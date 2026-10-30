@@ -3,46 +3,16 @@
  * document and the explanation of a term, from a model that runs on this
  * computer. Nothing here touches the network.
  *
- * `DocumentText` and `SourceSpan` copy the shapes part B owns in
- * `src/documentText.ts`. Once that file is on main, import them from there and
- * delete the copies below.
+ * `DocumentText` and `SourceSpan` are part B's, from `src/documentText.ts`,
+ * re-exported here for the reader's code.
  */
 
-export interface DocumentPageText {
-  /** From 0. */
-  index: number;
-  text: string;
-}
-
-/** A document's whole text, as native `vault_document_text` returns it
- * (part B, threat model AI-10). */
-export interface DocumentText {
-  /** How many pages the document has, whether or not all were read. */
-  pageCount: number;
-  /** The pages read, in order. A page that failed has no entry. */
-  pages: DocumentPageText[];
-  /** Every page's text, joined with "\n\n". */
-  joined: string;
-  /** Where each entry of `pages` starts in `joined`. */
-  pageStarts: number[];
-  /** Pages with no text (scans, pictures). */
-  emptyPages: number[];
-  /** Pages whose text the helper cut at its own limit. */
-  cutPages: number[];
-  /** Pages the helper refused or could not draw. */
-  failedPages: number[];
-  /** True when pages past the caps were left out. */
-  truncated: boolean;
-  /** The native ticket that lets this text be saved once (AI-02). */
-  ticket: string;
-}
-
-/** A span of one page's text, in UTF-16 code units, end exclusive. */
-export interface SourceSpan {
-  page: number;
-  start: number;
-  end: number;
-}
+export type {
+  DocumentPageText,
+  DocumentText,
+  SourceSpan,
+} from "../documentText";
+import type { DocumentText, SourceSpan } from "../documentText";
 
 export type AiTool = "summary" | "explain";
 

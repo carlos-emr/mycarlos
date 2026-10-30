@@ -1,6 +1,7 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
 import type { ModelStatus } from "./ai/types";
+import type { DocumentText } from "./documentText";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -466,7 +467,51 @@ export interface VaultBridge {
   cancelView(): Promise<void>;
   /** Whether the AI helper (#72) has a model on this computer. */
   aiModelStatus(): Promise<ModelStatus>;
+  /** The whole text of a stored PDF for the AI helper's preview (#72):
+   * every page's readable text, read once by the PDF helper on this device.
+   * Computers only. `password` is the document's own, when it is locked
+   * with one; it is not kept. The result carries the ticket one save
+   * needs. */
+  documentText(recordId: string, password?: string): Promise<DocumentText>;
+  /** Stops a text still being read: the preview closed. */
+  cancelDocumentText(): Promise<void>;
+  /** What the vault knows about a document's patient, for the remover:
+   * names, birth dates, the provider and the clinic of its delivery. */
+  recordKnownDetails(recordId: string): Promise<KnownIdentifiers>;
+  /** Opens the save picker for an anonymized text, with a generic name in
+   * the app's language. Needs the preview's ticket. The id of the chosen
+   * place, or null when cancelled. */
+  pickTextExportDestination(
+    recordId: string,
+    ticket: string,
+  ): Promise<string | null>;
+  /** Writes the anonymized text where the picker chose, after the native
+   * re-check: saved, or refused with the ranges still holding a detail the
+   * vault knows. One save ends the ticket. */
+  exportTextToPicked(
+    pickId: string,
+    recordId: string,
+    ticket: string,
+    text: string,
+  ): Promise<TextSaveOutcome>;
   reset(confirmation: string): Promise<boolean>;
+}
+
+/** What the vault knows about a document's patient (#72 part B). */
+export interface KnownIdentifiers {
+  names: string[];
+  /** As "1961-04-17". */
+  birthDates: string[];
+  doctorNames: string[];
+  clinicNames: string[];
+}
+
+/** How a text save ended (#72 part B, AI-02). */
+export interface TextSaveOutcome {
+  saved: boolean;
+  /** Ranges of the text, in UTF-16 units, that still hold a detail the
+   * vault knows or a character the cleaning drops. Empty when saved. */
+  hits: { start: number; end: number }[];
 }
 
 interface PublicError {
@@ -837,6 +882,25 @@ export function createVaultBridge(): VaultBridge {
       }),
     cancelView: () => invoke<void>("vault_view_cancel"),
     aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
+    documentText: (recordId, password) =>
+      invoke<DocumentText>("vault_document_text", {
+        request: { recordId, password: password ?? null },
+      }),
+    cancelDocumentText: () => invoke<void>("vault_document_text_cancel"),
+    recordKnownDetails: (recordId) =>
+      invoke<KnownIdentifiers>("vault_record_known_details", {
+        request: { recordId },
+      }),
+    pickTextExportDestination: (recordId, ticket) =>
+      invoke<string | null>("vault_export_text_pick", {
+        request: { recordId, ticket },
+        locale: getLocale(),
+      }),
+    exportTextToPicked: (pickId, recordId, ticket, text) =>
+      invoke<TextSaveOutcome>("vault_export_text_picked", {
+        request: { pickId, recordId, ticket, text },
+        locale: getLocale(),
+      }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>

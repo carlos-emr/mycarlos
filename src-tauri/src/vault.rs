@@ -646,6 +646,19 @@ pub struct VaultSnapshot {
 }
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
+/// What the vault knows about a document's patient (#72 part B). Names and
+/// birth dates feed the native re-check; the provider and the clinic feed
+/// the remover in page code.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownIdentifiers {
+    pub names: Vec<String>,
+    /// As "1961-04-17".
+    pub birth_dates: Vec<String>,
+    pub doctor_names: Vec<String>,
+    pub clinic_names: Vec<String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RecoveryReason {
@@ -2502,6 +2515,12 @@ impl VaultStore {
     /// a copy saved through a document provider, which `export_atomic` does
     /// not see.
     pub fn record_copy_saved(&self, record_id: Uuid, place: &str) {
+        self.record_copy_saved_how(record_id, place, None);
+    }
+
+    /// As `record_copy_saved`, with `how` saying what kind of copy: None for
+    /// the document itself, "anonymizedText" for the AI helper's text (#72).
+    pub fn record_copy_saved_how(&self, record_id: Uuid, place: &str, how: Option<&str>) {
         let mut guard = self.session();
         let Some(unlocked) = guard.as_mut() else {
             return;
@@ -2514,9 +2533,123 @@ impl VaultStore {
         else {
             return;
         };
-        let entry =
+        let mut entry =
             record_entry(HistoryEvent::CopySaved, crate::now_ms(), record).with_place(place);
+        entry.how = how.map(str::to_owned);
         record_in_session(&self.root, unlocked, vec![entry]);
+    }
+
+    /// Writes the AI helper's anonymized text of a document to a file the
+    /// patient chose (#72 part B, AI-02): the same staging and journal as
+    /// `export_atomic`, mode 0600, never inside the vault home. The caller
+    /// has checked the text; nothing here reads the document. Recorded in
+    /// the history as a copy saved, `how` "anonymizedText".
+    pub fn export_text_atomic(
+        &self,
+        record_id: Uuid,
+        destination: &Path,
+        content: &[u8],
+    ) -> Result<(), VaultError> {
+        let home = fs::canonicalize(vault_home(&self.root)?)?;
+        let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
+        if fs::canonicalize(destination_parent)?.starts_with(&home) {
+            return Err(VaultError::Invalid);
+        }
+        {
+            let guard = self.session();
+            let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+            let record = unlocked
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == record_id)
+                .ok_or(VaultError::NotFound)?;
+            if record.hidden.is_some() {
+                return Err(VaultError::NotFound);
+            }
+        }
+        let id = Uuid::new_v4();
+        let _in_flight = ExportInFlight::new(id);
+        let stage = destination_parent.join(format!("{EXPORT_STAGE_PREFIX}{id}"));
+        let entry = journal_export(&self.root, id, &stage).ok();
+        if let Err(error) = create_stage_dir(&stage) {
+            if let Some(entry) = &entry {
+                let _ = remove_owned_file(entry, Removable::ExportStage);
+            }
+            return Err(error);
+        }
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let result = AtomicFile::new_with_tmpdir(destination, AllowOverwrite, &stage)
+            .write_with_options(
+                |file| file.write_all(content).map_err(VaultError::from),
+                options,
+            )
+            .map_err(|error| match error {
+                AtomicWriteError::Internal(error) => error.into(),
+                AtomicWriteError::User(error) => error,
+            });
+        finish_export(&stage, entry.as_deref());
+        if result.is_ok() {
+            self.record_copy_saved_how(
+                record_id,
+                &destination.to_string_lossy(),
+                Some("anonymizedText"),
+            );
+        }
+        result
+    }
+
+    /// The identifiers the vault knows about a document's patient, for the
+    /// AI helper's native re-check (#72 part B, AI-02): every profile's
+    /// display and full name and birth date, and the patient's name and
+    /// birth date, the provider and the clinic from the document's delivery
+    /// manifest, if it has one. Nothing is stored or logged.
+    pub fn known_identifiers(&self, record_id: Uuid) -> Result<KnownIdentifiers, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let manifest = &unlocked.manifest;
+        let shared = shared_profile_id(manifest.vault_id);
+        let mut known = KnownIdentifiers::default();
+        for profile in &manifest.profiles {
+            if profile.id == shared {
+                continue;
+            }
+            known.names.push(profile.display_name.clone());
+            if let Some(full_name) = &profile.full_name {
+                known.names.push(full_name.clone());
+            }
+            if let Some(birth_date) = &profile.birth_date {
+                known.birth_dates.push(birth_date.clone());
+            }
+        }
+        let record = manifest
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?;
+        if let Some(custody) = &record.delivery {
+            let delivery = &custody.manifest;
+            known.names.push(delivery.patient.name.clone());
+            if !delivery.patient.birth_date.is_empty() {
+                known.birth_dates.push(delivery.patient.birth_date.clone());
+            }
+            known.doctor_names.push(delivery.provider_name.clone());
+            known.clinic_names.push(delivery.clinic_name.clone());
+        }
+        for list in [
+            &mut known.names,
+            &mut known.birth_dates,
+            &mut known.doctor_names,
+            &mut known.clinic_names,
+        ] {
+            list.retain(|value| !value.trim().is_empty());
+            list.sort();
+            list.dedup();
+        }
+        Ok(known)
     }
 
     /// Records a backup saved, and where (#71). For a backup saved through a

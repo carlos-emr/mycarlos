@@ -751,6 +751,85 @@ export const MESSAGE_KEYS = [
   "ai.failed",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
+  "aiHelper.notice.title",
+  "aiHelper.notice.introShare",
+  "aiHelper.notice.intro",
+  "aiHelper.notice.testBuild",
+  "aiHelper.notice.shareHeading",
+  "aiHelper.notice.shareBody",
+  "aiHelper.notice.previewBody",
+  "aiHelper.notice.limitsBody",
+  "aiHelper.notice.fileBody",
+  "aiHelper.notice.serviceBody",
+  "aiHelper.notice.adviceBody",
+  "aiHelper.notice.modelHeading",
+  "aiHelper.notice.modelBody",
+  "aiHelper.notice.resultsBody",
+  "aiHelper.exportHeader",
+  "aiHelper.exportCut",
+  "aiHelper.exportFileName",
+  "interface.history.how.anonymizedText",
+  "interface.RecordDetails.anonymizeText",
+  "interface.AnonymizePreview.title",
+  "interface.AnonymizePreview.reading",
+  "interface.AnonymizePreview.readFailed",
+  "interface.AnonymizePreview.emptyPages",
+  "interface.AnonymizePreview.cutPages",
+  "interface.AnonymizePreview.failedPages",
+  "interface.AnonymizePreview.replaced",
+  "interface.AnonymizePreview.headerNote",
+  "interface.AnonymizePreview.howMarked",
+  "interface.AnonymizePreview.textRegion",
+  "interface.AnonymizePreview.removedKind",
+  "interface.AnonymizePreview.movedDate",
+  "interface.AnonymizePreview.kind.name",
+  "interface.AnonymizePreview.kind.doctor",
+  "interface.AnonymizePreview.kind.clinic",
+  "interface.AnonymizePreview.kind.healthCard",
+  "interface.AnonymizePreview.kind.recordNumber",
+  "interface.AnonymizePreview.kind.sin",
+  "interface.AnonymizePreview.kind.dateOfBirth",
+  "interface.AnonymizePreview.kind.age",
+  "interface.AnonymizePreview.kind.address",
+  "interface.AnonymizePreview.kind.postalCode",
+  "interface.AnonymizePreview.kind.phone",
+  "interface.AnonymizePreview.kind.email",
+  "interface.AnonymizePreview.kind.web",
+  "interface.AnonymizePreview.kind.unclearDate",
+  "interface.AnonymizePreview.kind.manual",
+  "interface.AnonymizePreview.placeholder.name",
+  "interface.AnonymizePreview.placeholder.doctor",
+  "interface.AnonymizePreview.placeholder.clinic",
+  "interface.AnonymizePreview.placeholder.healthCard",
+  "interface.AnonymizePreview.placeholder.recordNumber",
+  "interface.AnonymizePreview.placeholder.sin",
+  "interface.AnonymizePreview.placeholder.dateOfBirth",
+  "interface.AnonymizePreview.placeholder.age",
+  "interface.AnonymizePreview.placeholder.address",
+  "interface.AnonymizePreview.placeholder.postalCode",
+  "interface.AnonymizePreview.placeholder.phone",
+  "interface.AnonymizePreview.placeholder.email",
+  "interface.AnonymizePreview.placeholder.web",
+  "interface.AnonymizePreview.placeholder.unclearDate",
+  "interface.AnonymizePreview.placeholder.manual",
+  "interface.AnonymizePreview.possibleNames",
+  "interface.AnonymizePreview.removeWord",
+  "interface.AnonymizePreview.removeSelected",
+  "interface.AnonymizePreview.selectFirst",
+  "interface.AnonymizePreview.phrase",
+  "interface.AnonymizePreview.removePhrase",
+  "interface.AnonymizePreview.phraseNotFound",
+  "interface.AnonymizePreview.removedPlaces",
+  "interface.AnonymizePreview.undo",
+  "interface.AnonymizePreview.save",
+  "interface.AnonymizePreview.confirmTitle",
+  "interface.AnonymizePreview.confirmBody",
+  "interface.AnonymizePreview.saved",
+  "interface.AnonymizePreview.saveCancelled",
+  "interface.AnonymizePreview.refused",
+  "interface.AnonymizePreview.close",
+  "interface.AiHelperNotice.continue",
+  "interface.AnonymizePreview.footerNote",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1628,6 +1707,133 @@ const FLUENT_IDS_BY_KEY = {
   "ai.failed": "ai-failed",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
+  "aiHelper.notice.title": "aiHelper-notice-title",
+  "aiHelper.notice.introShare": "aiHelper-notice-introShare",
+  "aiHelper.notice.intro": "aiHelper-notice-intro",
+  "aiHelper.notice.testBuild": "aiHelper-notice-testBuild",
+  "aiHelper.notice.shareHeading": "aiHelper-notice-shareHeading",
+  "aiHelper.notice.shareBody": "aiHelper-notice-shareBody",
+  "aiHelper.notice.previewBody": "aiHelper-notice-previewBody",
+  "aiHelper.notice.limitsBody": "aiHelper-notice-limitsBody",
+  "aiHelper.notice.fileBody": "aiHelper-notice-fileBody",
+  "aiHelper.notice.serviceBody": "aiHelper-notice-serviceBody",
+  "aiHelper.notice.adviceBody": "aiHelper-notice-adviceBody",
+  "aiHelper.notice.modelHeading": "aiHelper-notice-modelHeading",
+  "aiHelper.notice.modelBody": "aiHelper-notice-modelBody",
+  "aiHelper.notice.resultsBody": "aiHelper-notice-resultsBody",
+  "aiHelper.exportHeader": "aiHelper-exportHeader",
+  "aiHelper.exportCut": "aiHelper-exportCut",
+  "aiHelper.exportFileName": "aiHelper-exportFileName",
+  "interface.history.how.anonymizedText":
+    "interface-history-how-anonymizedText",
+  "interface.RecordDetails.anonymizeText":
+    "interface-RecordDetails-anonymizeText",
+  "interface.AnonymizePreview.title": "interface-AnonymizePreview-title",
+  "interface.AnonymizePreview.reading": "interface-AnonymizePreview-reading",
+  "interface.AnonymizePreview.readFailed":
+    "interface-AnonymizePreview-readFailed",
+  "interface.AnonymizePreview.emptyPages":
+    "interface-AnonymizePreview-emptyPages",
+  "interface.AnonymizePreview.cutPages": "interface-AnonymizePreview-cutPages",
+  "interface.AnonymizePreview.failedPages":
+    "interface-AnonymizePreview-failedPages",
+  "interface.AnonymizePreview.replaced": "interface-AnonymizePreview-replaced",
+  "interface.AnonymizePreview.headerNote":
+    "interface-AnonymizePreview-headerNote",
+  "interface.AnonymizePreview.howMarked":
+    "interface-AnonymizePreview-howMarked",
+  "interface.AnonymizePreview.textRegion":
+    "interface-AnonymizePreview-textRegion",
+  "interface.AnonymizePreview.removedKind":
+    "interface-AnonymizePreview-removedKind",
+  "interface.AnonymizePreview.movedDate":
+    "interface-AnonymizePreview-movedDate",
+  "interface.AnonymizePreview.kind.name":
+    "interface-AnonymizePreview-kind-name",
+  "interface.AnonymizePreview.kind.doctor":
+    "interface-AnonymizePreview-kind-doctor",
+  "interface.AnonymizePreview.kind.clinic":
+    "interface-AnonymizePreview-kind-clinic",
+  "interface.AnonymizePreview.kind.healthCard":
+    "interface-AnonymizePreview-kind-healthCard",
+  "interface.AnonymizePreview.kind.recordNumber":
+    "interface-AnonymizePreview-kind-recordNumber",
+  "interface.AnonymizePreview.kind.sin": "interface-AnonymizePreview-kind-sin",
+  "interface.AnonymizePreview.kind.dateOfBirth":
+    "interface-AnonymizePreview-kind-dateOfBirth",
+  "interface.AnonymizePreview.kind.age": "interface-AnonymizePreview-kind-age",
+  "interface.AnonymizePreview.kind.address":
+    "interface-AnonymizePreview-kind-address",
+  "interface.AnonymizePreview.kind.postalCode":
+    "interface-AnonymizePreview-kind-postalCode",
+  "interface.AnonymizePreview.kind.phone":
+    "interface-AnonymizePreview-kind-phone",
+  "interface.AnonymizePreview.kind.email":
+    "interface-AnonymizePreview-kind-email",
+  "interface.AnonymizePreview.kind.web": "interface-AnonymizePreview-kind-web",
+  "interface.AnonymizePreview.kind.unclearDate":
+    "interface-AnonymizePreview-kind-unclearDate",
+  "interface.AnonymizePreview.kind.manual":
+    "interface-AnonymizePreview-kind-manual",
+  "interface.AnonymizePreview.placeholder.name":
+    "interface-AnonymizePreview-placeholder-name",
+  "interface.AnonymizePreview.placeholder.doctor":
+    "interface-AnonymizePreview-placeholder-doctor",
+  "interface.AnonymizePreview.placeholder.clinic":
+    "interface-AnonymizePreview-placeholder-clinic",
+  "interface.AnonymizePreview.placeholder.healthCard":
+    "interface-AnonymizePreview-placeholder-healthCard",
+  "interface.AnonymizePreview.placeholder.recordNumber":
+    "interface-AnonymizePreview-placeholder-recordNumber",
+  "interface.AnonymizePreview.placeholder.sin":
+    "interface-AnonymizePreview-placeholder-sin",
+  "interface.AnonymizePreview.placeholder.dateOfBirth":
+    "interface-AnonymizePreview-placeholder-dateOfBirth",
+  "interface.AnonymizePreview.placeholder.age":
+    "interface-AnonymizePreview-placeholder-age",
+  "interface.AnonymizePreview.placeholder.address":
+    "interface-AnonymizePreview-placeholder-address",
+  "interface.AnonymizePreview.placeholder.postalCode":
+    "interface-AnonymizePreview-placeholder-postalCode",
+  "interface.AnonymizePreview.placeholder.phone":
+    "interface-AnonymizePreview-placeholder-phone",
+  "interface.AnonymizePreview.placeholder.email":
+    "interface-AnonymizePreview-placeholder-email",
+  "interface.AnonymizePreview.placeholder.web":
+    "interface-AnonymizePreview-placeholder-web",
+  "interface.AnonymizePreview.placeholder.unclearDate":
+    "interface-AnonymizePreview-placeholder-unclearDate",
+  "interface.AnonymizePreview.placeholder.manual":
+    "interface-AnonymizePreview-placeholder-manual",
+  "interface.AnonymizePreview.possibleNames":
+    "interface-AnonymizePreview-possibleNames",
+  "interface.AnonymizePreview.removeWord":
+    "interface-AnonymizePreview-removeWord",
+  "interface.AnonymizePreview.removeSelected":
+    "interface-AnonymizePreview-removeSelected",
+  "interface.AnonymizePreview.selectFirst":
+    "interface-AnonymizePreview-selectFirst",
+  "interface.AnonymizePreview.phrase": "interface-AnonymizePreview-phrase",
+  "interface.AnonymizePreview.removePhrase":
+    "interface-AnonymizePreview-removePhrase",
+  "interface.AnonymizePreview.phraseNotFound":
+    "interface-AnonymizePreview-phraseNotFound",
+  "interface.AnonymizePreview.removedPlaces":
+    "interface-AnonymizePreview-removedPlaces",
+  "interface.AnonymizePreview.undo": "interface-AnonymizePreview-undo",
+  "interface.AnonymizePreview.save": "interface-AnonymizePreview-save",
+  "interface.AnonymizePreview.confirmTitle":
+    "interface-AnonymizePreview-confirmTitle",
+  "interface.AnonymizePreview.confirmBody":
+    "interface-AnonymizePreview-confirmBody",
+  "interface.AnonymizePreview.saved": "interface-AnonymizePreview-saved",
+  "interface.AnonymizePreview.saveCancelled":
+    "interface-AnonymizePreview-saveCancelled",
+  "interface.AnonymizePreview.refused": "interface-AnonymizePreview-refused",
+  "interface.AnonymizePreview.close": "interface-AnonymizePreview-close",
+  "interface.AiHelperNotice.continue": "interface-AiHelperNotice-continue",
+  "interface.AnonymizePreview.footerNote":
+    "interface-AnonymizePreview-footerNote",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2470,6 +2676,85 @@ export interface MessageArgsByKey {
   "ai.failed": undefined;
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
+  "aiHelper.notice.title": undefined;
+  "aiHelper.notice.introShare": undefined;
+  "aiHelper.notice.intro": undefined;
+  "aiHelper.notice.testBuild": undefined;
+  "aiHelper.notice.shareHeading": undefined;
+  "aiHelper.notice.shareBody": undefined;
+  "aiHelper.notice.previewBody": undefined;
+  "aiHelper.notice.limitsBody": undefined;
+  "aiHelper.notice.fileBody": undefined;
+  "aiHelper.notice.serviceBody": undefined;
+  "aiHelper.notice.adviceBody": undefined;
+  "aiHelper.notice.modelHeading": undefined;
+  "aiHelper.notice.modelBody": undefined;
+  "aiHelper.notice.resultsBody": undefined;
+  "aiHelper.exportHeader": undefined;
+  "aiHelper.exportCut": { page: FluentArgument };
+  "aiHelper.exportFileName": undefined;
+  "interface.history.how.anonymizedText": undefined;
+  "interface.RecordDetails.anonymizeText": undefined;
+  "interface.AnonymizePreview.title": undefined;
+  "interface.AnonymizePreview.reading": undefined;
+  "interface.AnonymizePreview.readFailed": undefined;
+  "interface.AnonymizePreview.emptyPages": { pages: FluentArgument };
+  "interface.AnonymizePreview.cutPages": { pages: FluentArgument };
+  "interface.AnonymizePreview.failedPages": { pages: FluentArgument };
+  "interface.AnonymizePreview.replaced": { count: FluentArgument };
+  "interface.AnonymizePreview.headerNote": undefined;
+  "interface.AnonymizePreview.howMarked": undefined;
+  "interface.AnonymizePreview.textRegion": undefined;
+  "interface.AnonymizePreview.removedKind": { kind: FluentArgument };
+  "interface.AnonymizePreview.movedDate": undefined;
+  "interface.AnonymizePreview.kind.name": undefined;
+  "interface.AnonymizePreview.kind.doctor": undefined;
+  "interface.AnonymizePreview.kind.clinic": undefined;
+  "interface.AnonymizePreview.kind.healthCard": undefined;
+  "interface.AnonymizePreview.kind.recordNumber": undefined;
+  "interface.AnonymizePreview.kind.sin": undefined;
+  "interface.AnonymizePreview.kind.dateOfBirth": undefined;
+  "interface.AnonymizePreview.kind.age": undefined;
+  "interface.AnonymizePreview.kind.address": undefined;
+  "interface.AnonymizePreview.kind.postalCode": undefined;
+  "interface.AnonymizePreview.kind.phone": undefined;
+  "interface.AnonymizePreview.kind.email": undefined;
+  "interface.AnonymizePreview.kind.web": undefined;
+  "interface.AnonymizePreview.kind.unclearDate": undefined;
+  "interface.AnonymizePreview.kind.manual": undefined;
+  "interface.AnonymizePreview.placeholder.name": undefined;
+  "interface.AnonymizePreview.placeholder.doctor": undefined;
+  "interface.AnonymizePreview.placeholder.clinic": undefined;
+  "interface.AnonymizePreview.placeholder.healthCard": undefined;
+  "interface.AnonymizePreview.placeholder.recordNumber": undefined;
+  "interface.AnonymizePreview.placeholder.sin": undefined;
+  "interface.AnonymizePreview.placeholder.dateOfBirth": undefined;
+  "interface.AnonymizePreview.placeholder.age": undefined;
+  "interface.AnonymizePreview.placeholder.address": undefined;
+  "interface.AnonymizePreview.placeholder.postalCode": undefined;
+  "interface.AnonymizePreview.placeholder.phone": undefined;
+  "interface.AnonymizePreview.placeholder.email": undefined;
+  "interface.AnonymizePreview.placeholder.web": undefined;
+  "interface.AnonymizePreview.placeholder.unclearDate": undefined;
+  "interface.AnonymizePreview.placeholder.manual": undefined;
+  "interface.AnonymizePreview.possibleNames": undefined;
+  "interface.AnonymizePreview.removeWord": { word: FluentArgument };
+  "interface.AnonymizePreview.removeSelected": undefined;
+  "interface.AnonymizePreview.selectFirst": undefined;
+  "interface.AnonymizePreview.phrase": undefined;
+  "interface.AnonymizePreview.removePhrase": undefined;
+  "interface.AnonymizePreview.phraseNotFound": undefined;
+  "interface.AnonymizePreview.removedPlaces": { count: FluentArgument };
+  "interface.AnonymizePreview.undo": undefined;
+  "interface.AnonymizePreview.save": undefined;
+  "interface.AnonymizePreview.confirmTitle": undefined;
+  "interface.AnonymizePreview.confirmBody": undefined;
+  "interface.AnonymizePreview.saved": undefined;
+  "interface.AnonymizePreview.saveCancelled": undefined;
+  "interface.AnonymizePreview.refused": { count: FluentArgument };
+  "interface.AnonymizePreview.close": undefined;
+  "interface.AiHelperNotice.continue": undefined;
+  "interface.AnonymizePreview.footerNote": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];
