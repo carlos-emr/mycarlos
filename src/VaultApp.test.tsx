@@ -347,6 +347,80 @@ function renameBridge() {
 }
 
 describe("durable vault UI", () => {
+  it.each(["status", "snapshot"])(
+    "locks native state and shows unlock when the current startup %s fails",
+    async (stage) => {
+      const failure = {
+        code: "storage",
+        message: "FAKE current startup failed",
+      };
+      const bridge = nativeBridge({
+        status:
+          stage === "status"
+            ? vi.fn().mockRejectedValue(failure)
+            : vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockRejectedValue(failure),
+      });
+      render(<VaultApp bridge={bridge} />);
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByText(humanText("FAKE current startup failed")),
+      ).toBeVisible();
+      expect(bridge.snapshot).toHaveBeenCalledTimes(
+        stage === "snapshot" ? 1 : 0,
+      );
+      expect(
+        screen.queryByRole("heading", { name: humanText("My records") }),
+      ).toBeNull();
+    },
+  );
+
+  it("does not lock a new unlock when an abandoned startup check fails", async () => {
+    let refuseEarlier!: (error: unknown) => void;
+    const earlier = new Promise<"locked">((_, reject) => {
+      refuseEarlier = reject;
+    });
+    const failure = { code: "storage", message: "FAKE earlier startup failed" };
+    const bridge = nativeBridge({
+      status: vi.fn().mockReturnValueOnce(earlier).mockResolvedValue("locked"),
+      unlock: vi.fn().mockResolvedValue(snapshotWithRecord),
+    });
+    try {
+      // The application itself uses StrictMode. Its abandoned first effect
+      // must not issue a native lock owned by the later, successful startup.
+      render(
+        <StrictMode>
+          <VaultApp bridge={bridge} />
+        </StrictMode>,
+      );
+      const passphrase = await screen.findByLabelText(humanText("Passphrase"));
+      expect(bridge.status).toHaveBeenCalledTimes(2);
+      fireEvent.change(passphrase, {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      expect(
+        await screen.findByText(humanText("FAKE_Results.pdf")),
+      ).toBeVisible();
+      expect(bridge.unlock).toHaveBeenCalledOnce();
+      expect(bridge.lock).not.toHaveBeenCalled();
+
+      await act(async () => refuseEarlier(failure));
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(screen.getByText(humanText("FAKE_Results.pdf"))).toBeVisible();
+      expect(
+        screen.queryByText(humanText("FAKE earlier startup failed")),
+      ).not.toBeInTheDocument();
+    } finally {
+      await act(async () => refuseEarlier(failure));
+    }
+  });
+
   it.each(["verified", "pending"])(
     "conceals %s audit history while a manual native lock is still pending",
     async (kind) => {

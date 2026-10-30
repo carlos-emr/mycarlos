@@ -422,6 +422,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         if (active) setStatus(next);
       })
       .catch((error) => {
+        if (!active) return;
         // The unlock screen is about to be shown, so no timer or background
         // lock will cover a native session that is still open. Close it.
         void bridge.lock().catch(() => undefined);
