@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
   FAKE_PASSPHRASE,
   escapeRegExp,
   fakeCalls,
@@ -82,10 +83,10 @@ test("Save a copy asks first, then saves the document where the patient chose, a
   );
   expect(await exports()).toEqual(["vault_export_pick", "vault_export_picked"]);
   expect(await fakeCalls(page, "vault_export_pick")).toEqual([
-    { request: { recordId: "letter" } },
+    { request: { recordId: FAKE_IDS.letter } },
   ]);
   expect(await fakeCalls(page, "vault_export_picked")).toEqual([
-    { request: { pickId: "FAKE-export-pick", recordId: "letter" } },
+    { request: { pickId: FAKE_IDS.exportPick, recordId: FAKE_IDS.letter } },
   ]);
 
   // The picker cancelled: said, and no copy is written.
@@ -128,7 +129,7 @@ test("Hide takes a document out of view, Security > Hidden keeps it across a rel
   await expect(page.getByText(hiddenNotice, { exact: true })).toBeVisible();
   await expect(row).toHaveCount(0);
   expect(await fakeCalls(page, "vault_hide_record")).toEqual([
-    { request: { recordId: "letter" } },
+    { request: { recordId: FAKE_IDS.letter } },
   ]);
 
   // Still hidden after the vault is locked and the window reloads: it is the
@@ -198,7 +199,7 @@ test("Hide takes a document out of view, Security > Hidden keeps it across a rel
     }),
   ).toBeVisible();
   expect(await fakeCalls(page, "vault_unhide_record")).toEqual([
-    { request: { recordId: "letter" } },
+    { request: { recordId: FAKE_IDS.letter } },
   ]);
   await page
     .getByRole("button", { name: en("hidden.backToSecurity"), exact: true })

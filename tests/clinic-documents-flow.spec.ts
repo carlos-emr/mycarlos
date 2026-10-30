@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
   FAKE_CLINIC,
   FAKE_CLINIC_DOCUMENT,
   FAKE_DEVICE_CODE,
@@ -140,7 +141,7 @@ test("links this device to a clinic: a refused code is not kept, then the link, 
     page.getByText(en("portal.notRequested"), { exact: true }),
   ).toHaveCount(0);
   expect(await fakeCalls(page, "vault_request_device_approval")).toEqual([
-    { linkId: "FAKE-link-1" },
+    { linkId: FAKE_IDS.link },
   ]);
 
   // The device code, copied for the clinic's staff.

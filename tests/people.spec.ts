@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
+  fakeUuid,
   fakeCalls,
   fakeVaultWith,
   myRecords,
@@ -104,7 +106,7 @@ test("a person is added with their details in Security, their details are edited
     (await fakeCalls(page, "vault_update_profile_details")).at(-1),
   ).toEqual({
     request: {
-      profileId: "FAKE-profile-2",
+      profileId: fakeUuid(202),
       details: { fullName: CHILD_FULL_NAME },
       today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     },
@@ -146,8 +148,8 @@ test("a person is added with their details in Security, their details are edited
   expect(await fakeCalls(page, "vault_move_to_person")).toEqual([
     {
       request: {
-        recordIds: ["letter"],
-        profileId: "FAKE-profile-2",
+        recordIds: [FAKE_IDS.letter],
+        profileId: fakeUuid(202),
         folderIds: [],
       },
     },
@@ -182,7 +184,7 @@ test("a person is added with their details in Security, their details are edited
     .click();
   await expect(rename).toBeHidden();
   expect(await fakeCalls(page, "vault_rename_profile")).toEqual([
-    { request: { profileId: "FAKE-profile-2", displayName: "FAKE Kid" } },
+    { request: { profileId: fakeUuid(202), displayName: "FAKE Kid" } },
   ]);
   await expect(
     sidebar(page).getByRole("button", { name: /^FAKE Kid\b/ }),
