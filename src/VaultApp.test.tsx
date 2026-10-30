@@ -1819,6 +1819,62 @@ describe("durable vault UI", () => {
     },
   );
 
+  it.each([
+    ["person", "profile-1", "My records"],
+    ["shared", "shared-profile", "Shared with me"],
+  ])(
+    "shows the %s root location in document details with several people",
+    async (scope, profileId, location) => {
+      const user = userEvent.setup();
+      const { bridge, vault } = sharedVault(["Jamie", "Morgan"], [], {
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      vault.profiles.push({
+        id: "shared-profile",
+        displayName: "Shared with me",
+        createdAtMs: 2,
+      });
+      vault.records.push({
+        id: "root-record",
+        profileId,
+        folderIds: [],
+        displayName: "FAKE_Root_Record.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/pdf",
+        plaintextSize: 2048,
+        importedAtMs: 2,
+        available: true,
+      });
+      render(<VaultApp bridge={bridge} />);
+      if (scope === "shared") {
+        await user.click(
+          await screen.findByRole("button", {
+            name: humanText(/^Shared with me/),
+          }),
+        );
+      }
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("Details for FAKE_Root_Record.pdf"),
+        }),
+      );
+      const details = screen.getByRole("dialog", {
+        name: humanText("FAKE_Root_Record.pdf"),
+      });
+      const folder = within(details).getByText(humanText("Folder"), {
+        selector: "dt",
+      }).parentElement!;
+      expect(within(folder).getByRole("definition")).toHaveHumanTextContent(
+        location,
+      );
+      expect(
+        within(details).getByRole("combobox", { name: humanText("Move to") }),
+      ).toHaveValue(scope === "shared" ? "" : `${profileId}|`);
+      expect(bridge.assignFolders).not.toHaveBeenCalled();
+      expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    },
+  );
+
   it("keeps same-person detail moves on the folder assignment path with several people", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = sharedVault(["Jamie", "Morgan"], []);
