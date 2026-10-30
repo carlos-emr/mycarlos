@@ -188,9 +188,13 @@ interface-count-selected =
 
 interface-DocumentReader-documentPassword = Contraseña del documento
 
+interface-DocumentReader-firstPage = Primera página
+
 interface-DocumentReader-fitWidth = Ajustar al ancho
 
 interface-DocumentReader-larger = Ampliar
+
+interface-DocumentReader-lastPage = Última página
 
 interface-DocumentReader-nextPage = Página siguiente
 
