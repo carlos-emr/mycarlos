@@ -17,6 +17,9 @@ production end-of-support schedule remain an owner decision and release gate.
 - The only planned network use is pickup from the portal the patient links (carlos-portal #41).
   The fields it may send are listed under [Portal pickup](#portal-pickup-what-may-leave-the-device);
   nothing else may leave the device.
+- The planned AI helper (#72) adds nothing to this list: its "cloud" way is a text file the
+  patient saves, and its model helper has no network
+  ([AI helper](#ai-helper-72-nothing-leaves-the-device)).
 - There is no automatic support bundle. A future bundle must be generated locally, display every
   field to the patient before export, contain no document/profile/file name/path, key material,
   passphrase-derived value, vault/object ID or free-form log, and require an explicit save action.
@@ -149,6 +152,52 @@ off.
 If a portal or a clinic key may be compromised, follow the incident steps above. The clinic
 revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a key that
 was not active in the key list it pinned at linking (it does not yet learn of a later revocation), and patients can remove a device under Account → Linked devices in the portal.
+
+## AI helper (#72): nothing leaves the device
+
+Planned with #72 and not built yet ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
+on 29 October 2026 that the helper uses no cloud provider, so:
+
+- **What may leave the device: nothing.** The AI helper makes no network connection, its model runs
+  in a helper process with no network, and the webview's content policy is unchanged.
+- **The text source** is one read-only command, `vault_document_text` (AI-10). It works on
+  computers only, reuses the sandboxed PDF helper with no new helper message, caps the text at
+  50 pages and 1 MiB, lists the pages the helper refuses instead of dropping them, and adds no
+  network use.
+- **The export is a file save.** After the preview, the patient saves the anonymized text as a plain
+  text file through the system's save dialog (AI-01 to AI-03). Where it goes after that (a synced
+  folder, a cloud drive, an AI service) is the patient's choice, as for a readable copy, and what
+  that service learns or keeps is up to it (AI-09). Native code writes the file's first line
+  itself, in the app's language: it tells an AI to treat all of it as the document, not as
+  instructions (AI-02, AI-09); when the text was cut, the last line says so (AI-02, AI-10). The history
+  records it as `copySaved` with
+  `how: "anonymizedText"`: the document, where the file was saved (cut to 256 characters, and then
+  with a SHA-256 of the whole) and when; never the text, the removed details or the date offset.
+  Security shows it with a label of its own; an older build shows "Readable copy saved".
+- **The model file** holds no patient data. It is kept in a model folder beside, not inside, the
+  vault folder, not in myCarlos's encrypted backups, and marked to be left out of device backups
+  where the system allows. That folder is a removal kind of its own (no patient data, so #71's
+  rule that nothing is deleted does not apply): a partial copy is removed at the next start, a
+  refused file is offered for removal, and the patient can remove a model. It is checked against
+  a list built into the app (SHA-256 and size; part of the signed app once releases are signed)
+  when it is added and at each load (AI-04).
+- **How the model reaches the device is for Ben to choose** (THREAT_MODEL D-10). Proposed here: the
+  patient gets the file from a place the project names with the model choice, and adds it, so
+  myCarlos fetches nothing; that place sees the patient's IP address, as for any download. An
+  in-app download would add a host to this document's allow-list, and needs its own threat-model
+  row first (AI-08, NET-01).
+- **The model list is release material.** It changes only in a release, through the release supply
+  chain above. A model or runtime found unsafe is handled as a vulnerability (see
+  [Vulnerability intake and response](#vulnerability-intake-and-response)): a release removes its
+  entry, and the app then refuses that file. With no updater yet (MASVS CODE-2), that reaches only
+  patients who update.
+- **Advisories:** RustSec does not cover the model runtime (C/C++, such as llama.cpp). Its own
+  project's security advisories are watched, and its source revision is recorded in the SBOM.
+- **Licences:** each listed model's licence must allow the project to offer it to patients and
+  allow this use. It is recorded in `LICENSE_NOTES.md` when the model is picked.
+- **Canary drill:** the [synthetic canary drill](#synthetic-canary-drill) also covers the helper.
+  Identifying canaries in the vault's profiles and in synthetic documents must never appear in an
+  export, a log, or any file the helper leaves.
 
 ## Evaluating authenticated linking (#55)
 
