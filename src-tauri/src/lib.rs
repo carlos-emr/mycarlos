@@ -3284,7 +3284,7 @@ async fn vault_document_text(
                     // One page the helper refused: named, and the rest read.
                     text.failed_pages.push(index);
                     index += 1;
-                    if index >= text.page_count {
+                    if index >= text.page_count || index >= MAX_TEXT_PAGES {
                         break;
                     }
                     continue;
@@ -3474,12 +3474,13 @@ async fn vault_export_text_picked(
         // Only computers read a document's text, and they pick paths.
         return Err(VaultError::Invalid.into());
     };
-    // One save per ticket, taken once the write can start.
-    picks.take_text(request.ticket, record_id)?;
     run_blocking(store.inner(), move |store| {
         store.export_text_atomic(record_id, &destination_path, content.as_bytes())
     })
     .await?;
+    // One save per ticket: it ends with the write, so a failed write (disk
+    // full, say) leaves the preview able to try another place.
+    picks.take_text(request.ticket, record_id)?;
     Ok(TextSaveOutcome {
         saved: true,
         hits: Vec::new(),

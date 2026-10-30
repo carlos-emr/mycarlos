@@ -40,6 +40,7 @@ import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
 import { AnonymizePreview } from "./AnonymizePreview";
+import { AiHelperNotice } from "./AiHelperNotice";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
@@ -217,6 +218,12 @@ export function VaultLibrary({
   const [anonymizeRecordId, setAnonymizeRecordId] = useState<string | null>(
     null,
   );
+  // The notice about the AI helper: before the first export of this
+  // unlocked session (then the preview opens for `before`), or from Security.
+  const [aiNotice, setAiNotice] = useState<{ before: string | null } | null>(
+    null,
+  );
+  const [aiNoticeSeen, setAiNoticeSeen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
@@ -2167,6 +2174,9 @@ export function VaultLibrary({
                   setReturnFocusToHistory(false);
                   setSection("history");
                 }}
+                onOpenAiHelperNotice={
+                  computer ? () => setAiNotice({ before: null }) : undefined
+                }
                 people={people}
                 onUpdateProfileDetails={
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
@@ -2376,14 +2386,25 @@ export function VaultLibrary({
                 onAnonymize={
                   namedAsPdf(activeRecord.displayName) && computer
                     ? () => {
-                        setAnonymizeRecordId(activeRecord.id);
+                        if (aiNoticeSeen) setAnonymizeRecordId(activeRecord.id);
+                        else setAiNotice({ before: activeRecord.id });
                         setActiveRecordId(null);
                       }
                     : undefined
                 }
               />
             )}
-          {anonymizeRecord && (
+          {aiNotice && (
+            <AiHelperNotice
+              action={aiNotice.before ? "continue" : "close"}
+              onClose={() => {
+                setAiNoticeSeen(true);
+                if (aiNotice.before) setAnonymizeRecordId(aiNotice.before);
+                setAiNotice(null);
+              }}
+            />
+          )}
+          {anonymizeRecord && !aiNotice && (
             <AnonymizePreview
               record={anonymizeRecord}
               people={people}

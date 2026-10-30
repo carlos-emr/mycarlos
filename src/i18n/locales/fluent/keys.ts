@@ -756,7 +756,6 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.emptyPages",
   "interface.AnonymizePreview.cutPages",
   "interface.AnonymizePreview.failedPages",
-  "interface.AnonymizePreview.truncated",
   "interface.AnonymizePreview.replaced",
   "interface.AnonymizePreview.headerNote",
   "interface.AnonymizePreview.howMarked",
@@ -809,6 +808,8 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.saveCancelled",
   "interface.AnonymizePreview.refused",
   "interface.AnonymizePreview.close",
+  "interface.AiHelperNotice.continue",
+  "interface.AnonymizePreview.footerNote",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1696,8 +1697,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.AnonymizePreview.cutPages": "interface-AnonymizePreview-cutPages",
   "interface.AnonymizePreview.failedPages":
     "interface-AnonymizePreview-failedPages",
-  "interface.AnonymizePreview.truncated":
-    "interface-AnonymizePreview-truncated",
   "interface.AnonymizePreview.replaced": "interface-AnonymizePreview-replaced",
   "interface.AnonymizePreview.headerNote":
     "interface-AnonymizePreview-headerNote",
@@ -1792,6 +1791,9 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-saveCancelled",
   "interface.AnonymizePreview.refused": "interface-AnonymizePreview-refused",
   "interface.AnonymizePreview.close": "interface-AnonymizePreview-close",
+  "interface.AiHelperNotice.continue": "interface-AiHelperNotice-continue",
+  "interface.AnonymizePreview.footerNote":
+    "interface-AnonymizePreview-footerNote",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2635,7 +2637,6 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.emptyPages": { pages: FluentArgument };
   "interface.AnonymizePreview.cutPages": { pages: FluentArgument };
   "interface.AnonymizePreview.failedPages": { pages: FluentArgument };
-  "interface.AnonymizePreview.truncated": { count: FluentArgument };
   "interface.AnonymizePreview.replaced": { count: FluentArgument };
   "interface.AnonymizePreview.headerNote": undefined;
   "interface.AnonymizePreview.howMarked": undefined;
@@ -2688,6 +2689,8 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.saveCancelled": undefined;
   "interface.AnonymizePreview.refused": { count: FluentArgument };
   "interface.AnonymizePreview.close": undefined;
+  "interface.AiHelperNotice.continue": undefined;
+  "interface.AnonymizePreview.footerNote": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

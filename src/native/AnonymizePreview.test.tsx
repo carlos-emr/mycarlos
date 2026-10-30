@@ -311,7 +311,7 @@ describe("the anonymize preview (#72 part B)", () => {
       name: humanText("The text that will be saved"),
     });
     for (const note of [
-      "Only the first 1 pages are included. The file will say so.",
+      "[Text cut after page 1]",
       "Pages with no text that could be read, left out (they may be scans): 2",
       "Pages whose text was cut short: 3",
       "Pages that could not be read, left out: 4",

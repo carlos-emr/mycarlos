@@ -755,7 +755,6 @@
   "interface.AnonymizePreview.emptyPages",
   "interface.AnonymizePreview.cutPages",
   "interface.AnonymizePreview.failedPages",
-  "interface.AnonymizePreview.truncated",
   "interface.AnonymizePreview.replaced",
   "interface.AnonymizePreview.headerNote",
   "interface.AnonymizePreview.howMarked",
@@ -807,5 +806,7 @@
   "interface.AnonymizePreview.saved",
   "interface.AnonymizePreview.saveCancelled",
   "interface.AnonymizePreview.refused",
-  "interface.AnonymizePreview.close"
+  "interface.AnonymizePreview.close",
+  "interface.AiHelperNotice.continue",
+  "interface.AnonymizePreview.footerNote"
 ]

@@ -414,13 +414,7 @@ export function AnonymizePreview({
             {translateNow("aiHelper.notice.limitsBody")}{" "}
             {translateNow("interface.AnonymizePreview.howMarked")}
           </p>
-          {text && text.truncated && (
-            <p>
-              {translateNow("interface.AnonymizePreview.truncated", {
-                count: text.pages.length,
-              })}
-            </p>
-          )}
+
           {text && text.emptyPages.length > 0 && (
             <p>
               {translateNow("interface.AnonymizePreview.emptyPages", {
@@ -541,6 +535,18 @@ export function AnonymizePreview({
                 ),
               )}
             </div>
+            {text && text.truncated && text.pages.length > 0 && (
+              <p className="native-anonymize-header">
+                <span>
+                  {translateNow("interface.AnonymizePreview.footerNote")}
+                </span>{" "}
+                <span className="native-anonymize-fixed">
+                  {translateNow("aiHelper.exportCut", {
+                    page: text.pages[text.pages.length - 1].index + 1,
+                  })}
+                </span>
+              </p>
+            )}
             {possibleNames.length > 0 && (
               <div className="native-anonymize-possible">
                 <h3>

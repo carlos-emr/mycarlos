@@ -79,12 +79,14 @@ pub enum MessageId {
     FrameStateSettingUp,
     FrameWindowLabel,
     HiddenBackToSecurity,
+    InterfaceAiHelperNoticeContinue,
     InterfaceAnonymizePreviewClose,
     InterfaceAnonymizePreviewConfirmBody,
     InterfaceAnonymizePreviewConfirmTitle,
     InterfaceAnonymizePreviewCutPages,
     InterfaceAnonymizePreviewEmptyPages,
     InterfaceAnonymizePreviewFailedPages,
+    InterfaceAnonymizePreviewFooterNote,
     InterfaceAnonymizePreviewHeaderNote,
     InterfaceAnonymizePreviewHowMarked,
     InterfaceAnonymizePreviewKindAddress,
@@ -136,7 +138,6 @@ pub enum MessageId {
     InterfaceAnonymizePreviewSelectFirst,
     InterfaceAnonymizePreviewTextRegion,
     InterfaceAnonymizePreviewTitle,
-    InterfaceAnonymizePreviewTruncated,
     InterfaceAnonymizePreviewUndo,
     InterfaceCameraDialogCameraReady,
     InterfaceCameraDialogCameraView,
@@ -892,12 +893,14 @@ impl MessageId {
         Self::FrameStateSettingUp,
         Self::FrameWindowLabel,
         Self::HiddenBackToSecurity,
+        Self::InterfaceAiHelperNoticeContinue,
         Self::InterfaceAnonymizePreviewClose,
         Self::InterfaceAnonymizePreviewConfirmBody,
         Self::InterfaceAnonymizePreviewConfirmTitle,
         Self::InterfaceAnonymizePreviewCutPages,
         Self::InterfaceAnonymizePreviewEmptyPages,
         Self::InterfaceAnonymizePreviewFailedPages,
+        Self::InterfaceAnonymizePreviewFooterNote,
         Self::InterfaceAnonymizePreviewHeaderNote,
         Self::InterfaceAnonymizePreviewHowMarked,
         Self::InterfaceAnonymizePreviewKindAddress,
@@ -949,7 +952,6 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewSelectFirst,
         Self::InterfaceAnonymizePreviewTextRegion,
         Self::InterfaceAnonymizePreviewTitle,
-        Self::InterfaceAnonymizePreviewTruncated,
         Self::InterfaceAnonymizePreviewUndo,
         Self::InterfaceCameraDialogCameraReady,
         Self::InterfaceCameraDialogCameraView,
@@ -1705,6 +1707,7 @@ impl MessageId {
             Self::FrameStateSettingUp => "frame-state-settingUp",
             Self::FrameWindowLabel => "frame-window-label",
             Self::HiddenBackToSecurity => "hidden-backToSecurity",
+            Self::InterfaceAiHelperNoticeContinue => "interface-AiHelperNotice-continue",
             Self::InterfaceAnonymizePreviewClose => "interface-AnonymizePreview-close",
             Self::InterfaceAnonymizePreviewConfirmBody => "interface-AnonymizePreview-confirmBody",
             Self::InterfaceAnonymizePreviewConfirmTitle => {
@@ -1713,6 +1716,7 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewCutPages => "interface-AnonymizePreview-cutPages",
             Self::InterfaceAnonymizePreviewEmptyPages => "interface-AnonymizePreview-emptyPages",
             Self::InterfaceAnonymizePreviewFailedPages => "interface-AnonymizePreview-failedPages",
+            Self::InterfaceAnonymizePreviewFooterNote => "interface-AnonymizePreview-footerNote",
             Self::InterfaceAnonymizePreviewHeaderNote => "interface-AnonymizePreview-headerNote",
             Self::InterfaceAnonymizePreviewHowMarked => "interface-AnonymizePreview-howMarked",
             Self::InterfaceAnonymizePreviewKindAddress => "interface-AnonymizePreview-kind-address",
@@ -1816,7 +1820,6 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewSelectFirst => "interface-AnonymizePreview-selectFirst",
             Self::InterfaceAnonymizePreviewTextRegion => "interface-AnonymizePreview-textRegion",
             Self::InterfaceAnonymizePreviewTitle => "interface-AnonymizePreview-title",
-            Self::InterfaceAnonymizePreviewTruncated => "interface-AnonymizePreview-truncated",
             Self::InterfaceAnonymizePreviewUndo => "interface-AnonymizePreview-undo",
             Self::InterfaceCameraDialogCameraReady => "interface-CameraDialog-cameraReady",
             Self::InterfaceCameraDialogCameraView => "interface-CameraDialog-cameraView",
@@ -3697,9 +3700,6 @@ impl MessageId {
             "interface.AnonymizePreview.failedPages" => {
                 Some(Self::InterfaceAnonymizePreviewFailedPages)
             }
-            "interface.AnonymizePreview.truncated" => {
-                Some(Self::InterfaceAnonymizePreviewTruncated)
-            }
             "interface.AnonymizePreview.replaced" => Some(Self::InterfaceAnonymizePreviewReplaced),
             "interface.AnonymizePreview.headerNote" => {
                 Some(Self::InterfaceAnonymizePreviewHeaderNote)
@@ -3834,6 +3834,10 @@ impl MessageId {
             }
             "interface.AnonymizePreview.refused" => Some(Self::InterfaceAnonymizePreviewRefused),
             "interface.AnonymizePreview.close" => Some(Self::InterfaceAnonymizePreviewClose),
+            "interface.AiHelperNotice.continue" => Some(Self::InterfaceAiHelperNoticeContinue),
+            "interface.AnonymizePreview.footerNote" => {
+                Some(Self::InterfaceAnonymizePreviewFooterNote)
+            }
             _ => None,
         }
     }

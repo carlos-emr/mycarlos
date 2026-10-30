@@ -1729,7 +1729,6 @@ interface-AnonymizePreview-cutPages = Strony, których tekst został ucięty: { 
 
 interface-AnonymizePreview-failedPages = Strony, których nie udało się odczytać, pominięte: { $pages }
 
-interface-AnonymizePreview-truncated = Uwzględniono tylko pierwsze { $count } stron. Plik będzie to zawierał.
 
 interface-AnonymizePreview-replaced = { $count } nieczytelnych znaków zastąpiono znakiem „�”. Sprawdź je przed zapisaniem.
 
@@ -1834,3 +1833,7 @@ interface-AnonymizePreview-saveCancelled = Anulowano zapis. Nic się nie zmieni�
 interface-AnonymizePreview-refused = Dane znane sejfowi nadal były w tekście, w { $count } miejscach. Zostały usunięte; sprawdź tekst i zapisz ponownie.
 
 interface-AnonymizePreview-close = Zamknij
+
+interface-AiHelperNotice-continue = Dalej
+
+interface-AnonymizePreview-footerNote = Plik będzie kończył się tym wierszem:

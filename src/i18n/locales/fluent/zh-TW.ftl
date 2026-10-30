@@ -1525,7 +1525,6 @@ interface-AnonymizePreview-cutPages = 文字被截斷的頁面：{ $pages }
 
 interface-AnonymizePreview-failedPages = 無法讀取的頁面已被省略：{ $pages }
 
-interface-AnonymizePreview-truncated = 僅包含前 { $count } 頁。檔案中會註明。
 
 interface-AnonymizePreview-replaced = { $count } 個無法讀取的符號已取代為「�」。儲存前請檢查。
 
@@ -1630,3 +1629,7 @@ interface-AnonymizePreview-saveCancelled = 已取消儲存。沒有任何變更�
 interface-AnonymizePreview-refused = 保險庫已知的資訊仍在文字中的 { $count } 處。這些內容已被移除；請檢查文字後再次儲存。
 
 interface-AnonymizePreview-close = 關閉
+
+interface-AiHelperNotice-continue = 繼續
+
+interface-AnonymizePreview-footerNote = 檔案將以這一行結尾：

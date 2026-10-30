@@ -1695,7 +1695,6 @@ interface-AnonymizePreview-cutPages = Páginas cuyo texto quedó cortado: { $pag
 
 interface-AnonymizePreview-failedPages = Páginas que no se pudieron leer, omitidas: { $pages }
 
-interface-AnonymizePreview-truncated = Solo se incluyen las primeras { $count } páginas. El archivo lo indicará.
 
 interface-AnonymizePreview-replaced = { $count } signos ilegibles se reemplazaron por “�”. Revíselos antes de guardar.
 
@@ -1800,3 +1799,7 @@ interface-AnonymizePreview-saveCancelled = Guardado cancelado. No ha cambiado na
 interface-AnonymizePreview-refused = Datos que la bóveda conoce seguían en el texto, en { $count } lugares. Ya se han eliminado; revise el texto y vuelva a guardar.
 
 interface-AnonymizePreview-close = Cerrar
+
+interface-AiHelperNotice-continue = Continuar
+
+interface-AnonymizePreview-footerNote = El archivo terminará con esta línea:

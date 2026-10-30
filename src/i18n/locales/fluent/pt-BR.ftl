@@ -1695,7 +1695,6 @@ interface-AnonymizePreview-cutPages = Páginas cujo texto foi cortado: { $pages 
 
 interface-AnonymizePreview-failedPages = Páginas que não puderam ser lidas, deixadas de fora: { $pages }
 
-interface-AnonymizePreview-truncated = Apenas as primeiras { $count } páginas estão incluídas. O arquivo indicará isso.
 
 interface-AnonymizePreview-replaced = { $count } sinais ilegíveis foram substituídos por “�”. Verifique-os antes de salvar.
 
@@ -1800,3 +1799,7 @@ interface-AnonymizePreview-saveCancelled = Salvamento cancelado. Nada mudou.
 interface-AnonymizePreview-refused = Dados que o cofre conhece ainda estavam no texto, em { $count } lugares. Eles foram removidos; verifique o texto e salve novamente.
 
 interface-AnonymizePreview-close = Fechar
+
+interface-AiHelperNotice-continue = Continuar
+
+interface-AnonymizePreview-footerNote = O arquivo terminará com esta linha:

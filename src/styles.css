@@ -1205,3 +1205,7 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
 .language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
 .language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+.record-dialog.native-ai-notice { width: min(680px, 100%); }
+.native-ai-notice-body { display: grid; gap: 10px; padding: 12px 20px; }
+.native-ai-notice-body p, .native-ai-notice-body h3 { margin: 0; }
+.native-ai-notice-body h3 { font-size: 1rem; }

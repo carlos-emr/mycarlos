@@ -1695,7 +1695,6 @@ interface-AnonymizePreview-cutPages = Pages dont le texte a été coupé : { $pa
 
 interface-AnonymizePreview-failedPages = Pages qui n'ont pas pu être lues, laissées de côté : { $pages }
 
-interface-AnonymizePreview-truncated = Seules les { $count } premières pages sont incluses. Le fichier l'indiquera.
 
 interface-AnonymizePreview-replaced = { $count } signes illisibles ont été remplacés par « � ». Vérifiez-les avant d'enregistrer.
 
@@ -1800,3 +1799,7 @@ interface-AnonymizePreview-saveCancelled = Enregistrement annulé. Rien n'a chan
 interface-AnonymizePreview-refused = Des détails connus du coffre étaient encore dans le texte, à { $count } endroits. Ils ont été retirés ; vérifiez le texte et enregistrez de nouveau.
 
 interface-AnonymizePreview-close = Fermer
+
+interface-AiHelperNotice-continue = Continuer
+
+interface-AnonymizePreview-footerNote = Le fichier se terminera par cette ligne :

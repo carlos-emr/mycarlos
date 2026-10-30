@@ -1661,7 +1661,6 @@ interface-AnonymizePreview-cutPages = Pages whose text was cut short: { $pages }
 
 interface-AnonymizePreview-failedPages = Pages that could not be read, left out: { $pages }
 
-interface-AnonymizePreview-truncated = Only the first { $count } pages are included. The file will say so.
 
 interface-AnonymizePreview-replaced = { $count } signs that could not be read were replaced by “�”. Check them before you save.
 
@@ -1766,3 +1765,7 @@ interface-AnonymizePreview-saveCancelled = Save cancelled. Nothing changed.
 interface-AnonymizePreview-refused = Details the vault knows were still in the text, in { $count } places. They have now been removed; check the text and save again.
 
 interface-AnonymizePreview-close = Close
+
+interface-AiHelperNotice-continue = Continue
+
+interface-AnonymizePreview-footerNote = The file will end with this line:

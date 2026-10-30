@@ -112,6 +112,16 @@ test("prepares a document's text for an AI with the keyboard, at 200% text", asy
     await action.focus();
     await page.keyboard.press("Enter");
 
+    // The notice comes first, once per session: its button has the focus.
+    const notice = page.getByRole("dialog", { name: "About the AI helper" });
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText("Removing details is never perfect");
+    await expect(
+      notice.getByRole("button", { name: "Continue" }),
+    ).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(notice).toBeHidden();
+
     const preview = page.getByRole("dialog", {
       name: "Text with identifying details removed",
     });
