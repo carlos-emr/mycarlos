@@ -32,6 +32,7 @@ test.beforeEach(({}, testInfo) => {
 const SHARED_LETTER = "FAKE Shared letter.pdf";
 const NOT_PDF = "FAKE notes.txt";
 const CHILD = "FAKE Child";
+const DECOY = "FAKE Someone else";
 
 test("shared files wait for the unlock, the PDFs go into Shared with me, a non-PDF is named, and a document that looks like a person's is moved to them on the suggestion", async ({
   page,
@@ -39,7 +40,13 @@ test("shared files wait for the unlock, the PDFs go into Shared with me, a non-P
   await fakeVaultWith(page, {
     start: "locked",
     received: [SHARED_LETTER, NOT_PDF],
+    // Put a nonmatching person first so choosing the first fixture cannot pass.
     people: [
+      {
+        displayName: DECOY,
+        fullName: "FAKE Different Example",
+        birthDate: "1982-01-02",
+      },
       {
         displayName: CHILD,
         fullName: "FAKE Child Example",
@@ -70,13 +77,17 @@ test("shared files wait for the unlock, the PDFs go into Shared with me, a non-P
     .getByLabel(en("passphrase.label"), { exact: true })
     .fill(FAKE_PASSPHRASE);
   await page.getByRole("button", { name: en("unlock.submit") }).click();
-  // Two people, so the heading is the patient's name, not "My records".
+  // Several people, so the heading is the patient's name, not "My records".
   await expect(
     page.getByRole("heading", { name: "FAKE Patient", level: 1 }),
   ).toBeVisible();
-  // The non-PDF was named in a notice the unlock notice then replaced (its
-  // wording is covered by the vault's unit tests); what matters here is that
-  // only the PDF went in, into Shared with me.
+  await expect(
+    page.getByText(en("interface.notice.notPdf", { name: NOT_PDF }), {
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 3000 });
+  // The rendered rejection names the non-PDF; only the PDF is kept in
+  // Shared with me. The separate added-files announcement is checked below.
   expect(await fakeCalls(page, "received_accept")).toHaveLength(1);
   const kept = (await fakeSnapshot(page)).records;
   expect(kept.some((record) => record.displayName === NOT_PDF)).toBe(false);
@@ -124,6 +135,16 @@ test("shared files wait for the unlock, the PDFs go into Shared with me, a non-P
       why: en("personSuggestion.byDate"),
     }),
   );
+  await expect(suggestion).not.toContainText(DECOY);
+  await expect(
+    details.getByRole("button", {
+      name: en("personSuggestion.moveLabel", {
+        document: SHARED_LETTER,
+        name: DECOY,
+      }),
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await suggestion
     .getByRole("button", {
       name: en("personSuggestion.moveLabel", {
@@ -144,7 +165,7 @@ test("shared files wait for the unlock, the PDFs go into Shared with me, a non-P
   ).toBeVisible();
   const moves = await fakeCalls(page, "vault_move_to_person");
   expect(moves).toHaveLength(1);
-  expect(moves[0].request).toMatchObject({ profileId: fakeUuid(501) });
+  expect(moves[0].request).toMatchObject({ profileId: fakeUuid(502) });
   await expect(
     page.getByRole("button", { name: SHARED_LETTER, exact: true }),
   ).toHaveCount(0);
