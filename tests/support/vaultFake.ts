@@ -957,6 +957,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_rename_record": {
             refusePaused();
             const record = recordById(request.recordId);
+            if (record.displayName === request.name) return;
             wrote("renamed", {
               name: request.name ?? "",
               oldName: record.displayName,

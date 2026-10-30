@@ -24,6 +24,15 @@ test("replaying unchanged moves and hides does not invent history or change the 
       await ipc.invoke("vault_assign_folders_batch", {
         request: { recordIds: [record], folderIds: [folder] },
       });
+      await ipc.invoke("vault_rename_record", {
+        request: { recordId: record, name: "FAKE Bloodwork.pdf" },
+      });
+      await ipc.invoke("vault_rename_record", {
+        request: { recordId: record, name: "FAKE Results renamed.pdf" },
+      });
+      await ipc.invoke("vault_rename_record", {
+        request: { recordId: record, name: "FAKE Results renamed.pdf" },
+      });
       await ipc.invoke("vault_hide_record", { request: { recordId: record } });
       const first = await ipc.invoke("vault_snapshot");
       const history = await ipc.invoke("vault_history");
@@ -32,7 +41,7 @@ test("replaying unchanged moves and hides does not invent history or change the 
     { record: FAKE_IDS.record, folder: FAKE_IDS.folder },
   );
   expect(result.history).toMatchObject({
-    entries: [{ event: "created" }, { event: "hidden" }],
+    entries: [{ event: "created" }, { event: "renamed" }, { event: "hidden" }],
   });
   await page.clock.fastForward(2000);
   const replay = await page.evaluate(
