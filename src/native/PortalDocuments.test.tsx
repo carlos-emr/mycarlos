@@ -69,6 +69,86 @@ function fixture(
 }
 
 describe("native clinic document controls", () => {
+  it.each(["copied", "copyFailed"] as const)(
+    "updates settled device-code %s feedback when the language changes",
+    async (result) => {
+      const user = userEvent.setup();
+      const copy = vi.spyOn(navigator.clipboard, "writeText");
+      if (result === "copied") copy.mockResolvedValue(undefined);
+      else
+        copy.mockRejectedValue(
+          new DOMException("FAKE clipboard denied", "NotAllowedError"),
+        );
+      try {
+        fixture();
+        await user.click(
+          screen.getByRole("button", { name: "Copy device code" }),
+        );
+        const status = screen.getByRole("status");
+        await waitFor(() =>
+          expect(status).toHaveTextContent(translate("en", `portal.${result}`)),
+        );
+        expect(copy).toHaveBeenCalledExactlyOnceWith(deviceCode);
+
+        act(() => setLocaleOverride("fr"));
+        expect(
+          screen.getByRole("button", { name: translate("fr", "portal.copy") }),
+        ).toBeVisible();
+        expect(status).toHaveTextContent(translate("fr", `portal.${result}`));
+        expect(status).not.toHaveTextContent(
+          translate("en", `portal.${result}`),
+        );
+        expect(
+          screen.getByLabelText(translate("fr", "portal.deviceCode")),
+        ).toHaveValue(deviceCode);
+        expect(
+          screen.getByLabelText(translate("fr", "portal.fingerprint")),
+        ).toHaveValue(fingerprint);
+        act(() => setLocaleOverride("en"));
+        expect(status).toHaveTextContent(translate("en", `portal.${result}`));
+        expect(copy).toHaveBeenCalledOnce();
+      } finally {
+        copy.mockRestore();
+      }
+    },
+  );
+
+  it("updates copy guidance without a clipboard API when the language changes", async () => {
+    const user = userEvent.setup();
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard")!;
+    const copy = vi.spyOn(navigator.clipboard, "writeText");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      get: () => undefined,
+    });
+    try {
+      fixture();
+      await user.click(
+        screen.getByRole("button", { name: "Copy device code" }),
+      );
+      const status = screen.getByRole("status");
+      expect(status).toHaveTextContent(translate("en", "portal.copyFailed"));
+      act(() => setLocaleOverride("fr"));
+      expect(status).toHaveTextContent(translate("fr", "portal.copyFailed"));
+      expect(
+        screen.getByLabelText(translate("fr", "portal.deviceCode")),
+      ).toHaveValue(deviceCode);
+      expect(
+        screen.getByLabelText(translate("fr", "portal.fingerprint")),
+      ).toHaveValue(fingerprint);
+      act(() => setLocaleOverride("en"));
+      expect(status).toHaveTextContent(translate("en", "portal.copyFailed"));
+      expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
+      expect(screen.getByLabelText("Full device fingerprint")).toHaveValue(
+        fingerprint,
+      );
+      expect(copy).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(navigator, "clipboard", descriptor);
+      copy.mockRestore();
+    }
+  });
+
   it("keeps all clinic controls hidden when native capability is off", async () => {
     const { container, bridge } = fixture({
       snapshot: { ...snapshot, portalLinkingEnabled: false },

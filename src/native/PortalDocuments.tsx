@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useI18n } from "../i18n";
+import { useI18n, useTextState, message } from "../i18n";
 import { vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 
@@ -29,7 +29,7 @@ export function PortalDocuments({
   const [code, setCode] = useState("");
   const [device, setDevice] = useState("myCarlos");
   const [person, setPerson] = useState("");
-  const [copyState, setCopyState] = useState("");
+  const [copyState, setCopyState] = useTextState();
   const shown = useRef(true);
   useEffect(() => {
     shown.current = true;
@@ -240,9 +240,10 @@ export function PortalDocuments({
             onClick={() => {
               void navigator.clipboard
                 ?.writeText(link.deviceKeyId)
-                .then(() => setCopyState(t("portal.copied")))
-                .catch(() => setCopyState(t("portal.copyFailed")));
-              if (!navigator.clipboard) setCopyState(t("portal.copyFailed"));
+                .then(() => setCopyState(message("portal.copied")))
+                .catch(() => setCopyState(message("portal.copyFailed")));
+              if (!navigator.clipboard)
+                setCopyState(message("portal.copyFailed"));
             }}
           >
             {t("portal.copy")}
