@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { translate } from "./support/fluent";
 import { LOCALES } from "../src/i18n/types";
 
 // #67 and #84: on a phone with large text (the reader's 200% default text,
@@ -218,6 +219,12 @@ for (const width of [360, 320])
         ).toBeVisible();
         for (const problem of await cutOrOutside(page))
           problems.push(`${locale}: ${problem}`);
+        // #121: "Sort by" stays in view, in the language in use, and names
+        // its two choices.
+        const label = translate(locale, "interface.VaultLibrary.sortBy");
+        const sort = page.getByRole("group", { name: label, exact: true });
+        await expect(sort.getByText(label, { exact: true })).toBeVisible();
+        await expect(sort.getByRole("button")).toHaveCount(2);
       } finally {
         await context.close();
       }

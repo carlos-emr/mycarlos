@@ -373,8 +373,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = 此相片已在保险库�
 
 interface-VaultLibrary-topLevel = 最上层
 
-interface-VaultLibrary-unlockedLockNow = 已解锁 · 立即锁定
-
 interface-VaultLibrary-working = 处理中…
 
 interface-camera-denied = myCarlos 无法使用相机。{ $help } 接着请选择「重试」。
@@ -582,6 +580,12 @@ library-folder-open = 打开 { $name }
 library-folder-rename = 重命名文件夹 { $name }
 
 library-items = { $count } 个可见记录项目
+
+library-location-documents = 位置：{ $place }。{ $documents }。
+
+library-location-summary = 位置：{ $place }。{ $folders }，{ $documents }。
+
+library-lock-unlocked = 已解锁
 
 library-noMatch-help = 请尝试其他搜索内容。
 

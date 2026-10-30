@@ -107,11 +107,10 @@ describe("the installed interface in the selected language", () => {
       target: { value: "FAKE {name} Shared with me" },
     });
     changeLanguage("fr");
+    // Named by its words, with the state shown before them (#121).
     expect(
-      screen.getByRole("button", {
-        name: "Déverrouillé · Verrouiller maintenant",
-      }),
-    ).toBeVisible();
+      screen.getByRole("button", { name: "Verrouiller maintenant" }),
+    ).toHaveTextContent("Déverrouillé · Verrouiller maintenant");
     expect(screen.queryByRole("button", { name: /^Masqués/ })).toBeNull();
     expect(screen.getByRole("button", { name: "Sécurité" })).toBeVisible();
     expect(
@@ -128,8 +127,8 @@ describe("the installed interface in the selected language", () => {
     expect(draft).toHaveValue("FAKE {name} Shared with me");
     changeLanguage("pl");
     expect(
-      screen.getByRole("button", { name: "Odblokowany · Zablokuj teraz" }),
-    ).toBeVisible();
+      screen.getByRole("button", { name: "Zablokuj teraz" }),
+    ).toHaveTextContent("Odblokowany · Zablokuj teraz");
     expect(screen.getByRole("searchbox")).toBe(search);
     expect(draft).toHaveValue("FAKE {name} Shared with me");
   });

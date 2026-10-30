@@ -633,8 +633,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = To zdjęcie jest już w se
 
 interface-VaultLibrary-topLevel = Poziom główny
 
-interface-VaultLibrary-unlockedLockNow = Odblokowany · Zablokuj teraz
-
 interface-VaultLibrary-working = Przetwarzanie…
 
 kit-keep = Proszę przechowywać go w prywatnym miejscu, z dala od urządzenia. Każdy, kto ma ten klucz i kopię sejfu, może go otworzyć. Po skonfigurowaniu nowego klucza odzyskiwania ten klucz nie otwiera już sejfu na tym urządzeniu.
@@ -696,6 +694,12 @@ library-items =
     [many] { $count } widocznych elementów biblioteki
     *[other] { $count } widocznego elementu biblioteki
     }
+
+library-location-documents = Lokalizacja: { $place }. { $documents }.
+
+library-location-summary = Lokalizacja: { $place }. { $folders }, { $documents }.
+
+library-lock-unlocked = Odblokowany
 
 library-noMatch-help = Proszę spróbować innego wyszukiwania.
 

@@ -599,8 +599,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = This photo is already in t
 
 interface-VaultLibrary-topLevel = Top level
 
-interface-VaultLibrary-unlockedLockNow = Unlocked · Lock now
-
 interface-VaultLibrary-working = Working…
 
 kit-keep = Keep it somewhere private and away from the device. Anyone with this key and a copy of your vault can open it. If you set up a new recovery key, this one no longer opens the vault on this device.
@@ -658,6 +656,12 @@ library-items =
     [one] { $count } visible library item
     *[other] { $count } visible library items
     }
+
+library-location-documents = In { $place }: { $documents }.
+
+library-location-summary = In { $place }: { $folders }, { $documents }.
+
+library-lock-unlocked = Unlocked
 
 library-noMatch-help = Try another search.
 
