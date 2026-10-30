@@ -22,6 +22,7 @@ import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type {
   ImportOutcome,
+  PersonDetails,
   SavedBackup,
   VaultBridge,
   VaultSnapshot,
@@ -7452,6 +7453,86 @@ describe("durable vault UI", () => {
       failCreate({ code: "locked", message: "Unlock the vault to continue." }),
     );
     expect(screen.getByText(humanText("Vault locked."))).toBeVisible();
+  });
+
+  it("keeps the next profile name typed while an earlier profile is being saved", async () => {
+    const user = userEvent.setup();
+    const vault = structuredClone(emptySnapshot);
+    let finishSave!: () => void;
+    const saving = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    const createProfile = vi.fn(
+      async (name: string, details?: PersonDetails) => {
+        await saving;
+        vault.profiles.push({
+          id: "profile-2",
+          displayName: name,
+          createdAtMs: 2,
+          ...details,
+        });
+        return "profile-2";
+      },
+    );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => structuredClone(vault)),
+      createProfile,
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: humanText("Security") }),
+      );
+      const name = screen.getByLabelText(humanText("New profile name"));
+      const fullNameLabel = humanText(
+        translate("en", "personDetails.fullName"),
+      );
+      await user.type(name, "FAKE First");
+      await user.type(
+        screen.getByLabelText(fullNameLabel),
+        "FAKE First Person",
+      );
+      await user.click(
+        screen.getByRole("checkbox", {
+          name: humanText(translate("en", "personDetails.birthDateUnknown")),
+        }),
+      );
+      const add = screen.getByRole("button", {
+        name: humanText("Add profile"),
+      });
+      await user.click(add);
+      await waitFor(() =>
+        expect(createProfile).toHaveBeenCalledExactlyOnceWith("FAKE First", {
+          fullName: "FAKE First Person",
+        }),
+      );
+      expect(add).toBeDisabled();
+      expect(name).toBeEnabled();
+      await user.clear(name);
+      await user.type(name, "FAKE Second");
+
+      await act(async () => finishSave());
+      await screen.findByText(
+        humanText(
+          translate("en", "interface.notice.personAdded", {
+            name: "FAKE First",
+          }),
+        ),
+      );
+      // Details belong to the saved first profile and are cleared. Its late
+      // success must leave the independently edited next display name alone.
+      await waitFor(() =>
+        expect(screen.getByLabelText(fullNameLabel)).toHaveValue(""),
+      );
+      expect(screen.getByLabelText(humanText("New profile name"))).toHaveValue(
+        "FAKE Second",
+      );
+      expect(createProfile).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => finishSave());
+    }
   });
 
   it("keeps a refused profile name in the form and clears an accepted one", async () => {
