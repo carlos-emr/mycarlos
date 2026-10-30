@@ -157,6 +157,16 @@ export interface FakeVaultSetup {
   /** The vault opens in recovery mode: these documents' encrypted files are
    * missing, so changes are paused until they are hidden as damaged. */
   missingFiles?: string[];
+  /** More people in the vault, with the details clinic documents carry. */
+  people?: { displayName: string; fullName?: string; birthDate?: string }[];
+  /** Files another app shared to myCarlos, waiting to be added (#61). */
+  received?: string[];
+  /** What the vault finds on a shared document, by its name: the name and
+   * birth date written on it, for the person suggestion. */
+  identities?: Record<string, { name: string; birthDate?: string }>;
+  /** The history opens damaged: entries before `checkedFromMs` are gone,
+   * the later ones proven by the pinned end (D129/D146). */
+  damagedHistory?: boolean;
 }
 
 // The refusals the fake makes itself, by message key, in English as the
@@ -239,6 +249,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         sharedProfileId?: string;
       };
       type Outcome = { resolve?: unknown; reject?: unknown; pending?: true };
+      type HistoryEntry = {
+        seq: number;
+        atMs: number;
+        app: string;
+        event: string;
+        name: string | null;
+        oldName: string | null;
+        from: string[] | null;
+        fromTotal: number | null;
+        to: string[] | null;
+        toTotal: number | null;
+        how: string | null;
+        place: string | null;
+        previousSession: string | null;
+      };
       type State = {
         status: string;
         passphrase: string;
@@ -249,6 +274,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         checks: number;
         /** The files the next import picker "chooses" (FAKE names). */
         importQueue: string[];
+        /** Files shared to myCarlos, waiting (#61). */
+        received: { id: string; name: string; sourceLabel: string }[];
+        /** What the vault wrote down (#71), as the native side would. */
+        history: HistoryEntry[];
         /** Backups saved and the one the restore picker chooses. */
         backupsSaved: number;
         snapshot: Snapshot;
@@ -282,7 +311,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         pickId?: string;
         replace?: boolean;
       };
-      type Args = { request?: Request; linkId?: string; locale?: string };
+      type Args = {
+        request?: Request;
+        linkId?: string;
+        recordId?: string;
+        locale?: string;
+      };
 
       const copy = <T>(value: T): T =>
         value === undefined ? value : JSON.parse(JSON.stringify(value));
@@ -379,9 +413,41 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               ? [link(1, "https://fake-clinic.example.com", true)]
               : [];
         }
+        for (const [index, person] of setup.people.entries()) {
+          snapshot.profiles.push({
+            id: `FAKE-person-${index + 1}`,
+            displayName: person.displayName,
+            createdAtMs: 3 + index,
+            ...(person.fullName ? { fullName: person.fullName } : {}),
+            ...(person.birthDate ? { birthDate: person.birthDate } : {}),
+          });
+        }
+        const history: HistoryEntry[] = [
+          {
+            seq: 1,
+            atMs: Date.UTC(2026, 9, 1, 12),
+            app: "FAKE 0.1.0",
+            event: "created",
+            name: "FAKE Patient",
+            oldName: null,
+            from: null,
+            fromTotal: null,
+            to: null,
+            toTotal: null,
+            how: null,
+            place: null,
+            previousSession: null,
+          },
+        ];
         return {
           importQueue: [],
           backupsSaved: 0,
+          received: setup.received.map((name, index) => ({
+            id: `FAKE-received-${index + 1}`,
+            name,
+            sourceLabel: "Shared to myCarlos",
+          })),
+          history,
           status: setup.start,
           passphrase: setup.passphrase,
           recoveryKey: hasKey ? setup.recoveryKey : null,
@@ -465,6 +531,36 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         importedAtMs: Date.now(),
         available: true,
       });
+      const wrote = (event: string, fields: Partial<HistoryEntry> = {}) => {
+        state.history.push({
+          seq: state.history.length + 1,
+          atMs: Date.now(),
+          app: "FAKE 0.1.0",
+          event,
+          name: null,
+          oldName: null,
+          from: null,
+          fromTotal: null,
+          to: null,
+          toTotal: null,
+          how: null,
+          place: null,
+          previousSession: null,
+          ...fields,
+        });
+      };
+      const sharedProfile = () => {
+        const snapshot = state.snapshot;
+        if (!snapshot.sharedProfileId) {
+          snapshot.sharedProfileId = "shared";
+          snapshot.profiles.push({
+            id: "shared",
+            displayName: "FAKE shared files",
+            createdAtMs: 2,
+          });
+        }
+        return snapshot.sharedProfileId;
+      };
       const refuseLocked = () => {
         if (state.status !== "unlocked")
           throw refuse("locked", "native.error.14");
@@ -495,9 +591,67 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return { platform: "windows" };
           case "vault_status":
             return state.status;
-          // No files are waiting to be shared; the app still polls.
+          // Files shared to myCarlos wait until the vault is unlocked (#61).
           case "received_list":
-            return { files: [], notice: { dropped: 0, refusedShares: 0 } };
+            return {
+              files: copy(state.received),
+              notice: { dropped: 0, refusedShares: 0 },
+            };
+          case "received_accept": {
+            refuseLocked();
+            const imported: string[] = [];
+            const skippedDuplicates: string[] = [];
+            const notPdf: string[] = [];
+            for (const file of state.received.splice(0)) {
+              if (!/\.pdf$/i.test(file.name)) {
+                notPdf.push(file.name);
+                continue;
+              }
+              const profileId = sharedProfile();
+              if (
+                snapshot.records.some(
+                  (r) =>
+                    r.profileId === profileId && r.displayName === file.name,
+                )
+              ) {
+                skippedDuplicates.push(file.name);
+                continue;
+              }
+              const record = fakeRecord(file.name, profileId, []);
+              record.sourceLabel = file.sourceLabel;
+              snapshot.records.push(record);
+              imported.push(record.id);
+              wrote("imported", { name: file.name, how: "shared" });
+            }
+            return { imported, skippedDuplicates, notPdf };
+          }
+          case "vault_shared_identity": {
+            refuseLocked();
+            // Sent with the id beside `request`, as the link commands are.
+            const record = recordById(args.recordId ?? request.recordId);
+            return copy(setup.identities[record.displayName] ?? null);
+          }
+          case "vault_history": {
+            refuseLocked();
+            const entries = copy(state.history);
+            if (!setup.damagedHistory)
+              return {
+                entries,
+                laterEntries: [],
+                complete: true,
+                checkedUntilMs: null,
+                checkedFromMs: null,
+              };
+            // The start is damaged: only what the pinned end proves shows.
+            const later = entries.slice(1);
+            return {
+              entries: [],
+              laterEntries: later,
+              complete: false,
+              checkedUntilMs: null,
+              checkedFromMs: later[0]?.atMs ?? null,
+            };
+          }
           // As a11y.ts: the snapshot is given whenever it is asked for.
           case "vault_snapshot":
             return copy(snapshot);
@@ -525,6 +679,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             if (request.passphrase !== state.passphrase)
               throw refuse("wrong_passphrase", "native.error.16");
             state.status = "unlocked";
+            wrote("unlocked", { how: "passphrase" });
             return copy(snapshot);
           case "vault_recover":
             if (
@@ -587,18 +742,27 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               if (
                 record.id === request.recordId ||
                 request.recordIds?.includes(record.id)
-              )
+              ) {
+                const folderName = (id: string) =>
+                  snapshot.folders.find((f) => f.id === id)?.name ?? id;
+                wrote("moved", {
+                  name: record.displayName,
+                  from: record.folderIds.map(folderName),
+                  to: (request.folderIds ?? []).map(folderName),
+                });
                 record.folderIds = [...(request.folderIds ?? [])];
+              }
             return;
           case "vault_create_folder": {
             const id = `folder-${snapshot.folders.length + 1}`;
             snapshot.folders.push({
               id,
-              profileId: "profile",
+              profileId: request.profileId ?? "profile",
               parentId: request.parentId ?? null,
               name: request.name ?? "",
               createdAtMs: Date.UTC(2026, 9, 5, 12),
             });
+            wrote("folderCreated", { name: request.name ?? "" });
             return id;
           }
           case "vault_update_folder":
@@ -661,7 +825,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_export_picked":
             recordById(request.recordId);
             return;
+          case "vault_rename_record": {
+            refusePaused();
+            const record = recordById(request.recordId);
+            wrote("renamed", {
+              name: request.name ?? "",
+              oldName: record.displayName,
+            });
+            record.displayName = request.name ?? "";
+            return;
+          }
           case "vault_hide_record":
+            wrote("hidden", {
+              name: recordById(request.recordId).displayName,
+              how: "patient",
+            });
             recordById(request.recordId).hidden = {
               atMs: Date.now(),
               reason: "patient",
@@ -717,8 +895,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             });
             return { added: 1, refused: 0, receiptsPending: 0, issues: [] };
           // Nothing in the fake documents names a person.
-          case "vault_shared_identity":
-            return null;
           // --- Security: encrypted backup ---
           case "vault_backup_pick":
             refuseLocked();
@@ -728,6 +904,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             if (request.pickId !== "FAKE-backup-pick")
               throw refuse("not_found", "native.error.18");
             state.backupsSaved += 1;
+            wrote("backupSaved", {
+              place: "FAKE Backups/myCarlos backup.mycarlosbackup",
+            });
             return {
               name: `myCarlos backup FAKE ${setup.keyLabel}.mycarlosbackup`,
               bytes: 4096 * state.backupsSaved,
@@ -860,6 +1039,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               );
               snapshot.records.push(record);
               imported.push(record.id);
+              wrote("imported", { name, how: "picked" });
             }
             return { imported, skippedDuplicates };
           }
@@ -937,6 +1117,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       portal: setup.portal ?? null,
       backup: setup.backup ?? null,
       missingFiles: setup.missingFiles ?? [],
+      people: setup.people ?? [],
+      received: setup.received ?? [],
+      identities: setup.identities ?? {},
+      damagedHistory: setup.damagedHistory ?? false,
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
       messages: Object.fromEntries(
