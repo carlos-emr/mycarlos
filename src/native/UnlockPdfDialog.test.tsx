@@ -1,5 +1,5 @@
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { UnlockPdfDialog } from "./UnlockPdfDialog";
@@ -19,6 +19,62 @@ function renderDialog(
 }
 
 describe("the password prompt for a locked PDF", () => {
+  it("rewords a refused attempt without replacing the alert, losing the draft or submitting again", () => {
+    setLocaleOverride("en");
+    const name = "FAKE {name} Locked.pdf";
+    const { onUnlock, onCancel } = renderDialog({ name, wrongTries: 1 });
+    const dialog = screen.getByRole("dialog");
+    const field = screen.getByLabelText(
+      "Document password",
+    ) as HTMLInputElement;
+    const alert = screen.getByRole("alert");
+    const password = "FAKE e\u0301😀{ $password }";
+    fireEvent.change(field, { target: { value: password } });
+    field.setSelectionRange(2, 5);
+
+    for (const locale of ["pl", "fr", "zh-TW"] as const) {
+      act(() => setLocaleOverride(locale));
+      expect(
+        screen.getByLabelText(
+          translate(locale, "interface.DocumentReader.documentPassword"),
+        ),
+      ).toBe(field);
+      expect(screen.getByRole("dialog")).toBe(dialog);
+      expect(dialog).toHaveAccessibleName(
+        `${translate(locale, "unlock.submit")} ${name}`,
+      );
+      expect(screen.getByRole("alert")).toBe(alert);
+      expect(alert).toHaveTextContent(
+        translate(
+          locale,
+          "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+        ),
+      );
+      expect(field).toHaveAccessibleDescription(
+        translate(
+          locale,
+          "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+        ),
+      );
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(field).toHaveValue(password);
+      expect(field).toHaveFocus();
+      expect([field.selectionStart, field.selectionEnd]).toEqual([2, 5]);
+      expect(onUnlock).not.toHaveBeenCalled();
+      expect(onCancel).not.toHaveBeenCalled();
+    }
+
+    fireEvent.click(
+      screen.getByRole("button", { name: translate("zh-TW", "unlock.submit") }),
+    );
+    expect(onUnlock).toHaveBeenCalledExactlyOnceWith(password);
+    expect(field).toHaveValue("");
+    act(() => setLocaleOverride("pl"));
+    expect(field).toHaveValue("");
+    expect(onUnlock).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
   it("says what is asked for, and that the locked original is kept", () => {
     renderDialog();
     const dialog = screen.getByRole("dialog", {
