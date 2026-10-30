@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { humanText } from "../test/humanText";
+import { setLocaleOverride, translate } from "../i18n";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -252,6 +253,121 @@ describe("the document reader", () => {
       expect(
         screen.getByText(humanText("FAKE latest sharp page")),
       ).toBeVisible();
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("changes zoom announcements with the language without restarting native work", async () => {
+    setLocaleOverride("en");
+    let finish!: (value: ViewedPage) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const { cancelView, unmount } = renderReader(viewPage);
+    const picture = await screen.findByRole("img", {
+      name: humanText(/^Page 1 of 2/),
+    });
+    vi.useFakeTimers();
+    try {
+      const larger = screen.getByRole("button", { name: humanText("Larger") });
+      larger.focus();
+      await click(larger);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      const zoomWidth = picture.style.width;
+      await act(async () => {
+        setLocaleOverride("fr");
+      });
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Ouverture de la page 1…",
+      );
+      expect(larger).toHaveAccessibleName("Agrandir");
+      expect(larger).toHaveFocus();
+      expect(picture).toBeVisible();
+      expect(picture.style.width).toBe(zoomWidth);
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(cancelView).not.toHaveBeenCalled();
+      const rawText = "FAKE {name} résumé 120/80";
+      await act(async () => {
+        finish({ ...page(0), text: rawText });
+      });
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 sur 2");
+      expect(
+        screen.getByRole("region", { name: humanText("Page 1") }),
+      ).toHaveAttribute("aria-busy", "false");
+      await click(screen.getByText("Texte de cette page"));
+      expect(
+        document.querySelector(".native-reader-text div")!.textContent,
+      ).toBe(rawText);
+      await act(async () => {
+        setLocaleOverride("en");
+      });
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
+      expect(larger).toHaveAccessibleName("Larger");
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(cancelView).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retranslates a zoom failure and recovers the cached page without native work", async () => {
+    setLocaleOverride("en");
+    let rejectZoom!: (failure: unknown) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((_resolve, reject) => {
+            rejectZoom = reject;
+          }),
+      );
+    const { cancelView, unmount } = renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    vi.useFakeTimers();
+    try {
+      await click(screen.getByRole("button", { name: humanText("Larger") }));
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      // The key matches the structured PdfViewFailed response from native.
+      await act(async () => {
+        rejectZoom({
+          code: "pdf_view_failed",
+          messageKey: "native.error.31",
+          message: "FAKE legacy render failure",
+        });
+      });
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveHumanTextContent(translate("en", "native.error.31"));
+      await act(async () => {
+        setLocaleOverride("fr");
+      });
+      expect(screen.getByRole("alert")).toBe(alert);
+      expect(alert).toHaveHumanTextContent(translate("fr", "native.error.31"));
+      expect(alert).not.toHaveTextContent("FAKE legacy render failure");
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(cancelView).not.toHaveBeenCalled();
+      await click(screen.getByRole("button", { name: "Ajuster à la largeur" }));
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 sur 2");
+      expect(
+        screen.getByRole("img", { name: humanText(/^Page 1 sur 2/) }),
+      ).toBeVisible();
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(cancelView).not.toHaveBeenCalled();
     } finally {
       unmount();
       vi.useRealTimers();
