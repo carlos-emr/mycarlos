@@ -52,10 +52,10 @@ export const FAKE_IDS = {
   shared: fakeUuid(8),
   clinicLetter: fakeUuid(9),
   link: fakeUuid(101),
-  exportPick: fakeUuid(701),
-  backupPick: fakeUuid(702),
-  restorePick: fakeUuid(703),
-  importPick: fakeUuid(704),
+  exportPick: fakeUuid(1000),
+  backupPick: fakeUuid(1000),
+  restorePick: fakeUuid(1000),
+  importPick: fakeUuid(1000),
 };
 
 const PAGE_TEXT = "FAKE text of page {page} of {name}";
@@ -166,14 +166,29 @@ export interface FakeVaultSetup {
   /** Clinic linking is built in: with no clinic linked yet, or with one
    * linked and approved. */
   portal?: "unlinked" | "linked";
+  /** The backup file a restore would choose: what it replaces on this
+   * device, whether the vault here differs, the documents it holds (FAKE
+   * names), and the passphrase it was made with (the vault's by default). */
+  backup?: {
+    replaces: "nothing" | "sameVault" | "otherVault" | "unreadable";
+    differs?: boolean;
+    documents: string[];
+    passphrase?: string;
+  };
+  /** The vault opens in recovery mode: these documents' encrypted files are
+   * missing, so changes are paused until they are hidden as damaged. */
+  missingFiles?: string[];
 }
 
 // The refusals the fake makes itself, by message key, in English as the
 // native side sends them (the screens show the messageKey's own text).
 const NATIVE_MESSAGES: MessageKey[] = [
+  "native.error.07",
+  "native.error.08",
   "native.error.11",
   "native.error.12",
   "native.error.13",
+  "native.error.14",
   "native.error.16",
   "native.error.18",
   "native.error.19",
@@ -181,8 +196,11 @@ const NATIVE_MESSAGES: MessageKey[] = [
   "native.error.24",
   "native.error.25",
   "native.error.26",
+  "native.error.38",
+  "native.error.40",
   "native.error.36",
   "native.error.41",
+  "native.error.42",
   "native.error.44",
 ];
 
@@ -223,7 +241,13 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         approvalStatus: string | null;
       };
       type Snapshot = {
-        profiles: { id: string; displayName: string; createdAtMs: number }[];
+        profiles: {
+          id: string;
+          displayName: string;
+          createdAtMs: number;
+          fullName?: string;
+          birthDate?: string;
+        }[];
         folders: {
           id: string;
           profileId: string;
@@ -232,7 +256,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           createdAtMs: number;
         }[];
         records: FakeRecord[];
-        recovery: null;
+        recovery: "lostObjects" | null;
         recoveryKeySetAtMs: number | null;
         recoveryKeyLabel: string | null;
         portalLinkingEnabled?: boolean;
@@ -248,6 +272,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         /** Documents locked with their own password, by record id. */
         documentPasswords: Record<string, string>;
         checks: number;
+        nextRecordId: number;
+        nextPickId: number;
+        picks: Record<
+          string,
+          {
+            kind: string;
+            recordId?: string;
+            profileId?: string | null;
+            folderIds?: string[];
+          }
+        >;
+        /** The files the next import picker "chooses" (FAKE names). */
+        importQueue: string[];
+        /** Backups saved and the one the restore picker chooses. */
+        backupsSaved: number;
         snapshot: Snapshot;
         calls: { command: string; args: unknown }[];
         unexpected: string[];
@@ -272,6 +311,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         code?: string;
         deviceName?: string;
         profileId?: string | null;
+        currentPassphrase?: string;
+        displayName?: string;
+        details?: { fullName?: string; birthDate?: string };
+        confirmed?: string[];
+        pickId?: string;
+        replace?: boolean;
       };
       type Args = { request?: Request; linkId?: string; locale?: string };
 
@@ -338,6 +383,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           });
           documentPasswords[setup.ids.locked] = setup.documentPassword;
         }
+        for (const record of records) {
+          if (setup.missingFiles.includes(record.displayName))
+            record.available = false;
+        }
         const hasKey = setup.start !== "absent" && setup.recoveryKey !== null;
         const snapshot: Snapshot = {
           profiles: [
@@ -364,7 +413,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             },
           ],
           records,
-          recovery: null,
+          recovery: setup.missingFiles.length ? "lostObjects" : null,
           recoveryKeySetAtMs: hasKey ? 1 : null,
           recoveryKeyLabel: hasKey ? setup.keyLabel : null,
         };
@@ -376,6 +425,11 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               : [];
         }
         return {
+          nextRecordId: 401,
+          nextPickId: 1000,
+          picks: {},
+          importQueue: [],
+          backupsSaved: 0,
           status: setup.start,
           passphrase: setup.passphrase,
           recoveryKey: hasKey ? setup.recoveryKey : null,
@@ -443,6 +497,37 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         return canvas.toDataURL("image/png");
       };
 
+      const fakeRecord = (
+        displayName: string,
+        profileId: string,
+        folderIds: string[],
+      ): FakeRecord => ({
+        id: makeUuid(state.nextRecordId++),
+        profileId,
+        folderIds,
+        displayName,
+        sourceLabel: "Manual import — unverified",
+        sourceKind: "manual",
+        mediaType: "application/pdf",
+        plaintextSize: 1024,
+        importedAtMs: Date.now(),
+        available: true,
+      });
+      const refuseLocked = () => {
+        if (state.status !== "unlocked")
+          throw refuse("locked", "native.error.14");
+      };
+      const refusePaused = () => {
+        refuseLocked();
+        if (state.snapshot.recovery !== null)
+          throw refuse("recovery_mode", "native.error.40");
+      };
+      const profileOf = (id: string | null | undefined) => {
+        const found = state.snapshot.profiles.find((p) => p.id === id);
+        if (!found) throw refuse("not_found", "native.error.18");
+        return found;
+      };
+
       // Promises and command guards belong to this window, not sessionStorage.
       const pendingViews = new Set<(reason: unknown) => void>();
       let cancelledViews = 0;
@@ -477,6 +562,26 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             for (const id of request[field]) check(id);
         if (args.linkId != null) check(args.linkId);
         if ("recordId" in args && args.recordId != null) check(args.recordId);
+      };
+
+      const makePick = (
+        kind: string,
+        target: {
+          recordId?: string;
+          profileId?: string | null;
+          folderIds?: string[];
+        } = {},
+      ) => {
+        const id = makeUuid(state.nextPickId++);
+        state.picks[id] = { kind, ...copy(target) };
+        return id;
+      };
+      const pick = (id: string | undefined, kind: string, consume: boolean) => {
+        const found = id ? state.picks[id] : undefined;
+        if (id && consume) delete state.picks[id];
+        if (!found || found.kind !== kind)
+          throw refuse("not_found", "native.error.18");
+        return found;
       };
 
       const answer = async (command: string, args: Args): Promise<unknown> => {
@@ -545,6 +650,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             cancelViews();
             // A key being set up does not outlive the session.
             state.status = "locked";
+            state.picks = {};
             state.pendingKey = null;
             return;
           case "vault_recovery_key_begin":
@@ -670,10 +776,15 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             cancelViews();
             return;
           case "vault_export_pick":
-            return setup.ids.exportPick;
-          case "vault_export_picked":
+            refuseLocked();
+            return makePick("export", { recordId: request.recordId });
+          case "vault_export_picked": {
+            const chosen = pick(request.pickId, "export", true);
+            if (chosen.recordId !== request.recordId)
+              throw refuse("invalid", "native.error.19");
             recordById(request.recordId);
             return;
+          }
           case "vault_hide_record":
             recordById(request.recordId).hidden = {
               atMs: Date.now(),
@@ -732,6 +843,181 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // Nothing in the fake documents names a person.
           case "vault_shared_identity":
             return null;
+          // --- Security: encrypted backup ---
+          case "vault_backup_pick":
+            refusePaused();
+            return makePick("backup");
+          case "vault_backup_picked":
+            pick(request.pickId, "backup", true);
+            refusePaused();
+            state.backupsSaved += 1;
+            return {
+              name: `myCarlos backup FAKE ${setup.keyLabel}.mycarlosbackup`,
+              bytes: 4096 * state.backupsSaved,
+            };
+          // --- The unlock screen: restore from a backup ---
+          case "vault_restore_pick":
+            if (!setup.backup) throw refuse("not_found", "native.error.18");
+            return makePick("restore");
+          case "vault_restore_inspect":
+          case "vault_restore": {
+            pick(request.pickId, "restore", false);
+            if (state.status === "unlocked")
+              throw refuse("invalid", "native.error.19");
+            const backup = setup.backup;
+            if (!backup) throw refuse("not_found", "native.error.18");
+            if (request.recoveryKey !== undefined) {
+              if (
+                !state.recoveryKey ||
+                symbolsOf(request.recoveryKey) !== symbolsOf(state.recoveryKey)
+              )
+                throw refuse("wrong_recovery_key", "native.error.07");
+            } else if (
+              request.passphrase !== (backup.passphrase ?? state.passphrase)
+            )
+              throw refuse("wrong_passphrase", "native.error.08");
+            if (command === "vault_restore_inspect")
+              return {
+                replaces: backup.replaces,
+                differsFromThisDevice: backup.differs ?? false,
+                documentCount: backup.documents.length,
+              };
+            // The restore itself: the backup's vault takes this one's place,
+            // locked, opening with the backup's passphrase.
+            if (request.replace !== (backup.replaces !== "nothing"))
+              throw refuse("changed", "native.error.42");
+            pick(request.pickId, "restore", true);
+            state.picks = {};
+            state.status = "locked";
+            state.passphrase = backup.passphrase ?? state.passphrase;
+            snapshot.records = backup.documents.map((name) =>
+              fakeRecord(name, setup.ids.profile, []),
+            );
+            snapshot.recovery = null;
+            return true;
+          }
+          // --- Security: change the passphrase ---
+          case "vault_change_passphrase":
+            refusePaused();
+            if (request.currentPassphrase !== state.passphrase)
+              throw refuse("wrong_passphrase", "native.error.16");
+            state.passphrase = request.newPassphrase ?? "";
+            return;
+          // --- People ---
+          case "vault_create_profile": {
+            refusePaused();
+            const id = makeUuid(200 + snapshot.profiles.length + 1);
+            snapshot.profiles.push({
+              id,
+              displayName: request.displayName ?? "",
+              createdAtMs: Date.now(),
+              ...(request.details?.fullName
+                ? { fullName: request.details.fullName }
+                : {}),
+              ...(request.details?.birthDate
+                ? { birthDate: request.details.birthDate }
+                : {}),
+            });
+            return id;
+          }
+          case "vault_rename_profile":
+            refusePaused();
+            profileOf(request.profileId).displayName =
+              request.displayName ?? "";
+            return;
+          case "vault_update_profile_details": {
+            refusePaused();
+            const person = profileOf(request.profileId);
+            delete person.fullName;
+            delete person.birthDate;
+            if (request.details?.fullName)
+              person.fullName = request.details.fullName;
+            if (request.details?.birthDate)
+              person.birthDate = request.details.birthDate;
+            return;
+          }
+          case "vault_move_to_person": {
+            refusePaused();
+            const to = profileOf(request.profileId);
+            const moved: string[] = [];
+            const alreadyThere: string[] = [];
+            for (const id of request.recordIds ?? []) {
+              const record = snapshot.records.find((r) => r.id === id);
+              if (!record) continue;
+              const duplicate = snapshot.records.some(
+                (r) =>
+                  r.id !== id &&
+                  r.profileId === to.id &&
+                  r.displayName === record.displayName,
+              );
+              if (duplicate) {
+                alreadyThere.push(record.displayName);
+                continue;
+              }
+              record.profileId = to.id;
+              record.folderIds = request.folderIds ?? [];
+              moved.push(id);
+            }
+            return { moved, alreadyThere };
+          }
+          // --- Adding documents (the native picker "chooses" what the test
+          // queued with __fakeVault.pickFiles) ---
+          case "vault_import_pick":
+            refusePaused();
+            return state.importQueue.length
+              ? makePick("import", {
+                  profileId: request.profileId,
+                  folderIds: request.folderIds ?? [],
+                })
+              : null;
+          case "vault_import_picked": {
+            const chosen = pick(request.pickId, "import", true);
+            if (
+              chosen.profileId !== request.profileId ||
+              JSON.stringify(chosen.folderIds) !==
+                JSON.stringify(request.folderIds ?? [])
+            )
+              throw refuse("invalid", "native.error.19");
+            refusePaused();
+            const imported: string[] = [];
+            const skippedDuplicates: string[] = [];
+            for (const name of state.importQueue.splice(0)) {
+              const duplicate = snapshot.records.find(
+                (r) =>
+                  r.profileId === request.profileId && r.displayName === name,
+              );
+              if (duplicate) {
+                skippedDuplicates.push(duplicate.id);
+                continue;
+              }
+              const record = fakeRecord(
+                name,
+                request.profileId ?? setup.ids.profile,
+                request.folderIds ?? [],
+              );
+              snapshot.records.push(record);
+              imported.push(record.id);
+            }
+            return { imported, skippedDuplicates };
+          }
+          // --- Recovery mode: hide the documents whose files are missing ---
+          case "vault_hide_unavailable_records": {
+            refuseLocked();
+            const missing = snapshot.records
+              .filter((r) => !r.available && r.hidden?.reason !== "damaged")
+              .map((r) => r.id);
+            const confirmed = [...(request.confirmed ?? [])].sort();
+            if (
+              JSON.stringify(confirmed) !== JSON.stringify([...missing].sort())
+            )
+              throw refuse("list_changed", "native.error.38");
+            for (const record of snapshot.records) {
+              if (missing.includes(record.id))
+                record.hidden = { atMs: Date.now(), reason: "damaged" };
+            }
+            snapshot.recovery = null;
+            return missing;
+          }
           case "vault_touch":
           case "vault_set_auto_lock":
           case "plugin:window|set_theme":
@@ -753,6 +1039,16 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         snapshot: () => copy(state.snapshot),
         script: (command: string, outcome: Outcome) => {
           (state.script[command] ??= []).push(outcome);
+          save();
+        },
+        missingFiles: (names: string[]) => {
+          for (const record of state.snapshot.records)
+            record.available = !names.includes(record.displayName);
+          state.snapshot.recovery = names.length ? "lostObjects" : null;
+          save();
+        },
+        pickFiles: (names: string[]) => {
+          state.importQueue = names;
           save();
         },
       });
@@ -796,6 +1092,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       pageText: PAGE_TEXT,
       pageCount: FAKE_PAGE_COUNT,
       portal: setup.portal ?? null,
+      backup: setup.backup ?? null,
+      missingFiles: setup.missingFiles ?? [],
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
       messages: Object.fromEntries(
@@ -830,6 +1128,19 @@ export async function fakeCalls(
   return (await allCalls(page))
     .filter((call) => call.command === command)
     .map((call) => call.args);
+}
+
+/** The FAKE files the next "Choose files to import" picker chooses. */
+export async function fakePickFiles(page: Page, names: string[]) {
+  await page.evaluate(
+    (names) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          pickFiles: (names: string[]) => void;
+        }
+      ).pickFiles(names),
+    names,
+  );
 }
 
 /** The commands sent, in order. */
@@ -879,5 +1190,18 @@ export async function fakeViewDraws(
         viewDraws: () => { pending: number; cancelled: number };
       }
     ).viewDraws(),
+  );
+}
+
+/** Simulates encrypted files disappearing or returning between native requests. */
+export async function fakeMissingFiles(page: Page, names: string[]) {
+  await page.evaluate(
+    (names) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          missingFiles: (names: string[]) => void;
+        }
+      ).missingFiles(names),
+    names,
   );
 }
