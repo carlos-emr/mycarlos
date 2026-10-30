@@ -1503,6 +1503,8 @@ interface-history-empty = There are no history events.
 
 interface-history-error-unverified = The history could not be read and verified. No events are shown.
 
+interface-history-event-aiResultSaved = AI answer kept
+
 interface-history-event-backupRestored = Backup restored
 
 interface-history-event-backupSaved = Encrypted backup saved
@@ -1552,6 +1554,10 @@ interface-history-gap = Events here can't be checked and aren't shown.
 interface-history-how = How
 
 interface-history-how-camera = Added with the camera
+
+interface-history-how-summary = Summary in plain words
+
+interface-history-how-explain = A term explained
 
 interface-history-how-damaged = Hidden because its file was missing
 

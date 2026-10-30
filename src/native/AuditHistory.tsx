@@ -34,6 +34,7 @@ const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   folderRenamed: "interface.history.event.folderRenamed",
   folderMoved: "interface.history.event.folderMoved",
   setAside: "interface.history.event.setAside",
+  aiResultSaved: "interface.history.event.aiResultSaved",
 };
 
 const howLabels: Record<string, MessageKey> = {
@@ -43,6 +44,8 @@ const howLabels: Record<string, MessageKey> = {
   patient: "interface.history.how.patient",
   damaged: "interface.history.how.damaged",
   camera: "interface.history.how.camera",
+  summary: "interface.history.how.summary",
+  explain: "interface.history.how.explain",
   replaced: "interface.history.how.replaced",
 };
 

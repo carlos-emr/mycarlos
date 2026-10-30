@@ -432,6 +432,7 @@ impl VaultStore {
                 hidden: None,
                 original_pdf: None,
                 delivery: None,
+                ai_results: Vec::new(),
             };
             record.original_pdf = Some(self.stage_original_pdf(
                 unlocked.manifest.vault_id,

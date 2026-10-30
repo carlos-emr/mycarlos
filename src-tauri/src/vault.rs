@@ -35,23 +35,32 @@ use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
+mod ai_results;
 mod delivery;
 #[cfg(all(test, feature = "portal-linking"))]
 mod native_portal_flow;
 mod original_pdf;
 
+use ai_results::StoredAiResult;
+pub use ai_results::{AiResultInfo, AiResultInput};
+
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
-/// size class; format 3 adds the history; format 4 adds profile identity details.
+/// size class; format 3 adds the history; format 4 adds profile identity details;
+/// formats 5–8 add portal links, delivery and approval evidence and refused
+/// deliveries; format 9 adds the AI helper's answers (#72), objects of their own.
 /// Formats 1–3 are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 7;
+const VAULT_FORMAT: u32 = 9;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
 /// The first format that can hold a history.
 const MANIFEST_FORMAT_HISTORY: u32 = 3;
+/// The first format that can hold the AI helper's answers (#72 part D).
+/// Format 8 is clinic documents that failed their checks (#143, #161).
+const MANIFEST_FORMAT_AI_RESULTS: u32 = 9;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
@@ -479,6 +488,9 @@ struct StoredRecord {
     original_pdf: Option<StoredOriginalPdf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     delivery: Option<crate::portal_delivery::Custody>,
+    /// What the AI helper wrote about this document (#72). Format 9 only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ai_results: Vec<StoredAiResult>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -516,6 +528,7 @@ impl StoredRecord {
             wrapped_key: &original.wrapped_object_key,
             sha256: Some(&original.sha256),
         }))
+        .chain(self.ai_results.iter().map(StoredAiResult::object))
     }
 }
 
@@ -2045,6 +2058,7 @@ impl VaultStore {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    ai_results: Vec::new(),
                 };
                 // Preserve raw bytes before helper parsing/rendering, including
                 // unsigned or too-large PDFs whose signatures cannot be ruled
@@ -4252,6 +4266,12 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
                 return Err(VaultError::Corrupt);
             }
         }
+        ai_results::validate(
+            record,
+            manifest.format_version,
+            &mut object_ids,
+            &mut object_names,
+        )?;
         if (manifest.format_version < 6 && record.delivery.is_some())
             || record
                 .delivery
@@ -6891,6 +6911,9 @@ enum Removable {
     RestoreStage,
     /// What the atomic replacement primitive left behind.
     AtomicWriteLeftover,
+    /// An AI answer the committed manifest no longer names: replaced by a
+    /// newer answer to the same question (#72). Never a document's object.
+    SupersededAiResult,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.
@@ -8416,6 +8439,7 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    ai_results: Vec::new(),
                 },
                 StoredRecord {
                     id: second_record,
@@ -8432,6 +8456,7 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    ai_results: Vec::new(),
                 },
             ],
             history: HistoryState::default(),
@@ -13973,6 +13998,7 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    ai_results: Vec::new(),
                 })
                 .collect(),
             history: HistoryState::default(),
@@ -15755,6 +15781,8 @@ mod tests {
             MANIFEST_FORMAT_V1,
             MANIFEST_FORMAT_HIDDEN,
             MANIFEST_FORMAT_HISTORY,
+            // The last format before the AI helper's answers (#72).
+            MANIFEST_FORMAT_AI_RESULTS - 2,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =

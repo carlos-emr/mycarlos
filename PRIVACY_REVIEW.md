@@ -37,6 +37,7 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer or a phone), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person), including documents the patient has **hidden** | Yes, each with its own key        |
 | Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in                                                                                          | Yes                               |
+| AI answers       | What the AI helper wrote about a document on this computer (#72): a plain-words summary or a term explained, with the tool, language, model and date. Kept encrypted with the document, one per question; nothing leaves the device | Yes                               |
 | Profiles         | A display name for each person the patient keeps records for                                                                                                                                               | Yes                               |
 | Folders          | Folder names and how they nest                                                                                                                                                                             | Yes                               |
 | Passphrase       | Never stored. The vault's key is stored locked with a key worked out from the passphrase each time it is typed                                                                                             | The vault's key is locked with it |
@@ -52,7 +53,8 @@ documents are in every backup, like the rest.
 **A history is kept** (#71's second part). The vault records, encrypted with everything else,
 when it was opened (and with which secret), and each document added, renamed (both names),
 moved (the folders' names then), hidden, restored, or saved outside the vault as a readable copy,
-with where it was saved (a file path, or a document provider's address on Android), and when
+with where it was saved (a file path, or a document provider's address on Android), each AI answer
+kept with a document (the document's name and the tool, never the answer's text, #72), and when
 backups were saved, and where. It also records when the passphrase was changed (never the
 passphrase itself), each patient profile added (its name), and each folder made, renamed or moved
 (its names then). It keeps the names as they were at each moment, so a document

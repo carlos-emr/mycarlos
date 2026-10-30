@@ -1375,6 +1375,8 @@ interface-history-empty = 沒有任何紀錄事件。
 
 interface-history-error-unverified = 無法讀取並驗證紀錄，因此不顯示任何事件。
 
+interface-history-event-aiResultSaved = AI 回答已保存
+
 interface-history-event-backupRestored = 備份已還原
 
 interface-history-event-backupSaved = 加密備份已儲存
@@ -1420,6 +1422,10 @@ interface-history-gap = 此處的事件無法檢查，因此不顯示。
 interface-history-how = 方式
 
 interface-history-how-camera = 使用相機新增
+
+interface-history-how-summary = 淺白易懂的摘要
+
+interface-history-how-explain = 已解釋術語
 
 interface-history-how-damaged = 因檔案遺失而隱藏
 

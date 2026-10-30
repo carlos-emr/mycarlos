@@ -238,6 +238,7 @@ pub enum MessageId {
     InterfaceHistoryDamagedBetween,
     InterfaceHistoryEmpty,
     InterfaceHistoryErrorUnverified,
+    InterfaceHistoryEventAiResultSaved,
     InterfaceHistoryEventBackupRestored,
     InterfaceHistoryEventBackupSaved,
     InterfaceHistoryEventCopySaved,
@@ -262,6 +263,7 @@ pub enum MessageId {
     InterfaceHistoryHow,
     InterfaceHistoryHowCamera,
     InterfaceHistoryHowDamaged,
+    InterfaceHistoryHowExplain,
     InterfaceHistoryHowImportedShared,
     InterfaceHistoryHowMovedFromShared,
     InterfaceHistoryHowPassphrase,
@@ -269,6 +271,7 @@ pub enum MessageId {
     InterfaceHistoryHowPicked,
     InterfaceHistoryHowRecoveryKey,
     InterfaceHistoryHowReplaced,
+    InterfaceHistoryHowSummary,
     InterfaceHistoryIntro,
     InterfaceHistoryLaterSessionNotRecorded,
     InterfaceHistoryLoading,
@@ -993,6 +996,7 @@ impl MessageId {
         Self::InterfaceHistoryDamagedBetween,
         Self::InterfaceHistoryEmpty,
         Self::InterfaceHistoryErrorUnverified,
+        Self::InterfaceHistoryEventAiResultSaved,
         Self::InterfaceHistoryEventBackupRestored,
         Self::InterfaceHistoryEventBackupSaved,
         Self::InterfaceHistoryEventCopySaved,
@@ -1017,6 +1021,7 @@ impl MessageId {
         Self::InterfaceHistoryHow,
         Self::InterfaceHistoryHowCamera,
         Self::InterfaceHistoryHowDamaged,
+        Self::InterfaceHistoryHowExplain,
         Self::InterfaceHistoryHowImportedShared,
         Self::InterfaceHistoryHowMovedFromShared,
         Self::InterfaceHistoryHowPassphrase,
@@ -1024,6 +1029,7 @@ impl MessageId {
         Self::InterfaceHistoryHowPicked,
         Self::InterfaceHistoryHowRecoveryKey,
         Self::InterfaceHistoryHowReplaced,
+        Self::InterfaceHistoryHowSummary,
         Self::InterfaceHistoryIntro,
         Self::InterfaceHistoryLaterSessionNotRecorded,
         Self::InterfaceHistoryLoading,
@@ -1900,6 +1906,7 @@ impl MessageId {
             Self::InterfaceHistoryDamagedBetween => "interface-history-damagedBetween",
             Self::InterfaceHistoryEmpty => "interface-history-empty",
             Self::InterfaceHistoryErrorUnverified => "interface-history-error-unverified",
+            Self::InterfaceHistoryEventAiResultSaved => "interface-history-event-aiResultSaved",
             Self::InterfaceHistoryEventBackupRestored => "interface-history-event-backupRestored",
             Self::InterfaceHistoryEventBackupSaved => "interface-history-event-backupSaved",
             Self::InterfaceHistoryEventCopySaved => "interface-history-event-copySaved",
@@ -1926,6 +1933,7 @@ impl MessageId {
             Self::InterfaceHistoryHow => "interface-history-how",
             Self::InterfaceHistoryHowCamera => "interface-history-how-camera",
             Self::InterfaceHistoryHowDamaged => "interface-history-how-damaged",
+            Self::InterfaceHistoryHowExplain => "interface-history-how-explain",
             Self::InterfaceHistoryHowImportedShared => "interface-history-how-importedShared",
             Self::InterfaceHistoryHowMovedFromShared => "interface-history-how-movedFromShared",
             Self::InterfaceHistoryHowPassphrase => "interface-history-how-passphrase",
@@ -1933,6 +1941,7 @@ impl MessageId {
             Self::InterfaceHistoryHowPicked => "interface-history-how-picked",
             Self::InterfaceHistoryHowRecoveryKey => "interface-history-how-recoveryKey",
             Self::InterfaceHistoryHowReplaced => "interface-history-how-replaced",
+            Self::InterfaceHistoryHowSummary => "interface-history-how-summary",
             Self::InterfaceHistoryIntro => "interface-history-intro",
             Self::InterfaceHistoryLaterSessionNotRecorded => {
                 "interface-history-laterSessionNotRecorded"
@@ -3361,6 +3370,9 @@ impl MessageId {
             "interface.history.damagedBetween" => Some(Self::InterfaceHistoryDamagedBetween),
             "interface.history.empty" => Some(Self::InterfaceHistoryEmpty),
             "interface.history.error.unverified" => Some(Self::InterfaceHistoryErrorUnverified),
+            "interface.history.event.aiResultSaved" => {
+                Some(Self::InterfaceHistoryEventAiResultSaved)
+            }
             "interface.history.event.backupRestored" => {
                 Some(Self::InterfaceHistoryEventBackupRestored)
             }
@@ -3398,6 +3410,8 @@ impl MessageId {
             "interface.history.gap" => Some(Self::InterfaceHistoryGap),
             "interface.history.how" => Some(Self::InterfaceHistoryHow),
             "interface.history.how.camera" => Some(Self::InterfaceHistoryHowCamera),
+            "interface.history.how.summary" => Some(Self::InterfaceHistoryHowSummary),
+            "interface.history.how.explain" => Some(Self::InterfaceHistoryHowExplain),
             "interface.history.how.damaged" => Some(Self::InterfaceHistoryHowDamaged),
             "interface.history.how.importedShared" => Some(Self::InterfaceHistoryHowImportedShared),
             "interface.history.how.movedFromShared" => {

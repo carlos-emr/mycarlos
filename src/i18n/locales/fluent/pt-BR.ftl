@@ -1535,6 +1535,8 @@ interface-history-empty = Não há eventos no histórico.
 
 interface-history-error-unverified = Não foi possível ler e verificar o histórico. Nenhum evento foi exibido.
 
+interface-history-event-aiResultSaved = Resposta da IA guardada
+
 interface-history-event-backupRestored = Backup restaurado
 
 interface-history-event-backupSaved = Backup criptografado salvo
@@ -1585,6 +1587,10 @@ interface-history-gap = Os eventos neste ponto não podem ser verificados e não
 interface-history-how = Como
 
 interface-history-how-camera = Adicionado com a câmera
+
+interface-history-how-summary = Resumo em palavras simples
+
+interface-history-how-explain = Um termo explicado
 
 interface-history-how-damaged = Ocultado porque o arquivo estava ausente
 

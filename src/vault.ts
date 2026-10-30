@@ -1,6 +1,6 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
-import type { ModelStatus } from "./ai/types";
+import type { AiTool, ModelStatus } from "./ai/types";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -279,7 +279,8 @@ export interface AuditHistoryEntry {
     | "folderCreated"
     | "folderRenamed"
     | "folderMoved"
-    | "setAside";
+    | "setAside"
+    | "aiResultSaved";
   name: string | null;
   oldName: string | null;
   from: string[] | null;
@@ -289,6 +290,28 @@ export interface AuditHistoryEntry {
   how: string | null;
   place: string | null;
   previousSession: string | null;
+}
+
+/** What the AI helper asks the vault to keep with a document (#72). */
+export interface AiResultInput {
+  tool: AiTool;
+  lang: string;
+  /** The term explained; none for a summary. */
+  term?: string;
+  modelName: string;
+  modelSha256: string;
+}
+
+/** An AI answer as the vault lists it: everything but its text. */
+export interface AiResultInfo {
+  id: string;
+  tool: AiTool;
+  lang: string;
+  term?: string;
+  modelName: string;
+  modelSha256: string;
+  createdAtMs: number;
+  size: number;
 }
 
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
@@ -466,6 +489,17 @@ export interface VaultBridge {
   cancelView(): Promise<void>;
   /** Whether the AI helper (#72) has a model on this computer. */
   aiModelStatus(): Promise<ModelStatus>;
+  /** Keeps an AI answer with its document, encrypted; a new answer to the
+   * same question (tool, language, term) replaces the old one. */
+  saveAiResult(
+    recordId: string,
+    result: AiResultInput,
+    content: string,
+  ): Promise<AiResultInfo>;
+  /** The AI answers kept with a document, newest first. */
+  aiResults(recordId: string): Promise<AiResultInfo[]>;
+  /** One kept answer's text. */
+  readAiResult(recordId: string, resultId: string): Promise<string>;
   reset(confirmation: string): Promise<boolean>;
 }
 
@@ -837,6 +871,16 @@ export function createVaultBridge(): VaultBridge {
       }),
     cancelView: () => invoke<void>("vault_view_cancel"),
     aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
+    saveAiResult: (recordId, result, content) =>
+      invoke<AiResultInfo>("vault_ai_result_save", {
+        request: { recordId, result, content },
+      }),
+    aiResults: (recordId) =>
+      invoke<AiResultInfo[]>("vault_ai_results", { request: { recordId } }),
+    readAiResult: (recordId, resultId) =>
+      invoke<string>("vault_ai_result_read", {
+        request: { recordId, resultId },
+      }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>

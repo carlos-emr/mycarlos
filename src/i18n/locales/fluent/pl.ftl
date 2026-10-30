@@ -1567,6 +1567,8 @@ interface-history-empty = Brak zdarzeń w historii.
 
 interface-history-error-unverified = Nie udało się odczytać ani zweryfikować historii. Nie wyświetlono żadnych zdarzeń.
 
+interface-history-event-aiResultSaved = Zachowano odpowiedź AI
+
 interface-history-event-backupRestored = Przywrócono kopię zapasową
 
 interface-history-event-backupSaved = Zapisano zaszyfrowaną kopię zapasową
@@ -1618,6 +1620,10 @@ interface-history-gap = Zdarzenia w tym miejscu nie mogą zostać zweryfikowane 
 interface-history-how = Sposób
 
 interface-history-how-camera = Dodano za pomocą aparatu
+
+interface-history-how-summary = Podsumowanie prostymi słowami
+
+interface-history-how-explain = Wyjaśniono termin
 
 interface-history-how-damaged = Ukryto, ponieważ brakowało pliku
 

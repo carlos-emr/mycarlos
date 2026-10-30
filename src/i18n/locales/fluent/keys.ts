@@ -682,6 +682,7 @@ export const MESSAGE_KEYS = [
   "interface.history.damagedBetween",
   "interface.history.empty",
   "interface.history.error.unverified",
+  "interface.history.event.aiResultSaved",
   "interface.history.event.backupRestored",
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
@@ -705,6 +706,8 @@ export const MESSAGE_KEYS = [
   "interface.history.gap",
   "interface.history.how",
   "interface.history.how.camera",
+  "interface.history.how.summary",
+  "interface.history.how.explain",
   "interface.history.how.damaged",
   "interface.history.how.importedShared",
   "interface.history.how.movedFromShared",
@@ -1545,6 +1548,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.damagedBetween": "interface-history-damagedBetween",
   "interface.history.empty": "interface-history-empty",
   "interface.history.error.unverified": "interface-history-error-unverified",
+  "interface.history.event.aiResultSaved":
+    "interface-history-event-aiResultSaved",
   "interface.history.event.backupRestored":
     "interface-history-event-backupRestored",
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
@@ -1575,6 +1580,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.gap": "interface-history-gap",
   "interface.history.how": "interface-history-how",
   "interface.history.how.camera": "interface-history-how-camera",
+  "interface.history.how.summary": "interface-history-how-summary",
+  "interface.history.how.explain": "interface-history-how-explain",
   "interface.history.how.damaged": "interface-history-how-damaged",
   "interface.history.how.importedShared":
     "interface-history-how-importedShared",
@@ -2397,6 +2404,7 @@ export interface MessageArgsByKey {
   };
   "interface.history.empty": undefined;
   "interface.history.error.unverified": undefined;
+  "interface.history.event.aiResultSaved": undefined;
   "interface.history.event.backupRestored": undefined;
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
@@ -2420,6 +2428,8 @@ export interface MessageArgsByKey {
   "interface.history.gap": undefined;
   "interface.history.how": undefined;
   "interface.history.how.camera": undefined;
+  "interface.history.how.summary": undefined;
+  "interface.history.how.explain": undefined;
   "interface.history.how.damaged": undefined;
   "interface.history.how.importedShared": undefined;
   "interface.history.how.movedFromShared": undefined;

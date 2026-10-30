@@ -146,6 +146,13 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .mockRejectedValue(new Error("FAKE: no reader in this test")),
     cancelView: vi.fn().mockResolvedValue(undefined),
     aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
+    saveAiResult: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: not in this test")),
+    aiResults: vi.fn().mockResolvedValue([]),
+    readAiResult: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: not in this test")),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
