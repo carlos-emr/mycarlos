@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
   FAKE_PASSPHRASE,
   fakeCalls,
   fakeCommands,
@@ -99,7 +100,7 @@ test("Save a backup saves where the patient chose and says so, and a cancelled p
     ),
   ).toBeVisible();
   expect(await fakeCalls(page, "vault_backup_picked")).toEqual([
-    { request: { pickId: "FAKE-backup-pick" } },
+    { request: { pickId: FAKE_IDS.backupPick } },
   ]);
   // The vault itself is untouched by a backup.
   await expect(save).toBeEnabled();
@@ -170,7 +171,7 @@ test("Restore from a backup: a wrong passphrase is said, the check says what res
     {
       locale: "en",
       request: {
-        pickId: "FAKE-restore-pick",
+        pickId: FAKE_IDS.restorePick,
         passphrase: BACKUP_PASSPHRASE,
         replace: true,
       },

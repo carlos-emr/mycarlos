@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
+  fakeUuid,
   FAKE_PASSPHRASE,
   fakeCalls,
   fakeSnapshot,
@@ -80,7 +82,7 @@ test("shared files wait for the unlock, the PDFs go into Shared with me, a non-P
   expect(kept.some((record) => record.displayName === NOT_PDF)).toBe(false);
   expect(
     kept.find((record) => record.displayName === SHARED_LETTER)?.profileId,
-  ).toBe("shared");
+  ).toBe(FAKE_IDS.shared);
 
   // Shared with me lists it, with the suggestion that it is the child's.
   // Said, and the sidebar entry counts it as new (its name carries
@@ -142,7 +144,7 @@ test("shared files wait for the unlock, the PDFs go into Shared with me, a non-P
   ).toBeVisible();
   const moves = await fakeCalls(page, "vault_move_to_person");
   expect(moves).toHaveLength(1);
-  expect(moves[0].request).toMatchObject({ profileId: "FAKE-person-1" });
+  expect(moves[0].request).toMatchObject({ profileId: fakeUuid(501) });
   await expect(
     page.getByRole("button", { name: SHARED_LETTER, exact: true }),
   ).toHaveCount(0);

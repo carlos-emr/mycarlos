@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
+  fakeUuid,
   FAKE_PAGE_COUNT,
   fakeCalls,
   fakePickFiles,
@@ -61,8 +63,8 @@ test("Add documents: a cancelled picker changes nothing, chosen files are added 
   expect(await fakeCalls(page, "vault_import_picked")).toEqual([
     {
       request: {
-        pickId: "FAKE-import-pick",
-        profileId: "profile",
+        pickId: FAKE_IDS.importPick,
+        profileId: FAKE_IDS.profile,
         folderIds: [],
       },
     },
@@ -100,9 +102,9 @@ test("Add documents: a cancelled picker changes nothing, chosen files are added 
   await expect(row("FAKE Scan four.pdf")).toBeVisible();
   expect((await fakeCalls(page, "vault_import_picked")).at(-1)).toEqual({
     request: {
-      pickId: "FAKE-import-pick",
-      profileId: "profile",
-      folderIds: ["folder"],
+      pickId: fakeUuid(1002),
+      profileId: FAKE_IDS.profile,
+      folderIds: [FAKE_IDS.folder],
     },
   });
 

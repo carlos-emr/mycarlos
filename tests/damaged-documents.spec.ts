@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
   escapeRegExp,
   fakeCalls,
   fakeVaultWith,
@@ -134,8 +135,8 @@ test("a missing file pauses changes and marks the document; hiding it is asked f
   await expect(banner).toHaveCount(0);
   await expect(row).toHaveCount(0);
   expect(await fakeCalls(page, "vault_hide_unavailable_records")).toEqual([
-    { request: { confirmed: ["letter"] } },
-    { request: { confirmed: ["letter"] } },
+    { request: { confirmed: [FAKE_IDS.letter] } },
+    { request: { confirmed: [FAKE_IDS.letter] } },
   ]);
   await expect(
     page.getByRole("button", {

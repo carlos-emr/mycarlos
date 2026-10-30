@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
+  fakeUuid,
   fakeCalls,
   fakeVaultWith,
   myRecords,
@@ -66,11 +68,17 @@ test("a folder, a folder inside it, documents moved in from the selection bar an
   ).toBeVisible();
   await newFolder(page, "FAKE 2024");
   expect(await fakeCalls(page, "vault_create_folder")).toEqual([
-    { request: { profileId: "profile", parentId: null, name: "FAKE Imaging" } },
     {
       request: {
-        profileId: "profile",
-        parentId: "folder-3",
+        profileId: FAKE_IDS.profile,
+        parentId: null,
+        name: "FAKE Imaging",
+      },
+    },
+    {
+      request: {
+        profileId: FAKE_IDS.profile,
+        parentId: fakeUuid(303),
         name: "FAKE 2024",
       },
     },
@@ -101,7 +109,7 @@ test("a folder, a folder inside it, documents moved in from the selection bar an
     page.getByText(en("interface.notice.moved", { count: 1 }), { exact: true }),
   ).toBeVisible();
   expect(await fakeCalls(page, "vault_assign_folders_batch")).toEqual([
-    { request: { recordIds: ["letter"], folderIds: ["folder-3"] } },
+    { request: { recordIds: [FAKE_IDS.letter], folderIds: [fakeUuid(303)] } },
   ]);
   await expect(
     page.getByRole("button", { name: "FAKE Letter.pdf", exact: true }),
@@ -122,7 +130,7 @@ test("a folder, a folder inside it, documents moved in from the selection bar an
     })
     .click();
   expect((await fakeCalls(page, "vault_assign_folders")).at(-1)).toEqual({
-    request: { recordId: "letter", folderIds: ["folder-4"] },
+    request: { recordId: FAKE_IDS.letter, folderIds: [fakeUuid(304)] },
   });
   await expect(
     page.getByRole("button", { name: "FAKE Letter.pdf", exact: true }),
