@@ -320,6 +320,78 @@ describe("the document reader", () => {
     }
   });
 
+  it("still cancels newer sharpening after stale success and failure callbacks", async () => {
+    let oldest!: (value: ViewedPage) => void;
+    let rejectMiddle!: (failure: unknown) => void;
+    let latest!: (value: ViewedPage) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            oldest = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((_resolve, reject) => {
+            rejectMiddle = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            latest = resolve;
+          }),
+      );
+    const { cancelView, unmount } = renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    vi.useFakeTimers();
+    try {
+      const larger = screen.getByRole("button", { name: humanText("Larger") });
+      await click(larger);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      await click(larger);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(cancelView).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        oldest({ ...page(0), text: "FAKE stale first draw" });
+      });
+      // The stale success must leave the newer draw available for cancellation.
+      await click(larger);
+      expect(cancelView).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(4);
+      await act(async () => {
+        rejectMiddle(refusal("pdf_wrong_password"));
+      });
+      expect(
+        screen.queryByLabelText(humanText("Document password")),
+      ).toBeNull();
+      // A stale failure must also preserve the latest pending draw's cancellation.
+      await click(screen.getByRole("button", { name: humanText("Fit width") }));
+      expect(cancelView).toHaveBeenCalledTimes(3);
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
+      await act(async () => {
+        latest({ ...page(0), text: "FAKE stale last draw" });
+      });
+      await click(screen.getByText(humanText("Text on this page")));
+      expect(screen.getByText(humanText("FAKE text on page 1"))).toBeVisible();
+      expect(screen.queryByText(humanText("FAKE stale last draw"))).toBeNull();
+      expect(viewPage).toHaveBeenCalledTimes(4);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("returns to a cached size immediately and stops a sharper draw still in flight", async () => {
     let finish!: (value: ViewedPage) => void;
     const viewPage = vi
