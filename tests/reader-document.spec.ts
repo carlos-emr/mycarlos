@@ -182,9 +182,9 @@ test("reads a document page by page, with zoom and the page's text, and Close go
       }),
     )
     .toBeLessThanOrEqual(1);
-  expect(await pageArea(2).evaluate((area) => area.clientWidth)).toBeGreaterThan(
-    200,
-  );
+  expect(
+    await pageArea(2).evaluate((area) => area.clientWidth),
+  ).toBeGreaterThan(200);
   expect(
     await pageArea(2).evaluate((area) => area.scrollWidth <= area.clientWidth),
   ).toBe(true);
@@ -438,9 +438,7 @@ test("the reader closes, and stops the page being drawn, when the vault locks as
   );
   // The native cancellation has settled the in-flight draw(s). A cancel
   // command that merely logs a call while leaving the promise pending fails.
-  await expect
-    .poll(async () => (await fakeViewDraws(page)).pending)
-    .toBe(0);
+  await expect.poll(async () => (await fakeViewDraws(page)).pending).toBe(0);
   expect((await fakeViewDraws(page)).cancelled).toBeGreaterThanOrEqual(
     pendingBeforeLock,
   );
