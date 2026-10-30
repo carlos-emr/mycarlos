@@ -1284,7 +1284,7 @@ export function VaultLibrary({
     void run(async () => {
       await bridge.createFolder(profileId, currentFolderId, name);
       // Cleared only once the folder exists, so a refused name can be corrected.
-      setFolderName("");
+      setFolderName((current) => (current === name ? "" : current));
       await refresh();
       setShowFolderForm(false);
       setNotice(

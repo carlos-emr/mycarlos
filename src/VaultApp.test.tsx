@@ -7402,6 +7402,94 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(window.localStorage.getItem(guide)).toBeNull());
   });
 
+  it.each([
+    ["unchanged", ""],
+    ["edited", "FAKE Second folder"],
+  ])(
+    "keeps the %s folder draft reset scoped to the name that was saved",
+    async (draft, expected) => {
+      const user = userEvent.setup();
+      const vault = structuredClone(emptySnapshot);
+      let finishSave!: () => void;
+      const saving = new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      const createFolder = vi.fn(
+        async (profileId: string, parentId: string | null, name: string) => {
+          await saving;
+          vault.folders.push({
+            id: "folder-first",
+            profileId,
+            parentId,
+            name,
+            createdAtMs: 2,
+          });
+          return "folder-first";
+        },
+      );
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn(async () => structuredClone(vault)),
+        createFolder,
+      });
+      let view: ReturnType<typeof render> | undefined;
+      try {
+        view = render(<VaultApp bridge={bridge} />);
+        await user.click(
+          await screen.findByRole("button", { name: humanText("New folder") }),
+        );
+        const name = screen.getByLabelText(humanText("Folder name"));
+        await user.type(name, "FAKE First folder");
+        const create = screen.getByRole("button", {
+          name: humanText("Create"),
+        });
+        await user.click(create);
+        await waitFor(() =>
+          expect(createFolder).toHaveBeenCalledExactlyOnceWith(
+            "profile-1",
+            null,
+            "FAKE First folder",
+          ),
+        );
+        expect(create).toBeDisabled();
+        expect(name).toBeEnabled();
+        if (draft === "edited") {
+          await user.clear(name);
+          await user.type(name, expected);
+        }
+        await act(async () => {
+          finishSave();
+          await createFolder.mock.results[0].value;
+        });
+        await screen.findByText(
+          humanText(
+            translate("en", "interface.notice.folderCreated", {
+              name: "FAKE First folder",
+            }),
+          ),
+        );
+        // Inspect the next draft without imposing a form-closing policy.
+        // If the successful create closed it, reopen it first.
+        if (!screen.queryByLabelText(humanText("Folder name"))) {
+          await act(async () => {
+            await user.click(
+              screen.getByRole("button", { name: humanText("New folder") }),
+            );
+          });
+        }
+        expect(screen.getByLabelText(humanText("Folder name"))).toHaveValue(
+          expected,
+        );
+        expect(createFolder).toHaveBeenCalledOnce();
+      } finally {
+        await act(async () => {
+          finishSave();
+          view?.unmount();
+        });
+      }
+    },
+  );
+
   it("stays in the library when a command there finds no vault", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
