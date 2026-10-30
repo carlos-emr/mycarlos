@@ -3475,6 +3475,79 @@ describe("durable vault UI", () => {
     return { user, bridge, view, hide, setVisibility, unlock, typeKeyBack };
   }
 
+  it("does not relock a new session when an earlier recovery setup reports locked", async () => {
+    let finishBegin!: (key: string) => void;
+    let failBegin!: (error: unknown) => void;
+    const pendingBegin = new Promise<string>((resolve, reject) => {
+      finishBegin = resolve;
+      failBegin = reject;
+    });
+    const vault = { ...emptySnapshot, recoveryKeySetAtMs: 5 };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockResolvedValue(vault),
+      unlock: vi.fn().mockResolvedValue(vault),
+      beginRecoveryKey: vi.fn().mockReturnValue(pendingBegin),
+    });
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("visible");
+    onTestFinished(() => visibility.mockRestore());
+    const user = userEvent.setup();
+    render(<VaultApp bridge={bridge} />);
+    try {
+      await user.click(
+        await screen.findByRole("button", { name: humanText("Security") }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Replace recovery key") }),
+      );
+      const dialog = screen.getByRole("dialog");
+      await user.type(
+        within(dialog).getByLabelText(humanText("Passphrase")),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(
+        within(dialog).getByLabelText(
+          humanText("I just want a new key: its kit is safe"),
+        ),
+      );
+      await user.click(
+        within(dialog).getByRole("button", { name: humanText("Continue") }),
+      );
+      expect(bridge.beginRecoveryKey).toHaveBeenCalledOnce();
+      visibility.mockReturnValue("hidden");
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await screen.findByLabelText(humanText("Passphrase"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      visibility.mockReturnValue("visible");
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await user.type(
+        screen.getByLabelText(humanText("Passphrase")),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      expect(
+        await screen.findByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
+      // The old IPC result belongs to the setup that ended at the first lock.
+      await act(async () => failBegin({ code: "locked" }));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
+    } finally {
+      await act(async () => finishBegin(RECOVERY_KEY));
+    }
+  });
+
   it("conceals a printed recovery key before a hidden app's native lock finishes", async () => {
     let finishLock!: () => void;
     const locking = new Promise<void>((resolve) => {

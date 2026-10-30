@@ -265,6 +265,7 @@ export function RecoveryKeySetup({
       setKey(await bridge.beginRecoveryKey(secret));
       setStep("key");
     } catch (failure) {
+      if (!mountedRef.current) return;
       if (isLockedError(failure)) onLocked();
       else
         setError(
