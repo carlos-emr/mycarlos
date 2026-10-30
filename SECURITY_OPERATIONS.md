@@ -169,10 +169,11 @@ on 29 October 2026 that the helper uses no cloud provider, so:
   folder, a cloud drive, an AI service) is the patient's choice, as for a readable copy, and what
   that service learns or keeps is up to it (AI-09). Native code writes the file's first line
   itself, in the app's language: it tells an AI to treat all of it as the document, not as
-  instructions (AI-02, AI-09); when the text was cut, the last line says so (AI-10). The history
+  instructions (AI-02, AI-09); when the text was cut, the last line says so (AI-02, AI-10). The history
   records it as `copySaved` with
-  `how: "anonymizedText"`: the document, where the file was saved (cut to 256 characters, with a
-  SHA-256 of the whole) and when; never the text, the removed details or the date offset.
+  `how: "anonymizedText"`: the document, where the file was saved (cut to 256 characters, and then
+  with a SHA-256 of the whole) and when; never the text, the removed details or the date offset.
+  Security shows it with a label of its own; an older build shows "Readable copy saved".
 - **The model file** holds no patient data. It is kept in a model folder beside, not inside, the
   vault folder, not in myCarlos's encrypted backups, and marked to be left out of device backups
   where the system allows. That folder is a removal kind of its own (no patient data, so #71's
