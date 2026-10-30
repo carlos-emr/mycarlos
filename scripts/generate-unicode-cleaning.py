@@ -117,7 +117,7 @@ TS = "\n\n".join(
 
 RS = "\n\n".join(
     [
-        f"//! {HEADER}",
+        f"//! {HEADER}\n#![allow(dead_code)] // native code refuses by REMOVED and REPLACED; page code uses every table",
         f'pub(crate) const UNICODE_VERSION: &str = "{VERSION}";',
         rs_ranges("REMOVED", DEFAULT_IGNORABLE, "Dropped from the saved text: Default_Ignorable_Code_Point."),
         rs_ranges("REPLACED", REPLACED, "Each run becomes one U+FFFD: private use, unassigned, surrogates."),

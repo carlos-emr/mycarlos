@@ -933,6 +933,26 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     );
   });
 
+  it("takes a placeholder or a moved date into a removal when told to (AI-02)", () => {
+    const result = out("Seen Avery on 2026-10-08 at the clinic.", {
+      knownNames: ["Avery Example"],
+    });
+    expect(result.toSend).toBe("Seen [NAME 1] on 2026-08-29 at the clinic.");
+    // A hit inside the moved date takes the whole date.
+    const at = result.toSend.indexOf("08-29");
+    const over = removeMore(result, at, at + 2, { over: true });
+    expect(over.toSend).toBe("Seen [NAME 1] on [REMOVED 1] at the clinic.");
+    expect(() => removeMore(result, at, at + 2)).toThrow(RangeError);
+    // A range across a placeholder and text takes both.
+    const across = result.toSend.indexOf("[NAME 1] on");
+    const both = removeMore(result, across + 3, across + 11, { over: true });
+    expect(both.toSend).toBe("Seen [REMOVED 1] 2026-08-29 at the clinic.");
+    expect(both.onDevice.removed.map((part) => part.kind)).toEqual([
+      "manual",
+      "date",
+    ]);
+  });
+
   it("finds a detail split by hidden characters or written in full-width digits", () => {
     const result = out(
       "Health card ９１２３ ４５６ ７８９ for Av​ery Ex­ample.",

@@ -1653,38 +1653,51 @@ function build(
 /**
  * The patient removes more from the preview (#72): the part of the text to
  * send from `sentStart` to `sentEnd`, which must lie outside every
- * placeholder and shifted date already there. It becomes "[REMOVED n]".
+ * placeholder and shifted date already there, unless `over` is set: then
+ * the parts it touches are taken into the new removal, whole (the native
+ * re-check found a detail inside a moved date or a placeholder, AI-02). It
+ * becomes "[REMOVED n]".
  */
 export function removeMore(
   deidentified: Deidentified,
   sentStart: number,
   sentEnd: number,
+  options: { over?: boolean } = {},
 ): Deidentified {
   const { removed, possibleNames, source, ...settings } = deidentified.onDevice;
   // Map the range back to the document, through what came before it.
   let shift = 0;
+  let start = -1;
+  let end = -1;
+  const swallowed = new Set<Removed>();
   for (const part of removed) {
     if (part.sentEnd <= sentStart) {
       shift += part.end - part.start - (part.sentEnd - part.sentStart);
       continue;
     }
-    if (part.sentStart < sentEnd)
-      throw new RangeError("overlaps a part already removed");
+    if (part.sentStart >= sentEnd) break;
+    if (!options.over) throw new RangeError("overlaps a part already removed");
+    swallowed.add(part);
+    if (start < 0) start = Math.min(sentStart + shift, part.start);
+    shift += part.end - part.start - (part.sentEnd - part.sentStart);
+    end = Math.max(sentEnd + shift, part.end);
   }
-  const start = sentStart + shift;
-  const end = sentEnd + shift;
+  if (start < 0) start = sentStart + shift;
+  if (end < 0) end = sentEnd + shift;
   if (start < 0 || end > source.length || end <= start)
     throw new RangeError("outside the text");
   const manual = removed.filter((part) => part.kind === "manual");
   // Everything already decided stays as it was; only the new part is new.
   // A flagged word stays flagged unless the new part takes it.
   const findings: Finding[] = [
-    ...removed.map((part) => ({
-      kind: part.kind,
-      start: part.start,
-      end: part.end,
-      replacement: part.replacement,
-    })),
+    ...removed
+      .filter((part) => !swallowed.has(part))
+      .map((part) => ({
+        kind: part.kind,
+        start: part.start,
+        end: part.end,
+        replacement: part.replacement,
+      })),
     ...possibleNames
       .filter((possible) => possible.end <= start || end <= possible.start)
       .map((possible) => ({

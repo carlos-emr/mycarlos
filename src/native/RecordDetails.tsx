@@ -34,6 +34,9 @@ interface RecordDetailsProps {
   onExport: () => void;
   /** Opens the document in myCarlos's reader. */
   onRead?: () => void;
+  /** Opens the AI helper's preview: the text with identifying details
+   * removed, to save for an AI service (#72). Computers only, PDFs only. */
+  onAnonymize?: () => void;
   /** Shows the document as a photo; given only when its file is one. */
   onViewPhoto?: () => void;
   /** The document is a PDF that may be locked with a password (#54). */
@@ -57,6 +60,7 @@ export function RecordDetails({
   onHide,
   onExport,
   onRead,
+  onAnonymize,
   onViewPhoto,
   locked = false,
   onUnlock,
@@ -339,6 +343,16 @@ export function RecordDetails({
               onClick={onRead}
             >
               {translateNow("interface.RecordDetails.read")}
+            </button>
+          )}
+          {onAnonymize && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy || !record.available}
+              onClick={onAnonymize}
+            >
+              {translateNow("interface.RecordDetails.anonymizeText")}
             </button>
           )}
           <button
