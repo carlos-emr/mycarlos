@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import { translate } from "./support/fluent";
 import {
   FAKE_IDS,
   FAKE_PASSPHRASE,
   fakePickFiles,
+  fakeMissingFiles,
   fakeVaultWith,
   myRecords,
 } from "./support/vaultFake";
@@ -69,7 +71,17 @@ test("import picks are bound to their target, consumed once, and record IDs surv
       })
     ).error,
   ).toMatchObject({ code: "not_found" });
+  await invoke(page, "vault_lock");
   await page.reload();
+  await page
+    .getByLabel(translate("en", "passphrase.label"), { exact: true })
+    .fill(FAKE_PASSPHRASE);
+  await page
+    .getByRole("button", {
+      name: translate("en", "unlock.submit"),
+      exact: true,
+    })
+    .click();
   await expect(myRecords(page)).toBeVisible();
   await fakePickFiles(page, ["FAKE Second.pdf"]);
   const third = (await invoke(page, "vault_import_pick", { request: target }))
@@ -106,16 +118,13 @@ test("backup tickets are one-use and recovery refuses both picker and write", as
   ).toMatchObject({ code: "not_found" });
   const second = (await invoke(page, "vault_backup_pick")).value;
   expect(second).not.toBe(first);
+  await fakePickFiles(page, ["FAKE Recovery import.pdf"]);
+  const target = { profileId: FAKE_IDS.profile, folderIds: [] as string[] };
+  const importPick = (
+    await invoke(page, "vault_import_pick", { request: target })
+  ).value;
   // Model an encrypted file disappearing after the destination was picked.
-  await page.evaluate(() => {
-    const state = JSON.parse(
-      sessionStorage.getItem("mycarlos-e2e-fake-vault")!,
-    );
-    state.snapshot.recovery = "lostObjects";
-    sessionStorage.setItem("mycarlos-e2e-fake-vault", JSON.stringify(state));
-  });
-  await page.reload();
-  await expect(myRecords(page)).toBeVisible();
+  await fakeMissingFiles(page, ["FAKE Bloodwork.pdf"]);
   expect((await invoke(page, "vault_backup_pick")).error).toMatchObject({
     code: "recovery_mode",
     messageKey: "native.error.40",
@@ -124,6 +133,32 @@ test("backup tickets are one-use and recovery refuses both picker and write", as
     (await invoke(page, "vault_backup_picked", { request: { pickId: second } }))
       .error,
   ).toMatchObject({ code: "recovery_mode", messageKey: "native.error.40" });
+  expect(
+    (
+      await invoke(page, "vault_import_picked", {
+        request: { pickId: importPick, ...target },
+      })
+    ).error,
+  ).toMatchObject({ code: "recovery_mode" });
+  const readable = (
+    await invoke(page, "vault_export_pick", {
+      request: { recordId: FAKE_IDS.letter },
+    })
+  ).value;
+  expect(typeof readable).toBe("string");
+  expect(
+    await invoke(page, "vault_export_picked", {
+      request: { pickId: readable, recordId: FAKE_IDS.letter },
+    }),
+  ).not.toHaveProperty("error");
+  await fakeMissingFiles(page, []);
+  expect(
+    (
+      await invoke(page, "vault_import_picked", {
+        request: { pickId: importPick, ...target },
+      })
+    ).error,
+  ).toMatchObject({ code: "not_found" });
 });
 
 test("restore refuses an active session and consumes a successful restore pick", async ({

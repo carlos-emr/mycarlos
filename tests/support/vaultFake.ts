@@ -945,7 +945,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             cancelViews();
             return;
           case "vault_export_pick":
-            refusePaused();
+            refuseLocked();
             return makePick("export", { recordId: request.recordId });
           case "vault_export_picked": {
             const chosen = pick(request.pickId, "export", true);
@@ -1152,7 +1152,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                 })
               : null;
           case "vault_import_picked": {
-            refusePaused();
             const chosen = pick(request.pickId, "import", true);
             if (
               chosen.profileId !== request.profileId ||
@@ -1160,6 +1159,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                 JSON.stringify(request.folderIds ?? [])
             )
               throw refuse("invalid", "native.error.19");
+            refusePaused();
             const imported: string[] = [];
             const skippedDuplicates: string[] = [];
             for (const name of state.importQueue.splice(0)) {
@@ -1221,6 +1221,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         snapshot: () => copy(state.snapshot),
         script: (command: string, outcome: Outcome) => {
           (state.script[command] ??= []).push(outcome);
+          save();
+        },
+        missingFiles: (names: string[]) => {
+          for (const record of state.snapshot.records)
+            record.available = !names.includes(record.displayName);
+          state.snapshot.recovery = names.length ? "lostObjects" : null;
           save();
         },
         pickFiles: (names: string[]) => {
@@ -1376,5 +1382,18 @@ export async function fakeViewDraws(
         viewDraws: () => { pending: number; cancelled: number };
       }
     ).viewDraws(),
+  );
+}
+
+/** Simulates encrypted files disappearing or returning between native requests. */
+export async function fakeMissingFiles(page: Page, names: string[]) {
+  await page.evaluate(
+    (names) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          missingFiles: (names: string[]) => void;
+        }
+      ).missingFiles(names),
+    names,
   );
 }
