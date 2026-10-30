@@ -48,6 +48,8 @@ function renderLibrary() {
     platform: vi.fn().mockResolvedValue("windows"),
     snapshot: vi.fn().mockResolvedValue(vault),
     isLockedPdf: vi.fn().mockResolvedValue(false),
+    // People's details, and the person fields in Add profile.
+    updateProfileDetails: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultBridge;
   render(
     <VaultLibrary
@@ -245,6 +247,13 @@ describe("targets and text sizes in the app (#67)", () => {
           press(label === "desktop" ? new RegExp(`^${name}`) : name);
         open("Security");
         expectComfortable("Security");
+        // Add profile and Edit details are dialogs (Ben, 29 Oct).
+        press("Add profile");
+        expectComfortable("add profile");
+        press("Cancel");
+        press("Edit details for FAKE Avery");
+        expectComfortable("edit details");
+        press("Cancel");
         open("Preferences");
         expectComfortable("Preferences");
       });

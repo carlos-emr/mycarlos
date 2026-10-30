@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { humanText } from "../test/humanText";
 import {
@@ -88,6 +94,103 @@ describe("required profile identity details", () => {
         }),
       ).not.toBeInTheDocument(),
     );
+  });
+  it("edits details in a dialog that gives focus back to the person's Edit details button", async () => {
+    const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    render(
+      <PersonDetailsList
+        people={[
+          {
+            id: "p1",
+            displayName: "FAKE Mary",
+            createdAtMs: 1,
+            fullName: "FAKE Mary Smith",
+            birthDate: "1958-03-12",
+          },
+        ]}
+        busy={false}
+        onSave={save}
+        refusalText="FAKE refusal from the vault"
+      />,
+    );
+    const edit = screen.getByRole("button", {
+      name: humanText("Edit details for FAKE Mary"),
+    });
+    expect(edit).toHaveAttribute("aria-haspopup", "dialog");
+    edit.focus();
+    fireEvent.click(edit);
+    let dialog = screen.getByRole("dialog", { name: "Edit details" });
+    const fullName = within(dialog).getByLabelText(
+      "Full name, as on clinic documents",
+    );
+    expect(fullName).toHaveFocus();
+    expect(fullName).toHaveValue("FAKE Mary Smith");
+    expect(within(dialog).getByLabelText("Date of birth")).toHaveValue(
+      "1958-03-12",
+    );
+    fireEvent.keyDown(fullName, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(edit).toHaveFocus();
+    expect(save).not.toHaveBeenCalled();
+
+    fireEvent.click(edit);
+    dialog = screen.getByRole("dialog", { name: "Edit details" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save details" }),
+    );
+    // Refused: the dialog stays open and says why.
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "FAKE refusal from the vault",
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save details" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(edit).toHaveFocus());
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+  it("opens a person with no details with the date box open, and one with only a full name as date unknown", () => {
+    render(
+      <PersonDetailsList
+        people={[
+          { id: "p1", displayName: "FAKE Fresh", createdAtMs: 1 },
+          {
+            id: "p2",
+            displayName: "FAKE Named",
+            createdAtMs: 2,
+            fullName: "FAKE Named Example",
+          },
+        ]}
+        busy={false}
+        onSave={vi.fn()}
+      />,
+    );
+    const open = (name: string) => {
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: humanText(`Edit details for ${name}`),
+        }),
+      );
+      const dialog = screen.getByRole("dialog", { name: "Edit details" });
+      return {
+        dialog,
+        unknown: within(dialog).getByRole("checkbox", {
+          name: "I don't know this person's date of birth",
+        }),
+        date: within(dialog).getByLabelText("Date of birth"),
+      };
+    };
+    let shown = open("FAKE Fresh");
+    expect(shown.unknown).not.toBeChecked();
+    expect(shown.date).toBeEnabled();
+    fireEvent.click(
+      within(shown.dialog).getByRole("button", { name: "Cancel" }),
+    );
+    shown = open("FAKE Named");
+    expect(shown.unknown).toBeChecked();
+    expect(shown.date).toBeDisabled();
   });
   it("disables editing while busy or read-only", () => {
     render(
