@@ -133,8 +133,9 @@ test("prepares a document's text for an AI with the keyboard, at 200% text", asy
     await expect(region).not.toContainText("Avery");
     await expect(region).not.toContainText("1961");
     // The marks name themselves for a screen reader.
+    // Fluent isolates the kind with invisible marks, so the match is loose.
     await expect(region.locator("mark").first()).toContainText(
-      "(removed: name)",
+      /\(removed: .?name.?\)/,
     );
     // Nothing reaches the window's edge at 200% text.
     const overflow = await preview.evaluate((dialog) => {
