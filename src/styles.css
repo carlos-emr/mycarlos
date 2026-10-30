@@ -624,6 +624,10 @@ h1, h2, p { margin: 0; }
 
 .dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: var(--backdrop); }
 .record-dialog { width: min(520px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: 0 24px 70px var(--dialog-shadow); }
+/* A word wider than its line breaks there instead of running out of the dialog: at 320px with
+   200% text in Arial's widths (no Roboto or Segoe UI), "CRIPTOGRAFADO" or "odzyskiwania…" can be.
+   break-word, not anywhere, so whole words still decide how things wrap. */
+.record-dialog { overflow-wrap: break-word; }
 /* #68: the warning before the automatic lock, over any other dialog. Large
    text and a large Keep open; at 400% the dialog scrolls, as every one does. */
 .lock-warning-backdrop { z-index: 30; }
@@ -644,10 +648,15 @@ h1, h2, p { margin: 0; }
 .preview-paper i:first-child { width: 68%; height: 6px; background: var(--content-strong-line); }
 .preview-paper i:nth-child(4) { width: 82%; }
 .record-metadata { margin: 0; padding: 8px 20px; }
-.record-metadata div { display: flex; justify-content: space-between; gap: 20px; padding: 9px 0; border-bottom: 1px solid var(--metadata-line); font-size: 0.875rem; }
+/* The value takes the room beside its label and wraps there. Only when one of its words doesn't
+   fit beside the label does it go under it, still on the right (at 200% text on a phone,
+   "Mis documentos" or a date ran past the dialog's edge). Its basis is its longest word, so that
+   word decides the line; on a line of its own it may shrink below it, and a single word longer
+   than the row breaks. */
+.record-metadata div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 20px; padding: 9px 0; border-bottom: 1px solid var(--metadata-line); font-size: 0.875rem; }
 .record-metadata div:last-child { border-bottom: 0; }
 .record-metadata dt { color: var(--ink-soft); }
-.record-metadata dd { margin: 0; font-weight: 700; text-align: right; }
+.record-metadata dd { flex: 1 1 auto; width: min-content; min-width: 0; max-width: 100%; margin: 0; font-weight: 700; text-align: right; overflow-wrap: break-word; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid var(--line); }
 
 .evaluation-details { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow-sm); }
@@ -729,7 +738,21 @@ h1, h2, p { margin: 0; }
   .setting-row > .button { margin-left: auto; }
   .metric-grid { grid-template-columns: 1fr; }
   .metric-grid article { min-height: 82px; }
-  .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  /* Two buttons to a row, half each. A button whose longest word doesn't fit
+     its half gets a row of its own. A 1fr 1fr grid let such a button push the
+     other one past the dialog's start edge, where it can't be scrolled to
+     (e.g. "Annuler" beside "Enregistrer" at 200% text). */
+  .dialog-actions { flex-wrap: wrap; justify-content: flex-start; }
+  /* max-width: 100% caps each button's smallest width at the row. */
+  .dialog-actions > * { flex: 1 1 calc(50% - 4px); max-width: 100%; }
+  /* A button's words are one anonymous flex item, never narrower than its longest word, so
+     overflow-wrap can't break that word inside the button. In a column the words take the
+     button's whole width, and a word wider than the row breaks (.record-dialog's overflow-wrap);
+     the longest word still sets the button's smallest width, so it still decides when a button
+     gets a row of its own. A button with an icon keeps its row, its words in a span that may
+     shrink. Without :has() the rule is dropped and the button is as before. */
+  .dialog-actions > .button:not(:has(> svg)) { flex-direction: column; align-items: stretch; text-align: center; }
+  .dialog-actions > .button > span { min-width: 0; }
 }
 
 @media (max-width: 24.375em) {
@@ -951,9 +974,12 @@ h1, h2, p { margin: 0; }
 .recovery-key-about p { margin: 0; }
 .recovery-key-dialog .button, .recovery-key-dialog input { min-height: 44px; }
 .recovery-key-dialog .dialog-head h2:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.recovery-key-body { display: grid; gap: 12px; padding: 16px 20px; }
+/* One column the dialog's width: a wide field or button row must not stretch the dialog sideways
+   (the key check's field, 20 characters wide by default, did at 200% text on a phone). */
+.recovery-key-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px 20px; }
 .recovery-key-body p { margin: 0; overflow-wrap: anywhere; }
-.recovery-key-body label { display: grid; gap: 5px; font-weight: 700; }
+.recovery-key-body label { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; font-weight: 700; }
+.recovery-key-body label > input:not([type="radio"], [type="checkbox"]) { width: 100%; }
 .recovery-key-body input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: inherit; }
 .recovery-key-body [role="alert"] { color: var(--red); }
 .recovery-key-body fieldset { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
@@ -1058,8 +1084,9 @@ h1, h2, p { margin: 0; }
   .native-move-actions select { flex: 1; min-width: 130px; }
   .native-setting-form { display: grid; }
   .native-setting-form form, .native-danger-setting details { width: 100%; min-width: 0; }
-  .native-dialog-actions { grid-template-columns: 1fr; }
-  .native-dialog-actions label { width: 100%; }
+  /* minmax(0, 1fr): the Move to list's longest choice must not widen the dialog at 200% text. */
+  .native-dialog-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .native-dialog-actions label { width: 100%; grid-template-columns: minmax(0, 1fr); }
   .native-dialog-actions select { width: 100%; }
 }
 
