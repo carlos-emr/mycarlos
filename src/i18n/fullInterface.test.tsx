@@ -139,7 +139,10 @@ describe("the installed interface in the selected language", () => {
     const native = bridge();
     render(<VaultApp bridge={native} />);
     fireEvent.click(
-      await screen.findByRole("button", { name: "Choose files to import" }),
+      await screen.findByRole("button", {
+        name: "New",
+        description: "Choose files to import",
+      }),
     );
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
@@ -170,7 +173,10 @@ describe("the installed interface in the selected language", () => {
     });
     render(<VaultApp bridge={native} />);
     fireEvent.click(
-      await screen.findByRole("button", { name: "Choose files to import" }),
+      await screen.findByRole("button", {
+        name: "New",
+        description: "Choose files to import",
+      }),
     );
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(

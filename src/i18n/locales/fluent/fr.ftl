@@ -667,7 +667,7 @@ library-folder-items =
 
 library-folder-label = Dossier { $name }
 
-library-folder-open = Ouvrir { $name }
+library-folder-open = { $name }, ouvrir le dossier
 
 library-folder-rename = Renommer le dossier { $name }
 
@@ -881,7 +881,7 @@ notice-created = Coffre-fort chiffré créé. Configurez une clé de récupérat
 
 notice-createdThenLocked = Votre coffre-fort a été créé, puis verrouillé avant que sa clé de récupération puisse être créée. Déverrouillez-le pour en configurer une.
 
-notice-dropRefused = Pour importer des PDF, déverrouillez votre coffre-fort et utilisez { $button }. Le glisser-déposer déplace les documents déjà dans myCarlos.
+notice-dropRefused = Pour importer des PDF, déverrouillez votre coffre-fort et utilisez « { $button } ». Le glisser-déposer déplace les documents déjà dans myCarlos.
 
 notice-eraseCancelled = Rien n’a changé : le coffre-fort n’a pas été mis de côté.
 

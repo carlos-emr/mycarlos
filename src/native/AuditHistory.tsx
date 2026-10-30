@@ -14,6 +14,7 @@ import {
   type AuditHistoryView,
   type VaultBridge,
 } from "../vault";
+import { ANNOUNCE_DELAY_MS } from "./announce";
 
 const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   created: "interface.history.event.created",
@@ -150,11 +151,29 @@ export function AuditHistory({
   // A different native session must never display the previous request's rows
   // or error, including the render before its effect starts.
   const view = result?.bridge === bridge ? result.view : null;
-  const entries = view?.entries ?? null;
   const error = result?.bridge === bridge ? result.error : "";
   useEffect(() => {
     headingRef.current?.focus();
   }, []);
+  // The status line appears with this screen, and a screen reader reads a
+  // change in it only once it has taken the line in. So what was found is
+  // written no sooner than this after the screen opens (see announce.ts).
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(true), ANNOUNCE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const total = view ? view.entries.length + view.laterEntries.length : 0;
+  // Beside an error, or a damaged history with nothing that checks out, the
+  // alert says it all and the status line is empty at once.
+  const status: "loading" | "events" | "empty" | "none" =
+    error || (view !== null && !view.complete && total === 0)
+      ? "none"
+      : view === null || !settled
+        ? "loading"
+        : total > 0
+          ? "events"
+          : "empty";
   useEffect(() => {
     let current = true;
     void bridge.history().then(
@@ -196,27 +215,36 @@ export function AuditHistory({
           </p>
         </div>
       </div>
-      {error ? (
+      {error && (
         <p className="purpose-note warning" role="alert">
           {typeof error === "string" ? error : error.render()}
         </p>
-      ) : view === null || entries === null ? (
-        <p className="status-line" role="status" aria-live="polite">
-          {translateNow("interface.history.loading")}
+      )}
+      {/* A damaged history's warning comes first (D129). */}
+      {!error && view !== null && !view.complete && (
+        <p className="purpose-note warning" role="alert">
+          {damageNotice(view)}
         </p>
-      ) : (
-        <>
-          {!view.complete && (
-            <p className="purpose-note warning" role="alert">
-              {damageNotice(view)}
-            </p>
-          )}
-          {entries.length === 0 && view.laterEntries.length === 0 ? (
-            view.complete && <p>{translateNow("interface.history.empty")}</p>
-          ) : (
-            <HistoryList entries={entries} later={view.laterEntries} />
-          )}
-        </>
+      )}
+      {/* One status line, on the page from the start, so a screen reader
+          reads out the change from "checking" to what was found. "No history
+          events" is the page's only message, so it keeps a plain paragraph's
+          look. */}
+      <p
+        className={status === "empty" ? undefined : "status-line"}
+        role="status"
+        aria-live="polite"
+      >
+        {status === "loading"
+          ? translateNow("interface.history.loading")
+          : status === "events"
+            ? translateNow("interface.history.events", { count: total })
+            : status === "empty"
+              ? translateNow("interface.history.empty")
+              : ""}
+      </p>
+      {!error && view !== null && total > 0 && (
+        <HistoryList entries={view.entries} later={view.laterEntries} />
       )}
     </main>
   );
@@ -251,24 +279,17 @@ function HistoryList({
   later: AuditHistoryEntry[];
 }) {
   return (
-    <>
-      <p className="status-line" role="status">
-        {translateNow("interface.history.events", {
-          count: entries.length + later.length,
-        })}
-      </p>
-      <ol className="audit-history-list">
-        {[...later].reverse().map(historyItem)}
-        {later.length > 0 && entries.length > 0 && (
-          <li key="gap" className="audit-history-gap">
-            <p className="purpose-note warning">
-              {translateNow("interface.history.gap")}
-            </p>
-          </li>
-        )}
-        {[...entries].reverse().map(historyItem)}
-      </ol>
-    </>
+    <ol className="audit-history-list">
+      {[...later].reverse().map(historyItem)}
+      {later.length > 0 && entries.length > 0 && (
+        <li key="gap" className="audit-history-gap">
+          <p className="purpose-note warning">
+            {translateNow("interface.history.gap")}
+          </p>
+        </li>
+      )}
+      {[...entries].reverse().map(historyItem)}
+    </ol>
   );
 }
 

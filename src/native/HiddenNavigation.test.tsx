@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import type { VaultBridge, VaultRecord, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
-import { humanText } from "../test/humanText";
+import { humanText, visibleText } from "../test/humanText";
 
 const hiddenRecord = (id: string, profileId: string): VaultRecord => ({
   id,
@@ -120,9 +120,13 @@ describe("Hidden inside Security", () => {
         await user.click(
           within(section).getByRole("button", { name: security }),
         );
-        const entry = screen.getByRole("button", {
-          name: new RegExp(`^${hidden} 1`),
-        });
+        // Hidden, then what its count counts (WCAG 2.5.3: visible words first).
+        const entryName = humanText(
+          new RegExp(
+            `^${hidden} ${visibleText(translate(locale, "sidebar.documents", { count: 1 }))}`,
+          ),
+        );
+        const entry = screen.getByRole("button", { name: entryName });
         const explanation = entry.closest("section")!;
         expect(explanation).toHaveTextContent(
           translate(
@@ -175,12 +179,8 @@ describe("Hidden inside Security", () => {
         expect(back).toHaveFocus();
         await user.keyboard("{Enter}");
         expect(screen.getByRole("heading", { name: security })).toBeVisible();
-        expect(
-          screen.getByRole("button", { name: new RegExp(`^${hidden} 1`) }),
-        ).toHaveFocus();
-        await user.click(
-          screen.getByRole("button", { name: new RegExp(`^${hidden} 1`) }),
-        );
+        expect(screen.getByRole("button", { name: entryName })).toHaveFocus();
+        await user.click(screen.getByRole("button", { name: entryName }));
         await user.click(
           screen.getByRole("button", {
             name: translate(locale, "interface.hidden.restore", {
@@ -204,7 +204,13 @@ describe("Hidden inside Security", () => {
           }),
         );
         expect(
-          screen.getByRole("button", { name: new RegExp(`^${hidden} 0`) }),
+          screen.getByRole("button", {
+            name: humanText(
+              new RegExp(
+                `^${hidden} ${visibleText(translate(locale, "sidebar.documents", { count: 0 }))}`,
+              ),
+            ),
+          }),
         ).toBeEnabled();
         const securityNav = within(section).getByRole("button", {
           name: security,
@@ -221,7 +227,9 @@ describe("Hidden inside Security", () => {
     const user = userEvent.setup();
     const bridge = library();
     await user.click(screen.getByRole("button", { name: "Security" }));
-    await user.click(screen.getByRole("button", { name: /^Hidden 1/ }));
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^Hidden 1 document/) }),
+    );
     const row = screen.getByRole("article", {
       name: humanText("FAKE avery-hidden {name}.pdf, hidden"),
     });
@@ -237,7 +245,13 @@ describe("Hidden inside Security", () => {
     await user.click(
       screen.getByRole("button", { name: "Powrót do zabezpieczeń" }),
     );
-    const entry = screen.getByRole("button", { name: /^Ukryte 1/ });
+    const entry = screen.getByRole("button", {
+      name: humanText(
+        new RegExp(
+          `^Ukryte ${visibleText(translate("pl", "sidebar.documents", { count: 1 }))}`,
+        ),
+      ),
+    });
     expect(entry).toHaveTextContent("FAKE Avery");
     expect(bridge.unhideRecord).not.toHaveBeenCalled();
   });
@@ -249,7 +263,9 @@ describe("Hidden inside Security", () => {
       const user = userEvent.setup();
       const bridge = library({ [state]: true });
       await user.click(screen.getByRole("button", { name: "Security" }));
-      await user.click(screen.getByRole("button", { name: /^Hidden 1/ }));
+      await user.click(
+        screen.getByRole("button", { name: humanText(/^Hidden 1 document/) }),
+      );
       const restore = screen.getByRole("button", {
         name: humanText("Restore FAKE avery-hidden {name}.pdf"),
       });

@@ -1,9 +1,10 @@
-import { t as translateNow, useI18n, formatNumber } from "../i18n";
+import { t as translateNow, useI18n } from "../i18n";
 import { Fragment, useMemo } from "react";
 import { Icon } from "../Icon";
 
 import type { PatientProfile, VaultFolder, VaultRecord } from "../vault";
 import type { VaultDragDrop } from "./useVaultDragDrop";
+import { SpokenCount } from "./SpokenCount";
 
 interface LibrarySidebarProps {
   /** The brand line: the open person's name, or the vault's while Shared
@@ -169,9 +170,7 @@ export function LibrarySidebar({
                     ? person.displayName
                     : translateNow("sidebar.myRecords")}
                 </span>
-                <span className="nav-count">
-                  {formatNumber(counts.loose.get(person.id) ?? 0)}
-                </span>
+                <SpokenCount count={counts.loose.get(person.id) ?? 0} />
               </button>
               {(trees.get(person.id) ?? []).map(({ folder, depth }) => {
                 const zone = `sidebar:${folder.id}`;
@@ -194,7 +193,7 @@ export function LibrarySidebar({
                     // Two people can each have a "Lab results": say whose.
                     aria-label={
                       several
-                        ? `${folder.name} (${person.displayName}) ${formatNumber(counts.byFolder.get(folder.id) ?? 0)}`
+                        ? `${folder.name} (${person.displayName}) ${translateNow("sidebar.documents", { count: counts.byFolder.get(folder.id) ?? 0 })}`
                         : undefined
                     }
                     draggable={movable || undefined}
@@ -209,9 +208,7 @@ export function LibrarySidebar({
                   >
                     <Icon name="folder" />{" "}
                     <span className="native-nav-name">{folder.name}</span>
-                    <span className="nav-count">
-                      {formatNumber(counts.byFolder.get(folder.id) ?? 0)}
-                    </span>
+                    <SpokenCount count={counts.byFolder.get(folder.id) ?? 0} />
                   </button>
                 );
               })}
@@ -279,6 +276,7 @@ export function LibrarySidebar({
         <button
           className={section === "preferences" ? "selected" : ""}
           type="button"
+          aria-current={section === "preferences" ? "page" : undefined}
           onClick={onOpenPreferences}
         >
           <Icon name="settings" /> {translateNow("sidebar.preferences")}

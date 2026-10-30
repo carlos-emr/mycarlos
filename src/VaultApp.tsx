@@ -87,9 +87,6 @@ const PICKER_GRACE_MS = 15 * 60 * 1000;
 // 5 seconds after this screen's own deadline (the native 2-second check only
 // adds to that).
 const TOUCH_THROTTLE_MS = 10_000;
-// The library's import button, named in a notice as the library shows it:
-// in English until the library is translated.
-const IMPORT_BUTTON = "interface.VaultApp.chooseFilesToImport";
 
 export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
   useI18n();
@@ -210,7 +207,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         setNotice(
           deferredText(() =>
             translateCurrent("notice.dropRefused", {
-              button: translateCurrent(IMPORT_BUTTON),
+              // The import button, named as the library shows it ("New").
+              button: translateCurrent("interface.VaultLibrary.new"),
             }),
           ),
         );

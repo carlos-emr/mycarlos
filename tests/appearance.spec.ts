@@ -398,7 +398,7 @@ test("manual high contrast persists with readable controls and yields to OS colo
   await screenshot(page, info, "manual-high-contrast-preferences");
   await section(page, info, "records");
   await expect(
-    page.getByRole("button", { name: "Choose files to import" }),
+    page.getByRole("button", { name: "New", exact: true }),
   ).toBeDisabled();
   await contrast(page, text, "color", 7);
   await contrast(page, fields, "border-top-color", 3);

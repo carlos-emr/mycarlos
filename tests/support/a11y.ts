@@ -17,9 +17,17 @@ export const WCAG_TAGS = [
 
 export type VaultStart = "absent" | "locked" | "unlocked";
 
+/** Clinic linking in the fake: off (the section is not shown), on with no
+ * clinic yet, or one linked clinic waiting for or holding its approval. */
+export type FakePortal = "off" | "none" | "awaiting" | "approved";
+
 export interface FakeVaultOptions {
   /** The vault has a recovery key; without one, unlocking may offer one. */
   recoveryKey?: boolean;
+  /** Clinic documents in Security; "off" by default, as on a build without it. */
+  portal?: FakePortal;
+  /** A third document, hidden by the patient, so Hidden has something to list. */
+  hiddenDocument?: boolean;
 }
 
 /**
@@ -35,9 +43,31 @@ export async function fakeVault(
   options: FakeVaultOptions = {},
 ) {
   await page.addInitScript(
-    ({ start, recoveryKey }) => {
+    ({ start, recoveryKey, portal, hiddenDocument }) => {
       let status = start;
+      const link = (approved: boolean) => ({
+        id: "link",
+        portalBase: "https://portal.fake-clinic.example/patient",
+        deviceName: "myCarlos on Windows",
+        profileId: null as string | null,
+        clinicName: "FAKE Family Clinic",
+        fingerprints: ["FAKE-KEY-FINGERPRINT"],
+        incomplete: false,
+        deviceKeyId: "FAKE-device-key",
+        deviceFingerprint: "FAKE 1234 5678 9ABC DEF0 1234 5678 9ABC DEF0",
+        approvalRequested: true,
+        clinicApproved: approved,
+        approvalStatus: (approved ? "accepted" : "pending") as string | null,
+        approvalReason: null as string | null,
+      });
       const snapshot = {
+        portalLinkingEnabled: portal !== "off",
+        portalLinks:
+          portal === "awaiting"
+            ? [link(false)]
+            : portal === "approved"
+              ? [link(true)]
+              : [],
         profiles: [
           { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
         ],
@@ -80,6 +110,25 @@ export async function fakeVault(
             importedAtMs: Date.UTC(2026, 9, 3, 12),
             available: true,
           },
+          ...(hiddenDocument
+            ? [
+                {
+                  id: "hidden",
+                  profileId: "profile",
+                  folderIds: [] as string[],
+                  displayName: "FAKE Old Referral.pdf",
+                  sourceLabel: "Manual import — unverified",
+                  mediaType: "application/pdf",
+                  plaintextSize: 512,
+                  importedAtMs: Date.UTC(2026, 8, 20, 12),
+                  available: true,
+                  hidden: {
+                    atMs: Date.UTC(2026, 9, 6, 12),
+                    reason: "patient" as "patient" | "damaged",
+                  } as { atMs: number; reason: "patient" | "damaged" } | null,
+                },
+              ]
+            : []),
         ],
         recovery: null,
         recoveryKeySetAtMs: recoveryKey ? 1 : null,
@@ -93,7 +142,10 @@ export async function fakeVault(
           folderId?: string;
           parentId?: string | null;
           name?: string;
+          portalBase?: string;
+          deviceName?: string;
         };
+        linkId?: string;
       };
       const unexpected: string[] = [];
       const calls: string[] = [];
@@ -161,6 +213,66 @@ export async function fakeVault(
                 if (folder.id === request.folderId)
                   folder.parentId = request.parentId ?? null;
               return;
+            // Clinic linking: the native side links, asks for approval and
+            // picks documents up; here it only changes the fake's state.
+            case "vault_portal_link": {
+              const added = {
+                ...link(false),
+                approvalRequested: false,
+                approvalStatus: null,
+                portalBase: request.portalBase ?? "",
+                deviceName: request.deviceName ?? "",
+              };
+              snapshot.portalLinks = [added];
+              return structuredClone(added);
+            }
+            case "vault_request_device_approval":
+            case "vault_restart_device_approval":
+              for (const item of snapshot.portalLinks)
+                if (item.id === args?.linkId) {
+                  item.approvalRequested = true;
+                  item.approvalStatus = "pending";
+                }
+              return;
+            case "vault_check_documents":
+              return { added: 0, refused: 0, issues: [], receiptsPending: 0 };
+            case "vault_hide_record":
+            case "vault_unhide_record":
+              for (const record of snapshot.records)
+                if (record.id === request.recordId)
+                  Reflect.set(
+                    record,
+                    "hidden",
+                    command === "vault_hide_record"
+                      ? { atMs: Date.UTC(2026, 9, 7, 12), reason: "patient" }
+                      : null,
+                  );
+              return;
+            // Security's history: two events, all checked.
+            case "vault_history": {
+              const event = (seq: number, kind: string) => ({
+                seq,
+                atMs: Date.UTC(2026, 9, 1, 12) + seq * 60_000,
+                app: "FAKE 0.1.0",
+                event: kind,
+                name: kind === "imported" ? "FAKE Bloodwork.pdf" : null,
+                oldName: null,
+                from: null,
+                fromTotal: null,
+                to: null,
+                toTotal: null,
+                how: kind === "imported" ? "picked" : null,
+                place: null,
+                previousSession: null,
+              });
+              return {
+                entries: [event(1, "created"), event(2, "imported")],
+                laterEntries: [],
+                complete: true,
+                checkedUntilMs: null,
+                checkedFromMs: null,
+              };
+            }
             case "vault_import_pick":
               return "FAKE-pick";
             case "vault_import_picked":
@@ -188,7 +300,12 @@ export async function fakeVault(
         },
       });
     },
-    { start, recoveryKey: options.recoveryKey ?? true },
+    {
+      start,
+      recoveryKey: options.recoveryKey ?? true,
+      portal: options.portal ?? "off",
+      hiddenDocument: options.hiddenDocument ?? false,
+    },
   );
 }
 
@@ -358,7 +475,55 @@ export async function expectHeadingsInOrder(
   expect(skips, `${where}: headings that skip a level`).toEqual([]);
 }
 
-/** axe, names and headings for one screen or dialog. */
+/** The name a screen reader gives the element `locator` points at, read
+ * from Playwright's aria snapshot. Two gaps: a name over 900 characters is
+ * left out of the snapshot, and one written like a pattern (/…/) is not
+ * quoted; either comes back "" (and so is reported, not passed). */
+async function accessibleName(locator: Locator) {
+  let line = (await locator.ariaSnapshot().catch(() => "")).split("\n")[0];
+  line = line.replace(/^- /, "");
+  // A key with ": " in it is written as a single-quoted YAML string, maybe
+  // followed by ": <the control's own text>".
+  const yamlQuoted = /^'((?:[^']|'')*)'(:.*)?$/.exec(line);
+  if (yamlQuoted) line = yamlQuoted[1].replaceAll("''", "'");
+  const quoted = /^[\w-]+ "((?:[^"\\]|\\.)*)"/.exec(line);
+  return quoted ? (JSON.parse(`"${quoted[1]}"`) as string) : "";
+}
+
+const comparable = (text: string) =>
+  visibleHumanText(text)
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+/**
+ * WCAG 2.5.3 Label in Name: a control's name starts with the words it shows
+ * (its first visible line), so someone who sees "New" can say "click New".
+ * Anything more (a count, what the control does) goes after them, or in its
+ * description. Icon-only controls show no words and are left to
+ * expectEveryControlNamed.
+ */
+export async function expectVisibleWordsLeadNames(
+  scope: Locator,
+  where: string,
+) {
+  const offenders: string[] = [];
+  const controls = scope.locator(
+    "button, a[href], [role=button], [role=link], [role=tab], [role=menuitem]",
+  );
+  for (const control of await controls.all()) {
+    if (!(await control.isVisible())) continue;
+    const shown = (await control.innerText()).split("\n")[0] ?? "";
+    if (!comparable(shown)) continue;
+    const name = await accessibleName(control);
+    if (!comparable(name).startsWith(comparable(shown)))
+      offenders.push(`shows "${shown.trim()}", named "${name}"`);
+  }
+  expect(offenders, `${where}: visible words lead each name`).toEqual([]);
+}
+
+/** axe, names, visible words leading names (WCAG 2.5.3) and headings, for
+ * one screen or dialog. */
 export async function screenReaderSmoke(
   page: Page,
   where: string,
@@ -367,6 +532,7 @@ export async function screenReaderSmoke(
   await expectNoAxeViolations(page, where);
   const scope = dialog ?? page.locator("body");
   await expectEveryControlNamed(scope, where);
+  await expectVisibleWordsLeadNames(scope, where);
   await expectHeadingsInOrder(scope, where, Boolean(dialog));
 }
 

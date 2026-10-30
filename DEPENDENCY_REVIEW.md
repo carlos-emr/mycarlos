@@ -399,3 +399,31 @@ Unchanged shared M0 package vectors and RFC 9180 A.2.1 sequence zero have passed
 on Linux. Actual Java-produced PAdES package opening and retained receipt
 verification have also passed with explicit FAKE test trust. This is neither
 an independent dependency approval nor Windows/native portal enablement.
+
+## Added for screen-reader tests (28 October 2026)
+
+`@guidepup/virtual-screen-reader` **0.33.0** (MIT), a dev dependency only, pinned
+exactly. Published 20 September 2026, more than two weeks before it was added.
+It reads a rendered component as a screen reader would, in order, with roles,
+states, descriptions and polite/assertive live-region announcements, so the
+component tests in `src/native/screenReader.test.tsx` can check what is heard. It
+runs in the Vitest browser tests (headless Chromium) on the real DOM, and does
+not bring back jsdom.
+
+The lockfile gains three entries, all MIT:
+- `@guidepup/virtual-screen-reader` 0.33.0;
+- its own nested `dom-accessibility-api` 0.7.1 (published 27 November 2025); the
+  copies already in the tree (0.5.x for Testing Library, 0.6.3 under jest-dom)
+  are unchanged;
+- `html-aria` 0.5.3 (published 27 July 2025).
+
+Its other dependencies, `@testing-library/dom` and `@testing-library/user-event`,
+were already in the tree, at the same versions. Because `@testing-library/dom`
+is now a direct dependency of the new package, not only a peer, npm drops the
+`"peer": true` marker from it and its nine existing dependencies (ten entries);
+their versions and sources did not change.
+npm also re-sorted `package.json`'s dependency lists alphabetically on save,
+which moved the two `@fluent/*` entries; no version changed. Installed with
+`npm install --save-dev --save-exact` under Node 22.14 (the
+project's minimum for its native bundler binding), then checked with `npm ci`.
+Nothing ships in the app.

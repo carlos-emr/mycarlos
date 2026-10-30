@@ -577,7 +577,7 @@ library-folder-items = { $count } 個項目
 
 library-folder-label = { $name } 資料夾
 
-library-folder-open = 開啟 { $name }
+library-folder-open = { $name }，開啟資料夾
 
 library-folder-rename = 重新命名資料夾 { $name }
 
@@ -771,7 +771,7 @@ notice-created = 已建立加密保險庫。請設定復原金鑰，避免忘記
 
 notice-createdThenLocked = 保險庫已建立，但在建立復原金鑰前就已鎖定。請解鎖後設定復原金鑰。
 
-notice-dropRefused = 若要匯入 PDF，請解鎖保險庫並使用 { $button }。拖放功能會移動 myCarlos 中已有的文件。
+notice-dropRefused = 若要匯入 PDF，請解鎖保險庫並使用「{ $button }」。拖放功能會移動 myCarlos 中已有的文件。
 
 notice-eraseCancelled = 沒有變更任何內容：保險庫未擱置。
 
