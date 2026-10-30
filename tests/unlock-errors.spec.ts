@@ -63,6 +63,7 @@ test("a wrong passphrase, then the wait after wrong tries, are said by the Passp
   await page.goto("/");
   const { heading, passphrase, unlock } = unlockScreen(page);
   await expect(heading).toBeVisible();
+  await expect(passphrase).toBeFocused();
 
   // Wrong: said by the box, which is emptied for the next try.
   await passphrase.fill(WRONG_PASSPHRASE);

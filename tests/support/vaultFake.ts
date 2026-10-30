@@ -336,7 +336,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             importedAtMs: Date.UTC(2026, 9, 4, 12),
             available: true,
           });
-          documentPasswords.locked = setup.documentPassword;
+          documentPasswords[setup.ids.locked] = setup.documentPassword;
         }
         const hasKey = setup.start !== "absent" && setup.recoveryKey !== null;
         const snapshot: Snapshot = {

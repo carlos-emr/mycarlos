@@ -8,6 +8,7 @@ import {
   fakeCalls,
   fakeCommands,
   fakePageText,
+  fakeViewDraws,
   fakeVaultWith,
   lockedOriginalName,
   openDetails,
@@ -166,6 +167,27 @@ test("reads a document page by page, with zoom and the page's text, and Close go
   await button("interface.DocumentReader.fitWidth").click();
   await expect(zoom(100)).toBeVisible();
   await expect(button("interface.DocumentReader.fitWidth")).toBeDisabled();
+  // Check the rendered page, not just the zoom label: it fills the page
+  // area's content box without leaving a horizontal scrollbar.
+  await expect
+    .poll(async () =>
+      picture(2).evaluate((image) => {
+        const area = image.parentElement!;
+        const style = getComputedStyle(area);
+        const available =
+          area.clientWidth -
+          parseFloat(style.paddingLeft) -
+          parseFloat(style.paddingRight);
+        return Math.abs(image.getBoundingClientRect().width - available);
+      }),
+    )
+    .toBeLessThanOrEqual(1);
+  expect(await pageArea(2).evaluate((area) => area.clientWidth)).toBeGreaterThan(
+    200,
+  );
+  expect(
+    await pageArea(2).evaluate((area) => area.scrollWidth <= area.clientWidth),
+  ).toBe(true);
 
   await button("interface.DocumentReader.previousPage").click();
   await expect(picture(1)).toBeVisible();
@@ -395,10 +417,11 @@ test("the reader closes, and stops the page being drawn, when the vault locks as
     en("interface.reader.opening", { page: 1 }),
   );
 
-  // The first page's draw has been asked for and is still pending.
+  // The first page's draw is actually pending, not merely logged as asked for.
   await expect
-    .poll(async () => (await fakeCalls(page, "vault_view_page")).length)
+    .poll(async () => (await fakeViewDraws(page)).pending)
     .toBeGreaterThan(0);
+  const pendingBeforeLock = (await fakeViewDraws(page)).pending;
 
   await minimize(page);
   await expect(
@@ -412,6 +435,14 @@ test("the reader closes, and stops the page being drawn, when the vault locks as
   expect(commands).toContain("vault_lock");
   expect(commands.lastIndexOf("vault_view_cancel")).toBeGreaterThan(
     commands.indexOf("vault_view_page"),
+  );
+  // The native cancellation has settled the in-flight draw(s). A cancel
+  // command that merely logs a call while leaving the promise pending fails.
+  await expect
+    .poll(async () => (await fakeViewDraws(page)).pending)
+    .toBe(0);
+  expect((await fakeViewDraws(page)).cancelled).toBeGreaterThanOrEqual(
+    pendingBeforeLock,
   );
   await expectOnlyFakedCommands(page);
 });
