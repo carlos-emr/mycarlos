@@ -411,9 +411,11 @@ h1, h2, p { margin: 0; }
 }
 .chip:hover { background: var(--canvas); }
 .chip.selected { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); font-weight: 700; }
-.view-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* #84: with larger text, List and Grid move under the sort choice instead of past the window's edge. */
+.view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
 .segment { display: inline-flex; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
-.segment button { display: grid; place-items: center; width: 38px; min-height: 35px; padding: 7px 10px; border: 0; background: transparent; color: var(--ink-soft); }
+/* #84: a minimum width, so larger text widens List and Grid instead of cutting their icons off. */
+.segment button { display: grid; place-items: center; min-width: 38px; min-height: 35px; padding: 7px 10px; border: 0; background: transparent; color: var(--ink-soft); }
 .segment button + button { border-left: 1px solid var(--line); }
 .segment button.selected { background: var(--teal-soft); color: var(--teal-dark); }
 .status-line { min-height: 18px; margin: 0 2px 8px; color: var(--ink-soft); font-size: 0.875rem; }
@@ -453,9 +455,11 @@ h1, h2, p { margin: 0; }
 .native-reader-password input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
 
 .filelist { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+/* #84: the last column (More options) grows with the text, so larger text doesn't cut the
+   button off; a set width, not one per row, keeps every row's columns under their headings. */
 .file-head, .file-row {
   display: grid;
-  grid-template-columns: 30px minmax(210px, 1fr) minmax(6.5rem, 11.875rem) 9.5rem 34px;
+  grid-template-columns: 30px minmax(210px, 1fr) minmax(6.5rem, 11.875rem) 9.5rem max(34px, 2.125rem);
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -634,7 +638,8 @@ h1, h2, p { margin: 0; }
 .dialog-head { display: flex; align-items: flex-start; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
 .dialog-head > div { min-width: 0; }
 .dialog-head h2 { overflow: hidden; font-size: 1.125rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.dialog-close { flex: none; width: 34px; height: 34px; margin-left: auto; padding: 0; border: 0; border-radius: 8px; background: var(--canvas); color: var(--ink-soft); font-size: 1.5rem; line-height: 1; }
+/* #84: minimum sizes in rem, so Close grows with larger text instead of cutting off its ×. */
+.dialog-close { flex: none; min-width: 2.125rem; min-height: 2.125rem; margin-left: auto; padding: 0; border: 0; border-radius: 8px; background: var(--canvas); color: var(--ink-soft); font-size: 1.5rem; line-height: 1; }
 .dialog-close:hover { background: var(--canvas-2); color: var(--ink); }
 .document-preview { position: relative; display: grid; justify-items: center; gap: 10px; padding: 22px 20px 16px; background: var(--canvas); }
 .document-preview > .document-icon { position: absolute; justify-self: start; }
@@ -685,12 +690,13 @@ h1, h2, p { margin: 0; }
   .mobile-section-picker select { flex: 1; min-width: 0; min-height: 38px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
   .app-body { grid-template-columns: 1fr; }
   .sidebar { display: none; }
-  .file-head, .file-row { grid-template-columns: 30px minmax(0, 1fr) 34px; }
+  .file-head, .file-row { grid-template-columns: 30px minmax(0, 1fr) max(34px, 2.125rem); }
   .file-head .column, .file-row .column { display: none; }
   .trash-list .file-head, .trash-list .file-row { grid-template-columns: 24px minmax(0, 1fr) 4.5rem 3.75rem; }
   .trash-list .file-row .countdown, .native-hidden-list .file-row .hidden-date { display: block; overflow: visible; white-space: normal; line-height: 1.3; }
-  /* The location column is hidden here, so the name is the only way to tell items apart. */
-  .trash-list .name-copy strong { white-space: normal; overflow-wrap: anywhere; }
+  /* Most columns are hidden here, so the name is the only way to tell items apart:
+     it wraps instead of being cut short (#84), as in the vault's list (#67). */
+  .file-row :is(.record-open, .name-copy strong) { white-space: normal; overflow-wrap: anywhere; }
 }
 
 @media (max-width: 40em) {
@@ -710,7 +716,7 @@ h1, h2, p { margin: 0; }
   .filter-chips { width: 100%; }
   .view-controls { margin-left: 0; }
   .status-line { margin-top: 2px; }
-  .file-head, .file-row { grid-template-columns: 24px minmax(0, 1fr) 28px; gap: 10px; padding: 10px 12px; }
+  .file-head, .file-row { grid-template-columns: 24px minmax(0, 1fr) max(28px, 1.9rem); gap: 10px; padding: 10px 12px; }
   .file-row { min-height: 68px; }
   .file-head { min-height: 48px; }
   .document-icon { width: 36px; height: 36px; }
