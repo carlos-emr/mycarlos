@@ -16,6 +16,9 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
   isWrongPdfPassword,
+  isLockedError,
+  isCancelledError,
+  isMissingVaultError,
   localDateText,
   namedDamage,
   type BoxKey,
@@ -221,6 +224,7 @@ export function VaultLibrary({
     recordId: string;
     url: string;
   } | null>(null);
+  const photoRequestRef = useRef<symbol | null>(null);
   // The result of a dialog's action (a rename, a recovery key), given once the
   // dialog has closed (see the effect below), and the document whose details
   // it was started from, if any.
@@ -519,6 +523,9 @@ export function VaultLibrary({
       ? activeRecord.id
       : null;
   useEffect(() => {
+    // Closing/reopening details starts a new selection session, even for the
+    // same record. An older native read no longer owns its photo view.
+    photoRequestRef.current = null;
     setPhotoRecordId(null);
     setShownPhoto(null);
     if (!photoCandidate) return;
@@ -532,6 +539,7 @@ export function VaultLibrary({
     );
     return () => {
       current = false;
+      photoRequestRef.current = null;
     };
   }, [bridge, photoCandidate]);
   // A PDF that may be locked with a password can be unlocked from its details
@@ -594,8 +602,26 @@ export function VaultLibrary({
   };
   const viewPhoto = (recordId: string) =>
     run(async () => {
-      const url = await bridge.viewPhoto(recordId);
-      setShownPhoto({ recordId, url });
+      const request = Symbol();
+      photoRequestRef.current = request;
+      const current = () =>
+        mountedRef.current &&
+        photoRequestRef.current === request &&
+        activeRecordIdRef.current === recordId;
+      try {
+        const url = await bridge.viewPhoto(recordId);
+        if (current()) setShownPhoto({ recordId, url });
+      } catch (failure) {
+        // A dismissed view's ordinary read failure does not belong to the next
+        // document. Native lock/session failures still reach the app's runner.
+        if (
+          current() ||
+          isLockedError(failure) ||
+          isCancelledError(failure) ||
+          isMissingVaultError(failure)
+        )
+          throw failure;
+      }
     });
 
   // A folder opened from another person's tree in the sidebar: the person
