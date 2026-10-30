@@ -1,9 +1,16 @@
 import { humanText } from "../test/humanText";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { CameraDialog } from "./CameraDialog";
+import { setLocaleOverride, translate } from "../i18n";
 
 const EXPLAINED_KEY = "mycarlos.cameraExplained.v1";
 const AXE = {
@@ -79,6 +86,74 @@ async function startCamera() {
 }
 
 describe("CameraDialog", () => {
+  it("rewords a permission refusal and phone help without asking for the camera again", async () => {
+    setLocaleOverride("en");
+    getUserMedia.mockRejectedValueOnce(
+      new DOMException("FAKE denied", "NotAllowedError"),
+    );
+    const { onClose, onUse } = open({ platform: "ios" });
+    fireEvent.click(button("Use the camera"));
+    const alert = await screen.findByRole("alert");
+    const retry = button("Try again");
+    await waitFor(() => expect(retry).toHaveFocus());
+
+    act(() => setLocaleOverride("pl"));
+    expect(screen.getByRole("alert")).toBe(alert);
+    expect(alert).toHaveHumanTextContent(
+      "myCarlos nie może używać aparatu. Proszę otworzyć Ustawienia telefonu, następnie myCarlos i włączyć Aparat. Następnie proszę wybrać Spróbuj ponownie.",
+    );
+    expect(button("Spróbuj ponownie")).toBe(retry);
+    expect(retry).toHaveFocus();
+
+    act(() => setLocaleOverride("pt-BR"));
+    expect(alert).toHaveHumanTextContent(
+      "O myCarlos não pode usar a câmera. Abra os Ajustes do celular, depois myCarlos, e ative a Câmera. Depois, escolha Tentar de novo.",
+    );
+    expect(retry).toHaveFocus();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(onUse).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("keeps the captured pixels and stopped camera while translating the preview", async () => {
+    setLocaleOverride("en");
+    const { onUse, onClose } = open();
+    await startCamera();
+    fireEvent.click(shutter());
+    const photo = screen.getByRole("img", {
+      name: humanText("The photo you took"),
+    }) as HTMLCanvasElement;
+    const pixels = photo.toDataURL();
+    const use = button("Use photo");
+    await waitFor(() => expect(use).toHaveFocus());
+    expect(ended(streams[0])).toBe(true);
+
+    for (const locale of ["pl", "pt-BR", "en"] as const) {
+      act(() => setLocaleOverride(locale));
+      expect(
+        screen.getByRole("img", {
+          name: translate(locale, "interface.CameraDialog.thePhotoYouTook"),
+        }),
+      ).toBe(photo);
+      expect(photo).toBeVisible();
+      expect(photo.toDataURL()).toBe(pixels);
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        translate(
+          locale,
+          "interface.CameraDialog.photoTakenRetakeOrUseThePhoto",
+        ),
+      );
+      expect(button(translate(locale, "interface.CameraDialog.usePhoto"))).toBe(
+        use,
+      );
+      expect(use).toHaveFocus();
+      expect(ended(streams[0])).toBe(true);
+      expect(getUserMedia).toHaveBeenCalledTimes(1);
+    }
+    expect(onUse).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("explains first, asks for video only after the tap, and saves a JPEG", async () => {
     const { onUse, saved } = open();
     const dialog = screen.getByRole("dialog", {
