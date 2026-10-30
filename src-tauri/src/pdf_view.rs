@@ -22,26 +22,52 @@ use zeroize::Zeroizing;
 /// The latest page request; an older one still drawing is stopped.
 static VIEW_GENERATION: AtomicU64 = AtomicU64::new(0);
 static IDENTITY_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// The latest whole-document text read (#72, AI-10): its own generation, so
+/// that the reader's page requests and closing do not end it, while a lock
+/// and the preview closing do.
+static TEXT_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TicketKind {
+    View,
+    Identity,
+    Text,
+}
 
 /// One page request. It stays current until a newer request, a lock or the reader closing.
 #[derive(Clone, Copy)]
-pub(crate) struct ViewTicket(u64, bool);
+pub(crate) struct ViewTicket(u64, TicketKind);
 
 impl ViewTicket {
     pub(crate) fn new() -> Self {
-        Self(VIEW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1, false)
+        Self(
+            VIEW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1,
+            TicketKind::View,
+        )
     }
 
     /// Background suggestions cannot supersede the reader's page request.
     pub(crate) fn identity() -> Self {
-        Self(IDENTITY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1, true)
+        Self(
+            IDENTITY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1,
+            TicketKind::Identity,
+        )
+    }
+
+    /// A whole-document text read: ended by a lock, a newer read or the
+    /// preview closing, never by the reader.
+    pub(crate) fn text() -> Self {
+        Self(
+            TEXT_GENERATION.fetch_add(1, Ordering::SeqCst) + 1,
+            TicketKind::Text,
+        )
     }
 
     pub(crate) fn is_current(&self) -> bool {
-        let generation = if self.1 {
-            &IDENTITY_GENERATION
-        } else {
-            &VIEW_GENERATION
+        let generation = match self.1 {
+            TicketKind::View => &VIEW_GENERATION,
+            TicketKind::Identity => &IDENTITY_GENERATION,
+            TicketKind::Text => &TEXT_GENERATION,
         };
         generation.load(Ordering::SeqCst) == self.0
     }
@@ -51,6 +77,12 @@ impl ViewTicket {
 pub(crate) fn cancel_views() {
     IDENTITY_GENERATION.fetch_add(1, Ordering::SeqCst);
     VIEW_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Stops any whole-document text read: when the vault locks and when the
+/// preview closes.
+pub(crate) fn cancel_text_reads() {
+    TEXT_GENERATION.fetch_add(1, Ordering::SeqCst);
 }
 
 /// The request that asks the helper for a page.

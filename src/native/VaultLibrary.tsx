@@ -39,6 +39,8 @@ import { PortalDocuments } from "./PortalDocuments";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
+import { AnonymizePreview } from "./AnonymizePreview";
+import { AiHelperNotice } from "./AiHelperNotice";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
@@ -212,6 +214,16 @@ export function VaultLibrary({
   activeRecordIdRef.current = activeRecordId;
   // The document open in the reader, if any.
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
+  // The AI helper's preview (#72): open for one document at a time.
+  const [anonymizeRecordId, setAnonymizeRecordId] = useState<string | null>(
+    null,
+  );
+  // The notice about the AI helper: before the first export of this
+  // unlocked session (then the preview opens for `before`), or from Security.
+  const [aiNotice, setAiNotice] = useState<{ before: string | null } | null>(
+    null,
+  );
+  const [aiNoticeSeen, setAiNoticeSeen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
@@ -427,6 +439,8 @@ export function VaultLibrary({
     records.find((record) => record.id === activeRecordId) ?? null;
   const readerRecord =
     records.find((record) => record.id === readerRecordId) ?? null;
+  const anonymizeRecord =
+    records.find((record) => record.id === anonymizeRecordId) ?? null;
   const pendingAction =
     activeRecord && confirmation?.recordId === activeRecord.id
       ? confirmation.action
@@ -2160,6 +2174,9 @@ export function VaultLibrary({
                   setReturnFocusToHistory(false);
                   setSection("history");
                 }}
+                onOpenAiHelperNotice={
+                  computer ? () => setAiNotice({ before: null }) : undefined
+                }
                 people={people}
                 onUpdateProfileDetails={
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
@@ -2365,8 +2382,62 @@ export function VaultLibrary({
                       }
                     : undefined
                 }
+                // Computers only: the text comes from the PDF helper.
+                onAnonymize={
+                  namedAsPdf(activeRecord.displayName) && computer
+                    ? () => {
+                        if (aiNoticeSeen) setAnonymizeRecordId(activeRecord.id);
+                        else setAiNotice({ before: activeRecord.id });
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
               />
             )}
+          {aiNotice && (
+            <AiHelperNotice
+              action={aiNotice.before ? "continue" : "close"}
+              onClose={() => {
+                setAiNoticeSeen(true);
+                if (aiNotice.before) setAnonymizeRecordId(aiNotice.before);
+                setAiNotice(null);
+              }}
+            />
+          )}
+          {anonymizeRecord && !aiNotice && (
+            <AnonymizePreview
+              record={anonymizeRecord}
+              people={people}
+              clinicNames={[
+                ...(anonymizeRecord.verifiedClinicName
+                  ? [anonymizeRecord.verifiedClinicName]
+                  : []),
+                ...(snapshot.portalLinks ?? []).flatMap((link) =>
+                  link.clinicName ? [link.clinicName] : [],
+                ),
+              ]}
+              readText={(password) =>
+                bridge.documentText(anonymizeRecord.id, password)
+              }
+              cancelRead={() =>
+                void bridge.cancelDocumentText().catch(() => undefined)
+              }
+              knownDetails={() => bridge.recordKnownDetails(anonymizeRecord.id)}
+              pickDestination={(ticket) =>
+                bridge.pickTextExportDestination(anonymizeRecord.id, ticket)
+              }
+              saveText={(pickId, ticket, text) =>
+                bridge.exportTextToPicked(
+                  pickId,
+                  anonymizeRecord.id,
+                  ticket,
+                  text,
+                )
+              }
+              exportHeader={translateNow("aiHelper.exportHeader")}
+              onClose={() => setAnonymizeRecordId(null)}
+            />
+          )}
           {readerRecord && (
             <DocumentReader
               record={readerRecord}

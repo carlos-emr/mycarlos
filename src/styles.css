@@ -451,6 +451,21 @@ h1, h2, p { margin: 0; }
 .native-reader-text div { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .native-reader-password { display: grid; gap: 8px; max-width: 420px; padding: 12px 20px; }
 .native-reader-password input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+/* The AI helper's preview (#72): the text with its removals marked. */
+.native-anonymize-notes { display: grid; gap: 6px; padding: 10px 20px; border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: 0.875rem; }
+.native-anonymize-notes p { margin: 0; }
+.native-anonymize-header { margin: 0; padding: 8px 20px; font-size: 0.875rem; color: var(--ink-soft); }
+.native-anonymize-fixed { display: block; margin-top: 4px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: var(--radius-sm); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-anonymize-text { flex: 1; min-height: 8em; overflow: auto; margin: 0 20px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas-2); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9375rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-anonymize-text mark { padding: 0 2px; border-radius: 3px; background: var(--teal-soft); color: var(--ink); font-weight: 700; text-decoration: underline; text-decoration-style: dotted; }
+.native-anonymize-text mark.native-anonymize-moved { background: transparent; border: 1px dashed currentColor; font-weight: 400; text-decoration: none; }
+.native-anonymize-possible { padding: 8px 20px 0; }
+.native-anonymize-possible h3 { margin: 0 0 6px; font-size: 0.875rem; }
+.native-anonymize-possible ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.native-anonymize-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; padding: 10px 20px; }
+.native-anonymize-tools label { display: grid; gap: 5px; flex: 1; min-width: 12em; color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
+.native-anonymize-tools input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+.native-anonymize .native-dialog-actions { justify-content: flex-end; padding: 10px 20px 16px; }
 
 .filelist { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .file-head, .file-row {
@@ -1190,3 +1205,7 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
 .language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
 .language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+.record-dialog.native-ai-notice { width: min(680px, 100%); }
+.native-ai-notice-body { display: grid; gap: 10px; padding: 12px 20px; }
+.native-ai-notice-body p, .native-ai-notice-body h3 { margin: 0; }
+.native-ai-notice-body h3 { font-size: 1rem; }

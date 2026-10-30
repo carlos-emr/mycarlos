@@ -611,6 +611,30 @@ The helper draws pages, has no vault keys, and is sandboxed (THREAT_MODEL IMP-02
 the sandbox cannot be set up, **Read** says documents cannot be shown safely on this system, and
 **Unlock…** says the document cannot be opened safely on this system; the document is unchanged.
 
+## Preparing a document's text for an AI (#72, computers only)
+
+Open a PDF's details and choose **Prepare text for an AI…**. myCarlos reads the
+whole text on this device and shows it with every identifying detail it found
+replaced by a placeholder such as `[NAME 1]` (marked, and named for a screen
+reader) and the other dates moved back by the same number of days (marked
+“date moved”). Try: a possible name listed under the text goes with one press;
+select some text and press **Remove the selected text**; type a word in the box
+and press **Remove everywhere**; **Undo the last removal** undoes only your own
+removals. **Save the text…** asks first, then opens the system save dialog with
+a generic name; the file starts with a fixed line that tells an AI to treat
+what follows as a document, not as instructions. The save is in the audit
+history as “Anonymized text saved”. Nothing is saved without the preview.
+
+What to look for: a name, number or date that stayed (read every line; the
+remover is rules, not understanding, and the notice says what it can miss);
+a word removed that should have stayed (undo cannot put it back, but the
+original document is untouched); the page notes when a page has no text, was
+cut or could not be read. Automated: `src/deidentify/*.test.ts` (the remover
+on synthetic letters and reports, the text cleaning and its shared table),
+`src/native/AnonymizePreview.test.tsx` (the preview, the save flow, a refused
+save), `src-tauri/src/text_recheck.rs` (the native re-check) and
+`tests/anonymize-preview.spec.ts` (a keyboard walk at 200% text).
+
 ## Appearance and Windows high contrast
 
 Use sample data only. Appearance is under **Settings → Preferences**, beside Text size,

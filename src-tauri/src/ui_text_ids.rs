@@ -3,6 +3,24 @@ pub const FORMATTING_FAILURE_EN: &str =
     "myCarlos could not display this message correctly. Choose another language or restart the app, then check your records before trying again.";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MessageId {
+    AiHelperExportCut,
+    AiHelperExportFileName,
+    AiHelperExportHeader,
+    AiHelperNoticeAdviceBody,
+    AiHelperNoticeFileBody,
+    AiHelperNoticeIntro,
+    AiHelperNoticeIntroShare,
+    AiHelperNoticeLimitsBody,
+    AiHelperNoticeModelBody,
+    AiHelperNoticeModelHeading,
+    AiHelperNoticePreviewBody,
+    AiHelperNoticeResultsBody,
+    AiHelperNoticeServiceBody,
+    AiHelperNoticeShareBody,
+    AiHelperNoticeShareHeading,
+    AiHelperNoticeTestBuild,
+    AiHelperNoticeTitle,
+    AiHelperResultLabel,
     AppearanceDark,
     AppearanceErrorNotRemembered,
     AppearanceErrorUnreadable,
@@ -61,6 +79,66 @@ pub enum MessageId {
     FrameStateSettingUp,
     FrameWindowLabel,
     HiddenBackToSecurity,
+    InterfaceAiHelperNoticeContinue,
+    InterfaceAnonymizePreviewClose,
+    InterfaceAnonymizePreviewConfirmBody,
+    InterfaceAnonymizePreviewConfirmTitle,
+    InterfaceAnonymizePreviewCutPages,
+    InterfaceAnonymizePreviewEmptyPages,
+    InterfaceAnonymizePreviewFailedPages,
+    InterfaceAnonymizePreviewFooterNote,
+    InterfaceAnonymizePreviewHeaderNote,
+    InterfaceAnonymizePreviewHowMarked,
+    InterfaceAnonymizePreviewKindAddress,
+    InterfaceAnonymizePreviewKindAge,
+    InterfaceAnonymizePreviewKindClinic,
+    InterfaceAnonymizePreviewKindDateOfBirth,
+    InterfaceAnonymizePreviewKindDoctor,
+    InterfaceAnonymizePreviewKindEmail,
+    InterfaceAnonymizePreviewKindHealthCard,
+    InterfaceAnonymizePreviewKindManual,
+    InterfaceAnonymizePreviewKindName,
+    InterfaceAnonymizePreviewKindPhone,
+    InterfaceAnonymizePreviewKindPostalCode,
+    InterfaceAnonymizePreviewKindRecordNumber,
+    InterfaceAnonymizePreviewKindSin,
+    InterfaceAnonymizePreviewKindUnclearDate,
+    InterfaceAnonymizePreviewKindWeb,
+    InterfaceAnonymizePreviewMovedDate,
+    InterfaceAnonymizePreviewPhrase,
+    InterfaceAnonymizePreviewPhraseNotFound,
+    InterfaceAnonymizePreviewPlaceholderAddress,
+    InterfaceAnonymizePreviewPlaceholderAge,
+    InterfaceAnonymizePreviewPlaceholderClinic,
+    InterfaceAnonymizePreviewPlaceholderDateOfBirth,
+    InterfaceAnonymizePreviewPlaceholderDoctor,
+    InterfaceAnonymizePreviewPlaceholderEmail,
+    InterfaceAnonymizePreviewPlaceholderHealthCard,
+    InterfaceAnonymizePreviewPlaceholderManual,
+    InterfaceAnonymizePreviewPlaceholderName,
+    InterfaceAnonymizePreviewPlaceholderPhone,
+    InterfaceAnonymizePreviewPlaceholderPostalCode,
+    InterfaceAnonymizePreviewPlaceholderRecordNumber,
+    InterfaceAnonymizePreviewPlaceholderSin,
+    InterfaceAnonymizePreviewPlaceholderUnclearDate,
+    InterfaceAnonymizePreviewPlaceholderWeb,
+    InterfaceAnonymizePreviewPossibleNames,
+    InterfaceAnonymizePreviewReadFailed,
+    InterfaceAnonymizePreviewReading,
+    InterfaceAnonymizePreviewRefused,
+    InterfaceAnonymizePreviewRemovePhrase,
+    InterfaceAnonymizePreviewRemoveSelected,
+    InterfaceAnonymizePreviewRemoveWord,
+    InterfaceAnonymizePreviewRemovedKind,
+    InterfaceAnonymizePreviewRemovedPlaces,
+    InterfaceAnonymizePreviewReplaced,
+    InterfaceAnonymizePreviewSave,
+    InterfaceAnonymizePreviewSaveCancelled,
+    InterfaceAnonymizePreviewSaved,
+    InterfaceAnonymizePreviewSelectFirst,
+    InterfaceAnonymizePreviewTextRegion,
+    InterfaceAnonymizePreviewTitle,
+    InterfaceAnonymizePreviewUndo,
     InterfaceCameraDialogCameraReady,
     InterfaceCameraDialogCameraView,
     InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos,
@@ -95,6 +173,7 @@ pub enum MessageId {
     InterfaceHiddenDocumentsWasIn,
     InterfaceLibraryItemsIn,
     InterfaceLibrarySidebarSharedWithMe,
+    InterfaceRecordDetailsAnonymizeText,
     InterfaceRecordDetailsCloseDocumentDetails,
     InterfaceRecordDetailsEncryptedDocument,
     InterfaceRecordDetailsEncryptedDocumentDetails,
@@ -239,6 +318,7 @@ pub enum MessageId {
     InterfaceHistoryFrom,
     InterfaceHistoryGap,
     InterfaceHistoryHow,
+    InterfaceHistoryHowAnonymizedText,
     InterfaceHistoryHowCamera,
     InterfaceHistoryHowDamaged,
     InterfaceHistoryHowImportedShared,
@@ -737,6 +817,24 @@ pub enum MessageId {
 
 impl MessageId {
     pub const ALL: &'static [Self] = &[
+        Self::AiHelperExportCut,
+        Self::AiHelperExportFileName,
+        Self::AiHelperExportHeader,
+        Self::AiHelperNoticeAdviceBody,
+        Self::AiHelperNoticeFileBody,
+        Self::AiHelperNoticeIntro,
+        Self::AiHelperNoticeIntroShare,
+        Self::AiHelperNoticeLimitsBody,
+        Self::AiHelperNoticeModelBody,
+        Self::AiHelperNoticeModelHeading,
+        Self::AiHelperNoticePreviewBody,
+        Self::AiHelperNoticeResultsBody,
+        Self::AiHelperNoticeServiceBody,
+        Self::AiHelperNoticeShareBody,
+        Self::AiHelperNoticeShareHeading,
+        Self::AiHelperNoticeTestBuild,
+        Self::AiHelperNoticeTitle,
+        Self::AiHelperResultLabel,
         Self::AppearanceDark,
         Self::AppearanceErrorNotRemembered,
         Self::AppearanceErrorUnreadable,
@@ -795,6 +893,66 @@ impl MessageId {
         Self::FrameStateSettingUp,
         Self::FrameWindowLabel,
         Self::HiddenBackToSecurity,
+        Self::InterfaceAiHelperNoticeContinue,
+        Self::InterfaceAnonymizePreviewClose,
+        Self::InterfaceAnonymizePreviewConfirmBody,
+        Self::InterfaceAnonymizePreviewConfirmTitle,
+        Self::InterfaceAnonymizePreviewCutPages,
+        Self::InterfaceAnonymizePreviewEmptyPages,
+        Self::InterfaceAnonymizePreviewFailedPages,
+        Self::InterfaceAnonymizePreviewFooterNote,
+        Self::InterfaceAnonymizePreviewHeaderNote,
+        Self::InterfaceAnonymizePreviewHowMarked,
+        Self::InterfaceAnonymizePreviewKindAddress,
+        Self::InterfaceAnonymizePreviewKindAge,
+        Self::InterfaceAnonymizePreviewKindClinic,
+        Self::InterfaceAnonymizePreviewKindDateOfBirth,
+        Self::InterfaceAnonymizePreviewKindDoctor,
+        Self::InterfaceAnonymizePreviewKindEmail,
+        Self::InterfaceAnonymizePreviewKindHealthCard,
+        Self::InterfaceAnonymizePreviewKindManual,
+        Self::InterfaceAnonymizePreviewKindName,
+        Self::InterfaceAnonymizePreviewKindPhone,
+        Self::InterfaceAnonymizePreviewKindPostalCode,
+        Self::InterfaceAnonymizePreviewKindRecordNumber,
+        Self::InterfaceAnonymizePreviewKindSin,
+        Self::InterfaceAnonymizePreviewKindUnclearDate,
+        Self::InterfaceAnonymizePreviewKindWeb,
+        Self::InterfaceAnonymizePreviewMovedDate,
+        Self::InterfaceAnonymizePreviewPhrase,
+        Self::InterfaceAnonymizePreviewPhraseNotFound,
+        Self::InterfaceAnonymizePreviewPlaceholderAddress,
+        Self::InterfaceAnonymizePreviewPlaceholderAge,
+        Self::InterfaceAnonymizePreviewPlaceholderClinic,
+        Self::InterfaceAnonymizePreviewPlaceholderDateOfBirth,
+        Self::InterfaceAnonymizePreviewPlaceholderDoctor,
+        Self::InterfaceAnonymizePreviewPlaceholderEmail,
+        Self::InterfaceAnonymizePreviewPlaceholderHealthCard,
+        Self::InterfaceAnonymizePreviewPlaceholderManual,
+        Self::InterfaceAnonymizePreviewPlaceholderName,
+        Self::InterfaceAnonymizePreviewPlaceholderPhone,
+        Self::InterfaceAnonymizePreviewPlaceholderPostalCode,
+        Self::InterfaceAnonymizePreviewPlaceholderRecordNumber,
+        Self::InterfaceAnonymizePreviewPlaceholderSin,
+        Self::InterfaceAnonymizePreviewPlaceholderUnclearDate,
+        Self::InterfaceAnonymizePreviewPlaceholderWeb,
+        Self::InterfaceAnonymizePreviewPossibleNames,
+        Self::InterfaceAnonymizePreviewReadFailed,
+        Self::InterfaceAnonymizePreviewReading,
+        Self::InterfaceAnonymizePreviewRefused,
+        Self::InterfaceAnonymizePreviewRemovePhrase,
+        Self::InterfaceAnonymizePreviewRemoveSelected,
+        Self::InterfaceAnonymizePreviewRemoveWord,
+        Self::InterfaceAnonymizePreviewRemovedKind,
+        Self::InterfaceAnonymizePreviewRemovedPlaces,
+        Self::InterfaceAnonymizePreviewReplaced,
+        Self::InterfaceAnonymizePreviewSave,
+        Self::InterfaceAnonymizePreviewSaveCancelled,
+        Self::InterfaceAnonymizePreviewSaved,
+        Self::InterfaceAnonymizePreviewSelectFirst,
+        Self::InterfaceAnonymizePreviewTextRegion,
+        Self::InterfaceAnonymizePreviewTitle,
+        Self::InterfaceAnonymizePreviewUndo,
         Self::InterfaceCameraDialogCameraReady,
         Self::InterfaceCameraDialogCameraView,
         Self::InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos,
@@ -829,6 +987,7 @@ impl MessageId {
         Self::InterfaceHiddenDocumentsWasIn,
         Self::InterfaceLibraryItemsIn,
         Self::InterfaceLibrarySidebarSharedWithMe,
+        Self::InterfaceRecordDetailsAnonymizeText,
         Self::InterfaceRecordDetailsCloseDocumentDetails,
         Self::InterfaceRecordDetailsEncryptedDocument,
         Self::InterfaceRecordDetailsEncryptedDocumentDetails,
@@ -973,6 +1132,7 @@ impl MessageId {
         Self::InterfaceHistoryFrom,
         Self::InterfaceHistoryGap,
         Self::InterfaceHistoryHow,
+        Self::InterfaceHistoryHowAnonymizedText,
         Self::InterfaceHistoryHowCamera,
         Self::InterfaceHistoryHowDamaged,
         Self::InterfaceHistoryHowImportedShared,
@@ -1471,6 +1631,24 @@ impl MessageId {
 
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::AiHelperExportCut => "aiHelper-exportCut",
+            Self::AiHelperExportFileName => "aiHelper-exportFileName",
+            Self::AiHelperExportHeader => "aiHelper-exportHeader",
+            Self::AiHelperNoticeAdviceBody => "aiHelper-notice-adviceBody",
+            Self::AiHelperNoticeFileBody => "aiHelper-notice-fileBody",
+            Self::AiHelperNoticeIntro => "aiHelper-notice-intro",
+            Self::AiHelperNoticeIntroShare => "aiHelper-notice-introShare",
+            Self::AiHelperNoticeLimitsBody => "aiHelper-notice-limitsBody",
+            Self::AiHelperNoticeModelBody => "aiHelper-notice-modelBody",
+            Self::AiHelperNoticeModelHeading => "aiHelper-notice-modelHeading",
+            Self::AiHelperNoticePreviewBody => "aiHelper-notice-previewBody",
+            Self::AiHelperNoticeResultsBody => "aiHelper-notice-resultsBody",
+            Self::AiHelperNoticeServiceBody => "aiHelper-notice-serviceBody",
+            Self::AiHelperNoticeShareBody => "aiHelper-notice-shareBody",
+            Self::AiHelperNoticeShareHeading => "aiHelper-notice-shareHeading",
+            Self::AiHelperNoticeTestBuild => "aiHelper-notice-testBuild",
+            Self::AiHelperNoticeTitle => "aiHelper-notice-title",
+            Self::AiHelperResultLabel => "aiHelper-resultLabel",
             Self::AppearanceDark => "appearance-dark",
             Self::AppearanceErrorNotRemembered => "appearance-error-notRemembered",
             Self::AppearanceErrorUnreadable => "appearance-error-unreadable",
@@ -1529,6 +1707,120 @@ impl MessageId {
             Self::FrameStateSettingUp => "frame-state-settingUp",
             Self::FrameWindowLabel => "frame-window-label",
             Self::HiddenBackToSecurity => "hidden-backToSecurity",
+            Self::InterfaceAiHelperNoticeContinue => "interface-AiHelperNotice-continue",
+            Self::InterfaceAnonymizePreviewClose => "interface-AnonymizePreview-close",
+            Self::InterfaceAnonymizePreviewConfirmBody => "interface-AnonymizePreview-confirmBody",
+            Self::InterfaceAnonymizePreviewConfirmTitle => {
+                "interface-AnonymizePreview-confirmTitle"
+            }
+            Self::InterfaceAnonymizePreviewCutPages => "interface-AnonymizePreview-cutPages",
+            Self::InterfaceAnonymizePreviewEmptyPages => "interface-AnonymizePreview-emptyPages",
+            Self::InterfaceAnonymizePreviewFailedPages => "interface-AnonymizePreview-failedPages",
+            Self::InterfaceAnonymizePreviewFooterNote => "interface-AnonymizePreview-footerNote",
+            Self::InterfaceAnonymizePreviewHeaderNote => "interface-AnonymizePreview-headerNote",
+            Self::InterfaceAnonymizePreviewHowMarked => "interface-AnonymizePreview-howMarked",
+            Self::InterfaceAnonymizePreviewKindAddress => "interface-AnonymizePreview-kind-address",
+            Self::InterfaceAnonymizePreviewKindAge => "interface-AnonymizePreview-kind-age",
+            Self::InterfaceAnonymizePreviewKindClinic => "interface-AnonymizePreview-kind-clinic",
+            Self::InterfaceAnonymizePreviewKindDateOfBirth => {
+                "interface-AnonymizePreview-kind-dateOfBirth"
+            }
+            Self::InterfaceAnonymizePreviewKindDoctor => "interface-AnonymizePreview-kind-doctor",
+            Self::InterfaceAnonymizePreviewKindEmail => "interface-AnonymizePreview-kind-email",
+            Self::InterfaceAnonymizePreviewKindHealthCard => {
+                "interface-AnonymizePreview-kind-healthCard"
+            }
+            Self::InterfaceAnonymizePreviewKindManual => "interface-AnonymizePreview-kind-manual",
+            Self::InterfaceAnonymizePreviewKindName => "interface-AnonymizePreview-kind-name",
+            Self::InterfaceAnonymizePreviewKindPhone => "interface-AnonymizePreview-kind-phone",
+            Self::InterfaceAnonymizePreviewKindPostalCode => {
+                "interface-AnonymizePreview-kind-postalCode"
+            }
+            Self::InterfaceAnonymizePreviewKindRecordNumber => {
+                "interface-AnonymizePreview-kind-recordNumber"
+            }
+            Self::InterfaceAnonymizePreviewKindSin => "interface-AnonymizePreview-kind-sin",
+            Self::InterfaceAnonymizePreviewKindUnclearDate => {
+                "interface-AnonymizePreview-kind-unclearDate"
+            }
+            Self::InterfaceAnonymizePreviewKindWeb => "interface-AnonymizePreview-kind-web",
+            Self::InterfaceAnonymizePreviewMovedDate => "interface-AnonymizePreview-movedDate",
+            Self::InterfaceAnonymizePreviewPhrase => "interface-AnonymizePreview-phrase",
+            Self::InterfaceAnonymizePreviewPhraseNotFound => {
+                "interface-AnonymizePreview-phraseNotFound"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderAddress => {
+                "interface-AnonymizePreview-placeholder-address"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderAge => {
+                "interface-AnonymizePreview-placeholder-age"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderClinic => {
+                "interface-AnonymizePreview-placeholder-clinic"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderDateOfBirth => {
+                "interface-AnonymizePreview-placeholder-dateOfBirth"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderDoctor => {
+                "interface-AnonymizePreview-placeholder-doctor"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderEmail => {
+                "interface-AnonymizePreview-placeholder-email"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderHealthCard => {
+                "interface-AnonymizePreview-placeholder-healthCard"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderManual => {
+                "interface-AnonymizePreview-placeholder-manual"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderName => {
+                "interface-AnonymizePreview-placeholder-name"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderPhone => {
+                "interface-AnonymizePreview-placeholder-phone"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderPostalCode => {
+                "interface-AnonymizePreview-placeholder-postalCode"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderRecordNumber => {
+                "interface-AnonymizePreview-placeholder-recordNumber"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderSin => {
+                "interface-AnonymizePreview-placeholder-sin"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderUnclearDate => {
+                "interface-AnonymizePreview-placeholder-unclearDate"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderWeb => {
+                "interface-AnonymizePreview-placeholder-web"
+            }
+            Self::InterfaceAnonymizePreviewPossibleNames => {
+                "interface-AnonymizePreview-possibleNames"
+            }
+            Self::InterfaceAnonymizePreviewReadFailed => "interface-AnonymizePreview-readFailed",
+            Self::InterfaceAnonymizePreviewReading => "interface-AnonymizePreview-reading",
+            Self::InterfaceAnonymizePreviewRefused => "interface-AnonymizePreview-refused",
+            Self::InterfaceAnonymizePreviewRemovePhrase => {
+                "interface-AnonymizePreview-removePhrase"
+            }
+            Self::InterfaceAnonymizePreviewRemoveSelected => {
+                "interface-AnonymizePreview-removeSelected"
+            }
+            Self::InterfaceAnonymizePreviewRemoveWord => "interface-AnonymizePreview-removeWord",
+            Self::InterfaceAnonymizePreviewRemovedKind => "interface-AnonymizePreview-removedKind",
+            Self::InterfaceAnonymizePreviewRemovedPlaces => {
+                "interface-AnonymizePreview-removedPlaces"
+            }
+            Self::InterfaceAnonymizePreviewReplaced => "interface-AnonymizePreview-replaced",
+            Self::InterfaceAnonymizePreviewSave => "interface-AnonymizePreview-save",
+            Self::InterfaceAnonymizePreviewSaveCancelled => {
+                "interface-AnonymizePreview-saveCancelled"
+            }
+            Self::InterfaceAnonymizePreviewSaved => "interface-AnonymizePreview-saved",
+            Self::InterfaceAnonymizePreviewSelectFirst => "interface-AnonymizePreview-selectFirst",
+            Self::InterfaceAnonymizePreviewTextRegion => "interface-AnonymizePreview-textRegion",
+            Self::InterfaceAnonymizePreviewTitle => "interface-AnonymizePreview-title",
+            Self::InterfaceAnonymizePreviewUndo => "interface-AnonymizePreview-undo",
             Self::InterfaceCameraDialogCameraReady => "interface-CameraDialog-cameraReady",
             Self::InterfaceCameraDialogCameraView => "interface-CameraDialog-cameraView",
             Self::InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos => {
@@ -1591,6 +1883,7 @@ impl MessageId {
             Self::InterfaceHiddenDocumentsWasIn => "interface-HiddenDocuments-wasIn",
             Self::InterfaceLibraryItemsIn => "interface-LibraryItems-in",
             Self::InterfaceLibrarySidebarSharedWithMe => "interface-LibrarySidebar-sharedWithMe",
+            Self::InterfaceRecordDetailsAnonymizeText => "interface-RecordDetails-anonymizeText",
             Self::InterfaceRecordDetailsCloseDocumentDetails => {
                 "interface-RecordDetails-closeDocumentDetails"
             }
@@ -1861,6 +2154,7 @@ impl MessageId {
             Self::InterfaceHistoryFrom => "interface-history-from",
             Self::InterfaceHistoryGap => "interface-history-gap",
             Self::InterfaceHistoryHow => "interface-history-how",
+            Self::InterfaceHistoryHowAnonymizedText => "interface-history-how-anonymizedText",
             Self::InterfaceHistoryHowCamera => "interface-history-how-camera",
             Self::InterfaceHistoryHowDamaged => "interface-history-how-damaged",
             Self::InterfaceHistoryHowImportedShared => "interface-history-how-importedShared",
@@ -3372,6 +3666,178 @@ impl MessageId {
             }
             "interface.history.title" => Some(Self::InterfaceHistoryTitle),
             "interface.history.to" => Some(Self::InterfaceHistoryTo),
+            "aiHelper.notice.title" => Some(Self::AiHelperNoticeTitle),
+            "aiHelper.notice.introShare" => Some(Self::AiHelperNoticeIntroShare),
+            "aiHelper.notice.intro" => Some(Self::AiHelperNoticeIntro),
+            "aiHelper.notice.testBuild" => Some(Self::AiHelperNoticeTestBuild),
+            "aiHelper.notice.shareHeading" => Some(Self::AiHelperNoticeShareHeading),
+            "aiHelper.notice.shareBody" => Some(Self::AiHelperNoticeShareBody),
+            "aiHelper.notice.previewBody" => Some(Self::AiHelperNoticePreviewBody),
+            "aiHelper.notice.limitsBody" => Some(Self::AiHelperNoticeLimitsBody),
+            "aiHelper.notice.fileBody" => Some(Self::AiHelperNoticeFileBody),
+            "aiHelper.notice.serviceBody" => Some(Self::AiHelperNoticeServiceBody),
+            "aiHelper.notice.adviceBody" => Some(Self::AiHelperNoticeAdviceBody),
+            "aiHelper.notice.modelHeading" => Some(Self::AiHelperNoticeModelHeading),
+            "aiHelper.notice.modelBody" => Some(Self::AiHelperNoticeModelBody),
+            "aiHelper.notice.resultsBody" => Some(Self::AiHelperNoticeResultsBody),
+            "aiHelper.resultLabel" => Some(Self::AiHelperResultLabel),
+            "aiHelper.exportHeader" => Some(Self::AiHelperExportHeader),
+            "aiHelper.exportCut" => Some(Self::AiHelperExportCut),
+            "aiHelper.exportFileName" => Some(Self::AiHelperExportFileName),
+            "interface.history.how.anonymizedText" => Some(Self::InterfaceHistoryHowAnonymizedText),
+            "interface.RecordDetails.anonymizeText" => {
+                Some(Self::InterfaceRecordDetailsAnonymizeText)
+            }
+            "interface.AnonymizePreview.title" => Some(Self::InterfaceAnonymizePreviewTitle),
+            "interface.AnonymizePreview.reading" => Some(Self::InterfaceAnonymizePreviewReading),
+            "interface.AnonymizePreview.readFailed" => {
+                Some(Self::InterfaceAnonymizePreviewReadFailed)
+            }
+            "interface.AnonymizePreview.emptyPages" => {
+                Some(Self::InterfaceAnonymizePreviewEmptyPages)
+            }
+            "interface.AnonymizePreview.cutPages" => Some(Self::InterfaceAnonymizePreviewCutPages),
+            "interface.AnonymizePreview.failedPages" => {
+                Some(Self::InterfaceAnonymizePreviewFailedPages)
+            }
+            "interface.AnonymizePreview.replaced" => Some(Self::InterfaceAnonymizePreviewReplaced),
+            "interface.AnonymizePreview.headerNote" => {
+                Some(Self::InterfaceAnonymizePreviewHeaderNote)
+            }
+            "interface.AnonymizePreview.howMarked" => {
+                Some(Self::InterfaceAnonymizePreviewHowMarked)
+            }
+            "interface.AnonymizePreview.textRegion" => {
+                Some(Self::InterfaceAnonymizePreviewTextRegion)
+            }
+            "interface.AnonymizePreview.removedKind" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedKind)
+            }
+            "interface.AnonymizePreview.movedDate" => {
+                Some(Self::InterfaceAnonymizePreviewMovedDate)
+            }
+            "interface.AnonymizePreview.kind.name" => Some(Self::InterfaceAnonymizePreviewKindName),
+            "interface.AnonymizePreview.kind.doctor" => {
+                Some(Self::InterfaceAnonymizePreviewKindDoctor)
+            }
+            "interface.AnonymizePreview.kind.clinic" => {
+                Some(Self::InterfaceAnonymizePreviewKindClinic)
+            }
+            "interface.AnonymizePreview.kind.healthCard" => {
+                Some(Self::InterfaceAnonymizePreviewKindHealthCard)
+            }
+            "interface.AnonymizePreview.kind.recordNumber" => {
+                Some(Self::InterfaceAnonymizePreviewKindRecordNumber)
+            }
+            "interface.AnonymizePreview.kind.sin" => Some(Self::InterfaceAnonymizePreviewKindSin),
+            "interface.AnonymizePreview.kind.dateOfBirth" => {
+                Some(Self::InterfaceAnonymizePreviewKindDateOfBirth)
+            }
+            "interface.AnonymizePreview.kind.age" => Some(Self::InterfaceAnonymizePreviewKindAge),
+            "interface.AnonymizePreview.kind.address" => {
+                Some(Self::InterfaceAnonymizePreviewKindAddress)
+            }
+            "interface.AnonymizePreview.kind.postalCode" => {
+                Some(Self::InterfaceAnonymizePreviewKindPostalCode)
+            }
+            "interface.AnonymizePreview.kind.phone" => {
+                Some(Self::InterfaceAnonymizePreviewKindPhone)
+            }
+            "interface.AnonymizePreview.kind.email" => {
+                Some(Self::InterfaceAnonymizePreviewKindEmail)
+            }
+            "interface.AnonymizePreview.kind.web" => Some(Self::InterfaceAnonymizePreviewKindWeb),
+            "interface.AnonymizePreview.kind.unclearDate" => {
+                Some(Self::InterfaceAnonymizePreviewKindUnclearDate)
+            }
+            "interface.AnonymizePreview.kind.manual" => {
+                Some(Self::InterfaceAnonymizePreviewKindManual)
+            }
+            "interface.AnonymizePreview.placeholder.name" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderName)
+            }
+            "interface.AnonymizePreview.placeholder.doctor" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderDoctor)
+            }
+            "interface.AnonymizePreview.placeholder.clinic" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderClinic)
+            }
+            "interface.AnonymizePreview.placeholder.healthCard" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderHealthCard)
+            }
+            "interface.AnonymizePreview.placeholder.recordNumber" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderRecordNumber)
+            }
+            "interface.AnonymizePreview.placeholder.sin" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderSin)
+            }
+            "interface.AnonymizePreview.placeholder.dateOfBirth" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderDateOfBirth)
+            }
+            "interface.AnonymizePreview.placeholder.age" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderAge)
+            }
+            "interface.AnonymizePreview.placeholder.address" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderAddress)
+            }
+            "interface.AnonymizePreview.placeholder.postalCode" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderPostalCode)
+            }
+            "interface.AnonymizePreview.placeholder.phone" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderPhone)
+            }
+            "interface.AnonymizePreview.placeholder.email" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderEmail)
+            }
+            "interface.AnonymizePreview.placeholder.web" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderWeb)
+            }
+            "interface.AnonymizePreview.placeholder.unclearDate" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderUnclearDate)
+            }
+            "interface.AnonymizePreview.placeholder.manual" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderManual)
+            }
+            "interface.AnonymizePreview.possibleNames" => {
+                Some(Self::InterfaceAnonymizePreviewPossibleNames)
+            }
+            "interface.AnonymizePreview.removeWord" => {
+                Some(Self::InterfaceAnonymizePreviewRemoveWord)
+            }
+            "interface.AnonymizePreview.removeSelected" => {
+                Some(Self::InterfaceAnonymizePreviewRemoveSelected)
+            }
+            "interface.AnonymizePreview.selectFirst" => {
+                Some(Self::InterfaceAnonymizePreviewSelectFirst)
+            }
+            "interface.AnonymizePreview.phrase" => Some(Self::InterfaceAnonymizePreviewPhrase),
+            "interface.AnonymizePreview.removePhrase" => {
+                Some(Self::InterfaceAnonymizePreviewRemovePhrase)
+            }
+            "interface.AnonymizePreview.phraseNotFound" => {
+                Some(Self::InterfaceAnonymizePreviewPhraseNotFound)
+            }
+            "interface.AnonymizePreview.removedPlaces" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedPlaces)
+            }
+            "interface.AnonymizePreview.undo" => Some(Self::InterfaceAnonymizePreviewUndo),
+            "interface.AnonymizePreview.save" => Some(Self::InterfaceAnonymizePreviewSave),
+            "interface.AnonymizePreview.confirmTitle" => {
+                Some(Self::InterfaceAnonymizePreviewConfirmTitle)
+            }
+            "interface.AnonymizePreview.confirmBody" => {
+                Some(Self::InterfaceAnonymizePreviewConfirmBody)
+            }
+            "interface.AnonymizePreview.saved" => Some(Self::InterfaceAnonymizePreviewSaved),
+            "interface.AnonymizePreview.saveCancelled" => {
+                Some(Self::InterfaceAnonymizePreviewSaveCancelled)
+            }
+            "interface.AnonymizePreview.refused" => Some(Self::InterfaceAnonymizePreviewRefused),
+            "interface.AnonymizePreview.close" => Some(Self::InterfaceAnonymizePreviewClose),
+            "interface.AiHelperNotice.continue" => Some(Self::InterfaceAiHelperNoticeContinue),
+            "interface.AnonymizePreview.footerNote" => {
+                Some(Self::InterfaceAnonymizePreviewFooterNote)
+            }
             _ => None,
         }
     }
