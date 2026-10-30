@@ -1998,6 +1998,63 @@ describe("durable vault UI", () => {
     expect(bridge.createProfile).not.toHaveBeenCalled();
   });
 
+  it("discards a shared-file refusal name that arrives after Lock", async () => {
+    const user = userEvent.setup();
+    const privateName = "FAKE_Private_Patient_Result.jpg";
+    const { bridge } = sharedVault(["Jamie"], [privateName], {
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    const accept = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+    let releaseIntake!: () => void;
+    const intake = new Promise<void>((resolve) => {
+      releaseIntake = resolve;
+    });
+    vi.mocked(bridge.acceptReceived).mockImplementationOnce(async () => {
+      await intake;
+      return accept();
+    });
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      await waitFor(() => expect(bridge.acceptReceived).toHaveBeenCalledOnce());
+      expect(document.body).not.toHaveTextContent(privateName);
+
+      // Intake runs in the background: Lock remains available while the
+      // native reply containing this document name is still in flight.
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlocked · Lock now") }),
+      );
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      await act(async () => {
+        releaseIntake();
+        await intake;
+      });
+      expect(document.body).not.toHaveTextContent(privateName);
+      expect(screen.getByLabelText(humanText("Passphrase"))).toBeVisible();
+      expect(
+        within(
+          screen.getByLabelText(humanText("Passphrase")).closest("form")!,
+        ).getByRole("status"),
+      ).toHaveHumanTextContent("Vault locked.");
+
+      await unlockWith(user);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      await passAnnounceDelay();
+      expect(document.body).not.toHaveTextContent(privateName);
+      expect(screen.getByText(humanText(/^Vault unlocked\.$/))).toBeVisible();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(bridge.unlock).toHaveBeenCalledOnce();
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => {
+        releaseIntake();
+        await intake;
+      });
+    }
+  });
+
   it("adds a file shared while the vault is open, and names one that is not a PDF (#61)", async () => {
     const user = userEvent.setup();
     const { bridge, arrive } = sharedVault(["Jamie"], ["FAKE_Letter.pdf"]);
