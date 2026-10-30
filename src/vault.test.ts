@@ -20,7 +20,9 @@ import {
 } from "./vault";
 
 describe("native idle deadline bridge", () => {
-  beforeEach(() => invoke.mockReset());
+  beforeEach(() => {
+    invoke.mockReset();
+  });
 
   it("sends the commands and arguments the native side registers", async () => {
     const bridge = createVaultBridge();
@@ -137,6 +139,55 @@ describe("native idle deadline bridge", () => {
     expect(invoke).toHaveBeenLastCalledWith("vault_view_photo", {
       request: { recordId: "record-1" },
     });
+  });
+
+  it("clears its photo IPC copy on refusal while preserving the caller's bytes and original error", async () => {
+    let finish!: (result: {
+      imported: string[];
+      skippedDuplicates: string[];
+    }) => void;
+    let refuse!: (error: unknown) => void;
+    const pending = new Promise<{
+      imported: string[];
+      skippedDuplicates: string[];
+    }>((resolve, reject) => {
+      finish = resolve;
+      refuse = reject;
+    });
+    let request!: Uint8Array;
+    let dispatched!: Uint8Array;
+    invoke.mockImplementation((command: string, body: Uint8Array) => {
+      if (command !== "vault_save_photo" || !(body instanceof Uint8Array))
+        throw new Error(
+          `Unexpected photo IPC fixture call: ${String(command)}`,
+        );
+      request = body;
+      // Observe what IPC receives at dispatch, without requiring the bridge
+      // to retain its copy for the whole pending operation.
+      dispatched = body.slice();
+      return pending;
+    });
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0x12, 0x34, 0xff, 0xd9]);
+    const original = jpeg.slice();
+    const refusal = { code: "storage", message: "FAKE photo save refused." };
+    const outcome = createVaultBridge()
+      .savePhoto("profile-1", ["folder-1"], "FAKE scan.jpg", jpeg)
+      .catch((error: unknown) => error);
+    try {
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(invoke.mock.calls[0][0]).toBe("vault_save_photo");
+      expect(dispatched.byteLength).toBeGreaterThan(jpeg.byteLength);
+      expect(dispatched.slice(-jpeg.byteLength)).toEqual(original);
+      refuse(refusal);
+      expect(await outcome).toBe(refusal);
+      expect(request.byteLength).toBe(dispatched.byteLength);
+      expect(request.every((byte) => byte === 0)).toBe(true);
+      expect(jpeg).toEqual(original);
+      expect(invoke).toHaveBeenCalledTimes(1);
+    } finally {
+      finish({ imported: [], skippedDuplicates: [] });
+      await outcome;
+    }
   });
 
   it("sends the locked-PDF commands the native side registers (#54)", async () => {
