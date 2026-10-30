@@ -37,6 +37,27 @@ export const FAKE_DEVICE_CODE = "FAKE-DEVICE-1";
 export const FAKE_KEY_LABEL = "FAKE-KEY1";
 export const FAKE_NEW_KEY_LABEL = "FAKE-KEY2";
 
+// Fixed synthetic UUIDs, in the wire format accepted by native Uuid fields.
+const UUID_PREFIX = "00000000-0000-4000-8000-";
+export const fakeUuid = (index: number) =>
+  UUID_PREFIX + index.toString(16).padStart(12, "0");
+export const FAKE_IDS = {
+  profile: fakeUuid(1),
+  folder: fakeUuid(2),
+  letters: fakeUuid(3),
+  record: fakeUuid(4),
+  letter: fakeUuid(5),
+  locked: fakeUuid(6),
+  unlocked: fakeUuid(7),
+  shared: fakeUuid(8),
+  clinicLetter: fakeUuid(9),
+  link: fakeUuid(101),
+  exportPick: fakeUuid(701),
+  backupPick: fakeUuid(702),
+  restorePick: fakeUuid(703),
+  importPick: fakeUuid(704),
+};
+
 const PAGE_TEXT = "FAKE text of page {page} of {name}";
 
 /** The text the fake gives for a page (from 1) of a document. */
@@ -150,6 +171,7 @@ export interface FakeVaultSetup {
 // The refusals the fake makes itself, by message key, in English as the
 // native side sends them (the screens show the messageKey's own text).
 const NATIVE_MESSAGES: MessageKey[] = [
+  "native.error.11",
   "native.error.12",
   "native.error.13",
   "native.error.16",
@@ -157,7 +179,9 @@ const NATIVE_MESSAGES: MessageKey[] = [
   "native.error.19",
   "native.error.23",
   "native.error.24",
+  "native.error.25",
   "native.error.26",
+  "native.error.36",
   "native.error.41",
   "native.error.44",
 ];
@@ -177,6 +201,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         displayName: string;
         sourceLabel: string;
         mediaType: string;
+        sourceKind?: "manual";
         plaintextSize: number;
         importedAtMs: number;
         available: boolean;
@@ -253,8 +278,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       const copy = <T>(value: T): T =>
         value === undefined ? value : JSON.parse(JSON.stringify(value));
 
+      const makeUuid = (index: number) =>
+        setup.uuidPrefix + index.toString(16).padStart(12, "0");
       const link = (n: number, portalBase: string, approved: boolean) => ({
-        id: `FAKE-link-${n}`,
+        id: makeUuid(100 + n),
         portalBase,
         deviceName: "FAKE device",
         profileId: null,
@@ -271,22 +298,24 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       const initial = (): State => {
         const records: FakeRecord[] = [
           {
-            id: "record",
-            profileId: "profile",
-            folderIds: ["folder"],
+            id: setup.ids.record,
+            profileId: setup.ids.profile,
+            folderIds: [setup.ids.folder],
             displayName: "FAKE Bloodwork.pdf",
             sourceLabel: "Manual import — unverified",
+            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 2048,
             importedAtMs: Date.UTC(2026, 9, 2, 12),
             available: true,
           },
           {
-            id: "letter",
-            profileId: "profile",
+            id: setup.ids.letter,
+            profileId: setup.ids.profile,
             folderIds: [],
             displayName: "FAKE Letter.pdf",
             sourceLabel: "Manual import — unverified",
+            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 1024,
             importedAtMs: Date.UTC(2026, 9, 3, 12),
@@ -296,11 +325,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         const documentPasswords: Record<string, string> = {};
         if (setup.lockedPdf) {
           records.push({
-            id: "locked",
-            profileId: "profile",
+            id: setup.ids.locked,
+            profileId: setup.ids.profile,
             folderIds: [],
             displayName: "FAKE Locked.pdf",
             sourceLabel: "Manual import — unverified",
+            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 3072,
             importedAtMs: Date.UTC(2026, 9, 4, 12),
@@ -311,19 +341,23 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         const hasKey = setup.start !== "absent" && setup.recoveryKey !== null;
         const snapshot: Snapshot = {
           profiles: [
-            { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
+            {
+              id: setup.ids.profile,
+              displayName: "FAKE Patient",
+              createdAtMs: 1,
+            },
           ],
           folders: [
             {
-              id: "folder",
-              profileId: "profile",
+              id: setup.ids.folder,
+              profileId: setup.ids.profile,
               parentId: null,
               name: "FAKE Results",
               createdAtMs: Date.UTC(2026, 9, 1, 12),
             },
             {
-              id: "letters",
-              profileId: "profile",
+              id: setup.ids.letters,
+              profileId: setup.ids.profile,
               parentId: null,
               name: "FAKE Letters",
               createdAtMs: Date.UTC(2026, 9, 1, 13),
@@ -409,11 +443,53 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         return canvas.toDataURL("image/png");
       };
 
+      // Promises and command guards belong to this window, not sessionStorage.
+      const pendingViews = new Set<(reason: unknown) => void>();
+      let cancelledViews = 0;
+      let checkingDocuments = false;
+      const cancelViews = () => {
+        const stopped = [...pendingViews];
+        pendingViews.clear();
+        cancelledViews += stopped.length;
+        for (const reject of stopped)
+          reject(refuse("cancelled", "native.error.36"));
+      };
+      // Native request deserialization rejects malformed Uuid arguments before
+      // executing a command, including a command with a scripted answer.
+      const validateIds = (args: Args) => {
+        const uuid =
+          /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}|urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        const check = (value: unknown) => {
+          if (typeof value !== "string" || !uuid.test(value))
+            throw new Error("invalid UUID in native request");
+        };
+        const request = (args.request ?? {}) as Record<string, unknown>;
+        for (const field of [
+          "recordId",
+          "profileId",
+          "folderId",
+          "parentId",
+          "pickId",
+        ])
+          if (request[field] != null) check(request[field]);
+        for (const field of ["recordIds", "folderIds", "confirmed"])
+          if (Array.isArray(request[field]))
+            for (const id of request[field]) check(id);
+        if (args.linkId != null) check(args.linkId);
+        if ("recordId" in args && args.recordId != null) check(args.recordId);
+      };
+
       const answer = async (command: string, args: Args): Promise<unknown> => {
         const queued = state.script[command]?.shift();
         if (queued) {
           save();
-          if (queued.pending) return new Promise(() => undefined);
+          if (queued.pending) {
+            if (command === "vault_view_page")
+              return new Promise((_resolve, reject) =>
+                pendingViews.add(reject),
+              );
+            return new Promise(() => undefined);
+          }
           if ("reject" in queued) throw queued.reject;
           return queued.resolve;
         }
@@ -440,7 +516,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             state.passphrase = request.passphrase ?? "";
             snapshot.profiles = [
               {
-                id: "profile",
+                id: setup.ids.profile,
                 displayName: request.initialProfileName ?? "",
                 createdAtMs: Date.now(),
               },
@@ -466,6 +542,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             state.status = "unlocked";
             return { passphraseReplaced: true, snapshot: copy(snapshot) };
           case "vault_lock":
+            cancelViews();
             // A key being set up does not outlive the session.
             state.status = "locked";
             state.pendingKey = null;
@@ -520,10 +597,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                 record.folderIds = [...(request.folderIds ?? [])];
             return;
           case "vault_create_folder": {
-            const id = `folder-${snapshot.folders.length + 1}`;
+            const id = makeUuid(300 + snapshot.folders.length + 1);
             snapshot.folders.push({
               id,
-              profileId: "profile",
+              profileId: setup.ids.profile,
               parentId: request.parentId ?? null,
               name: request.name ?? "",
               createdAtMs: Date.UTC(2026, 9, 5, 12),
@@ -549,9 +626,15 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               throw refuse("pdf_wrong_password", "native.error.26");
             // The copy opens without the password, beside the original,
             // which is kept, locked, under a new name.
+            if (
+              snapshot.records.some(
+                (candidate) => candidate.id === setup.ids.unlocked,
+              )
+            )
+              throw refuse("pdf_already_unlocked", "native.error.25");
             const unlocked: FakeRecord = {
               ...copy(record),
-              id: `${record.id}-unlocked`,
+              id: setup.ids.unlocked,
               importedAtMs: Date.now(),
             };
             snapshot.records.push(unlocked);
@@ -584,9 +667,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             };
           }
           case "vault_view_cancel":
+            cancelViews();
             return;
           case "vault_export_pick":
-            return "FAKE-export-pick";
+            return setup.ids.exportPick;
           case "vault_export_picked":
             recordById(request.recordId);
             return;
@@ -625,16 +709,16 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             // The first check brings one verified document into Shared with
             // me, made with its first file.
             if (!snapshot.sharedProfileId) {
-              snapshot.sharedProfileId = "shared";
+              snapshot.sharedProfileId = setup.ids.shared;
               snapshot.profiles.push({
-                id: "shared",
+                id: setup.ids.shared,
                 displayName: "FAKE shared files",
                 createdAtMs: 2,
               });
             }
             snapshot.records.push({
-              id: "clinic-letter",
-              profileId: "shared",
+              id: setup.ids.clinicLetter,
+              profileId: setup.ids.shared,
               folderIds: [],
               displayName: setup.clinicDocument,
               sourceLabel: "FAKE clinic portal",
@@ -662,6 +746,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       Reflect.set(window, "__unexpectedIpc", state.unexpected);
       Reflect.set(window, "__fakeVault", {
         calls: () => copy(state.calls),
+        viewDraws: () => ({
+          pending: pendingViews.size,
+          cancelled: cancelledViews,
+        }),
         snapshot: () => copy(state.snapshot),
         script: (command: string, outcome: Outcome) => {
           (state.script[command] ??= []).push(outcome);
@@ -676,15 +764,25 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         invoke: async (command: string, args?: Args) => {
           state.calls.push({ command, args: copy(args ?? {}) });
           save();
+          let ownsCheck = false;
           try {
+            validateIds(args ?? {});
+            if (command === "vault_check_documents") {
+              if (checkingDocuments) throw refuse("invalid", "native.error.19");
+              checkingDocuments = true;
+              ownsCheck = true;
+            }
             return await answer(command, args ?? {});
           } finally {
+            if (ownsCheck) checkingDocuments = false;
             save();
           }
         },
       });
     },
     {
+      ids: FAKE_IDS,
+      uuidPrefix: UUID_PREFIX,
       start: setup.start,
       passphrase: FAKE_PASSPHRASE,
       recoveryKey:
@@ -768,5 +866,18 @@ export async function scriptFake(
         }
       ).script(command, outcome),
     { command, outcome },
+  );
+}
+
+/** Pending helper draws and draws actually cancelled in this window. */
+export async function fakeViewDraws(
+  page: Page,
+): Promise<{ pending: number; cancelled: number }> {
+  return page.evaluate(() =>
+    (
+      Reflect.get(window, "__fakeVault") as {
+        viewDraws: () => { pending: number; cancelled: number };
+      }
+    ).viewDraws(),
   );
 }

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { messagePattern, translate } from "./support/fluent";
 import {
+  FAKE_IDS,
   FAKE_DOCUMENT_PASSWORD,
   FAKE_PAGE_COUNT,
   fakeCalls,
@@ -108,7 +109,7 @@ test("reads a document page by page, with zoom and the page's text, and Close go
   const first = (await fakeCalls(page, "vault_view_page"))[0];
   expect(first).toEqual({
     request: {
-      recordId: "letter",
+      recordId: FAKE_IDS.letter,
       page: 0,
       width: expect.any(Number),
       password: null,
@@ -124,7 +125,7 @@ test("reads a document page by page, with zoom and the page's text, and Close go
   await expect(button("interface.DocumentReader.previousPage")).toBeEnabled();
   expect(await fakeCalls(page, "vault_view_page")).toContainEqual({
     request: {
-      recordId: "letter",
+      recordId: FAKE_IDS.letter,
       page: 1,
       width: expect.any(Number),
       password: null,
@@ -155,7 +156,7 @@ test("reads a document page by page, with zoom and the page's text, and Close go
     .poll(async () => (await fakeCalls(page, "vault_view_page")).at(-1))
     .toEqual({
       request: {
-        recordId: "letter",
+        recordId: FAKE_IDS.letter,
         page: 1,
         width: Math.round(Math.round((fitted / ratio) * 1.25) * ratio),
         password: null,
@@ -219,7 +220,7 @@ test("a document locked with its own password asks for it in the reader, says wh
   for (const call of asked)
     expect(call).toEqual({
       request: {
-        recordId: "locked",
+        recordId: FAKE_IDS.locked,
         page: 0,
         width: expect.any(Number),
         password: null,
@@ -244,7 +245,7 @@ test("a document locked with its own password asks for it in the reader, says wh
   await expect(reader.getByRole("img")).toHaveCount(0);
   expect(await fakeCalls(page, "vault_view_page")).toContainEqual({
     request: {
-      recordId: "locked",
+      recordId: FAKE_IDS.locked,
       page: 0,
       width: expect.any(Number),
       password: WRONG_PASSWORD,
@@ -261,7 +262,7 @@ test("a document locked with its own password asks for it in the reader, says wh
   await expect(picture(2)).toBeVisible();
   expect(await fakeCalls(page, "vault_view_page")).toContainEqual({
     request: {
-      recordId: "locked",
+      recordId: FAKE_IDS.locked,
       page: 1,
       width: expect.any(Number),
       password: FAKE_DOCUMENT_PASSWORD,
@@ -321,8 +322,10 @@ test("Unlock in a locked document's details adds a copy that opens without the p
   await unlock.click();
   await expect(dialog).toBeHidden();
   expect(await fakeCalls(page, "vault_unlock_pdf")).toEqual([
-    { request: { recordId: "locked", password: WRONG_PASSWORD } },
-    { request: { recordId: "locked", password: FAKE_DOCUMENT_PASSWORD } },
+    { request: { recordId: FAKE_IDS.locked, password: WRONG_PASSWORD } },
+    {
+      request: { recordId: FAKE_IDS.locked, password: FAKE_DOCUMENT_PASSWORD },
+    },
   ]);
 
   // The details now show the copy, which has the name and no lock; they say
@@ -350,7 +353,7 @@ test("Unlock in a locked document's details adds a copy that opens without the p
   await expect(picture(1)).toBeVisible();
   expect((await fakeCalls(page, "vault_view_page")).at(-1)).toEqual({
     request: {
-      recordId: "locked-unlocked",
+      recordId: FAKE_IDS.unlocked,
       page: 0,
       width: expect.any(Number),
       password: null,
