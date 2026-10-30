@@ -2806,6 +2806,77 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(opener).toHaveFocus());
   });
 
+  it("shows a new vault's starting folders in the sidebar the first time it opens", async () => {
+    const user = userEvent.setup();
+    // What vault_create answers for a new vault (#66): the folders it was made
+    // with, one inside another. The set itself is kept on the native side.
+    const created: VaultSnapshot = {
+      ...emptySnapshot,
+      folders: [
+        {
+          id: "folder-visits",
+          profileId: "profile-1",
+          parentId: null,
+          name: "FAKE Visits",
+          createdAtMs: 1,
+        },
+        {
+          id: "folder-results",
+          profileId: "profile-1",
+          parentId: null,
+          name: "FAKE Test results",
+          createdAtMs: 1,
+        },
+        {
+          id: "folder-imaging",
+          profileId: "profile-1",
+          parentId: "folder-results",
+          name: "FAKE Imaging",
+          createdAtMs: 1,
+        },
+      ],
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      create: vi.fn().mockResolvedValue(created),
+      snapshot: vi.fn().mockResolvedValue(created),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    await user.type(
+      await screen.findByLabelText("Whose records will you keep here?"),
+      "FAKE Test Patient",
+    );
+    await user.type(
+      screen.getByLabelText("Passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText("Confirm passphrase"),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: "Create vault" }));
+
+    const library = await screen.findByRole("navigation", {
+      name: "Record library",
+    });
+    const folder = (name: string) =>
+      within(library).getByRole("button", { name: new RegExp(`^${name}`) });
+    for (const name of ["FAKE Visits", "FAKE Test results", "FAKE Imaging"])
+      expect(folder(name)).toBeVisible();
+    expect(within(library).queryByText("No folders yet")).toBeNull();
+    // The sub-folder sits under its parent, one step further in.
+    const buttons = within(library).getAllByRole("button");
+    expect(buttons.indexOf(folder("FAKE Imaging"))).toBe(
+      buttons.indexOf(folder("FAKE Test results")) + 1,
+    );
+    expect(
+      parseFloat(folder("FAKE Imaging").style.paddingLeft),
+    ).toBeGreaterThan(
+      parseFloat(folder("FAKE Test results").style.paddingLeft),
+    );
+  });
+
   it("sets up a recovery key before anything else in a new vault", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
