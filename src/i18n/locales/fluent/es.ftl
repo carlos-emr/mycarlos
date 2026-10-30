@@ -1291,6 +1291,8 @@ sidebar-folderCount =
     *[other] { $count } carpetas
     }
 
+sidebar-folderOfPerson = { $folder } ({ $person })
+
 sidebar-label = Biblioteca de documentos
 
 sidebar-myRecords = Mis documentos

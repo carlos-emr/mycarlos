@@ -1141,6 +1141,8 @@ sidebar-documents = { $count } 份文档
 
 sidebar-folderCount = { $count } 个文件夹
 
+sidebar-folderOfPerson = { $folder }（{ $person }）
+
 sidebar-label = 记录库
 
 sidebar-myRecords = 我的记录
