@@ -1655,7 +1655,7 @@ ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos 
 
 ai-notInstalled-openPreferences = Abrir Preferências
 
-ai-label = Escrito por IA e pode estar errado. Confira com seu médico.
+aiHelper-resultLabel = Escrito por IA e pode estar errado. Confira com seu médico.
 
 ai-result-meta = { $tool } · { $model } · { $date }
 

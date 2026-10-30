@@ -735,7 +735,7 @@
   "ai.notInstalled.title",
   "ai.notInstalled.body",
   "ai.notInstalled.openPreferences",
-  "ai.label",
+  "aiHelper.resultLabel",
   "ai.result.meta",
   "ai.summary.showInDocument",
   "ai.summary.partial",

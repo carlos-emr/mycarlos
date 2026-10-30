@@ -35,9 +35,18 @@ const TERM_MAX = 200;
 /** The most of a page's text given to the model around a term. */
 const CONTEXT_MAX = 400;
 
+/** Lower case, character by character, keeping the length: a character
+ * whose lower case is longer (İ) stays as it is, so offsets still hold. */
+function foldCase(text: string): string {
+  return Array.from(text, (char) => {
+    const lower = char.toLowerCase();
+    return lower.length === char.length ? lower : char;
+  }).join("");
+}
+
 /** The sentence of `text` that `term` is in (case aside), or "". */
 export function sentenceAround(text: string, term: string): string {
-  const at = text.toLowerCase().indexOf(term.toLowerCase());
+  const at = foldCase(text).indexOf(foldCase(term));
   if (!term || at < 0) return "";
   const before = text.slice(0, at);
   const start =

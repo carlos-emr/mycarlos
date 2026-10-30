@@ -105,7 +105,9 @@ export function ReaderAiPanel({
           lang,
         );
         if (!live.current) return;
-        setPagesRead(document.pages.length);
+        // The last page read, by its number: a page that failed has no
+        // entry, so the count of entries would be short.
+        setPagesRead((document.pages.at(-1)?.index ?? -1) + 1);
         // Pages with no text, cut short or not read at all are never left
         // out silently.
         setSomeUnread(
@@ -181,17 +183,17 @@ export function ReaderAiPanel({
       {noText && <p>{t("ai.summary.noText")}</p>}
       {summary && (
         <div className="native-reader-ai-result">
-          <p className="ai-label">{t("ai.label")}</p>
+          <p className="ai-label">{t("aiHelper.resultLabel")}</p>
           <ol>
-            {summary.sentences.map((sentence, index) => (
+            {summary.sentences.map(({ text, source }, index) => (
               <li key={index}>
-                <span id={`reader-ai-sentence-${index}`}>{sentence.text}</span>{" "}
-                {sentence.source ? (
+                <span id={`reader-ai-sentence-${index}`}>{text}</span>{" "}
+                {source ? (
                   <button
                     className="button"
                     type="button"
                     aria-describedby={`reader-ai-sentence-${index}`}
-                    onClick={() => onShowSource(sentence.source!)}
+                    onClick={() => onShowSource(source)}
                   >
                     {t("ai.summary.showInDocument")}
                   </button>
@@ -218,7 +220,7 @@ export function ReaderAiPanel({
       )}
       {explained && tool === "explain" && (
         <div className="native-reader-ai-result">
-          <p className="ai-label">{t("ai.label")}</p>
+          <p className="ai-label">{t("aiHelper.resultLabel")}</p>
           <p>{explained.text}</p>
           <ResultMeta
             tool={explained.tool}

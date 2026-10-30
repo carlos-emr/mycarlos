@@ -736,7 +736,7 @@ export const MESSAGE_KEYS = [
   "ai.notInstalled.title",
   "ai.notInstalled.body",
   "ai.notInstalled.openPreferences",
-  "ai.label",
+  "aiHelper.resultLabel",
   "ai.result.meta",
   "ai.summary.showInDocument",
   "ai.summary.partial",
@@ -1613,7 +1613,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.notInstalled.title": "ai-notInstalled-title",
   "ai.notInstalled.body": "ai-notInstalled-body",
   "ai.notInstalled.openPreferences": "ai-notInstalled-openPreferences",
-  "ai.label": "ai-label",
+  "aiHelper.resultLabel": "aiHelper-resultLabel",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
   "ai.summary.partial": "ai-summary-partial",
@@ -2451,7 +2451,7 @@ export interface MessageArgsByKey {
   "ai.notInstalled.title": undefined;
   "ai.notInstalled.body": undefined;
   "ai.notInstalled.openPreferences": undefined;
-  "ai.label": undefined;
+  "aiHelper.resultLabel": undefined;
   "ai.result.meta": {
     date: FluentArgument;
     model: FluentArgument;

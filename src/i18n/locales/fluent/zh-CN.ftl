@@ -1485,7 +1485,7 @@ ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模�
 
 ai-notInstalled-openPreferences = 打开偏好设置
 
-ai-label = 由 AI 撰写，可能有误。请向您的医生核实。
+aiHelper-resultLabel = 由 AI 撰写，可能有误。请向您的医生核实。
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
@@ -1493,7 +1493,7 @@ ai-summary-showInDocument = 在文档中显示
 
 ai-summary-partial = 此摘要仅涵盖文档开头部分：第 1 页至第 { $last } 页。
 
-ai-summary-noText = myCarlos 无法读取此文档中的任何文本，因此无法生成摘要。这可能是扫描档。
+ai-summary-noText = myCarlos 无法读取此文档中的任何文本，因此无法生成摘要。这可能是扫描件。
 
 ai-explain-box = 字词或短语
 

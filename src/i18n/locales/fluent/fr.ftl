@@ -1655,7 +1655,7 @@ ai-notInstalled-body = Une fois installé, il vous explique vos documents en mot
 
 ai-notInstalled-openPreferences = Ouvrir les Préférences
 
-ai-label = Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.
+aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
@@ -1667,7 +1667,7 @@ ai-summary-noText = myCarlos n’a pu lire aucun texte dans ce document et ne pe
 
 ai-explain-box = Mot ou expression
 
-ai-explain-hint = Sélectionnez des mots dans « Texte de cette page » ou tapez-les ici.
+ai-explain-hint = Sélectionnez des mots dans « Texte de cette page » ou tapez-les ici.
 
 ai-explain-submit = Expliquer
 

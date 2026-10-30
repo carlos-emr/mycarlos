@@ -1485,7 +1485,7 @@ ai-notInstalled-body = 安裝後，它會使用在此電腦上執行的 AI 模�
 
 ai-notInstalled-openPreferences = 開啟偏好設定
 
-ai-label = 由 AI 撰寫，可能有誤。請向您的醫師確認。
+aiHelper-resultLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認。
 
 ai-result-meta = { $tool } · { $model } · { $date }
 

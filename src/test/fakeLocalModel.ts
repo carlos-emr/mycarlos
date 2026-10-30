@@ -65,19 +65,24 @@ export function fakeDocumentText(
   truncated = false,
   unread: { cutPages?: number[]; failedPages?: number[] } = {},
 ): DocumentText {
+  const failed = new Set(unread.failedPages ?? []);
+  // As the native command does: a page that failed has no entry.
+  const read = pages.flatMap((text, index) =>
+    failed.has(index) ? [] : [{ index, text }],
+  );
   const pageStarts: number[] = [];
   let joined = "";
-  pages.forEach((text, index) => {
-    if (index > 0) joined += "\n\n";
+  read.forEach((page, position) => {
+    if (position > 0) joined += "\n\n";
     pageStarts.push(joined.length);
-    joined += text;
+    joined += page.text;
   });
   return {
     pageCount: pages.length,
-    pages: pages.map((text, index) => ({ index, text })),
+    pages: read,
     joined,
     pageStarts,
-    emptyPages: pages.flatMap((text, index) => (text ? [] : [index])),
+    emptyPages: read.flatMap((page) => (page.text ? [] : [page.index])),
     cutPages: unread.cutPages ?? [],
     failedPages: unread.failedPages ?? [],
     truncated,

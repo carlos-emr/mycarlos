@@ -168,7 +168,9 @@ describe("the reader's AI helper", () => {
       "zh-TW": "由 AI 撰寫，可能有誤。請向您的醫師確認。",
     };
     for (const locale of LOCALES) {
-      expect(translate(locale, "ai.label"), locale).toBe(notice[locale]);
+      expect(translate(locale, "aiHelper.resultLabel"), locale).toBe(
+        notice[locale],
+      );
     }
   });
 
@@ -214,6 +216,31 @@ describe("the reader's AI helper", () => {
       "Written by AI and may be wrong. Check with your doctor.",
     );
     expect(model.calls).toHaveLength(1);
+  });
+
+  it("numbers the last page read by its page, not by the count, when a page failed", async () => {
+    // Pages 1, 2 and 4 read, page 3 refused, the rest left out: "pages 1 to 4".
+    renderReader(fakeLocalModel(), {
+      loadText: async () =>
+        fakeDocumentText(
+          [...pageTexts, "FAKE page three", "FAKE page four"],
+          true,
+          {
+            failedPages: [2],
+          },
+        ),
+    });
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(
+      await screen.findByText(
+        humanText(
+          "This summary covers only the start of the document: pages 1 to 4.",
+        ),
+      ),
+    ).toBeVisible();
   });
 
   it("says when only the start of a long document was summarized", async () => {
@@ -348,6 +375,9 @@ describe("sentenceAround", () => {
     expect(sentenceAround(text, "CONSOLIDATION")).toBe("No new consolidation.");
     expect(sentenceAround(text, "nodule")).toBe("Findings: a 6 mm nodule.");
     expect(sentenceAround(text, "heart")).toBe("Heart size normal.");
+    // A capital whose lower case is longer (İ) must not shift the offsets.
+    const turkish = "İlk cümle. İkinci cümle burada. Son.";
+    expect(sentenceAround(turkish, "burada")).toBe("İkinci cümle burada.");
     expect(sentenceAround(text, "malignancy")).toBe("");
     expect(sentenceAround(text, "")).toBe("");
   });
