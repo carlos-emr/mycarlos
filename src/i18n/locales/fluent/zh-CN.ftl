@@ -1287,6 +1287,8 @@ portal-copyFailed = 请选取完整的设备代码并复制。
 
 portal-dateNotRecorded = 未记录日期
 
+portal-defaultDeviceName = { $platform } 上的 myCarlos
+
 portal-deviceCode = 设备代码
 
 portal-deviceName = 此设备的名称
