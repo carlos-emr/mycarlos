@@ -9,6 +9,8 @@ import { ClinicServiceDate } from "./ClinicServiceDate";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
+import type { AiTool, SourceSpan } from "../ai/types";
+import { ReaderAiPanel, type ReaderAi } from "./ReaderAiPanel";
 import {
   hasVaultErrorCode,
   vaultErrorMessage,
@@ -28,6 +30,36 @@ const CACHED_PAGES = 6;
 const CACHED_CHARACTERS = 48 * 1024 * 1024;
 /** A resize settles before the page is measured again. */
 const RESIZE_SETTLE_MS = 150;
+/** The most of a selection taken as a term to explain. */
+const TERM_MAX = 200;
+/** The most of a page's text given to the model around a term. */
+const CONTEXT_MAX = 400;
+
+/** Lower case, character by character, keeping the length: a character
+ * whose lower case is longer (İ) stays as it is, so offsets still hold. */
+function foldCase(text: string): string {
+  return Array.from(text, (char) => {
+    const lower = char.toLowerCase();
+    return lower.length === char.length ? lower : char;
+  }).join("");
+}
+
+/** The sentence of `text` that `term` is in (case aside), or "". */
+export function sentenceAround(text: string, term: string): string {
+  const at = foldCase(text).indexOf(foldCase(term));
+  if (!term || at < 0) return "";
+  const before = text.slice(0, at);
+  const start =
+    Math.max(
+      before.lastIndexOf(". "),
+      before.lastIndexOf("\n"),
+      before.lastIndexOf("? "),
+      before.lastIndexOf("! "),
+    ) + 1;
+  const after = text.slice(at + term.length).search(/[.!?](\s|$)|\n/);
+  const end = after < 0 ? text.length : at + term.length + after + 1;
+  return text.slice(start, end).trim().slice(0, CONTEXT_MAX);
+}
 
 /** Retains drawn pages within the reader's count and character budgets. */
 export function cacheDrawnPage(
@@ -61,6 +93,7 @@ export function DocumentReader({
   viewPage,
   cancelView,
   onClose,
+  ai,
 }: {
   record: VaultRecord;
   viewPage: (
@@ -71,6 +104,8 @@ export function DocumentReader({
   /** Stops a page still being drawn, when the reader closes. */
   cancelView?: () => void;
   onClose: () => void;
+  /** The AI helper's actions (#72), where this computer can offer them. */
+  ai?: ReaderAi;
 }) {
   useI18n();
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -101,6 +136,29 @@ export function DocumentReader({
   cancelViewRef.current = cancelView;
   // A page still being drawn when the reader closes is stopped.
   useEffect(() => () => cancelViewRef.current?.(), []);
+  // The AI helper: which panel is open, the words last selected in the page
+  // text (a term to explain), and a summary sentence's place being shown.
+  const [aiTool, setAiTool] = useState<AiTool | null>(null);
+  const [textOpen, setTextOpen] = useState(false);
+  const [highlight, setHighlight] = useState<SourceSpan | null>(null);
+  const textRef = useRef<HTMLDivElement | null>(null);
+  const markRef = useRef<HTMLElement | null>(null);
+  const selected = useRef("");
+  const offersAi = Boolean(ai);
+  useEffect(() => {
+    if (!offersAi) return;
+    const remember = () => {
+      const selection = document.getSelection();
+      if (
+        selection &&
+        !selection.isCollapsed &&
+        textRef.current?.contains(selection.anchorNode)
+      )
+        selected.current = selection.toString().trim().slice(0, TERM_MAX);
+    };
+    document.addEventListener("selectionchange", remember);
+    return () => document.removeEventListener("selectionchange", remember);
+  }, [offersAi]);
 
   useEffect(() => {
     // The width inside the page area's padding, so that a page fitted to it
@@ -193,6 +251,34 @@ export function DocumentReader({
         });
   // The picture shown is the page asked for, not one left from before.
   const current = shown && shown.page === page && !asking && !error;
+  const pageText = current ? (shown.readableText ?? shown.text) : "";
+  // A summary sentence's place, on the page shown. Offsets are into the page
+  // text as read; the text shown here is trimmed, so they move with it.
+  const lead = pageText.length - pageText.trimStart().length;
+  const shownText = pageText.trim();
+  const marked =
+    highlight && current && highlight.page === shown.page
+      ? {
+          start: Math.max(
+            0,
+            Math.min(shownText.length, highlight.start - lead),
+          ),
+          end: Math.max(0, Math.min(shownText.length, highlight.end - lead)),
+        }
+      : null;
+  // Each "Show in document" brings the words into view and focus, even
+  // the same words again: the highlight is a new object each time.
+  useEffect(() => {
+    markRef.current?.scrollIntoView?.({ block: "center" });
+    markRef.current?.focus();
+  }, [highlight, current]);
+  const showSource = (span: SourceSpan) => {
+    setHighlight({ ...span });
+    setTextOpen(true);
+    setPage(span.page);
+  };
+  const toggleAi = (tool: AiTool) =>
+    setAiTool((open) => (open === tool ? null : tool));
   return (
     <div className="dialog-backdrop" role="presentation">
       <section
@@ -233,7 +319,10 @@ export function DocumentReader({
             className="button"
             type="button"
             disabled={loading || page === 0}
-            onClick={() => setPage((current) => current - 1)}
+            onClick={() => {
+              setHighlight(null);
+              setPage((current) => current - 1);
+            }}
           >
             {translateNow("interface.DocumentReader.previousPage")}
           </button>
@@ -242,7 +331,10 @@ export function DocumentReader({
             className="button"
             type="button"
             disabled={loading || last === null || page >= last}
-            onClick={() => setPage((current) => current + 1)}
+            onClick={() => {
+              setHighlight(null);
+              setPage((current) => current + 1);
+            }}
           >
             {translateNow("interface.DocumentReader.nextPage")}
           </button>
@@ -281,6 +373,32 @@ export function DocumentReader({
               {translateNow("interface.DocumentReader.fitWidth")}
             </button>
           </span>
+          {ai && (
+            <span className="native-reader-ai-actions">
+              <button
+                className="button"
+                type="button"
+                aria-expanded={aiTool === "summary"}
+                aria-controls={
+                  aiTool === "summary" ? "reader-ai-panel" : undefined
+                }
+                onClick={() => toggleAi("summary")}
+              >
+                {translateNow("ai.summary.button")}
+              </button>
+              <button
+                className="button"
+                type="button"
+                aria-expanded={aiTool === "explain"}
+                aria-controls={
+                  aiTool === "explain" ? "reader-ai-panel" : undefined
+                }
+                onClick={() => toggleAi("explain")}
+              >
+                {translateNow("ai.explain.title")}
+              </button>
+            </span>
+          )}
         </div>
         <p
           className={loading && !asking ? "native-dialog-status" : "sr-only"}
@@ -358,17 +476,40 @@ export function DocumentReader({
           )}
         </div>
         {current && (
-          <details className="native-reader-text">
+          <details
+            className="native-reader-text"
+            open={textOpen}
+            onToggle={(event) => setTextOpen(event.currentTarget.open)}
+          >
             <summary>
               {translateNow("interface.DocumentReader.textOnThisPage")}
             </summary>
-            <div>
-              {(shown.readableText ?? shown.text).trim() ||
-                translateNow(
-                  "interface.DocumentReader.noTextCouldBeReadOnThis",
-                )}
+            <div ref={textRef}>
+              {!shownText ? (
+                translateNow("interface.DocumentReader.noTextCouldBeReadOnThis")
+              ) : marked && marked.end > marked.start ? (
+                <>
+                  {shownText.slice(0, marked.start)}
+                  <mark ref={markRef} tabIndex={-1}>
+                    {shownText.slice(marked.start, marked.end)}
+                  </mark>
+                  {shownText.slice(marked.end)}
+                </>
+              ) : (
+                shownText
+              )}
             </div>
           </details>
+        )}
+        {ai && aiTool && (
+          <ReaderAiPanel
+            key={aiTool}
+            ai={ai}
+            tool={aiTool}
+            initialTerm={aiTool === "explain" ? selected.current : ""}
+            contextFor={(term) => sentenceAround(pageText, term)}
+            onShowSource={showSource}
+          />
         )}
       </section>
     </div>

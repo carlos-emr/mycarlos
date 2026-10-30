@@ -1,5 +1,6 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
+import type { ModelStatus } from "./ai/types";
 import type { DocumentText } from "./documentText";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
@@ -464,6 +465,8 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn: the reader closed. */
   cancelView(): Promise<void>;
+  /** Whether the AI helper (#72) has a model on this computer. */
+  aiModelStatus(): Promise<ModelStatus>;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -878,6 +881,7 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, page, width, password: password ?? null },
       }),
     cancelView: () => invoke<void>("vault_view_cancel"),
+    aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
     documentText: (recordId, password) =>
       invoke<DocumentText>("vault_document_text", {
         request: { recordId, password: password ?? null },

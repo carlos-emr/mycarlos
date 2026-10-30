@@ -263,6 +263,8 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         }
         if (command === "vault_snapshot") return structuredClone(snapshot);
         if (command === "runtime_info") return { platform: "windows" };
+        // Preferences on a computer asks whether an AI model is installed (#72).
+        if (command === "ai_model_status") return { state: "notInstalled" };
         // The setup checklist asks which rules a passphrase meets (#76).
         if (command === "vault_passphrase_rules")
           return { longEnough: false, notAName: true, hardToGuess: false };

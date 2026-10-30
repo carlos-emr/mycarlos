@@ -730,6 +730,27 @@ export const MESSAGE_KEYS = [
   "interface.history.sessionNotRecorded",
   "interface.history.title",
   "interface.history.to",
+  "ai.summary.button",
+  "ai.summary.title",
+  "ai.explain.title",
+  "ai.notInstalled.title",
+  "ai.notInstalled.body",
+  "ai.notInstalled.openPreferences",
+  "aiHelper.resultLabel",
+  "ai.result.meta",
+  "ai.summary.showInDocument",
+  "ai.summary.partial",
+  "ai.summary.noText",
+  "ai.explain.box",
+  "ai.explain.hint",
+  "ai.explain.submit",
+  "ai.preferences.title",
+  "ai.preferences.body",
+  "ai.preferences.notInstalled",
+  "ai.working",
+  "ai.failed",
+  "ai.summary.pagesMissing",
+  "ai.summary.noSource",
   "aiHelper.notice.title",
   "aiHelper.notice.introShare",
   "aiHelper.notice.intro",
@@ -744,7 +765,6 @@ export const MESSAGE_KEYS = [
   "aiHelper.notice.modelHeading",
   "aiHelper.notice.modelBody",
   "aiHelper.notice.resultsBody",
-  "aiHelper.resultLabel",
   "aiHelper.exportHeader",
   "aiHelper.exportCut",
   "aiHelper.exportFileName",
@@ -1666,6 +1686,27 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-sessionNotRecorded",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
+  "ai.summary.button": "ai-summary-button",
+  "ai.summary.title": "ai-summary-title",
+  "ai.explain.title": "ai-explain-title",
+  "ai.notInstalled.title": "ai-notInstalled-title",
+  "ai.notInstalled.body": "ai-notInstalled-body",
+  "ai.notInstalled.openPreferences": "ai-notInstalled-openPreferences",
+  "aiHelper.resultLabel": "aiHelper-resultLabel",
+  "ai.result.meta": "ai-result-meta",
+  "ai.summary.showInDocument": "ai-summary-showInDocument",
+  "ai.summary.partial": "ai-summary-partial",
+  "ai.summary.noText": "ai-summary-noText",
+  "ai.explain.box": "ai-explain-box",
+  "ai.explain.hint": "ai-explain-hint",
+  "ai.explain.submit": "ai-explain-submit",
+  "ai.preferences.title": "ai-preferences-title",
+  "ai.preferences.body": "ai-preferences-body",
+  "ai.preferences.notInstalled": "ai-preferences-notInstalled",
+  "ai.working": "ai-working",
+  "ai.failed": "ai-failed",
+  "ai.summary.pagesMissing": "ai-summary-pagesMissing",
+  "ai.summary.noSource": "ai-summary-noSource",
   "aiHelper.notice.title": "aiHelper-notice-title",
   "aiHelper.notice.introShare": "aiHelper-notice-introShare",
   "aiHelper.notice.intro": "aiHelper-notice-intro",
@@ -1680,7 +1721,6 @@ const FLUENT_IDS_BY_KEY = {
   "aiHelper.notice.modelHeading": "aiHelper-notice-modelHeading",
   "aiHelper.notice.modelBody": "aiHelper-notice-modelBody",
   "aiHelper.notice.resultsBody": "aiHelper-notice-resultsBody",
-  "aiHelper.resultLabel": "aiHelper-resultLabel",
   "aiHelper.exportHeader": "aiHelper-exportHeader",
   "aiHelper.exportCut": "aiHelper-exportCut",
   "aiHelper.exportFileName": "aiHelper-exportFileName",
@@ -2611,6 +2651,31 @@ export interface MessageArgsByKey {
   "interface.history.sessionNotRecorded": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
+  "ai.summary.button": undefined;
+  "ai.summary.title": undefined;
+  "ai.explain.title": undefined;
+  "ai.notInstalled.title": undefined;
+  "ai.notInstalled.body": undefined;
+  "ai.notInstalled.openPreferences": undefined;
+  "aiHelper.resultLabel": undefined;
+  "ai.result.meta": {
+    date: FluentArgument;
+    model: FluentArgument;
+    tool: FluentArgument;
+  };
+  "ai.summary.showInDocument": undefined;
+  "ai.summary.partial": { last: FluentArgument };
+  "ai.summary.noText": undefined;
+  "ai.explain.box": undefined;
+  "ai.explain.hint": undefined;
+  "ai.explain.submit": undefined;
+  "ai.preferences.title": undefined;
+  "ai.preferences.body": undefined;
+  "ai.preferences.notInstalled": undefined;
+  "ai.working": undefined;
+  "ai.failed": undefined;
+  "ai.summary.pagesMissing": undefined;
+  "ai.summary.noSource": undefined;
   "aiHelper.notice.title": undefined;
   "aiHelper.notice.introShare": undefined;
   "aiHelper.notice.intro": undefined;
@@ -2625,7 +2690,6 @@ export interface MessageArgsByKey {
   "aiHelper.notice.modelHeading": undefined;
   "aiHelper.notice.modelBody": undefined;
   "aiHelper.notice.resultsBody": undefined;
-  "aiHelper.resultLabel": undefined;
   "aiHelper.exportHeader": undefined;
   "aiHelper.exportCut": { page: FluentArgument };
   "aiHelper.exportFileName": undefined;

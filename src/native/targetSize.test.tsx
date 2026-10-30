@@ -48,6 +48,7 @@ function renderLibrary() {
     platform: vi.fn().mockResolvedValue("windows"),
     snapshot: vi.fn().mockResolvedValue(vault),
     isLockedPdf: vi.fn().mockResolvedValue(false),
+    aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
   } as unknown as VaultBridge;
   render(
     <VaultLibrary

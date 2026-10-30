@@ -39,6 +39,8 @@ import { PortalDocuments } from "./PortalDocuments";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
+import { nativeLocalModel } from "../ai/localModel";
+import type { ModelStatus } from "../ai/types";
 import { AnonymizePreview } from "./AnonymizePreview";
 import { AiHelperNotice } from "./AiHelperNotice";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
@@ -214,6 +216,23 @@ export function VaultLibrary({
   activeRecordIdRef.current = activeRecordId;
   // The document open in the reader, if any.
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
+  // The AI helper (#72): on a computer only, as the reader's text is.
+  const localModel = useMemo(
+    () => nativeLocalModel(() => bridge.aiModelStatus()),
+    [bridge],
+  );
+  const [aiStatus, setAiStatus] = useState<ModelStatus | null>(null);
+  useEffect(() => {
+    if (section !== "preferences" || !computer) return;
+    let current = true;
+    localModel.status().then(
+      (found) => current && setAiStatus(found),
+      () => current && setAiStatus({ state: "notInstalled" }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [computer, localModel, section]);
   // The AI helper's preview (#72): open for one document at a time.
   const [anonymizeRecordId, setAnonymizeRecordId] = useState<string | null>(
     null,
@@ -2142,7 +2161,9 @@ export function VaultLibrary({
               />
             )}
 
-            {section === "preferences" && <PreferencesSettings />}
+            {section === "preferences" && (
+              <PreferencesSettings aiStatus={computer ? aiStatus : undefined} />
+            )}
 
             {section === "security" && (
               <SecuritySettings
@@ -2446,6 +2467,22 @@ export function VaultLibrary({
               }
               cancelView={() => void bridge.cancelView().catch(() => undefined)}
               onClose={() => setReaderRecordId(null)}
+              ai={
+                computer
+                  ? {
+                      model: localModel,
+                      // Part B's whole-document text (#171). A locked PDF
+                      // is refused there, which the panel says as a failure;
+                      // passing the reader's document password is the model
+                      // step's work.
+                      loadText: () => bridge.documentText(readerRecord.id),
+                      onOpenPreferences: () => {
+                        setReaderRecordId(null);
+                        setSection("preferences");
+                      },
+                    }
+                  : undefined
+              }
             />
           )}
           {confirmHideDamaged && (

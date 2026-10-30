@@ -9,6 +9,7 @@ mod camera_permission;
 mod document_identity;
 mod history;
 mod idle;
+mod local_model;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -1459,6 +1460,13 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
 #[tauri::command]
 fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
+}
+
+/// Whether the AI helper (#72) has a model on this computer. None can be
+/// installed yet: getting one comes in a later version.
+#[tauri::command]
+fn ai_model_status() -> local_model::ModelStatus {
+    local_model::status()
 }
 
 #[derive(Serialize)]
@@ -3982,6 +3990,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            ai_model_status,
             kdf_benchmark,
             vault_status,
             vault_passphrase_rules,
