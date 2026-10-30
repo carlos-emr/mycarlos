@@ -486,7 +486,7 @@ its document and never deleted (#71), and it is in backups like the rest of the 
 - **A signed-in AI service knows the patient.** Removing details then mainly protects the other
   people named in the document, and limits what the service keeps.
 - **The AI can be wrong.** It is not meant to diagnose or to advise on treatment or medicines. Each
-  sentence of a summary links to the sentence of the document it cites, when it cites a real one;
+  sentence of a summary links to the words of the document it quotes, when they are really there;
   one with no valid source is marked "No source found". A link shows where a sentence came from,
   not that it is right.
 - **Scanned pages** have no text, so the helper cannot work on them until on-device text
