@@ -2,7 +2,7 @@
 
 This guide is for anyone who wants to install an evaluation build and try it, without building
 anything. Every change to `main` publishes installable builds for Windows, macOS, Android and the
-iOS Simulator.
+iOS Simulator. Only a real iPhone or iPad needs a build of your own, on a Mac.
 
 > **Synthetic data only.** These are unsigned evaluation builds. Use the included FAKE sample PDFs
 > and made-up names; never real patient records or names. Choose a throwaway passphrase: a
@@ -41,9 +41,10 @@ which records the source it was built from; include it in bug reports. (It is no
 check: the run page in step 2 is.) Downloads expire after 30 days, so use the newest run.
 These are unoptimized debug builds, so they are large: the Android APK is about 320 MB.
 
-There is no build for a real iPhone or iPad yet: installing on one needs an Apple Developer
-account and signing. Linux has an unsupported debug `.deb` (`mycarlos-linux-evaluation-debug`,
-kept for 7 days) for compatibility checks only.
+There is no download for a real iPhone or iPad yet. With a Mac you can build one and install it
+yourself: see [iPhone or iPad (build it on a Mac)](#iphone-or-ipad-build-it-on-a-mac). Linux has an
+unsupported debug `.deb` (`mycarlos-linux-evaluation-debug`, kept for 7 days) for compatibility
+checks only.
 
 ## Install
 
@@ -104,6 +105,159 @@ install over it; each build may be signed with a different debug key. Uninstalli
    `Terminal`, press Return), type `xattr -dr com.apple.quarantine ` (with the trailing space),
    drag the app into the Terminal window to fill in its location, and press Return.
 4. Drag the sample PDFs onto the Simulator window; they are saved to the Files app.
+
+### iPhone or iPad (build it on a Mac)
+
+This install builds an evaluation app on a Mac with full Xcode and the iOS platform, then signs
+it for your connected phone with your Apple Account (a free Personal Team can be used). These
+steps have not been tried on a real device here. Use only FAKE files and a throwaway test vault;
+if a step fails, [report it](#report-what-you-find) with the source commit and last lines of output.
+
+The default checkout below is **main at `315604a32202eae9168582bb66609841c2d8ead6`**.
+It has no iPhone PDF reader: **Read** on a phone reports that documents cannot be shown yet.
+The optional draft reader trial below uses a separate, exact source commit.
+
+**Once, on the Mac:**
+
+1. Install full **Xcode**, open it, accept its licence and add the **iOS** platform. Follow
+   [Tauri's iOS prerequisites](https://v2.tauri.app/start/prerequisites/#ios). Command Line Tools
+   alone are not enough. Check that `xcode-select -p` ends in `Xcode.app/Contents/Developer`;
+   otherwise run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+2. Use **Node 22.14.0**, matching this source's CI, from the
+   [versioned Node download](https://nodejs.org/download/release/v22.14.0/), and install
+   [rustup](https://rustup.rs/) and CocoaPods as described in the prerequisites. Then run:
+
+   ```bash
+   node --version
+   rustup toolchain install 1.98.0 --profile minimal --component clippy --component rustfmt
+   pod --version
+   xcodebuild -version
+   ```
+
+   Node should report `v22.14.0`; `rust-toolchain.toml` pins Rust **1.98.0**.
+   `npm ci` below installs the locked Tauri CLI **2.11.4**; do not install a global CLI or update
+   the lockfiles. This repository does not pin Xcode or CocoaPods versions. Include their versions,
+   the Mac's macOS version, and the phone's model and iOS version in your test report.
+3. In **Xcode → Settings → Accounts**, sign in with your Apple Account, select your
+   **Personal Team**, and use **Manage Certificates… → + → Apple Development**.
+4. Get a fresh checkout of the default main source:
+
+   ```bash
+   git clone --no-checkout https://github.com/carlos-emr/mycarlos.git ~/mycarlos
+   cd ~/mycarlos
+   git fetch origin main
+   git switch --detach 315604a32202eae9168582bb66609841c2d8ead6
+   git rev-parse HEAD
+   ```
+
+   Confirm that `git rev-parse HEAD` prints the full commit above, then install dependencies:
+
+   ```bash
+   npm ci
+   rustup target add --toolchain 1.98.0 aarch64-apple-ios
+   ```
+
+   The `aarch64-apple-ios` target is for a real phone; the downloadable CI app targets the
+   Simulator and cannot be installed on the phone. For the optional reader trial, use its
+   separate checkout below instead of this step.
+
+**Each time you install** (from the selected checkout):
+
+5. Set `APPLE_DEVELOPMENT_TEAM` to the 10-character team ID for the certificate you just created
+   (under **Subject Name → Organizational Unit** in Keychain Access). Replace the placeholder
+   below; use the same team you selected in Xcode. The variable lasts for this Terminal window.
+   On the fresh checkout, initialize the iOS project once:
+
+   ```bash
+   export APPLE_DEVELOPMENT_TEAM='YOUR_TEAM_ID'
+   npm run tauri ios init
+   ```
+
+6. Connect the unlocked phone with a data cable, tap **Trust** and enter its passcode. Let Xcode
+   prepare it in **Window → Devices and Simulators**. On iOS 16 or later, enable
+   **Settings → Privacy & Security → Developer Mode** and complete the restart. If the switch is
+   missing, open Xcode's Devices window with the phone connected and check again.
+7. Build and install, with the phone unlocked:
+
+   ```bash
+   npm run tauri ios run
+   ```
+
+   Choose the connected phone if prompted. This uses the bundled frontend, without a development
+   server ([Tauri command reference](https://v2.tauri.app/reference/cli/#ios-run)). Allow the
+   signing keychain prompt. The first install may need step 8 before it can open; then repeat
+   this step.
+8. On the phone, trust your developer under **Settings → General → VPN & Device Management**.
+
+**Optional iPhone PDF reader trial — draft #105:**
+
+Use the published [draft #105](https://github.com/carlos-emr/mycarlos/pull/105) at
+**`098c576986b17c39edc1a8b7dd0f98d118db709b`**. It is unmerged; installing main does not enable
+this reader. Instead of step 4, use a separate checkout:
+
+```bash
+git clone --no-checkout https://github.com/carlos-emr/mycarlos.git ~/mycarlos-iphone-trial
+cd ~/mycarlos-iphone-trial
+git fetch origin codex/agent2-ios-pdf-reader-20261022
+git switch --detach 098c576986b17c39edc1a8b7dd0f98d118db709b
+git rev-parse HEAD
+```
+
+Confirm that the printed commit is exactly the trial pin above, then run `npm ci` and
+`rustup target add --toolchain 1.98.0 aarch64-apple-ios` here and continue steps 5–8 from this
+checkout. To keep a separate main app installed alongside it, choose a distinct local bundle
+identifier before `ios init`, as described in the troubleshooting table.
+
+[This pin's automatic checks](https://github.com/carlos-emr/mycarlos/actions/runs/40524215876)
+were still pending when recorded on 27 October 2026. Earlier head [7586137](https://github.com/carlos-emr/mycarlos/commit/758613727b9c0ea5557414413cb401e24b7f6114)
+passed iOS Simulator compilation; that result is not a current-pin build or a device test.
+Record the checks for the exact source you install.
+
+This trial uses a separate native WebKit PDF view; it does not establish the desktop helper's
+isolation guarantees. Native rendering, close/background/lock behavior, VoiceOver and repeated-read
+memory checks still need a real iPhone. A successful Simulator compile or browser test is not
+that proof. Import/export through Files, including **On My iPhone** and **iCloud Drive**, also
+remain unverified ([issue #5](https://github.com/carlos-emr/mycarlos/issues/5)); the reader does
+not resolve the save picker's security-scoped file and temporary-directory behavior.
+
+**Sample files:** Five FAKE PDFs are included in the selected checkout's `dev-data/`. To regenerate
+these synthetic files, run `npm run dev:data` there. AirDrop only `FAKE_*.pdf` to the phone and save
+them to Files; `FAKE_MANIFEST.json` describes the samples and is not a PDF. Then follow
+[What to try](#what-to-try), recording actual results and any platform limitations.
+
+Good to know:
+
+- **Free Personal Team:** Apple limits this to three installed apps per device and profiles that
+  expire after seven days. Rebuild and reinstall using the same team and bundle identifier to
+  renew the profile ([Apple's account guide](https://developer.apple.com/help/account/basics/about-your-developer-account)).
+  Vault preservation during renewal has not been checked on a real phone here.
+- **Updating a pinned checkout:** do not use `git pull` to change the source implicitly. Select
+  another reviewed full commit in a fresh checkout, record it, run `npm ci`, and repeat the
+  signing/install steps. Keep existing checkouts and vaults.
+- **Removing:** deleting the app removes its vault. Do not uninstall it as a signing or reader fix.
+- **Desktop only in main:** unlocking password-protected PDFs and the built-in PDF reader. The
+  draft trial does not provide the desktop password-unlock controls on iPhone.
+- **Camera:** enabled in the source on computers, Android and iPhone; real-phone permission and
+  capture checks remain unperformed here.
+
+**If something goes wrong:**
+
+| You see | Do this |
+| --- | --- |
+| `xcodebuild` requires Xcode but the active developer directory is Command Line Tools | `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |
+| An iOS platform is missing | Install it in Xcode's Settings, then retry |
+| The device target is not installed | In the selected checkout: `rustup target add --toolchain 1.98.0 aarch64-apple-ios` |
+| `pod: command not found` | Complete the CocoaPods prerequisite, then open a new Terminal |
+| No signing certificate or development team | Recheck steps 3 and 5, using the selected team's certificate |
+| The bundle identifier is unavailable | Choose a unique local `identifier` in `src-tauri/tauri.conf.json` before initializing. Do not commit it. A different identifier installs a separate app with a separate vault |
+| Developer Mode is disabled or the phone is locked | Complete step 6 and unlock the phone |
+| A signature or profile is not trusted | Trust the developer in step 8 and repeat step 7 |
+| A free development limit is reached | Check the account's limits in Xcode; preserve existing apps and vaults |
+| The phone is not listed | Check the data cable, unlock and Trust, then check Xcode's Devices window |
+| The build runs out of storage | Report the failing command and free storage; preserve existing checkouts and test evidence |
+
+Anything else: [report it](#report-what-you-find) with the source commit, tool versions and last
+lines of output. Never include a private signing key, passphrase or recovery key.
 
 ## What to try
 

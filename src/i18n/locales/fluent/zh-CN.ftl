@@ -317,9 +317,9 @@ interface-VaultLibrary-myCarlosEncryptedRecordLibrary = myCarlos 加密记录库
 
 interface-VaultLibrary-nameAZ = 名称 A–Z
 
-interface-VaultLibrary-new = 添加
+interface-VaultLibrary-new = 新建
 
-interface-VaultLibrary-newFolder = 添加文件夹
+interface-VaultLibrary-newFolder = 新建文件夹
 
 interface-VaultLibrary-newestFirst = 最新项目优先
 
@@ -1140,6 +1140,8 @@ security-title = 安全
 sidebar-documents = { $count } 份文档
 
 sidebar-folderCount = { $count } 个文件夹
+
+sidebar-folderOfPerson = { $folder }（{ $person }）
 
 sidebar-label = 记录库
 

@@ -560,7 +560,7 @@ interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteca de documentos
 
 interface-VaultLibrary-nameAZ = Nome A–Z
 
-interface-VaultLibrary-new = Novos
+interface-VaultLibrary-new = Novo
 
 interface-VaultLibrary-newestFirst = Mais recentes primeiro
 
@@ -1290,6 +1290,8 @@ sidebar-folderCount =
     [many] { $count } de pastas
     *[other] { $count } pastas
     }
+
+sidebar-folderOfPerson = { $folder } ({ $person })
 
 sidebar-label = Biblioteca de documentos
 
