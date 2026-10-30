@@ -730,6 +730,13 @@ export const MESSAGE_KEYS = [
   "interface.history.sessionNotRecorded",
   "interface.history.title",
   "interface.history.to",
+  "portal.connectConsent",
+  "portal.connected",
+  "portal.connecting",
+  "portal.errorBusy",
+  "portal.linkedApprovalIssue",
+  "portal.retryApproval",
+  "portal.working",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1586,6 +1593,13 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-sessionNotRecorded",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
+  "portal.connectConsent": "portal-connectConsent",
+  "portal.connected": "portal-connected",
+  "portal.connecting": "portal-connecting",
+  "portal.errorBusy": "portal-errorBusy",
+  "portal.linkedApprovalIssue": "portal-linkedApprovalIssue",
+  "portal.retryApproval": "portal-retryApproval",
+  "portal.working": "portal-working",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2403,6 +2417,13 @@ export interface MessageArgsByKey {
   "interface.history.sessionNotRecorded": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
+  "portal.connectConsent": undefined;
+  "portal.connected": undefined;
+  "portal.connecting": undefined;
+  "portal.errorBusy": undefined;
+  "portal.linkedApprovalIssue": undefined;
+  "portal.retryApproval": undefined;
+  "portal.working": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -94,6 +94,26 @@ describe("native idle deadline bridge", () => {
     ]);
   });
 
+  it("keeps the link and approval action in one native call and preserves partial state", async () => {
+    const bridge = createVaultBridge();
+    const request = {
+      portalBase: "https://portal.example.test/patient",
+      code: "FAKE0001-FAKE7-Q2M4K",
+      deviceName: "FAKE receiving device",
+      profileId: null,
+    };
+    const result = {
+      link: { id: "FAKE original link", deviceKeyId: "FAKE original key" },
+      approvalError: {
+        code: "portal_link_incomplete",
+        message: "FAKE lost reply",
+      },
+    };
+    invoke.mockResolvedValue(result);
+    await expect(bridge.connectPortal!(request)).resolves.toEqual(result);
+    expect(invoke.mock.calls).toEqual([["vault_portal_connect", { request }]]);
+  });
+
   it("sends a photo as one body: its target's length, the target, then the JPEG", async () => {
     const bridge = createVaultBridge();
     const sent: Uint8Array[] = [];

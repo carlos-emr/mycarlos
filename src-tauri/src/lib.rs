@@ -322,6 +322,10 @@ impl From<VaultError> for PublicText {
                         code: "portal_link_device_exists",
                         message_key: "portal.errorExists",
                     },
+                    LinkError::Busy => Self {
+                        code: "portal_busy",
+                        message_key: "portal.errorBusy",
+                    },
                     LinkError::Cancelled => Self {
                         code: "cancelled",
                         message_key: "portal.errorCancelled",
@@ -1745,6 +1749,45 @@ async fn vault_portal_link(
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
     .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_portal_connect(
+    store: State<'_, Arc<VaultStore>>,
+    request: PortalLinkRequest,
+) -> CommandResult<PortalConnectResult> {
+    if !portal_link::enabled() {
+        return Err(VaultError::Portal(portal_link::LinkError::Disabled).into());
+    }
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        store.connect_portal(
+            &request.portal_base,
+            &request.code,
+            &request.device_name,
+            request.profile_id,
+            now_ms(),
+            session,
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map(|(link, error)| PortalConnectResult {
+        link,
+        approval_error: error.map(PublicError::from),
+    })
+    .map_err(Into::into)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PortalConnectResult {
+    link: portal_link::LinkSummary,
+    approval_error: Option<PublicError>,
 }
 
 #[tauri::command]
@@ -3538,6 +3581,7 @@ pub fn run() {
             vault_snapshot,
             vault_history,
             vault_portal_link,
+            vault_portal_connect,
             vault_check_documents,
             vault_request_device_approval,
             vault_restart_device_approval,

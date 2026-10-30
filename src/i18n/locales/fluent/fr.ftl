@@ -1477,11 +1477,11 @@ portal-errorUnavailable = L’association au portail n’est pas encore disponib
 
 portal-fingerprint = Empreinte complète de l’appareil
 
-portal-incomplete = Association incomplète. Consultez les appareils associés dans le portail avant de réessayer.
+portal-incomplete = Cette tentative enregistrée est incomplète. Vérifiez les appareils associés dans le portail ou contactez votre clinique avant d’associer l’appareil à nouveau. Cette application ne peut pas reprendre cette tentative.
 
 portal-intro = Associez myCarlos avec l’adresse et le code affichés dans votre portail patient.
 
-portal-link = Associer à la clinique
+portal-link = Connecter et demander l’approbation
 
 portal-matchPerson = Utiliser les renseignements du document
 
@@ -1519,6 +1519,19 @@ rename-profile-saved = Le dossier s’appelle maintenant { $name }.
 
 rename-title-profile = Renommer le dossier de la personne
 
+portal-connectConsent = Cette action associe cet appareil à votre clinique et envoie une demande d’approbation. Votre clinique doit approuver l’appareil avant qu’il puisse recevoir des documents.
+
+portal-connected = Appareil associé. Son état d’approbation est indiqué sur la page Sécurité, section Documents de la clinique.
+
+portal-connecting = Connexion et demande d’approbation à la clinique en cours…
+
+portal-errorBusy = Une autre opération avec la clinique est en cours. Attendez qu’elle se termine, puis réessayez.
+
+portal-linkedApprovalIssue = Appareil associé, mais la demande d’approbation n’a pas pu être confirmée. L’état de l’appareil, sur la page Sécurité, section Documents de la clinique, indique la marche à suivre.
+
+portal-retryApproval = Réessayer la demande d’approbation enregistrée
+
+portal-working = Opération avec la clinique en cours…
 hidden-backToSecurity = Retour à la sécurité
 
 interface-history-appVersion = Version de myCarlos

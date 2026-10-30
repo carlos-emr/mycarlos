@@ -99,25 +99,31 @@ pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Op
 }
 
 #[cfg(feature = "portal-linking")]
+pub(super) struct PortalWork<'a>(&'a AtomicBool);
+
+#[cfg(feature = "portal-linking")]
+impl Drop for PortalWork<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+#[cfg(feature = "portal-linking")]
 impl VaultStore {
+    /// Reserve portal work without queuing it behind another session's HTTP.
+    /// Local reads and the short vault commits remain independent of this guard.
+    pub(super) fn start_portal_work(&self) -> Result<PortalWork<'_>, VaultError> {
+        self.portal_check_running
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| PortalWork(&self.portal_check_running))
+            .map_err(|_| VaultError::Portal(portal_link::LinkError::Busy))
+    }
+
     pub(crate) fn check_documents(
         &self,
         session: u64,
     ) -> Result<crate::portal_pickup::CheckResult, VaultError> {
-        if self
-            .portal_check_running
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err(VaultError::Invalid);
-        }
-        struct Running<'a>(&'a AtomicBool);
-        impl Drop for Running<'_> {
-            fn drop(&mut self) {
-                self.0.store(false, Ordering::Release);
-            }
-        }
-        let _running = Running(&self.portal_check_running);
+        let _running = self.start_portal_work()?;
         crate::portal_pickup::check(self, session)
     }
 
@@ -973,11 +979,36 @@ struct ApprovalReconciliation {
 }
 #[cfg(feature = "portal-linking")]
 impl VaultStore {
+    pub(super) fn connect_portal_using(
+        &self,
+        session: u64,
+        link: impl FnOnce() -> Result<portal_link::LinkSummary, VaultError>,
+        http: &impl ApprovalExchange,
+    ) -> Result<(portal_link::LinkSummary, Option<VaultError>), VaultError> {
+        let _running = self.start_portal_work()?;
+        let linked = link()?;
+        run_at_test_boundary("portal.connected-before-approval");
+        // Both operations use the ticket captured before IPC was queued. A
+        // lock/reopen between them must not authorize work in the new session.
+        let approval_error = self
+            .request_staff_approval_using(linked.id, session, false, http)
+            .err();
+        // Publish only current persisted state in that same writable session.
+        // A failed second step never starts a replacement link or request.
+        let current = self
+            .delivery_links(session)?
+            .into_iter()
+            .find(|saved| saved.id == linked.id)
+            .ok_or(VaultError::NotFound)?;
+        Ok((current.summary(), approval_error))
+    }
+
     pub(crate) fn request_staff_approval(
         &self,
         link_id: Uuid,
         session: u64,
     ) -> Result<(), VaultError> {
+        let _running = self.start_portal_work()?;
         self.request_staff_approval_using(link_id, session, false, &ApprovalHttp)
     }
     pub(crate) fn restart_staff_approval(
@@ -985,6 +1016,7 @@ impl VaultStore {
         link_id: Uuid,
         session: u64,
     ) -> Result<(), VaultError> {
+        let _running = self.start_portal_work()?;
         self.request_staff_approval_using(link_id, session, true, &ApprovalHttp)
     }
     fn approval_error(link: &StoredLink, missing: bool) -> Result<(), VaultError> {
@@ -1359,6 +1391,278 @@ mod approval_recovery_tests {
             .ok_or(VaultError::Invalid)
         }
     }
+    fn new_connect_store() -> (tempfile::TempDir, VaultStore) {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Connect Patient", 1).unwrap();
+        (temp, store)
+    }
+
+    fn finish_connect_link(
+        store: &VaultStore,
+        session: u64,
+    ) -> Result<portal_link::LinkSummary, VaultError> {
+        store.link_portal_using(
+            "https://fake.example",
+            "FAKE0001-FAKE7-Q2M4K",
+            "myCarlos FAKE device",
+            None,
+            (crate::now_ms(), session),
+            |_, device_id, _| {
+                let (_, fixture, _) = portal_approval::first_fixture();
+                let mut clinic = fixture.clinic.unwrap();
+                clinic.device_key_id = device_id.to_owned();
+                Ok(clinic)
+            },
+        )
+    }
+
+    #[test]
+    fn connect_submits_only_for_the_exact_durably_linked_device_without_granting_approval() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let mut http = Script::new(vec![], vec![Reply::Pending]);
+        http.check_saved_on_post = Some(&store);
+        let (result, error) = store
+            .connect_portal_using(session, || finish_connect_link(&store, session), &http)
+            .unwrap();
+        assert!(error.is_none());
+        assert!(!result.incomplete && result.approval_requested && !result.clinic_approved);
+        let current = saved(&store);
+        assert_eq!(current.id, result.id);
+        assert_eq!(current.keys.device_key_id(), result.device_key_id);
+        assert_eq!(
+            store
+                .session()
+                .as_ref()
+                .unwrap()
+                .manifest
+                .portal_links
+                .len(),
+            1
+        );
+        assert!(current.approval_history.is_empty());
+        let calls = http.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0],
+            (
+                "POST",
+                current.approval.as_ref().unwrap().request_id,
+                current.approval.as_ref().unwrap().intent.clone()
+            )
+        );
+    }
+
+    #[test]
+    fn connect_lost_approval_reply_keeps_the_original_link_keys_and_request_for_retry_after_reopen()
+    {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let http = Script::new(vec![], vec![Reply::Network]);
+        let (result, error) = store
+            .connect_portal_using(session, || finish_connect_link(&store, session), &http)
+            .unwrap();
+        assert!(matches!(
+            error,
+            Some(VaultError::Portal(portal_link::LinkError::Network))
+        ));
+        let original = saved(&store);
+        assert_eq!(original.id, result.id);
+        assert!(!result.incomplete && result.approval_requested && !result.clinic_approved);
+        let store = restart(store);
+        let http = Script::new(vec![Reply::Missing], vec![Reply::Pending]);
+        store
+            .request_staff_approval_using(result.id, store.portal_link_ticket(), false, &http)
+            .unwrap();
+        let retried = saved(&store);
+        assert_eq!(original.id, retried.id);
+        assert_eq!(original.keys.device_key_id(), retried.keys.device_key_id());
+        assert_eq!(
+            original.approval.as_ref().unwrap().request_id,
+            retried.approval.as_ref().unwrap().request_id
+        );
+        assert_eq!(
+            original.approval.as_ref().unwrap().intent,
+            retried.approval.as_ref().unwrap().intent
+        );
+        assert!(retried.approval_history.is_empty());
+        assert_eq!(
+            store
+                .session()
+                .as_ref()
+                .unwrap()
+                .manifest
+                .portal_links
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn connect_lock_and_reopen_between_link_and_request_never_posts_in_the_new_session() {
+        let (_temp, store) = new_connect_store();
+        let store = Arc::new(store);
+        let session = store.portal_link_ticket();
+        let locker = Arc::clone(&store);
+        AT_TEST_BOUNDARY.with(|slot| {
+            *slot.borrow_mut() = Some((
+                "portal.connected-before-approval",
+                Box::new(move || {
+                    locker.lock();
+                    locker.unlock(PASSWORD).unwrap();
+                }),
+            ));
+        });
+        let http = Script::new(vec![], vec![]);
+        let result =
+            store.connect_portal_using(session, || finish_connect_link(&store, session), &http);
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        assert!(http.calls.lock().unwrap().is_empty());
+        let current = saved(&store);
+        assert!(!current.summary().incomplete);
+        assert!(current.approval.is_none());
+        assert_eq!(
+            store
+                .session()
+                .as_ref()
+                .unwrap()
+                .manifest
+                .portal_links
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn connect_lost_link_reply_keeps_incomplete_attempt_without_requesting_approval() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let http = Script::new(vec![], vec![]);
+        let result = store.connect_portal_using(
+            session,
+            || {
+                store.link_portal_using(
+                    "https://fake.example",
+                    "FAKE0001-FAKE7-Q2M4K",
+                    "myCarlos",
+                    None,
+                    (crate::now_ms(), session),
+                    |_, _, _| Err(portal_link::LinkError::Network),
+                )
+            },
+            &http,
+        );
+        assert!(matches!(
+            result,
+            Err(VaultError::Portal(portal_link::LinkError::Network))
+        ));
+        assert!(http.calls.lock().unwrap().is_empty());
+        let guard = store.session();
+        let links = &guard.as_ref().unwrap().manifest.portal_links;
+        assert_eq!(links.len(), 1);
+        assert!(links[0].summary().incomplete && links[0].approval.is_none());
+        drop(guard);
+        assert!(
+            store.start_portal_work().is_ok(),
+            "failed work releases admission"
+        );
+    }
+
+    #[test]
+    fn connect_shared_admission_rejects_repeated_callbacks_and_other_portal_work_without_queuing() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let running = store.start_portal_work().unwrap();
+        let stale = session.wrapping_add(1);
+        let busy = |error| matches!(error, VaultError::Portal(portal_link::LinkError::Busy));
+        assert!(busy(
+            store
+                .connect_portal_using(
+                    stale,
+                    || panic!("duplicate link must not generate keys"),
+                    &Script::new(vec![], vec![])
+                )
+                .err()
+                .unwrap()
+        ));
+        assert!(busy(
+            store
+                .link_portal(
+                    "https://fake.example",
+                    "FAKE0001-FAKE7-Q2M4K",
+                    "myCarlos",
+                    None,
+                    1,
+                    stale
+                )
+                .err()
+                .unwrap()
+        ));
+        assert!(busy(
+            store
+                .request_staff_approval(Uuid::nil(), stale)
+                .err()
+                .unwrap()
+        ));
+        assert!(busy(
+            store
+                .restart_staff_approval(Uuid::nil(), stale)
+                .err()
+                .unwrap()
+        ));
+        assert!(busy(store.check_documents(stale).err().unwrap()));
+        assert!(
+            store.snapshot().unwrap().portal_links.is_empty(),
+            "local records remain readable"
+        );
+        drop(running);
+        let http = Script::new(vec![], vec![Reply::Pending]);
+        assert!(store
+            .connect_portal_using(session, || finish_connect_link(&store, session), &http)
+            .is_ok());
+    }
+
+    #[test]
+    fn connect_recovery_mode_and_stale_tickets_never_link_or_request_approval() {
+        for recovery in [false, true] {
+            let (_temp, store) = new_connect_store();
+            let session = store.portal_link_ticket();
+            if recovery {
+                store.session().as_mut().unwrap().recovery = Some(RecoveryReason::WriteFailed);
+            } else {
+                store.lock();
+                store.unlock(PASSWORD).unwrap();
+            }
+            let before = store.session().as_ref().unwrap().manifest.clone();
+            let http = Script::new(vec![], vec![]);
+            let result = store.connect_portal_using(
+                session,
+                || {
+                    store.link_portal_using(
+                        "https://fake.example",
+                        "FAKE0001-FAKE7-Q2M4K",
+                        "myCarlos",
+                        None,
+                        (crate::now_ms(), session),
+                        |_, _, _| panic!("ineligible session must not send HTTP"),
+                    )
+                },
+                &http,
+            );
+            if recovery {
+                assert!(matches!(result, Err(VaultError::RecoveryMode)));
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(VaultError::Portal(portal_link::LinkError::Cancelled))
+                ));
+            }
+            assert!(http.calls.lock().unwrap().is_empty());
+            assert!(before == store.session().as_ref().unwrap().manifest);
+        }
+    }
+
     fn setup(saved: bool) -> (tempfile::TempDir, VaultStore, StoredLink, Attempt) {
         let (_, mut link, attempt) = portal_approval::first_fixture();
         if saved {

@@ -321,6 +321,12 @@ export interface VaultBridge {
   /** Reads the audit history as far as its encrypted chain checks out. */
   history(): Promise<AuditHistoryView>;
   linkPortal?(request: PortalLinkInput): Promise<PortalLinkSummary>;
+  /** One explicit action, under one native session ticket; a failed approval
+   * step returns the durable original link rather than creating another one. */
+  connectPortal?(request: PortalLinkInput): Promise<{
+    link: PortalLinkSummary;
+    approvalError: PublicError | null;
+  }>;
   checkDocuments?(): Promise<{
     added: number;
     refused: number;
@@ -535,6 +541,7 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     portal_link_keys_missing: "portal.errorKeys",
     portal_link_device_exists: "portal.errorExists",
     portal_link_incomplete: "portal.errorIncomplete",
+    portal_busy: "portal.errorBusy",
     pickup_refused: "portal.errorRefused",
     pickup_damaged: "portal.errorDamaged",
   } as const;
@@ -717,6 +724,7 @@ export function createVaultBridge(): VaultBridge {
       invoke("vault_request_device_approval", { linkId }),
     linkPortal: (request) =>
       invoke<PortalLinkSummary>("vault_portal_link", { request }),
+    connectPortal: (request) => invoke("vault_portal_connect", { request }),
     changePassphrase: (currentPassphrase, newPassphrase) =>
       invoke<void>("vault_change_passphrase", {
         request: { currentPassphrase, newPassphrase },

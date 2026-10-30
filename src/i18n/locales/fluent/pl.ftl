@@ -1509,11 +1509,11 @@ portal-errorUnavailable = Łączenie z portalem nie jest jeszcze dostępne na ty
 
 portal-fingerprint = Pełny odcisk urządzenia
 
-portal-incomplete = Połączenie nie zostało ukończone. Sprawdź połączone urządzenia w portalu przed kolejną próbą.
+portal-incomplete = Ta zapisana próba jest niekompletna. Sprawdź połączone urządzenia w portalu lub skontaktuj się z przychodnią przed ponownym łączeniem. Aplikacja nie może wznowić tej próby.
 
 portal-intro = Połącz myCarlos, używając adresu i kodu z portalu pacjenta.
 
-portal-link = Połącz z przychodnią
+portal-link = Połącz i poproś o zatwierdzenie
 
 portal-matchPerson = Dopasuj dane z dokumentu
 
@@ -1551,6 +1551,19 @@ rename-profile-saved = Nazwa folderu została zmieniona na { $name }.
 
 rename-title-profile = Zmień nazwę folderu osoby
 
+portal-connectConsent = Ta czynność łączy to urządzenie i wysyła prośbę o zatwierdzenie. Przychodnia musi zatwierdzić urządzenie, zanim będzie ono mogło odbierać dokumenty.
+
+portal-connected = Urządzenie zostało połączone. Stan jego zatwierdzenia znajdziesz na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni.
+
+portal-connecting = Łączenie i wysyłanie prośby o zatwierdzenie przez przychodnię…
+
+portal-errorBusy = Trwa inna operacja związana z przychodnią. Poczekaj, aż się zakończy, i spróbuj ponownie.
+
+portal-linkedApprovalIssue = Urządzenie zostało połączone, ale nie udało się potwierdzić prośby o zatwierdzenie. Stan urządzenia na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni, wskazuje, co zrobić dalej.
+
+portal-retryApproval = Ponów zapisaną prośbę o zatwierdzenie
+
+portal-working = Trwa operacja związana z przychodnią…
 hidden-backToSecurity = Powrót do zabezpieczeń
 
 interface-history-appVersion = Wersja myCarlos

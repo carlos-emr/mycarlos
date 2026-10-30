@@ -1445,11 +1445,11 @@ portal-errorUnavailable = Portal linking is not available on this device yet.
 
 portal-fingerprint = Full device fingerprint
 
-portal-incomplete = Link incomplete. Check Linked devices in the portal before trying again.
+portal-incomplete = This saved attempt is incomplete. Check linked devices in the portal or contact your clinic before connecting again. This app cannot resume this attempt.
 
 portal-intro = Link myCarlos using the address and code shown in your patient portal.
 
-portal-link = Link to clinic
+portal-link = Connect and request approval
 
 portal-matchPerson = Match the document details
 
@@ -1487,6 +1487,19 @@ rename-profile-saved = Folder name changed to { $name }.
 
 rename-title-profile = Rename person's folder
 
+portal-connectConsent = This connects this device and sends an approval request. Your clinic must approve the device before it can receive documents.
+
+portal-connected = Device linked. Its approval status is shown in Security, under Clinic documents.
+
+portal-connecting = Connecting and requesting clinic approval…
+
+portal-errorBusy = Another clinic operation is running. Wait for it to finish, then try again.
+
+portal-linkedApprovalIssue = Device linked, but the approval request could not be confirmed. Its status in Security, under Clinic documents, says what to do next.
+
+portal-retryApproval = Retry saved approval request
+
+portal-working = Clinic operation in progress…
 hidden-backToSecurity = Back to Security
 
 interface-history-appVersion = myCarlos version

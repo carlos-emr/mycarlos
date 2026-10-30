@@ -1317,11 +1317,11 @@ portal-errorUnavailable = 此裝置尚不能使用入口網站連結功能。
 
 portal-fingerprint = 完整裝置指紋
 
-portal-incomplete = 連結未完成。請先在入口網站的「Linked devices」（已連結的裝置）頁面查看，再重試。
+portal-incomplete = 此已儲存的嘗試未完成。重新連線前，請在入口網站查看已連結的裝置（「Linked devices」頁面），或聯絡診所。此 App 無法繼續這次嘗試。
 
 portal-intro = 請使用病患入口網站上顯示的網址和連結碼來連結 myCarlos。
 
-portal-link = 連結診所
+portal-link = 連線並申請核准
 
 portal-matchPerson = 依文件上的資料比對
 
@@ -1359,6 +1359,19 @@ rename-profile-saved = 資料夾名稱已變更為「{ $name }」。
 
 rename-title-profile = 重新命名此人的資料夾
 
+portal-connectConsent = 此操作會連線此裝置並傳送核准請求。診所必須先核准此裝置，裝置才能接收文件。
+
+portal-connected = 裝置已連結。可在「安全性」的「診所文件」下查看其核准狀態。
+
+portal-connecting = 正在連線並申請診所核准…
+
+portal-errorBusy = 另一項診所作業正在進行。請等其完成後重試。
+
+portal-linkedApprovalIssue = 裝置已連結，但無法確認核准請求。請查看「安全性」的「診所文件」下的狀態，了解下一步操作。
+
+portal-retryApproval = 重試已儲存的核准請求
+
+portal-working = 正在處理診所作業…
 hidden-backToSecurity = 返回「安全性」
 
 interface-history-appVersion = myCarlos 版本

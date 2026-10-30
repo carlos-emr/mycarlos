@@ -1477,11 +1477,11 @@ portal-errorUnavailable = A vinculação com o portal ainda não está disponív
 
 portal-fingerprint = Impressão digital completa do dispositivo
 
-portal-incomplete = Vinculação incompleta. Confira os dispositivos vinculados no portal antes de tentar novamente.
+portal-incomplete = Esta tentativa salva está incompleta. Confira os dispositivos vinculados no portal ou entre em contato com sua clínica antes de conectar novamente. Este aplicativo não pode retomar esta tentativa.
 
 portal-intro = Vincule o myCarlos usando o endereço e o código exibidos no portal do paciente.
 
-portal-link = Vincular à clínica
+portal-link = Conectar e solicitar aprovação
 
 portal-matchPerson = Usar os dados do documento
 
@@ -1519,6 +1519,19 @@ rename-profile-saved = O nome da pasta foi alterado para { $name }.
 
 rename-title-profile = Renomear a pasta da pessoa
 
+portal-connectConsent = Esta ação vincula este dispositivo e envia uma solicitação de aprovação. Sua clínica precisa aprovar o dispositivo antes que ele possa receber documentos.
+
+portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Documentos da clínica.
+
+portal-connecting = Conectando e solicitando a aprovação da clínica…
+
+portal-errorBusy = Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.
+
+portal-linkedApprovalIssue = Dispositivo vinculado, mas não foi possível confirmar a solicitação de aprovação. O status do dispositivo, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
+
+portal-retryApproval = Tentar novamente a solicitação de aprovação salva
+
+portal-working = Operação com a clínica em andamento…
 hidden-backToSecurity = Voltar para Segurança
 
 interface-history-appVersion = Versão do myCarlos

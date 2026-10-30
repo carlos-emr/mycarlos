@@ -1317,11 +1317,11 @@ portal-errorUnavailable = 此设备尚不能使用门户网站关联功能。
 
 portal-fingerprint = 完整设备指纹
 
-portal-incomplete = 关联未完成。请先在门户网站的「Linked devices」（已关联的设备）页面查看，再重试。
+portal-incomplete = 此已保存的尝试未完成。重新连接前，请在门户网站查看已关联的设备（「Linked devices」页面），或联系诊所。此应用无法继续这次尝试。
 
 portal-intro = 请使用患者门户网站上显示的网址和关联码来关联 myCarlos。
 
-portal-link = 关联诊所
+portal-link = 连接并申请批准
 
 portal-matchPerson = 依文档上的资料匹配
 
@@ -1359,6 +1359,19 @@ rename-profile-saved = 文件夹名称已变更为「{ $name }」。
 
 rename-title-profile = 重命名此人的文件夹
 
+portal-connectConsent = 此操作会连接此设备并发送批准请求。诊所必须先批准此设备，设备才能接收文档。
+
+portal-connected = 设备已关联。可在「安全」的「诊所文档」下查看其批准状态。
+
+portal-connecting = 正在连接并申请诊所批准…
+
+portal-errorBusy = 另一项诊所操作正在进行。请等其完成后重试。
+
+portal-linkedApprovalIssue = 设备已关联，但无法确认批准请求。请查看「安全」的「诊所文档」下的状态，了解下一步操作。
+
+portal-retryApproval = 重试已保存的批准请求
+
+portal-working = 正在处理诊所操作…
 hidden-backToSecurity = 返回「安全」
 
 interface-history-appVersion = myCarlos 版本

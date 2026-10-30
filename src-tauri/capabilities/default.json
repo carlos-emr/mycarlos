@@ -16,6 +16,7 @@
     "allow-vault-snapshot",
     "allow-vault-history",
     "allow-vault-portal-link",
+    "allow-vault-portal-connect",
     "allow-vault-check-documents",
     "allow-vault-request-device-approval",
     "allow-vault-restart-device-approval",

@@ -8793,3 +8793,415 @@ describe("the warning before the automatic lock (#68)", () => {
     ).toBeVisible();
   });
 });
+
+describe("clinic connection operations", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
+  });
+  const connectedLink = {
+    id: "fake-clinic-link",
+    portalBase: "https://portal.example.test/patient",
+    deviceName: "myCarlos FAKE device",
+    profileId: null,
+    clinicName: "FAKE First Clinic",
+    fingerprints: [],
+    incomplete: false,
+    deviceKeyId: "FAKE_FIRST_DEVICE",
+    deviceFingerprint: "11".repeat(32),
+    approvalRequested: true,
+    clinicApproved: false,
+  };
+  const clinicSnapshot: VaultSnapshot = {
+    ...snapshotWithRecord,
+    profiles: [
+      { id: "profile-1", displayName: "FAKE First Patient", createdAtMs: 1 },
+    ],
+    recoveryKeySetAtMs: 5,
+    portalLinkingEnabled: true,
+    portalLinks: [],
+  };
+  type ConnectResult = Awaited<
+    ReturnType<NonNullable<VaultBridge["connectPortal"]>>
+  >;
+  function pendingConnection() {
+    let finish!: (result: ConnectResult) => void;
+    const promise = new Promise<ConnectResult>((resolve) => {
+      finish = resolve;
+    });
+    return { promise, finish };
+  }
+  async function openConnectForm(code = "01234567-89ABCDEFGH") {
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(screen.getByLabelText("Linking code"), code);
+    return screen
+      .getByRole("button", { name: "Connect and request approval" })
+      .closest("form")!;
+  }
+
+  it("keeps local records usable and shares admission across clinic-view remounts", async () => {
+    let current = clinicSnapshot;
+    const pending = pendingConnection();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => current),
+      connectPortal: vi.fn().mockReturnValue(pending.promise),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const form = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    await userEvent
+      .setup()
+      .click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
+    expect(
+      await screen.findByRole("dialog", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Close document details" }));
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Security" }));
+    const connect = screen.getByRole("button", {
+      name: "Connect and request approval",
+    });
+    expect(connect).toBeDisabled();
+    expect(screen.getByText("Clinic operation in progress…")).toBeVisible();
+    await act(async () => {
+      fireEvent.submit(connect.closest("form")!);
+    });
+    expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+    await act(async () =>
+      pending.finish({ link: connectedLink, approvalError: null }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByLabelText("Full device fingerprint")).toHaveValue(
+      connectedLink.deviceFingerprint,
+    );
+    expect(bridge.linkPortal).not.toHaveBeenCalled();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "picker",
+      "No files selected. Nothing changed. Device linked. Its approval status is shown in Security, under Clinic documents.",
+    ],
+    [
+      "transfer",
+      "1 document encrypted and added. Device linked. Its approval status is shown in Security, under Clinic documents.",
+    ],
+  ] as const)(
+    "adds a clinic result that arrives during an import's %s after the import's own result",
+    async (stage, expected) => {
+      let current = clinicSnapshot;
+      const pending = pendingConnection();
+      let pick!: (value: string | null) => void;
+      let finishImport!: (value: ImportOutcome) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockImplementation(async () => current),
+        connectPortal: vi.fn().mockReturnValue(pending.promise),
+        checkDocuments: vi.fn(),
+        requestDeviceApproval: vi.fn(),
+        ...(stage === "picker"
+          ? {
+              pickImportFiles: vi.fn().mockReturnValue(
+                new Promise<string | null>((resolve) => {
+                  pick = resolve;
+                }),
+              ),
+            }
+          : {
+              importPickedFiles: vi.fn().mockReturnValue(
+                new Promise<ImportOutcome>((resolve) => {
+                  finishImport = resolve;
+                }),
+              ),
+            }),
+      });
+      render(<VaultApp bridge={bridge} />);
+      const form = await openConnectForm();
+      await act(async () => {
+        fireEvent.submit(form);
+      });
+      await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+      const user = userEvent.setup();
+      await user.click(
+        screen.getAllByRole("button", { name: /^My records/ })[0],
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Choose files to import" }),
+      );
+      await waitFor(() =>
+        expect(
+          stage === "picker"
+            ? bridge.pickImportFiles
+            : bridge.importPickedFiles,
+        ).toHaveBeenCalled(),
+      );
+      current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+      // The clinic view is gone and the import holds the line: the result
+      // waits. The compact control shows the clinic work has ended.
+      await act(async () =>
+        pending.finish({ link: connectedLink, approvalError: null }),
+      );
+      expect(
+        await screen.findByRole("button", { name: "Check for new documents" }),
+      ).toBeVisible();
+      expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+      await act(async () =>
+        stage === "picker"
+          ? pick(null)
+          : finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
+      );
+      await waitFor(() =>
+        expect(screen.getByText(humanText(expected))).toBeVisible(),
+      );
+    },
+  );
+
+  it("forgets a held clinic result when the vault locks", async () => {
+    let current = clinicSnapshot;
+    const pending = pendingConnection();
+    let pick!: (value: string | null) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => current),
+      unlock: vi.fn().mockImplementation(async () => current),
+      connectPortal: vi.fn().mockReturnValue(pending.promise),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+      pickImportFiles: vi.fn().mockReturnValue(
+        new Promise<string | null>((resolve) => {
+          pick = resolve;
+        }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const form = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await user.click(
+      screen.getByRole("button", { name: "Choose files to import" }),
+    );
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+    await act(async () =>
+      pending.finish({ link: connectedLink, approvalError: null }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Check for new documents" }),
+    ).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    // The picker settles in the ended session: nothing reaches the unlock
+    // screen.
+    await act(async () => pick(null));
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+    await user.type(
+      screen.getByLabelText("Passphrase", { exact: true }),
+      "FAKE clinic lock passphrase",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByRole("heading", { name: "My records" }),
+    ).toBeVisible();
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+  });
+
+  it("replaces an earlier clinic error with the next result, and holds an error during a picker", async () => {
+    let current = clinicSnapshot;
+    const retry = pendingConnection();
+    let refuseLater!: (error: unknown) => void;
+    const later = new Promise<never>((_, reject) => {
+      refuseLater = reject;
+    });
+    let pick!: (value: string | null) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => current),
+      connectPortal: vi
+        .fn()
+        .mockRejectedValueOnce({ code: "portal_link_code_rejected" })
+        .mockReturnValueOnce(retry.promise)
+        .mockReturnValueOnce(later),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+      pickImportFiles: vi.fn().mockReturnValue(
+        new Promise<string | null>((resolve) => {
+          pick = resolve;
+        }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const rejected =
+      "The portal did not accept that code. Make a new linking code in your patient portal.";
+    const form = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    expect(await screen.findByText(rejected)).toBeVisible();
+    // A new attempt clears the line when it starts; its result is alone.
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGJ",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(rejected)).not.toBeInTheDocument();
+    current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+    await act(async () =>
+      retry.finish({ link: connectedLink, approvalError: null }),
+    );
+    expect(
+      await screen.findByText(
+        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+      ),
+    ).toBeVisible();
+    // An error that arrives while a picker is open waits for its result.
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await user.click(
+      screen.getByRole("button", { name: "Choose files to import" }),
+    );
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    expect(bridge.connectPortal).toHaveBeenCalledTimes(3);
+    await act(async () => refuseLater({ code: "portal_busy" }));
+    expect(
+      await screen.findByRole("button", { name: "Check for new documents" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Another clinic operation is running/),
+    ).not.toBeInTheDocument();
+    await act(async () => pick(null));
+    expect(
+      await screen.findByText(
+        "No files selected. Nothing changed. Another clinic operation is running. Wait for it to finish, then try again.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("drops old-session completion without unlocking or clearing a new session's clinic work", async () => {
+    const first = pendingConnection();
+    const second = pendingConnection();
+    const secondLink = {
+      ...connectedLink,
+      id: "fake-clinic-link-2",
+      clinicName: "FAKE Second Clinic",
+      deviceKeyId: "FAKE_SECOND_DEVICE",
+      deviceFingerprint: "22".repeat(32),
+    };
+    const secondSnapshot: VaultSnapshot = {
+      ...clinicSnapshot,
+      profiles: [
+        { id: "profile-2", displayName: "FAKE Second Patient", createdAtMs: 2 },
+      ],
+      records: [],
+    };
+    let current = clinicSnapshot;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => current),
+      unlock: vi.fn().mockResolvedValue(secondSnapshot),
+      connectPortal: vi
+        .fn()
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const submittedForm = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(submittedForm);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    await userEvent
+      .setup()
+      .click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Passphrase", { exact: true }),
+      "FAKE second session passphrase",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    current = secondSnapshot;
+    const nextForm = await openConnectForm("01234567-89ABCDEFGJ");
+    await act(async () => {
+      fireEvent.submit(nextForm);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(2));
+    vi.mocked(bridge.snapshot).mockResolvedValueOnce({
+      ...clinicSnapshot,
+      portalLinks: [connectedLink],
+    });
+    await act(async () =>
+      first.finish({ link: connectedLink, approvalError: null }),
+    );
+    expect(screen.queryByText("FAKE First Clinic")).not.toBeInTheDocument();
+    // Nothing of the old session's result reaches the new session's line.
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Connecting and requesting clinic approval…"),
+    ).toBeVisible();
+    current = { ...secondSnapshot, portalLinks: [secondLink] };
+    await act(async () =>
+      second.finish({ link: secondLink, approvalError: null }),
+    );
+    expect(await screen.findByText("FAKE Second Clinic")).toBeVisible();
+    expect(screen.queryByText("FAKE First Clinic")).not.toBeInTheDocument();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+  });
+});
