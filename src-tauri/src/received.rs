@@ -201,6 +201,13 @@ struct Waiting {
 }
 
 impl ReceivedFiles {
+    /// Initial argv and Windows second launches use exactly the same filtering and quota.
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
+    pub(crate) fn receive_command_line(&self, args: impl IntoIterator<Item = OsString>) {
+        let (offered, sources) = accept_command_line(args);
+        self.receive(offered, sources);
+    }
+
     fn waiting(&self) -> MutexGuard<'_, Waiting> {
         self.waiting.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -380,6 +387,69 @@ mod tests {
             accept_command_line(vec![OsString::from("/opt/mycarlos/mycarlos")]),
             (0, Vec::new())
         );
+    }
+
+    #[test]
+    fn startup_and_early_forwarded_argv_share_filtering_and_arrival_order() {
+        let first = std::env::temp_dir().join("FAKE José 结果.pdf");
+        let later = std::env::temp_dir().join("FAKE later file.pdf");
+        let files = std::sync::Arc::new(ReceivedFiles::default());
+        files.receive_command_line([OsString::from("myCarlos"), first.into_os_string()]);
+        let callback_queue = std::sync::Arc::clone(&files);
+        callback_queue.receive_command_line([
+            OsString::from("myCarlos"),
+            OsString::from(format!("--hint=|{}", later.display())),
+            OsString::from("relative.pdf"),
+            later.into_os_string(),
+        ]);
+        assert_eq!(
+            files
+                .list()
+                .iter()
+                .map(|file| file.name.as_str())
+                .collect::<Vec<_>>(),
+            ["FAKE José 结果.pdf", "FAKE later file.pdf"]
+        );
+        assert_eq!(
+            files.take_notice(),
+            ReceiveNotice {
+                dropped: 1,
+                refused_shares: 0
+            }
+        );
+    }
+
+    #[test]
+    fn forwarded_argv_respects_inflight_quota_and_restores_failed_startup_files_first() {
+        let files = ReceivedFiles::default();
+        let paths = (0..MAX_IMPORT_FILES - 1).map(|i| {
+            std::env::temp_dir()
+                .join(format!("FAKE initial {i}.pdf"))
+                .into_os_string()
+        });
+        files.receive_command_line(std::iter::once(OsString::from("myCarlos")).chain(paths));
+        let initial = files.list();
+        let taken = files
+            .take(&initial.iter().map(|file| file.id).collect::<Vec<_>>())
+            .unwrap();
+        let later = std::env::temp_dir().join("FAKE later.pdf").into_os_string();
+        files.receive_command_line([OsString::from("myCarlos"), later.clone(), later.clone()]);
+        assert!(
+            files.list().is_empty(),
+            "over-limit handoff is refused whole"
+        );
+        assert_eq!(
+            files.take_notice(),
+            ReceiveNotice {
+                dropped: 0,
+                refused_shares: 1
+            }
+        );
+        files.receive_command_line([OsString::from("myCarlos"), later]);
+        files.restore(taken);
+        assert_eq!(&files.list()[..initial.len()], initial);
+        assert_eq!(files.list().last().unwrap().name, "FAKE later.pdf");
+        assert_eq!(files.list().len(), MAX_IMPORT_FILES);
     }
 
     #[test]

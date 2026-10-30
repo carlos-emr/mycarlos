@@ -1,0 +1,76 @@
+{
+  "kind": "Synthetic production-browser concealment regression proof; no Windows runtime",
+  "before_ref": "e772ca7512c61089437601be1befd6da487b059a",
+  "after_source_sha256": {
+    "src/VaultApp.tsx": "3d104b5a2045a60fac5c029615a778c7dff084e39553a347edcc813b9f2ca84c",
+    "src/native/VaultLibrary.tsx": "32cf3518e0719986f5faf12c5dd771412cae1385f4ed894e96a015577e574336",
+    "src/native/receivedNotice.ts": "6e0efcca62c54388815b8a4e50f6ab10bfe843eacc7749ff515ad97866c9b57a",
+    "src-tauri/src/lib.rs": "3239eb25fae32b2a4fb86a6be81567d1a08ba9345aef480873b557085ffa42e9"
+  },
+  "native_notification_script": "window.dispatchEvent(new Event('mycarlos-received-changed'));",
+  "node": "v22.14.0",
+  "production_bundles_sha256": {
+    "before": {
+      "dist/index.html": "5c56662ed76b44c7a92d63d744c5dfcf08fd8137c91c461d7a8369047afc70a9",
+      "dist/assets/index-Bh_6yNs2.js": "124d64b9457069ac6884296a53bff1c3abedfcf288b74c1d97760ec26bdebe01",
+      "dist/assets/index-CfBu_Pt8.css": "be6adbe979e5044f44a73e2b7cd2d63886e24ba6de656ee549db2b151e790356"
+    },
+    "after": {
+      "dist/index.html": "2f114cfe0112b2dc78e1a3221cc25756f7f5b65dd64ced030ef3297856fa6be7",
+      "dist/assets/index-CfBu_Pt8.css": "be6adbe979e5044f44a73e2b7cd2d63886e24ba6de656ee549db2b151e790356",
+      "dist/assets/index-D5MFD18x.js": "5b018fe0af7265e5ba2fc557cb8bb617d281475a31e2621e7c7e60c9a51b6b2f"
+    }
+  },
+  "cases": [
+    {
+      "revision": "before",
+      "hiddenText": "myCarlos could not lock the vault. Its content is hidden, but the vault is still open. FAKE_Private_result.jpg is not a PDF document, so myCarlos did not add it. For now only PDF documents can be shared to myCarlos. FAKE_Existing_duplicate.pdf was already in Shared with me.",
+      "hiddenCounts": {
+        "status": "unlocked",
+        "accepts": 1,
+        "locks": 1,
+        "records": 1,
+        "waiting": 0
+      },
+      "authorizedShowsOutcome": false,
+      "authorizedShowsAccounting": false,
+      "finalCounts": {
+        "status": "unlocked",
+        "accepts": 1,
+        "locks": 2,
+        "records": 1,
+        "waiting": 0
+      },
+      "errors": []
+    },
+    {
+      "revision": "after",
+      "hiddenText": "myCarlos could not lock the vault. Its content is hidden, but the vault is still open. FAKE storage failure",
+      "hiddenCounts": {
+        "status": "unlocked",
+        "accepts": 1,
+        "locks": 1,
+        "records": 1,
+        "waiting": 0
+      },
+      "authorizedShowsOutcome": true,
+      "authorizedShowsAccounting": true,
+      "finalCounts": {
+        "status": "unlocked",
+        "accepts": 1,
+        "locks": 2,
+        "records": 1,
+        "waiting": 0
+      },
+      "errors": []
+    }
+  ],
+  "images_sha256": {
+    "conceal-before-hidden.png": "8744ad79cbd33cf66e762265d151afdf142da10dbb624d6300b11f300c42f24d",
+    "conceal-after-hidden.png": "cd406fd3481c374eef6e82739f8f15be4bd539693b530c89d16872b8dbf185a7",
+    "conceal-before-authorized.png": "8c4adcb26040f34c449c860eed013b53d8c2135a4232674824bca068a3874e9b",
+    "conceal-after-authorized.png": "4658e74e0d63eac181de6502728d558c852482eb926a39ee116d6274098fb0f4"
+  },
+  "personally_inspected": true,
+  "native_windows_runtime": false
+}

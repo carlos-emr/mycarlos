@@ -1,5 +1,67 @@
 # Dependency review — PR #1
 
+## Windows second-launch forwarding (#53, partial)
+
+`tauri-plugin-single-instance` is pinned at `=2.4.0` (Apache-2.0 OR MIT), with a
+reviewed Windows-only local transport delta. Complete upstream archive identity,
+licenses, source revision and the full patch are retained in
+[`src-tauri/vendor`](src-tauri/vendor/README.md). The application dependency is
+Windows-only, without the optional deep-link or semver features. The app registers
+it first, before any vault or webview setup, and forwards through the same bounded
+receive queue as initial arguments. A fixed, payload-free DOM notification refreshes
+an already-focused window without new renderer permissions or CSP changes.
+
+The compatible release accepts Tauri 2.10; the lock retains upstream Tauri 2.11.5.
+The inspected 2.5.x releases require Tauri 2.12, so they are not substituted for
+the existing reviewed runtime. The patch bounds the native message read, preserves
+supported arguments without lossy conversion or delimiter injection, rejects
+legacy acknowledgements, and fails closed during startup or failed handoff.
+Its exact lifecycle and platform limits are described in the vendor record.
+
+Cargo resolves 32 added packages: this plugin and support for its upstream Linux
+D-Bus backend, which remains in the complete upstream manifest even though the
+application uses the plugin only on Windows. They are locked for the all-target
+graph; the Linux backend is not enabled by a Windows-only application dependency.
+Every existing package version, including P-256 0.14 / ECDSA 0.17 and Tauri 2.11.5,
+is preserved. Existing `tracing` and `enumflags2` dependency lists gain the support
+features needed by the added graph. All 32 additions declare MIT, Apache-2.0 OR MIT,
+or MIT OR Apache-2.0, compatible with AGPL-3.0-or-later.
+
+Vendor reconstruction verifies both patches against their checksum-pinned
+archives. The graph check allows only these two local dependency identities;
+the audit helper restores both registry identities in a temporary lockfile so
+upstream advisories remain visible. It does not ignore or suppress any advisory.
+Host codec tests and cross-compilation do not replace real Windows IPC and
+two-process lifecycle acceptance, or the remaining installer/Explorer checks.
+
+On 27 October 2026, the actual pinned `cargo-audit` 0.22.2 scans of the temporary
+registry-restored main lock and the separate glib regression lock both exited zero.
+The main scan reported these twelve nonfatal warnings under the scanner's default
+policy. None was ignored or suppressed; an exit of zero is not advisory clearance.
+
+| Package | Locked version | Warning / advisory |
+|---|---|---|
+| proc-macro-error | 1.0.4 | unmaintained, RUSTSEC-2024-0370 |
+| unic-char-property | 0.9.0 | unmaintained, RUSTSEC-2025-0081 |
+| unic-char-range | 0.9.0 | unmaintained, RUSTSEC-2025-0075 |
+| unic-common | 0.9.0 | unmaintained, RUSTSEC-2025-0080 |
+| unic-ucd-ident | 0.9.0 | unmaintained, RUSTSEC-2025-0100 |
+| unic-ucd-version | 0.9.0 | unmaintained, RUSTSEC-2025-0098 |
+| zbus_names | 4.3.5 | unmaintained, RUSTSEC-2026-0371 |
+| zvariant | 5.15.1 | unmaintained, RUSTSEC-2026-0370 |
+| zvariant_derive | 5.15.1 | unmaintained, RUSTSEC-2026-0372 |
+| glib | 0.18.5 | unsound, RUSTSEC-2024-0429; reviewed source backport below |
+| tokio | 1.53.1 | unsound, RUSTSEC-2026-0386; unchanged baseline, unresolved by this change |
+| inout | 0.2.3 | yanked |
+
+The three D-Bus warnings enter the all-target lock with the new plugin's upstream
+Linux backend; the application does not enable that backend. This explains their
+graph location and is not a dismissal of the advisories. See the primary
+[zbus_names](https://rustsec.org/advisories/RUSTSEC-2026-0371.html),
+[zvariant](https://rustsec.org/advisories/RUSTSEC-2026-0370.html),
+[zvariant_derive](https://rustsec.org/advisories/RUSTSEC-2026-0372.html) and
+[Tokio](https://rustsec.org/advisories/RUSTSEC-2026-0386.html) records.
+
 The [Socket comment on the initial import](https://github.com/carlos-emr/mycarlos/pull/1#issuecomment-5670042450)
 flagged `jsdom@29.0.1`, `data-urls@7.0.0`, and `hyper-util@0.1.20` for possible
 obfuscation. These were package-level warnings with confidence 0.90, not a claim

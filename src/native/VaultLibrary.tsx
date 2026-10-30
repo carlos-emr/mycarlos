@@ -12,6 +12,7 @@ import type { PersonDetails } from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
+import { sharedAddedText } from "./receivedNotice";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
@@ -767,11 +768,7 @@ export function VaultLibrary({
   useEffect(() => {
     const added = sharedNew - sharedSeen.current;
     if (added > 0)
-      setSharedAnnouncement(
-        deferredText(() =>
-          translateNow("interface.notice.sharedAdded", { count: added }),
-        ),
-      );
+      setSharedAnnouncement(deferredText(() => sharedAddedText(added)));
     sharedSeen.current = sharedNew;
   }, [sharedNew]);
   // Seen as soon as Shared with me is open.

@@ -213,8 +213,9 @@ On every platform:
     does. If you stay away longer than that, the vault may instead lock as you return and leave the
     document out; after you unlock, the app says "The transfer did not finish." Either way nothing
     from the vault is shown meanwhile.
-13. **Shared with me.** With myCarlos closed, open a FAKE PDF with it (on Windows, right-click the
-    file, then **Open with** → myCarlos; on a Mac, the same from Finder). The lock screen says one
+13. **Shared with me.** With myCarlos closed, open a FAKE PDF with it (on Windows, use the
+    command-line forwarding check below; installer **Open with** and **Send to** registration
+    remains pending in #53; on a Mac, use Finder's **Open With** where available). The lock screen says one
     shared file is waiting, without its name. Unlock: the sidebar shows **Shared with me** with
     "1 new", and the app says the file was added. With one person in the vault it sits among
     their folders; with several, above them, outside everyone's records. Open it: the "new" goes,
@@ -222,6 +223,37 @@ On every platform:
     to**: it moves there, and Shared with me is empty. Open a file that is not a PDF the same way
     (a FAKE `.txt` renamed `.pdf` will do): after unlocking, the app names it and says it was not
     added. Sharing from another app on a phone comes with the phone issues (#50 to #53).
+
+**Windows second-launch forwarding (#53; real Windows execution still required).**
+Use a build containing this change, a synthetic vault, and two FAKE PDFs. In PowerShell,
+replace the executable placeholder with the actual installed executable path:
+
+```powershell
+$appPath = 'C:\replace-with-the-actual-installed-executable.exe'
+& $appPath 'C:\FAKE Samples\FAKE first.pdf'
+```
+
+With the app initially closed, it should open one window and show only a waiting count
+until unlock. After unlocking, the file should appear in Shared with me with its size and
+**Manual import — unverified** label. Keep the app running for the second launch:
+
+```powershell
+Start-Job -ArgumentList $appPath, 'C:\FAKE Samples\FAKE José 结果.pdf' -ScriptBlock {
+    param($program, $file)
+    Start-Sleep -Seconds 5
+    & $program $file
+}
+```
+
+Bring myCarlos to the front before five seconds pass and leave it focused. The second
+file should appear once, without requiring another focus change or another window.
+Repeat while locked with another FAKE PDF: the count changes, names remain hidden, and
+unlocking adds it.
+Also record startup/exit races, a second arrival during an import, an unreadable-file
+retry, and password-protected PDF helper operation. Record the exact build and results;
+browser mocks and cross-compilation do not establish these Windows outcomes. This checks
+the executable handoff only; Explorer/Outlook menus, installer registration/uninstall,
+unchanged default PDF handling and Windows 11 Share remain separate acceptance work.
 
 On Android, also check the items in [issue #4](https://github.com/carlos-emr/mycarlos/issues/4):
 

@@ -12,5 +12,12 @@ fn main() {
     {
         std::process::exit(mycarlos_tauri_poc_lib::pdf_helper_main());
     }
+    // The Windows handoff transports strict Unicode. Refuse unsupported argv before
+    // either GUI intake path; a helper invocation above still uses only its protocol.
+    #[cfg(windows)]
+    if std::env::args_os().any(|arg| arg.to_str().is_none()) {
+        eprintln!("myCarlos could not open the supplied arguments");
+        std::process::exit(2);
+    }
     mycarlos_tauri_poc_lib::run();
 }
