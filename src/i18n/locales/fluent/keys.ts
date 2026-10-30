@@ -749,6 +749,8 @@ export const MESSAGE_KEYS = [
   "ai.preferences.notInstalled",
   "ai.working",
   "ai.failed",
+  "ai.summary.pagesMissing",
+  "ai.summary.noSource",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1624,6 +1626,8 @@ const FLUENT_IDS_BY_KEY = {
   "ai.preferences.notInstalled": "ai-preferences-notInstalled",
   "ai.working": "ai-working",
   "ai.failed": "ai-failed",
+  "ai.summary.pagesMissing": "ai-summary-pagesMissing",
+  "ai.summary.noSource": "ai-summary-noSource",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2464,6 +2468,8 @@ export interface MessageArgsByKey {
   "ai.preferences.notInstalled": undefined;
   "ai.working": undefined;
   "ai.failed": undefined;
+  "ai.summary.pagesMissing": undefined;
+  "ai.summary.noSource": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

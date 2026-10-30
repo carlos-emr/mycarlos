@@ -56,6 +56,19 @@ describe("locateQuote", () => {
     expect(locateQuote(document, "  ...  ")).toBeNull();
   });
 
+  it("refuses a quote too short to mean one place: under 12 characters and 3 words", () => {
+    // "mm" and "the" are on the page, but a link to them would say nothing.
+    expect(locateQuote(document, "mm")).toBeNull();
+    expect(locateQuote(document, "the right")).toBeNull();
+    expect(locateQuote(document, "6 mm ... the")).toBeNull();
+    // Three words, or twelve characters, is enough; so is one part of each.
+    expect(locateQuote(document, "a 6 mm")).not.toBeNull();
+    expect(locateQuote(document, "consolidation")).not.toBeNull();
+    expect(
+      locateQuote(document, "Findings: A 6 mm nodule ... Heart size normal"),
+    ).not.toBeNull();
+  });
+
   it("keeps the page's own offsets around characters outside the BMP and case changes", () => {
     const text = "\u{1D465} İstanbul clinic: 6 mm nodule";
     const doc = fakeDocumentText([text]);
@@ -81,6 +94,9 @@ describe("locateQuote", () => {
     const doc = fakeDocumentText([text]);
     const span = locateQuote(doc, "右上肺6毫米结节");
     expect(text.slice(span!.start, span!.end)).toBe("右上肺６毫米结节");
+    // Each Chinese character counts as a word: three are enough, two are not.
+    expect(locateQuote(doc, "无变化")).not.toBeNull();
+    expect(locateQuote(doc, "结节")).toBeNull();
   });
 
   it("skips pages with no text", () => {

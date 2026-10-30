@@ -2,10 +2,12 @@ import { humanText } from "../test/humanText";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import { DocumentReader, sentenceAround } from "./DocumentReader";
 import { PreferencesSettings } from "./PreferencesSettings";
 import type { ReaderAi } from "./ReaderAiPanel";
 import { notInstalledModel } from "../ai/localModel";
+import { LOCALES, translate } from "../i18n";
 import type { LocalModel } from "../ai/types";
 import { fakeDocumentText, fakeLocalModel } from "../test/fakeLocalModel";
 import type { VaultRecord, ViewedPage } from "../vault";
@@ -41,20 +43,21 @@ const page = (index: number): ViewedPage => ({
 
 function renderReader(
   model: LocalModel | null,
-  options: { loadText?: ReaderAi["loadText"] } = {},
+  options: { loadText?: ReaderAi["loadText"]; strict?: boolean } = {},
 ) {
   const onOpenPreferences = vi.fn();
   const loadText = vi.fn(
     options.loadText ?? (async () => fakeDocumentText(pageTexts)),
   );
-  render(
+  const reader = (
     <DocumentReader
       record={record}
       viewPage={vi.fn(async (index: number) => page(index))}
       onClose={vi.fn()}
       ai={model ? { model, loadText, onOpenPreferences } : undefined}
-    />,
+    />
   );
+  render(options.strict ? <StrictMode>{reader}</StrictMode> : reader);
   return { onOpenPreferences, loadText };
 }
 
@@ -141,12 +144,32 @@ describe("the reader's AI helper", () => {
     expect(links[1]).toHaveAccessibleDescription(
       "FAKE: repeat the test in two weeks.",
     );
+    const unsourced = within(panel).getAllByRole("listitem")[2];
+    expect(within(unsourced).getByText("No source found")).toBeVisible();
+    expect(within(unsourced).queryByRole("button")).toBeNull();
     expect(
       within(panel).getByText(
         humanText(/^Summary in plain words · FAKE test model · /),
       ),
     ).toBeVisible();
     expect(model.calls).toHaveLength(1);
+  });
+
+  it("labels every answer with the words of the AI helper notice, in all seven languages", () => {
+    // AI_HELPER_NOTICE.md (#169), `aiHelper-resultLabel`: the same words
+    // there, in the notice's `resultsBody`, and on every answer here.
+    const notice = {
+      en: "Written by AI and may be wrong. Check with your doctor.",
+      es: "Escrito por IA; puede contener errores. Consulte con su médico.",
+      fr: "Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.",
+      pl: "Napisane przez AI, może zawierać błędy. Proszę skonsultować się z lekarzem.",
+      "pt-BR": "Escrito por IA e pode estar errado. Confira com seu médico.",
+      "zh-CN": "由 AI 撰写，可能有误。请向您的医生核实。",
+      "zh-TW": "由 AI 撰寫，可能有誤。請向您的醫師確認。",
+    };
+    for (const locale of LOCALES) {
+      expect(translate(locale, "ai.label"), locale).toBe(notice[locale]);
+    }
   });
 
   it("shows a sentence's place: its page, the page text open, the words marked", async () => {
@@ -180,6 +203,19 @@ describe("the reader's AI helper", () => {
     expect(document.querySelector(".native-reader-text mark")).toBeNull();
   });
 
+  it("asks the model for a summary once, even where React runs effects twice", async () => {
+    const model = fakeLocalModel();
+    renderReader(model, { strict: true });
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText(
+      "Written by AI and may be wrong. Check with your doctor.",
+    );
+    expect(model.calls).toHaveLength(1);
+  });
+
   it("says when only the start of a long document was summarized", async () => {
     renderReader(fakeLocalModel(), {
       loadText: async () => fakeDocumentText(pageTexts, true),
@@ -193,6 +229,26 @@ describe("the reader's AI helper", () => {
         humanText(
           "This summary covers only the start of the document: pages 1 to 2.",
         ),
+      ),
+    ).toBeVisible();
+  });
+
+  it.each([
+    ["a page with no text", fakeDocumentText([pageTexts[0], ""])],
+    ["a page cut short", fakeDocumentText(pageTexts, false, { cutPages: [1] })],
+    [
+      "a page not read",
+      fakeDocumentText(pageTexts, false, { failedPages: [0] }),
+    ],
+  ])("says a summary may leave parts out, with %s", async (_case, text) => {
+    renderReader(fakeLocalModel(), { loadText: async () => text });
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(
+      await screen.findByText(
+        "Some pages could not be read in full, so this summary may leave parts out.",
       ),
     ).toBeVisible();
   });

@@ -56,6 +56,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       checkedFromMs: null,
     }),
     isLockedPdf: vi.fn().mockResolvedValue(false),
+    aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   render(

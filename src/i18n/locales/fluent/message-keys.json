@@ -747,5 +747,7 @@
   "ai.preferences.body",
   "ai.preferences.notInstalled",
   "ai.working",
-  "ai.failed"
+  "ai.failed",
+  "ai.summary.pagesMissing",
+  "ai.summary.noSource"
 ]

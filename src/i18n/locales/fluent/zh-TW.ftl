@@ -1510,3 +1510,7 @@ ai-preferences-notInstalled = 未安裝
 ai-working = AI 助理正在處理…
 
 ai-failed = AI 助理未能完成。請重試。
+
+ai-summary-pagesMissing = 部分頁面未能完整讀取，因此此摘要可能遺漏部分內容。
+
+ai-summary-noSource = 未找到來源

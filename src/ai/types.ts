@@ -8,22 +8,36 @@
  * delete the copies below.
  */
 
-/** A document's text, page by page, as the reader shows it. */
-export interface DocumentText {
-  pageCount: number;
-  /** Each page's text (`readableText ?? text`); "" for a page with none. */
-  pages: { index: number; text: string }[];
-  /** The pages joined with "\n\n". */
-  joined: string;
-  /** Where each page starts in `joined`. */
-  pageStarts: number[];
-  /** Pages with no text, such as scans. */
-  emptyPages: number[];
-  /** True when only the first pages were read (a page or size cap). */
-  truncated: boolean;
+export interface DocumentPageText {
+  /** From 0. */
+  index: number;
+  text: string;
 }
 
-/** A place in one page's text: UTF-16 offsets, end exclusive. */
+/** A document's whole text, as native `vault_document_text` returns it
+ * (part B, threat model AI-10). */
+export interface DocumentText {
+  /** How many pages the document has, whether or not all were read. */
+  pageCount: number;
+  /** The pages read, in order. A page that failed has no entry. */
+  pages: DocumentPageText[];
+  /** Every page's text, joined with "\n\n". */
+  joined: string;
+  /** Where each entry of `pages` starts in `joined`. */
+  pageStarts: number[];
+  /** Pages with no text (scans, pictures). */
+  emptyPages: number[];
+  /** Pages whose text the helper cut at its own limit. */
+  cutPages: number[];
+  /** Pages the helper refused or could not draw. */
+  failedPages: number[];
+  /** True when pages past the caps were left out. */
+  truncated: boolean;
+  /** The native ticket that lets this text be saved once (AI-02). */
+  ticket: string;
+}
+
+/** A span of one page's text, in UTF-16 code units, end exclusive. */
 export interface SourceSpan {
   page: number;
   start: number;

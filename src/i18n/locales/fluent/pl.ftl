@@ -1689,7 +1689,7 @@ ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami z
 
 ai-notInstalled-openPreferences = Otwórz Preferencje
 
-ai-label = Napisane przez AI i może zawierać błędy. Należy to skonsultować z lekarzem.
+ai-label = Napisane przez AI, może zawierać błędy. Proszę skonsultować się z lekarzem.
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
@@ -1714,3 +1714,7 @@ ai-preferences-notInstalled = Nie zainstalowano
 ai-working = Asystent AI pracuje…
 
 ai-failed = Asystent AI nie zdołał dokończyć. Można spróbować ponownie.
+
+ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stron, więc w tym podsumowaniu może czegoś brakować.
+
+ai-summary-noSource = Nie znaleziono źródła

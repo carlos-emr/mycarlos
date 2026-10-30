@@ -110,6 +110,9 @@ export async function fakeVault(
           switch (command) {
             case "runtime_info":
               return { platform: "windows" };
+            // Preferences on a computer asks whether an AI model is installed (#72).
+            case "ai_model_status":
+              return { state: "notInstalled" };
             case "vault_status":
               return status;
             // These accessibility journeys have no files waiting to be shared.

@@ -35,6 +35,8 @@ async function fakeVault(page: Page, platform = "windows") {
         if (command === "vault_status") return "unlocked";
         if (command === "vault_snapshot") return structuredClone(snapshot);
         if (command === "runtime_info") return { platform };
+        // Preferences on a computer asks whether an AI model is installed (#72).
+        if (command === "ai_model_status") return { state: "notInstalled" };
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
         if (command === "vault_save_photo" && args instanceof Uint8Array) {

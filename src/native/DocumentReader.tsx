@@ -135,8 +135,9 @@ export function DocumentReader({
   const textRef = useRef<HTMLDivElement | null>(null);
   const markRef = useRef<HTMLElement | null>(null);
   const selected = useRef("");
+  const offersAi = Boolean(ai);
   useEffect(() => {
-    if (!ai) return;
+    if (!offersAi) return;
     const remember = () => {
       const selection = document.getSelection();
       if (
@@ -148,7 +149,7 @@ export function DocumentReader({
     };
     document.addEventListener("selectionchange", remember);
     return () => document.removeEventListener("selectionchange", remember);
-  }, [ai]);
+  }, [offersAi]);
 
   useEffect(() => {
     // The width inside the page area's padding, so that a page fitted to it
@@ -256,13 +257,14 @@ export function DocumentReader({
           end: Math.max(0, Math.min(shownText.length, highlight.end - lead)),
         }
       : null;
+  // Each "Show in document" brings the words into view and focus, even
+  // the same words again: the highlight is a new object each time.
   useEffect(() => {
-    if (!marked || marked.end <= marked.start) return;
     markRef.current?.scrollIntoView?.({ block: "center" });
     markRef.current?.focus();
-  }, [marked?.start, marked?.end, current]);
+  }, [highlight, current]);
   const showSource = (span: SourceSpan) => {
-    setHighlight(span);
+    setHighlight({ ...span });
     setTextOpen(true);
     setPage(span.page);
   };

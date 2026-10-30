@@ -14,7 +14,13 @@ import type { DocumentText, SourceSpan } from "./types";
  *
  * It is an exact match after that, never a guess: a quote that is not in the
  * document gives `null`, and the sentence then shows without a link. The
- * first match wins; a quote shorter than 3 characters gives `null`.
+ * first match wins.
+ *
+ * A quote has to be worth finding: each part, after folding and trimming,
+ * needs at least 12 characters or at least 3 words (a word is a run of
+ * letters or digits, or one Chinese, Japanese or Korean character). A model
+ * that cites "mg" or "the" would otherwise get a real-looking link to any
+ * page, which is what the check is for (THREAT_MODEL.md AI-05).
  */
 export function locateQuote(
   document: DocumentText,
@@ -24,7 +30,7 @@ export function locateQuote(
     .split(/\.\.\.|…/)
     .map((part) => trimEnds(fold(part).text))
     .filter((part) => part.length > 0);
-  if (parts.reduce((sum, part) => sum + part.length, 0) < 3) return null;
+  if (parts.length === 0 || !parts.every(substantial)) return null;
   for (const page of document.pages) {
     if (!page.text) continue;
     const folded = fold(page.text);
@@ -32,6 +38,19 @@ export function locateQuote(
     if (span) return { page: page.index, start: span.start, end: span.end };
   }
   return null;
+}
+
+const MIN_CHARACTERS = 12;
+const MIN_WORDS = 3;
+const WORD =
+  /\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul}|[\p{L}\p{N}]+/gu;
+
+/** Whether a folded, trimmed quote part is long enough to mean one place. */
+function substantial(part: string): boolean {
+  if (part.length >= MIN_CHARACTERS) return true;
+  let words = 0;
+  for (const _ of part.matchAll(WORD)) if (++words >= MIN_WORDS) return true;
+  return false;
 }
 
 interface Folded {

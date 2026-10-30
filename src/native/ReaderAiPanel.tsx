@@ -51,6 +51,7 @@ export function ReaderAiPanel({
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [pagesRead, setPagesRead] = useState(0);
+  const [someUnread, setSomeUnread] = useState(false);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
   const [term, setTerm] = useState(initialTerm);
   const live = useRef(true);
@@ -83,9 +84,12 @@ export function ReaderAiPanel({
   };
 
   // A summary starts once the panel opens on an installed model: the patient
-  // asked for it by opening the panel.
+  // asked for it by opening the panel. Once per language: React may run this
+  // effect twice (StrictMode), and a model takes a while.
+  const startedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (tool !== "summary" || !installed) return;
+    if (tool !== "summary" || !installed || startedFor.current === lang) return;
+    startedFor.current = lang;
     setWorking(true);
     setFailed(false);
     aiRef.current
@@ -102,6 +106,14 @@ export function ReaderAiPanel({
         );
         if (!live.current) return;
         setPagesRead(document.pages.length);
+        // Pages with no text, cut short or not read at all are never left
+        // out silently.
+        setSomeUnread(
+          document.emptyPages.length +
+            document.cutPages.length +
+            document.failedPages.length >
+            0,
+        );
         setSummary(result);
       })
       .catch(stopped)
@@ -173,23 +185,27 @@ export function ReaderAiPanel({
           <ol>
             {summary.sentences.map((sentence, index) => (
               <li key={index}>
-                <span id={`reader-ai-sentence-${index}`}>{sentence.text}</span>
-                {sentence.source && (
-                  <>
-                    {" "}
-                    <button
-                      className="button"
-                      type="button"
-                      aria-describedby={`reader-ai-sentence-${index}`}
-                      onClick={() => onShowSource(sentence.source!)}
-                    >
-                      {t("ai.summary.showInDocument")}
-                    </button>
-                  </>
+                <span id={`reader-ai-sentence-${index}`}>{sentence.text}</span>{" "}
+                {sentence.source ? (
+                  <button
+                    className="button"
+                    type="button"
+                    aria-describedby={`reader-ai-sentence-${index}`}
+                    onClick={() => onShowSource(sentence.source!)}
+                  >
+                    {t("ai.summary.showInDocument")}
+                  </button>
+                ) : (
+                  // Never a guessed place: a sentence whose words were not
+                  // found in the document says so (threat model AI-05).
+                  <span className="ai-no-source">
+                    {t("ai.summary.noSource")}
+                  </span>
                 )}
               </li>
             ))}
           </ol>
+          {someUnread && <p>{t("ai.summary.pagesMissing")}</p>}
           {summary.partial && (
             <p>{t("ai.summary.partial", { last: pagesRead })}</p>
           )}

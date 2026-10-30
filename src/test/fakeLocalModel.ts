@@ -63,6 +63,7 @@ function firstLines(document: DocumentText): ModelSentence[] {
 export function fakeDocumentText(
   pages: string[],
   truncated = false,
+  unread: { cutPages?: number[]; failedPages?: number[] } = {},
 ): DocumentText {
   const pageStarts: number[] = [];
   let joined = "";
@@ -77,6 +78,9 @@ export function fakeDocumentText(
     joined,
     pageStarts,
     emptyPages: pages.flatMap((text, index) => (text ? [] : [index])),
+    cutPages: unread.cutPages ?? [],
+    failedPages: unread.failedPages ?? [],
     truncated,
+    ticket: "FAKE-ticket",
   };
 }
