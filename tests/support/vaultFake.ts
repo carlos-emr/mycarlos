@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import type { MessageKey } from "../../src/i18n/locales/fluent/keys";
 import type { VaultStart } from "./a11y";
 import { translate } from "./fluent";
@@ -73,6 +73,38 @@ export function fakeRecoveryKey(seed: string): string {
 }
 
 /** The same key with its last letter or digit changed: a typo. */
+/** The recovery key the fake's vault has unless a spec gives its own. */
+export const FAKE_VAULT_KEY = fakeRecoveryKey("the vault's key");
+
+/** Regex-escapes catalogue text for a pattern a spec builds around it. */
+export const escapeRegExp = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const en = (key: MessageKey, params?: Parameters<typeof translate>[2]) =>
+  translate("en", key, params);
+
+/** My records' heading, once the library is open. */
+export const myRecords = (page: Page) =>
+  page.getByRole("heading", { name: en("sidebar.myRecords"), exact: true });
+
+/** The sidebar. */
+export const sidebar = (page: Page) =>
+  page.getByRole("navigation", { name: en("sidebar.label"), exact: true });
+
+/** Opens a document's details from My records. */
+export async function openDetails(page: Page, name: string) {
+  await expect(myRecords(page)).toBeVisible();
+  await page.getByRole("button", { name, exact: true }).click();
+  const details = page.getByRole("dialog", { name, exact: true });
+  await expect(
+    details.getByRole("button", {
+      name: en("interface.RecordDetails.closeDocumentDetails"),
+      exact: true,
+    }),
+  ).toBeVisible();
+  return details;
+}
+
 export function mistypedKey(key: string): string {
   const last = key.slice(-1);
   const other = CROCKFORD[(CROCKFORD.indexOf(last) + 1) % CROCKFORD.length];
@@ -656,9 +688,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       start: setup.start,
       passphrase: FAKE_PASSPHRASE,
       recoveryKey:
-        setup.recoveryKey === undefined
-          ? fakeRecoveryKey("the vault's key")
-          : setup.recoveryKey,
+        setup.recoveryKey === undefined ? FAKE_VAULT_KEY : setup.recoveryKey,
       newRecoveryKey: setup.newRecoveryKey ?? fakeRecoveryKey("a new key"),
       keyLabel: FAKE_KEY_LABEL,
       newKeyLabel: FAKE_NEW_KEY_LABEL,

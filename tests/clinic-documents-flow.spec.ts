@@ -5,10 +5,13 @@ import {
   FAKE_CLINIC,
   FAKE_CLINIC_DOCUMENT,
   FAKE_DEVICE_CODE,
+  escapeRegExp,
   fakeCalls,
   fakeVaultWith,
+  myRecords,
   refusal,
   scriptFake,
+  sidebar,
 } from "./support/vaultFake";
 
 // Clinic documents, myCarlos's anchor workflow: linking this device to a
@@ -27,20 +30,18 @@ const en = (
 test.beforeEach(({}, testInfo) => {
   test.skip(
     testInfo.project.name === "phone",
-    "the fake native side is a computer; the vault screens' phone layout is checked by large-text-accessibility.spec.ts",
+    "these flows are checked on the desktop project only; the vault screens' phone layout is covered by large-text-accessibility.spec.ts",
   );
 });
 
 const PORTAL = "https://fake-clinic.example.com";
 
-const sidebar = (page: Page) =>
-  page.getByRole("navigation", { name: en("sidebar.label"), exact: true });
-const myRecords = (page: Page) =>
-  page.getByRole("heading", { name: en("sidebar.myRecords"), exact: true });
 /** The sidebar's My records, whose name ends with how many it holds. */
 const openMyRecords = (page: Page) =>
   sidebar(page)
-    .getByRole("button", { name: new RegExp(`^${en("sidebar.myRecords")}\\b`) })
+    .getByRole("button", {
+      name: new RegExp(`^${escapeRegExp(en("sidebar.myRecords"))}\\b`),
+    })
     .click();
 
 test("links this device to a clinic: a refused code is not kept, then the link, the approval request and the device code", async ({

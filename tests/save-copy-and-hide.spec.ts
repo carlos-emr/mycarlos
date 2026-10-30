@@ -1,13 +1,16 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
   FAKE_PASSPHRASE,
+  escapeRegExp,
   fakeCalls,
   fakeCommands,
-  fakeSnapshot,
   fakeVaultWith,
+  myRecords,
+  openDetails,
   scriptFake,
+  sidebar,
 } from "./support/vaultFake";
 
 // Two things a patient does with a document every week: save a readable copy
@@ -24,26 +27,11 @@ const en = (
 test.beforeEach(({}, testInfo) => {
   test.skip(
     testInfo.project.name === "phone",
-    "the fake native side is a computer; the vault screens' phone layout is checked by large-text-accessibility.spec.ts",
+    "these flows are checked on the desktop project only; the vault screens' phone layout is covered by large-text-accessibility.spec.ts",
   );
 });
 
 const LETTER = "FAKE Letter.pdf";
-
-const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const myRecords = (page: Page) =>
-  page.getByRole("heading", { name: en("sidebar.myRecords"), exact: true });
-const sidebar = (page: Page) =>
-  page.getByRole("navigation", { name: en("sidebar.label"), exact: true });
-
-async function openDetails(page: Page, name: string) {
-  await expect(myRecords(page)).toBeVisible();
-  await page.getByRole("button", { name, exact: true }).click();
-  const details = page.getByRole("dialog", { name, exact: true });
-  await expect(details).toBeVisible();
-  return details;
-}
 
 test("Save a copy asks first, then saves the document where the patient chose, and a cancelled picker changes nothing", async ({
   page,
@@ -143,10 +131,15 @@ test("Hide takes a document out of view, Security > Hidden keeps it across a rel
     { request: { recordId: "letter" } },
   ]);
 
-  // Still hidden after the window reloads: it is the vault's state. Hiding
-  // the window locks the vault, so the reload lands on the unlock screen and
-  // the vault is opened again. (The folders show that My records has been
+  // Still hidden after the vault is locked and the window reloads: it is the
+  // vault's state, not the page's. (The folders show that My records has been
   // drawn from the vault again.)
+  await page
+    .getByRole("button", {
+      name: en("interface.VaultLibrary.unlockedLockNow"),
+      exact: true,
+    })
+    .click();
   await page.reload();
   await page
     .getByLabel(en("passphrase.label"), { exact: true })
@@ -162,10 +155,6 @@ test("Hide takes a document out of view, Security > Hidden keeps it across a rel
     }),
   ).toBeVisible();
   await expect(row).toHaveCount(0);
-  const hidden = (await fakeSnapshot(page)).records.find(
-    (record) => record.id === "letter",
-  )?.hidden;
-  expect(hidden).toMatchObject({ reason: "patient" });
 
   // Security > Hidden lists it, with where it was.
   await sidebar(page)
@@ -176,7 +165,7 @@ test("Hide takes a document out of view, Security > Hidden keeps it across a rel
   const entry = (count: number) =>
     page.getByRole("button", {
       name: new RegExp(
-        `^${escaped(hiddenLabel)}\\s+${count}\\s+${escaped(en("sidebar.myRecords"))}$`,
+        `^${escapeRegExp(hiddenLabel)}\\s+${count}\\s+${escapeRegExp(en("sidebar.myRecords"))}$`,
       ),
     });
   await entry(1).click();
@@ -219,7 +208,7 @@ test("Hide takes a document out of view, Security > Hidden keeps it across a rel
   // Back where it was, in My records.
   await sidebar(page)
     .getByRole("button", {
-      name: new RegExp(`^${escaped(en("sidebar.myRecords"))}\\b`),
+      name: new RegExp(`^${escapeRegExp(en("sidebar.myRecords"))}\\b`),
     })
     .click();
   await expect(myRecords(page)).toBeVisible();

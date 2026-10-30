@@ -7,8 +7,9 @@ import {
 import { messagePattern, translate } from "./support/fluent";
 import {
   FAKE_PASSPHRASE,
+  FAKE_VAULT_KEY,
+  escapeRegExp,
   fakeCalls,
-  fakeRecoveryKey,
   fakeVaultWith,
   mistypedKey,
   refusal,
@@ -31,15 +32,14 @@ const en = (
 test.beforeEach(({}, testInfo) => {
   test.skip(
     testInfo.project.name === "phone",
-    "the fake native side is a computer; the vault screens' phone layout is checked by large-text-accessibility.spec.ts",
+    "these flows are checked on the desktop project only; the vault screens' phone layout is covered by large-text-accessibility.spec.ts",
   );
 });
 
 const WRONG_PASSPHRASE = "FAKE wrong passphrase";
 const NEW_PASSPHRASE = "FAKE new passphrase after recovery";
 
-const escaped = (text: string) =>
-  new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+const escaped = (text: string) => new RegExp(escapeRegExp(text));
 
 function unlockScreen(page: Page) {
   return {
@@ -69,7 +69,9 @@ test("a wrong passphrase, then the wait after wrong tries, are said by the Passp
   await unlock.click();
   const wrong = en("native.error.16");
   await expect(page.getByText(wrong, { exact: true })).toBeVisible();
-  await expect(passphrase).toHaveAccessibleDescription(escaped(wrong));
+  await expect(passphrase).toHaveAccessibleDescription(
+    messagePattern("en", "native.error.16"),
+  );
   await expect(passphrase).toHaveValue("");
   await expect(heading).toBeVisible();
   expect(await fakeCalls(page, "vault_unlock")).toEqual([
@@ -125,7 +127,7 @@ test("a wrong passphrase, then the wait after wrong tries, are said by the Passp
 test("Forgot your passphrase: a wrong recovery key is said in that form and kept to correct, and the right key opens the vault with a new passphrase", async ({
   page,
 }) => {
-  const key = fakeRecoveryKey("the vault's key");
+  const key = FAKE_VAULT_KEY;
   await fakeVaultWith(page, { start: "locked", recoveryKey: key });
   await page.goto("/");
   const { heading, passphrase } = unlockScreen(page);

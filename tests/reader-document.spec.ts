@@ -9,6 +9,7 @@ import {
   fakePageText,
   fakeVaultWith,
   lockedOriginalName,
+  openDetails,
   scriptFake,
 } from "./support/vaultFake";
 
@@ -28,29 +29,13 @@ const en = (
 test.beforeEach(({}, testInfo) => {
   test.skip(
     testInfo.project.name === "phone",
-    "the fake native side is a computer; the vault screens' phone layout is checked by large-text-accessibility.spec.ts",
+    "these flows are checked on the desktop project only; the vault screens' phone layout is covered by large-text-accessibility.spec.ts",
   );
 });
 
 const LETTER = "FAKE Letter.pdf";
 const LOCKED = "FAKE Locked.pdf";
 const WRONG_PASSWORD = "FAKE wrong document password";
-
-/** Opens a document's details from My records. */
-async function openDetails(page: Page, name: string) {
-  await expect(
-    page.getByRole("heading", { name: en("sidebar.myRecords"), exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name, exact: true }).click();
-  const details = page.getByRole("dialog", { name, exact: true });
-  await expect(
-    details.getByRole("button", {
-      name: en("interface.RecordDetails.closeDocumentDetails"),
-      exact: true,
-    }),
-  ).toBeVisible();
-  return details;
-}
 
 /** The reader's parts, for the document `name`. */
 function readerOf(page: Page, name: string) {
@@ -155,8 +140,10 @@ test("reads a document page by page, with zoom and the page's text, and Close go
     reader.getByText(fakePageText(LETTER, 1), { exact: true }),
   ).toHaveCount(0);
 
-  // Larger draws the page again, wider by the zoom step (Desktop Chrome draws
-  // one picture pixel per CSS pixel); Fit width goes back to the drawn page.
+  // Larger draws the page again, wider by the zoom step, in picture pixels
+  // (CSS pixels times the screen's pixel ratio); Fit width goes back to the
+  // drawn page.
+  const ratio = await page.evaluate(() => window.devicePixelRatio);
   const fitted = Number(
     (await fakeCalls(page, "vault_view_page"))
       .filter((call) => call.request?.page === 1)
@@ -170,7 +157,7 @@ test("reads a document page by page, with zoom and the page's text, and Close go
       request: {
         recordId: "letter",
         page: 1,
-        width: Math.round(fitted * 1.25),
+        width: Math.round(Math.round((fitted / ratio) * 1.25) * ratio),
         password: null,
       },
     });
@@ -404,6 +391,11 @@ test("the reader closes, and stops the page being drawn, when the vault locks as
   await expect(reader.getByRole("status")).toHaveText(
     en("interface.reader.opening", { page: 1 }),
   );
+
+  // The first page's draw has been asked for and is still pending.
+  await expect
+    .poll(async () => (await fakeCalls(page, "vault_view_page")).length)
+    .toBeGreaterThan(0);
 
   await minimize(page);
   await expect(

@@ -9,6 +9,7 @@ import {
   fakeSnapshot,
   fakeVaultWith,
   mistypedKey,
+  myRecords,
 } from "./support/vaultFake";
 
 // Setting up a recovery key to the end, which every new patient does once and
@@ -28,12 +29,9 @@ const en = (
 test.beforeEach(({}, testInfo) => {
   test.skip(
     testInfo.project.name === "phone",
-    "the fake native side is a computer; the vault screens' phone layout is checked by large-text-accessibility.spec.ts",
+    "these flows are checked on the desktop project only; the vault screens' phone layout is covered by large-text-accessibility.spec.ts",
   );
 });
-
-const myRecords = (page: Page) =>
-  page.getByRole("heading", { name: en("sidebar.myRecords"), exact: true });
 
 const stepHeading = (dialog: Locator, key: Parameters<typeof translate>[1]) =>
   dialog.getByRole("heading", { name: en(key), exact: true });
