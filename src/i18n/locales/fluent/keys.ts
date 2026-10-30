@@ -730,6 +730,9 @@ export const MESSAGE_KEYS = [
   "interface.history.sessionNotRecorded",
   "interface.history.title",
   "interface.history.to",
+  "reader.iphone.failed",
+  "reader.iphone.opening",
+  "reader.iphone.tooLarge",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1586,6 +1589,9 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-sessionNotRecorded",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
+  "reader.iphone.failed": "reader-iphone-failed",
+  "reader.iphone.opening": "reader-iphone-opening",
+  "reader.iphone.tooLarge": "reader-iphone-tooLarge",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2403,6 +2409,9 @@ export interface MessageArgsByKey {
   "interface.history.sessionNotRecorded": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
+  "reader.iphone.failed": undefined;
+  "reader.iphone.opening": undefined;
+  "reader.iphone.tooLarge": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

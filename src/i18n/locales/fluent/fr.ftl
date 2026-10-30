@@ -1642,3 +1642,9 @@ interface-history-title = Historique des événements
 interface-history-to = Vers
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos conserve aussi un historique : les ouvertures du coffre-fort; la définition ou la modification de sa phrase secrète ou de sa clé de récupération, ainsi que l’enregistrement ou la restauration d’une sauvegarde; l’ajout de chaque profil patient et la création, le changement de nom ou le déplacement de chaque dossier; l’ajout, le changement de nom, le déplacement, le masquage ou la restauration de chaque document, ainsi que son enregistrement en dehors de myCarlos et l’emplacement choisi. Cet historique est chiffré avec le reste. Vous pouvez le consulter ici ; myCarlos ne le modifie et ne le supprime jamais.
+
+reader-iphone-failed = myCarlos n’a pas pu afficher ce document. Enregistrez une copie pour le lire dans une autre application.
+
+reader-iphone-opening = Ouverture du document…
+
+reader-iphone-tooLarge = Ce PDF dépasse 20 Mo. Enregistrez une copie pour le lire dans une autre application.

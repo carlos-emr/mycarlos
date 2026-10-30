@@ -1608,3 +1608,9 @@ interface-history-title = Audit history
 interface-history-to = To
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where. It is encrypted with everything else. You can read it here; myCarlos never changes or removes it.
+
+reader-iphone-failed = myCarlos could not show this document. Save a copy to read it in another app.
+
+reader-iphone-opening = Opening document…
+
+reader-iphone-tooLarge = This PDF is larger than 20 MB. Save a copy to read it in another app.

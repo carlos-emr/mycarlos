@@ -1642,3 +1642,9 @@ interface-history-title = Histórico de auditoria
 interface-history-to = Para
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também guarda um histórico: quando o cofre foi aberto; quando a frase secreta ou a chave de recuperação foi configurada ou alterada e quando uma cópia de segurança foi salva ou restaurada; quando cada perfil de paciente foi adicionado e cada pasta foi criada, renomeada ou movida; e quando cada documento foi adicionado, renomeado, movido, ocultado, restaurado ou salvo fora do myCarlos e onde. Ele fica criptografado junto com todo o resto. Você pode consultá-lo aqui; o myCarlos nunca o altera nem o remove.
+
+reader-iphone-failed = O myCarlos não conseguiu exibir este documento. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-iphone-opening = Abrindo documento…
+
+reader-iphone-tooLarge = Este PDF tem mais de 20 MB. Salve uma cópia para lê-lo em outro aplicativo.

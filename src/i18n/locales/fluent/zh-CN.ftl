@@ -1472,3 +1472,9 @@ interface-history-title = 操作记录
 interface-history-to = 目标
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也会保存操作记录：保险库何时打开；密码短语或恢复密钥何时设置或变更；备份何时保存或还原；各患者档案何时添加，以及各文件夹何时创建、重命名或移动；每份文档何时添加、重命名、移动、隐藏、还原或保存在 myCarlos 外部，以及保存位置。这些记录会和其他内容一起加密。您可以在此查看这些记录；myCarlos 绝不会变更或移除它们。
+
+reader-iphone-failed = myCarlos 无法显示此文档。请保存副本，以便在其他应用中阅读。
+
+reader-iphone-opening = 正在打开文档…
+
+reader-iphone-tooLarge = 此 PDF 超过 20 MB。请保存副本，以便在其他应用中阅读。

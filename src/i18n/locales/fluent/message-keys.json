@@ -728,5 +728,8 @@
   "interface.history.sessionLockedByPerson",
   "interface.history.sessionNotRecorded",
   "interface.history.title",
-  "interface.history.to"
+  "interface.history.to",
+  "reader.iphone.failed",
+  "reader.iphone.opening",
+  "reader.iphone.tooLarge"
 ]

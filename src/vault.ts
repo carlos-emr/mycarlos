@@ -1,5 +1,5 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -186,6 +186,9 @@ export interface ImportOutcome {
    * yet; this is never a Verified claim or a durable trust decision. */
   unverifiedSignatures?: { recordId: string; reason: unknown }[];
 }
+
+/** Genuine input in the separate native reader; no document data is carried. */
+export const NATIVE_READER_ACTIVITY_EVENT = "mycarlos-native-reader-activity";
 
 /** What adding the waiting files to Shared with me did (#61). */
 export interface ReceivedAcceptOutcome extends ImportOutcome {
@@ -463,6 +466,9 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn: the reader closed. */
   cancelView(): Promise<void>;
+  /** iOS only: native-memory PDF preview, with no document bytes in this bridge.
+   * Resolves when the native reader is dismissed. cancelView also stops it. */
+  readNativePdf(recordId: string, closeLabel: string): Promise<void>;
   reset(confirmation: string): Promise<boolean>;
 }
 
@@ -833,6 +839,17 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, page, width, password: password ?? null },
       }),
     cancelView: () => invoke<void>("vault_view_cancel"),
+    readNativePdf: (recordId, closeLabel) => {
+      const activity = new Channel<void>();
+      activity.onmessage = () =>
+        window.dispatchEvent(new Event(NATIVE_READER_ACTIVITY_EVENT));
+      return invoke<void>("vault_read_native_pdf", {
+        request: { recordId, closeLabel },
+        activity,
+      }).finally(() => {
+        activity.onmessage = () => undefined;
+      });
+    },
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>

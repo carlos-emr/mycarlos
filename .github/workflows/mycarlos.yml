@@ -540,7 +540,7 @@ jobs:
           --target aarch64-apple-ios-sim
       - run: npm ci
       - run: npm run tauri ios init -- --ci
-      - run: npm run tauri ios build -- --debug --target aarch64-sim --no-sign --ci
+      - run: npm run tauri ios build -- --debug --target aarch64-sim --no-sign --ci --verbose --verbose
       - name: Compile iOS mobile development proxy
         run: cargo check --manifest-path src-tauri/Cargo.toml --lib --target aarch64-apple-ios-sim --no-default-features --locked
       - run: git diff --exit-code -- src-tauri/Cargo.lock
