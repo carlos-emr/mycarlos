@@ -311,6 +311,62 @@ describe("AuditHistory dates keep the computer's format (D130)", () => {
 });
 
 describe("AuditHistory damaged history (D129)", () => {
+  it("says every event is shown when only storage without events is damaged (#120 C1)", async () => {
+    const rows = [
+      entry(),
+      entry({ seq: 1, event: "unlocked", atMs: Date.UTC(2026, 1, 3, 9) }),
+    ];
+    render(
+      <AuditHistory
+        {...props(
+          bridge(
+            vi.fn().mockResolvedValue({
+              ...damaged(rows),
+              everyEventShown: true,
+            }),
+          ),
+        )}
+      />,
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveHumanTextContent(
+      "Part of the storage for this history is damaged, but every event checks out and is shown.",
+    );
+    expect(alert).not.toHaveHumanTextContent("can't be checked");
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(document.querySelector(".audit-history-gap")).toBeNull();
+    await act(async () => setLocaleOverride("zh-CN"));
+    expect(alert).toHaveHumanTextContent(
+      translate("zh-CN", "interface.history.damagedStorageOnly"),
+    );
+  });
+
+  // Native code keeps padding last, so this view is defensive: the screen follows
+  // everyEventShown and marks no gap whatever the two parts hold.
+  it("marks no gap between contiguous checked parts (#120 C1)", async () => {
+    const early = [entry(), entry({ seq: 1, event: "unlocked" })];
+    const later = [
+      entry({ seq: 2, event: "renamed", atMs: Date.UTC(2026, 2, 1, 10) }),
+    ];
+    render(
+      <AuditHistory
+        {...props(
+          bridge(
+            vi.fn().mockResolvedValue({
+              ...damaged(early, later),
+              everyEventShown: true,
+            }),
+          ),
+        )}
+      />,
+    );
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "every event checks out and is shown",
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(document.querySelector(".audit-history-gap")).toBeNull();
+  });
+
   it("shows the entries that check out, newest first, under a dated warning", async () => {
     const rows = [
       entry(),

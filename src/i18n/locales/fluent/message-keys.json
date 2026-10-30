@@ -728,5 +728,6 @@
   "interface.history.sessionLockedByPerson",
   "interface.history.sessionNotRecorded",
   "interface.history.title",
-  "interface.history.to"
+  "interface.history.to",
+  "interface.history.damagedStorageOnly"
 ]

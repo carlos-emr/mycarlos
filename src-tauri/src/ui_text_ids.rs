@@ -215,6 +215,7 @@ pub enum MessageId {
     InterfaceHistoryDamagedAll,
     InterfaceHistoryDamagedBefore,
     InterfaceHistoryDamagedBetween,
+    InterfaceHistoryDamagedStorageOnly,
     InterfaceHistoryEmpty,
     InterfaceHistoryErrorUnverified,
     InterfaceHistoryEventBackupRestored,
@@ -949,6 +950,7 @@ impl MessageId {
         Self::InterfaceHistoryDamagedAll,
         Self::InterfaceHistoryDamagedBefore,
         Self::InterfaceHistoryDamagedBetween,
+        Self::InterfaceHistoryDamagedStorageOnly,
         Self::InterfaceHistoryEmpty,
         Self::InterfaceHistoryErrorUnverified,
         Self::InterfaceHistoryEventBackupRestored,
@@ -1835,6 +1837,7 @@ impl MessageId {
             Self::InterfaceHistoryDamagedAll => "interface-history-damagedAll",
             Self::InterfaceHistoryDamagedBefore => "interface-history-damagedBefore",
             Self::InterfaceHistoryDamagedBetween => "interface-history-damagedBetween",
+            Self::InterfaceHistoryDamagedStorageOnly => "interface-history-damagedStorageOnly",
             Self::InterfaceHistoryEmpty => "interface-history-empty",
             Self::InterfaceHistoryErrorUnverified => "interface-history-error-unverified",
             Self::InterfaceHistoryEventBackupRestored => "interface-history-event-backupRestored",
@@ -3372,6 +3375,9 @@ impl MessageId {
             }
             "interface.history.title" => Some(Self::InterfaceHistoryTitle),
             "interface.history.to" => Some(Self::InterfaceHistoryTo),
+            "interface.history.damagedStorageOnly" => {
+                Some(Self::InterfaceHistoryDamagedStorageOnly)
+            }
             _ => None,
         }
     }

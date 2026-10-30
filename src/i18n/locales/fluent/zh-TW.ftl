@@ -1367,6 +1367,8 @@ interface-history-damaged = 此紀錄有部分已損毀。{ $date } 之後的事
 
 interface-history-damagedAll = 此紀錄有部分已損毀。其中的事件無法檢查，因此全部不顯示。
 
+interface-history-damagedStorageOnly = 此紀錄的部分儲存內容已損毀，但所有事件均通過檢查，並全部顯示。
+
 interface-history-damagedBefore = 此紀錄有部分已損毀。{ $date } 之前的事件無法檢查，因此不顯示。
 
 interface-history-damagedBetween = 此紀錄有部分已損毀。{ $from } 至 { $to } 之間的事件無法檢查，因此不顯示。

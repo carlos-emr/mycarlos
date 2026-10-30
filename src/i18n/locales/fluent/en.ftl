@@ -1495,6 +1495,8 @@ interface-history-damaged = Part of this history is damaged. Events after { $dat
 
 interface-history-damagedAll = Part of this history is damaged. Its events can't be checked, so none are shown.
 
+interface-history-damagedStorageOnly = Part of the storage for this history is damaged, but every event checks out and is shown.
+
 interface-history-damagedBefore = Part of this history is damaged. Events before { $date } can't be checked and aren't shown.
 
 interface-history-damagedBetween = Part of this history is damaged. Events between { $from } and { $to } can't be checked and aren't shown.
