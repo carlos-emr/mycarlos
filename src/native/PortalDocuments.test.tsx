@@ -176,6 +176,78 @@ describe("native clinic document controls", () => {
     );
     expect(failures).toHaveLength(1);
   });
+  it.each(["success", "refusal"] as const)(
+    "forgets a linking code after native %s while the vault refresh still waits",
+    async (outcome) => {
+      let finishLink!: (linked: PortalLinkSummary) => void;
+      let refuseLink!: (error: unknown) => void;
+      const pendingLink = new Promise<PortalLinkSummary>((resolve, reject) => {
+        finishLink = resolve;
+        refuseLink = reject;
+      });
+      let finishRefresh!: (updated: VaultSnapshot) => void;
+      const pendingRefresh = new Promise<VaultSnapshot>((resolve) => {
+        finishRefresh = resolve;
+      });
+      const refresh = vi.fn().mockReturnValue(pendingRefresh);
+      const { bridge, failures } = fixture({ refresh });
+      vi.mocked(bridge.linkPortal!).mockReturnValue(pendingLink);
+      const user = userEvent.setup();
+      const address = "https://portal.example.test/patient";
+      const oneUseCode = "FAKE-ONE-USE-12345678";
+      const deviceName = "FAKE bedside tablet";
+      const refusal = { code: "portal_link_code_rejected" };
+      try {
+        await user.type(screen.getByLabelText("Portal HTTPS address"), address);
+        await user.type(screen.getByLabelText("Linking code"), oneUseCode);
+        const device = screen.getByLabelText("Name for this device");
+        await waitFor(() => expect(device).toHaveValue("myCarlos on Windows"));
+        await user.clear(device);
+        await user.type(device, deviceName);
+        await user.selectOptions(
+          screen.getByLabelText("Whose records"),
+          "fake-person",
+        );
+        await user.click(
+          screen.getByRole("button", { name: "Link to clinic" }),
+        );
+        expect(bridge.linkPortal).toHaveBeenCalledExactlyOnceWith({
+          portalBase: address,
+          code: oneUseCode,
+          deviceName,
+          profileId: "fake-person",
+        });
+        expect(refresh).not.toHaveBeenCalled();
+        await act(async () => {
+          if (outcome === "success") finishLink(link);
+          else refuseLink(refusal);
+        });
+        // The native attempt ended, but its follow-up snapshot is still pending.
+        // A stalled refresh must not keep the one-use code in the form.
+        expect(refresh).toHaveBeenCalledOnce();
+        expect(screen.getByLabelText("Linking code")).toHaveValue("");
+        expect(screen.getByLabelText("Portal HTTPS address")).toHaveValue(
+          address,
+        );
+        expect(device).toHaveValue(deviceName);
+        expect(screen.getByLabelText("Whose records")).toHaveValue(
+          "fake-person",
+        );
+        expect(failures).toEqual([]);
+        await act(async () => finishRefresh(snapshot));
+        expect(failures).toEqual(outcome === "success" ? [] : [refusal]);
+        if (outcome === "refusal") expect(failures[0]).toBe(refusal);
+        expect(screen.getByLabelText("Linking code")).toHaveValue("");
+        expect(bridge.linkPortal).toHaveBeenCalledTimes(1);
+        expect(refresh).toHaveBeenCalledOnce();
+      } finally {
+        await act(async () => {
+          finishLink(link);
+          finishRefresh(snapshot);
+        });
+      }
+    },
+  );
   it("checks only on explicit action and disables writes in recovery", async () => {
     const { bridge, props, rerender } = fixture();
     expect(bridge.checkDocuments).not.toHaveBeenCalled();
