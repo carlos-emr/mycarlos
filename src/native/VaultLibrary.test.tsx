@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { page } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
-import type { VaultBridge, VaultSnapshot } from "../vault";
+import type { PortalLinkSummary, VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
 const snapshot: VaultSnapshot = {
@@ -41,7 +41,11 @@ const snapshot: VaultSnapshot = {
   recovery: null,
 };
 
-function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
+function renderLibrary(
+  shown: VaultSnapshot = snapshot,
+  sharedNew = 0,
+  bridgeExtras: Record<string, unknown> = {},
+) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
@@ -56,6 +60,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       checkedFromMs: null,
     }),
     isLockedPdf: vi.fn().mockResolvedValue(false),
+    ...bridgeExtras,
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   render(
@@ -915,6 +920,70 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     } finally {
       await page.viewport(1100, 760);
     }
+  });
+});
+
+describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
+  // A clinic this vault is linked to (FAKE), so the library shows its
+  // compact Check for new documents.
+  const link: PortalLinkSummary = {
+    id: "fake-link",
+    portalBase: "https://portal.example.test/patient",
+    deviceName: "myCarlos on Windows",
+    profileId: null,
+    clinicName: "FAKE Clinic",
+    fingerprints: [],
+    incomplete: false,
+    deviceKeyId: "fake-device",
+    deviceFingerprint: "11".repeat(32),
+    approvalRequested: true,
+    clinicApproved: true,
+  };
+  const portal = {
+    linkPortal: vi.fn(),
+    checkDocuments: vi
+      .fn()
+      .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+  };
+  const box = (element: Element) => element.getBoundingClientRect();
+
+  it("sits to the right of the search box, and under it on a narrow window", async () => {
+    renderLibrary(
+      { ...snapshot, portalLinkingEnabled: true, portalLinks: [link] },
+      0,
+      portal,
+    );
+    const search = screen.getByRole("searchbox").closest("label")!;
+    const check = screen.getByRole("button", {
+      name: humanText("Check for new documents"),
+    });
+    // After the search box in reading and Tab order, in the same row.
+    expect(
+      search.compareDocumentPosition(check) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(check.parentElement).toBe(search.parentElement);
+    try {
+      await page.viewport(1100, 760);
+      expect(box(check).left).toBeGreaterThanOrEqual(box(search).right);
+      expect(box(check).top).toBeLessThan(box(search).bottom);
+      // Narrow (a phone, or large text): the box keeps its width and the
+      // button goes under it.
+      await page.viewport(360, 800);
+      expect(box(check).top).toBeGreaterThanOrEqual(box(search).bottom);
+    } finally {
+      await page.viewport(1100, 760);
+    }
+  });
+
+  it("leaves the search box the whole row when there is no clinic link", () => {
+    renderLibrary({ ...snapshot, portalLinkingEnabled: true }, 0, portal);
+    const search = screen.getByRole("searchbox").closest("label")!;
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeNull();
+    expect(box(search).width).toBeCloseTo(box(search.parentElement!).width, 0);
   });
 });
 
