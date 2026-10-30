@@ -1,5 +1,11 @@
 import { humanText } from "../test/humanText";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
@@ -201,6 +207,42 @@ describe("CameraDialog", () => {
       expect(onUse).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
+    }
+  });
+
+  it("clears a handed-off JPEG after saving settles even if the dialog already closed", async () => {
+    let finishSave!: () => void;
+    const pendingSave = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    const handoff = vi
+      .fn<(jpeg: Uint8Array) => Promise<void>>()
+      .mockReturnValue(pendingSave);
+    const { unmount, onClose } = open({ onUse: handoff });
+    try {
+      await startCamera();
+      fireEvent.click(shutter());
+      fireEvent.click(button("Use photo"));
+      await waitFor(() => expect(handoff).toHaveBeenCalledOnce());
+      const jpeg = handoff.mock.calls[0][0];
+      const original = jpeg.slice();
+      expect(original.byteLength).toBeGreaterThan(3);
+      expect([...original.slice(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+      // The consumer already has these bytes when a lock closes the dialog.
+      await act(async () => unmount());
+      expect(screen.queryByRole("dialog")).toBeNull();
+      // Do not erase the consumer's in-flight input before it finishes reading.
+      expect(jpeg).toEqual(original);
+      await act(async () => finishSave());
+      // Cleanup still runs after the producing component has gone away.
+      expect(jpeg.byteLength).toBe(original.byteLength);
+      expect(jpeg.every((byte) => byte === 0)).toBe(true);
+      expect(handoff).toHaveBeenCalledOnce();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(getUserMedia).toHaveBeenCalledOnce();
+      expect(ended(streams[0])).toBe(true);
+    } finally {
+      await act(async () => finishSave());
     }
   });
 
