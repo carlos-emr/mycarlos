@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deidentify, removeMore, restore, type Removed } from "./deidentify";
 import source from "./deidentify.ts?raw";
+import cleaningSource from "./textCleaning.ts?raw";
 import discharge from "./fixtures/discharge-summary.txt?raw";
 import imaging from "./fixtures/imaging-report.txt?raw";
 import lab from "./fixtures/lab-report.txt?raw";
@@ -277,14 +278,15 @@ describe("the name remover (#72)", () => {
     expect(imaging10).toContain("around Oct. 22, 2027.");
   });
 
-  it("reads a date like 03/04/2026 day first unless told otherwise", () => {
+  it("removes a date like 03/04/2026, which could be read two ways, and moves one it can read", () => {
     const shift = (text: string, dayFirst?: boolean) =>
       deidentify(text, { knownNames: [], dateShiftDays: 1, dayFirst }).toSend;
-    expect(shift("Seen 03/04/2026.")).toBe("Seen 04/04/2026.");
-    expect(shift("Seen 03/04/2026.", false)).toBe("Seen 03/05/2026.");
-    // A day over 12 settles it either way.
+    expect(shift("Seen 03/04/2026.")).toBe("Seen [DATE 1].");
+    expect(shift("Seen 03/04/2026.", false)).toBe("Seen [DATE 1].");
+    // A day over 12 settles it either way, and the same day and month too.
     expect(shift("Seen 25/12/2026.", false)).toBe("Seen 26/12/2026.");
     expect(shift("Seen 12/25/2026.")).toBe("Seen 12/26/2026.");
+    expect(shift("Seen 04/04/2026.")).toBe("Seen 05/04/2026.");
   });
 
   it("takes out the details root-c2's probe found missed (#72 review)", () => {
@@ -504,12 +506,14 @@ describe("the name remover (#72)", () => {
     expect(run10("Dr. Grant agrees. Grant will call.").toSend).toBe(
       "Dr. [DOCTOR 1] agrees. [DOCTOR 1] will call.",
     );
-    // A profile name's word in lower case is flagged too.
+    // A profile name's word goes in any case (AI-01): the vault knows it
+    // is a name, and the preview shows the removal.
     const profile = run10("Seen with Avery. For example, avery.", [
       "Avery Example",
     ]);
-    expect(profile.toSend).toBe("Seen with [NAME 1]. For example, avery.");
-    expect(flagged(profile)).toEqual(["example", "avery"]);
+    // "example, avery" reads as the name surname first.
+    expect(profile.toSend).toBe("Seen with [NAME 1]. For [NAME 1].");
+    expect(flagged(profile)).toEqual([]);
     // One tap removes a flagged word; the others stay flagged, in place.
     const [first] = price.onDevice.possibleNames;
     const removed = removeMore(price, first.sentStart, first.sentEnd);
@@ -551,13 +555,14 @@ describe("the name remover (#72)", () => {
     expect(result.onDevice.removed).toEqual([]);
   });
 
-  it("chooses a shift of 30 to 365 days, earlier or later, when none is given", () => {
+  it("chooses a shift of 30 to 365 days, always earlier, when none is given", () => {
     for (let round = 0; round < 20; round++) {
-      const { dateShiftDays } = deidentify("Seen 2026-10-01.", {
+      const { dateShiftDays, removed } = deidentify("Seen 2026-10-01.", {
         knownNames: [],
       }).onDevice;
-      expect(Math.abs(dateShiftDays)).toBeGreaterThanOrEqual(30);
-      expect(Math.abs(dateShiftDays)).toBeLessThanOrEqual(365);
+      expect(dateShiftDays).toBeLessThanOrEqual(-30);
+      expect(dateShiftDays).toBeGreaterThanOrEqual(-365);
+      expect(removed[0].replacement < "2026-10-01").toBe(true);
     }
   });
 
@@ -609,9 +614,334 @@ describe("the name remover (#72)", () => {
   });
 
   it("uses no network: plain text in, plain text out", () => {
-    expect(source).not.toMatch(
-      /\bfetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|@tauri-apps|invoke\(|https?:\/\//,
+    for (const file of [source, cleaningSource]) {
+      expect(file).not.toMatch(
+        /\bfetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|@tauri-apps|invoke\(|https?:\/\//,
+      );
+      // Only the text cleaning and its generated table, next to this file.
+      for (const line of file.match(/^import .*$/gm) ?? [])
+        expect(line).toMatch(
+          /from "\.\/(textCleaning|unicodeCleaningTable)";$/,
+        );
+    }
+  });
+});
+
+// ---------------------------------------------------------------- part B
+
+import extractedLetter from "./fixtures/extracted-letter.txt?raw";
+import extractedLab from "./fixtures/extracted-lab-report.txt?raw";
+import { DEFAULT_LABELS } from "./deidentify";
+
+describe("the name remover, part B (#72, threat model AI-01)", () => {
+  const out = (
+    text: string,
+    options: Partial<Parameters<typeof deidentify>[1]> = {},
+  ) => deidentify(text, { knownNames: [], dateShiftDays: -40, ...options });
+
+  /** Every removal stands where it says, in the source and in the text to
+   * send. */
+  const consistent = (result: ReturnType<typeof deidentify>) => {
+    const { removed, possibleNames, source } = result.onDevice;
+    for (const part of removed) {
+      expect(source.slice(part.start, part.end)).toBe(part.original);
+      expect(result.toSend.slice(part.sentStart, part.sentEnd)).toBe(
+        part.replacement,
+      );
+    }
+    for (const possible of possibleNames)
+      expect(result.toSend.slice(possible.sentStart, possible.sentEnd)).toBe(
+        possible.original,
+      );
+  };
+
+  it("takes every listed detail out of the extracted letter", () => {
+    const result = out(extractedLetter, {
+      knownNames: ["Łukasz Żółć", "王小明"],
+      knownBirthDates: ["1933-02-11"],
+      knownClinics: ["Clinique médicale Fictive"],
+      knownDoctors: ["Jan Kowalski"],
+    });
+    consistent(result);
+    const text = result.toSend;
+    for (const detail of [
+      "Clinique médicale Fictive",
+      "boul. René-Lévesque",
+      "Montréal",
+      "H2X 1A1",
+      "514-555-0199",
+      "514-555-0198",
+      "www.clinique-fictive.example.ca",
+      "clinique-fictive.example.ca/patients",
+      "https://portal.example.org/results?id=4471",
+      "Kowalski",
+      "Hôpital Fictif de Testville",
+      "ŻÓŁĆ",
+      "Łukasz",
+      "Żółć",
+      "1933-02-11",
+      "046 454 286",
+      "SP-2025-00417",
+      "92-year-old",
+      "王小明",
+      "Ewa",
+      "03/04/2025",
+      "17/10/25",
+      "October 6, 2025",
+      "March 2024",
+      "Côté-Lévesque",
+    ])
+      expect(text, detail).not.toContain(detail);
+    // The year after "since" moved with its 1 July: forty days earlier
+    // keeps the year, so the removal is checked, not the text.
+    expect(
+      result.onDevice.removed.find((part) => part.original === "2019")?.kind,
+    ).toBe("date");
+    for (const clinical of [
+      "amlodipine 5 mg",
+      "138/84",
+      "normal ejection fraction",
+      "Platelets 250 x10⁹/L",
+      "Dose 5 µg daily; results ≥ 10 are flagged.",
+    ])
+      expect(text, clinical).toContain(clinical);
+    const kinds = new Set(result.onDevice.removed.map((part) => part.kind));
+    for (const kind of [
+      "clinic",
+      "doctor",
+      "name",
+      "address",
+      "postalCode",
+      "phone",
+      "web",
+      "sin",
+      "recordNumber",
+      "dateOfBirth",
+      "age",
+      "unclearDate",
+      "date",
+    ])
+      expect(kinds, kind).toContain(kind);
+  });
+
+  it("takes every listed detail out of the lab report as the reader extracts it", () => {
+    const result = out(extractedLab, {
+      knownNames: ["Avery Example", "Jordan Example"],
+      knownBirthDates: ["1961-04-17"],
+    });
+    consistent(result);
+    const text = result.toSend;
+    // The cleaned text has no zero-width characters and keeps the visible
+    // marks of the symbol font as U+FFFD.
+    expect(result.onDevice.source).not.toMatch(/[​­]/);
+    expect(result.onDevice.cleaning).toEqual({
+      replacedRuns: 3,
+      droppedCodePoints: 3,
+    });
+    expect(text).toContain("Dose 5 �g; results � 10 are flagged � 2.");
+    for (const detail of [
+      "EXAMPLE",
+      "Avery",
+      "Avеry",
+      "Jordan",
+      "９１２３ ４５６ ７８９",
+      "17-Apr-1961",
+      "H00012345",
+      "SP-26-0099812",
+      "Testcase",
+      "Morgan",
+      "Tuesday, 2026-10-08",
+      "Sept 2026",
+      "1-800-555-0100",
+      "results@lab.example.org",
+    ])
+      expect(text, detail).not.toContain(detail);
+    expect(text).not.toMatch(/avery|example|jordan/i);
+    expect(text).toContain(
+      "Potassium            5.4        mmol/L     3.5-5.0     H",
     );
-    expect(source).not.toMatch(/^import /m);
+    expect(text).toContain("aged 65");
+    expect(
+      result.onDevice.removed.find((part) => part.original === "2024")?.kind,
+    ).toBe("date");
+    // The weekday moved with its date, forty days earlier.
+    expect(text).toContain("Collected:   Saturday, 2026-08-29 07:40");
+  });
+
+  it("removes a known birth date wherever it stands, in any form", () => {
+    for (const text of [
+      "Born 17 April 1961.",
+      "Seen 1961-04-17.",
+      "Date 17/04/1961 and 04/17/1961.",
+      "On Apr. 17, 1961 she was born.",
+    ]) {
+      const result = out(text, { knownBirthDates: ["1961-04-17"] });
+      expect(result.toSend, text).not.toContain("1961");
+      expect(
+        result.onDevice.removed.every((part) => part.kind === "dateOfBirth"),
+        text,
+      ).toBe(true);
+    }
+    // Another date is only moved.
+    expect(
+      out("Seen 1961-04-18.", { knownBirthDates: ["1961-04-17"] }).toSend,
+    ).toBe("Seen 1961-03-09.");
+  });
+
+  it("takes a vault name in either order, surname first, and in any case", () => {
+    const names = ["Avery Example"];
+    for (const text of [
+      "Patient: Example, Avery",
+      "EXAMPLE, AVERY was seen",
+      "Example Avery was seen",
+      "avery example was seen",
+      "Seen: AVERY",
+    ]) {
+      const result = out(text, { knownNames: names });
+      expect(result.toSend, text).not.toMatch(/avery|example/i);
+      expect(
+        result.onDevice.removed.map((part) => part.replacement),
+        text,
+      ).toEqual(["[NAME 1]"]);
+    }
+    // Accents and look-alike letters fold: Côté stands as Cote and as Cоté.
+    expect(
+      out("Seen Renee COTE and Cоté.", { knownNames: ["Renée Côté"] }).toSend,
+    ).toBe("Seen [NAME 1] and [NAME 1].");
+    // Polish letters fold too.
+    expect(
+      out("Seen Lukasz Zolc.", { knownNames: ["Łukasz Żółć"] }).toSend,
+    ).toBe("Seen [NAME 1].");
+    // A Han name of two characters stands alone; a Latin part under three
+    // letters, a common word and a relationship word do not.
+    expect(
+      out("王小明 and 小明 came.", { knownNames: ["王小明"] }).toSend,
+    ).toBe("[NAME 1] and [NAME 1] came.");
+    expect(
+      out("Jo and Mom and the major issue.", {
+        knownNames: ["Jo Major", "Mom"],
+      }).toSend,
+    ).toBe("Jo and Mom and the major issue.");
+    // A vault name that is also a disease name is shown as a removal, for
+    // the preview to show (false positives are the patient's call).
+    const graves = out("Graves disease. Addison's disease.", {
+      knownNames: ["Pat Graves", "Sam Addison"],
+    });
+    expect(graves.toSend).toBe("[NAME 1] disease. [NAME 2]'s disease.");
+  });
+
+  it("takes the vault's known clinic and doctor names, in any case", () => {
+    const result = out(
+      "Sent by maplewood family health team. Seen by Blake Sample; SAMPLE, Blake signed.",
+      {
+        knownClinics: ["Maplewood Family Health Team"],
+        knownDoctors: ["Blake Sample"],
+      },
+    );
+    expect(result.toSend).toBe(
+      "Sent by [CLINIC 1]. Seen by [DOCTOR 1]; [DOCTOR 1] signed.",
+    );
+  });
+
+  it("moves dates back only, with the weekday, and month and year forms", () => {
+    const shift = (text: string) => out(text).toSend;
+    expect(shift("Seen Monday, October 6, 2025.")).toBe(
+      "Seen Wednesday, August 27, 2025.",
+    );
+    expect(shift("Vu le lundi 6 octobre 2025.")).toBe(
+      "Vu le mercredi 27 août 2025.",
+    );
+    expect(shift("Thu. 2026-01-15")).toBe("Sat. 2025-12-06");
+    // A month and a year move with the 15th; a year alone, after a cue,
+    // with its 1 July.
+    expect(shift("Started in March 2024 and in 2019; born in 2019.")).toBe(
+      "Started in February 2024 and in 2019; born in 2019.",
+    );
+    expect(out("since 2019", { dateShiftDays: -200 }).toSend).toBe(
+      "since 2018",
+    );
+    expect(shift("depuis 2019 et en octobre 2026")).toBe(
+      "depuis 2019 et en septembre 2026",
+    );
+    // No cue, no change: a bare year or a number is not a date.
+    expect(shift("Lot 2019, 2019 tablets")).toBe("Lot 2019, 2019 tablets");
+    // Every moved date is earlier.
+    const { removed } = out(
+      "A 2026-10-08, B October 8, 2026, C 8 octobre 2026, D 28/10/2026.",
+    ).onDevice;
+    expect(removed).toHaveLength(4);
+    for (const part of removed) expect(part.kind).toBe("date");
+  });
+
+  it("removes an ambiguous numeric date instead of moving it", () => {
+    const result = out("Echo of 03/04/2025 and 25/04/2025; Date: 1/2/24.");
+    expect(result.toSend).toBe(
+      "Echo of [DATE 1] and 16/03/2025; Date: [DATE 2].",
+    );
+    expect(result.onDevice.removed.map((part) => part.kind)).toEqual([
+      "unclearDate",
+      "date",
+      "unclearDate",
+    ]);
+    // A date of birth is removed as one whichever way it reads.
+    expect(
+      out("DOB 03/04/1961", { knownBirthDates: ["1961-03-04"] }).onDevice
+        .removed[0].kind,
+    ).toBe("dateOfBirth");
+  });
+
+  it("takes out web addresses, ages of 90 and over, social insurance and specimen numbers", () => {
+    expect(
+      out("See www.example.com/info and https://x.example.org/a?b=1.").toSend,
+    ).toBe("See [WEB ADDRESS 1] and [WEB ADDRESS 2].");
+    expect(
+      out(
+        "A 92-year-old man, aged 95, 101 yo; une femme âgée de 90 ans; 65-year-old.",
+      ).toSend,
+    ).toBe("A [AGE 1] man, [AGE 2], [AGE 3]; une femme [AGE 4]; 65-year-old.");
+    expect(out("SIN: 046454286, NAS 046 454 286, 046-454-286.").toSend).toBe(
+      "SIN: [SIN 1], NAS [SIN 2], [SIN 3].",
+    );
+    // A phone number is not one.
+    expect(out("Call 613-555-0142.").toSend).toBe("Call [PHONE 1].");
+    expect(
+      out("Specimen #: SP-26-0099812; Sample ID: 44A7; Specimen: urine.")
+        .toSend,
+    ).toBe(
+      "Specimen #: [RECORD NUMBER 1]; Sample ID: [RECORD NUMBER 2]; Specimen: urine.",
+    );
+  });
+
+  it("writes the placeholders in the app's language, and keeps them for later removals", () => {
+    const labels = { ...DEFAULT_LABELS, name: "NOM", manual: "RETIRÉ" };
+    const result = out("Patient: Émilie Tremblay; voir plus loin.", { labels });
+    expect(result.toSend).toBe("Patient: [NOM 1]; voir plus loin.");
+    const at = result.toSend.indexOf("voir");
+    const more = removeMore(result, at, at + 4);
+    expect(more.toSend).toBe("Patient: [NOM 1]; [RETIRÉ 1] plus loin.");
+    expect(more.onDevice.labels).toEqual(labels);
+    // `removeMore` keeps how dates were read.
+    const monthFirst = out("Seen 03/04/2025 and 05/06/2025.", {
+      dayFirst: false,
+      knownBirthDates: ["2025-05-06"],
+    });
+    expect(monthFirst.onDevice.dayFirst).toBe(false);
+    const moreStill = removeMore(monthFirst, 0, 4);
+    expect(moreStill.onDevice.dayFirst).toBe(false);
+    expect(moreStill.toSend).toBe(
+      "[REMOVED 1] [DATE 1] and [DATE OF BIRTH 1].",
+    );
+  });
+
+  it("finds a detail split by hidden characters or written in full-width digits", () => {
+    const result = out(
+      "Health card ９１２３ ４５６ ７８９ for Av​ery Ex­ample.",
+      {
+        knownNames: ["Avery Example"],
+      },
+    );
+    expect(result.toSend).toBe("Health card [HEALTH CARD 1] for [NAME 1].");
+    consistent(result);
+    expect(result.onDevice.removed[0].original).toBe("９１２３ ４５６ ７８９");
   });
 });

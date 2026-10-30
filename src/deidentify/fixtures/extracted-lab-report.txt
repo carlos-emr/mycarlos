@@ -1,0 +1,16 @@
+SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY
+Fictional Valley Laboratories - Clinical Chemistry
+Patient:   EXAMPLE, Avery               PHN: ９１２３ ４５６ ７８９
+Date of birth:   17-Apr-1961            Sex: F
+MRN: H00012345                          Specimen #: SP-26-0099812
+Ordering provider:   Dr. Morgan T​estcase
+Collected:   Tuesday, 2026-10-08 07:40  Reported: 2026-10-09 15:12
+Av­ery Ex​ample, aged 65, seen in Sept 2026 and in 2024.
+Test                 Result     Units      Reference
+Hemoglobin           132        g/L        120-160
+Potassium            5.4        mmol/L     3.5-5.0     H
+Magnesium            0.8        mmol/L     0.7-1.0
+Dose 5 g; results  10 are flagged  2.
+Comment: Potassium mildly raised. Repeat in 2 weeks (on or after 2026-10-22).
+Questions: call the lab at 1-800-555-0100 or email results@lab.example.org.
+Avеry (with a Cyrillic letter) and Jordan Example were told.
