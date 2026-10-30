@@ -308,6 +308,8 @@ describe("the reader's AI helper", () => {
           lang: "en",
           createdAt: Date.UTC(2026, 9, 1),
           partial: true,
+          lastPage: 4,
+          pagesMissing: true,
         }),
       },
     ]);
@@ -319,7 +321,19 @@ describe("the reader's AI helper", () => {
     expect(screen.getByText(AI_LABEL)).toBeVisible();
     expect(screen.getByText(humanText(/FAKE older model/))).toBeVisible();
     expect(model.calls).toHaveLength(0);
-    expect(screen.queryByText(humanText(/pages 1 to/))).toBeNull();
+    // A kept summary keeps its own notices: what was read, and what was not.
+    expect(
+      screen.getByText(
+        humanText(
+          "This summary covers only the start of the document: pages 1 to 4.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Some pages could not be read in full, so this summary may leave parts out.",
+      ),
+    ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Summarize again" }));
     await screen.findByText(humanText(/FAKE test model/));
     expect(model.calls).toHaveLength(1);

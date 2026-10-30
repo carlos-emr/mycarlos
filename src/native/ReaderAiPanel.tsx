@@ -53,8 +53,6 @@ export function ReaderAiPanel({
   const [failed, setFailed] = useState(false);
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
-  const [pagesRead, setPagesRead] = useState(0);
-  const [someUnread, setSomeUnread] = useState(false);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
   const [term, setTerm] = useState(initialTerm);
   // Whether the summary shown is one the vault kept, and whether keeping
@@ -142,17 +140,6 @@ export function ReaderAiPanel({
         );
         if (!live.current) return;
         setFromKept(false);
-        // The last page read, by its number: a page that failed has no
-        // entry, so the count of entries would be short.
-        setPagesRead((document.pages.at(-1)?.index ?? -1) + 1);
-        // Pages with no text, cut short or not read at all are never left
-        // out silently.
-        setSomeUnread(
-          document.emptyPages.length +
-            document.cutPages.length +
-            document.failedPages.length >
-            0,
-        );
         setSummary(result);
         await keep(result);
       })
@@ -250,9 +237,11 @@ export function ReaderAiPanel({
               </li>
             ))}
           </ol>
-          {someUnread && <p>{t("ai.summary.pagesMissing")}</p>}
-          {summary.partial && !fromKept && (
-            <p>{t("ai.summary.partial", { last: pagesRead })}</p>
+          {/* Pages with no text, cut short or not read at all are never
+              left out silently, for a kept summary as for a new one. */}
+          {summary.pagesMissing && <p>{t("ai.summary.pagesMissing")}</p>}
+          {summary.partial && (
+            <p>{t("ai.summary.partial", { last: summary.lastPage })}</p>
           )}
           <ResultMeta
             tool={summary.tool}

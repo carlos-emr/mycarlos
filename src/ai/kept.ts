@@ -42,7 +42,9 @@ export function parseKeptSummary(text: string): SummaryResult | null {
     !isModel(candidate.model) ||
     typeof candidate.lang !== "string" ||
     !isNumber(candidate.createdAt) ||
-    typeof candidate.partial !== "boolean"
+    typeof candidate.partial !== "boolean" ||
+    !isNumber(candidate.lastPage) ||
+    typeof candidate.pagesMissing !== "boolean"
   )
     return null;
   const sentences: SummaryResult["sentences"] = [];
@@ -66,6 +68,8 @@ export function parseKeptSummary(text: string): SummaryResult | null {
     lang: candidate.lang,
     createdAt: candidate.createdAt,
     partial: candidate.partial,
+    lastPage: candidate.lastPage,
+    pagesMissing: candidate.pagesMissing,
   };
 }
 

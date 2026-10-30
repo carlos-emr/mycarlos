@@ -16,6 +16,8 @@ const summary: SummaryResult = {
   lang: "fr",
   createdAt: 1700000000000,
   partial: false,
+  lastPage: 2,
+  pagesMissing: false,
 };
 
 describe("answers kept with the document", () => {
@@ -47,6 +49,9 @@ describe("answers kept with the document", () => {
     expect(
       parseKeptSummary(JSON.stringify({ ...summary, model: { name: "x" } })),
     ).toBeNull();
+    // A summary kept without the page facts is not shown as complete.
+    const { lastPage: _page, ...withoutPages } = summary;
+    expect(parseKeptSummary(JSON.stringify(withoutPages))).toBeNull();
   });
 
   it("tells the vault the tool, language, term and model of an answer", () => {
