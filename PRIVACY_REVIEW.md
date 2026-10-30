@@ -446,10 +446,12 @@ People's details, names that follow a title or a label (such as "Dr." or "Patien
 and French text, health card and medical record numbers and other identifying numbers (such as
 lab order numbers), dates of birth, ages of 90 and over, addresses, postal codes, phone and fax
 numbers, email and web addresses, and the names of clinics and doctors, and removes them. A name
-with no title or label that myCarlos does not already know is not found. Other dates are moved
-back by one random number of days (30 to 365), the same for every date in that text, so the time
-between them stays the same. The number is new each time and is not kept. Dates in an answer from
-another AI are therefore the moved dates, not the real ones.
+with no title or label that myCarlos does not already know is not found. Other dates that myCarlos
+recognises (written in English or French) are moved back by one random number of days (30 to 365),
+the same for every date in that text, so the time between them stays the same. The number is new
+each time and is not kept. Dates it moved stay moved in another AI's answer; a date it does not
+recognise (for example one written in Spanish, Polish, Portuguese or Chinese) stays as it was,
+unmarked.
 
 **The preview.** Before anything is saved, the patient sees all of the text the file will hold,
 with the removed parts and the moved dates marked, and can remove more. Nothing is saved until the
@@ -484,8 +486,9 @@ its document and never deleted (#71), and it is in backups like the rest of the 
 - **A signed-in AI service knows the patient.** Removing details then mainly protects the other
   people named in the document, and limits what the service keeps.
 - **The AI can be wrong.** It is not meant to diagnose or to advise on treatment or medicines. Each
-  sentence of a summary links to the part of the document it came from, so the patient can check
-  it.
+  sentence of a summary links to the sentence of the document it cites, when it cites a real one;
+  one with no valid source is marked "No source found". A link shows where a sentence came from,
+  not that it is right.
 - **Scanned pages** have no text, so the helper cannot work on them until on-device text
   recognition exists.
 - **Phones:** the PDF helper does not run on phones (`THREAT_MODEL.md` IMP-02), so a phone can

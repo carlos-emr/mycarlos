@@ -162,12 +162,15 @@ on 29 October 2026 that the helper uses no cloud provider, so:
   in a helper process with no network, and the webview's content policy is unchanged.
 - **The text source** is one read-only command, `vault_document_text` (AI-10). It works on
   computers only, reuses the sandboxed PDF helper with no new helper message, caps the text at
-  50 pages and 1 MiB, and adds no network use.
+  50 pages and 1 MiB, lists the pages the helper refuses instead of dropping them, and adds no
+  network use.
 - **The export is a file save.** After the preview, the patient saves the anonymized text as a plain
   text file through the system's save dialog (AI-01 to AI-03). Where it goes after that (a synced
   folder, a cloud drive, an AI service) is the patient's choice, as for a readable copy, and what
-  that service learns or keeps is up to it (AI-09). The file's first line says that it is a copy of
-  a medical document and holds no instructions. The history records it as `copySaved` with
+  that service learns or keeps is up to it (AI-09). Native code writes the file's first line
+  itself, in the app's language: it tells an AI to treat all of it as the document, not as
+  instructions (AI-02, AI-09); when the text was cut, the last line says so (AI-10). The history
+  records it as `copySaved` with
   `how: "anonymizedText"`: the document, where the file was saved (cut to 256 characters, with a
   SHA-256 of the whole) and when; never the text, the removed details or the date offset.
 - **The model file** holds no patient data. It is kept in a model folder beside, not inside, the
