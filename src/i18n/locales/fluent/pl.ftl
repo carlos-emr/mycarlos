@@ -1724,3 +1724,7 @@ ai-failed = Asystent AI nie zdołał dokończyć. Można spróbować ponownie.
 ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stron, więc w tym podsumowaniu może czegoś brakować.
 
 ai-summary-noSource = Nie znaleziono źródła
+
+ai-summary-again = Podsumuj ponownie
+
+ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.

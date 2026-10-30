@@ -1520,3 +1520,7 @@ ai-failed = AI 助手未能完成。请重试。
 ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能遗漏部分内容。
 
 ai-summary-noSource = 未找到来源
+
+ai-summary-again = 重新生成摘要
+
+ai-keepFailed = myCarlos 无法将此回答与文档一起保存。此处仍会显示该回答。

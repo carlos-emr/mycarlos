@@ -754,6 +754,8 @@ export const MESSAGE_KEYS = [
   "ai.failed",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
+  "ai.summary.again",
+  "ai.keepFailed",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1635,6 +1637,8 @@ const FLUENT_IDS_BY_KEY = {
   "ai.failed": "ai-failed",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
+  "ai.summary.again": "ai-summary-again",
+  "ai.keepFailed": "ai-keepFailed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2480,6 +2484,8 @@ export interface MessageArgsByKey {
   "ai.failed": undefined;
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
+  "ai.summary.again": undefined;
+  "ai.keepFailed": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

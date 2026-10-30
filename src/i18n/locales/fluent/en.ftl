@@ -1656,3 +1656,7 @@ ai-failed = The AI helper could not finish. Try again.
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 
 ai-summary-noSource = No source found
+
+ai-summary-again = Summarize again
+
+ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.

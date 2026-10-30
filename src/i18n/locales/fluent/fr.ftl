@@ -1690,3 +1690,7 @@ ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
 ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; ce résumé peut donc en omettre des parties.
 
 ai-summary-noSource = Source introuvable
+
+ai-summary-again = Résumer à nouveau
+
+ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.

@@ -6,6 +6,7 @@ import { StrictMode } from "react";
 import { DocumentReader, sentenceAround } from "./DocumentReader";
 import { PreferencesSettings } from "./PreferencesSettings";
 import type { ReaderAi } from "./ReaderAiPanel";
+import type { KeptAnswers } from "../ai/kept";
 import { notInstalledModel } from "../ai/localModel";
 import { LOCALES, translate } from "../i18n";
 import type { LocalModel } from "../ai/types";
@@ -43,7 +44,11 @@ const page = (index: number): ViewedPage => ({
 
 function renderReader(
   model: LocalModel | null,
-  options: { loadText?: ReaderAi["loadText"]; strict?: boolean } = {},
+  options: {
+    loadText?: ReaderAi["loadText"];
+    strict?: boolean;
+    kept?: KeptAnswers;
+  } = {},
 ) {
   const onOpenPreferences = vi.fn();
   const loadText = vi.fn(
@@ -54,12 +59,53 @@ function renderReader(
       record={record}
       viewPage={vi.fn(async (index: number) => page(index))}
       onClose={vi.fn()}
-      ai={model ? { model, loadText, onOpenPreferences } : undefined}
+      ai={
+        model
+          ? { model, loadText, onOpenPreferences, kept: options.kept }
+          : undefined
+      }
     />
   );
   render(options.strict ? <StrictMode>{reader}</StrictMode> : reader);
   return { onOpenPreferences, loadText };
 }
+
+/** A vault that keeps answers in memory, as the real one does per record. */
+function fakeKept(saved: { input: unknown; content: string }[] = []) {
+  const infoOf = (
+    input: { tool: "summary" | "explain"; lang: string; term?: string },
+    size: number,
+    id: string,
+  ) => ({
+    id,
+    tool: input.tool,
+    lang: input.lang,
+    ...(input.term ? { term: input.term } : {}),
+    modelName: "FAKE model",
+    modelSha256: "ab".repeat(32),
+    createdAtMs: 1,
+    size,
+  });
+  const kept: KeptAnswers = {
+    list: vi.fn(async () =>
+      saved.map((entry, index) =>
+        infoOf(
+          entry.input as { tool: "summary" | "explain"; lang: string },
+          entry.content.length,
+          `k${index}`,
+        ),
+      ),
+    ),
+    read: vi.fn(async (id: string) => saved[Number(id.slice(1))].content),
+    save: vi.fn(async (input, content) => {
+      saved.push({ input, content });
+      return infoOf(input, content.length, `k${saved.length - 1}`);
+    }),
+  };
+  return { kept, saved };
+}
+
+const AI_LABEL = "Written by AI and may be wrong. Check with your doctor.";
 
 const firstPage = () =>
   screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
@@ -216,6 +262,85 @@ describe("the reader's AI helper", () => {
       "Written by AI and may be wrong. Check with your doctor.",
     );
     expect(model.calls).toHaveLength(1);
+  });
+
+  it("keeps a new summary and a new explanation with the document", async () => {
+    const { kept, saved } = fakeKept();
+    renderReader(fakeLocalModel(), { kept });
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText(AI_LABEL);
+    await waitFor(() => expect(kept.save).toHaveBeenCalledTimes(1));
+    expect(saved[0].input).toEqual({
+      tool: "summary",
+      lang: "en",
+      modelName: "FAKE test model",
+      modelSha256: expect.any(String),
+    });
+    expect(JSON.parse(saved[0].content).tool).toBe("summary");
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    await user.type(screen.getByLabelText("Word or phrase"), "potassium");
+    await user.click(screen.getByRole("button", { name: "Explain" }));
+    await waitFor(() => expect(kept.save).toHaveBeenCalledTimes(2));
+    expect(saved[1].input).toMatchObject({
+      tool: "explain",
+      term: "potassium",
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows the summary the vault kept, asks no model, and summarizes again on request", async () => {
+    const model = fakeLocalModel();
+    const { kept } = fakeKept([
+      {
+        input: { tool: "summary", lang: "en" },
+        content: JSON.stringify({
+          tool: "summary",
+          sentences: [
+            {
+              text: "FAKE: kept earlier.",
+              quote: "FAKE text on page 2",
+              source: null,
+            },
+          ],
+          model: { name: "FAKE older model", sha256: "cd".repeat(32) },
+          lang: "en",
+          createdAt: Date.UTC(2026, 9, 1),
+          partial: true,
+        }),
+      },
+    ]);
+    renderReader(model, { kept });
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByText("FAKE: kept earlier.")).toBeVisible();
+    expect(screen.getByText(AI_LABEL)).toBeVisible();
+    expect(screen.getByText(humanText(/FAKE older model/))).toBeVisible();
+    expect(model.calls).toHaveLength(0);
+    expect(screen.queryByText(humanText(/pages 1 to/))).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Summarize again" }));
+    await screen.findByText(humanText(/FAKE test model/));
+    expect(model.calls).toHaveLength(1);
+    expect(screen.queryByText("FAKE: kept earlier.")).toBeNull();
+    expect(kept.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("says when an answer could not be kept, and keeps showing it", async () => {
+    const { kept } = fakeKept();
+    (kept.save as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("FAKE: disk full"),
+    );
+    renderReader(fakeLocalModel(), { kept });
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "myCarlos could not keep this answer with the document. It is still shown here.",
+    );
+    expect(screen.getByText(AI_LABEL)).toBeVisible();
   });
 
   it("numbers the last page read by its page, not by the count, when a page failed", async () => {

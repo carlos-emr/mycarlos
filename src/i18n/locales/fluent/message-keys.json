@@ -752,5 +752,7 @@
   "ai.working",
   "ai.failed",
   "ai.summary.pagesMissing",
-  "ai.summary.noSource"
+  "ai.summary.noSource",
+  "ai.summary.again",
+  "ai.keepFailed"
 ]

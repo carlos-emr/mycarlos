@@ -1690,3 +1690,7 @@ ai-failed = O assistente de IA não conseguiu terminar. Tente de novo.
 ai-summary-pagesMissing = Algumas páginas não puderam ser lidas por completo, então este resumo pode deixar partes de fora.
 
 ai-summary-noSource = Fonte não encontrada
+
+ai-summary-again = Resumir de novo
+
+ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.
