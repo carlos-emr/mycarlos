@@ -164,6 +164,26 @@ describe("RecoveryKeySetup", () => {
     );
   });
 
+  it("hands an active locked key-generation result to the app", async () => {
+    const user = userEvent.setup();
+    const { bridge, onLocked } = setUp(
+      {},
+      {
+        beginRecoveryKey: vi.fn().mockRejectedValue({
+          code: "locked",
+          message: "FAKE key generation found the vault locked.",
+        }),
+      },
+    );
+    await user.type(screen.getByLabelText("Passphrase"), "FAKE current secret");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await vi.waitFor(() => expect(onLocked).toHaveBeenCalledOnce());
+    expect(bridge.beginRecoveryKey).toHaveBeenCalledExactlyOnceWith(
+      "FAKE current secret",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("saves the kit and says so", async () => {
     const user = userEvent.setup();
     const { bridge } = setUp({ initialKey: KEY });
