@@ -3476,6 +3476,60 @@ describe("durable vault UI", () => {
     return { user, bridge, view, hide, setVisibility, unlock, typeKeyBack };
   }
 
+  it("conceals a recovery key when its current label request reports a locked vault", async () => {
+    let finishLabel!: (label: string) => void;
+    let failLabel!: (error: unknown) => void;
+    const pendingLabel = new Promise<string>((resolve, reject) => {
+      finishLabel = resolve;
+      failLabel = reject;
+    });
+    const { bridge } = await showKeyInSetup(5, {
+      recoveryKeyLabel: vi.fn().mockReturnValue(pendingLabel),
+    });
+    try {
+      expect(bridge.recoveryKeyLabel).toHaveBeenCalledOnce();
+      expect(bridge.lock).not.toHaveBeenCalled();
+      await act(async () => failLabel({ code: "locked" }));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      expect(
+        screen.queryByRole("dialog", { name: humanText("Your recovery key") }),
+      ).toBeNull();
+      expect(document.querySelector(".recovery-key-groups")).toBeNull();
+    } finally {
+      await act(async () => finishLabel("FAKE"));
+    }
+  });
+
+  it("does not relock a new session when an earlier label request reports locked", async () => {
+    let finishLabel!: (label: string) => void;
+    let failLabel!: (error: unknown) => void;
+    const pendingLabel = new Promise<string>((resolve, reject) => {
+      finishLabel = resolve;
+      failLabel = reject;
+    });
+    const { bridge, hide, unlock } = await showKeyInSetup(5, {
+      recoveryKeyLabel: vi.fn().mockReturnValue(pendingLabel),
+    });
+    try {
+      await hide();
+      await unlock();
+      expect(
+        await screen.findByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      await act(async () => failLabel({ code: "locked" }));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
+    } finally {
+      await act(async () => finishLabel("FAKE"));
+    }
+  });
+
   it("does not relock a new session when an earlier recovery setup reports locked", async () => {
     let finishBegin!: (key: string) => void;
     let failBegin!: (error: unknown) => void;

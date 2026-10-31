@@ -199,18 +199,19 @@ describe("RecoveryKeySetup", () => {
   });
 
   it("shows the key's label with the key", async () => {
-    const { bridge } = setUp({ initialKey: KEY });
+    const { bridge, onLocked } = setUp({ initialKey: KEY });
     expect(await screen.findByText("7F3A")).toBeVisible();
     expect(bridge.recoveryKeyLabel).toHaveBeenCalledOnce();
+    expect(onLocked).not.toHaveBeenCalled();
   });
 
   it("shows the key without its label when the label cannot be had", async () => {
     const user = userEvent.setup();
     const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
     onTestFinished(() => print.mockRestore());
-    setUp(
+    const { onLocked } = setUp(
       { initialKey: KEY, canPrint: true },
-      { recoveryKeyLabel: vi.fn().mockRejectedValue({ code: "locked" }) },
+      { recoveryKeyLabel: vi.fn().mockRejectedValue({ code: "storage" }) },
     );
     expect(await screen.findByText(GROUPS[0])).toBeVisible();
     expect(screen.queryByText(/Key label/)).toBeNull();
@@ -225,6 +226,7 @@ describe("RecoveryKeySetup", () => {
     expect(kit).not.toHaveTextContent(/label/i);
     // The date still tells it from other kits.
     expect(kit).toHaveTextContent(`Printed ${printedDate(new Date())}`);
+    expect(onLocked).not.toHaveBeenCalled();
   });
 
   it("offers Print only where the platform can print", () => {

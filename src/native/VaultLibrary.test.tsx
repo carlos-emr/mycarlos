@@ -793,6 +793,67 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     ]);
   });
 
+  it("forgets the previous person's bulk selection and destination before moving another person's document", async () => {
+    const shown: VaultSnapshot = {
+      ...twoPatients,
+      folders: [
+        ...twoPatients.folders,
+        {
+          ...folder("blake-visits", "FAKE Blake visits", null),
+          profileId: "profile-2",
+        },
+      ],
+      records: [
+        record("avery-document", "FAKE Avery note.pdf", []),
+        {
+          ...record("blake-document", "FAKE Blake note.pdf", ["blake-visits"]),
+          profileId: "profile-2",
+        },
+      ],
+    };
+    const { bridge } = renderLibrary(shown);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Select FAKE Avery note.pdf"),
+      }),
+    );
+    const oldDestination = screen.getByLabelText(humanText("Move selected to"));
+    fireEvent.change(oldDestination, { target: { value: "letters" } });
+    expect(oldDestination).toHaveValue("letters");
+    expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+
+    openFolder(/^FAKE Blake visits/);
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: humanText("FAKE Blake visits"),
+      }),
+    ).toBeVisible();
+    expect(screen.queryByLabelText(humanText("Move selected to"))).toBeNull();
+    expect(screen.queryByText(humanText("FAKE Avery note.pdf"))).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Select FAKE Blake note.pdf"),
+      }),
+    );
+    const destination = screen.getByLabelText(humanText("Move selected to"));
+    expect(destination).toHaveValue("");
+    expect(
+      within(destination).queryByRole("option", {
+        name: humanText("FAKE Letters"),
+      }),
+    ).toBeNull();
+    // A select can visually fall back to the first option while retaining a
+    // stale folder ID in state. Check the actual move, not just its label.
+    fireEvent.click(screen.getByRole("button", { name: humanText("Move") }));
+    await vi.waitFor(() =>
+      expect(bridge.assignFoldersBatch).toHaveBeenCalledExactlyOnceWith(
+        ["blake-document"],
+        [],
+      ),
+    );
+  });
+
   it("shows Shared with me's whole name in the sidebar, with its new count on one line (#61)", () => {
     renderLibrary(snapshot, 2);
     const shared = screen.getByRole("button", {

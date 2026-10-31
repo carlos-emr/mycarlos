@@ -123,8 +123,10 @@ export function RecoveryKeySetup({
         (found) => {
           if (current) setLabel(found);
         },
-        // Only the label is missing: the key and its kit still work.
-        () => undefined,
+        // A missing label does not stop setup; a locked vault does.
+        (failure: unknown) => {
+          if (current && isLockedError(failure)) onLocked();
+        },
       )
       .finally(() => {
         if (current) setLabelSettled(true);
