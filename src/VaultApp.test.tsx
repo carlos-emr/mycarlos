@@ -7885,6 +7885,59 @@ describe("durable vault UI", () => {
     expect(opener).toHaveFocus();
   });
 
+  it.each([
+    ["composition", { isComposing: true }],
+    ["composition compatibility", { keyCode: 229 }],
+    ["ordinary", {}],
+  ] as const)(
+    "handles Escape on a rename draft during %s input",
+    async (kind, flags) => {
+      const user = userEvent.setup();
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      });
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("FAKE_Results.pdf"),
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Rename document") }),
+      );
+      const rename = () =>
+        screen.queryByRole("dialog", { name: humanText("Rename document") });
+      const input = within(rename()!).getByLabelText(humanText("File name"));
+      await waitFor(() => expect(input).toBeEnabled());
+      await user.clear(input);
+      await user.type(input, "FAKE Draft");
+      if (kind !== "ordinary") fireEvent.compositionStart(input);
+      if (kind === "composition compatibility") fireEvent.compositionEnd(input);
+      const escape = new KeyboardEvent("keydown", {
+        key: "Escape",
+        code: "Escape",
+        bubbles: true,
+        cancelable: true,
+        ...flags,
+      });
+      if (kind === "composition") expect(escape.isComposing).toBe(true);
+      if (kind === "composition compatibility")
+        expect(escape.keyCode).toBe(229);
+      fireEvent(input, escape);
+      if (kind !== "ordinary") {
+        expect(rename()).toBeVisible();
+        expect(input).toHaveValue("FAKE Draft");
+        expect(escape.defaultPrevented).toBe(false);
+        fireEvent.compositionEnd(input);
+        await user.keyboard("{Escape}");
+      } else expect(escape.defaultPrevented).toBe(true);
+      expect(rename()).toBeNull();
+      expect(bridge.renameRecord).not.toHaveBeenCalled();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns focus to the record control after renaming from its details", async () => {
     const user = userEvent.setup();
     const record = {
