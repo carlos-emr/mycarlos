@@ -17,7 +17,6 @@ import { Icon } from "../Icon";
 import {
   isLockedError,
   isWrongPdfPassword,
-  isLockedError,
   isCancelledError,
   isMissingVaultError,
   localDateText,
