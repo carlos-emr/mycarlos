@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { humanText } from "../test/humanText";
@@ -157,6 +164,71 @@ describe("shared PDF suggestions use explicit Move", () => {
       within(suggestion).getByRole("button", { name: /^Move / }),
     );
     expect(bridge.moveToPerson).toHaveBeenCalledWith(["s1"], "p2", []);
+  });
+
+  it("pauses queued identity reads in the reader and resumes them when it closes", async () => {
+    let finish: ((identity: FoundIdentity) => void) | undefined;
+    const identity = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<FoundIdentity>((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValue({ name: "FAKE Jamie Example" });
+    const complete = async () => {
+      const reply = finish;
+      finish = undefined;
+      if (reply) await act(async () => reply({ name: "FAKE Jamie Example" }));
+    };
+    const { bridge } = renderLibrary(
+      {
+        sharedIdentity: identity,
+        viewPage: vi.fn().mockResolvedValue({
+          pageCount: 1,
+          width: 1,
+          height: 1,
+          image:
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+          text: "FAKE reader text",
+        }),
+        cancelView: vi.fn().mockResolvedValue(undefined),
+      },
+      { ...vault, records: vault.records.slice(0, 2) },
+    );
+    try {
+      fireEvent.click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
+      await waitFor(() =>
+        expect(identity).toHaveBeenCalledExactlyOnceWith("s1"),
+      );
+      fireEvent.click(screen.getByText(humanText("FAKE Referral letter.pdf")));
+      await userEvent.click(screen.getByRole("button", { name: "Read" }));
+      const reader = await screen.findByRole("dialog", {
+        name: "FAKE Referral letter.pdf",
+      });
+      await within(reader).findByRole("img");
+      expect(bridge.viewPage).toHaveBeenCalledWith(
+        "s1",
+        0,
+        expect.any(Number),
+        undefined,
+      );
+      await complete();
+      expect(identity).toHaveBeenCalledExactlyOnceWith("s1");
+      await userEvent.click(
+        within(reader).getByRole("button", { name: "Close" }),
+      );
+      await screen.findByRole("group", {
+        name: humanText("Suggested person for FAKE Pharmacy receipt.pdf"),
+      });
+      expect(identity.mock.calls).toEqual([["s1"], ["s2"]]);
+      expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    } finally {
+      await complete();
+    }
   });
 
   it("hides a suggestion after Not this person, in the list and the details", async () => {
