@@ -1,10 +1,10 @@
 import { StrictMode } from "react";
 import { humanText } from "../test/humanText";
 import { setLocaleOverride, translate } from "../i18n";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { userEvent as realKeys } from "vitest/browser";
+import { page as browserPage, userEvent as realKeys } from "vitest/browser";
 import { cacheDrawnPage, DocumentReader } from "./DocumentReader";
 import type { VaultRecord, ViewedPage } from "../vault";
 
@@ -820,6 +820,50 @@ describe("the document reader", () => {
       .setup()
       .click(screen.getByText(humanText("Text on this page")));
     expect(screen.getByText(humanText("FAKE second document"))).toBeVisible();
+  });
+
+  it("refits the open page after a viewport resize and reuses its original width when restored", async () => {
+    const original = { width: window.innerWidth, height: window.innerHeight };
+    const { viewPage } = renderReader();
+    const name = humanText("Page 1 of 2. The page's text follows.");
+    const picture = await screen.findByRole("img", { name });
+    const fittedWidth = picture.getBoundingClientRect().width;
+    const originalRequest = viewPage.mock.calls[0];
+    expect(viewPage).toHaveBeenCalledOnce();
+    try {
+      await browserPage.viewport(600, original.height);
+      await waitFor(() => expect(viewPage).toHaveBeenCalledTimes(2));
+      const current = await screen.findByRole("img", { name });
+      expect(current.getBoundingClientRect().width).toBeLessThan(fittedWidth);
+      const area = current.parentElement!;
+      const style = getComputedStyle(area);
+      const available = Math.floor(
+        area.clientWidth -
+          parseFloat(style.paddingLeft) -
+          parseFloat(style.paddingRight),
+      );
+      expect(
+        Math.abs(current.getBoundingClientRect().width - available),
+      ).toBeLessThanOrEqual(1);
+      expect(area.scrollWidth).toBeLessThanOrEqual(area.clientWidth);
+      expect(viewPage.mock.calls[1]).toEqual([
+        0,
+        Math.min(4096, Math.round(available * window.devicePixelRatio)),
+        undefined,
+      ]);
+      expect(viewPage.mock.calls[1][1]).toBeLessThan(originalRequest[1]);
+      await browserPage.viewport(original.width, original.height);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("img", { name }).getBoundingClientRect().width,
+        ).toBe(fittedWidth),
+      );
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
+      expect(screen.getByText(humanText("100%"))).toBeVisible();
+    } finally {
+      await browserPage.viewport(original.width, original.height);
+    }
   });
 
   it("asks for a locked document's own password, and again when it is wrong", async () => {
