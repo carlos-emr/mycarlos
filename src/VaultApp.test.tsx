@@ -348,6 +348,80 @@ function renameBridge() {
 }
 
 describe("durable vault UI", () => {
+  it.each(["status", "snapshot"])(
+    "locks native state and shows unlock when the current startup %s fails",
+    async (stage) => {
+      const failure = {
+        code: "storage",
+        message: "FAKE current startup failed",
+      };
+      const bridge = nativeBridge({
+        status:
+          stage === "status"
+            ? vi.fn().mockRejectedValue(failure)
+            : vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockRejectedValue(failure),
+      });
+      render(<VaultApp bridge={bridge} />);
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByText(humanText("FAKE current startup failed")),
+      ).toBeVisible();
+      expect(bridge.snapshot).toHaveBeenCalledTimes(
+        stage === "snapshot" ? 1 : 0,
+      );
+      expect(
+        screen.queryByRole("heading", { name: humanText("My records") }),
+      ).toBeNull();
+    },
+  );
+
+  it("does not lock a new unlock when an abandoned startup check fails", async () => {
+    let refuseEarlier!: (error: unknown) => void;
+    const earlier = new Promise<"locked">((_, reject) => {
+      refuseEarlier = reject;
+    });
+    const failure = { code: "storage", message: "FAKE earlier startup failed" };
+    const bridge = nativeBridge({
+      status: vi.fn().mockReturnValueOnce(earlier).mockResolvedValue("locked"),
+      unlock: vi.fn().mockResolvedValue(snapshotWithRecord),
+    });
+    try {
+      // The application itself uses StrictMode. Its abandoned first effect
+      // must not issue a native lock owned by the later, successful startup.
+      render(
+        <StrictMode>
+          <VaultApp bridge={bridge} />
+        </StrictMode>,
+      );
+      const passphrase = await screen.findByLabelText(humanText("Passphrase"));
+      expect(bridge.status).toHaveBeenCalledTimes(2);
+      fireEvent.change(passphrase, {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      expect(
+        await screen.findByText(humanText("FAKE_Results.pdf")),
+      ).toBeVisible();
+      expect(bridge.unlock).toHaveBeenCalledOnce();
+      expect(bridge.lock).not.toHaveBeenCalled();
+
+      await act(async () => refuseEarlier(failure));
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(screen.getByText(humanText("FAKE_Results.pdf"))).toBeVisible();
+      expect(
+        screen.queryByText(humanText("FAKE earlier startup failed")),
+      ).not.toBeInTheDocument();
+    } finally {
+      await act(async () => refuseEarlier(failure));
+    }
+  });
+
   it.each(["verified", "pending"])(
     "conceals %s audit history while a manual native lock is still pending",
     async (kind) => {
@@ -1746,6 +1820,62 @@ describe("durable vault UI", () => {
     },
   );
 
+  it.each([
+    ["person", "profile-1", "My records"],
+    ["shared", "shared-profile", "Shared with me"],
+  ])(
+    "shows the %s root location in document details with several people",
+    async (scope, profileId, location) => {
+      const user = userEvent.setup();
+      const { bridge, vault } = sharedVault(["Jamie", "Morgan"], [], {
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      vault.profiles.push({
+        id: "shared-profile",
+        displayName: "Shared with me",
+        createdAtMs: 2,
+      });
+      vault.records.push({
+        id: "root-record",
+        profileId,
+        folderIds: [],
+        displayName: "FAKE_Root_Record.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/pdf",
+        plaintextSize: 2048,
+        importedAtMs: 2,
+        available: true,
+      });
+      render(<VaultApp bridge={bridge} />);
+      if (scope === "shared") {
+        await user.click(
+          await screen.findByRole("button", {
+            name: humanText(/^Shared with me/),
+          }),
+        );
+      }
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("Details for FAKE_Root_Record.pdf"),
+        }),
+      );
+      const details = screen.getByRole("dialog", {
+        name: humanText("FAKE_Root_Record.pdf"),
+      });
+      const folder = within(details).getByText(humanText("Folder"), {
+        selector: "dt",
+      }).parentElement!;
+      expect(within(folder).getByRole("definition")).toHaveHumanTextContent(
+        location,
+      );
+      expect(
+        within(details).getByRole("combobox", { name: humanText("Move to") }),
+      ).toHaveValue(scope === "shared" ? "" : `${profileId}|`);
+      expect(bridge.assignFolders).not.toHaveBeenCalled();
+      expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    },
+  );
+
   it("keeps same-person detail moves on the folder assignment path with several people", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = sharedVault(["Jamie", "Morgan"], []);
@@ -1923,6 +2053,63 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Add profile") }),
     ).toBeDisabled();
     expect(bridge.createProfile).not.toHaveBeenCalled();
+  });
+
+  it("discards a shared-file refusal name that arrives after Lock", async () => {
+    const user = userEvent.setup();
+    const privateName = "FAKE_Private_Patient_Result.jpg";
+    const { bridge } = sharedVault(["Jamie"], [privateName], {
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    const accept = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+    let releaseIntake!: () => void;
+    const intake = new Promise<void>((resolve) => {
+      releaseIntake = resolve;
+    });
+    vi.mocked(bridge.acceptReceived).mockImplementationOnce(async () => {
+      await intake;
+      return accept();
+    });
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      await waitFor(() => expect(bridge.acceptReceived).toHaveBeenCalledOnce());
+      expect(document.body).not.toHaveTextContent(privateName);
+
+      // Intake runs in the background: Lock remains available while the
+      // native reply containing this document name is still in flight.
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlocked · Lock now") }),
+      );
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      await act(async () => {
+        releaseIntake();
+        await intake;
+      });
+      expect(document.body).not.toHaveTextContent(privateName);
+      expect(screen.getByLabelText(humanText("Passphrase"))).toBeVisible();
+      expect(
+        within(
+          screen.getByLabelText(humanText("Passphrase")).closest("form")!,
+        ).getByRole("status"),
+      ).toHaveHumanTextContent("Vault locked.");
+
+      await unlockWith(user);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      await passAnnounceDelay();
+      expect(document.body).not.toHaveTextContent(privateName);
+      expect(screen.getByText(humanText(/^Vault unlocked\.$/))).toBeVisible();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(bridge.unlock).toHaveBeenCalledOnce();
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => {
+        releaseIntake();
+        await intake;
+      });
+    }
   });
 
   it("adds a file shared while the vault is open, and names one that is not a PDF (#61)", async () => {

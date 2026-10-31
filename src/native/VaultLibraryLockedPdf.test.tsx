@@ -1,6 +1,6 @@
 import { humanText } from "../test/humanText";
 import { useTextState } from "../i18n";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -37,8 +37,9 @@ const base: VaultSnapshot = {
 function renderLibrary(
   bridgeOverrides: Partial<VaultBridge> = {},
   computer = true,
+  initial = base,
 ) {
-  let current = base;
+  let current = initial;
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
     isPhoto: vi.fn(async () => false),
@@ -88,7 +89,7 @@ function renderLibrary(
     ...bridgeOverrides,
   } as unknown as VaultBridge;
   function Harness() {
-    const [snapshot, setSnapshot] = useState(base);
+    const [snapshot, setSnapshot] = useState(initial);
     const [notice, setNotice] = useTextState();
     return (
       <VaultLibrary
@@ -130,6 +131,77 @@ const openDetails = async (user: ReturnType<typeof userEvent.setup>) => {
 };
 
 describe("a PDF locked with a password (#54)", () => {
+  it("keeps the current PDF unlock available when an earlier document check finishes", async () => {
+    const user = userEvent.setup();
+    let finishEarlier!: (locked: boolean) => void;
+    const earlier = new Promise<boolean>((resolve) => {
+      finishEarlier = resolve;
+    });
+    const bridge = renderLibrary(
+      {
+        isLockedPdf: vi.fn((id: string) =>
+          id === "locked-1" ? earlier : Promise.resolve(true),
+        ),
+        unlockPdf: vi.fn().mockRejectedValue({ code: "pdf_wrong_password" }),
+      },
+      true,
+      {
+        ...base,
+        records: [...base.records, record("locked-2", "FAKE Results.pdf")],
+      },
+    );
+    try {
+      const earlierDetails = await openDetails(user);
+      expect(bridge.isLockedPdf).toHaveBeenCalledExactlyOnceWith("locked-1");
+      expect(
+        within(earlierDetails).queryByRole("button", {
+          name: humanText("Unlock…"),
+        }),
+      ).toBeNull();
+      await user.click(
+        within(earlierDetails).getByRole("button", {
+          name: humanText("Close document details"),
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", {
+          name: humanText("Details for FAKE Results.pdf"),
+        }),
+      );
+      const currentDetails = screen.getByRole("dialog", {
+        name: humanText("FAKE Results.pdf"),
+      });
+      const unlock = await within(currentDetails).findByRole("button", {
+        name: humanText("Unlock…"),
+      });
+      expect(bridge.isLockedPdf).toHaveBeenNthCalledWith(2, "locked-2");
+
+      // The older positive check must not replace the current document's
+      // positive check, which would remove its already available Unlock action.
+      await act(async () => finishEarlier(true));
+      expect(unlock).toBeVisible();
+      expect(unlock).toBeEnabled();
+      await user.click(unlock);
+      const prompt = screen.getByRole("dialog", {
+        name: humanText("Unlock FAKE Results.pdf"),
+      });
+      await user.type(
+        within(prompt).getByLabelText(humanText("Document password")),
+        "FAKE-current-password{Enter}",
+      );
+      expect(await within(prompt).findByRole("alert")).toHaveHumanTextContent(
+        "That password did not open the document.",
+      );
+      expect(bridge.unlockPdf).toHaveBeenCalledExactlyOnceWith(
+        "locked-2",
+        "FAKE-current-password",
+      );
+      expect(bridge.isLockedPdf).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () => finishEarlier(true));
+    }
+  });
+
   it("is unlocked from its details: the copy takes its name, and the original is kept", async () => {
     const user = userEvent.setup();
     const wrong = Object.assign(new Error("wrong"), {
