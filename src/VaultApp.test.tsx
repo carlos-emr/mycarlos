@@ -8274,6 +8274,17 @@ describe("durable vault UI", () => {
 
   // The old vault's outcome must not reach a new one.
   it("does not carry a kept outcome into a vault created after the old one went missing", async () => {
+    const guideKey = "mycarlos.oldBackupsGuide.v1";
+    const previousBackup = "FAKE previous vault backup.mycarlosbackup";
+    window.localStorage.setItem(
+      guideKey,
+      JSON.stringify({
+        step: "delete",
+        keep: previousBackup,
+        savedAtMs: Date.now(),
+        bytes: 4096,
+      }),
+    );
     let finishImport!: (value: ImportOutcome) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
@@ -8285,6 +8296,19 @@ describe("durable vault UI", () => {
       ),
     });
     render(<VaultApp bridge={bridge} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    const previousGuide = screen.getByRole("region", {
+      name: humanText("Your older backups"),
+    });
+    expect(previousGuide).toBeVisible();
+    expect(previousGuide).toHaveHumanTextContent(previousBackup);
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: humanText("Record library") }),
+      ).getByRole("button", { name: humanText(/^My records/) }),
+    );
     const user = await holdLockForImport(bridge, () =>
       finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
     );
@@ -8319,7 +8343,18 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Create vault") }),
     );
     await user.click(
-      await screen.findByRole("button", { name: humanText(/Lock now/) }),
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    expect(bridge.create).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("region", { name: humanText("Your older backups") }),
+    ).not.toBeInTheDocument();
+    expect(document.body).not.toHaveHumanTextContent(previousBackup);
+    expect(window.localStorage.getItem(guideKey)).toBeNull();
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText(/Unlocked · Lock now/),
+      }),
     );
     await screen.findByLabelText(humanText("Passphrase"));
     await expectNothingKeptAfterUnlock();
