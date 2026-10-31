@@ -628,8 +628,23 @@ describe("VaultLibrary controls for older patients (#67)", () => {
     ],
   };
 
-  it("puts words on its buttons and shows both sort choices", () => {
-    renderLibrary(withRecord);
+  it("puts words on its buttons and sorts the documents with both choices", () => {
+    renderLibrary({
+      ...withRecord,
+      records: [
+        withRecord.records[0],
+        {
+          ...record("blood-pressure", "FAKE Blood pressure log.pdf", []),
+          importedAtMs: Date.UTC(2026, 0, 14, 12),
+        },
+        {
+          ...record("manual-document", "FAKE Manual document.pdf", []),
+          importedAtMs: Date.UTC(2026, 0, 15, 12),
+        },
+      ],
+    });
+    const documentNames = () =>
+      humanValue(shownDocuments().map(([name]) => name));
     const details = screen.getByRole("button", {
       name: humanText("Details for FAKE Results.pdf"),
     });
@@ -650,12 +665,33 @@ describe("VaultLibrary controls for older patients (#67)", () => {
     expect(
       within(sort).getByRole("radio", { name: humanText("Newest first") }),
     ).toBeChecked();
+    expect(documentNames()).toEqual([
+      "FAKE Results.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Blood pressure log.pdf",
+    ]);
     fireEvent.click(
       within(sort).getByRole("radio", { name: humanText("Name A–Z") }),
     );
     expect(
       within(sort).getByRole("radio", { name: humanText("Name A–Z") }),
     ).toBeChecked();
+    expect(documentNames()).toEqual([
+      "FAKE Blood pressure log.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Results.pdf",
+    ]);
+    fireEvent.click(
+      within(sort).getByRole("radio", { name: humanText("Newest first") }),
+    );
+    expect(
+      within(sort).getByRole("radio", { name: humanText("Newest first") }),
+    ).toBeChecked();
+    expect(documentNames()).toEqual([
+      "FAKE Results.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Blood pressure log.pdf",
+    ]);
     fireEvent.click(details);
     expect(
       screen.getByRole("button", { name: humanText("Close document details") }),
