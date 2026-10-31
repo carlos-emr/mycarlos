@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { RestorePreview } from "../vault";
 import { RestoreBackup } from "./RestoreBackup";
+import { setLocaleOverride, translate } from "../i18n";
 
 function setUp(preview: Partial<RestorePreview> = {}, overrides = {}) {
   const bridge = {
@@ -252,6 +253,75 @@ describe("RestoreBackup", () => {
         vi.advanceTimersByTime(5 * 60 * 1000);
       });
       expect(field).toHaveValue("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the original unattended-clear deadline when the checked backup changes language", async () => {
+    vi.useFakeTimers();
+    try {
+      setLocaleOverride("en");
+      const { bridge, onRestored } = setUp({ replaces: "otherVault" });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: humanText("Choose backup file…"),
+          }),
+        );
+      });
+      const field = screen.getByLabelText(humanText("Backup passphrase"));
+      const secret = "FAKE restore draft { $name }";
+      fireEvent.change(field, { target: { value: secret } });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Check backup") }),
+        );
+      });
+      const agreement = screen.getByRole("checkbox");
+      fireEvent.click(agreement);
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Show passphrase") }),
+      );
+      expect(field).toHaveAttribute("type", "text");
+
+      act(() => vi.advanceTimersByTime(4 * 60 * 1000));
+      act(() => setLocaleOverride("pl"));
+      expect(
+        screen.getByLabelText(translate("pl", "restore.passphrase.label")),
+      ).toBe(field);
+      expect(field).toHaveValue(secret);
+      expect(agreement).toBeChecked();
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        translate("pl", "restore.checked", {
+          count: 2,
+          consequence: translate("pl", "restore.consequence.otherVault"),
+        }),
+      );
+      expect(
+        screen.getByRole("button", { name: translate("pl", "restore.submit") }),
+      ).toBeEnabled();
+
+      act(() => vi.advanceTimersByTime(59_999));
+      act(() => setLocaleOverride("fr"));
+      expect(field).toHaveValue(secret);
+      expect(agreement).toBeChecked();
+      act(() => vi.advanceTimersByTime(1));
+      expect(field).toHaveValue("");
+      expect(field).toHaveAttribute("type", "password");
+      expect(screen.queryByRole("checkbox")).toBeNull();
+      expect(
+        screen.queryByRole("button", {
+          name: translate("fr", "restore.submit"),
+        }),
+      ).toBeNull();
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+      expect(bridge.pickRestoreSource).toHaveBeenCalledTimes(1);
+      expect(bridge.inspectRestore).toHaveBeenCalledExactlyOnceWith("pick-1", {
+        passphrase: secret,
+      });
+      expect(bridge.restore).not.toHaveBeenCalled();
+      expect(onRestored).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
