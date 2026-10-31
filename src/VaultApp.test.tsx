@@ -7917,7 +7917,6 @@ describe("durable vault UI", () => {
     expect(screen.getByText(humanText("Vault locked."))).toBeVisible();
   });
 
-<<<<<<< HEAD
   it("updates a settled person-details save notice when the language changes", async () => {
     const user = userEvent.setup();
     const vault = structuredClone(emptySnapshot);
@@ -8029,7 +8028,48 @@ describe("durable vault UI", () => {
       linkPortal: vi.fn().mockResolvedValue(vault.portalLinks![0]),
       checkDocuments: check,
     });
-=======
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    const clinic = screen.getByRole("region", {
+      name: humanText(translate("en", "portal.title")),
+    });
+    await user.click(
+      within(clinic).getByRole("button", {
+        name: humanText(translate("en", "portal.check")),
+      }),
+    );
+    const english = translate("en", "portal.result", { added: 0, refused: 0 });
+    const notice = (await screen.findByText(humanText(english))).closest(
+      '[role="status"]',
+    )!;
+    expect(check).toHaveBeenCalledOnce();
+
+    act(() => setLocaleOverride("fr"));
+    expect(
+      within(clinic).getByRole("button", {
+        name: humanText(translate("fr", "portal.check")),
+      }),
+    ).toBeVisible();
+    expect(notice).toHaveHumanTextContent(
+      translate("fr", "portal.result", { added: 0, refused: 0 }),
+    );
+    expect(notice).not.toHaveHumanTextContent(english);
+    expect(
+      within(clinic).getByLabelText(translate("fr", "portal.deviceCode")),
+    ).toHaveValue(deviceCode);
+    expect(
+      within(clinic).getByLabelText(translate("fr", "portal.fingerprint")),
+    ).toHaveValue(fingerprint);
+    expect(
+      within(clinic).getByRole("heading", { name: "FAKE {Clinic}" }),
+    ).toBeVisible();
+    act(() => setLocaleOverride("en"));
+    expect(notice).toHaveHumanTextContent(english);
+    expect(check).toHaveBeenCalledOnce();
+  });
+
   it("keeps the next profile name typed while an earlier profile is being saved", async () => {
     const user = userEvent.setup();
     const vault = structuredClone(emptySnapshot);
@@ -8138,49 +8178,10 @@ describe("durable vault UI", () => {
         },
       ),
     });
->>>>>>> 4a53cce9df272f82c97a9208fae9e2dafc90eceb
     render(<VaultApp bridge={bridge} />);
     await user.click(
       await screen.findByRole("button", { name: humanText("Security") }),
     );
-<<<<<<< HEAD
-    const clinic = screen.getByRole("region", {
-      name: humanText(translate("en", "portal.title")),
-    });
-    await user.click(
-      within(clinic).getByRole("button", {
-        name: humanText(translate("en", "portal.check")),
-      }),
-    );
-    const english = translate("en", "portal.result", { added: 0, refused: 0 });
-    const notice = (await screen.findByText(humanText(english))).closest(
-      '[role="status"]',
-    )!;
-    expect(check).toHaveBeenCalledOnce();
-
-    act(() => setLocaleOverride("fr"));
-    expect(
-      within(clinic).getByRole("button", {
-        name: humanText(translate("fr", "portal.check")),
-      }),
-    ).toBeVisible();
-    expect(notice).toHaveHumanTextContent(
-      translate("fr", "portal.result", { added: 0, refused: 0 }),
-    );
-    expect(notice).not.toHaveHumanTextContent(english);
-    expect(
-      within(clinic).getByLabelText(translate("fr", "portal.deviceCode")),
-    ).toHaveValue(deviceCode);
-    expect(
-      within(clinic).getByLabelText(translate("fr", "portal.fingerprint")),
-    ).toHaveValue(fingerprint);
-    expect(
-      within(clinic).getByRole("heading", { name: "FAKE {Clinic}" }),
-    ).toBeVisible();
-    act(() => setLocaleOverride("en"));
-    expect(notice).toHaveHumanTextContent(english);
-    expect(check).toHaveBeenCalledOnce();
-=======
     await user.click(
       screen.getByRole("button", {
         name: humanText("Edit details for FAKE Existing"),
@@ -8241,7 +8242,6 @@ describe("durable vault UI", () => {
       "profile-1",
       { fullName: "FAKE Unsaved Person" },
     );
->>>>>>> 4a53cce9df272f82c97a9208fae9e2dafc90eceb
   });
 
   it("keeps a refused profile name in the form and clears an accepted one", async () => {
