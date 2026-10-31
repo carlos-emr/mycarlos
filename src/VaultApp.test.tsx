@@ -7776,6 +7776,94 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(window.localStorage.getItem(guide)).toBeNull());
   });
 
+  it.each([
+    ["unchanged", ""],
+    ["edited", "FAKE Second folder"],
+  ])(
+    "keeps the %s folder draft reset scoped to the name that was saved",
+    async (draft, expected) => {
+      const user = userEvent.setup();
+      const vault = structuredClone(emptySnapshot);
+      let finishSave!: () => void;
+      const saving = new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      const createFolder = vi.fn(
+        async (profileId: string, parentId: string | null, name: string) => {
+          await saving;
+          vault.folders.push({
+            id: "folder-first",
+            profileId,
+            parentId,
+            name,
+            createdAtMs: 2,
+          });
+          return "folder-first";
+        },
+      );
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn(async () => structuredClone(vault)),
+        createFolder,
+      });
+      let view: ReturnType<typeof render> | undefined;
+      try {
+        view = render(<VaultApp bridge={bridge} />);
+        await user.click(
+          await screen.findByRole("button", { name: humanText("New folder") }),
+        );
+        const name = screen.getByLabelText(humanText("Folder name"));
+        await user.type(name, "FAKE First folder");
+        const create = screen.getByRole("button", {
+          name: humanText("Create"),
+        });
+        await user.click(create);
+        await waitFor(() =>
+          expect(createFolder).toHaveBeenCalledExactlyOnceWith(
+            "profile-1",
+            null,
+            "FAKE First folder",
+          ),
+        );
+        expect(create).toBeDisabled();
+        expect(name).toBeEnabled();
+        if (draft === "edited") {
+          await user.clear(name);
+          await user.type(name, expected);
+        }
+        await act(async () => {
+          finishSave();
+          await createFolder.mock.results[0].value;
+        });
+        await screen.findByText(
+          humanText(
+            translate("en", "interface.notice.folderCreated", {
+              name: "FAKE First folder",
+            }),
+          ),
+        );
+        // Inspect the next draft without imposing a form-closing policy.
+        // If the successful create closed it, reopen it first.
+        if (!screen.queryByLabelText(humanText("Folder name"))) {
+          await act(async () => {
+            await user.click(
+              screen.getByRole("button", { name: humanText("New folder") }),
+            );
+          });
+        }
+        expect(screen.getByLabelText(humanText("Folder name"))).toHaveValue(
+          expected,
+        );
+        expect(createFolder).toHaveBeenCalledOnce();
+      } finally {
+        await act(async () => {
+          finishSave();
+          view?.unmount();
+        });
+      }
+    },
+  );
+
   it("stays in the library when a command there finds no vault", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
@@ -7829,6 +7917,7 @@ describe("durable vault UI", () => {
     expect(screen.getByText(humanText("Vault locked."))).toBeVisible();
   });
 
+<<<<<<< HEAD
   it("updates a settled person-details save notice when the language changes", async () => {
     const user = userEvent.setup();
     const vault = structuredClone(emptySnapshot);
@@ -7940,10 +8029,121 @@ describe("durable vault UI", () => {
       linkPortal: vi.fn().mockResolvedValue(vault.portalLinks![0]),
       checkDocuments: check,
     });
+=======
+  it("keeps the next profile name typed while an earlier profile is being saved", async () => {
+    const user = userEvent.setup();
+    const vault = structuredClone(emptySnapshot);
+    let finishSave!: () => void;
+    const saving = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    const createProfile = vi.fn(
+      async (name: string, details?: PersonDetails) => {
+        await saving;
+        vault.profiles.push({
+          id: "profile-2",
+          displayName: name,
+          createdAtMs: 2,
+          ...details,
+        });
+        return "profile-2";
+      },
+    );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => structuredClone(vault)),
+      createProfile,
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: humanText("Security") }),
+      );
+      const name = screen.getByLabelText(humanText("New profile name"));
+      const fullNameLabel = humanText(
+        translate("en", "personDetails.fullName"),
+      );
+      await user.type(name, "FAKE First");
+      await user.type(
+        screen.getByLabelText(fullNameLabel),
+        "FAKE First Person",
+      );
+      await user.click(
+        screen.getByRole("checkbox", {
+          name: humanText(translate("en", "personDetails.birthDateUnknown")),
+        }),
+      );
+      const add = screen.getByRole("button", {
+        name: humanText("Add profile"),
+      });
+      await user.click(add);
+      await waitFor(() =>
+        expect(createProfile).toHaveBeenCalledExactlyOnceWith("FAKE First", {
+          fullName: "FAKE First Person",
+        }),
+      );
+      expect(add).toBeDisabled();
+      expect(name).toBeEnabled();
+      await user.clear(name);
+      await user.type(name, "FAKE Second");
+
+      await act(async () => finishSave());
+      await screen.findByText(
+        humanText(
+          translate("en", "interface.notice.personAdded", {
+            name: "FAKE First",
+          }),
+        ),
+      );
+      // Details belong to the saved first profile and are cleared. Its late
+      // success must leave the independently edited next display name alone.
+      await waitFor(() =>
+        expect(screen.getByLabelText(fullNameLabel)).toHaveValue(""),
+      );
+      expect(screen.getByLabelText(humanText("New profile name"))).toHaveValue(
+        "FAKE Second",
+      );
+      expect(createProfile).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => finishSave());
+    }
+  });
+
+  it("keeps an existing person draft while adding another profile refreshes the list", async () => {
+    const user = userEvent.setup();
+    const vault = structuredClone(emptySnapshot);
+    vault.profiles[0].displayName = "FAKE Existing";
+    vault.profiles[0].fullName = "FAKE Original Person";
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => structuredClone(vault)),
+      createProfile: vi.fn(
+        async (displayName: string, details?: PersonDetails) => {
+          vault.profiles.push({
+            id: "profile-2",
+            displayName,
+            createdAtMs: 2,
+            ...details,
+          });
+          return "profile-2";
+        },
+      ),
+      updateProfileDetails: vi.fn(
+        async (id: string, details: PersonDetails) => {
+          Object.assign(
+            vault.profiles.find((person) => person.id === id)!,
+            details,
+          );
+        },
+      ),
+    });
+>>>>>>> 4a53cce9df272f82c97a9208fae9e2dafc90eceb
     render(<VaultApp bridge={bridge} />);
     await user.click(
       await screen.findByRole("button", { name: humanText("Security") }),
     );
+<<<<<<< HEAD
     const clinic = screen.getByRole("region", {
       name: humanText(translate("en", "portal.title")),
     });
@@ -7980,6 +8180,68 @@ describe("durable vault UI", () => {
     act(() => setLocaleOverride("en"));
     expect(notice).toHaveHumanTextContent(english);
     expect(check).toHaveBeenCalledOnce();
+=======
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Existing"),
+      }),
+    );
+    const existing = () =>
+      screen.getByRole("form", {
+        name: humanText("Details for FAKE Existing"),
+      });
+    const fullName = humanText(translate("en", "personDetails.fullName"));
+    await user.clear(within(existing()).getByLabelText(fullName));
+    await user.type(
+      within(existing()).getByLabelText(fullName),
+      "FAKE Unsaved Person",
+    );
+
+    const create = screen
+      .getByLabelText(humanText("New profile name"))
+      .closest("form")!;
+    await user.type(
+      within(create).getByLabelText(humanText("New profile name")),
+      "FAKE Added",
+    );
+    await user.type(
+      within(create).getByLabelText(fullName),
+      "FAKE Added Person",
+    );
+    await user.click(
+      within(create).getByRole("checkbox", {
+        name: humanText(translate("en", "personDetails.birthDateUnknown")),
+      }),
+    );
+    await user.click(
+      within(create).getByRole("button", { name: humanText("Add profile") }),
+    );
+    await screen.findByText(humanText("FAKE Added was added."));
+    // The added person proves the list refreshed. Re-querying the current
+    // form prevents a detached old draft from satisfying these checks.
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Added"),
+      }),
+    ).toBeVisible();
+    expect(within(existing()).getByLabelText(fullName)).toHaveValue(
+      "FAKE Unsaved Person",
+    );
+    expect(bridge.createProfile).toHaveBeenCalledExactlyOnceWith("FAKE Added", {
+      fullName: "FAKE Added Person",
+    });
+    expect(bridge.updateProfileDetails).not.toHaveBeenCalled();
+    await user.click(
+      within(existing()).getByRole("button", {
+        name: humanText("Save details"),
+      }),
+    );
+    await screen.findByText(humanText("Details for FAKE Existing saved."));
+    expect(bridge.updateProfileDetails).toHaveBeenCalledExactlyOnceWith(
+      "profile-1",
+      { fullName: "FAKE Unsaved Person" },
+    );
+>>>>>>> 4a53cce9df272f82c97a9208fae9e2dafc90eceb
   });
 
   it("keeps a refused profile name in the form and clears an accepted one", async () => {
@@ -8149,6 +8411,59 @@ describe("durable vault UI", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
   });
+
+  it.each([
+    ["composition", { isComposing: true }],
+    ["composition compatibility", { keyCode: 229 }],
+    ["ordinary", {}],
+  ] as const)(
+    "handles Escape on a rename draft during %s input",
+    async (kind, flags) => {
+      const user = userEvent.setup();
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      });
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("FAKE_Results.pdf"),
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Rename document") }),
+      );
+      const rename = () =>
+        screen.queryByRole("dialog", { name: humanText("Rename document") });
+      const input = within(rename()!).getByLabelText(humanText("File name"));
+      await waitFor(() => expect(input).toBeEnabled());
+      await user.clear(input);
+      await user.type(input, "FAKE Draft");
+      if (kind !== "ordinary") fireEvent.compositionStart(input);
+      if (kind === "composition compatibility") fireEvent.compositionEnd(input);
+      const escape = new KeyboardEvent("keydown", {
+        key: "Escape",
+        code: "Escape",
+        bubbles: true,
+        cancelable: true,
+        ...flags,
+      });
+      if (kind === "composition") expect(escape.isComposing).toBe(true);
+      if (kind === "composition compatibility")
+        expect(escape.keyCode).toBe(229);
+      fireEvent(input, escape);
+      if (kind !== "ordinary") {
+        expect(rename()).toBeVisible();
+        expect(input).toHaveValue("FAKE Draft");
+        expect(escape.defaultPrevented).toBe(false);
+        fireEvent.compositionEnd(input);
+        await user.keyboard("{Escape}");
+      } else expect(escape.defaultPrevented).toBe(true);
+      expect(rename()).toBeNull();
+      expect(bridge.renameRecord).not.toHaveBeenCalled();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns focus to the record control after renaming from its details", async () => {
     const user = userEvent.setup();
