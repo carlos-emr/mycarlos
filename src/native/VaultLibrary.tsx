@@ -15,6 +15,7 @@ import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
+  isLockedError,
   isWrongPdfPassword,
   localDateText,
   namedDamage,
@@ -2264,7 +2265,12 @@ export function VaultLibrary({
             <RenameDialog
               target={renameTarget}
               readOnly={busy || readOnly}
-              onSave={saveName}
+              onSave={(name) =>
+                saveName(name).catch((error: unknown) => {
+                  if (mountedRef.current && isLockedError(error)) void onLock();
+                  throw error;
+                })
+              }
               onClose={() => setRenameTarget(null)}
             />
           )}

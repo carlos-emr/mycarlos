@@ -7622,6 +7622,130 @@ describe("durable vault UI", () => {
     expect(opener).toHaveFocus();
   });
 
+  it.each(["locked", "storage", "late-locked"] as const)(
+    "handles a document rename %s refusal in its own session",
+    async (code) => {
+      const user = userEvent.setup();
+      const vault = {
+        ...emptySnapshot,
+        records: [
+          {
+            id: "FAKE-record",
+            profileId: "profile-1",
+            folderIds: [],
+            displayName: "FAKE_Report.pdf",
+            sourceLabel: "Manual import — unverified",
+            mediaType: "application/octet-stream",
+            plaintextSize: 2048,
+            importedAtMs: 1,
+            available: true,
+          },
+        ],
+      };
+      let rejectRename: ((error: unknown) => void) | undefined;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockResolvedValue(vault),
+        unlock: vi.fn().mockResolvedValue(vault),
+        renameRecord: vi.fn(
+          () =>
+            new Promise<void>((_resolve, reject) => {
+              rejectRename = reject;
+            }),
+        ),
+      });
+      const refuse = async (failure: unknown) => {
+        const reject = rejectRename;
+        rejectRename = undefined;
+        if (reject) await act(async () => reject(failure));
+      };
+      onTestFinished(async () => {
+        await refuse({ code: "locked" });
+      });
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("FAKE_Report.pdf"),
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Rename document") }),
+      );
+      await user.clear(screen.getByLabelText(humanText("File name")));
+      await user.type(
+        screen.getByLabelText(humanText("File name")),
+        "FAKE Revised",
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Save name") }),
+      );
+      expect(bridge.renameRecord).toHaveBeenCalledExactlyOnceWith(
+        "FAKE-record",
+        "FAKE Revised.pdf",
+      );
+      if (code !== "late-locked")
+        await refuse({ code, message: "FAKE rename refused." });
+      if (code === "late-locked") {
+        // An external visibility lock can close a dialog while Save is pending.
+        let state: DocumentVisibilityState = "visible";
+        const visibility = vi
+          .spyOn(document, "visibilityState", "get")
+          .mockImplementation(() => state);
+        try {
+          await act(async () => {
+            state = "hidden";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          });
+          await act(async () => {
+            state = "visible";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await user.type(
+            screen.getByLabelText(humanText("Passphrase")),
+            "river-azimuth-cobalt-sparrow-934",
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Unlock") }),
+          );
+          await screen.findByRole("button", {
+            name: humanText("FAKE_Report.pdf"),
+          });
+          await refuse({ code: "locked" });
+          expect(bridge.lock).toHaveBeenCalledOnce();
+          expect(bridge.unlock).toHaveBeenCalledOnce();
+          expect(
+            screen.getByRole("button", {
+              name: humanText("FAKE_Report.pdf"),
+            }),
+          ).toBeVisible();
+          expect(screen.queryByRole("dialog")).toBeNull();
+        } finally {
+          visibility.mockRestore();
+        }
+      } else if (code === "locked") {
+        expect(
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
+        ).toBeVisible();
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        expect(document.body).not.toHaveTextContent("FAKE_Report.pdf");
+        expect(document.body).not.toHaveTextContent("FAKE Revised");
+      } else {
+        expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+          "FAKE rename refused.",
+        );
+        expect(screen.getByLabelText(humanText("File name"))).toHaveValue(
+          "FAKE Revised",
+        );
+        expect(bridge.lock).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("returns focus to the record control after renaming from its details", async () => {
     const user = userEvent.setup();
     const record = {
