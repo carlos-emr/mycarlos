@@ -85,7 +85,7 @@ async function minimize(page: Page) {
 
 test("reads a document page by page, with zoom and the page's text, and Close goes back to it", async ({
   page,
-}) => {
+}, testInfo) => {
   await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
   const details = await openDetails(page, LETTER);
@@ -188,6 +188,86 @@ test("reads a document page by page, with zoom and the page's text, and Close go
   expect(
     await pageArea(2).evaluate((area) => area.scrollWidth <= area.clientWidth),
   ).toBe(true);
+
+  // Resizing the same open page refits it without changing the page or zoom.
+  // Returning to its original width reuses the already drawn fitted page.
+  const originalViewport = page.viewportSize()!;
+  const originalWidth = await picture(2).evaluate(
+    (image) => image.getBoundingClientRect().width,
+  );
+  const drawsBeforeResize = (await fakeCalls(page, "vault_view_page")).length;
+  try {
+    await page.setViewportSize({ width: 700, height: originalViewport.height });
+    await expect
+      .poll(async () =>
+        picture(2).evaluate((image) => image.getBoundingClientRect().width),
+      )
+      .toBeLessThan(originalWidth);
+    await expect(picture(2)).toBeVisible();
+    await expect(reader.getByRole("status")).toHaveText(where(2));
+    await expect(zoom(100)).toBeVisible();
+    await expect(
+      reader.getByText(fakePageText(LETTER, 2), { exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(async () =>
+        picture(2).evaluate((image) => {
+          const area = image.parentElement!;
+          const style = getComputedStyle(area);
+          const available =
+            area.clientWidth -
+            parseFloat(style.paddingLeft) -
+            parseFloat(style.paddingRight);
+          return Math.abs(image.getBoundingClientRect().width - available);
+        }),
+      )
+      .toBeLessThanOrEqual(1);
+    expect(
+      await pageArea(2).evaluate(
+        (area) => area.scrollWidth <= area.clientWidth,
+      ),
+    ).toBe(true);
+    const narrowWidth = await picture(2).evaluate(
+      (image) => image.getBoundingClientRect().width,
+    );
+    const drawsAfterResize = (await fakeCalls(page, "vault_view_page")).length;
+    expect(drawsAfterResize).toBe(drawsBeforeResize + 1);
+    await page.screenshot({
+      path: testInfo.outputPath("reader-page2-narrow.png"),
+    });
+
+    await page.setViewportSize(originalViewport);
+    await expect
+      .poll(async () =>
+        picture(2).evaluate((image) => image.getBoundingClientRect().width),
+      )
+      .toBe(originalWidth);
+    await expect(picture(2)).toBeVisible();
+    await expect(reader.getByRole("status")).toHaveText(where(2));
+    await expect(zoom(100)).toBeVisible();
+    await expect(
+      reader.getByText(fakePageText(LETTER, 2), { exact: true }),
+    ).toBeVisible();
+    expect((await fakeCalls(page, "vault_view_page")).length).toBe(
+      drawsAfterResize,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath("reader-page2-restored.png"),
+    });
+    await testInfo.attach("reader-resize-geometry", {
+      body: JSON.stringify({
+        originalViewport,
+        originalWidth,
+        narrowWidth,
+        drawsBeforeResize,
+        drawsAfterResize,
+        drawsAfterReturn: (await fakeCalls(page, "vault_view_page")).length,
+      }),
+      contentType: "application/json",
+    });
+  } finally {
+    await page.setViewportSize(originalViewport);
+  }
 
   await button("interface.DocumentReader.previousPage").click();
   await expect(picture(1)).toBeVisible();
