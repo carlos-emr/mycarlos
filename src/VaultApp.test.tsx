@@ -4253,6 +4253,59 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("conceals the current recovery key before acknowledging a native locked label", async () => {
+    let failLabel!: (failure: unknown) => void;
+    const pendingLabel = new Promise<string>((_resolve, reject) => {
+      failLabel = reject;
+    });
+    let finishLock!: () => void;
+    let acknowledged = false;
+    const locking = new Promise<void>((resolve) => {
+      finishLock = () => {
+        acknowledged = true;
+        resolve();
+      };
+    });
+    try {
+      const { bridge } = await showKeyInSetup(5, {
+        recoveryKeyLabel: vi.fn().mockReturnValue(pendingLabel),
+        lock: vi.fn().mockReturnValue(locking),
+      });
+      const groups = document.querySelector(".recovery-key-groups");
+      expect(groups).toBeVisible();
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(document.visibilityState).toBe("visible");
+
+      // Native already reports Locked. This read, not hiding/focusing the app,
+      // must conceal current content while the follow-up lock IPC still waits.
+      await act(async () => failLabel({ code: "locked" }));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(acknowledged).toBe(false);
+      expect(document.visibilityState).toBe("visible");
+      expect(groups).not.toBeVisible();
+      expect(document.querySelector(".recovery-key-groups")).toBeNull();
+      expect(
+        screen.queryByRole("dialog", { name: humanText("Your recovery key") }),
+      ).toBeNull();
+      expect(
+        screen.getByText(
+          humanText("Vault content is hidden while myCarlos finishes locking…"),
+        ),
+      ).toBeVisible();
+      expect(screen.queryByLabelText(humanText("Passphrase"))).toBeNull();
+
+      await act(async () => finishLock());
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      expect(document.querySelector(".recovery-key-groups")).toBeNull();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(bridge.confirmRecoveryKey).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => finishLock());
+    }
+  });
+
   it("does not relock a new session when an earlier label request reports locked", async () => {
     let finishLabel!: (label: string) => void;
     let failLabel!: (error: unknown) => void;
