@@ -160,6 +160,49 @@ describe("RestoreBackup", () => {
     ).toBeEnabled();
   });
 
+  it("clears the old value and resets reveal when the credential method changes", async () => {
+    const user = userEvent.setup();
+    const { bridge, onRestored } = setUp();
+    await user.click(
+      screen.getByRole("button", { name: humanText("Choose backup file…") }),
+    );
+    const passphrase = await screen.findByLabelText(
+      humanText("Backup passphrase"),
+    );
+    await user.type(passphrase, "FAKE old passphrase");
+    await user.click(
+      screen.getByRole("button", { name: humanText("Show passphrase") }),
+    );
+    expect(passphrase).toHaveAttribute("type", "text");
+    expect(passphrase).toHaveValue("FAKE old passphrase");
+
+    await user.click(screen.getByLabelText(humanText("Its recovery key")));
+    const recovery = screen.getByLabelText(humanText("Recovery key"));
+    expect(recovery).toHaveValue("");
+    expect(recovery).toHaveAttribute("type", "password");
+    const showKey = screen.getByRole("button", {
+      name: humanText("Show recovery key"),
+    });
+    expect(showKey).toHaveAttribute("aria-pressed", "false");
+    await user.type(recovery, "FAKE replacement key");
+    expect(recovery).toHaveAttribute("type", "password");
+    await user.click(showKey);
+    expect(recovery).toHaveAttribute("type", "text");
+    expect(recovery).toHaveValue("FAKE replacement key");
+
+    await user.click(screen.getByLabelText(humanText("Its passphrase")));
+    const again = screen.getByLabelText(humanText("Backup passphrase"));
+    expect(again).toHaveValue("");
+    expect(again).toHaveAttribute("type", "password");
+    expect(
+      screen.getByRole("button", { name: humanText("Show passphrase") }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(bridge.pickRestoreSource).toHaveBeenCalledOnce();
+    expect(bridge.inspectRestore).not.toHaveBeenCalled();
+    expect(bridge.restore).not.toHaveBeenCalled();
+    expect(onRestored).not.toHaveBeenCalled();
+  });
+
   it("hides the secret as typed and forgets a preview when it changes", async () => {
     const user = userEvent.setup();
     setUp();
