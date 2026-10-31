@@ -1,5 +1,11 @@
 import { humanText } from "../test/humanText";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
@@ -222,6 +228,38 @@ describe("CameraDialog", () => {
     );
     fireEvent.click(button("Try again"));
     await waitFor(() => expect(shutter()).toBeEnabled());
+  });
+
+  it("recovers from a disconnected camera and saves from the replacement stream", async () => {
+    const { onUse } = open();
+    await startCamera();
+    const disconnected = streams[0];
+    await act(async () => {
+      // Canvas tracks do not emulate hardware disconnection. End the track
+      // and deliver the event a disconnected camera would send.
+      const track = disconnected.getVideoTracks()[0];
+      track.stop();
+      track.dispatchEvent(new Event("ended"));
+    });
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "The camera stopped. Check that it is connected, then choose Try again.",
+    );
+    await waitFor(() => expect(button("Try again")).toHaveFocus());
+    expect(onUse).not.toHaveBeenCalled();
+
+    fireEvent.click(button("Try again"));
+    await waitFor(() => expect(shutter()).toBeEnabled());
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(streams).toHaveLength(2);
+    expect(ended(streams[1])).toBe(false);
+    expect(screen.getByLabelText(humanText("Camera view"))).toHaveProperty(
+      "srcObject",
+      streams[1],
+    );
+    fireEvent.click(shutter());
+    expect(ended(streams[1])).toBe(true);
+    fireEvent.click(button("Use photo"));
+    await waitFor(() => expect(onUse).toHaveBeenCalledOnce());
   });
 
   it("stops a camera that answers after the dialog was cancelled", async () => {
