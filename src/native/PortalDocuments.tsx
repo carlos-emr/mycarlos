@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useI18n, useTextState, message } from "../i18n";
+import {
+  useI18n,
+  useTextState,
+  message,
+  deferredText,
+  t as translateNow,
+  type UiText,
+} from "../i18n";
 import { vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 
@@ -10,7 +17,7 @@ interface Props {
   readOnly: boolean;
   run: (operation: () => Promise<void>) => Promise<void>;
   refresh: () => Promise<VaultSnapshot>;
-  setNotice: (text: string) => void;
+  setNotice: (text: UiText) => void;
   compact?: boolean;
 }
 
@@ -91,33 +98,35 @@ export function PortalDocuments({
         await refresh();
         if (shown.current)
           setNotice(
-            [
-              t(
-                result.issues?.length
-                  ? "portal.partialResult"
-                  : "portal.result",
-                {
-                  added: result.added,
-                  refused: result.refused,
-                },
-              ),
-              ...(result.issues ?? []).map((issue) =>
-                t("portal.clinicIssue", {
-                  clinic: issue.clinicName,
-                  detail: vaultErrorMessage({
-                    code: issue.code,
-                    message: t("portal.errorIncomplete"),
-                  }),
-                }),
-              ),
-              ...(result.receiptsPending > 0
-                ? [
-                    t("portal.confirmationsPending", {
-                      count: result.receiptsPending,
+            deferredText(() =>
+              [
+                translateNow(
+                  result.issues?.length
+                    ? "portal.partialResult"
+                    : "portal.result",
+                  {
+                    added: result.added,
+                    refused: result.refused,
+                  },
+                ),
+                ...(result.issues ?? []).map((issue) =>
+                  translateNow("portal.clinicIssue", {
+                    clinic: issue.clinicName,
+                    detail: vaultErrorMessage({
+                      code: issue.code,
+                      message: translateNow("portal.errorIncomplete"),
                     }),
-                  ]
-                : []),
-            ].join(" "),
+                  }),
+                ),
+                ...(result.receiptsPending > 0
+                  ? [
+                      translateNow("portal.confirmationsPending", {
+                        count: result.receiptsPending,
+                      }),
+                    ]
+                  : []),
+              ].join(" "),
+            ),
           );
       } catch (error) {
         await refresh();

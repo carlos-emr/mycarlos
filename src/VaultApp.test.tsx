@@ -7534,6 +7534,80 @@ describe("durable vault UI", () => {
     expect(update).toHaveBeenCalledOnce();
   });
 
+  it("updates a settled clinic-check result when the language changes without another check", async () => {
+    const user = userEvent.setup();
+    const deviceCode = "FAKE-DEVICE-CODE";
+    const fingerprint = "11".repeat(32);
+    const vault: VaultSnapshot = {
+      ...structuredClone(emptySnapshot),
+      portalLinkingEnabled: true,
+      portalLinks: [
+        {
+          id: "fake-link",
+          portalBase: "https://portal.example.test/patient",
+          deviceName: "FAKE device",
+          profileId: "profile-1",
+          clinicName: "FAKE {Clinic}",
+          fingerprints: [],
+          incomplete: false,
+          deviceKeyId: deviceCode,
+          deviceFingerprint: fingerprint,
+          approvalRequested: true,
+          clinicApproved: true,
+        },
+      ],
+    };
+    const check = vi
+      .fn()
+      .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => structuredClone(vault)),
+      linkPortal: vi.fn().mockResolvedValue(vault.portalLinks![0]),
+      checkDocuments: check,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    const clinic = screen.getByRole("region", {
+      name: humanText(translate("en", "portal.title")),
+    });
+    await user.click(
+      within(clinic).getByRole("button", {
+        name: humanText(translate("en", "portal.check")),
+      }),
+    );
+    const english = translate("en", "portal.result", { added: 0, refused: 0 });
+    const notice = (await screen.findByText(humanText(english))).closest(
+      '[role="status"]',
+    )!;
+    expect(check).toHaveBeenCalledOnce();
+
+    act(() => setLocaleOverride("fr"));
+    expect(
+      within(clinic).getByRole("button", {
+        name: humanText(translate("fr", "portal.check")),
+      }),
+    ).toBeVisible();
+    expect(notice).toHaveHumanTextContent(
+      translate("fr", "portal.result", { added: 0, refused: 0 }),
+    );
+    expect(notice).not.toHaveHumanTextContent(english);
+    expect(
+      within(clinic).getByLabelText(translate("fr", "portal.deviceCode")),
+    ).toHaveValue(deviceCode);
+    expect(
+      within(clinic).getByLabelText(translate("fr", "portal.fingerprint")),
+    ).toHaveValue(fingerprint);
+    expect(
+      within(clinic).getByRole("heading", { name: "FAKE {Clinic}" }),
+    ).toBeVisible();
+    act(() => setLocaleOverride("en"));
+    expect(notice).toHaveHumanTextContent(english);
+    expect(check).toHaveBeenCalledOnce();
+  });
+
   it("keeps a refused profile name in the form and clears an accepted one", async () => {
     const user = userEvent.setup();
     const createProfile = vi

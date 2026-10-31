@@ -5,7 +5,7 @@ import { humanValue } from "../test/humanText";
 import { page } from "vitest/browser";
 import { PortalDocuments } from "./PortalDocuments";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
-import { LOCALES, setLocaleOverride, translate } from "../i18n";
+import { LOCALES, setLocaleOverride, translate, resolveText } from "../i18n";
 
 const deviceCode = "Ebz2sH2jVoqcdFhl1BmIOBRm1xuT-zW5bvFBcCeERPY";
 const fingerprint = "11".repeat(32);
@@ -67,6 +67,13 @@ function fixture(
   };
   return { ...render(<PortalDocuments {...props} />), props, bridge, failures };
 }
+
+const noticeCalls = (
+  setNotice: Parameters<typeof PortalDocuments>[0]["setNotice"],
+) =>
+  humanValue(
+    vi.mocked(setNotice).mock.calls.map(([value]) => [resolveText(value)]),
+  );
 
 describe("native clinic document controls", () => {
   it.each(["copied", "copyFailed"] as const)(
@@ -343,18 +350,28 @@ describe("native clinic document controls", () => {
       .setup()
       .click(screen.getByRole("button", { name: "Check for new documents" }));
     await waitFor(() =>
-      expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
+      expect(noticeCalls(props.setNotice)).toContainEqual([
         expect.stringContaining("New documents saved: 1."),
       ]),
     );
-    expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
+    expect(noticeCalls(props.setNotice)).toContainEqual([
       expect.stringContaining(
         "Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault.",
       ),
     ]);
-    expect(
-      humanValue(vi.mocked(props.setNotice).mock.calls),
-    ).not.toContainEqual([expect.stringContaining("Picked up")]);
+    expect(noticeCalls(props.setNotice)).not.toContainEqual([
+      expect.stringContaining("Picked up"),
+    ]);
+    const completed = vi.mocked(props.setNotice).mock.calls.at(-1)![0];
+    act(() => setLocaleOverride("fr"));
+    const french = humanValue(resolveText(completed));
+    expect(french).toContain(
+      humanValue(translate("fr", "portal.result", { added: 1, refused: 0 })),
+    );
+    expect(french).toContain(
+      humanValue(translate("fr", "portal.confirmationsPending", { count: 1 })),
+    );
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
   });
   it("shows clinic-specific partial guidance while preserving successful progress from other links", async () => {
     const { bridge, props } = fixture();
@@ -374,17 +391,34 @@ describe("native clinic document controls", () => {
       .setup()
       .click(screen.getByRole("button", { name: "Check for new documents" }));
     await waitFor(() =>
-      expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
+      expect(noticeCalls(props.setNotice)).toContainEqual([
         expect.stringContaining(
           "Some clinic checks need attention. New documents saved: 2.",
         ),
       ]),
     );
-    expect(humanValue(vi.mocked(props.setNotice).mock.calls)).toContainEqual([
+    expect(noticeCalls(props.setNotice)).toContainEqual([
       expect.stringContaining(
         "FAKE Other Clinic: This approval request expired.",
       ),
     ]);
+    const completed = vi.mocked(props.setNotice).mock.calls.at(-1)![0];
+    act(() => setLocaleOverride("fr"));
+    const french = humanValue(resolveText(completed));
+    expect(french).toContain(
+      humanValue(
+        translate("fr", "portal.partialResult", { added: 2, refused: 0 }),
+      ),
+    );
+    expect(french).toContain(
+      humanValue(
+        translate("fr", "portal.clinicIssue", {
+          clinic: "FAKE Other Clinic",
+          detail: translate("fr", "portal.approvalExpired"),
+        }),
+      ),
+    );
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
   });
   it("keeps contact guidance and hides restart when the native request archive is full", () => {
     fixture({
