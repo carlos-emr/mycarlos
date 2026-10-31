@@ -2718,6 +2718,110 @@ describe("durable vault UI", () => {
     expect(bridge.cancelView).toHaveBeenCalled();
   });
 
+  it("keeps the bulk selection and destination after a refused move, then retries once", async () => {
+    const user = userEvent.setup();
+    let vault: VaultSnapshot = {
+      ...snapshotWithRecord,
+      folders: [
+        {
+          id: "letters",
+          profileId: "profile-1",
+          parentId: null,
+          name: "FAKE Letters",
+          createdAtMs: 2,
+        },
+      ],
+      records: [
+        snapshotWithRecord.records[0],
+        {
+          ...snapshotWithRecord.records[0],
+          id: "record-2",
+          displayName: "FAKE_Letter.pdf",
+        },
+      ],
+    };
+    const assignFoldersBatch = vi
+      .fn<VaultBridge["assignFoldersBatch"]>()
+      .mockRejectedValueOnce({
+        code: "busy",
+        message: "FAKE move was refused.",
+      })
+      .mockImplementationOnce(async (ids, folderIds) => {
+        // Only the successful fake native mutation changes the returned snapshot.
+        vault = {
+          ...vault,
+          records: vault.records.map((record) =>
+            ids.includes(record.id) ? { ...record, folderIds } : record,
+          ),
+        };
+      });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => structuredClone(vault)),
+      assignFoldersBatch,
+    });
+    render(<VaultApp bridge={bridge} />);
+    for (const name of ["FAKE_Results.pdf", "FAKE_Letter.pdf"]) {
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText(`Select ${name}`),
+        }),
+      );
+    }
+    await user.selectOptions(
+      screen.getByLabelText(humanText("Move selected to")),
+      "letters",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Move") }));
+    expect(await screen.findByText("FAKE move was refused.")).toBeVisible();
+    expect(assignFoldersBatch).toHaveBeenCalledOnce();
+    expect(assignFoldersBatch).toHaveBeenLastCalledWith(
+      ["record-1", "record-2"],
+      ["letters"],
+    );
+    expect(screen.getByText(humanText("2 selected"))).toBeVisible();
+    expect(screen.getByLabelText(humanText("Move selected to"))).toHaveValue(
+      "letters",
+    );
+    for (const name of ["FAKE_Results.pdf", "FAKE_Letter.pdf"]) {
+      expect(
+        screen.getByRole("button", { name: humanText(`Select ${name}`) }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(
+        vault.records.find((record) => record.displayName === name)?.folderIds,
+      ).toEqual([]);
+    }
+    const retry = screen.getByRole("button", { name: humanText("Move") });
+    await waitFor(() => expect(retry).toBeEnabled());
+    await user.click(retry);
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText(humanText("Move selected to")),
+      ).not.toBeInTheDocument(),
+    );
+    expect(assignFoldersBatch.mock.calls).toEqual([
+      [["record-1", "record-2"], ["letters"]],
+      [["record-1", "record-2"], ["letters"]],
+    ]);
+    expect(
+      screen.queryByText("FAKE move was refused."),
+    ).not.toBeInTheDocument();
+    for (const name of ["FAKE_Results.pdf", "FAKE_Letter.pdf"]) {
+      expect(
+        screen.queryByRole("article", { name: humanText(`${name} document`) }),
+      ).not.toBeInTheDocument();
+    }
+    await user.click(
+      screen.getByRole("button", { name: humanText("Open FAKE Letters") }),
+    );
+    for (const name of ["FAKE_Results.pdf", "FAKE_Letter.pdf"]) {
+      expect(
+        screen.getByRole("article", { name: humanText(`${name} document`) }),
+      ).toBeVisible();
+    }
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
   it("presents durable records as a navigable filing cabinet", async () => {
     const user = userEvent.setup();
     const filingSnapshot: VaultSnapshot = {
