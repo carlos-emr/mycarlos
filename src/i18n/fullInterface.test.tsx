@@ -225,8 +225,10 @@ describe("the installed interface in the selected language", () => {
       displayName: "FAKE Newly imported.pdf",
     };
     vi.mocked(native.snapshot)
-      .mockResolvedValueOnce(snapshot)
-      .mockResolvedValue({ ...snapshot, records: [record, imported] });
+      .mockImplementationOnce(async () => captureSnapshot(snapshot))
+      .mockImplementation(async () =>
+        captureSnapshot({ ...snapshot, records: [record, imported] }),
+      );
     let finishImporting!: (
       outcome: Awaited<ReturnType<VaultBridge["importPickedFiles"]>>,
     ) => void;
