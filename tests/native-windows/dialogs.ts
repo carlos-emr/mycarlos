@@ -551,6 +551,150 @@ export async function testNativeDialogs(
         await expect(records).toBeVisible();
         await expect(pdfRow).toBeVisible();
         await expect(pdfRow).toBeFocused();
+        // The producer verified this document opens only with the exact spaced password.
+        const spacedPath = resolve(
+          "src-tauri/tests/fixtures/locked-pdf/image-aes256-spaced.pdf",
+        );
+        expect(
+          createHash("sha256")
+            .update(await readFile(spacedPath))
+            .digest("hex"),
+        ).toBe(
+          "ddee7f163612ef7b893fafa12baeaf9970650850dcc5fcc65789b8b6f230cc72",
+        );
+        const importedSpaced = await Promise.allSettled([
+          page
+            .getByRole("button", {
+              name: translate("en", "interface.VaultApp.chooseFilesToImport"),
+              exact: true,
+            })
+            .click(),
+          native("FILE_OPEN", "file", spacedPath),
+        ]);
+        for (const result of importedSpaced)
+          if (result.status === "rejected") throw result.reason;
+        await expect(
+          page.getByText(
+            translate("en", "interface.notice.imported", { count: 1 }),
+            {
+              exact: true,
+            },
+          ),
+        ).toBeVisible();
+        const spacedName = "image-aes256-spaced.pdf";
+        const originalName = "image-aes256-spaced (locked original).pdf";
+        await page
+          .getByRole("button", { name: spacedName, exact: true })
+          .click();
+        const spacedDetails = page.getByRole("dialog", {
+          name: spacedName,
+          exact: true,
+        });
+        await spacedDetails
+          .getByRole("button", {
+            name: translate("en", "interface.RecordDetails.unlock"),
+            exact: true,
+          })
+          .click();
+        const passwordDialog = page.getByRole("dialog", {
+          name: `${translate("en", "unlock.submit")} ${spacedName}`,
+          exact: true,
+        });
+        const documentPassword = passwordDialog.getByLabel(
+          translate("en", "interface.DocumentReader.documentPassword"),
+          { exact: true },
+        );
+        const spacedPassword = "  FAKE-portal-2026  ";
+        await documentPassword.fill(spacedPassword);
+        await expect(documentPassword).toHaveValue(spacedPassword);
+        await passwordDialog
+          .getByRole("button", {
+            name: translate("en", "unlock.submit"),
+            exact: true,
+          })
+          .click();
+        await expect(passwordDialog).toHaveCount(0);
+        await expect(spacedDetails.getByRole("status")).toHaveText(
+          translate("en", "interface.notice.pdfUnlocked", {
+            name: originalName,
+          }),
+        );
+        await spacedDetails
+          .getByRole("button", {
+            name: translate("en", "interface.RecordDetails.read"),
+            exact: true,
+          })
+          .click();
+        const copyReader = page.getByRole("dialog", {
+          name: spacedName,
+          exact: true,
+        });
+        const copyPicture = copyReader.getByRole("img", {
+          name: translate("en", "interface.reader.textFollows", {
+            page: 1,
+            total: 1,
+          }),
+          exact: true,
+        });
+        await expect(copyPicture).toBeVisible();
+        await expect(copyReader.getByRole("status")).toHaveText(
+          translate("en", "interface.reader.where", { page: 1, total: 1 }),
+        );
+        await expect(
+          copyReader.getByRole("region", {
+            name: translate("en", "interface.reader.page", { page: 1 }),
+            exact: true,
+          }),
+        ).toHaveAttribute("aria-busy", "false");
+        await expect
+          .poll(() =>
+            copyPicture.evaluate(
+              (image: HTMLImageElement) =>
+                image.complete &&
+                image.naturalWidth > 0 &&
+                image.naturalHeight > 0,
+            ),
+          )
+          .toBe(true);
+        await expect(
+          copyReader.getByLabel(
+            translate("en", "interface.DocumentReader.documentPassword"),
+            { exact: true },
+          ),
+        ).toHaveCount(0);
+        await copyReader
+          .getByText(
+            translate("en", "interface.DocumentReader.textOnThisPage"),
+            {
+              exact: true,
+            },
+          )
+          .click();
+        const copyText = copyReader.locator(".native-reader-text div");
+        await expect(copyText).toBeVisible();
+        await expect(copyText).toContainText(
+          "FAKE scan with a made-up picture",
+        );
+        await page.screenshot({
+          path: testInfo.outputPath(
+            "native-spaced-password-unlocked-copy-reader.png",
+          ),
+        });
+        await copyReader
+          .getByRole("button", { name: "Close", exact: true })
+          .click();
+        await expect(copyReader).toHaveCount(0);
+        await expect(records).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: spacedName, exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: originalName, exact: true }),
+        ).toBeVisible();
+        await expect(pdfRow).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: photoName, exact: true }),
+        ).toBeVisible();
         await page
           .getByRole("button", { name: "Unlocked · Lock now", exact: true })
           .click();
