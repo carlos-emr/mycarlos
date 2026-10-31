@@ -22,6 +22,7 @@ import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type {
   ImportOutcome,
+  PersonDetails,
   SavedBackup,
   VaultBridge,
   VaultSnapshot,
@@ -7452,6 +7453,85 @@ describe("durable vault UI", () => {
       failCreate({ code: "locked", message: "Unlock the vault to continue." }),
     );
     expect(screen.getByText(humanText("Vault locked."))).toBeVisible();
+  });
+
+  it("updates a settled person-details save notice when the language changes", async () => {
+    const user = userEvent.setup();
+    const vault = structuredClone(emptySnapshot);
+    const displayName = "FAKE {Person}";
+    const fullName = "FAKE Exact {Clinic} Name";
+    vault.profiles[0].displayName = displayName;
+    vault.profiles[0].fullName = "FAKE Earlier Name";
+    const update = vi.fn(async (_id: string, details: PersonDetails) => {
+      Object.assign(vault.profiles[0], details);
+    });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => structuredClone(vault)),
+      updateProfileDetails: update,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText(
+          translate("en", "personDetails.editFor", { name: displayName }),
+        ),
+      }),
+    );
+    const form = screen.getByRole("form", {
+      name: humanText(
+        translate("en", "personDetails.for", { name: displayName }),
+      ),
+    });
+    const input = within(form).getByLabelText(
+      humanText(translate("en", "personDetails.fullName")),
+    );
+    await user.clear(input);
+    await user.paste(fullName);
+    await user.click(
+      within(form).getByRole("button", {
+        name: humanText(translate("en", "personDetails.save")),
+      }),
+    );
+    const english = translate("en", "personDetails.saved", {
+      name: displayName,
+    });
+    const notice = (await screen.findByText(humanText(english))).closest(
+      '[role="status"]',
+    )!;
+    expect(update).toHaveBeenCalledExactlyOnceWith("profile-1", { fullName });
+    expect(
+      screen.queryByRole("form", {
+        name: humanText(
+          translate("en", "personDetails.for", { name: displayName }),
+        ),
+      }),
+    ).toBeNull();
+    const list = screen.getByRole("list", {
+      name: humanText(translate("en", "personDetails.list")),
+    });
+    expect(list).toHaveTextContent(fullName);
+
+    act(() => setLocaleOverride("fr"));
+    expect(
+      screen.getByRole("button", {
+        name: humanText(
+          translate("fr", "personDetails.editFor", { name: displayName }),
+        ),
+      }),
+    ).toBeVisible();
+    expect(notice).toHaveHumanTextContent(
+      translate("fr", "personDetails.saved", { name: displayName }),
+    );
+    expect(notice).not.toHaveHumanTextContent(english);
+    expect(list).toHaveTextContent(fullName);
+    act(() => setLocaleOverride("en"));
+    expect(notice).toHaveHumanTextContent(english);
+    expect(list).toHaveTextContent(fullName);
+    expect(update).toHaveBeenCalledOnce();
   });
 
   it("keeps a refused profile name in the form and clears an accepted one", async () => {

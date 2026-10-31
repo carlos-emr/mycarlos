@@ -1192,7 +1192,7 @@ export function VaultLibrary({
       saved = true;
       await refresh();
       setNotice(
-        t("personDetails.saved", {
+        message("personDetails.saved", {
           name: people.find((p) => p.id === id)?.displayName ?? "",
         }),
       );
