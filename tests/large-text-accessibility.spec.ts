@@ -433,15 +433,9 @@ test("has no automatically detectable WCAG violations on the vault screens with 
   await withReaderText200(page, walkTheVault);
 });
 
-// #84: the preview library still cuts controls off at 200% default text.
-// The vault test below requires the cut-off checks on both desktop and phone.
 test("cuts nothing off with the reader's default text at 200% (#84)", async ({
   page,
 }) => {
-  test.fail(
-    true,
-    "#84: the library's controls are cut off at 200% default text",
-  );
   await withReaderText200(page, walkThePreview, true);
 });
 
