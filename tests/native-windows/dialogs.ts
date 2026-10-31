@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { translate } from "../support/fluent";
 
 type Request = { id: number; action: string; title: string; value: string };
 type State = {
@@ -124,6 +125,209 @@ export async function testNativeDialogs(
           result.dismissedByKey,
           "Windows Enter must activate its safe default",
         ).toBe(true);
+      // Keep the synthetic key out of the polled state and native-dialogs.json.
+      // The existing uninterrupted trace may record this entirely synthetic flow.
+      let recoveryKey = await page.evaluate(() => {
+        const host = window as unknown as {
+          __nativeDialogUiFixture?: { recoveryKey?: string };
+        };
+        const key = host.__nativeDialogUiFixture?.recoveryKey;
+        delete host.__nativeDialogUiFixture;
+        return key;
+      });
+      if (typeof recoveryKey !== "string" || !recoveryKey)
+        throw new Error("Synthetic backup recovery key is missing");
+      try {
+        await page.reload();
+        await expect(
+          page.getByRole("heading", {
+            name: "Make myCarlos comfortable for you",
+            exact: true,
+          }),
+        ).toBeVisible();
+        await page
+          .getByRole("button", { name: "Continue", exact: true })
+          .click();
+        await expect(
+          page.getByRole("heading", {
+            name: "Set up myCarlos on this computer",
+            exact: true,
+          }),
+        ).toBeVisible();
+        await page.getByText("Restore from a backup", { exact: true }).click();
+        const restore = page.locator("form.restore-backup");
+        // The real native picker can hold CDP's click pending until it closes.
+        const picked = await Promise.allSettled([
+          restore
+            .getByRole("button", { name: "Choose backup file…", exact: true })
+            .click(),
+          native("FILE_OPEN", "file", backupPath),
+        ]);
+        for (const result of picked)
+          if (result.status === "rejected") throw result.reason;
+        const useKey = restore.getByRole("radio", {
+          name: "Its recovery key",
+          exact: true,
+        });
+        await useKey.check();
+        await expect(useKey).toBeChecked();
+        await restore
+          .getByLabel("Recovery key", { exact: true })
+          .fill(recoveryKey);
+        await restore
+          .getByRole("button", { name: "Check backup", exact: true })
+          .click();
+        await expect(restore.getByRole("status")).toHaveText(
+          translate("en", "restore.checked", {
+            count: 1,
+            consequence: translate("en", "restore.consequence.nothing"),
+          }),
+        );
+        const submit = restore.getByRole("button", {
+          name: "Restore backup",
+          exact: true,
+        });
+        await expect(submit).toBeEnabled();
+        await submit.click();
+        await expect(
+          page.getByText(
+            "Backup restored. Unlock it with the passphrase it was made with, or use its recovery key.",
+            { exact: true },
+          ),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("heading", { name: "Unlock your vault", exact: true }),
+        ).toBeVisible();
+        const records = page.getByRole("heading", {
+          name: "My records",
+          exact: true,
+        });
+        await expect(records).toHaveCount(0);
+        await page.screenshot({
+          path: testInfo.outputPath("native-key-backup-restored-locked.png"),
+        });
+
+        await page
+          .getByText("Forgot your passphrase?", { exact: true })
+          .click();
+        const recover = page.locator("form").filter({
+          has: page.getByRole("button", {
+            name: "Open with recovery key",
+            exact: true,
+          }),
+        });
+        await recover
+          .getByLabel("Recovery key", { exact: true })
+          .fill(recoveryKey);
+        const newPassphrase = "velvet heron meadow quartz lantern 842!";
+        await recover
+          .getByLabel("New passphrase", { exact: true })
+          .fill(newPassphrase);
+        await recover
+          .getByLabel("Confirm new passphrase", { exact: true })
+          .fill(newPassphrase);
+        await recover
+          .getByRole("button", { name: "Open with recovery key", exact: true })
+          .click();
+        await expect(records).toBeVisible();
+        const photoName = "Photo, 1 Jan 2026, 9.00 AM.jpg";
+        await page
+          .getByRole("button", { name: photoName, exact: true })
+          .click();
+        const details = page.getByRole("dialog", {
+          name: photoName,
+          exact: true,
+        });
+        await details
+          .getByRole("button", { name: "View photo", exact: true })
+          .click();
+        const viewer = page.getByRole("dialog", {
+          name: photoName,
+          exact: true,
+        });
+        const photo = viewer.getByRole("img", {
+          name: translate("en", "photo.alt", { name: photoName }),
+          exact: true,
+        });
+        await expect(photo).toBeVisible();
+        await expect
+          .poll(() =>
+            photo.evaluate((image: HTMLImageElement) => image.naturalWidth),
+          )
+          .toBeGreaterThan(0);
+        await page.screenshot({
+          path: testInfo.outputPath("native-key-backup-restored-photo.png"),
+        });
+        await viewer
+          .getByRole("button", { name: "Close", exact: true })
+          .click();
+        await expect(photo).toHaveCount(0);
+        await expect(
+          details.getByRole("button", { name: "View photo", exact: true }),
+        ).toBeVisible();
+        await details
+          .getByRole("button", { name: "Close document details", exact: true })
+          .click();
+        await page
+          .getByRole("button", { name: "Unlocked · Lock now", exact: true })
+          .click();
+        await expect(
+          page.getByRole("heading", { name: "Unlock your vault", exact: true }),
+        ).toBeVisible();
+        await expect(records).toHaveCount(0);
+        await page
+          .getByLabel("Passphrase", { exact: true })
+          .fill(newPassphrase);
+        await page.getByRole("button", { name: "Unlock", exact: true }).click();
+        await expect(records).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: photoName, exact: true }),
+        ).toBeVisible();
+        await page
+          .getByRole("button", { name: "Unlocked · Lock now", exact: true })
+          .click();
+        await expect(
+          page.getByRole("heading", { name: "Unlock your vault", exact: true }),
+        ).toBeVisible();
+        await expect(records).toHaveCount(0);
+
+        // Set aside only this synthetic vault through the real UI and owned dialog.
+        await page
+          .getByText("Forgot your passphrase?", { exact: true })
+          .click();
+        await page
+          .getByLabel(
+            translate("en", "reset.type", { phrase: "RESET MYCARLOS VAULT" }),
+            { exact: true },
+          )
+          .fill("RESET MYCARLOS VAULT");
+        const cleaned = await Promise.allSettled([
+          page
+            .getByRole("button", { name: "Set vault aside", exact: true })
+            .click(),
+          native(
+            "Set this myCarlos vault aside and start again?",
+            "button",
+            "Set it aside",
+          ),
+        ]);
+        for (const result of cleaned)
+          if (result.status === "rejected") throw result.reason;
+        await expect
+          .poll(() =>
+            page.evaluate(() => {
+              const host = window as unknown as {
+                __TAURI_INTERNALS__: {
+                  invoke: (command: string) => Promise<unknown>;
+                };
+              };
+              return host.__TAURI_INTERNALS__.invoke("vault_status");
+            }),
+          )
+          .toBe("absent");
+      } finally {
+        recoveryKey = undefined;
+      }
       return;
     }
     const request = state.request;

@@ -4,6 +4,7 @@ const CANVAS_PHOTO =
   "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAIABADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAcJ/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/EABQBAQAAAAAAAAAAAAAAAAAAAAX/xAAbEQACAQUAAAAAAAAAAAAAAAAAB0RFgoPCw//aAAwDAQACEQMRAD8Ak7QsBTpp+XmHLaXZuf/Z";
 
 export async function runDialogScenarios({ backupPath }) {
+  delete window.__nativeDialogUiFixture;
   const state = (window.__nativeDialogTest = {
     results: [],
     request: null,
@@ -159,6 +160,7 @@ export async function runDialogScenarios({ backupPath }) {
       "The vault set aside is still in use",
     );
     await create();
+    await savePhoto();
     const groups = (key) => ({
       groups: key.split("-").map((value, index) => ({ index, value })),
     });
@@ -296,6 +298,8 @@ export async function runDialogScenarios({ backupPath }) {
       (await call("vault_status")) === "absent",
       "Test vault remains after cleanup",
     );
+    // Synthetic credential for the Windows UI follow-up, never in the polled results.
+    window.__nativeDialogUiFixture = { recoveryKey: replacement };
   } catch (error) {
     state.error = error?.message
       ? `${error.message}\n${error.stack || ""}`
