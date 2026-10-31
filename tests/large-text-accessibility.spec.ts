@@ -201,7 +201,7 @@ async function walkThePreview(large: LargeText) {
  */
 async function mockNativeVault(page: Page, status: "absent" | "locked") {
   await page.addInitScript((initialStatus) => {
-    let current = initialStatus;
+    let current: "absent" | "locked" | "unlocked" = initialStatus;
     const captureEpoch = crypto.randomUUID();
     let captureSequence = 0;
     const snapshot = {
