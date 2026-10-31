@@ -824,6 +824,7 @@ describe("the document reader", () => {
 
   it("asks for a locked document's own password, and again when it is wrong", async () => {
     const user = userEvent.setup();
+    const rawPassword = "  FAKE cafe\u0301 password  ";
     let rejectWrong!: (reason: unknown) => void;
     let unlock!: (value: ViewedPage) => void;
     const viewPage = vi
@@ -856,10 +857,9 @@ describe("the document reader", () => {
     expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       "That password did not open the document.",
     );
-    await user.type(
-      screen.getByLabelText(humanText("Document password")),
-      "FAKE-portal-2026",
-    );
+    const retry = screen.getByLabelText(humanText("Document password"));
+    await user.type(retry, rawPassword);
+    expect(retry).toHaveValue(rawPassword);
     await click(screen.getByRole("button", { name: humanText("Open") }));
     await act(async () => {
       unlock(page(0));
@@ -868,7 +868,7 @@ describe("the document reader", () => {
     expect(viewPage).toHaveBeenLastCalledWith(
       0,
       expect.any(Number),
-      "FAKE-portal-2026",
+      rawPassword,
     );
     // Later pages use the same password, without asking.
     await user.click(
@@ -878,7 +878,7 @@ describe("the document reader", () => {
     expect(viewPage).toHaveBeenLastCalledWith(
       1,
       expect.any(Number),
-      "FAKE-portal-2026",
+      rawPassword,
     );
   });
 

@@ -20,6 +20,8 @@ import {
   type ViewedPage,
 } from "./vault";
 
+const PDF_PASSWORD = "  FAKE cafe\u0301 password  ";
+
 describe("native idle deadline bridge", () => {
   beforeEach(() => invoke.mockReset());
 
@@ -56,7 +58,7 @@ describe("native idle deadline bridge", () => {
     await bridge.acceptReceived();
     await bridge.moveToPerson(["record-1"], "profile-1", ["folder-1"]);
     await bridge.viewPage("record-1", 0, 800);
-    await bridge.viewPage("record-1", 1, 800, "FAKE-portal-2026");
+    await bridge.viewPage("record-1", 1, 800, PDF_PASSWORD);
     expect(invoke.mock.calls).toEqual([
       ["received_list"],
       ["received_accept"],
@@ -88,7 +90,7 @@ describe("native idle deadline bridge", () => {
             recordId: "record-1",
             page: 1,
             width: 800,
-            password: "FAKE-portal-2026",
+            password: PDF_PASSWORD,
           },
         },
       ],
@@ -324,9 +326,9 @@ describe("native idle deadline bridge", () => {
       request: { recordId: "record-1" },
     });
     invoke.mockResolvedValue({ recordId: "copy-1", originalName: "FAKE" });
-    await bridge.unlockPdf("record-1", "FAKE-portal-2026");
+    await bridge.unlockPdf("record-1", PDF_PASSWORD);
     expect(invoke).toHaveBeenLastCalledWith("vault_unlock_pdf", {
-      request: { recordId: "record-1", password: "FAKE-portal-2026" },
+      request: { recordId: "record-1", password: PDF_PASSWORD },
     });
     expect(isWrongPdfPassword({ code: "pdf_wrong_password" })).toBe(true);
     expect(isWrongPdfPassword({ code: "pdf_unlock_failed" })).toBe(false);
