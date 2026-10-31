@@ -634,7 +634,7 @@ h1, h2, p { margin: 0; }
 .dialog-head { display: flex; align-items: flex-start; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
 .dialog-head > div { min-width: 0; }
 .dialog-head h2 { overflow: hidden; font-size: 1.125rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.dialog-close { flex: none; width: auto; min-width: 34px; height: auto; min-height: 34px; margin-left: auto; padding: 0; border: 0; border-radius: 8px; background: var(--canvas); color: var(--ink-soft); font-size: 1.5rem; line-height: 1; }
+.dialog-close { flex: none; width: auto; min-width: 34px; height: auto; min-height: 34px; margin-left: auto; padding: 0; border: 0; border-radius: 8px; background: var(--canvas); color: var(--ink-soft); font-size: 1.5rem; line-height: normal; }
 .dialog-close:hover { background: var(--canvas-2); color: var(--ink); }
 .document-preview { position: relative; display: grid; justify-items: center; gap: 10px; padding: 22px 20px 16px; background: var(--canvas); }
 .document-preview > .document-icon { position: absolute; justify-self: start; }
