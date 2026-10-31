@@ -202,6 +202,8 @@ async function walkThePreview(large: LargeText) {
 async function mockNativeVault(page: Page, status: "absent" | "locked") {
   await page.addInitScript((initialStatus) => {
     let current = initialStatus;
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const snapshot = {
       profiles: [
         { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
@@ -259,9 +261,16 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         if (command === "vault_status") return current;
         if (command === "vault_unlock") {
           current = "unlocked";
-          return structuredClone(snapshot);
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         }
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform: "windows" };
         // The setup checklist asks which rules a passphrase meets (#76).
         if (command === "vault_passphrase_rules")

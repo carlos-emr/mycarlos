@@ -10,6 +10,8 @@ import { LOCALES } from "../src/i18n/types";
 /** A vault with two patients, two folders and two documents (FAKE). */
 async function fakeVault(page: Page) {
   await page.addInitScript(() => {
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const snapshot = {
       profiles: [
         { id: "p1", displayName: "FAKE Avery Example", createdAtMs: 1 },
@@ -61,7 +63,11 @@ async function fakeVault(page: Page) {
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return "unlocked";
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform: "windows" };
         return undefined;
       },

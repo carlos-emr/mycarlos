@@ -58,7 +58,7 @@ test("snapshot captures increase within the fake runtime across renderer reload"
     "requires capture-time metadata",
   );
   await page.reload();
-  // Reload hides the old window and locks its native session; the fake runtime survives.
+  // Unlock the persisted fake session after reload; its runtime epoch survives.
   await expect(
     page.getByRole("heading", { name: "Unlock your vault", exact: true }),
   ).toBeVisible();

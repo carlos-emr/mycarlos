@@ -1,7 +1,14 @@
 import { StrictMode } from "react";
 import { humanText } from "../test/humanText";
 import { setLocaleOverride, translate } from "../i18n";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { page as browserPage, userEvent as realKeys } from "vitest/browser";
