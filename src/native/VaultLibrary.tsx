@@ -15,6 +15,7 @@ import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
+  isLockedError,
   isWrongPdfPassword,
   isLockedError,
   isCancelledError,
@@ -2290,7 +2291,12 @@ export function VaultLibrary({
             <RenameDialog
               target={renameTarget}
               readOnly={busy || readOnly}
-              onSave={saveName}
+              onSave={(name) =>
+                saveName(name).catch((error: unknown) => {
+                  if (mountedRef.current && isLockedError(error)) void onLock();
+                  throw error;
+                })
+              }
               onClose={() => setRenameTarget(null)}
             />
           )}
@@ -2397,7 +2403,13 @@ export function VaultLibrary({
             <DocumentReader
               record={readerRecord}
               viewPage={(page, width, password) =>
-                bridge.viewPage(readerRecord.id, page, width, password)
+                bridge
+                  .viewPage(readerRecord.id, page, width, password)
+                  .catch((error: unknown) => {
+                    if (mountedRef.current && isLockedError(error))
+                      void onLock();
+                    throw error;
+                  })
               }
               cancelView={() => void bridge.cancelView().catch(() => undefined)}
               onClose={() => setReaderRecordId(null)}
