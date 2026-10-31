@@ -32,6 +32,18 @@ import type {
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import { setLocaleOverride, translate } from "./i18n";
 
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
 const IOS_PAUSE = "Keep myCarlos open: switching apps pauses this transfer.";
@@ -46,6 +58,7 @@ const PARTIAL_EXPORT = {
 };
 
 const emptySnapshot: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [{ id: "profile-1", displayName: "Jamie", createdAtMs: 1 }],
   folders: [],
   records: [],
@@ -69,13 +82,19 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       notAName: true,
       hardToGuess: true,
     }),
-    create: vi.fn().mockResolvedValue(emptySnapshot),
-    unlock: vi.fn().mockResolvedValue(emptySnapshot),
+    create: vi
+      .fn()
+      .mockImplementation(async () => captureSnapshot(emptySnapshot)),
+    unlock: vi
+      .fn()
+      .mockImplementation(async () => captureSnapshot(emptySnapshot)),
     lock: vi.fn().mockResolvedValue(undefined),
     touch: vi.fn().mockResolvedValue(undefined),
     setAutoLock: vi.fn().mockResolvedValue(undefined),
     platform: vi.fn().mockResolvedValue("windows"),
-    snapshot: vi.fn().mockResolvedValue(emptySnapshot),
+    snapshot: vi
+      .fn()
+      .mockImplementation(async () => captureSnapshot(emptySnapshot)),
     history: vi.fn().mockResolvedValue({
       entries: [],
       laterEntries: [],
@@ -91,16 +110,19 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .mockRejectedValue({ code: "storage", message: "FAKE no key here." }),
     confirmRecoveryKey: vi
       .fn()
-      .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+      .mockImplementation(async () =>
+        captureSnapshot({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+      ),
     saveRecoveryKit: vi.fn().mockResolvedValue(true),
     benchmarkKdf: vi
       .fn()
       .mockRejectedValue({ code: "busy", message: "FAKE no speed test." }),
     recoveryKeyLabel: vi.fn().mockResolvedValue("7F3A"),
     cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
-    recover: vi
-      .fn()
-      .mockResolvedValue({ passphraseReplaced: true, snapshot: emptySnapshot }),
+    recover: vi.fn().mockImplementation(async () => {
+      const result = { passphraseReplaced: true, snapshot: emptySnapshot };
+      return { ...result, snapshot: captureSnapshot(result.snapshot) };
+    }),
     pickBackupDestination: vi.fn().mockResolvedValue(null),
     saveBackupToPicked: vi.fn().mockResolvedValue(undefined),
     pickRestoreSource: vi.fn().mockResolvedValue(null),
@@ -328,7 +350,7 @@ function renameBridge() {
   };
   return nativeBridge({
     status: vi.fn().mockResolvedValue("unlocked"),
-    snapshot: vi.fn().mockImplementation(async () => snapshot),
+    snapshot: vi.fn().mockImplementation(async () => captureSnapshot(snapshot)),
     updateFolder: vi.fn().mockImplementation(async (id, parentId, name) => {
       snapshot = {
         ...snapshot,
@@ -889,22 +911,24 @@ describe("durable vault UI", () => {
         imported: ["record-1"],
         skippedDuplicates: ["copy.pdf"],
       }),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        records: [
-          {
-            id: "record-1",
-            profileId: "profile-1",
-            folderIds: [],
-            displayName: "report.pdf",
-            sourceLabel: "Manual import — unverified",
-            mediaType: "application/octet-stream",
-            plaintextSize: 2048,
-            importedAtMs: 1,
-            available: true,
-          },
-        ],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          records: [
+            {
+              id: "record-1",
+              profileId: "profile-1",
+              folderIds: [],
+              displayName: "report.pdf",
+              sourceLabel: "Manual import — unverified",
+              mediaType: "application/octet-stream",
+              plaintextSize: 2048,
+              importedAtMs: 1,
+              available: true,
+            },
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -946,6 +970,7 @@ describe("durable vault UI", () => {
   ) {
     const SHARED = "shared-profile";
     const vault: VaultSnapshot = {
+      capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
       profiles: people.map((displayName, index) => ({
         id: `profile-${index + 1}`,
         displayName,
@@ -962,8 +987,8 @@ describe("durable vault UI", () => {
       sourceLabel: "Manual import — unverified",
     }));
     const bridge = nativeBridge({
-      unlock: vi.fn(async () => structuredClone(vault)),
-      snapshot: vi.fn(async () => structuredClone(vault)),
+      unlock: vi.fn(async () => captureSnapshot(vault)),
+      snapshot: vi.fn(async () => captureSnapshot(vault)),
       listReceived: vi.fn(async () => ({
         files: structuredClone(queue),
         notice: { dropped: 0, refusedShares: 0 },
@@ -1067,7 +1092,7 @@ describe("durable vault UI", () => {
     let holdNext = false;
     let releaseOld: (() => void) | undefined;
     const snapshot = vi.mocked(bridge.snapshot).mockImplementation(() => {
-      const captured = structuredClone(vault);
+      const captured = captureSnapshot(vault);
       if (holdNext) {
         holdNext = false;
         return new Promise<VaultSnapshot>((resolve) => {
@@ -1167,7 +1192,7 @@ describe("durable vault UI", () => {
           message: "FAKE interrupted snapshot response.",
         });
       }
-      const captured = structuredClone(vault);
+      const captured = captureSnapshot(vault);
       if (holdNext) {
         holdNext = false;
         return new Promise<VaultSnapshot>((resolve) => {
@@ -2506,7 +2531,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       isPhoto: vi.fn().mockResolvedValue(true),
       viewPhoto: vi.fn().mockResolvedValue("data:image/jpeg;base64,FAKE"),
     });
@@ -2540,7 +2567,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       viewPage: vi.fn().mockResolvedValue({
         pageCount: 1,
         width: 800,
@@ -2695,7 +2724,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       // Still drawing when the lock comes.
       viewPage: vi.fn(() => new Promise<ViewedPage>(() => undefined)),
     });
@@ -2825,6 +2856,7 @@ describe("durable vault UI", () => {
   it("presents durable records as a navigable filing cabinet", async () => {
     const user = userEvent.setup();
     const filingSnapshot: VaultSnapshot = {
+      capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
       profiles: [
         { id: "profile-1", displayName: "FAKE Avery Patient", createdAtMs: 1 },
       ],
@@ -2879,7 +2911,9 @@ describe("durable vault UI", () => {
     };
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(filingSnapshot),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(filingSnapshot)),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -3512,7 +3546,9 @@ describe("durable vault UI", () => {
       beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     await continuePastComfort();
@@ -3813,8 +3849,16 @@ describe("durable vault UI", () => {
     offerIsDue();
     const user = userEvent.setup();
     const bridge = nativeBridge({
-      unlock: vi.fn().mockResolvedValue({ ...emptySnapshot, ...state }),
-      snapshot: vi.fn().mockResolvedValue({ ...emptySnapshot, ...state }),
+      unlock: vi
+        .fn()
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, ...state }),
+        ),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, ...state }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     await user.type(
@@ -3919,7 +3963,9 @@ describe("durable vault UI", () => {
     const recordId = snapshotWithRecord.records[0].id;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
       saveBackupToPicked: vi.fn().mockRejectedValue({
         code: "damaged_document",
@@ -4089,8 +4135,8 @@ describe("durable vault UI", () => {
     const vault = { ...emptySnapshot, recoveryKeySetAtMs: setAtMs };
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(vault),
-      unlock: vi.fn().mockResolvedValue(vault),
+      snapshot: vi.fn().mockImplementation(async () => captureSnapshot(vault)),
+      unlock: vi.fn().mockImplementation(async () => captureSnapshot(vault)),
       beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
       ...overrides,
     });
@@ -4383,6 +4429,226 @@ describe("durable vault UI", () => {
     },
   );
 
+  it.each(["equal", "foreign epoch"] as const)(
+    "ignores a refresh with an %s capture stamp",
+    async (kind) => {
+      const user = userEvent.setup();
+      const current = captureSnapshot(snapshotWithRecord);
+      const rejected: VaultSnapshot = {
+        ...structuredClone(current),
+        capture:
+          kind === "equal"
+            ? current.capture
+            : {
+                epoch: "00000000-0000-4000-8000-000000000186",
+                sequence: Number.MAX_SAFE_INTEGER,
+              },
+        records: [{ ...current.records[0], displayName: "FAKE_Rejected.pdf" }],
+      };
+      const snapshot = vi
+        .fn()
+        .mockImplementationOnce(async () => current)
+        .mockImplementationOnce(async () => rejected);
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        // A duplicate result still refreshes, without simulating a new file write.
+        importPickedFiles: vi
+          .fn()
+          .mockResolvedValue({
+            imported: [],
+            skippedDuplicates: ["FAKE existing.pdf"],
+          }),
+        snapshot,
+      });
+      render(<VaultApp bridge={bridge} />);
+      expect(
+        await screen.findByText(humanText("FAKE_Results.pdf")),
+      ).toBeVisible();
+      const choose = screen.getByRole("button", {
+        name: humanText("Choose files to import"),
+      });
+      await user.click(choose);
+      await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(choose).toBeEnabled());
+      expect(screen.getByText(humanText("FAKE_Results.pdf"))).toBeVisible();
+      expect(
+        screen.queryByText(humanText("FAKE_Rejected.pdf")),
+      ).not.toBeInTheDocument();
+      expect(bridge.importPickedFiles).toHaveBeenCalledOnce();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("anchors a newly unlocked native epoch before applying its later captures", async () => {
+    const user = userEvent.setup();
+    const current = captureSnapshot({
+      ...snapshotWithRecord,
+      recoveryKeySetAtMs: 5,
+    });
+    const reopened: VaultSnapshot = {
+      ...structuredClone(current),
+      capture: { epoch: "00000000-0000-4000-8000-000000000186", sequence: 1 },
+      records: [{ ...current.records[0], displayName: "FAKE_NewRuntime.pdf" }],
+    };
+    const newer: VaultSnapshot = {
+      ...reopened,
+      capture: { ...reopened.capture, sequence: 2 },
+      records: [
+        { ...reopened.records[0], displayName: "FAKE_LaterRuntime.pdf" },
+      ],
+    };
+    const snapshot = vi
+      .fn()
+      .mockImplementationOnce(async () => current)
+      .mockImplementationOnce(async () => newer);
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      importPickedFiles: vi
+        .fn()
+        .mockResolvedValue({
+          imported: [],
+          skippedDuplicates: ["FAKE existing.pdf"],
+        }),
+      snapshot,
+      unlock: vi.fn(async () => reopened),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByText(humanText("FAKE_Results.pdf"));
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
+    );
+    await user.type(
+      await screen.findByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    expect(
+      await screen.findByText(humanText("FAKE_NewRuntime.pdf")),
+    ).toBeVisible();
+    const choose = screen.getByRole("button", {
+      name: humanText("Choose files to import"),
+    });
+    await user.click(choose);
+    expect(
+      await screen.findByText(humanText("FAKE_LaterRuntime.pdf")),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText("FAKE_NewRuntime.pdf")),
+    ).not.toBeInTheDocument();
+    expect(snapshot).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).toHaveBeenCalledOnce();
+  });
+
+  it("keeps newer shared intake after a delayed recovery confirmation snapshot", async () => {
+    const {
+      bridge: receivedBridge,
+      vault,
+      arrive,
+    } = sharedVault(["FAKE Patient"], []);
+    vault.recoveryKeySetAtMs = 5;
+    let finish: (() => void) | undefined;
+    const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
+      snapshot: receivedBridge.snapshot,
+      listReceived: receivedBridge.listReceived,
+      acceptReceived: receivedBridge.acceptReceived,
+      confirmRecoveryKey: vi.fn(() => {
+        // The command returns the snapshot captured when it stored the key.
+        // Only delivery of that captured reply is held here.
+        vault.recoveryKeySetAtMs = 9;
+        const stored = captureSnapshot(vault);
+        return new Promise<VaultSnapshot>((resolve) => {
+          finish = () => resolve(stored);
+        });
+      }),
+    });
+    try {
+      await typeKeyBack();
+      expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
+      expect(finish).toBeTypeOf("function");
+      arrive("FAKE_After_key.pdf");
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      await waitFor(() => expect(bridge.snapshot).toHaveBeenCalledTimes(2));
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+      expect(vault.records).toHaveLength(1);
+      // Intake announces only after its snapshot refresh has completed.
+      expect(
+        await screen.findByText(
+          humanText("A shared file was added to Shared with me."),
+        ),
+      ).toBeInTheDocument();
+
+      await act(async () => finish!());
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(
+        await screen.findByText(humanText(/^Recovery key replaced\./)),
+      ).toBeVisible();
+      expect(bridge.snapshot).toHaveBeenCalledTimes(2);
+      await user.click(
+        within(
+          screen.getByRole("navigation", { name: humanText("Record library") }),
+        ).getByRole("button", { name: humanText(/^Shared with me/) }),
+      );
+      expect(screen.getByText(humanText("FAKE_After_key.pdf"))).toBeVisible();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => finish?.());
+    }
+  });
+
+  it("applies a recovery key captured after a query made while confirmation was pending", async () => {
+    const {
+      bridge: receivedBridge,
+      vault,
+      arrive,
+    } = sharedVault(["FAKE Patient"], []);
+    vault.recoveryKeySetAtMs = 5;
+    vault.recoveryKeyLabel = "OLD1";
+    let commit: (() => void) | undefined;
+    const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
+      snapshot: receivedBridge.snapshot,
+      listReceived: receivedBridge.listReceived,
+      acceptReceived: receivedBridge.acceptReceived,
+      confirmRecoveryKey: vi.fn(
+        () =>
+          new Promise<VaultSnapshot>((resolve) => {
+            commit = () => {
+              vault.recoveryKeySetAtMs = 9;
+              vault.recoveryKeyLabel = "NEW2";
+              resolve(captureSnapshot(vault));
+            };
+          }),
+      ),
+    });
+    try {
+      await typeKeyBack();
+      expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
+      arrive("FAKE_Before_commit.pdf");
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      expect(
+        await screen.findByText(
+          humanText("A shared file was added to Shared with me."),
+        ),
+      ).toBeInTheDocument();
+      expect(bridge.snapshot).toHaveBeenCalledTimes(2);
+      expect(vault.recoveryKeyLabel).toBe("OLD1");
+      await act(async () => commit!());
+      expect(
+        await screen.findByText(humanText(/^Recovery key replaced\./)),
+      ).toBeVisible();
+      await user.click(
+        screen.getByRole("button", { name: humanText("Security") }),
+      );
+      expect(screen.getByText("NEW2")).toBeVisible();
+      expect(screen.queryByText("OLD1")).not.toBeInTheDocument();
+      expect(bridge.snapshot).toHaveBeenCalledTimes(2);
+      expect(bridge.lock).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => commit?.());
+    }
+  });
+
   it("never says a key stored as the vault locked was lost", async () => {
     // Hiding the app while the native confirmation may be open does not lock
     // it; the lock comes as the confirmation ends, and its reply and the
@@ -4404,11 +4670,13 @@ describe("durable vault UI", () => {
     expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
     await setVisibility("hidden");
     expect(bridge.lock).not.toHaveBeenCalled();
-    const saved = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
+    const saved = captureSnapshot({ ...emptySnapshot, recoveryKeySetAtMs: 9 });
     await act(async () => answer(saved));
     await waitFor(() => expect(bridge.lock).toHaveBeenCalled());
     await setVisibility("visible");
-    vi.mocked(bridge.unlock).mockResolvedValue(saved);
+    vi.mocked(bridge.unlock).mockImplementation(async () =>
+      captureSnapshot(saved),
+    );
     await unlock();
     expect(
       await screen.findByText(humanText(/^Vault unlocked\./)),
@@ -4426,7 +4694,11 @@ describe("durable vault UI", () => {
       const after = { ...emptySnapshot, recoveryKeySetAtMs: saved ? 9 : 5 };
       const { user, bridge, hide, unlock, typeKeyBack } = await showKeyInSetup(
         5,
-        { confirmRecoveryKey: vi.fn().mockResolvedValue(after) },
+        {
+          confirmRecoveryKey: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(after)),
+        },
       );
       if (saved) await typeKeyBack();
       else
@@ -4449,7 +4721,9 @@ describe("durable vault UI", () => {
             ),
           ),
         ).toBeVisible();
-      vi.mocked(bridge.unlock).mockResolvedValue(after);
+      vi.mocked(bridge.unlock).mockImplementation(async () =>
+        captureSnapshot(after),
+      );
       await hide();
       await unlock();
       expect(
@@ -4467,7 +4741,9 @@ describe("durable vault UI", () => {
       recovery: "writeFailed" as const,
     };
     const { typeKeyBack } = await showKeyInSetup(5, {
-      confirmRecoveryKey: vi.fn().mockResolvedValue(stored),
+      confirmRecoveryKey: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(stored)),
     });
     await typeKeyBack();
     expect(
@@ -4484,7 +4760,11 @@ describe("durable vault UI", () => {
     const after = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
     const { user, typeKeyBack } = await showKeyInSetup(
       5,
-      { confirmRecoveryKey: vi.fn().mockResolvedValue(after) },
+      {
+        confirmRecoveryKey: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(after)),
+      },
       false,
     );
     await typeKeyBack();
@@ -4507,7 +4787,9 @@ describe("durable vault UI", () => {
     };
     const written = "myCarlos backup 2026-09-30 7F3A.mycarlosbackup";
     const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
-      confirmRecoveryKey: vi.fn().mockResolvedValue(after),
+      confirmRecoveryKey: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(after)),
       pickBackupDestination: vi.fn().mockResolvedValue("pick-9"),
       saveBackupToPicked: vi
         .fn()
@@ -4734,8 +5016,12 @@ describe("durable vault UI", () => {
     render(
       <VaultApp
         bridge={nativeBridge({
-          unlock: vi.fn().mockResolvedValue(vault),
-          snapshot: vi.fn().mockResolvedValue(vault),
+          unlock: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(vault)),
+          snapshot: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(vault)),
         })}
       />,
     );
@@ -4763,7 +5049,11 @@ describe("durable vault UI", () => {
     const vault = { ...emptySnapshot, recoveryKeySetAtMs: 5 };
     render(
       <VaultApp
-        bridge={nativeBridge({ unlock: vi.fn().mockResolvedValue(vault) })}
+        bridge={nativeBridge({
+          unlock: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(vault)),
+        })}
       />,
     );
     await user.type(
@@ -4791,7 +5081,11 @@ describe("durable vault UI", () => {
     };
     render(
       <VaultApp
-        bridge={nativeBridge({ unlock: vi.fn().mockResolvedValue(vault) })}
+        bridge={nativeBridge({
+          unlock: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(vault)),
+        })}
       />,
     );
     await user.type(
@@ -5154,10 +5448,15 @@ describe("durable vault UI", () => {
     });
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        records: [record("a", "FAKE_Alpha.pdf"), record("b", "FAKE_Beta.pdf")],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          records: [
+            record("a", "FAKE_Alpha.pdf"),
+            record("b", "FAKE_Beta.pdf"),
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -5201,7 +5500,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -5261,10 +5562,12 @@ describe("durable vault UI", () => {
     unmount();
 
     const snapshot = await bridge.snapshot();
-    vi.mocked(bridge.snapshot).mockResolvedValue({
-      ...snapshot,
-      recovery: "writeFailed",
-    });
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot({
+        ...snapshot,
+        recovery: "writeFailed",
+      }),
+    );
     render(<VaultApp bridge={bridge} />);
     expect(
       await screen.findByRole("button", {
@@ -5596,12 +5899,21 @@ describe("durable vault UI", () => {
     };
     const hideRecord = vi.fn().mockResolvedValue(undefined);
     const unhideRecord = vi.fn().mockResolvedValue(undefined);
-    const hidden = { ...record, hidden: { atMs: 5, reason: "patient" } };
+    const hidden = {
+      ...record,
+      hidden: { atMs: 5, reason: "patient" as const },
+    };
     const snapshot = vi
       .fn()
-      .mockResolvedValueOnce({ ...emptySnapshot, records: [record] })
-      .mockResolvedValueOnce({ ...emptySnapshot, records: [hidden] })
-      .mockResolvedValue({ ...emptySnapshot, records: [record] });
+      .mockImplementationOnce(async () =>
+        captureSnapshot({ ...emptySnapshot, records: [record] }),
+      )
+      .mockImplementationOnce(async () =>
+        captureSnapshot({ ...emptySnapshot, records: [hidden] }),
+      )
+      .mockImplementation(async () =>
+        captureSnapshot({ ...emptySnapshot, records: [record] }),
+      );
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot,
@@ -5691,7 +6003,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     const document = await screen.findByRole("article", {
@@ -6019,7 +6333,9 @@ describe("durable vault UI", () => {
       let failExport!: (error: unknown) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
         pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
         exportToPicked: vi.fn(
           () =>
@@ -6241,16 +6557,17 @@ describe("durable vault UI", () => {
       vi.useFakeTimers();
       try {
         let finishImport!: (value: ImportOutcome) => void;
-        let finishRefresh!: (value: VaultSnapshot) => void;
+        let finishRefresh!: () => void;
         const bridge = nativeBridge({
           status: vi.fn().mockResolvedValue("unlocked"),
           snapshot: vi
             .fn()
-            .mockResolvedValueOnce(emptySnapshot)
+            .mockImplementationOnce(async () => captureSnapshot(emptySnapshot))
             .mockImplementationOnce(
               () =>
                 new Promise<VaultSnapshot>((resolve) => {
-                  finishRefresh = resolve;
+                  const captured = captureSnapshot(emptySnapshot);
+                  finishRefresh = () => resolve(captured);
                 }),
             ),
           importPickedFiles: vi.fn(
@@ -6288,7 +6605,7 @@ describe("durable vault UI", () => {
         expect(bridge.lock).not.toHaveBeenCalled();
         expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
 
-        await act(async () => finishRefresh(emptySnapshot));
+        await act(async () => finishRefresh());
         expect(bridge.lock).toHaveBeenCalledOnce();
         await expectOutcomeAfterUnlock("1 document encrypted and added.");
       } finally {
@@ -6306,16 +6623,17 @@ describe("durable vault UI", () => {
       vi.useFakeTimers();
       try {
         let finishImport!: (value: ImportOutcome) => void;
-        let finishRefresh!: (value: VaultSnapshot) => void;
+        let finishRefresh!: () => void;
         const bridge = nativeBridge({
           status: vi.fn().mockResolvedValue("unlocked"),
           snapshot: vi
             .fn()
-            .mockResolvedValueOnce(emptySnapshot)
+            .mockImplementationOnce(async () => captureSnapshot(emptySnapshot))
             .mockImplementationOnce(
               () =>
                 new Promise<VaultSnapshot>((resolve) => {
-                  finishRefresh = resolve;
+                  const captured = captureSnapshot(emptySnapshot);
+                  finishRefresh = () => resolve(captured);
                 }),
             ),
           importPickedFiles: vi.fn(
@@ -6353,7 +6671,7 @@ describe("durable vault UI", () => {
         expect(bridge.lock).not.toHaveBeenCalled();
         expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
 
-        await act(async () => finishRefresh(emptySnapshot));
+        await act(async () => finishRefresh());
         expect(bridge.lock).toHaveBeenCalledOnce();
         await expectOutcomeAfterUnlock("1 document encrypted and added.");
       } finally {
@@ -6565,7 +6883,9 @@ describe("durable vault UI", () => {
     let failExport!: (error: unknown) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
       exportToPicked: vi.fn(
         () =>
@@ -6820,7 +7140,9 @@ describe("durable vault UI", () => {
       let failExport!: (error: unknown) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
         pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
         exportToPicked: vi.fn(
           () =>
@@ -6891,7 +7213,9 @@ describe("durable vault UI", () => {
       let failExport!: (error: unknown) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
         pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
         exportToPicked: vi.fn(
           () =>
@@ -7865,7 +8189,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       pickExportDestination: vi.fn().mockResolvedValue(null),
     });
     render(<VaultApp bridge={bridge} />);
@@ -8029,7 +8355,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       pickImportFiles: vi.fn().mockResolvedValue(null),
     });
     render(<VaultApp bridge={bridge} />);
@@ -8111,23 +8439,31 @@ describe("durable vault UI", () => {
       importedAtMs: 1,
       available: true,
     };
-    let deliverSnapshot: (value: VaultSnapshot) => void = () => undefined;
+    let deliverSnapshot: () => void = () => undefined;
     const snapshot = vi
       .fn()
-      .mockResolvedValueOnce({ ...emptySnapshot, records: [record] })
+      .mockImplementationOnce(async () =>
+        captureSnapshot({ ...emptySnapshot, records: [record] }),
+      )
       .mockImplementationOnce(
         () =>
           new Promise<VaultSnapshot>((resolve) => {
-            deliverSnapshot = resolve;
+            const captured = captureSnapshot({
+              ...emptySnapshot,
+              records: [{ ...record, displayName: "FAKE_Renamed.pdf" }],
+            });
+            deliverSnapshot = () => resolve(captured);
           }),
       );
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot,
-      unlock: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        records: [{ ...record, displayName: "FAKE_Current.pdf" }],
-      }),
+      unlock: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          records: [{ ...record, displayName: "FAKE_Current.pdf" }],
+        }),
+      ),
       renameRecord: vi.fn().mockResolvedValue(undefined),
     });
     render(<VaultApp bridge={bridge} />);
@@ -8167,12 +8503,7 @@ describe("durable vault UI", () => {
       await screen.findByText(humanText("FAKE_Current.pdf")),
     ).toBeVisible();
 
-    await act(async () =>
-      deliverSnapshot({
-        ...emptySnapshot,
-        records: [{ ...record, displayName: "FAKE_Renamed.pdf" }],
-      }),
-    );
+    await act(async () => deliverSnapshot());
     expect(screen.getByText(humanText("FAKE_Current.pdf"))).toBeVisible();
     expect(
       screen.queryByText(humanText(/FAKE_Renamed/)),
@@ -8894,7 +9225,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
@@ -9117,7 +9450,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
@@ -9167,23 +9502,25 @@ describe("durable vault UI", () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "lostObjects",
-        records: [
-          {
-            id: "record-lost",
-            profileId: "profile-1",
-            folderIds: [],
-            displayName: "FAKE_Lost.pdf",
-            sourceLabel: "Manual import — unverified",
-            mediaType: "application/octet-stream",
-            plaintextSize: 2048,
-            importedAtMs: 1,
-            available: false,
-          },
-        ],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records: [
+            {
+              id: "record-lost",
+              profileId: "profile-1",
+              folderIds: [],
+              displayName: "FAKE_Lost.pdf",
+              sourceLabel: "Manual import — unverified",
+              mediaType: "application/octet-stream",
+              plaintextSize: 2048,
+              importedAtMs: 1,
+              available: false,
+            },
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
     expect(
@@ -9237,7 +9574,7 @@ describe("durable vault UI", () => {
     let shown = lost;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn(async () => structuredClone(shown)),
+      snapshot: vi.fn(async () => captureSnapshot(shown)),
       hideUnavailableRecords: vi.fn(async (ids) => {
         shown = {
           ...lost,
@@ -9330,16 +9667,20 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValueOnce({
-          ...emptySnapshot,
-          recovery: "lostObjects",
-          records: [lost, kept],
-        })
-        .mockResolvedValue({
-          ...emptySnapshot,
-          recovery: null,
-          records: [kept],
-        }),
+        .mockImplementationOnce(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: "lostObjects",
+            records: [lost, kept],
+          }),
+        )
+        .mockImplementation(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: null,
+            records: [kept],
+          }),
+        ),
       hideUnavailableRecords,
     });
     render(<VaultApp bridge={bridge} />);
@@ -9433,13 +9774,17 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValueOnce({
-          ...emptySnapshot,
-          recovery: "lostObjects",
-          records: [lost],
-        })
+        .mockImplementationOnce(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: "lostObjects",
+            records: [lost],
+          }),
+        )
         // The removal committed, but its redundant write failed.
-        .mockResolvedValue({ ...emptySnapshot, recovery: "writeFailed" }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, recovery: "writeFailed" }),
+        ),
       hideUnavailableRecords: vi.fn().mockResolvedValue(["record-lost"]),
     });
     render(<VaultApp bridge={bridge} />);
@@ -9464,10 +9809,12 @@ describe("durable vault UI", () => {
   it("offers no removal when recovery is not about missing files", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "unreadableSlot",
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "unreadableSlot",
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
     expect(
@@ -9495,11 +9842,13 @@ describe("durable vault UI", () => {
     }));
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "lostObjects",
-        records,
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records,
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
@@ -9546,17 +9895,21 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValueOnce({
-          ...emptySnapshot,
-          recovery: "lostObjects",
-          records: [record("a", false), record("b", true)],
-        })
+        .mockImplementationOnce(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: "lostObjects",
+            records: [record("a", false), record("b", true)],
+          }),
+        )
         // Another file went missing before the removal ran.
-        .mockResolvedValue({
-          ...emptySnapshot,
-          recovery: "lostObjects",
-          records: [record("a", false), record("b", false)],
-        }),
+        .mockImplementation(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: "lostObjects",
+            records: [record("a", false), record("b", false)],
+          }),
+        ),
       hideUnavailableRecords: vi.fn().mockRejectedValue({
         code: "removal_changed",
         message: "FAKE the vault changed.",
@@ -9624,23 +9977,25 @@ describe("durable vault UI", () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "unreadableSlot",
-        records: [
-          {
-            id: "record-1",
-            profileId: "profile-1",
-            folderIds: [],
-            displayName: "FAKE_Unreadable.pdf",
-            sourceLabel: "Manual import — unverified",
-            mediaType: "application/pdf",
-            plaintextSize: 2048,
-            importedAtMs: 1,
-            available: false,
-          },
-        ],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "unreadableSlot",
+          records: [
+            {
+              id: "record-1",
+              profileId: "profile-1",
+              folderIds: [],
+              displayName: "FAKE_Unreadable.pdf",
+              sourceLabel: "Manual import — unverified",
+              mediaType: "application/pdf",
+              plaintextSize: 2048,
+              importedAtMs: 1,
+              available: false,
+            },
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
     expect(
@@ -9664,23 +10019,25 @@ describe("durable vault UI", () => {
       '<img src="https://attacker.invalid/leak">\u202ereport.pdf';
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "writeFailed",
-        records: [
-          {
-            id: "record-hostile",
-            profileId: "profile-1",
-            folderIds: [],
-            displayName: hostileName,
-            sourceLabel: "Manual import — unverified",
-            mediaType: "application/octet-stream",
-            plaintextSize: 42,
-            importedAtMs: 1,
-            available: true,
-          },
-        ],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "writeFailed",
+          records: [
+            {
+              id: "record-hostile",
+              profileId: "profile-1",
+              folderIds: [],
+              displayName: hostileName,
+              sourceLabel: "Manual import — unverified",
+              mediaType: "application/octet-stream",
+              plaintextSize: 42,
+              importedAtMs: 1,
+              available: true,
+            },
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -9839,7 +10196,9 @@ describe("durable vault UI", () => {
     let failExport!: (error: unknown) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
       exportToPicked: vi.fn(
         () =>
@@ -9878,7 +10237,9 @@ describe("durable vault UI", () => {
       let failExport!: (error: unknown) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
         pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
         exportToPicked: vi.fn(
           () =>
@@ -9920,7 +10281,9 @@ describe("durable vault UI", () => {
     let finishExport!: () => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
       exportToPicked: vi.fn(
         () =>
@@ -9952,7 +10315,9 @@ describe("durable vault UI", () => {
     let failExport!: (error: unknown) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
       exportToPicked: vi.fn(
         () =>
@@ -9976,7 +10341,9 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", {
       name: humanText("Unlock your vault"),
     });
-    vi.mocked(bridge.snapshot).mockResolvedValue(snapshotWithRecord);
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(snapshotWithRecord),
+    );
     await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
   });
 });
@@ -10190,7 +10557,9 @@ describe("the warning before the automatic lock (#68)", () => {
     const bridge = await openLibrary(
       nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       }),
     );
     await act(async () => {

@@ -21,6 +21,7 @@ import {
   vaultErrorMessage,
   vaultErrorNote,
   type ReceivedFile,
+  type SnapshotCapture,
   type VaultBridge,
   type VaultSnapshot,
   type VaultStatus,
@@ -195,6 +196,16 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Incremented whenever the vault locks. Work started in an earlier session
   // must not put its decrypted results or document names back on screen.
   const sessionRef = useRef(0);
+  const appliedCaptureRef = useRef<
+    (SnapshotCapture & { owner: number }) | null
+  >(null);
+  const installOpeningSnapshot = (next: VaultSnapshot) => {
+    appliedCaptureRef.current = {
+      ...next.capture,
+      owner: sessionRef.current,
+    };
+    setSnapshot(next);
+  };
 
   useEffect(() => {
     // HTML drag/drop owns in-vault moves. External files still use the native
@@ -300,6 +311,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     try {
       await bridge.lock();
       sessionRef.current += 1;
+      appliedCaptureRef.current = null;
       setSnapshot(null);
       // A key shown but not set up ended with the session.
       setOpeningRecoverySetup(null);
@@ -417,7 +429,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       .then(async (next) => {
         if (next === "unlocked") {
           const current = await bridge.snapshot();
-          if (active) setSnapshot(current);
+          if (active) installOpeningSnapshot(current);
         }
         if (active) setStatus(next);
       })
@@ -751,22 +763,25 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
 
   // These are handed to the library, which unmounts on lock. A call that is
   // still in flight then belongs to a finished session and is ignored.
-  const refreshIssuedRef = useRef(0);
-  const refreshAppliedRef = useRef(0);
   const session = sessionRef.current;
   const inSession = () => sessionRef.current === session;
   // `known` is the vault as a command that changed it returned it, taken
   // under the same guard as the change: nothing to ask again.
   const refresh = async (known?: VaultSnapshot) => {
-    const request = ++refreshIssuedRef.current;
     const next = known ?? (await bridge.snapshot());
-    // Received intake can refresh alongside a library action. An older reply
-    // must not roll back a later successful result. Compare applied successes,
-    // so a later failed request does not discard a usable earlier result.
-    if (inSession() && request > refreshAppliedRef.current) {
-      refreshAppliedRef.current = request;
+    const applied = appliedCaptureRef.current;
+    // Native captures are ordered under the session guard, including known
+    // results delivered late. Failed requests advance no applied capture.
+    if (
+      inSession() &&
+      applied?.owner === session &&
+      next.capture.epoch === applied.epoch &&
+      next.capture.sequence > applied.sequence
+    ) {
+      appliedCaptureRef.current = { ...next.capture, owner: session };
       setSnapshot(next);
     }
+    // A stale snapshot can still acknowledge a successful native key write.
     return next;
   };
   const setSessionNotice = (message: UiText) => {
@@ -872,7 +887,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         onCreate={(profile, passphrase) =>
           run(
             async () => {
-              setSnapshot(await bridge.create(passphrase, profile));
+              installOpeningSnapshot(await bridge.create(passphrase, profile));
               // Nothing from a vault that is gone.
               pendingOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);
@@ -889,6 +904,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               if (begun.locked) {
                 // The vault locked meanwhile (its automatic lock): it is shown
                 // locked, not open on what the lock ended.
+                appliedCaptureRef.current = null;
                 setSnapshot(null);
                 setStatus("locked");
                 setNotice(
@@ -945,7 +961,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               recoveryOfferDue(Date.now());
             if (offer) recordRecoveryOffer(Date.now());
             setOpeningRecoverySetup(offer ? { vault: "unlocked" } : null);
-            setSnapshot(current);
+            installOpeningSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
             // With the offer open, its dialog says that the vault is open,
@@ -969,7 +985,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               await bridge.recover(recoveryKey, newPassphrase);
             // A vault opened with its recovery key has one.
             setOpeningRecoverySetup(null);
-            setSnapshot(current);
+            installOpeningSnapshot(current);
             setConcealed(false);
             setStatus("unlocked");
             const outcome = takeHeldOutcome(current);

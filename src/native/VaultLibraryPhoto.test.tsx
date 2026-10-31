@@ -18,6 +18,18 @@ import {
 } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const NAME = /^Photo, [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}\.\d{2} [AP]M\.jpg$/;
 const PHOTO_URL = "data:image/jpeg;base64,/9j/FAKE";
 
@@ -35,6 +47,7 @@ const record = (id: string, displayName: string, folderIds: string[] = []) =>
   }) satisfies VaultRecord;
 
 const base: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [{ id: "profile-1", displayName: "FAKE Patient", createdAtMs: 1 }],
   folders: [
     {
@@ -99,7 +112,7 @@ function renderLibrary(
     isPhoto: vi.fn(async () => true),
     isLockedPdf: vi.fn(async () => false),
     viewPhoto: vi.fn(async () => PHOTO_URL),
-    snapshot: vi.fn(async () => current),
+    snapshot: vi.fn(async () => captureSnapshot(current)),
     ...bridgeOverrides,
   } as unknown as VaultBridge;
   const runFailure = vi.fn<(failure: unknown) => void>();

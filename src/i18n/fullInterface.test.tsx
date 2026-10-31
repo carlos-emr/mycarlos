@@ -20,6 +20,18 @@ import { printedDate } from "../native/KeyLabel";
 import { setDeviceLocale } from "../test/deviceLocale";
 import { visibleText } from "../test/humanText";
 
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const record: VaultRecord = {
   id: "record",
   profileId: "person",
@@ -33,6 +45,7 @@ const record: VaultRecord = {
   available: true,
 };
 const snapshot: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [
     { id: "person", displayName: "FAKE {name} Avery", createdAtMs: 1 },
     { id: "shared", displayName: "Shared with me", createdAtMs: 1 },
@@ -55,7 +68,7 @@ function bridge() {
   return {
     native: true,
     status: vi.fn().mockResolvedValue("unlocked"),
-    snapshot: vi.fn().mockResolvedValue(snapshot),
+    snapshot: vi.fn().mockImplementation(async () => captureSnapshot(snapshot)),
     platform: vi.fn().mockResolvedValue("windows"),
     listReceived: vi.fn().mockResolvedValue({
       files: [],

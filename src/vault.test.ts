@@ -665,6 +665,44 @@ describe("errors the app words itself, in the language in use (#46)", () => {
   });
 });
 
+describe("native snapshot capture metadata", () => {
+  it("preserves capture stamps in every snapshot-returning native result", async () => {
+    invoke.mockReset();
+    const snapshot = {
+      capture: {
+        epoch: "00000000-0000-4000-8000-000000000185",
+        sequence: Number.MAX_SAFE_INTEGER,
+      },
+      profiles: [],
+      folders: [],
+      records: [],
+      recovery: null,
+    };
+    const bridge = createVaultBridge();
+    for (const read of [
+      () => bridge.create("FAKE passphrase", "FAKE Person"),
+      () => bridge.unlock("FAKE passphrase"),
+      () => bridge.snapshot(),
+      () => bridge.confirmRecoveryKey([{ index: 0, value: "FAKE" }]),
+    ]) {
+      invoke.mockResolvedValueOnce(snapshot);
+      expect(await read()).toEqual(snapshot);
+    }
+    const recovered = { passphraseReplaced: true, snapshot };
+    invoke.mockResolvedValueOnce(recovered);
+    expect(await bridge.recover("FAKE key", "FAKE replacement")).toEqual(
+      recovered,
+    );
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "vault_create",
+      "vault_unlock",
+      "vault_snapshot",
+      "vault_recovery_key_confirm",
+      "vault_recover",
+    ]);
+  });
+});
+
 describe("localized native presentation contracts", () => {
   it("sends only the selected locale and operation data to native confirmations", async () => {
     invoke.mockReset();
