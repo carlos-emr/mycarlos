@@ -1141,6 +1141,89 @@ describe("durable vault UI", () => {
     await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
   }
 
+  it.each(["same session", "after another unlock"] as const)(
+    "counts shared intake only for the session whose refresh completed: %s",
+    async (when) => {
+      const user = userEvent.setup();
+      const { bridge, vault, arrive } = sharedVault(["FAKE Patient"], [], {
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      let holdNext = false;
+      let finish: (() => void) | undefined;
+      vi.mocked(bridge.snapshot).mockImplementation(() => {
+        const captured = structuredClone(vault);
+        if (!holdNext) return Promise.resolve(captured);
+        holdNext = false;
+        return new Promise<VaultSnapshot>((resolve) => {
+          finish = () => resolve(captured);
+        });
+      });
+      const complete = async () => {
+        const reply = finish;
+        finish = undefined;
+        if (reply) await act(async () => reply());
+      };
+      onTestFinished(complete);
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      holdNext = true;
+      arrive("FAKE_Before_lock.pdf");
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      await waitFor(() => expect(finish).toBeTypeOf("function"));
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+      expect(vault.records).toHaveLength(1);
+
+      if (when === "after another unlock") {
+        let state: DocumentVisibilityState = "visible";
+        const visibility = vi
+          .spyOn(document, "visibilityState", "get")
+          .mockImplementation(() => state);
+        try {
+          await act(async () => {
+            state = "hidden";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          });
+          await act(async () => {
+            state = "visible";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await user.type(
+            screen.getByLabelText(humanText("Passphrase")),
+            "river-azimuth-cobalt-sparrow-934",
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Unlock") }),
+          );
+          await screen.findByRole("heading", { name: humanText("My records") });
+          expect(
+            screen.getByRole("button", { name: humanText("Shared with me") }),
+          ).toBeVisible();
+        } finally {
+          visibility.mockRestore();
+        }
+      }
+
+      await complete();
+      const shared = screen.getByRole("button", {
+        name: humanText(
+          when === "same session" ? "Shared with me, 1 new" : "Shared with me",
+        ),
+      });
+      await user.click(shared);
+      expect(screen.getByText(humanText("FAKE_Before_lock.pdf"))).toBeVisible();
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+      expect(bridge.lock).toHaveBeenCalledTimes(
+        when === "same session" ? 0 : 1,
+      );
+      expect(bridge.unlock).toHaveBeenCalledTimes(
+        when === "same session" ? 0 : 1,
+      );
+    },
+  );
+
   it("keeps shared files waiting while locked, puts them in Shared with me at unlock, and moves one to the person (#61)", async () => {
     const user = userEvent.setup();
     const { bridge } = sharedVault(

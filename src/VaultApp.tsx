@@ -794,6 +794,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setReceived([]);
       if (outcome.imported.length) {
         await refresh();
+        if (!inSession()) return;
         setSharedNew((count) => count + outcome.imported.length);
       }
       const said = () => [
