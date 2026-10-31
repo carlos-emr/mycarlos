@@ -461,7 +461,7 @@ export interface VaultBridge {
     width: number,
     password?: string,
   ): Promise<ViewedPage>;
-  /** Stops a page still being drawn: the reader closed. */
+  /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
   reset(confirmation: string): Promise<boolean>;
 }
@@ -687,6 +687,10 @@ function isNativeRuntime(): boolean {
 
 export function createVaultBridge(): VaultBridge {
   const native = isNativeRuntime();
+  // A delayed cancellation must finish before a newer page takes a native
+  // ticket. Keep this on the bridge, including across reader close/reopen.
+  let pendingViewCancellation: Promise<void> | undefined;
+  let viewGeneration = 0;
   return {
     native,
     status: () => invoke<VaultStatus>("vault_status"),
@@ -700,7 +704,10 @@ export function createVaultBridge(): VaultBridge {
       }),
     unlock: (passphrase) =>
       invoke<VaultSnapshot>("vault_unlock", { request: { passphrase } }),
-    lock: () => invoke<void>("vault_lock"),
+    lock: () => {
+      viewGeneration += 1;
+      return invoke<void>("vault_lock");
+    },
     touch: () => invoke<void>("vault_touch"),
     setAutoLock: (minutes) =>
       invoke<void>("vault_set_auto_lock", { request: { minutes } }),
@@ -828,11 +835,33 @@ export function createVaultBridge(): VaultBridge {
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
       }),
-    viewPage: (recordId, page, width, password) =>
-      invoke<ViewedPage>("vault_view_page", {
+    viewPage: async (recordId, page, width, password) => {
+      const generation = ++viewGeneration;
+      if (pendingViewCancellation) {
+        // A failed cancel is still reported to its caller. A new native page
+        // ticket can supersede older work, so it need not strand this reader.
+        await pendingViewCancellation.catch(() => undefined);
+      }
+      if (generation !== viewGeneration) throw { code: "cancelled" };
+      return invoke<ViewedPage>("vault_view_page", {
         request: { recordId, page, width, password: password ?? null },
-      }),
-    cancelView: () => invoke<void>("vault_view_cancel"),
+      });
+    },
+    cancelView: () => {
+      viewGeneration += 1;
+      // No newer page can start while this is pending, so one cancellation
+      // also covers repeated close/supersede calls during the same wait.
+      if (pendingViewCancellation) return pendingViewCancellation;
+      const cancellation = invoke<void>("vault_view_cancel");
+      pendingViewCancellation = cancellation;
+      const clear = () => {
+        if (pendingViewCancellation === cancellation) {
+          pendingViewCancellation = undefined;
+        }
+      };
+      void cancellation.then(clear, clear);
+      return cancellation;
+    },
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>

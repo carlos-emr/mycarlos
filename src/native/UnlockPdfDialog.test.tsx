@@ -35,8 +35,11 @@ describe("the password prompt for a locked PDF", () => {
     const user = userEvent.setup();
     const { onUnlock } = renderDialog();
     const field = screen.getByLabelText("Document password");
-    await user.type(field, "FAKE-portal-2026{Enter}");
-    expect(onUnlock).toHaveBeenCalledExactlyOnceWith("FAKE-portal-2026");
+    const rawPassword = "  FAKE cafe\u0301 password  ";
+    await user.type(field, rawPassword);
+    expect(field).toHaveValue(rawPassword);
+    await user.keyboard("{Enter}");
+    expect(onUnlock).toHaveBeenCalledExactlyOnceWith(rawPassword);
     expect(field).toHaveValue("");
   });
 

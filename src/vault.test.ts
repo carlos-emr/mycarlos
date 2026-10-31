@@ -17,7 +17,10 @@ import {
   namedDamage,
   vaultErrorMessage,
   type VaultRecord,
+  type ViewedPage,
 } from "./vault";
+
+const PDF_PASSWORD = "  FAKE cafe\u0301 password  ";
 
 describe("native idle deadline bridge", () => {
   beforeEach(() => invoke.mockReset());
@@ -55,7 +58,7 @@ describe("native idle deadline bridge", () => {
     await bridge.acceptReceived();
     await bridge.moveToPerson(["record-1"], "profile-1", ["folder-1"]);
     await bridge.viewPage("record-1", 0, 800);
-    await bridge.viewPage("record-1", 1, 800, "FAKE-portal-2026");
+    await bridge.viewPage("record-1", 1, 800, PDF_PASSWORD);
     expect(invoke.mock.calls).toEqual([
       ["received_list"],
       ["received_accept"],
@@ -87,11 +90,187 @@ describe("native idle deadline bridge", () => {
             recordId: "record-1",
             page: 1,
             width: 800,
-            password: "FAKE-portal-2026",
+            password: PDF_PASSWORD,
           },
         },
       ],
     ]);
+  });
+
+  it("waits for cancellation completion before invoking a newer page", async () => {
+    let finishCancel!: () => void;
+    const rendered = {
+      pageCount: 1,
+      width: 1600,
+      height: 2000,
+      image: "FAKE PNG",
+      text: "FAKE page",
+    } satisfies ViewedPage;
+    invoke.mockImplementation((command) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => {
+            finishCancel = resolve;
+          })
+        : Promise.resolve(rendered),
+    );
+    const bridge = createVaultBridge();
+    const cancellation = bridge.cancelView();
+    const newer = bridge.viewPage(
+      "record-1",
+      0,
+      1600,
+      "FAKE-document-password",
+    );
+    expect(invoke.mock.calls).toEqual([["vault_view_cancel"]]);
+    finishCancel();
+    await cancellation;
+    await expect(newer).resolves.toEqual(rendered);
+    expect(invoke.mock.calls).toEqual([
+      ["vault_view_cancel"],
+      [
+        "vault_view_page",
+        {
+          request: {
+            recordId: "record-1",
+            page: 0,
+            width: 1600,
+            password: "FAKE-document-password",
+          },
+        },
+      ],
+    ]);
+  });
+
+  it("coalesces pending cancellations before starting another page", async () => {
+    const finishes: Array<() => void> = [];
+    invoke.mockImplementation((command) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => {
+            finishes.push(resolve);
+          })
+        : Promise.resolve(undefined),
+    );
+    const bridge = createVaultBridge();
+    const first = bridge.cancelView();
+    const second = bridge.cancelView();
+    const page = bridge.viewPage("record-1", 0, 1600);
+    expect(invoke.mock.calls).toEqual([["vault_view_cancel"]]);
+    expect(second).toBe(first);
+    expect(finishes).toHaveLength(1);
+    finishes[0]();
+    await Promise.all([first, second, page]);
+    expect(invoke).toHaveBeenLastCalledWith("vault_view_page", {
+      request: { recordId: "record-1", page: 0, width: 1600, password: null },
+    });
+  });
+
+  it("discards queued page sizes superseded while cancellation is pending", async () => {
+    let finishCancel!: () => void;
+    invoke.mockImplementation((command) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => {
+            finishCancel = resolve;
+          })
+        : Promise.resolve(undefined),
+    );
+    const bridge = createVaultBridge();
+    const cancellation = bridge.cancelView();
+    const old = bridge.viewPage("record-1", 0, 1000);
+    const discarded = expect(old).rejects.toMatchObject({ code: "cancelled" });
+    const latest = bridge.viewPage("record-1", 0, 1600);
+    finishCancel();
+    await Promise.all([cancellation, discarded, latest]);
+    expect(invoke.mock.calls).toEqual([
+      ["vault_view_cancel"],
+      [
+        "vault_view_page",
+        {
+          request: {
+            recordId: "record-1",
+            page: 0,
+            width: 1600,
+            password: null,
+          },
+        },
+      ],
+    ]);
+  });
+
+  it.each(["close", "lock"])(
+    "discards a waiting page when the reader must %s",
+    async (reason) => {
+      let finishCancel!: () => void;
+      let cancels = 0;
+      invoke.mockImplementation((command) =>
+        command === "vault_view_cancel" && cancels++ === 0
+          ? new Promise<void>((resolve) => {
+              finishCancel = resolve;
+            })
+          : Promise.resolve(undefined),
+      );
+      const bridge = createVaultBridge();
+      const cancellation = bridge.cancelView();
+      const waiting = bridge.viewPage("record-1", 0, 1600);
+      const discarded = expect(waiting).rejects.toMatchObject({
+        code: "cancelled",
+      });
+      const closing = reason === "lock" ? bridge.lock() : bridge.cancelView();
+      finishCancel();
+      await Promise.all([cancellation, closing, discarded]);
+      expect(
+        invoke.mock.calls.some(([command]) => command === "vault_view_page"),
+      ).toBe(false);
+      expect(invoke).toHaveBeenLastCalledWith(
+        reason === "lock" ? "vault_lock" : "vault_view_cancel",
+      );
+    },
+  );
+
+  it("reports cancellation failure without stranding the next page", async () => {
+    let rejectCancel!: (reason: unknown) => void;
+    const failure = { code: "FAKE_cancel_failure" };
+    invoke.mockImplementation((command) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((_resolve, reject) => {
+            rejectCancel = reject;
+          })
+        : Promise.resolve("FAKE rendered page"),
+    );
+    const bridge = createVaultBridge();
+    const cancellation = bridge.cancelView();
+    const reported = expect(cancellation).rejects.toBe(failure);
+    const waiting = bridge.viewPage("record-1", 0, 1600);
+    rejectCancel(failure);
+    await reported;
+    await expect(waiting).resolves.toBe("FAKE rendered page");
+    expect(invoke).toHaveBeenLastCalledWith("vault_view_page", {
+      request: { recordId: "record-1", page: 0, width: 1600, password: null },
+    });
+  });
+
+  it("keeps pending cancellation state on its own bridge instance", async () => {
+    let finishCancel!: () => void;
+    invoke.mockImplementation((command) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => {
+            finishCancel = resolve;
+          })
+        : Promise.resolve(undefined),
+    );
+    const first = createVaultBridge();
+    const second = createVaultBridge();
+    const cancellation = first.cancelView();
+    const waiting = first.viewPage("record-1", 0, 1000);
+    await second.viewPage("record-2", 0, 800);
+    expect(invoke).toHaveBeenLastCalledWith("vault_view_page", {
+      request: { recordId: "record-2", page: 0, width: 800, password: null },
+    });
+    expect(invoke).toHaveBeenCalledTimes(2);
+    finishCancel();
+    await Promise.all([cancellation, waiting]);
+    expect(invoke).toHaveBeenLastCalledWith("vault_view_page", {
+      request: { recordId: "record-1", page: 0, width: 1000, password: null },
+    });
   });
 
   it("sends a photo as one body: its target's length, the target, then the JPEG", async () => {
@@ -147,9 +326,9 @@ describe("native idle deadline bridge", () => {
       request: { recordId: "record-1" },
     });
     invoke.mockResolvedValue({ recordId: "copy-1", originalName: "FAKE" });
-    await bridge.unlockPdf("record-1", "FAKE-portal-2026");
+    await bridge.unlockPdf("record-1", PDF_PASSWORD);
     expect(invoke).toHaveBeenLastCalledWith("vault_unlock_pdf", {
-      request: { recordId: "record-1", password: "FAKE-portal-2026" },
+      request: { recordId: "record-1", password: PDF_PASSWORD },
     });
     expect(isWrongPdfPassword({ code: "pdf_wrong_password" })).toBe(true);
     expect(isWrongPdfPassword({ code: "pdf_unlock_failed" })).toBe(false);
