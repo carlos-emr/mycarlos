@@ -283,6 +283,274 @@ export async function testNativeDialogs(
         await expect(
           page.getByRole("button", { name: photoName, exact: true }),
         ).toBeVisible();
+        // Read a public FAKE PDF through the installed app and its own helper.
+        const pdfPath = resolve(
+          "src-tauri/tests/fixtures/locked-pdf/text-original.pdf",
+        );
+        expect(
+          createHash("sha256")
+            .update(await readFile(pdfPath))
+            .digest("hex"),
+          "The documented synthetic two-page PDF fixture",
+        ).toBe(
+          "41e61a36137b8f4c79a284a73adb36d634708625831c88c60e05e961756d51a9",
+        );
+        const imported = await Promise.allSettled([
+          page
+            .getByRole("button", {
+              name: translate("en", "interface.VaultApp.chooseFilesToImport"),
+              exact: true,
+            })
+            .click(),
+          native("FILE_OPEN", "file", pdfPath),
+        ]);
+        for (const result of imported)
+          if (result.status === "rejected") throw result.reason;
+        await expect(
+          page.getByText(
+            translate("en", "interface.notice.imported", { count: 1 }),
+            {
+              exact: true,
+            },
+          ),
+        ).toBeVisible();
+        const pdfName = "text-original.pdf";
+        const pdfRow = page.getByRole("button", { name: pdfName, exact: true });
+        await expect(pdfRow).toBeVisible();
+        await pdfRow.click();
+        const pdfDetails = page.getByRole("dialog", {
+          name: pdfName,
+          exact: true,
+        });
+        await pdfDetails
+          .getByRole("button", {
+            name: translate("en", "interface.RecordDetails.read"),
+            exact: true,
+          })
+          .click();
+        const reader = page.getByRole("dialog", { name: pdfName, exact: true });
+        const picture = reader.getByRole("img", {
+          name: translate("en", "interface.reader.textFollows", {
+            page: 1,
+            total: 2,
+          }),
+          exact: true,
+        });
+        const pageArea = reader.getByRole("region", {
+          name: translate("en", "interface.reader.page", { page: 1 }),
+          exact: true,
+        });
+        const where = translate("en", "interface.reader.where", {
+          page: 1,
+          total: 2,
+        });
+        await expect(picture).toBeVisible();
+        await expect(reader.getByRole("status")).toHaveText(where);
+        await expect(pageArea).toHaveAttribute("aria-busy", "false");
+        await expect
+          .poll(() =>
+            picture.evaluate(
+              (image: HTMLImageElement) =>
+                image.complete &&
+                image.naturalWidth > 0 &&
+                image.naturalHeight > 0,
+            ),
+          )
+          .toBe(true);
+        await expect(
+          reader.getByText(
+            translate("en", "interface.reader.zoom", { percent: 100 }),
+            {
+              exact: true,
+            },
+          ),
+        ).toBeVisible();
+        await reader
+          .getByText(
+            translate("en", "interface.DocumentReader.textOnThisPage"),
+            {
+              exact: true,
+            },
+          )
+          .click();
+        const pageText = reader.locator(".native-reader-text div");
+        await expect(pageText).toBeVisible();
+        await expect(pageText).toContainText(
+          "FAKE Clinic - test document, not a real record",
+        );
+        await expect(pageText).toContainText(
+          "FAKE Hemoglobin 140 g/L (made-up value)",
+        );
+        await expect(pageText).toContainText("Page 1 of 2");
+        const firstPageSource = await picture.getAttribute("src");
+        if (!firstPageSource)
+          throw new Error("The first rendered PDF page is missing");
+        await reader
+          .getByRole("button", {
+            name: translate("en", "interface.DocumentReader.nextPage"),
+            exact: true,
+          })
+          .click();
+        const secondPicture = reader.getByRole("img", {
+          name: translate("en", "interface.reader.textFollows", {
+            page: 2,
+            total: 2,
+          }),
+          exact: true,
+        });
+        await expect(secondPicture).toBeVisible();
+        await expect(reader.getByRole("status")).toHaveText(
+          translate("en", "interface.reader.where", { page: 2, total: 2 }),
+        );
+        await expect(
+          reader.getByRole("region", {
+            name: translate("en", "interface.reader.page", { page: 2 }),
+            exact: true,
+          }),
+        ).toHaveAttribute("aria-busy", "false");
+        await expect
+          .poll(() =>
+            secondPicture.evaluate(
+              (image: HTMLImageElement, first) =>
+                image.complete &&
+                image.naturalWidth > 0 &&
+                image.naturalHeight > 0 &&
+                image.src !== first,
+              firstPageSource,
+            ),
+          )
+          .toBe(true);
+        await reader
+          .getByText(
+            translate("en", "interface.DocumentReader.textOnThisPage"),
+            {
+              exact: true,
+            },
+          )
+          .click();
+        await expect(pageText).toBeVisible();
+        await expect(pageText).toContainText("Page 2 of 2");
+        await expect(pageText).not.toContainText("Page 1 of 2");
+        await reader
+          .getByRole("button", {
+            name: translate("en", "interface.DocumentReader.previousPage"),
+            exact: true,
+          })
+          .click();
+        await expect(picture).toBeVisible();
+        await expect(reader.getByRole("status")).toHaveText(where);
+        await expect(pageArea).toHaveAttribute("aria-busy", "false");
+        await expect
+          .poll(() =>
+            picture.evaluate(
+              (image: HTMLImageElement) =>
+                image.complete &&
+                image.naturalWidth > 0 &&
+                image.naturalHeight > 0,
+            ),
+          )
+          .toBe(true);
+        await reader
+          .getByText(
+            translate("en", "interface.DocumentReader.textOnThisPage"),
+            {
+              exact: true,
+            },
+          )
+          .click();
+        await expect(pageText).toBeVisible();
+        await expect(pageText).toContainText("Page 1 of 2");
+        await expect(pageText).not.toContainText("Page 2 of 2");
+        const fitted = await picture.evaluate((image: HTMLImageElement) => ({
+          raster: image.naturalWidth,
+          css: image.getBoundingClientRect().width,
+        }));
+        await reader
+          .getByRole("button", {
+            name: translate("en", "interface.DocumentReader.larger"),
+            exact: true,
+          })
+          .click();
+        await expect(
+          reader.getByText(
+            translate("en", "interface.reader.zoom", { percent: 125 }),
+            {
+              exact: true,
+            },
+          ),
+        ).toBeVisible();
+        // Scaling the old image is not enough: await the helper's sharper raster.
+        await expect
+          .poll(() =>
+            picture.evaluate((image: HTMLImageElement) =>
+              image.complete ? image.naturalWidth : 0,
+            ),
+          )
+          .toBeGreaterThan(fitted.raster);
+        await expect(reader.getByRole("status")).toHaveText(where);
+        await expect(pageArea).toHaveAttribute("aria-busy", "false");
+        expect(
+          await picture.evaluate(
+            (image) => image.getBoundingClientRect().width,
+          ),
+        ).toBeGreaterThan(fitted.css);
+        await page.screenshot({
+          path: testInfo.outputPath("native-pdf-reader-enlarged.png"),
+        });
+        const fit = reader.getByRole("button", {
+          name: translate("en", "interface.DocumentReader.fitWidth"),
+          exact: true,
+        });
+        await fit.click();
+        await expect(
+          reader.getByText(
+            translate("en", "interface.reader.zoom", { percent: 100 }),
+            {
+              exact: true,
+            },
+          ),
+        ).toBeVisible();
+        await expect(fit).toBeDisabled();
+        await expect
+          .poll(() =>
+            picture.evaluate((image: HTMLImageElement) =>
+              image.complete ? image.naturalWidth : 0,
+            ),
+          )
+          .toBe(fitted.raster);
+        await expect(reader.getByRole("status")).toHaveText(where);
+        await expect(pageArea).toHaveAttribute("aria-busy", "false");
+        await expect
+          .poll(() =>
+            picture.evaluate((image) => {
+              const area = image.parentElement!;
+              const style = getComputedStyle(area);
+              const available =
+                area.clientWidth -
+                parseFloat(style.paddingLeft) -
+                parseFloat(style.paddingRight);
+              return Math.abs(image.getBoundingClientRect().width - available);
+            }),
+          )
+          .toBeLessThanOrEqual(1);
+        expect(
+          await pageArea.evaluate(
+            (area) => area.scrollWidth <= area.clientWidth,
+          ),
+        ).toBe(true);
+        await expect(pageText).toContainText("Page 1 of 2");
+        await page.screenshot({
+          path: testInfo.outputPath("native-pdf-reader-refitted.png"),
+        });
+        await reader
+          .getByRole("button", { name: "Close", exact: true })
+          .click();
+        // PDF Read removed Details; Close returns directly to the library.
+        await expect(reader).toHaveCount(0);
+        await expect(picture).toHaveCount(0);
+        await expect(records).toBeVisible();
+        await expect(pdfRow).toBeVisible();
+        await expect(pdfRow).toBeFocused();
         await page
           .getByRole("button", { name: "Unlocked · Lock now", exact: true })
           .click();
