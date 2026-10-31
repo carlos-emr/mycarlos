@@ -7623,6 +7623,100 @@ describe("durable vault UI", () => {
     }
   });
 
+  it("keeps an existing person draft while adding another profile refreshes the list", async () => {
+    const user = userEvent.setup();
+    const vault = structuredClone(emptySnapshot);
+    vault.profiles[0].displayName = "FAKE Existing";
+    vault.profiles[0].fullName = "FAKE Original Person";
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => structuredClone(vault)),
+      createProfile: vi.fn(
+        async (displayName: string, details?: PersonDetails) => {
+          vault.profiles.push({
+            id: "profile-2",
+            displayName,
+            createdAtMs: 2,
+            ...details,
+          });
+          return "profile-2";
+        },
+      ),
+      updateProfileDetails: vi.fn(
+        async (id: string, details: PersonDetails) => {
+          Object.assign(
+            vault.profiles.find((person) => person.id === id)!,
+            details,
+          );
+        },
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Existing"),
+      }),
+    );
+    const existing = () =>
+      screen.getByRole("form", {
+        name: humanText("Details for FAKE Existing"),
+      });
+    const fullName = humanText(translate("en", "personDetails.fullName"));
+    await user.clear(within(existing()).getByLabelText(fullName));
+    await user.type(
+      within(existing()).getByLabelText(fullName),
+      "FAKE Unsaved Person",
+    );
+
+    const create = screen
+      .getByLabelText(humanText("New profile name"))
+      .closest("form")!;
+    await user.type(
+      within(create).getByLabelText(humanText("New profile name")),
+      "FAKE Added",
+    );
+    await user.type(
+      within(create).getByLabelText(fullName),
+      "FAKE Added Person",
+    );
+    await user.click(
+      within(create).getByRole("checkbox", {
+        name: humanText(translate("en", "personDetails.birthDateUnknown")),
+      }),
+    );
+    await user.click(
+      within(create).getByRole("button", { name: humanText("Add profile") }),
+    );
+    await screen.findByText(humanText("FAKE Added was added."));
+    // The added person proves the list refreshed. Re-querying the current
+    // form prevents a detached old draft from satisfying these checks.
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Added"),
+      }),
+    ).toBeVisible();
+    expect(within(existing()).getByLabelText(fullName)).toHaveValue(
+      "FAKE Unsaved Person",
+    );
+    expect(bridge.createProfile).toHaveBeenCalledExactlyOnceWith("FAKE Added", {
+      fullName: "FAKE Added Person",
+    });
+    expect(bridge.updateProfileDetails).not.toHaveBeenCalled();
+    await user.click(
+      within(existing()).getByRole("button", {
+        name: humanText("Save details"),
+      }),
+    );
+    await screen.findByText(humanText("Details for FAKE Existing saved."));
+    expect(bridge.updateProfileDetails).toHaveBeenCalledExactlyOnceWith(
+      "profile-1",
+      { fullName: "FAKE Unsaved Person" },
+    );
+  });
+
   it("keeps a refused profile name in the form and clears an accepted one", async () => {
     const user = userEvent.setup();
     const createProfile = vi
