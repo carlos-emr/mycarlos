@@ -2282,7 +2282,7 @@ export function VaultLibrary({
                 }
                 focusPageIfLost();
               }}
-              onLocked={() => void onLock()}
+              onLocked={() => void lockAndConceal()}
               onLockAndLeave={onRequestLock ?? (() => void onLock())}
             />
           )}
@@ -2292,7 +2292,8 @@ export function VaultLibrary({
               readOnly={busy || readOnly}
               onSave={(name) =>
                 saveName(name).catch((error: unknown) => {
-                  if (mountedRef.current && isLockedError(error)) void onLock();
+                  if (mountedRef.current && isLockedError(error))
+                    void lockAndConceal();
                   throw error;
                 })
               }
@@ -2406,7 +2407,7 @@ export function VaultLibrary({
                   .viewPage(readerRecord.id, page, width, password)
                   .catch((error: unknown) => {
                     if (mountedRef.current && isLockedError(error))
-                      void onLock();
+                      void lockAndConceal();
                     throw error;
                   })
               }
