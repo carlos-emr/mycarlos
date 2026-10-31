@@ -574,7 +574,7 @@ h1, h2, p { margin: 0; }
 .audit-history-date { margin: 4px 0 10px; color: var(--ink-soft); }
 .audit-history-entry dl { display: grid; gap: 5px; margin: 0; }
 .audit-history-entry dl > div { display: grid; grid-template-columns: minmax(110px, 0.3fr) 1fr; gap: 10px; }
-.audit-history-entry dt { color: var(--ink-soft); }
+.audit-history-entry dt { color: var(--ink-soft); overflow-wrap: anywhere; }
 .audit-history-entry dd { margin: 0; overflow-wrap: anywhere; }
 .old-backups-guide {
   margin-top: 10px;
