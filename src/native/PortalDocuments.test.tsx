@@ -146,6 +146,56 @@ describe("native clinic document controls", () => {
       await page.viewport(1100, 760);
     }
   });
+  it("keeps a device name typed before platform detection finishes and submits that name", async () => {
+    let detect!: (platform: string) => void;
+    const platform = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          detect = resolve;
+        }),
+    );
+    const linkPortal = vi.fn().mockResolvedValue(undefined);
+    const bridge = {
+      platform,
+      linkPortal,
+      checkDocuments: vi.fn(),
+    } as unknown as VaultBridge;
+    const { props } = fixture({ bridge });
+    const user = userEvent.setup();
+    expect(platform).toHaveBeenCalledOnce();
+    const device = screen.getByLabelText("Name for this device");
+    expect(device).toHaveValue("myCarlos");
+    await user.clear(device);
+    await user.type(device, "FAKE waiting room laptop");
+    expect(device).toHaveValue("FAKE waiting room laptop");
+    expect(linkPortal).not.toHaveBeenCalled();
+    await act(async () => detect("windows"));
+    expect(screen.getByLabelText("Name for this device")).toHaveValue(
+      "FAKE waiting room laptop",
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGH",
+    );
+    await user.click(screen.getByRole("button", { name: "Link to clinic" }));
+    await waitFor(() => expect(props.refresh).toHaveBeenCalledOnce());
+    expect(linkPortal).toHaveBeenCalledExactlyOnceWith({
+      portalBase: "https://portal.example.test/patient",
+      code: "01234567-89ABCDEFGH",
+      deviceName: "FAKE waiting room laptop",
+      profileId: null,
+    });
+    expect(screen.getByLabelText("Name for this device")).toHaveValue(
+      "FAKE waiting room laptop",
+    );
+    expect(screen.getByLabelText("Linking code")).toHaveValue("");
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    expect(platform).toHaveBeenCalledOnce();
+  });
   it("sends a linking code only to native IPC and clears it after a refused attempt", async () => {
     const { bridge, failures } = fixture();
     const user = userEvent.setup();
