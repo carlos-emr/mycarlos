@@ -788,8 +788,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   acceptSharedRef.current = async () => {
     if (status !== "unlocked" || !inSession() || accepting.current) return;
     accepting.current = true;
+    let accepted = false;
     try {
       const outcome = await bridge.acceptReceived();
+      accepted = true;
       if (!inSession()) return;
       setReceived([]);
       if (outcome.imported.length) {
@@ -812,7 +814,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     } finally {
       accepting.current = false;
       // A newer unlock may have asked while these files were still taken.
-      if (!inSession()) void refreshReceived();
+      if (accepted || !inSession()) void refreshReceived();
     }
   };
   useEffect(() => {

@@ -1986,6 +1986,107 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it.each([false, true])(
+    "imports a second share received before the first intake reply: %s",
+    async (anotherShare) => {
+      const user = userEvent.setup();
+      const { bridge, vault, arrive } = sharedVault(
+        ["FAKE Patient"],
+        ["FAKE_First.pdf"],
+        { status: vi.fn().mockResolvedValue("unlocked") },
+      );
+      const accept = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+      const list = vi.mocked(bridge.listReceived).getMockImplementation()!;
+      let finish: (() => void) | undefined;
+      let listedSecond = false;
+      vi.mocked(bridge.acceptReceived)
+        .mockImplementationOnce(async () => {
+          const committed = await accept();
+          return new Promise<ReceivedAcceptOutcome>((resolve) => {
+            finish = () => resolve(committed);
+          });
+        })
+        .mockImplementation(accept);
+      vi.mocked(bridge.listReceived).mockImplementation(async () => {
+        const state = await list();
+        if (state.files.some((file) => file.name === "FAKE_Second.pdf"))
+          listedSecond = true;
+        return state;
+      });
+      const complete = async () => {
+        const reply = finish;
+        finish = undefined;
+        if (reply) await act(async () => reply());
+      };
+      onTestFinished(complete);
+      render(<VaultApp bridge={bridge} />);
+      await waitFor(() => expect(finish).toBeTypeOf("function"));
+      expect(vault.records).toHaveLength(1);
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+      if (anotherShare) {
+        arrive("FAKE_Second.pdf");
+        await act(async () => window.dispatchEvent(new Event("focus")));
+        await waitFor(() => expect(listedSecond).toBe(true));
+        // The native first import is committed; only its reply is pending.
+        // Its busy flag must serialize the two imports, then hand off the ask.
+        expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+        expect(vault.records).toHaveLength(1);
+      }
+      await complete();
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText(`Shared with me, ${anotherShare ? 2 : 1} new`),
+        }),
+      );
+      expect(screen.getByText(humanText("FAKE_First.pdf"))).toBeVisible();
+      if (anotherShare)
+        expect(screen.getByText(humanText("FAKE_Second.pdf"))).toBeVisible();
+      expect(bridge.acceptReceived).toHaveBeenCalledTimes(anotherShare ? 2 : 1);
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("waits for the next focus after a current intake storage refusal", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(
+      ["FAKE Patient"],
+      ["FAKE_Waiting.pdf"],
+      {
+        status: vi.fn().mockResolvedValue("unlocked"),
+      },
+    );
+    const accept = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+    let rejectOld: ((error: unknown) => void) | undefined;
+    vi.mocked(bridge.acceptReceived)
+      .mockImplementationOnce(
+        () =>
+          new Promise<ReceivedAcceptOutcome>((_resolve, reject) => {
+            rejectOld = reject;
+          }),
+      )
+      .mockImplementation(accept);
+    const refuse = async () => {
+      const reject = rejectOld;
+      rejectOld = undefined;
+      if (reject) await act(async () => reject({ code: "storage" }));
+    };
+    onTestFinished(refuse);
+    render(<VaultApp bridge={bridge} />);
+    await waitFor(() => expect(bridge.acceptReceived).toHaveBeenCalledOnce());
+    await refuse();
+    expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+    expect(vault.records).toHaveLength(0);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Shared with me, 1 new"),
+      }),
+    );
+    expect(screen.getByText(humanText("FAKE_Waiting.pdf"))).toBeVisible();
+    expect(bridge.acceptReceived).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
   it.each(["same session", "after another unlock", "while locked"] as const)(
     "rechecks restored shared intake: %s",
     async (when) => {
