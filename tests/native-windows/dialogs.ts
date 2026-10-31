@@ -695,6 +695,125 @@ export async function testNativeDialogs(
         await expect(
           page.getByRole("button", { name: photoName, exact: true }),
         ).toBeVisible();
+        // Reading the retained encrypted original uses a reader-local password.
+        const originalRow = page.getByRole("button", {
+          name: originalName,
+          exact: true,
+        });
+        await originalRow.click();
+        const originalReader = page.getByRole("dialog", {
+          name: originalName,
+          exact: true,
+        });
+        await originalReader
+          .getByRole("button", {
+            name: translate("en", "interface.RecordDetails.read"),
+            exact: true,
+          })
+          .click();
+        const inlinePassword = originalReader.getByLabel(
+          translate("en", "interface.DocumentReader.documentPassword"),
+          { exact: true },
+        );
+        const inlineOpen = originalReader.getByRole("button", {
+          name: translate("en", "interface.DocumentReader.open"),
+          exact: true,
+        });
+        const originalArea = originalReader.getByRole("region", {
+          name: translate("en", "interface.reader.page", { page: 1 }),
+          exact: true,
+        });
+        await expect(inlinePassword).toBeVisible();
+        await expect(inlinePassword).toHaveValue("");
+        await expect(inlineOpen).toBeDisabled();
+        await expect(originalReader.getByRole("img")).toHaveCount(0);
+        await expect(originalArea).toHaveAttribute("aria-busy", "false");
+        await inlinePassword.fill(spacedPassword);
+        await expect(inlinePassword).toHaveValue(spacedPassword);
+        await inlineOpen.click();
+        await expect(inlinePassword).toHaveCount(0);
+        const originalPicture = originalReader.getByRole("img", {
+          name: translate("en", "interface.reader.textFollows", {
+            page: 1,
+            total: 1,
+          }),
+          exact: true,
+        });
+        await expect(originalPicture).toBeVisible();
+        await expect(originalReader.getByRole("status")).toHaveText(
+          translate("en", "interface.reader.where", { page: 1, total: 1 }),
+        );
+        await expect(originalArea).toHaveAttribute("aria-busy", "false");
+        await expect
+          .poll(() =>
+            originalPicture.evaluate(
+              (image: HTMLImageElement) =>
+                image.complete &&
+                image.naturalWidth > 0 &&
+                image.naturalHeight > 0,
+            ),
+          )
+          .toBe(true);
+        await originalReader
+          .getByText(
+            translate("en", "interface.DocumentReader.textOnThisPage"),
+            {
+              exact: true,
+            },
+          )
+          .click();
+        const originalText = originalReader.locator(".native-reader-text div");
+        await expect(originalText).toBeVisible();
+        await expect(originalText).toContainText(
+          "FAKE scan with a made-up picture",
+        );
+        await page.screenshot({
+          path: testInfo.outputPath(
+            "native-original-inline-password-reader.png",
+          ),
+        });
+        await originalReader
+          .getByRole("button", { name: "Close", exact: true })
+          .click();
+        await expect(originalReader).toHaveCount(0);
+        await expect(originalPicture).toHaveCount(0);
+        await expect(records).toBeVisible();
+        await expect(originalRow).toBeVisible();
+
+        // The same original must ask again; Close ended the reading session.
+        await originalRow.click();
+        await originalReader
+          .getByRole("button", {
+            name: translate("en", "interface.RecordDetails.read"),
+            exact: true,
+          })
+          .click();
+        await expect(inlinePassword).toBeVisible();
+        await expect(inlinePassword).toHaveValue("");
+        await expect(inlineOpen).toBeDisabled();
+        await expect(originalReader.getByRole("img")).toHaveCount(0);
+        await expect(originalReader.locator(".native-reader-text")).toHaveCount(
+          0,
+        );
+        await expect(originalArea).toHaveAttribute("aria-busy", "false");
+        await page.screenshot({
+          path: testInfo.outputPath(
+            "native-original-inline-password-reopened.png",
+          ),
+        });
+        await originalReader
+          .getByRole("button", { name: "Close", exact: true })
+          .click();
+        await expect(originalReader).toHaveCount(0);
+        await expect(records).toBeVisible();
+        await expect(originalRow).toHaveCount(1);
+        await expect(
+          page.getByRole("button", { name: spacedName, exact: true }),
+        ).toHaveCount(1);
+        await expect(pdfRow).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: photoName, exact: true }),
+        ).toBeVisible();
         await page
           .getByRole("button", { name: "Unlocked · Lock now", exact: true })
           .click();
