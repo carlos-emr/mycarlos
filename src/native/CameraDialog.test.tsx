@@ -1,9 +1,16 @@
 import { humanText } from "../test/humanText";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { CameraDialog } from "./CameraDialog";
+import { setLocaleOverride, translate } from "../i18n";
 
 const EXPLAINED_KEY = "mycarlos.cameraExplained.v1";
 const AXE = {
@@ -79,6 +86,74 @@ async function startCamera() {
 }
 
 describe("CameraDialog", () => {
+  it("rewords a permission refusal and phone help without asking for the camera again", async () => {
+    setLocaleOverride("en");
+    getUserMedia.mockRejectedValueOnce(
+      new DOMException("FAKE denied", "NotAllowedError"),
+    );
+    const { onClose, onUse } = open({ platform: "ios" });
+    fireEvent.click(button("Use the camera"));
+    const alert = await screen.findByRole("alert");
+    const retry = button("Try again");
+    await waitFor(() => expect(retry).toHaveFocus());
+
+    act(() => setLocaleOverride("pl"));
+    expect(screen.getByRole("alert")).toBe(alert);
+    expect(alert).toHaveHumanTextContent(
+      "myCarlos nie może używać aparatu. Proszę otworzyć Ustawienia telefonu, następnie myCarlos i włączyć Aparat. Następnie proszę wybrać Spróbuj ponownie.",
+    );
+    expect(button("Spróbuj ponownie")).toBe(retry);
+    expect(retry).toHaveFocus();
+
+    act(() => setLocaleOverride("pt-BR"));
+    expect(alert).toHaveHumanTextContent(
+      "O myCarlos não pode usar a câmera. Abra os Ajustes do celular, depois myCarlos, e ative a Câmera. Depois, escolha Tentar de novo.",
+    );
+    expect(retry).toHaveFocus();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(onUse).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("keeps the captured pixels and stopped camera while translating the preview", async () => {
+    setLocaleOverride("en");
+    const { onUse, onClose } = open();
+    await startCamera();
+    fireEvent.click(shutter());
+    const photo = screen.getByRole("img", {
+      name: humanText("The photo you took"),
+    }) as HTMLCanvasElement;
+    const pixels = photo.toDataURL();
+    const use = button("Use photo");
+    await waitFor(() => expect(use).toHaveFocus());
+    expect(ended(streams[0])).toBe(true);
+
+    for (const locale of ["pl", "pt-BR", "en"] as const) {
+      act(() => setLocaleOverride(locale));
+      expect(
+        screen.getByRole("img", {
+          name: translate(locale, "interface.CameraDialog.thePhotoYouTook"),
+        }),
+      ).toBe(photo);
+      expect(photo).toBeVisible();
+      expect(photo.toDataURL()).toBe(pixels);
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        translate(
+          locale,
+          "interface.CameraDialog.photoTakenRetakeOrUseThePhoto",
+        ),
+      );
+      expect(button(translate(locale, "interface.CameraDialog.usePhoto"))).toBe(
+        use,
+      );
+      expect(use).toHaveFocus();
+      expect(ended(streams[0])).toBe(true);
+      expect(getUserMedia).toHaveBeenCalledTimes(1);
+    }
+    expect(onUse).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("explains first, asks for video only after the tap, and saves a JPEG", async () => {
     const { onUse, saved } = open();
     const dialog = screen.getByRole("dialog", {
@@ -204,6 +279,42 @@ describe("CameraDialog", () => {
     }
   });
 
+  it("clears a handed-off JPEG after saving settles even if the dialog already closed", async () => {
+    let finishSave!: () => void;
+    const pendingSave = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    const handoff = vi
+      .fn<(jpeg: Uint8Array) => Promise<void>>()
+      .mockReturnValue(pendingSave);
+    const { unmount, onClose } = open({ onUse: handoff });
+    try {
+      await startCamera();
+      fireEvent.click(shutter());
+      fireEvent.click(button("Use photo"));
+      await waitFor(() => expect(handoff).toHaveBeenCalledOnce());
+      const jpeg = handoff.mock.calls[0][0];
+      const original = jpeg.slice();
+      expect(original.byteLength).toBeGreaterThan(3);
+      expect([...original.slice(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+      // The consumer already has these bytes when a lock closes the dialog.
+      await act(async () => unmount());
+      expect(screen.queryByRole("dialog")).toBeNull();
+      // Do not erase the consumer's in-flight input before it finishes reading.
+      expect(jpeg).toEqual(original);
+      await act(async () => finishSave());
+      // Cleanup still runs after the producing component has gone away.
+      expect(jpeg.byteLength).toBe(original.byteLength);
+      expect(jpeg.every((byte) => byte === 0)).toBe(true);
+      expect(handoff).toHaveBeenCalledOnce();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(getUserMedia).toHaveBeenCalledOnce();
+      expect(ended(streams[0])).toBe(true);
+    } finally {
+      await act(async () => finishSave());
+    }
+  });
+
   it("stops the camera when the window is hidden", async () => {
     open();
     await startCamera();
@@ -222,6 +333,38 @@ describe("CameraDialog", () => {
     );
     fireEvent.click(button("Try again"));
     await waitFor(() => expect(shutter()).toBeEnabled());
+  });
+
+  it("recovers from a disconnected camera and saves from the replacement stream", async () => {
+    const { onUse } = open();
+    await startCamera();
+    const disconnected = streams[0];
+    await act(async () => {
+      // Canvas tracks do not emulate hardware disconnection. End the track
+      // and deliver the event a disconnected camera would send.
+      const track = disconnected.getVideoTracks()[0];
+      track.stop();
+      track.dispatchEvent(new Event("ended"));
+    });
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "The camera stopped. Check that it is connected, then choose Try again.",
+    );
+    await waitFor(() => expect(button("Try again")).toHaveFocus());
+    expect(onUse).not.toHaveBeenCalled();
+
+    fireEvent.click(button("Try again"));
+    await waitFor(() => expect(shutter()).toBeEnabled());
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(streams).toHaveLength(2);
+    expect(ended(streams[1])).toBe(false);
+    expect(screen.getByLabelText(humanText("Camera view"))).toHaveProperty(
+      "srcObject",
+      streams[1],
+    );
+    fireEvent.click(shutter());
+    expect(ended(streams[1])).toBe(true);
+    fireEvent.click(button("Use photo"));
+    await waitFor(() => expect(onUse).toHaveBeenCalledOnce());
   });
 
   it("stops a camera that answers after the dialog was cancelled", async () => {

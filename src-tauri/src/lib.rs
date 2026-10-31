@@ -4301,6 +4301,28 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_capture_confirmation_follows_reads_during_native_question() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, groups) = key_being_set_up(&temp.path().join("vault"), true);
+        let during = std::cell::Cell::new(None);
+        let stored = confirm_recovery_key_asking(
+            &store,
+            &typed_back(&groups),
+            || 6,
+            || {
+                during.set(Some(store.snapshot().unwrap().capture));
+                true
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let earlier = during.get().unwrap();
+        assert_eq!(earlier.epoch, stored.capture.epoch);
+        assert!(earlier.sequence < stored.capture.sequence);
+        assert_eq!(stored.recovery_key_set_at_ms, Some(6));
+    }
+
+    #[test]
     fn a_first_recovery_key_is_stored_without_asking() {
         let temp = tempfile::tempdir().unwrap();
         let (store, groups) = key_being_set_up(&temp.path().join("vault"), false);

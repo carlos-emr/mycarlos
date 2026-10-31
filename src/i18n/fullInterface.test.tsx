@@ -18,6 +18,19 @@ import { HiddenDocuments } from "../native/HiddenDocuments";
 import type { VaultBridge, VaultRecord, VaultSnapshot } from "../vault";
 import { printedDate } from "../native/KeyLabel";
 import { setDeviceLocale } from "../test/deviceLocale";
+import { visibleText } from "../test/humanText";
+
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
 
 const record: VaultRecord = {
   id: "record",
@@ -32,6 +45,7 @@ const record: VaultRecord = {
   available: true,
 };
 const snapshot: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [
     { id: "person", displayName: "FAKE {name} Avery", createdAtMs: 1 },
     { id: "shared", displayName: "Shared with me", createdAtMs: 1 },
@@ -54,7 +68,7 @@ function bridge() {
   return {
     native: true,
     status: vi.fn().mockResolvedValue("unlocked"),
-    snapshot: vi.fn().mockResolvedValue(snapshot),
+    snapshot: vi.fn().mockImplementation(async () => captureSnapshot(snapshot)),
     platform: vi.fn().mockResolvedValue("windows"),
     listReceived: vi.fn().mockResolvedValue({
       files: [],
@@ -155,6 +169,114 @@ describe("the installed interface in the selected language", () => {
       "Nie wybrano plików. Nic się nie zmieniło.",
     );
     expect(native.pickImportFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("finishes a cancelled picker in the current language without reopening it", async () => {
+    setLocaleOverride("en");
+    const native = bridge();
+    let finishPicking!: (value: string | null) => void;
+    vi.mocked(native.pickImportFiles).mockReturnValue(
+      new Promise((resolve) => {
+        finishPicking = resolve;
+      }),
+    );
+    native.importPickedFiles = vi.fn();
+    render(<VaultApp bridge={native} />);
+    const button = await screen.findByRole("button", {
+      name: "Choose files to import",
+    });
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+
+    changeLanguage("pl");
+    expect(
+      screen.getByRole("button", {
+        name: translate("pl", "interface.VaultApp.chooseFilesToImport"),
+      }),
+    ).toBe(button);
+    expect(button).toHaveTextContent("Przetwarzanie…");
+    await act(async () => finishPicking(null));
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Nie wybrano plików. Nic się nie zmieniło.",
+    );
+    expect(button).toHaveTextContent("Nowy");
+
+    changeLanguage("pt-BR");
+    expect(button).toHaveTextContent("Novo");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Nenhum arquivo selecionado. Nada mudou.",
+    );
+    expect(native.pickImportFiles).toHaveBeenCalledExactlyOnceWith(
+      "person",
+      [],
+    );
+    expect(native.importPickedFiles).not.toHaveBeenCalled();
+    expect(native.snapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it("localizes an import that settles after a language switch and retains both outcome counts", async () => {
+    setLocaleOverride("en");
+    const native = bridge();
+    vi.mocked(native.pickImportFiles).mockResolvedValue("FAKE pick");
+    const imported = {
+      ...record,
+      id: "imported",
+      displayName: "FAKE Newly imported.pdf",
+    };
+    vi.mocked(native.snapshot)
+      .mockImplementationOnce(async () => captureSnapshot(snapshot))
+      .mockImplementation(async () =>
+        captureSnapshot({ ...snapshot, records: [record, imported] }),
+      );
+    let finishImporting!: (
+      outcome: Awaited<ReturnType<VaultBridge["importPickedFiles"]>>,
+    ) => void;
+    native.importPickedFiles = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        finishImporting = resolve;
+      }),
+    );
+    render(<VaultApp bridge={native} />);
+    const button = await screen.findByRole("button", {
+      name: "Choose files to import",
+    });
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(native.importPickedFiles).toHaveBeenCalledExactlyOnceWith(
+        "FAKE pick",
+        "person",
+        [],
+      ),
+    );
+    changeLanguage("pl");
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent("Przetwarzanie…");
+    await act(async () =>
+      finishImporting({
+        imported: ["imported"],
+        skippedDuplicates: ["FAKE copy 1.pdf", "FAKE copy 2.pdf"],
+      }),
+    );
+    await waitFor(() => expect(button).toBeEnabled());
+    const status = screen.getByRole("status");
+    expect(visibleText(status.textContent ?? "")).toBe(
+      "Zaszyfrowano i dodano 1 dokument. Pominięto 2 duplikaty.",
+    );
+    expect(button).toHaveTextContent("Nowy");
+    expect(screen.getByText("FAKE Newly imported.pdf")).toBeVisible();
+
+    changeLanguage("pt-BR");
+    expect(visibleText(status.textContent ?? "")).toBe(
+      "1 documento criptografado e adicionado. 2 duplicatas ignoradas.",
+    );
+    expect(button).toHaveTextContent("Novo");
+    expect(native.pickImportFiles).toHaveBeenCalledExactlyOnceWith(
+      "person",
+      [],
+    );
+    expect(native.importPickedFiles).toHaveBeenCalledTimes(1);
+    expect(native.snapshot).toHaveBeenCalledTimes(2);
   });
 
   it("updates a native error and its destination warning without repeating the operation", async () => {

@@ -10,6 +10,8 @@ async function fakeVault(
 ) {
   await page.addInitScript(
     ({ platform, locked, recovery }) => {
+      const captureEpoch = crypto.randomUUID();
+      let captureSequence = 0;
       let status = locked ? "locked" : "unlocked";
       const calls: string[] = [];
       const themes: unknown[] = [];
@@ -23,6 +25,7 @@ async function fakeVault(
           if (command === "vault_status") return status;
           if (command === "vault_snapshot")
             return {
+              capture: { epoch: captureEpoch, sequence: ++captureSequence },
               profiles: [
                 { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
               ],

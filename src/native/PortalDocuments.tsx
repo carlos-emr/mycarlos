@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useI18n } from "../i18n";
+import {
+  useI18n,
+  useTextState,
+  message,
+  deferredText,
+  t as translateNow,
+  type UiText,
+} from "../i18n";
 import { vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 
@@ -10,7 +17,7 @@ interface Props {
   readOnly: boolean;
   run: (operation: () => Promise<void>) => Promise<void>;
   refresh: () => Promise<VaultSnapshot>;
-  setNotice: (text: string) => void;
+  setNotice: (text: UiText) => void;
   compact?: boolean;
 }
 
@@ -29,7 +36,7 @@ export function PortalDocuments({
   const [code, setCode] = useState("");
   const [device, setDevice] = useState("myCarlos");
   const [person, setPerson] = useState("");
-  const [copyState, setCopyState] = useState("");
+  const [copyState, setCopyState] = useTextState();
   const shown = useRef(true);
   useEffect(() => {
     shown.current = true;
@@ -91,33 +98,35 @@ export function PortalDocuments({
         await refresh();
         if (shown.current)
           setNotice(
-            [
-              t(
-                result.issues?.length
-                  ? "portal.partialResult"
-                  : "portal.result",
-                {
-                  added: result.added,
-                  refused: result.refused,
-                },
-              ),
-              ...(result.issues ?? []).map((issue) =>
-                t("portal.clinicIssue", {
-                  clinic: issue.clinicName,
-                  detail: vaultErrorMessage({
-                    code: issue.code,
-                    message: t("portal.errorIncomplete"),
-                  }),
-                }),
-              ),
-              ...(result.receiptsPending > 0
-                ? [
-                    t("portal.confirmationsPending", {
-                      count: result.receiptsPending,
+            deferredText(() =>
+              [
+                translateNow(
+                  result.issues?.length
+                    ? "portal.partialResult"
+                    : "portal.result",
+                  {
+                    added: result.added,
+                    refused: result.refused,
+                  },
+                ),
+                ...(result.issues ?? []).map((issue) =>
+                  translateNow("portal.clinicIssue", {
+                    clinic: issue.clinicName,
+                    detail: vaultErrorMessage({
+                      code: issue.code,
+                      message: translateNow("portal.errorIncomplete"),
                     }),
-                  ]
-                : []),
-            ].join(" "),
+                  }),
+                ),
+                ...(result.receiptsPending > 0
+                  ? [
+                      translateNow("portal.confirmationsPending", {
+                        count: result.receiptsPending,
+                      }),
+                    ]
+                  : []),
+              ].join(" "),
+            ),
           );
       } catch (error) {
         await refresh();
@@ -240,9 +249,10 @@ export function PortalDocuments({
             onClick={() => {
               void navigator.clipboard
                 ?.writeText(link.deviceKeyId)
-                .then(() => setCopyState(t("portal.copied")))
-                .catch(() => setCopyState(t("portal.copyFailed")));
-              if (!navigator.clipboard) setCopyState(t("portal.copyFailed"));
+                .then(() => setCopyState(message("portal.copied")))
+                .catch(() => setCopyState(message("portal.copyFailed")));
+              if (!navigator.clipboard)
+                setCopyState(message("portal.copyFailed"));
             }}
           >
             {t("portal.copy")}

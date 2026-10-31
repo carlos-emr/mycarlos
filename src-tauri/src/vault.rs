@@ -625,9 +625,21 @@ pub struct VaultRecord {
     pub clinic_service_date: Option<String>,
 }
 
+// JSON numbers must remain exact when the renderer compares capture order.
+const MAX_SNAPSHOT_SEQUENCE: u64 = (1_u64 << 53) - 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotCapture {
+    pub epoch: Uuid,
+    pub sequence: u64,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultSnapshot {
+    /// Runtime capture order, never part of the encrypted vault format.
+    pub capture: SnapshotCapture,
     pub profiles: Vec<PatientProfile>,
     pub folders: Vec<VaultFolder>,
     pub records: Vec<VaultRecord>,
@@ -829,6 +841,8 @@ impl Drop for KdfWork<'_> {
 pub struct VaultStore {
     root: PathBuf,
     unlocked: Mutex<Option<UnlockedVault>>,
+    snapshot_epoch: Uuid,
+    snapshot_sequence: AtomicU64,
     kdf_running: AtomicBool,
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
@@ -852,6 +866,8 @@ impl VaultStore {
         Self {
             root,
             unlocked: Mutex::new(None),
+            snapshot_epoch: Uuid::new_v4(),
+            snapshot_sequence: AtomicU64::new(0),
             kdf_running: AtomicBool::new(false),
             portal_session: AtomicU64::new(0),
             #[cfg(feature = "portal-linking")]
@@ -1336,10 +1352,27 @@ impl VaultStore {
 
     pub fn snapshot(&self) -> Result<VaultSnapshot, VaultError> {
         let guard = self.session();
-        Ok(Self::snapshot_of(
-            &self.root,
-            guard.as_ref().ok_or(VaultError::Locked)?,
-        ))
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let capture = self.reserve_snapshot_capture()?;
+        Ok(Self::snapshot_of(&self.root, unlocked, capture))
+    }
+
+    /// Called only under the session mutex, which orders reservation and
+    /// capture together. Reserve before an irreversible write so exhaustion
+    /// cannot make an already stored recovery key look like a failed write.
+    fn reserve_snapshot_capture(&self) -> Result<SnapshotCapture, VaultError> {
+        let previous = self
+            .snapshot_sequence
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value
+                    .checked_add(1)
+                    .filter(|next| *next <= MAX_SNAPSHOT_SEQUENCE)
+            })
+            .map_err(|_| VaultError::Storage)?;
+        Ok(SnapshotCapture {
+            epoch: self.snapshot_epoch,
+            sequence: previous + 1,
+        })
     }
 
     /// The strict read: the whole history, or `Corrupt` when any of it does not check out.
@@ -1449,8 +1482,13 @@ impl VaultStore {
         })
     }
 
-    fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
+    fn snapshot_of(
+        root: &Path,
+        unlocked: &UnlockedVault,
+        capture: SnapshotCapture,
+    ) -> VaultSnapshot {
         VaultSnapshot {
+            capture,
             portal_linking_enabled: crate::portal_client::available(),
             portal_links: unlocked
                 .manifest
@@ -3008,6 +3046,7 @@ impl VaultStore {
             &unlocked.master_key,
             Some(&envelope),
         )?;
+        let capture = self.reserve_snapshot_capture()?;
         let written = write_header_pair(
             &self.root,
             &first,
@@ -3028,7 +3067,7 @@ impl VaultStore {
         // Taken under the same session guard: a lock that came between the
         // key being stored and a snapshot taken apart would report a key
         // that was stored as a failure.
-        Ok(Self::snapshot_of(&self.root, unlocked))
+        Ok(Self::snapshot_of(&self.root, unlocked, capture))
     }
 
     /// Opens a locked vault with its recovery key and replaces the forgotten
@@ -7846,6 +7885,123 @@ pub(crate) fn history_events_for_test(store: &VaultStore) -> Vec<HistoryEntry> {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn snapshot_capture_orders_reads_and_changes_epoch_only_with_runtime() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let first = store.snapshot().unwrap();
+        let second = store.snapshot().unwrap();
+        assert_eq!(first.capture.epoch, second.capture.epoch);
+        assert_eq!(second.capture.sequence, first.capture.sequence + 1);
+        let json = serde_json::to_value(&second).unwrap();
+        assert_eq!(json["capture"]["epoch"], second.capture.epoch.to_string());
+        assert_eq!(
+            json["capture"]["sequence"].as_u64(),
+            Some(second.capture.sequence)
+        );
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let reopened = store.snapshot().unwrap();
+        assert_eq!(reopened.capture.epoch, first.capture.epoch);
+        assert!(reopened.capture.sequence > second.capture.sequence);
+        drop(store);
+        let restarted = VaultStore::new(root);
+        restarted.unlock(PASSWORD).unwrap();
+        let next_runtime = restarted.snapshot().unwrap();
+        assert_ne!(next_runtime.capture.epoch, first.capture.epoch);
+        assert_eq!(next_runtime.capture.sequence, 1);
+    }
+
+    #[test]
+    fn snapshot_capture_key_commit_precedes_later_mutation() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let before = store.snapshot().unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap();
+        let groups = recovery_key_groups(&key);
+        let stored = store.confirm_recovery_key(&typed_back(&groups), 5).unwrap();
+        store.create_profile("FAKE Second", 6).unwrap();
+        let later = store.snapshot().unwrap();
+        assert!(before.capture.sequence < stored.capture.sequence);
+        assert!(stored.capture.sequence < later.capture.sequence);
+        assert_eq!(stored.capture.epoch, later.capture.epoch);
+        assert_eq!(stored.profiles.len(), 1);
+        assert_eq!(later.profiles.len(), 2);
+        assert_eq!(stored.recovery_key_set_at_ms, Some(5));
+        store.lock();
+        assert!(matches!(store.snapshot(), Err(VaultError::Locked)));
+        // The successful receipt remains usable without reading the locked vault.
+        assert_eq!(
+            serde_json::to_value(stored).unwrap()["recoveryKeySetAtMs"],
+            5
+        );
+    }
+
+    #[test]
+    fn snapshot_capture_exhaustion_refuses_before_key_write() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap();
+        let groups = recovery_key_groups(&key);
+        let files = || {
+            fs::read_dir(&root)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| path.is_file())
+                .map(|path| {
+                    (
+                        path.file_name().unwrap().to_owned(),
+                        fs::read(path).unwrap(),
+                    )
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        let before = files();
+        store
+            .snapshot_sequence
+            .store(MAX_SNAPSHOT_SEQUENCE, Ordering::Relaxed);
+        assert!(matches!(
+            store.confirm_recovery_key(&typed_back(&groups), 5),
+            Err(VaultError::Storage)
+        ));
+        assert_eq!(files(), before);
+        assert!(!store.check_recovery_key(&typed_back(&groups)).unwrap());
+        assert!(matches!(store.snapshot(), Err(VaultError::Storage)));
+        assert_eq!(
+            store.snapshot_sequence.load(Ordering::Relaxed),
+            MAX_SNAPSHOT_SEQUENCE
+        );
+    }
+
+    #[test]
+    fn snapshot_capture_last_safe_value_and_partial_key_write_are_returned() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap();
+        let groups = recovery_key_groups(&key);
+        store
+            .snapshot_sequence
+            .store(MAX_SNAPSHOT_SEQUENCE - 1, Ordering::Relaxed);
+        let stored = {
+            let _fail = FailAt::new("recovery-key.after-first-write");
+            store.confirm_recovery_key(&typed_back(&groups), 5).unwrap()
+        };
+        assert_eq!(stored.capture.sequence, MAX_SNAPSHOT_SEQUENCE);
+        assert_eq!(stored.recovery, Some(RecoveryReason::WriteFailed));
+        assert_eq!(stored.recovery_key_set_at_ms, Some(5));
+        assert_eq!(
+            serde_json::to_value(&stored).unwrap()["capture"]["sequence"].as_u64(),
+            Some(MAX_SNAPSHOT_SEQUENCE)
+        );
+        assert!(matches!(store.snapshot(), Err(VaultError::Storage)));
+    }
 
     #[cfg(not(feature = "portal-linking"))]
     #[test]

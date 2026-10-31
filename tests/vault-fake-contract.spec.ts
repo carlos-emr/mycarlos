@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import {
   FAKE_IDS,
+  FAKE_PASSPHRASE,
   FAKE_DOCUMENT_PASSWORD,
   fakeVaultWith,
   myRecords,
@@ -33,6 +34,43 @@ async function invoke(page: Page, command: string, args: unknown = {}) {
     { command, args },
   );
 }
+
+test("snapshot captures increase within the fake runtime across renderer reload", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  const first = (await invoke(page, "vault_snapshot")).value as {
+    capture: { epoch: string; sequence: number };
+  };
+  const second = (await invoke(page, "vault_snapshot")).value as typeof first;
+  expect(first.capture.epoch).toMatch(/^[0-9a-f-]{36}$/);
+  expect(second.capture.epoch).toBe(first.capture.epoch);
+  expect(second.capture.sequence).toBeGreaterThan(first.capture.sequence);
+  expect(Number.isSafeInteger(second.capture.sequence)).toBe(true);
+  await scriptFake(page, "vault_snapshot", { resolve: first });
+  expect((await invoke(page, "vault_snapshot")).value).toEqual(first);
+  await scriptFake(page, "vault_snapshot", {
+    resolve: { profiles: [], folders: [], records: [], recovery: null },
+  });
+  expect((await invoke(page, "vault_snapshot")).error).toContain(
+    "requires capture-time metadata",
+  );
+  await page.reload();
+  // Unlock the persisted fake session after reload; its runtime epoch survives.
+  await expect(
+    page.getByRole("heading", { name: "Unlock your vault", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Passphrase", { exact: true }).fill(FAKE_PASSPHRASE);
+  await page.getByRole("button", { name: "Unlock", exact: true }).click();
+  await expect(myRecords(page)).toBeVisible();
+  const afterReload = (await invoke(page, "vault_snapshot"))
+    .value as typeof first;
+  expect(afterReload.capture.epoch).toBe(first.capture.epoch);
+  expect(afterReload.capture.sequence).toBeGreaterThan(second.capture.sequence);
+  await expectOnlyFakedCommands(page);
+});
 
 test("fixture IDs are UUIDs and malformed native IDs are refused", async ({
   page,

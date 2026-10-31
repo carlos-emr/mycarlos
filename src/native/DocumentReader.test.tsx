@@ -1,7 +1,17 @@
+import { StrictMode } from "react";
 import { humanText } from "../test/humanText";
-import { render, screen, within } from "@testing-library/react";
+import { setLocaleOverride, translate } from "../i18n";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { page as browserPage, userEvent as realKeys } from "vitest/browser";
 import { cacheDrawnPage, DocumentReader } from "./DocumentReader";
 import type { VaultRecord, ViewedPage } from "../vault";
 
@@ -28,6 +38,13 @@ const page = (index: number): ViewedPage => ({
 });
 const refusal = (code: string) =>
   Object.assign(new Error(code), { code, message: `FAKE ${code}` });
+
+async function click(control: Element) {
+  // Flush the promise callbacks too, including immediate synthetic page draws.
+  await act(async () => {
+    fireEvent.click(control);
+  });
+}
 
 function renderReader(
   viewPage = vi.fn(async (index: number, _width: number, _password?: string) =>
@@ -183,29 +200,726 @@ describe("the document reader", () => {
     expect(viewPage).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts rapid zoom input while sharpening and requests only the settled size", async () => {
+    let finish!: (value: ViewedPage) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementation(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const { unmount } = renderReader(viewPage);
+    const picture = await screen.findByRole("img", {
+      name: humanText(/^Page 1 of 2/),
+    });
+    const fittedWidth = parseFloat(picture.style.width);
+    vi.useFakeTimers();
+    try {
+      const larger = screen.getByRole("button", { name: humanText("Larger") });
+      larger.focus();
+      for (let i = 0; i < 3; i++) await click(larger);
+      expect(larger).toBeEnabled();
+      expect(larger).toHaveFocus();
+      expect(screen.getByText(humanText("195%"))).toBeVisible();
+      expect(parseFloat(picture.style.width)).toBe(
+        Math.round(fittedWidth * 1.25 ** 3),
+      );
+      expect(
+        screen.getByRole("region", { name: humanText("Page 1") }),
+      ).toHaveAttribute("aria-busy", "true");
+      expect(viewPage).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        vi.advanceTimersByTime(119);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(viewPage).toHaveBeenLastCalledWith(
+        0,
+        Math.min(
+          4096,
+          Math.round(
+            Math.round(fittedWidth * 1.25 ** 3) * window.devicePixelRatio,
+          ),
+        ),
+        undefined,
+      );
+      expect(larger).toBeEnabled();
+      await act(async () => {
+        finish({ ...page(0), text: "FAKE latest sharp page" });
+      });
+      expect(
+        screen.getByRole("region", { name: humanText("Page 1") }),
+      ).toHaveAttribute("aria-busy", "false");
+      await click(screen.getByText(humanText("Text on this page")));
+      expect(
+        screen.getByText(humanText("FAKE latest sharp page")),
+      ).toBeVisible();
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("changes zoom announcements with the language without restarting native work", async () => {
+    setLocaleOverride("en");
+    let finish!: (value: ViewedPage) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const { cancelView, unmount } = renderReader(viewPage);
+    const picture = await screen.findByRole("img", {
+      name: humanText(/^Page 1 of 2/),
+    });
+    vi.useFakeTimers();
+    try {
+      const larger = screen.getByRole("button", { name: humanText("Larger") });
+      larger.focus();
+      await click(larger);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      const zoomWidth = picture.style.width;
+      await act(async () => {
+        setLocaleOverride("fr");
+      });
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Ouverture de la page 1…",
+      );
+      expect(larger).toHaveAccessibleName("Agrandir");
+      expect(larger).toHaveFocus();
+      expect(picture).toBeVisible();
+      expect(picture.style.width).toBe(zoomWidth);
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(cancelView).not.toHaveBeenCalled();
+      const rawText = "FAKE {name} résumé 120/80";
+      await act(async () => {
+        finish({ ...page(0), text: rawText });
+      });
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 sur 2");
+      expect(
+        screen.getByRole("region", { name: humanText("Page 1") }),
+      ).toHaveAttribute("aria-busy", "false");
+      await click(screen.getByText("Texte de cette page"));
+      expect(
+        document.querySelector(".native-reader-text div")!.textContent,
+      ).toBe(rawText);
+      await act(async () => {
+        setLocaleOverride("en");
+      });
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
+      expect(larger).toHaveAccessibleName("Larger");
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(cancelView).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retranslates a zoom failure and recovers the cached page without native work", async () => {
+    setLocaleOverride("en");
+    let rejectZoom!: (failure: unknown) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((_resolve, reject) => {
+            rejectZoom = reject;
+          }),
+      );
+    const { cancelView, unmount } = renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    vi.useFakeTimers();
+    try {
+      await click(screen.getByRole("button", { name: humanText("Larger") }));
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      // The key matches the structured PdfViewFailed response from native.
+      await act(async () => {
+        rejectZoom({
+          code: "pdf_view_failed",
+          messageKey: "native.error.31",
+          message: "FAKE legacy render failure",
+        });
+      });
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveHumanTextContent(translate("en", "native.error.31"));
+      await act(async () => {
+        setLocaleOverride("fr");
+      });
+      expect(screen.getByRole("alert")).toBe(alert);
+      expect(alert).toHaveHumanTextContent(translate("fr", "native.error.31"));
+      expect(alert).not.toHaveTextContent("FAKE legacy render failure");
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(cancelView).not.toHaveBeenCalled();
+      await click(screen.getByRole("button", { name: "Ajuster à la largeur" }));
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 sur 2");
+      expect(
+        screen.getByRole("img", { name: humanText(/^Page 1 sur 2/) }),
+      ).toBeVisible();
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(cancelView).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels superseded zooms, ignores their results and does not cache them", async () => {
+    let old!: (value: ViewedPage) => void;
+    let latest!: (value: ViewedPage) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            old = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            latest = resolve;
+          }),
+      )
+      .mockImplementation(async () => page(0));
+    const { cancelView, unmount } = renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    vi.useFakeTimers();
+    try {
+      const larger = screen.getByRole("button", { name: humanText("Larger") });
+      await click(larger);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      await click(larger);
+      expect(cancelView).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(3);
+      await act(async () => {
+        old({ ...page(0), text: "FAKE stale zoom", pageCount: 99 });
+      });
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
+        "Opening page 1…",
+      );
+      expect(screen.queryByText(humanText("FAKE stale zoom"))).toBeNull();
+      await act(async () => {
+        latest({ ...page(0), text: "FAKE latest zoom" });
+      });
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
+      await click(screen.getByText(humanText("Text on this page")));
+      expect(screen.getByText(humanText("FAKE latest zoom"))).toBeVisible();
+      await click(screen.getByRole("button", { name: humanText("Fit width") }));
+      expect(screen.getByText(humanText("100%"))).toBeVisible();
+      expect(viewPage).toHaveBeenCalledTimes(3);
+      // The stale 125% result was discarded, so returning to it must draw again.
+      await click(larger);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(4);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("still cancels newer sharpening after stale success and failure callbacks", async () => {
+    let oldest!: (value: ViewedPage) => void;
+    let rejectMiddle!: (failure: unknown) => void;
+    let latest!: (value: ViewedPage) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            oldest = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((_resolve, reject) => {
+            rejectMiddle = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            latest = resolve;
+          }),
+      );
+    const { cancelView, unmount } = renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    vi.useFakeTimers();
+    try {
+      const larger = screen.getByRole("button", { name: humanText("Larger") });
+      await click(larger);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      await click(larger);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(cancelView).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        oldest({ ...page(0), text: "FAKE stale first draw" });
+      });
+      // The stale success must leave the newer draw available for cancellation.
+      await click(larger);
+      expect(cancelView).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(4);
+      await act(async () => {
+        rejectMiddle(refusal("pdf_wrong_password"));
+      });
+      expect(
+        screen.queryByLabelText(humanText("Document password")),
+      ).toBeNull();
+      // A stale failure must also preserve the latest pending draw's cancellation.
+      await click(screen.getByRole("button", { name: humanText("Fit width") }));
+      expect(cancelView).toHaveBeenCalledTimes(3);
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
+      await act(async () => {
+        latest({ ...page(0), text: "FAKE stale last draw" });
+      });
+      await click(screen.getByText(humanText("Text on this page")));
+      expect(screen.getByText(humanText("FAKE text on page 1"))).toBeVisible();
+      expect(screen.queryByText(humanText("FAKE stale last draw"))).toBeNull();
+      expect(viewPage).toHaveBeenCalledTimes(4);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns to a cached size immediately and stops a sharper draw still in flight", async () => {
+    let finish!: (value: ViewedPage) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementation(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const { cancelView, unmount } = renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    vi.useFakeTimers();
+    try {
+      await click(screen.getByRole("button", { name: humanText("Larger") }));
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      await click(screen.getByRole("button", { name: humanText("Fit width") }));
+      expect(cancelView).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
+      await act(async () => {
+        finish({ ...page(0), text: "FAKE cancelled sharp page" });
+      });
+      await click(screen.getByText(humanText("Text on this page")));
+      expect(screen.getByText(humanText("FAKE text on page 1"))).toBeVisible();
+      expect(
+        screen.queryByText(humanText("FAKE cancelled sharp page")),
+      ).toBeNull();
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("recovers a failed zoom by returning to the fitted page already cached", async () => {
+    let rejectZoom!: (failure: unknown) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((_resolve, reject) => {
+            rejectZoom = reject;
+          }),
+      );
+    const { unmount } = renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    vi.useFakeTimers();
+    try {
+      await click(screen.getByRole("button", { name: humanText("Larger") }));
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      await act(async () => {
+        rejectZoom(refusal("pdf_view_failed"));
+      });
+      expect(screen.getByRole("alert")).toHaveHumanTextContent(
+        "FAKE pdf_view_failed",
+      );
+      const fit = screen.getByRole("button", { name: humanText("Fit width") });
+      expect(fit).toBeEnabled();
+      await click(fit);
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(
+        screen.getByRole("img", { name: humanText(/^Page 1 of 2/) }),
+      ).toBeVisible();
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
+      expect(screen.getByText(humanText("100%"))).toBeVisible();
+      expect(viewPage).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("discards queued sharpening when the reader closes", async () => {
+    const { viewPage, cancelView, unmount } = renderReader();
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    vi.useFakeTimers();
+    try {
+      await click(screen.getByRole("button", { name: humanText("Larger") }));
+      unmount();
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(1);
+      expect(cancelView).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["pdf_view_failed", "pdf_wrong_password", "pdf_locked"])(
+    "ignores a stale %s rejection after the latest zoom succeeds",
+    async (code) => {
+      let rejectOld!: (failure: unknown) => void;
+      const viewPage = vi
+        .fn()
+        .mockResolvedValueOnce(page(0))
+        .mockImplementationOnce(
+          () =>
+            new Promise<ViewedPage>((_resolve, reject) => {
+              rejectOld = reject;
+            }),
+        )
+        .mockResolvedValue({ ...page(0), text: "FAKE latest successful zoom" });
+      const { cancelView, unmount } = renderReader(viewPage);
+      await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+      vi.useFakeTimers();
+      try {
+        const larger = screen.getByRole("button", {
+          name: humanText("Larger"),
+        });
+        await click(larger);
+        await act(async () => {
+          vi.advanceTimersByTime(120);
+        });
+        await click(larger);
+        await act(async () => {
+          vi.advanceTimersByTime(120);
+        });
+        expect(viewPage).toHaveBeenCalledTimes(3);
+        expect(cancelView).toHaveBeenCalledTimes(1);
+        await act(async () => {
+          rejectOld(refusal(code));
+        });
+        expect(screen.getByRole("status")).toHaveHumanTextContent(
+          "Page 1 of 2",
+        );
+        expect(screen.queryByRole("alert")).toBeNull();
+        expect(
+          screen.queryByLabelText(humanText("Document password")),
+        ).toBeNull();
+        expect(larger).toBeEnabled();
+        await click(screen.getByText(humanText("Text on this page")));
+        expect(
+          screen.getByText(humanText("FAKE latest successful zoom")),
+        ).toBeVisible();
+      } finally {
+        unmount();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("cancels in-flight sharpening on close and discards its late result", async () => {
+    let finish!: (value: ViewedPage) => void;
+    const viewPage = vi
+      .fn()
+      .mockResolvedValueOnce(page(0))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            finish = resolve;
+          }),
+      );
+    const { cancelView, unmount } = renderReader(viewPage);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    vi.useFakeTimers();
+    try {
+      await click(screen.getByRole("button", { name: humanText("Larger") }));
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      unmount();
+      expect(cancelView).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        finish({ ...page(0), text: "FAKE closed session" });
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByText(humanText("FAKE closed session"))).toBeNull();
+      expect(viewPage).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens and closes under StrictMode while cancellation remains unresolved", async () => {
+    const viewPage = vi.fn(async () => page(0));
+    const cancellations: Array<() => void> = [];
+    const cancelView = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          cancellations.push(resolve);
+        }),
+    );
+    const { unmount } = render(
+      <StrictMode>
+        <DocumentReader
+          record={record}
+          viewPage={viewPage}
+          cancelView={cancelView}
+          onClose={vi.fn()}
+        />
+      </StrictMode>,
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    expect(viewPage).toHaveBeenCalledTimes(1);
+    expect(cancelView).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("button", { name: humanText("Close") }),
+    ).toHaveFocus();
+    unmount();
+    expect(cancelView).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      cancellations.forEach((finish) => finish());
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("clamps a burst at each zoom bound and sharpens only the final width", async () => {
+    const { viewPage, unmount } = renderReader();
+    const picture = await screen.findByRole("img", {
+      name: humanText(/^Page 1 of 2/),
+    });
+    const fittedWidth = parseFloat(picture.style.width);
+    vi.useFakeTimers();
+    try {
+      const larger = screen.getByRole("button", { name: humanText("Larger") });
+      const smaller = screen.getByRole("button", {
+        name: humanText("Smaller"),
+      });
+      for (let i = 0; i < 20; i++) await click(larger);
+      expect(screen.getByText(humanText("400%"))).toBeVisible();
+      expect(larger).toBeDisabled();
+      expect(smaller).toBeEnabled();
+      expect(parseFloat(picture.style.width)).toBe(Math.round(fittedWidth * 4));
+      expect(viewPage).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(viewPage).toHaveBeenLastCalledWith(
+        0,
+        Math.min(
+          4096,
+          Math.round(Math.round(fittedWidth * 4) * window.devicePixelRatio),
+        ),
+        undefined,
+      );
+      for (let i = 0; i < 20; i++) await click(smaller);
+      expect(screen.getByText(humanText("50%"))).toBeVisible();
+      expect(smaller).toBeDisabled();
+      expect(larger).toBeEnabled();
+      expect(parseFloat(picture.style.width)).toBe(
+        Math.round(fittedWidth * 0.5),
+      );
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(viewPage).toHaveBeenCalledTimes(3);
+      expect(viewPage).toHaveBeenLastCalledWith(
+        0,
+        Math.min(
+          4096,
+          Math.round(Math.round(fittedWidth * 0.5) * window.devicePixelRatio),
+        ),
+        undefined,
+      );
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts a new cache and password session when the document changes", async () => {
+    let unlockFirst!: (value: ViewedPage) => void;
+    const first = vi
+      .fn()
+      .mockRejectedValueOnce(refusal("pdf_locked"))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            unlockFirst = resolve;
+          }),
+      );
+    const second = vi.fn(async () => ({
+      ...page(0),
+      text: "FAKE second document",
+    }));
+    const cancelView = vi.fn();
+    const props = { record, viewPage: first, cancelView, onClose: vi.fn() };
+    const view = render(<DocumentReader {...props} />);
+    const field = await screen.findByLabelText(humanText("Document password"));
+    await userEvent.setup().type(field, "FAKE-session-secret");
+    await click(screen.getByRole("button", { name: humanText("Open") }));
+    await act(async () => {
+      unlockFirst(page(0));
+    });
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    await act(async () => {
+      view.rerender(
+        <DocumentReader
+          {...props}
+          record={{ ...record, id: "record-2", displayName: "FAKE second.pdf" }}
+          viewPage={second}
+        />,
+      );
+    });
+    await vi.waitFor(() => expect(second).toHaveBeenCalledTimes(1));
+    expect(second).toHaveBeenLastCalledWith(0, expect.any(Number), undefined);
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
+    expect(cancelView).toHaveBeenCalledTimes(1);
+    await userEvent
+      .setup()
+      .click(screen.getByText(humanText("Text on this page")));
+    expect(screen.getByText(humanText("FAKE second document"))).toBeVisible();
+  });
+
+  it("refits the open page after a viewport resize and reuses its original width when restored", async () => {
+    const original = { width: window.innerWidth, height: window.innerHeight };
+    const { viewPage } = renderReader();
+    const name = humanText("Page 1 of 2. The page's text follows.");
+    const picture = await screen.findByRole("img", { name });
+    const fittedWidth = picture.getBoundingClientRect().width;
+    const originalRequest = viewPage.mock.calls[0];
+    expect(viewPage).toHaveBeenCalledOnce();
+    try {
+      await browserPage.viewport(600, original.height);
+      await waitFor(() => expect(viewPage).toHaveBeenCalledTimes(2));
+      const current = await screen.findByRole("img", { name });
+      expect(current.getBoundingClientRect().width).toBeLessThan(fittedWidth);
+      const area = current.parentElement!;
+      const style = getComputedStyle(area);
+      const available = Math.floor(
+        area.clientWidth -
+          parseFloat(style.paddingLeft) -
+          parseFloat(style.paddingRight),
+      );
+      expect(
+        Math.abs(current.getBoundingClientRect().width - available),
+      ).toBeLessThanOrEqual(1);
+      expect(area.scrollWidth).toBeLessThanOrEqual(area.clientWidth);
+      expect(viewPage.mock.calls[1]).toEqual([
+        0,
+        Math.min(4096, Math.round(available * window.devicePixelRatio)),
+        undefined,
+      ]);
+      expect(viewPage.mock.calls[1][1]).toBeLessThan(originalRequest[1]);
+      await browserPage.viewport(original.width, original.height);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("img", { name }).getBoundingClientRect().width,
+        ).toBe(fittedWidth),
+      );
+      expect(viewPage).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2");
+      expect(screen.getByText(humanText("100%"))).toBeVisible();
+    } finally {
+      await browserPage.viewport(original.width, original.height);
+    }
+  });
+
   it("asks for a locked document's own password, and again when it is wrong", async () => {
     const user = userEvent.setup();
+    const rawPassword = "  FAKE cafe\u0301 password  ";
+    let rejectWrong!: (reason: unknown) => void;
+    let unlock!: (value: ViewedPage) => void;
     const viewPage = vi
       .fn()
       .mockRejectedValueOnce(refusal("pdf_locked"))
-      .mockRejectedValueOnce(refusal("pdf_wrong_password"))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((_resolve, reject) => {
+            rejectWrong = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewedPage>((resolve) => {
+            unlock = resolve;
+          }),
+      )
       .mockImplementation(async (index: number) => page(index));
     renderReader(viewPage);
     const field = await screen.findByLabelText(humanText("Document password"));
     expect(screen.queryByRole("img")).toBeNull();
-    await user.type(field, "FAKE-wrong{Enter}");
+    await user.type(field, "FAKE-wrong");
+    // The browser submits the focused password field when Enter is pressed.
+    await act(async () => {
+      await realKeys.keyboard("{Enter}");
+    });
+    await act(async () => {
+      rejectWrong(refusal("pdf_wrong_password"));
+    });
     expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       "That password did not open the document.",
     );
-    await user.type(
-      screen.getByLabelText(humanText("Document password")),
-      "FAKE-portal-2026{Enter}",
-    );
+    const retry = screen.getByLabelText(humanText("Document password"));
+    await user.type(retry, rawPassword);
+    expect(retry).toHaveValue(rawPassword);
+    await click(screen.getByRole("button", { name: humanText("Open") }));
+    await act(async () => {
+      unlock(page(0));
+    });
     await screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
     expect(viewPage).toHaveBeenLastCalledWith(
       0,
       expect.any(Number),
-      "FAKE-portal-2026",
+      rawPassword,
     );
     // Later pages use the same password, without asking.
     await user.click(
@@ -215,7 +929,7 @@ describe("the document reader", () => {
     expect(viewPage).toHaveBeenLastCalledWith(
       1,
       expect.any(Number),
-      "FAKE-portal-2026",
+      rawPassword,
     );
   });
 
@@ -253,12 +967,14 @@ describe("the document reader", () => {
     expect(
       screen.getByRole("status").getBoundingClientRect().height,
     ).toBeGreaterThan(1);
-    // Sizes and pages cannot be asked for while one is being drawn.
+    // Initial opening has no picture to scale, and page navigation waits for it.
     for (const name of ["Larger", "Smaller", "Next page"])
       expect(screen.getByRole("button", { name })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: humanText("Larger") }));
     expect(viewPage).toHaveBeenCalledTimes(1);
-    finish(page(0));
+    await act(async () => {
+      finish(page(0));
+    });
     // Once shown, the page is said, for screen readers.
     await vi.waitFor(() =>
       expect(screen.getByRole("status")).toHaveHumanTextContent("Page 1 of 2"),

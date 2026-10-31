@@ -290,6 +290,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         previousSession: string | null;
       };
       type State = {
+        captureEpoch: string;
+        captureSequence: number;
         status: string;
         passphrase: string;
         recoveryKey: string | null;
@@ -485,6 +487,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           },
         ];
         return {
+          captureEpoch: crypto.randomUUID(),
+          captureSequence: 0,
           nextRecordId: 401,
           nextPickId: 1000,
           picks: {},
@@ -516,6 +520,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       } catch {
         state = initial();
       }
+      state.captureEpoch ??= crypto.randomUUID();
+      state.captureSequence ??= 0;
       const save = () => {
         try {
           window.sessionStorage.setItem(STORE, JSON.stringify(state));
@@ -524,6 +530,15 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         }
       };
       save();
+      const captured = () => {
+        const capture = {
+          epoch: state.captureEpoch,
+          sequence: ++state.captureSequence,
+        };
+        const snapshot = { ...copy(state.snapshot), capture };
+        save();
+        return snapshot;
+      };
 
       const refuse = (
         code: string,
@@ -692,6 +707,44 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return new Promise(() => undefined);
           }
           if ("reject" in queued) throw queued.reject;
+          // Scripted snapshots are already captured. Never stamp them when
+          // their reply is delivered, including an intentionally old reply.
+          if (
+            [
+              "vault_snapshot",
+              "vault_create",
+              "vault_unlock",
+              "vault_recovery_key_confirm",
+              "vault_recover",
+            ].includes(command) &&
+            !(
+              command === "vault_recovery_key_confirm" &&
+              queued.resolve === null
+            )
+          ) {
+            const value =
+              command === "vault_recover"
+                ? (queued.resolve as { snapshot?: unknown } | undefined)
+                    ?.snapshot
+                : queued.resolve;
+            const capture = (
+              value as
+                | { capture?: { epoch?: unknown; sequence?: unknown } }
+                | undefined
+            )?.capture;
+            if (
+              !capture ||
+              typeof capture.epoch !== "string" ||
+              !capture.epoch ||
+              typeof capture.sequence !== "number" ||
+              !Number.isSafeInteger(capture.sequence) ||
+              capture.sequence <= 0
+            ) {
+              throw new Error(
+                "FAKE scripted snapshot requires capture-time metadata",
+              );
+            }
+          }
           return queued.resolve;
         }
         const request: Request = args.request ?? {};
@@ -764,7 +817,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           }
           // As a11y.ts: the snapshot is given whenever it is asked for.
           case "vault_snapshot":
-            return copy(snapshot);
+            return captured();
           case "vault_passphrase_rules":
             return { longEnough: true, notAName: true, hardToGuess: true };
           case "vault_create":
@@ -782,7 +835,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             ];
             snapshot.folders = [];
             snapshot.records = [];
-            return copy(snapshot);
+            return captured();
           case "vault_unlock":
             if (state.status === "absent")
               throw refuse("missing", "native.error.13");
@@ -790,7 +843,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               throw refuse("wrong_passphrase", "native.error.16");
             state.status = "unlocked";
             wrote("unlocked", { how: "passphrase" });
-            return copy(snapshot);
+            return captured();
           case "vault_recover":
             if (
               !state.recoveryKey ||
@@ -800,7 +853,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               throw refuse("wrong_recovery_key", "native.error.44");
             state.passphrase = request.newPassphrase ?? "";
             state.status = "unlocked";
-            return { passphraseReplaced: true, snapshot: copy(snapshot) };
+            return { passphraseReplaced: true, snapshot: captured() };
           case "vault_lock":
             cancelViews();
             // A key being set up does not outlive the session.
@@ -846,7 +899,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             state.pendingKey = null;
             snapshot.recoveryKeySetAtMs = Date.now();
             snapshot.recoveryKeyLabel = setup.newKeyLabel;
-            return copy(snapshot);
+            return captured();
           }
           case "vault_assign_folders":
           case "vault_assign_folders_batch":

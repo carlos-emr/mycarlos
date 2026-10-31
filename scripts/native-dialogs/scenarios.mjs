@@ -167,6 +167,17 @@ export async function runDialogScenarios({ backupPath }) {
     });
     await call("vault_recovery_key_confirm", groups(original));
     const snapshot = await call("vault_snapshot");
+    const { capture: initialCapture, ...initialContents } = snapshot;
+    const validCapture = (capture) =>
+      typeof capture?.epoch === "string" &&
+      capture.epoch.length > 0 &&
+      Number.isSafeInteger(capture.sequence) &&
+      capture.sequence > 0;
+    assert(
+      validCapture(initialCapture),
+      "Initial key snapshot capture is invalid",
+    );
+    let previousCapture = initialCapture;
     const replacement = await call("vault_recovery_key_begin", {
       passphrase: password,
     });
@@ -185,11 +196,21 @@ export async function runDialogScenarios({ backupPath }) {
         `Key replacement was authorized by ${action}`,
       );
       await unchanged(before, `key replacement ${action}`);
+      const { capture, ...contents } = await call("vault_snapshot");
       assert(
-        JSON.stringify(await call("vault_snapshot")) ===
-          JSON.stringify(snapshot),
-        "Current key snapshot changed on cancellation",
+        validCapture(capture),
+        "Cancelled key snapshot capture is invalid",
       );
+      assert(
+        capture.epoch === initialCapture.epoch &&
+          capture.sequence > previousCapture.sequence,
+        "Cancelled key snapshot capture did not advance in the same runtime",
+      );
+      assert(
+        JSON.stringify(contents) === JSON.stringify(initialContents),
+        "Current key snapshot contents changed on cancellation",
+      );
+      previousCapture = capture;
     }
     const replaced = await dialog(
       "vault_recovery_key_confirm",
