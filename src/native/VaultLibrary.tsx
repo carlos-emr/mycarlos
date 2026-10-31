@@ -2377,7 +2377,13 @@ export function VaultLibrary({
             <DocumentReader
               record={readerRecord}
               viewPage={(page, width, password) =>
-                bridge.viewPage(readerRecord.id, page, width, password)
+                bridge
+                  .viewPage(readerRecord.id, page, width, password)
+                  .catch((error: unknown) => {
+                    if (mountedRef.current && isLockedError(error))
+                      void onLock();
+                    throw error;
+                  })
               }
               cancelView={() => void bridge.cancelView().catch(() => undefined)}
               onClose={() => setReaderRecordId(null)}

@@ -2083,6 +2083,107 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it.each(["locked", "pdf_locked", "late-locked"] as const)(
+    "distinguishes a native vault lock from a document password: %s",
+    async (code) => {
+      const user = userEvent.setup();
+      let rejectPage: ((error: unknown) => void) | undefined;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        unlock: vi.fn().mockResolvedValue(snapshotWithRecord),
+        viewPage: vi.fn(
+          () =>
+            new Promise<ViewedPage>((_resolve, reject) => {
+              rejectPage = reject;
+            }),
+        ),
+      });
+      const refuse = async (failure: unknown) => {
+        const reject = rejectPage;
+        rejectPage = undefined;
+        if (reject) await act(async () => reject(failure));
+      };
+      onTestFinished(async () => {
+        await refuse({ code: "locked" });
+      });
+      render(<VaultApp bridge={bridge} />);
+      await user.click(await screen.findByText(humanText("FAKE_Results.pdf")));
+      await user.click(screen.getByRole("button", { name: humanText("Read") }));
+      await waitFor(() =>
+        expect(bridge.viewPage).toHaveBeenCalledExactlyOnceWith(
+          "record-1",
+          0,
+          expect.any(Number),
+          undefined,
+        ),
+      );
+      if (code !== "late-locked")
+        await refuse({ code, message: "FAKE page refused." });
+      if (code === "late-locked") {
+        let state: DocumentVisibilityState = "visible";
+        const visibility = vi
+          .spyOn(document, "visibilityState", "get")
+          .mockImplementation(() => state);
+        try {
+          await act(async () => {
+            state = "hidden";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          });
+          await act(async () => {
+            state = "visible";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await user.type(
+            screen.getByLabelText(humanText("Passphrase")),
+            "river-azimuth-cobalt-sparrow-934",
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Unlock") }),
+          );
+          await screen.findByRole("button", {
+            name: humanText("FAKE_Results.pdf"),
+          });
+          await refuse({ code: "locked" });
+          expect(bridge.lock).toHaveBeenCalledOnce();
+          expect(bridge.unlock).toHaveBeenCalledOnce();
+          expect(
+            screen.getByRole("button", {
+              name: humanText("FAKE_Results.pdf"),
+            }),
+          ).toBeVisible();
+          expect(screen.queryByRole("dialog")).toBeNull();
+        } finally {
+          visibility.mockRestore();
+        }
+      } else if (code === "locked") {
+        expect(
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
+        ).toBeVisible();
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        expect(document.body).not.toHaveTextContent("FAKE_Results.pdf");
+      } else {
+        const reader = screen.getByRole("dialog", {
+          name: humanText("FAKE_Results.pdf"),
+        });
+        expect(
+          await within(reader).findByLabelText(humanText("Document password")),
+        ).toBeVisible();
+        expect(bridge.lock).not.toHaveBeenCalled();
+        expect(
+          screen.queryByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
+        ).toBeNull();
+      }
+    },
+  );
+
   it("closes the reader, and stops its page, when the vault locks", async () => {
     const user = userEvent.setup();
     const record = {
