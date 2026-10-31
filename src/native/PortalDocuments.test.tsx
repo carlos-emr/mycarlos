@@ -23,6 +23,7 @@ const link: PortalLinkSummary = {
   clinicApproved: false,
 };
 const snapshot: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [
     { id: "fake-person", displayName: "FAKE Patient", createdAtMs: 1 },
   ],

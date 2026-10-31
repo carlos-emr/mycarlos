@@ -4,6 +4,19 @@ import { describe, expect, it, vi } from "vitest";
 import { humanText } from "../test/humanText";
 import type { VaultBridge, VaultSnapshot, FoundIdentity } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
+
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const people = [
   { id: "p1", displayName: "FAKE Mom", createdAtMs: 1 },
   { id: "p2", displayName: "FAKE Jamie Example", createdAtMs: 2 },
@@ -21,6 +34,7 @@ describe("shared PDF suggestions use explicit Move", () => {
     available: true,
   });
   const vault: VaultSnapshot = {
+    capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
     profiles: [
       ...people,
       { id: "shared", displayName: "Shared with me", createdAtMs: 3 },
@@ -40,7 +54,7 @@ describe("shared PDF suggestions use explicit Move", () => {
       platform: vi.fn().mockResolvedValue("windows"),
       isPhoto: vi.fn().mockResolvedValue(false),
       isLockedPdf: vi.fn().mockResolvedValue(false),
-      snapshot: vi.fn().mockResolvedValue(shown),
+      snapshot: vi.fn().mockImplementation(async () => captureSnapshot(shown)),
       moveToPerson: vi
         .fn()
         .mockResolvedValue({ moved: ["s1"], alreadyThere: [] }),

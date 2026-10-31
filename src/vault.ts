@@ -61,7 +61,15 @@ export interface HiddenRecord {
  * the vault's metadata could not be read, or a write failed. */
 export type RecoveryReason = "lostObjects" | "unreadableSlot" | "writeFailed";
 
+export interface SnapshotCapture {
+  /** Opaque native-store runtime identity; epochs are never ordered. */
+  epoch: string;
+  /** Native capture order, bounded to JavaScript's positive safe integers. */
+  sequence: number;
+}
+
 export interface VaultSnapshot {
+  capture: SnapshotCapture;
   profiles: PatientProfile[];
   folders: VaultFolder[];
   records: VaultRecord[];

@@ -12,6 +12,18 @@ import {
 } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const record = (id: string, displayName: string) =>
   ({
     id,
@@ -26,6 +38,7 @@ const record = (id: string, displayName: string) =>
   }) satisfies VaultRecord;
 
 const base: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [{ id: "profile-1", displayName: "FAKE Patient", createdAtMs: 1 }],
   folders: [],
   records: [record("locked-1", "FAKE Letter.pdf")],
@@ -84,7 +97,7 @@ function renderLibrary(
         ),
       };
     }),
-    snapshot: vi.fn(async () => current),
+    snapshot: vi.fn(async () => captureSnapshot(current)),
     ...bridgeOverrides,
   } as unknown as VaultBridge;
   function Harness() {

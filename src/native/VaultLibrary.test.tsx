@@ -12,7 +12,20 @@ import { describe, expect, it, vi } from "vitest";
 import type { VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const snapshot: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [{ id: "profile-1", displayName: "FAKE Avery", createdAtMs: 1 }],
   folders: [
     {
@@ -47,7 +60,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
     updateFolder: vi.fn().mockResolvedValue(undefined),
     renameProfile: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
-    snapshot: vi.fn().mockResolvedValue(shown),
+    snapshot: vi.fn().mockImplementation(async () => captureSnapshot(shown)),
     history: vi.fn().mockResolvedValue({
       entries: [],
       laterEntries: [],
@@ -252,6 +265,7 @@ describe("clinic service dates", () => {
   });
 });
 const filed: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: snapshot.profiles,
   folders: [
     folder("lab", "FAKE Lab results", null),
