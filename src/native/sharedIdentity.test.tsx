@@ -47,22 +47,91 @@ describe("shared PDF suggestions use explicit Move", () => {
       ...extra,
     } as unknown as VaultBridge;
     const setNotice = vi.fn();
-    render(
+    const screenFor = (current: VaultSnapshot) => (
       <VaultLibrary
         bridge={bridge}
-        snapshot={shown}
+        snapshot={current}
         busy={false}
         notice=""
         setNotice={setNotice}
         run={async (operation) => operation()}
-        refresh={async () => shown}
+        refresh={async () => current}
         onLock={vi.fn().mockResolvedValue(undefined)}
         autoLockMinutes={5}
         onAutoLockMinutes={vi.fn()}
-      />,
+      />
     );
-    return { bridge, setNotice };
+    const view = render(screenFor(shown));
+    return {
+      bridge,
+      setNotice,
+      rerenderSnapshot: (current: VaultSnapshot) =>
+        view.rerender(screenFor(current)),
+    };
   }
+
+  it("uses current saved people for a cached document suggestion and its Move", async () => {
+    const shown = { ...vault, records: [vault.records[0]] };
+    const identity = vi.fn().mockResolvedValue({ name: "FAKE Jamie Example" });
+    const { bridge, rerenderSnapshot } = renderLibrary(
+      { sharedIdentity: identity },
+      shown,
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
+    const groupName = humanText(
+      "Suggested person for FAKE Referral letter.pdf",
+    );
+    expect(
+      within(await screen.findByRole("group", { name: groupName })).getByRole(
+        "button",
+        {
+          name: humanText(
+            "Move FAKE Referral letter.pdf to FAKE Jamie Example's records",
+          ),
+        },
+      ),
+    ).toBeEnabled();
+
+    // A refreshed profile's recorded full name supersedes its display label.
+    const unmatched = {
+      ...shown,
+      profiles: shown.profiles.map((person) =>
+        person.id === "p2"
+          ? { ...person, fullName: "FAKE Robin Sample" }
+          : person,
+      ),
+    };
+    rerenderSnapshot(unmatched);
+    expect(screen.queryByRole("group", { name: groupName })).toBeNull();
+    expect(bridge.moveToPerson).not.toHaveBeenCalled();
+
+    rerenderSnapshot({
+      ...unmatched,
+      profiles: unmatched.profiles.map((person) =>
+        person.id === "p1"
+          ? { ...person, fullName: "FAKE Jamie Example" }
+          : person,
+      ),
+    });
+    await userEvent.click(
+      within(await screen.findByRole("group", { name: groupName })).getByRole(
+        "button",
+        {
+          name: humanText(
+            "Move FAKE Referral letter.pdf to FAKE Mom's records",
+          ),
+        },
+      ),
+    );
+    expect(bridge.moveToPerson).toHaveBeenCalledExactlyOnceWith(
+      ["s1"],
+      "p1",
+      [],
+    );
+    expect(identity).toHaveBeenCalledExactlyOnceWith("s1");
+  });
 
   it("suggests the one person a shared document's name matches, and only moves on Move", async () => {
     const found: Record<string, FoundIdentity | null> = {
