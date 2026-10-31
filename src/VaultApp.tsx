@@ -786,7 +786,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // all waiting for the next ask.
   const accepting = useRef(false);
   acceptSharedRef.current = async () => {
-    if (status !== "unlocked" || accepting.current) return;
+    if (status !== "unlocked" || !inSession() || accepting.current) return;
     accepting.current = true;
     try {
       const outcome = await bridge.acceptReceived();
@@ -810,6 +810,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // They keep waiting: the next ask tries again.
     } finally {
       accepting.current = false;
+      // A newer unlock may have asked while these files were still taken.
+      if (!inSession()) void refreshReceived();
     }
   };
   useEffect(() => {

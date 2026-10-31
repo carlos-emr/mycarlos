@@ -22,6 +22,7 @@ import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type {
   ImportOutcome,
+  ReceivedAcceptOutcome,
   SavedBackup,
   VaultBridge,
   VaultSnapshot,
@@ -1901,6 +1902,127 @@ describe("durable vault UI", () => {
       ),
     ).toBeVisible();
   });
+
+  it.each(["same session", "after another unlock", "while locked"] as const)(
+    "rechecks restored shared intake: %s",
+    async (when) => {
+      const user = userEvent.setup();
+      const { bridge } = sharedVault(["FAKE Patient"], ["FAKE_Restored.pdf"], {
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      const accept = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+      const list = vi.mocked(bridge.listReceived).getMockImplementation()!;
+      const unlock = vi.mocked(bridge.unlock).getMockImplementation()!;
+      let taken = false;
+      let unlockedAgain = false;
+      let listedAfterUnlock = false;
+      let listedRestored = false;
+      let rejectOld: ((error: unknown) => void) | undefined;
+      vi.mocked(bridge.acceptReceived)
+        .mockImplementationOnce(() => {
+          taken = true;
+          return new Promise<ReceivedAcceptOutcome>((_resolve, reject) => {
+            rejectOld = reject;
+          });
+        })
+        .mockImplementation(accept);
+      vi.mocked(bridge.listReceived).mockImplementation(async () => {
+        const state = await list();
+        if (unlockedAgain) listedAfterUnlock = true;
+        if (!taken && vi.mocked(bridge.acceptReceived).mock.calls.length === 1)
+          listedRestored = true;
+        // Native received_accept takes files out of the waiting list, then
+        // restores them before returning a failed attempt (received.rs).
+        return taken ? { ...state, files: [] } : state;
+      });
+      vi.mocked(bridge.unlock).mockImplementation(async (passphrase) => {
+        unlockedAgain = true;
+        return unlock(passphrase);
+      });
+      const refuse = async () => {
+        const reject = rejectOld;
+        rejectOld = undefined;
+        if (!reject) return;
+        taken = false;
+        await act(async () =>
+          reject({ code: when === "same session" ? "storage" : "locked" }),
+        );
+      };
+      onTestFinished(refuse);
+      render(<VaultApp bridge={bridge} />);
+      await waitFor(() => expect(bridge.acceptReceived).toHaveBeenCalledOnce());
+      const unlockAgain = async () => {
+        await user.type(
+          screen.getByLabelText(humanText("Passphrase")),
+          "river-azimuth-cobalt-sparrow-934",
+        );
+        await user.click(
+          screen.getByRole("button", { name: humanText("Unlock") }),
+        );
+        await screen.findByRole("heading", { name: humanText("My records") });
+      };
+
+      if (when !== "same session") {
+        let state: DocumentVisibilityState = "visible";
+        const visibility = vi
+          .spyOn(document, "visibilityState", "get")
+          .mockImplementation(() => state);
+        try {
+          await act(async () => {
+            state = "hidden";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          });
+          await act(async () => {
+            state = "visible";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          if (when === "after another unlock") {
+            await unlockAgain();
+            await waitFor(() => expect(listedAfterUnlock).toBe(true));
+          }
+          expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+        } finally {
+          visibility.mockRestore();
+        }
+      }
+
+      await refuse();
+      if (when === "same session") {
+        // A current refusal waits for the next ask, without an automatic loop.
+        expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+        expect(listedRestored).toBe(false);
+        await act(async () => window.dispatchEvent(new Event("focus")));
+      } else if (when === "while locked") {
+        await waitFor(() => expect(listedRestored).toBe(true));
+        expect(
+          await screen.findByText(
+            humanText(
+              "One shared file is waiting. Unlock and it goes into Shared with me. If myCarlos closes first, it is not kept: share it again.",
+            ),
+          ),
+        ).toBeVisible();
+        expect(document.body).not.toHaveTextContent("FAKE_Restored.pdf");
+        expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+        await unlockAgain();
+      }
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("Shared with me, 1 new"),
+        }),
+      );
+      expect(screen.getByText(humanText("FAKE_Restored.pdf"))).toBeVisible();
+      expect(bridge.acceptReceived).toHaveBeenCalledTimes(2);
+      expect(bridge.lock).toHaveBeenCalledTimes(
+        when === "same session" ? 0 : 1,
+      );
+      expect(bridge.unlock).toHaveBeenCalledTimes(
+        when === "same session" ? 0 : 1,
+      );
+    },
+  );
 
   it("lets no person be called Shared with me (#61)", async () => {
     const user = userEvent.setup();
