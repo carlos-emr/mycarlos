@@ -85,6 +85,7 @@ function ReadingDocument({
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
   useModalFocus(true, dialogRef, onClose, closeRef);
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState(1);
@@ -101,6 +102,10 @@ function ReadingDocument({
   const [asking, setAsking] = useState(false);
   const [wrongTries, setWrongTries] = useState(0);
   const [typed, setTyped] = useState("");
+  // A refused attempt remounts the field; keep keyboard retry in that field.
+  useEffect(() => {
+    if (asking && wrongTries > 0) passwordRef.current?.focus();
+  }, [asking, wrongTries]);
   // Pages already drawn at a width, so that going back is quick. Memory only.
   const drawn = useRef(new Map<string, ViewedPage>());
   // The latest way to ask for a page; a new function alone asks for nothing.
@@ -350,6 +355,7 @@ function ReadingDocument({
               {translateNow("interface.DocumentReader.documentPassword")}
             </label>
             <input
+              ref={passwordRef}
               id="reader-password"
               type="password"
               autoComplete="off"
