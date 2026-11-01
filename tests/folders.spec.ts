@@ -5,9 +5,12 @@ import {
   FAKE_IDS,
   fakeUuid,
   fakeCalls,
+  fakeSnapshot,
   fakeVaultWith,
   myRecords,
   openDetails,
+  refusal,
+  scriptFake,
   sidebar,
 } from "./support/vaultFake";
 
@@ -157,6 +160,133 @@ test("a folder, a folder inside it, documents moved in from the selection bar an
   await expect(
     page.getByText(en("sidebar.folderCount", { count: 4 }), { exact: false }),
   ).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
+
+test("a refused bulk move keeps both selections and the destination for an explicit keyboard retry", async ({
+  page,
+}, testInfo) => {
+  // This exercises the browser UI and the stateful scripted bridge, not native
+  // filesystem failure or transaction behavior.
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await newFolder(page, "FAKE Imaging");
+
+  // Search includes documents in folders, so this is a two-document move
+  // from different starting locations rather than a single selected row.
+  const search = page.getByRole("searchbox", {
+    name: en("interface.search.all", { location: en("sidebar.myRecords") }),
+    exact: true,
+  });
+  await search.fill(".pdf");
+  const names = ["FAKE Bloodwork.pdf", "FAKE Letter.pdf"];
+  const selection = (name: string) =>
+    page.getByRole("button", {
+      name: en("library.select", { name }),
+      exact: true,
+    });
+  for (const name of names) await selection(name).click();
+  const destination = page.getByLabel(
+    en("interface.VaultLibrary.moveSelectedTo"),
+    { exact: true },
+  );
+  await destination.selectOption({ label: "FAKE Imaging" });
+  const move = page.getByRole("button", {
+    name: en("interface.RecordDetails.move"),
+    exact: true,
+  });
+  const before = await fakeSnapshot(page);
+  await scriptFake(page, "vault_assign_folders_batch", {
+    reject: refusal("storage", "native.error.35"),
+  });
+  await move.click();
+  const error = page.getByText(en("native.error.35"), { exact: true });
+  await expect(error).toBeVisible();
+  await expect(move).toBeEnabled();
+  await expect(
+    page.getByText(en("interface.count.selected", { count: 2 }), {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(destination).toHaveValue(fakeUuid(303));
+  for (const name of names) {
+    await expect(selection(name)).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  }
+  expect((await fakeSnapshot(page)).records).toEqual(before.records);
+  const request = {
+    request: {
+      recordIds: [FAKE_IDS.record, FAKE_IDS.letter],
+      folderIds: [fakeUuid(303)],
+    },
+  };
+  expect(await fakeCalls(page, "vault_assign_folders_batch")).toEqual([
+    request,
+  ]);
+  await testInfo.attach("refused-move-selection-and-destination", {
+    body: await page.screenshot(),
+    contentType: "image/png",
+  });
+
+  // The refusal does not schedule a retry. Tab from the retained destination
+  // to Move and press Enter to make the second, identical request explicitly.
+  await destination.focus();
+  await page.keyboard.press("Tab");
+  await expect(move).toBeFocused();
+  expect(await fakeCalls(page, "vault_assign_folders_batch")).toEqual([
+    request,
+  ]);
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByText(en("interface.notice.moved", { count: 2 }), { exact: true }),
+  ).toBeVisible();
+  await expect(error).toHaveCount(0);
+  await expect(destination).toHaveCount(0);
+  expect(await fakeCalls(page, "vault_assign_folders_batch")).toEqual([
+    request,
+    request,
+  ]);
+  for (const name of names)
+    await expect(selection(name)).toHaveAttribute("aria-pressed", "false");
+  expect((await fakeSnapshot(page)).records).toEqual(
+    before.records.map((record) => ({ ...record, folderIds: [fakeUuid(303)] })),
+  );
+
+  // Clearing the search shows the source is empty. Both matching rows must
+  // then be present in the chosen folder, with no leftover selection.
+  await search.fill("");
+  for (const name of names)
+    await expect(page.getByRole("button", { name, exact: true })).toHaveCount(
+      0,
+    );
+  await expect(folderButton(page, "FAKE Imaging")).toHaveText(/2$/);
+  await expect(folderButton(page, "FAKE Results")).toHaveText(/0$/);
+  await folderButton(page, "FAKE Imaging").click();
+  for (const name of names) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+    await expect(selection(name)).toHaveAttribute("aria-pressed", "false");
+  }
+  const details = await openDetailsIn(page, "FAKE Imaging", "FAKE Letter.pdf");
+  await details
+    .getByRole("button", {
+      name: en("interface.RecordDetails.closeDocumentDetails"),
+      exact: true,
+    })
+    .click();
+  await expect(details).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "FAKE Letter.pdf", exact: true }),
+  ).toBeFocused();
+  await testInfo.attach("retried-move-destination-rows-and-returned-focus", {
+    body: await page.screenshot(),
+    contentType: "image/png",
+  });
+  expect(await fakeCalls(page, "vault_assign_folders_batch")).toEqual([
+    request,
+    request,
+  ]);
+  expect(await fakeCalls(page, "vault_lock")).toEqual([]);
   await expectOnlyFakedCommands(page);
 });
 
