@@ -551,6 +551,82 @@ export async function testNativeDialogs(
         await expect(records).toBeVisible();
         await expect(pdfRow).toBeVisible();
         await expect(pdfRow).toBeFocused();
+
+        // A readable copy leaves the vault through the actual Windows picker.
+        // Verify the file itself, not only the UI's saved notice.
+        const readableCopyPath = testInfo.outputPath(
+          "native-readable-copy.pdf",
+        );
+        await expect(stat(readableCopyPath)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        await pdfRow.click();
+        await expect(pdfDetails).toBeVisible();
+        await pdfDetails
+          .getByRole("button", {
+            name: translate(
+              "en",
+              "interface.RecordDetails.saveACopyToThisComputer",
+            ),
+            exact: true,
+          })
+          .click();
+        const copyQuestion = page.getByRole("alertdialog", {
+          name: translate("en", "interface.VaultLibrary.saveAReadableCopy"),
+          exact: true,
+        });
+        await expect(copyQuestion).toBeVisible();
+        await expect(
+          copyQuestion.getByText(
+            translate(
+              "en",
+              "interface.VaultLibrary.savingCreatesAReadableFileOutsideThe",
+            ),
+            { exact: true },
+          ),
+        ).toBeVisible();
+        const exported = await Promise.allSettled([
+          copyQuestion
+            .getByRole("button", {
+              name: translate("en", "interface.VaultLibrary.saveACopy"),
+              exact: true,
+            })
+            .click(),
+          native("FILE_SAVE", "file", readableCopyPath),
+        ]);
+        for (const result of exported)
+          if (result.status === "rejected") throw result.reason;
+        await expect(copyQuestion).toHaveCount(0);
+        await expect(pdfDetails.getByRole("status")).toHaveText(
+          translate("en", "interface.notice.copySaved"),
+        );
+        const publicPdfBytes = await readFile(pdfPath);
+        const readableCopyBytes = await readFile(readableCopyPath);
+        expect(readableCopyBytes).toEqual(publicPdfBytes);
+        expect(
+          createHash("sha256").update(readableCopyBytes).digest("hex"),
+          "The readable copy contains the public two-page PDF bytes",
+        ).toBe(
+          "41e61a36137b8f4c79a284a73adb36d634708625831c88c60e05e961756d51a9",
+        );
+        await page.screenshot({
+          path: testInfo.outputPath("native-readable-copy-saved.png"),
+        });
+        await pdfDetails
+          .getByRole("button", {
+            name: translate(
+              "en",
+              "interface.RecordDetails.closeDocumentDetails",
+            ),
+            exact: true,
+          })
+          .click();
+        await expect(pdfDetails).toHaveCount(0);
+        await expect(records).toBeVisible();
+        await expect(pdfRow).toHaveCount(1);
+        await expect(pdfRow).toBeVisible();
+        await expect(pdfRow).toBeFocused();
+
         // The producer verified this document opens only with the exact spaced password.
         const spacedPath = resolve(
           "src-tauri/tests/fixtures/locked-pdf/image-aes256-spaced.pdf",
@@ -821,6 +897,9 @@ export async function testNativeDialogs(
           page.getByRole("heading", { name: "Unlock your vault", exact: true }),
         ).toBeVisible();
         await expect(records).toHaveCount(0);
+
+        // This chosen public copy stays readable outside the locked vault.
+        expect(await readFile(readableCopyPath)).toEqual(publicPdfBytes);
 
         // Set aside only this synthetic vault through the real UI and owned dialog.
         await page
