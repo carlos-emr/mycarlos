@@ -137,6 +137,34 @@ export async function testNativeDialogs(
       });
       if (typeof recoveryKey !== "string" || !recoveryKey)
         throw new Error("Synthetic backup recovery key is missing");
+      let ownsFollowupVault = false;
+      // Unlike UI actions, page.evaluate has no per-call timeout. Bound
+      // follow-up IPC too, so a hung native call cannot hide the first error.
+      const followupCommand = async (
+        command: "vault_status" | "vault_lock",
+      ) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          return await Promise.race([
+            page.evaluate((command) => {
+              const host = window as unknown as {
+                __TAURI_INTERNALS__: {
+                  invoke: (command: string) => Promise<unknown>;
+                };
+              };
+              return host.__TAURI_INTERNALS__.invoke(command);
+            }, command),
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(
+                () => reject(new Error(`Follow-up ${command} timed out`)),
+                NATIVE_STEP_TIMEOUT_MS,
+              );
+            }),
+          ]);
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+        }
+      };
       try {
         await page.reload();
         await expect(
@@ -188,6 +216,11 @@ export async function testNativeDialogs(
           exact: true,
         });
         await expect(submit).toBeEnabled();
+        // The caller requires an empty disposable account. This follow-up
+        // creates a vault only from the owned backup just picked and checked.
+        // Recheck absence before allowing either restore or failure cleanup.
+        expect(await followupCommand("vault_status")).toBe("absent");
+        ownsFollowupVault = true;
         await submit.click();
         await expect(
           page.getByText(
@@ -935,6 +968,62 @@ export async function testNativeDialogs(
             }),
           )
           .toBe("absent");
+      } catch (failure) {
+        if (ownsFollowupVault) {
+          try {
+            const status = await followupCommand("vault_status");
+            if (status !== "absent") {
+              if (status !== "locked" && status !== "unlocked")
+                throw new Error("Unknown owned synthetic vault status");
+              await followupCommand("vault_lock");
+              await page.reload({ timeout: NATIVE_STEP_TIMEOUT_MS });
+              await expect(
+                page.getByRole("heading", {
+                  name: "Unlock your vault",
+                  exact: true,
+                }),
+              ).toBeVisible();
+              await page
+                .getByText("Forgot your passphrase?", { exact: true })
+                .click();
+              await page
+                .getByLabel(
+                  translate("en", "reset.type", {
+                    phrase: "RESET MYCARLOS VAULT",
+                  }),
+                  { exact: true },
+                )
+                .fill("RESET MYCARLOS VAULT");
+              const cleanedAfterFailure = await Promise.allSettled([
+                page
+                  .getByRole("button", {
+                    name: "Set vault aside",
+                    exact: true,
+                  })
+                  .click(),
+                native(
+                  "Set this myCarlos vault aside and start again?",
+                  "button",
+                  "Set it aside",
+                ),
+              ]);
+              for (const result of cleanedAfterFailure)
+                if (result.status === "rejected") throw result.reason;
+              await expect
+                .poll(() => followupCommand("vault_status"))
+                .toBe("absent");
+            }
+          } catch (cleanupFailure) {
+            // Preserve the actual test failure even if the app or OS dialog
+            // cannot be used for best-effort cleanup. Outer teardown still
+            // stops only the owned app process tree.
+            console.error(
+              "Additional owned synthetic vault cleanup failure:",
+              cleanupFailure,
+            );
+          }
+        }
+        throw failure;
       } finally {
         recoveryKey = undefined;
       }

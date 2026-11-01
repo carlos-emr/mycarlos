@@ -45,12 +45,24 @@ test("snapshot captures increase within the fake runtime across renderer reload"
     capture: { epoch: string; sequence: number };
   };
   const second = (await invoke(page, "vault_snapshot")).value as typeof first;
-  expect(first.capture.epoch).toMatch(/^[0-9a-f-]{36}$/);
+  expect(first.capture.epoch).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  );
   expect(second.capture.epoch).toBe(first.capture.epoch);
   expect(second.capture.sequence).toBeGreaterThan(first.capture.sequence);
   expect(Number.isSafeInteger(second.capture.sequence)).toBe(true);
   await scriptFake(page, "vault_snapshot", { resolve: first });
   expect((await invoke(page, "vault_snapshot")).value).toEqual(first);
+  // Length alone is not the UUID wire format emitted by the native store.
+  await scriptFake(page, "vault_snapshot", {
+    resolve: {
+      ...first,
+      capture: { ...first.capture, epoch: "-".repeat(36) },
+    },
+  });
+  expect((await invoke(page, "vault_snapshot")).error).toContain(
+    "requires capture-time metadata",
+  );
   await scriptFake(page, "vault_snapshot", {
     resolve: { profiles: [], folders: [], records: [], recovery: null },
   });

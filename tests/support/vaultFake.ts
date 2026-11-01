@@ -735,7 +735,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             if (
               !capture ||
               typeof capture.epoch !== "string" ||
-              !capture.epoch ||
+              !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                capture.epoch,
+              ) ||
               typeof capture.sequence !== "number" ||
               !Number.isSafeInteger(capture.sequence) ||
               capture.sequence <= 0
