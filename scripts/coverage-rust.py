@@ -183,14 +183,15 @@ def execute(args, pin, host, tools, versions):
         env = os.environ.copy()
         env.update({"RUSTUP_TOOLCHAIN": pin, "RUSTC": str(tools["rustc"]),
                     "RUSTC_WRAPPER": "", "RUSTC_WORKSPACE_WRAPPER": "",
-                    "CARGO_ENCODED_RUSTFLAGS": "-C\x1finstrument-coverage",
+                    "CARGO_ENCODED_RUSTFLAGS": "",
                     "CARGO_TARGET_DIR": str(directory / "target"), "CARGO_INCREMENTAL": "0",
                     "CARGO_BUILD_JOBS": str(args.jobs), "TMPDIR": str(directory / "tmp"),
                     "DEBUGINFOD_URLS": "",
                     "LLVM_PROFILE_FILE": str(directory / "build-profiles/%m-%p.profraw")})
-        build = run.command("build", [str(tools["cargo"]), "test", "--manifest-path", str(MANIFEST),
-            "--offline", "--locked", "--lib", "--target", host, "--jobs", str(args.jobs),
-            "--no-run", "--message-format=json"], env)
+        # Extra rustc arguments apply only to the selected project library test target.
+        build = run.command("build", [str(tools["cargo"]), "rustc", "--manifest-path", str(MANIFEST),
+            "--offline", "--locked", "--lib", "--profile", "test", "--target", host,
+            "--jobs", str(args.jobs), "--message-format=json", "--", "-C", "instrument-coverage"], env)
         cargo = tomllib.loads(MANIFEST.read_text())
         lib_source = (MANIFEST.parent / cargo["lib"].get("path", "src/lib.rs")).resolve()
         artifacts = []

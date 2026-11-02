@@ -5,6 +5,13 @@ complete default, nonignored **library test suite** for the pinned compiler's ho
 merges its recorded profiles with matching LLVM tools. Normal Cargo, frontend and release commands
 are unchanged. See [frontend coverage](COVERAGE.md) for the separate TypeScript report.
 
+The build uses `cargo rustc --lib --profile test -- -C instrument-coverage` to instrument only the
+project library test crate. Dependencies retain their existing profile settings and are exercised
+by the same tests, without coverage counters in dependency code that is outside the report's
+denominator. Cargo's special `test` profile builds the selected library with its test harness and
+`cfg(test)`; it does not select additional test targets. See the supported
+[cargo rustc command](https://doc.rust-lang.org/cargo/commands/cargo-rustc.html).
+
 ## Prerequisites and commands
 
 Use Python 3.11 or later, Git, rustup, the exact compiler in `rust-toolchain.toml`, and the Linux
@@ -34,7 +41,7 @@ and browser/global leases before invoking the runner, just as for ordinary nativ
 Each invocation creates a fresh private directory under the already ignored `coverage/rust/`.
 The runner accepts no reusable target/output directory and performs no deletion or `cargo clean`.
 The normal `src-tauri/target`, shared build caches and earlier reports are not reused or cleaned.
-Allow enough disk space for a complete instrumented native dependency build before starting.
+Allow enough disk space for a complete native dependency build and instrumented library test binary.
 
 The run retains:
 
