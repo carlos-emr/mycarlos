@@ -124,6 +124,91 @@ describe("RestoreBackup", () => {
     },
   );
 
+  it("drops a checked restore when the replacement picker fails, then restores only the newly checked pick", async () => {
+    const user = userEvent.setup();
+    let refusePicker!: (reason: unknown) => void;
+    const pendingPicker = new Promise<string | null>((_resolve, reject) => {
+      refusePicker = reject;
+    });
+    const pickRestoreSource = vi
+      .fn()
+      .mockResolvedValueOnce("pick-1")
+      .mockReturnValueOnce(pendingPicker)
+      .mockResolvedValueOnce("pick-2");
+    const { bridge, onRestored } = setUp(
+      { replaces: "otherVault" },
+      { pickRestoreSource },
+    );
+    await chooseAndCheck(user);
+    const agreement = () =>
+      screen.getByRole("checkbox", {
+        name: humanText(
+          "Set the vault on this device aside and restore the backup",
+        ),
+      });
+    await user.click(agreement());
+    expect(
+      screen.getByRole("button", { name: humanText("Restore backup") }),
+    ).toBeEnabled();
+
+    const choose = screen.getByRole("button", {
+      name: humanText("Choose a different backup…"),
+    });
+    await user.click(choose);
+    expect(choose).toBeDisabled();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: humanText("Restore backup") }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(bridge.inspectRestore).toHaveBeenCalledOnce();
+    expect(bridge.restore).not.toHaveBeenCalled();
+
+    await act(async () =>
+      refusePicker({ code: "io", message: "FAKE backup picker failed." }),
+    );
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "FAKE backup picker failed.",
+    );
+    expect(choose).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: humanText("Restore backup") }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(bridge.inspectRestore).toHaveBeenCalledOnce();
+    expect(bridge.restore).not.toHaveBeenCalled();
+    expect(onRestored).not.toHaveBeenCalled();
+
+    await user.click(choose);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveHumanTextContent("Backup chosen.");
+    // Picking alone cannot reuse the previous preview or consent.
+    expect(bridge.inspectRestore).toHaveBeenCalledOnce();
+    expect(bridge.restore).not.toHaveBeenCalled();
+    await user.click(
+      screen.getByRole("button", { name: humanText("Check backup") }),
+    );
+    expect(bridge.inspectRestore).toHaveBeenNthCalledWith(2, "pick-2", {
+      passphrase: "river-azimuth-cobalt-sparrow-934",
+    });
+    expect(agreement()).not.toBeChecked();
+    const restore = screen.getByRole("button", {
+      name: humanText("Restore backup"),
+    });
+    expect(restore).toBeDisabled();
+    await user.click(restore);
+    expect(bridge.restore).not.toHaveBeenCalled();
+    await user.click(agreement());
+    await user.click(restore);
+    expect(bridge.restore).toHaveBeenCalledExactlyOnceWith(
+      "pick-2",
+      { passphrase: "river-azimuth-cobalt-sparrow-934" },
+      true,
+    );
+    expect(pickRestoreSource).toHaveBeenCalledTimes(3);
+    expect(onRestored).toHaveBeenCalledOnce();
+  });
+
   it("asks for no agreement when the vault holds what the backup holds", async () => {
     const user = userEvent.setup();
     const { bridge } = setUp({ replaces: "sameVault" });
