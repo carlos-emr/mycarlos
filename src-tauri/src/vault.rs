@@ -15138,6 +15138,58 @@ mod tests {
     }
 
     #[test]
+    fn atomic_backup_preserves_a_restorable_destination_after_source_corruption() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let out = temp.path().join("backups");
+        fs::create_dir(&out).unwrap();
+        let destination = out.join("kept.mycarlosbackup");
+        let (store, records, objects) = vault_with_records(&root, &["first.pdf", "second.pdf"]);
+        store.unlock(PASSWORD).unwrap();
+        store.backup_atomic(&destination, 3).unwrap();
+        let kept = fs::read(&destination).unwrap();
+        let saved_backups = |store: &VaultStore| {
+            history_events(store)
+                .iter()
+                .filter(|entry| entry.event == HistoryEvent::BackupSaved)
+                .count()
+        };
+        let saved_before = saved_backups(&store);
+        assert!(saved_before > 0);
+
+        // A source file can rot after a good backup was saved. The writer has
+        // already staged headers and earlier objects before it detects this;
+        // reporting the failure must not sacrifice the last usable backup.
+        let mut damaged = fs::read(&objects[1]).unwrap();
+        *damaged.last_mut().unwrap() ^= 1;
+        fs::write(&objects[1], damaged).unwrap();
+        assert!(matches!(
+            store.backup_atomic(&destination, 4),
+            Err(VaultError::DamagedDocument(id)) if id == records[1]
+        ));
+        assert_eq!(fs::read(&destination).unwrap(), kept);
+        assert!(leftovers(&out, &["kept.mycarlosbackup"]).is_empty());
+        // A failure may be audited, but it must not be recorded as a saved backup.
+        assert_eq!(saved_backups(&store), saved_before);
+
+        // Preserve a usable encrypted backup, not just a file with the same
+        // name: restore the actual destination in an independent vault home.
+        let restored = VaultStore::new(temp.path().join("restored-home").join("vault"));
+        restored
+            .restore(
+                File::open(&destination).unwrap(),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        assert_eq!(restored.status().unwrap(), VaultStatus::Locked);
+        restored.unlock(PASSWORD).unwrap();
+        assert_eq!(exported(&restored, "first.pdf"), b"first.pdf");
+        assert_eq!(exported(&restored, "second.pdf"), b"second.pdf");
+        assert_eq!(restored.snapshot().unwrap().recovery, None);
+    }
+
+    #[test]
     fn atomic_export_preserves_an_existing_destination_on_corruption() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("home").join("vault");
