@@ -114,11 +114,11 @@ class Run:
     def save(self):
         (self.directory / "run.json").write_text(json.dumps(self.metadata, indent=2) + "\n")
 
-    def command(self, label, command, env, output=None, strict=False):
+    def command(self, label, command, env, output=None, strict=False, cwd=ROOT):
         stdout = output or self.directory / "logs" / f"{label}.stdout"
         stderr = self.directory / "logs" / f"{label}.stderr"
         record = {"label": label, "argv": [str(item) for item in command],
-                  "stdout": str(stdout), "stderr": str(stderr)}
+                  "cwd": str(cwd), "stdout": str(stdout), "stderr": str(stderr)}
         self.metadata["commands"].append(record)
         self.save()
         print(f"{label}: logs in {self.directory / 'logs'}", flush=True)
@@ -129,7 +129,7 @@ class Run:
             if remaining <= 0:
                 raise TimeoutError(f"coverage budget exhausted before {label}")
             with stdout.open("xb") as out, stderr.open("xb") as err:
-                process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=out, stderr=err,
+                process = subprocess.Popen(command, cwd=cwd, env=env, stdout=out, stderr=err,
                                            start_new_session=True)
                 record["pid"] = process.pid
                 record["exit_code"] = process.wait(timeout=remaining)
@@ -219,7 +219,9 @@ def execute(args, pin, host, tools, versions):
             raise RuntimeError("Cargo test executable is outside the private target directory")
         metadata.update({"artifact": artifact, "executable_sha256": digest(binary)})
         env["LLVM_PROFILE_FILE"] = str(directory / "profiles/%m-%p.profraw")
-        run.command("test", [str(binary), "--test-threads=1"], env)
+        # Children that clear their environment use LLVM's relative fallback filename.
+        # Keep those profiles inside the same private, validated profile inventory.
+        run.command("test", [str(binary), "--test-threads=1"], env, cwd=directory / "profiles")
         profiles = sorted((directory / "profiles").iterdir())
         if not profiles or any(path.is_symlink() or not path.is_file() or
                                path.suffix != ".profraw" or not path.stat().st_size for path in profiles):

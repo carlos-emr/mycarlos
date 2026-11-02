@@ -47,14 +47,18 @@ The run retains:
 
 - `target/`, `profiles/`, `build-profiles/` and `tmp/`: private build and runtime data. Build-time
   profiles are separate and never merged into the test report. `%m-%p.profraw` names distinguish
-  instrumented binaries and processes, including self-spawned test helpers.
+  instrumented binaries and processes, including self-spawned test helpers. The test binary runs
+  with `profiles/` as its working directory: children that clear their environment can write LLVM's
+  relative `default_%m_%p.profraw` fallback there. These files enter the same validated profile
+  inventory and merge as profiles written through `LLVM_PROFILE_FILE`.
 - `logs/`: exact Cargo JSON artifact output, test stdout/stderr and LLVM command diagnostics.
 - `report/summary.txt`, `report/coverage.json`, `report/lcov.info` and `report/merged.profdata`:
   the human summary, JSON, LCOV and merged profile.
 - `report/source-census.json`: mapped project Rust sources and separately listed unmapped sources.
 - `run.json`: completion status, commands, versions, selected Cargo artifact, executable/profile
-  hashes and before/after hashes of tracked and nonignored untracked source inputs. A failed run
-  retains its partial outputs for diagnosis; only `status: "passed"` denotes a complete run.
+  hashes, each command's working directory and before/after hashes of tracked and nonignored
+  untracked source inputs. A failed run retains its partial outputs for diagnosis; only
+  `status: "passed"` denotes a complete run.
 
 The executable is selected from Cargo's machine-readable `compiler-artifact` record for this
 library's manifest, target name and source path, with `profile.test` set. It must reside in the fresh
