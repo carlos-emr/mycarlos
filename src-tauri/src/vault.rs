@@ -12905,6 +12905,181 @@ mod tests {
     }
 
     #[test]
+    fn locking_cancels_a_confirmed_restore_without_replacing_the_current_vault() {
+        struct GatedBackup {
+            data: Cursor<Vec<u8>>,
+            after_object: u64,
+            entered: Option<mpsc::Sender<()>>,
+            release: mpsc::Receiver<()>,
+        }
+        impl Read for GatedBackup {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                if self.data.position() == self.after_object {
+                    if let Some(entered) = self.entered.take() {
+                        entered.send(()).map_err(io::Error::other)?;
+                        self.release
+                            .recv_timeout(Duration::from_secs(10))
+                            .map_err(io::Error::other)?;
+                    }
+                }
+                let count = if self.data.position() < self.after_object {
+                    buffer
+                        .len()
+                        .min((self.after_object - self.data.position()) as usize)
+                } else {
+                    buffer.len()
+                };
+                self.data.read(&mut buffer[..count])
+            }
+        }
+        struct Transfers {
+            release: Option<mpsc::Sender<()>>,
+            restoring: Option<std::thread::JoinHandle<Result<(), VaultError>>>,
+            locking: Option<std::thread::JoinHandle<()>>,
+        }
+        impl Transfers {
+            fn release(&mut self) {
+                if let Some(release) = self.release.take() {
+                    let _ = release.send(());
+                }
+            }
+        }
+        impl Drop for Transfers {
+            fn drop(&mut self) {
+                // Also on assertion failure: unblock the reader, then join both
+                // workers before their store or temporary files can be dropped.
+                self.release();
+                if let Some(restoring) = self.restoring.take() {
+                    let _ = restoring.join();
+                }
+                if let Some(locking) = self.locking.take() {
+                    let _ = locking.join();
+                }
+            }
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup) = changed_since_its_backup(&root);
+        let confirmed = store
+            .inspect_backup(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+            )
+            .unwrap();
+        assert!(confirmed.differs_from_this_device);
+
+        // Stop at an actual entry boundary, after one object has been copied
+        // and synced, rather than guessing an offset in the backup format.
+        let mut framing = BackupReader::new(Cursor::new(backup.clone())).unwrap();
+        framing
+            .small_entry(BACKUP_KIND_HEADER, MAX_HEADER_BYTES)
+            .unwrap();
+        framing
+            .small_entry(BACKUP_KIND_MANIFEST, MAX_MANIFEST_BYTES)
+            .unwrap();
+        let (kind, name, length) = framing.next_entry().unwrap().unwrap();
+        assert_eq!(kind, BACKUP_KIND_OBJECT);
+        framing
+            .copy_entry(kind, &name, length, &mut io::sink())
+            .unwrap();
+        let after_object = framing.inner.position();
+        let store = Arc::new(store);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let restoring_store = Arc::clone(&store);
+        let mut transfers = Transfers {
+            release: Some(release_tx),
+            restoring: Some(std::thread::spawn(move || {
+                restoring_store.restore_confirmed(
+                    GatedBackup {
+                        data: Cursor::new(backup),
+                        after_object,
+                        entered: Some(entered_tx),
+                        release: release_rx,
+                    },
+                    RestoreCredential::Passphrase(PASSWORD),
+                    &confirmed,
+                )
+            })),
+            locking: None,
+        };
+        entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        // The restore owns the session mutex here: inspect only its files.
+        let stages = restore_leftovers(&root);
+        assert_eq!(stages.len(), 1);
+        assert!(root
+            .parent()
+            .unwrap()
+            .join(&stages[0])
+            .join("objects")
+            .join(name)
+            .is_file());
+        assert!(!restore_ready_path(&root).unwrap().exists());
+        let locking_store = Arc::clone(&store);
+        transfers.locking = Some(std::thread::spawn(move || locking_store.lock()));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !store.cancel_io.load(Ordering::Acquire) {
+            assert!(
+                Instant::now() < deadline,
+                "lock did not request cancellation"
+            );
+            std::thread::yield_now();
+        }
+        transfers.release();
+        let restored = transfers.restoring.take().unwrap().join();
+        let locked = transfers.locking.take().unwrap().join();
+        assert!(locked.is_ok());
+        assert!(matches!(restored.unwrap(), Err(VaultError::Cancelled)));
+        assert!(!store.cancel_io.load(Ordering::Acquire));
+        assert_eq!(store.status().unwrap(), VaultStatus::Locked);
+        assert!(restore_leftovers(&root).is_empty());
+        assert!(!reset_path(&root).unwrap().exists());
+        drop(store);
+
+        // A later start must keep the newer current vault, not complete the
+        // cancelled restore. Allow legitimate lock and unlock history entries.
+        let restarted = VaultStore::new(root.clone());
+        assert_eq!(restarted.status().unwrap(), VaultStatus::Locked);
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().records.len(), 3);
+        assert_eq!(exported(&restarted, "first.pdf"), CANARY);
+        assert_eq!(
+            exported(&restarted, "second.pdf"),
+            b"second synthetic record"
+        );
+        assert_eq!(exported(&restarted, "later.pdf"), b"later record");
+        restarted.lock();
+
+        // An explicitly requested restore still works with a fresh preview.
+        // Read the original backup again from the framing reader's owned bytes.
+        let retry = framing.inner.into_inner();
+        let preview = restarted
+            .inspect_backup(
+                Cursor::new(retry.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+            )
+            .unwrap();
+        restarted
+            .restore_confirmed(
+                Cursor::new(retry),
+                RestoreCredential::Passphrase(PASSWORD),
+                &preview,
+            )
+            .unwrap();
+        assert_eq!(restarted.status().unwrap(), VaultStatus::Locked);
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().records.len(), 2);
+        assert_eq!(exported(&restarted, "first.pdf"), CANARY);
+        assert_eq!(
+            exported(&restarted, "second.pdf"),
+            b"second synthetic record"
+        );
+        assert!(restore_leftovers(&root).is_empty());
+        assert!(!reset_path(&root).unwrap().exists());
+    }
+
+    #[test]
     fn a_restore_that_fails_before_it_is_verified_leaves_nothing() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("home").join("vault");
