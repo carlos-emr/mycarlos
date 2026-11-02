@@ -211,6 +211,106 @@ describe("CameraDialog", () => {
     );
   });
 
+  it.each(["missing context", "draw refusal"] as const)(
+    "refuses a capture with %s and saves only after a successful retake",
+    async (failure) => {
+      const { onUse, saved } = open();
+      await startCamera();
+      const capture = screen.getByLabelText(
+        humanText("The photo you took"),
+      ) as HTMLCanvasElement;
+      const fault =
+        failure === "missing context"
+          ? vi.spyOn(capture, "getContext").mockReturnValue(null)
+          : vi
+              .spyOn(capture.getContext("2d")!, "drawImage")
+              .mockImplementationOnce(() => {
+                throw new DOMException("FAKE capture allocation refusal");
+              });
+      try {
+        fireEvent.click(shutter());
+        expect(screen.getByRole("status")).toHaveHumanTextContent(
+          "The photo could not be prepared. Choose Retake.",
+        );
+        expect(
+          screen.queryByRole("img", { name: humanText("The photo you took") }),
+        ).toBeNull();
+        expect(ended(streams[0])).toBe(true);
+        expect(button("Retake")).toHaveFocus();
+        expect(button("Use photo")).toHaveAttribute("aria-disabled", "true");
+        // An aria-disabled button must refuse even a programmatic click.
+        fireEvent.click(button("Use photo"));
+        expect(onUse).not.toHaveBeenCalled();
+      } finally {
+        fault.mockRestore();
+      }
+
+      fireEvent.click(button("Retake"));
+      await waitFor(() => expect(shutter()).toBeEnabled());
+      expect(streams).toHaveLength(2);
+      fireEvent.click(shutter());
+      expect(ended(streams[1])).toBe(true);
+      expect(button("Use photo")).toHaveAttribute("aria-disabled", "false");
+      fireEvent.click(button("Use photo"));
+      await waitFor(() => expect(onUse).toHaveBeenCalledOnce());
+      // The real JPEG contains the replacement stream's blue frame, not a
+      // blank canvas left by the refused capture. Only the refusal was faked.
+      const picture = await createImageBitmap(
+        new Blob([saved[0] as BlobPart], { type: "image/jpeg" }),
+      );
+      try {
+        expect([picture.width, picture.height]).toEqual([320, 240]);
+        const check = document.createElement("canvas");
+        check.width = picture.width;
+        check.height = picture.height;
+        const context = check.getContext("2d")!;
+        context.drawImage(picture, 0, 0);
+        const pixel = context.getImageData(160, 120, 1, 1).data;
+        for (const [index, expected] of [29, 111, 184].entries())
+          expect(Math.abs(pixel[index] - expected)).toBeLessThanOrEqual(3);
+        expect(pixel[3]).toBe(255);
+      } finally {
+        picture.close();
+      }
+      await waitFor(() =>
+        expect(onUse.mock.calls[0][0].every((byte) => byte === 0)).toBe(true),
+      );
+    },
+  );
+
+  it("keeps an unencodable photo out of the vault and recovers by retaking", async () => {
+    const { onUse } = open();
+    await startCamera();
+    fireEvent.click(shutter());
+    const capture = screen.getByRole("img", {
+      name: humanText("The photo you took"),
+    }) as HTMLCanvasElement;
+    const encoding = vi
+      .spyOn(capture, "toBlob")
+      .mockImplementationOnce((callback) => callback(null));
+    try {
+      fireEvent.click(button("Use photo"));
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveHumanTextContent(
+          "The photo could not be prepared. Choose Retake.",
+        ),
+      );
+      expect(onUse).not.toHaveBeenCalled();
+      expect(ended(streams[0])).toBe(true);
+      expect(button("Use photo")).toHaveAttribute("aria-disabled", "false");
+      expect(button("Retake")).toHaveAttribute("aria-disabled", "false");
+    } finally {
+      encoding.mockRestore();
+    }
+    fireEvent.click(button("Retake"));
+    await waitFor(() => expect(shutter()).toBeEnabled());
+    fireEvent.click(shutter());
+    fireEvent.click(button("Use photo"));
+    await waitFor(() => expect(onUse).toHaveBeenCalledOnce());
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(ended(streams[1])).toBe(true);
+  });
+
   it("opens straight on the camera once the camera has worked", async () => {
     const first = open();
     await startCamera();
