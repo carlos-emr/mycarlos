@@ -731,6 +731,18 @@ export const MESSAGE_KEYS = [
   "interface.history.sessionNotRecorded",
   "interface.history.title",
   "interface.history.to",
+  "notifications.allow",
+  "notifications.blocked",
+  "notifications.error",
+  "notifications.help",
+  "notifications.title",
+  "notifications.unknown",
+  "notifications.unavailable",
+  "notifications.helpAutomatic",
+  "notifications.autoAllow",
+  "notifications.autoHelp",
+  "notifications.autoPaused",
+  "notifications.checkBusy",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1588,6 +1600,18 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-sessionNotRecorded",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
+  "notifications.allow": "notifications-allow",
+  "notifications.blocked": "notifications-blocked",
+  "notifications.error": "notifications-error",
+  "notifications.help": "notifications-help",
+  "notifications.title": "notifications-title",
+  "notifications.unknown": "notifications-unknown",
+  "notifications.unavailable": "notifications-unavailable",
+  "notifications.helpAutomatic": "notifications-helpAutomatic",
+  "notifications.autoAllow": "notifications-autoAllow",
+  "notifications.autoHelp": "notifications-autoHelp",
+  "notifications.autoPaused": "notifications-autoPaused",
+  "notifications.checkBusy": "notifications-checkBusy",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2406,6 +2430,18 @@ export interface MessageArgsByKey {
   "interface.history.sessionNotRecorded": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
+  "notifications.allow": undefined;
+  "notifications.blocked": undefined;
+  "notifications.error": undefined;
+  "notifications.help": undefined;
+  "notifications.title": undefined;
+  "notifications.unknown": undefined;
+  "notifications.unavailable": undefined;
+  "notifications.helpAutomatic": undefined;
+  "notifications.autoAllow": undefined;
+  "notifications.autoHelp": undefined;
+  "notifications.autoPaused": undefined;
+  "notifications.checkBusy": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

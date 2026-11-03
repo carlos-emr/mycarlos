@@ -1474,3 +1474,16 @@ interface-history-title = 操作紀錄
 interface-history-to = 目標
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也會保存操作紀錄：保險庫何時開啟；密語或復原金鑰何時設定或變更；備份何時儲存或還原；各病患檔案何時新增，以及各資料夾何時建立、重新命名或移動；每份文件何時新增、重新命名、移動、隱藏、還原或儲存在 myCarlos 外部，以及儲存位置。這些紀錄會和其他內容一起加密。您可以在此查看這些紀錄；myCarlos 絕不會變更或移除它們。
+
+notifications-title = 檢查文件後的通知
+notifications-help = 手動檢查後，診所文件儲存至 myCarlos 時，Windows 可顯示一則一般通知。請依平常方式開啟 myCarlos 閱讀文件。系統不會自動檢查文件。
+notifications-allow = 允許文件送達通知
+notifications-blocked = Windows 正在封鎖通知。請查看 Windows 通知設定。
+notifications-unknown = 無法檢查 Windows 通知權限。
+notifications-error = 無法儲存此設定。本次工作階段的通知已關閉。
+notifications-unavailable = 文件通知無法使用。請依平常方式開啟 myCarlos 查看文件。
+notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。
+notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
+notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
+notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
+notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。

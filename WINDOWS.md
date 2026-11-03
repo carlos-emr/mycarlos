@@ -39,6 +39,16 @@ To remove evaluation data, close myCarlos and delete its vault folder,
 there. App removal can leave app-data files behind, and nothing in the app removes readable
 exports.
 
+## Optional document arrival notices
+
+Document arrival notices are an optional Windows evaluation feature. Normal builds leave them disabled. The controls are available only in builds that explicitly enable the relevant evaluation features.
+
+In Clinic documents, turn on **Allow document arrival notices** to allow a generic Windows notice after a clinic document is verified and saved in your vault. Open myCarlos normally to read the document. A notice does not include patient, clinic, or document details, and a successful submission to Windows does not guarantee that you will see it.
+
+Automatic checks require a build with that additional feature enabled and a separate choice: **Check for clinic documents automatically while unlocked**. This allows checks of saved, approved clinic links while myCarlos is running and the vault is unlocked, with at least two minutes between attempts. Locking the vault or closing the app stops further checks. Turning off document arrival notices also turns off automatic checks. Windows blocking notices does not itself turn off automatic checks you have allowed.
+
+If automatic checks are paused, open Clinic documents and choose **Check for new documents**. This feature does not deliver notices or fetch documents while the app is closed.
+
 ## Opening locked documents and reading documents
 
 myCarlos opens and draws PDFs in a separate helper program, which Windows runs in an

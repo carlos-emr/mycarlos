@@ -768,6 +768,62 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     }
     return next;
   };
+  const refreshMounted = useRef(false);
+  const refreshOwner = useRef({ status, snapshot });
+  refreshOwner.current = { status, snapshot };
+  const refreshAutomaticArrivals = useCallback(async () => {
+    const before = refreshOwner.current;
+    const owner = before.snapshot?.sharedProfileId;
+    if (
+      !refreshMounted.current ||
+      before.status !== "unlocked" ||
+      !owner ||
+      !before.snapshot?.automaticDocumentChecksSupported ||
+      before.snapshot.recovery ||
+      lockingRef.current
+    )
+      return;
+    const startedIn = sessionRef.current;
+    const request = ++refreshIssuedRef.current;
+    try {
+      const next = await bridge.snapshot();
+      const current = refreshOwner.current;
+      if (
+        refreshMounted.current &&
+        !lockingRef.current &&
+        sessionRef.current === startedIn &&
+        current.status === "unlocked" &&
+        !current.snapshot?.recovery &&
+        current.snapshot?.sharedProfileId === owner &&
+        next.sharedProfileId === owner &&
+        next.recovery === null &&
+        request > refreshAppliedRef.current
+      ) {
+        refreshAppliedRef.current = request;
+        setSnapshot((previous) =>
+          previous?.sharedProfileId === owner ? next : previous,
+        );
+      }
+    } catch {
+      /* Keep current edits/state; a later explicit open/focus retries. */
+    }
+  }, [bridge]);
+  useEffect(() => {
+    refreshMounted.current = true;
+    const onFocus = () => {
+      void refreshAutomaticArrivals();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") onFocus();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      refreshMounted.current = false;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refreshAutomaticArrivals]);
   const setSessionNotice = (message: UiText) => {
     // Clearing the line is not a result: it must not replace a transfer's
     // outcome, shown or held.
@@ -1068,6 +1124,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         covered={lockWarning !== null}
         sharedNew={sharedNew}
         onSharedSeen={clearSharedNew}
+        onClinicDocumentsEntry={refreshAutomaticArrivals}
       />
       {lockWarning !== null && (
         <LockWarning

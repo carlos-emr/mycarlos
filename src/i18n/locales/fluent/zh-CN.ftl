@@ -1474,3 +1474,16 @@ interface-history-title = 操作记录
 interface-history-to = 目标
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也会保存操作记录：保险库何时打开；密码短语或恢复密钥何时设置或变更；备份何时保存或还原；各患者档案何时添加，以及各文件夹何时创建、重命名或移动；每份文档何时添加、重命名、移动、隐藏、还原或保存在 myCarlos 外部，以及保存位置。这些记录会和其他内容一起加密。您可以在此查看这些记录；myCarlos 绝不会变更或移除它们。
+
+notifications-title = 检查文档后的通知
+notifications-help = 手动检查后，诊所文档保存到 myCarlos 时，Windows 可显示一条通用通知。请按通常方式打开 myCarlos 阅读文档。系统不会自动检查文档。
+notifications-allow = 允许文档到达通知
+notifications-blocked = Windows 正在阻止通知。请查看 Windows 通知设置。
+notifications-unknown = 无法检查 Windows 通知权限。
+notifications-error = 无法保存此设置。本次会话的通知已关闭。
+notifications-unavailable = 文档通知不可用。请按通常方式打开 myCarlos 查看文档。
+notifications-helpAutomatic = 保存诊所文档后，Windows 可以显示不含具体内容的通知。请照常打开 myCarlos 阅读文档。
+notifications-autoAllow = 保险库解锁时自动检查诊所文档
+notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
+notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
+notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。

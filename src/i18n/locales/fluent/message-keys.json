@@ -729,5 +729,17 @@
   "interface.history.sessionLockedByPerson",
   "interface.history.sessionNotRecorded",
   "interface.history.title",
-  "interface.history.to"
+  "interface.history.to",
+  "notifications.allow",
+  "notifications.blocked",
+  "notifications.error",
+  "notifications.help",
+  "notifications.title",
+  "notifications.unknown",
+  "notifications.unavailable",
+  "notifications.helpAutomatic",
+  "notifications.autoAllow",
+  "notifications.autoHelp",
+  "notifications.autoPaused",
+  "notifications.checkBusy"
 ]
