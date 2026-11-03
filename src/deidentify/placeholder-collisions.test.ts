@@ -65,7 +65,8 @@ describe("literal placeholder collisions", () => {
     );
     expect(restore(second.toSend, second)).toBe(source);
     expect(second.onDevice.removed.map((part) => part.replacement)).toEqual([
-      "[REMOVED 2]", "[REMOVED 3]",
+      "[REMOVED 2]",
+      "[REMOVED 3]",
     ]);
   });
 
@@ -186,7 +187,9 @@ describe("literal placeholder collisions", () => {
       ...options,
       knownNames: ["Avery Example"],
     });
-    const names = result.onDevice.removed.filter((part) => part.kind === "name");
+    const names = result.onDevice.removed.filter(
+      (part) => part.kind === "name",
+    );
     expect(new Set(names.map((part) => part.original)).size).toBeGreaterThan(1);
     expect(new Set(names.map((part) => part.replacement))).toEqual(
       new Set(["[NAME 1]"]),
