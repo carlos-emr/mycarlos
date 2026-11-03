@@ -1,3 +1,5 @@
+#[cfg(all(target_os = "android", feature = "android-push"))]
+mod android_push;
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
 mod ui_text;
@@ -3498,7 +3500,10 @@ fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(all(target_os = "android", feature = "android-push"))]
+    let builder = builder.plugin(android_push::init());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(navigation_guard())

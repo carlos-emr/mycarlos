@@ -57,6 +57,15 @@ fn main() {
         println!("cargo:rerun-if-changed={}", rules.display());
         let contents = std::fs::read_to_string(&manifest)
             .unwrap_or_else(|_| panic!("Android manifest missing at {}", manifest.display()));
+        if std::env::var_os("CARGO_FEATURE_ANDROID_PUSH").is_some() {
+            let main = manifest.parent().unwrap();
+            assert!(contents.contains("<!-- MYCARLOS_PUSH_BEGIN -->")
+                && contents.contains("ca.carlos.mycarlos.push.ReadyMessagingService")
+                && contents.contains("firebase_messaging_auto_init_enabled\" android:value=\"false\"")
+                && main.join("res/values/mycarlos_firebase.xml").is_file()
+                && main.join("java/ca/carlos/mycarlos/push/PushPlugin.kt").is_file(),
+                "Apply the reviewed android:push config hook before building the android-push feature");
+        }
         // Android 12 and later ignore the first two for device-to-device
         // transfer, which only the data extraction rules exclude.
         assert!(
@@ -76,7 +85,14 @@ fn main() {
     }
     let windows_msvc = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
         && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
-    let mut attributes = tauri_build::Attributes::new();
+    // Explicit manifest makes every native push command deny by default for renderer IPC.
+    // No capability grants android-push permissions; Rust PluginHandle calls remain native.
+    let mut attributes = tauri_build::Attributes::new().plugin(
+        "android-push",
+        tauri_build::InlinedPlugin::new().commands(&[
+            "snapshot", "requestPermission", "enableTransport", "disableTransport",
+        ]),
+    );
     if windows_msvc {
         // The linker supplies the manifest for both the app and lib-unit tests.
         // Keep Tauri's icon/version resource without a second RT_MANIFEST.

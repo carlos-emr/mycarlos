@@ -11,6 +11,8 @@
     "dev": "vite",
     "build": "npm run i18n:check && tsc -b && vite build",
     "check": "npm run i18n:check && tsc -b --pretty false",
+    "android:push": "node scripts/configure-android-push.mjs",
+    "test:android-push": "node --test scripts/configure-android-push.test.mjs",
     "android:secure": "node scripts/configure-android-security.mjs",
     "dev:data": "node scripts/generate-fake-dev-data.mjs",
     "preview": "vite preview",
