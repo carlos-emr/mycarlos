@@ -20,8 +20,9 @@ import {
 // document locked with its own password (#54), in the reader and with
 // Unlock; and the reader closing when the vault locks. The native side is
 // faked (support/vaultFake.ts): Rust tests cover drawing pages in the PDF
-// helper, and this covers what the screens ask it for and show. The reader's
-// layout at large text sizes is reader-layout.spec.ts (#158).
+// helper, and this covers what the screens ask it for and show. The password
+// retry also runs at the phone viewport. It uses the synthetic desktop bridge;
+// it does not establish native PDF-helper support on mobile devices.
 
 const en = (
   key: Parameters<typeof translate>[1],
@@ -30,8 +31,9 @@ const en = (
 
 test.beforeEach(({}, testInfo) => {
   test.skip(
-    testInfo.project.name === "phone",
-    "these flows are checked on the desktop project only; the vault screens' phone layout is covered by large-text-accessibility.spec.ts",
+    testInfo.project.name === "phone" &&
+      !testInfo.tags.includes("@password-retry"),
+    "the other reader flows run on desktop; the password retry also checks the phone viewport",
   );
 });
 
@@ -85,7 +87,7 @@ async function minimize(page: Page) {
 
 test("reads a document page by page, with zoom and the page's text, and Close goes back to it", async ({
   page,
-}) => {
+}, testInfo) => {
   await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
   const details = await openDetails(page, LETTER);
@@ -189,6 +191,86 @@ test("reads a document page by page, with zoom and the page's text, and Close go
     await pageArea(2).evaluate((area) => area.scrollWidth <= area.clientWidth),
   ).toBe(true);
 
+  // Resizing the same open page refits it without changing the page or zoom.
+  // Returning to its original width reuses the already drawn fitted page.
+  const originalViewport = page.viewportSize()!;
+  const originalWidth = await picture(2).evaluate(
+    (image) => image.getBoundingClientRect().width,
+  );
+  const drawsBeforeResize = (await fakeCalls(page, "vault_view_page")).length;
+  try {
+    await page.setViewportSize({ width: 700, height: originalViewport.height });
+    await expect
+      .poll(async () =>
+        picture(2).evaluate((image) => image.getBoundingClientRect().width),
+      )
+      .toBeLessThan(originalWidth);
+    await expect(picture(2)).toBeVisible();
+    await expect(reader.getByRole("status")).toHaveText(where(2));
+    await expect(zoom(100)).toBeVisible();
+    await expect(
+      reader.getByText(fakePageText(LETTER, 2), { exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(async () =>
+        picture(2).evaluate((image) => {
+          const area = image.parentElement!;
+          const style = getComputedStyle(area);
+          const available =
+            area.clientWidth -
+            parseFloat(style.paddingLeft) -
+            parseFloat(style.paddingRight);
+          return Math.abs(image.getBoundingClientRect().width - available);
+        }),
+      )
+      .toBeLessThanOrEqual(1);
+    expect(
+      await pageArea(2).evaluate(
+        (area) => area.scrollWidth <= area.clientWidth,
+      ),
+    ).toBe(true);
+    const narrowWidth = await picture(2).evaluate(
+      (image) => image.getBoundingClientRect().width,
+    );
+    const drawsAfterResize = (await fakeCalls(page, "vault_view_page")).length;
+    expect(drawsAfterResize).toBe(drawsBeforeResize + 1);
+    await page.screenshot({
+      path: testInfo.outputPath("reader-page2-narrow.png"),
+    });
+
+    await page.setViewportSize(originalViewport);
+    await expect
+      .poll(async () =>
+        picture(2).evaluate((image) => image.getBoundingClientRect().width),
+      )
+      .toBe(originalWidth);
+    await expect(picture(2)).toBeVisible();
+    await expect(reader.getByRole("status")).toHaveText(where(2));
+    await expect(zoom(100)).toBeVisible();
+    await expect(
+      reader.getByText(fakePageText(LETTER, 2), { exact: true }),
+    ).toBeVisible();
+    expect((await fakeCalls(page, "vault_view_page")).length).toBe(
+      drawsAfterResize,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath("reader-page2-restored.png"),
+    });
+    await testInfo.attach("reader-resize-geometry", {
+      body: JSON.stringify({
+        originalViewport,
+        originalWidth,
+        narrowWidth,
+        drawsBeforeResize,
+        drawsAfterResize,
+        drawsAfterReturn: (await fakeCalls(page, "vault_view_page")).length,
+      }),
+      contentType: "application/json",
+    });
+  } finally {
+    await page.setViewportSize(originalViewport);
+  }
+
   await button("interface.DocumentReader.previousPage").click();
   await expect(picture(1)).toBeVisible();
   await expect(reader.getByRole("status")).toHaveText(where(1));
@@ -204,106 +286,146 @@ test("reads a document page by page, with zoom and the page's text, and Close go
   await expectOnlyFakedCommands(page);
 });
 
-test("a document locked with its own password asks for it in the reader, says when it is wrong, and keeps it for the next pages", async ({
-  page,
-}) => {
-  await fakeVaultWith(page, { start: "unlocked", lockedPdf: true });
-  await page.goto("/");
-  const details = await openDetails(page, LOCKED);
-  await expect(
-    details.getByText(
-      en("interface.RecordDetails.lockedWithAPasswordUnlockAddsA"),
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await details
-    .getByRole("button", {
-      name: en("interface.RecordDetails.read"),
-      exact: true,
-    })
-    .click();
+test(
+  "a document locked with its own password asks for it in the reader, says when it is wrong, and keeps it for the next pages",
+  { tag: "@password-retry" },
+  async ({ page }, testInfo) => {
+    await fakeVaultWith(page, { start: "unlocked", lockedPdf: true });
+    await page.goto("/");
+    const details = await openDetails(page, LOCKED);
+    await expect(
+      details.getByText(
+        en("interface.RecordDetails.lockedWithAPasswordUnlockAddsA"),
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await details
+      .getByRole("button", {
+        name: en("interface.RecordDetails.read"),
+        exact: true,
+      })
+      .click();
 
-  const { reader, button, picture } = readerOf(page, LOCKED);
-  const password = reader.getByLabel(
-    en("interface.DocumentReader.documentPassword"),
-    { exact: true },
-  );
-  await expect(
-    reader.getByText(
-      en("interface.DocumentReader.thisDocumentIsLockedWithItsOwn"),
+    const { reader, button, picture } = readerOf(page, LOCKED);
+    const password = reader.getByLabel(
+      en("interface.DocumentReader.documentPassword"),
       { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(password).toBeVisible();
-  await expect(password).not.toHaveAttribute("aria-invalid", "true");
-  await expect(reader.getByRole("img")).toHaveCount(0);
-  const asked = await fakeCalls(page, "vault_view_page");
-  expect(asked.length).toBeGreaterThan(0);
-  for (const call of asked)
-    expect(call).toEqual({
+    );
+    await expect(
+      reader.getByText(
+        en("interface.DocumentReader.thisDocumentIsLockedWithItsOwn"),
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(password).toBeVisible();
+    await expect(password).not.toHaveAttribute("aria-invalid", "true");
+    await expect(reader.getByRole("img")).toHaveCount(0);
+    const asked = await fakeCalls(page, "vault_view_page");
+    expect(asked.length).toBeGreaterThan(0);
+    for (const call of asked)
+      expect(call).toEqual({
+        request: {
+          recordId: FAKE_IDS.locked,
+          page: 0,
+          width: expect.any(Number),
+          password: null,
+        },
+      });
+
+    // A wrong password: said, and the box is emptied for the next try.
+    await password.fill(WRONG_PASSWORD);
+    await page.keyboard.press("Enter");
+    const wrong = en(
+      "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+    );
+    await expect(reader.getByRole("alert")).toHaveText(wrong);
+    await expect(password).toHaveAttribute("aria-invalid", "true");
+    await expect(password).toHaveValue("");
+    await testInfo.attach("password-retry-focus", {
+      body: JSON.stringify(
+        await password.evaluate((field) => ({
+          passwordFieldFocused: document.activeElement === field,
+          activeTag: document.activeElement?.tagName,
+          activeId: document.activeElement?.id,
+        })),
+      ),
+      contentType: "application/json",
+    });
+    await expect(password).toBeFocused();
+    await expect(password).toBeInViewport({ ratio: 1 });
+    await expect(button("interface.DocumentReader.open")).toBeInViewport({
+      ratio: 1,
+    });
+    await expect(button("photo.close")).toBeInViewport({ ratio: 1 });
+    const retryGeometry = await reader.evaluate((dialog) => ({
+      viewportWidth: window.innerWidth,
+      pageWidth: document.documentElement.scrollWidth,
+      readerWidth: dialog.clientWidth,
+      readerScrollWidth: dialog.scrollWidth,
+    }));
+    expect(retryGeometry.pageWidth).toBeLessThanOrEqual(
+      retryGeometry.viewportWidth,
+    );
+    expect(retryGeometry.readerScrollWidth).toBeLessThanOrEqual(
+      retryGeometry.readerWidth,
+    );
+    await testInfo.attach("password-retry-geometry", {
+      body: JSON.stringify(retryGeometry),
+      contentType: "application/json",
+    });
+    await page.screenshot({
+      path: testInfo.outputPath("reader-password-keyboard-retry.png"),
+    });
+    await expect(password).toHaveAccessibleDescription(
+      messagePattern(
+        "en",
+        "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+      ),
+    );
+    await expect(reader.getByRole("img")).toHaveCount(0);
+    expect(await fakeCalls(page, "vault_view_page")).toContainEqual({
       request: {
         recordId: FAKE_IDS.locked,
         page: 0,
         width: expect.any(Number),
-        password: null,
+        password: WRONG_PASSWORD,
       },
     });
 
-  // A wrong password: said, and the box is emptied for the next try.
-  await password.fill(WRONG_PASSWORD);
-  await button("interface.DocumentReader.open").click();
-  const wrong = en(
-    "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
-  );
-  await expect(reader.getByRole("alert")).toHaveText(wrong);
-  await expect(password).toHaveAttribute("aria-invalid", "true");
-  await expect(password).toHaveValue("");
-  await expect(password).toHaveAccessibleDescription(
-    messagePattern(
-      "en",
-      "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
-    ),
-  );
-  await expect(reader.getByRole("img")).toHaveCount(0);
-  expect(await fakeCalls(page, "vault_view_page")).toContainEqual({
-    request: {
-      recordId: FAKE_IDS.locked,
-      page: 0,
-      width: expect.any(Number),
-      password: WRONG_PASSWORD,
-    },
-  });
+    // The right one opens it; the next page is asked for with it too.
+    await page.keyboard.insertText(FAKE_DOCUMENT_PASSWORD);
+    await page.keyboard.press("Enter");
+    await expect(picture(1)).toBeVisible();
+    await expect(password).toHaveCount(0);
+    await expect(reader.getByRole("alert")).toHaveCount(0);
+    await button("interface.DocumentReader.nextPage").click();
+    await expect(picture(2)).toBeVisible();
+    expect(await fakeCalls(page, "vault_view_page")).toContainEqual({
+      request: {
+        recordId: FAKE_IDS.locked,
+        page: 1,
+        width: expect.any(Number),
+        password: FAKE_DOCUMENT_PASSWORD,
+      },
+    });
+    // No box on the page holds it.
+    expect(
+      await page
+        .locator("input")
+        .evaluateAll((inputs) =>
+          inputs.map((input) => (input as HTMLInputElement).value),
+        ),
+    ).not.toContain(FAKE_DOCUMENT_PASSWORD);
 
-  // The right one opens it; the next page is asked for with it too.
-  await password.fill(FAKE_DOCUMENT_PASSWORD);
-  await button("interface.DocumentReader.open").click();
-  await expect(picture(1)).toBeVisible();
-  await expect(password).toHaveCount(0);
-  await expect(reader.getByRole("alert")).toHaveCount(0);
-  await button("interface.DocumentReader.nextPage").click();
-  await expect(picture(2)).toBeVisible();
-  expect(await fakeCalls(page, "vault_view_page")).toContainEqual({
-    request: {
-      recordId: FAKE_IDS.locked,
-      page: 1,
-      width: expect.any(Number),
-      password: FAKE_DOCUMENT_PASSWORD,
-    },
-  });
-  // No box on the page holds it.
-  expect(
-    await page
-      .locator("input")
-      .evaluateAll((inputs) =>
-        inputs.map((input) => (input as HTMLInputElement).value),
-      ),
-  ).not.toContain(FAKE_DOCUMENT_PASSWORD);
-
-  await button("photo.close").click();
-  await expect(reader).toBeHidden();
-  expect(await fakeCommands(page)).toContain("vault_view_cancel");
-  await expectOnlyFakedCommands(page);
-});
+    await button("photo.close").click();
+    await expect(reader).toBeHidden();
+    await expect(
+      page.getByRole("button", { name: LOCKED, exact: true }),
+    ).toBeFocused();
+    expect(await fakeCommands(page)).toContain("vault_view_cancel");
+    await expectOnlyFakedCommands(page);
+  },
+);
 
 test("Unlock in a locked document's details adds a copy that opens without the password, and keeps the original", async ({
   page,
