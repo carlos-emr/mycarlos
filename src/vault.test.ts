@@ -2,13 +2,19 @@ import { humanValue } from "./test/humanText";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn());
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke,
+  Channel: class {
+    onmessage: (value: unknown) => void = () => undefined;
+  },
+}));
 
 import { setLocaleOverride } from "./i18n";
 import { setDeviceLocale } from "./test/deviceLocale";
 import {
   boxesWithControlCharacters,
   createVaultBridge,
+  NATIVE_READER_ACTIVITY_EVENT,
   isCancelledError,
   isLockedError,
   isMissingVaultError,
@@ -21,6 +27,34 @@ import {
 
 describe("native idle deadline bridge", () => {
   beforeEach(() => invoke.mockReset());
+
+  it("passes native-reader activity without document bytes and stops forwarding on close", async () => {
+    let resolve!: () => void;
+    invoke.mockReturnValue(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
+    const listener = vi.fn();
+    window.addEventListener(NATIVE_READER_ACTIVITY_EVENT, listener);
+    try {
+      const opened = createVaultBridge().readNativePdf("FAKE record", "Close");
+      const [command, args] = invoke.mock.calls[0];
+      expect(command).toBe("vault_read_native_pdf");
+      expect(Object.keys(args.request).sort()).toEqual([
+        "closeLabel",
+        "recordId",
+      ]);
+      args.activity.onmessage(null);
+      expect(listener).toHaveBeenCalledOnce();
+      resolve();
+      await opened;
+      args.activity.onmessage(null);
+      expect(listener).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(NATIVE_READER_ACTIVITY_EVENT, listener);
+    }
+  });
 
   it("sends the commands and arguments the native side registers", async () => {
     const bridge = createVaultBridge();
