@@ -12,6 +12,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 default = []
+# Android native push transport scaffold; no UI/enrollment enabled by default.
+android-push = []
 # Evaluation only. The native link command refuses before any write or request
 # unless this build feature is explicitly selected; renderer state cannot enable it.
 portal-linking = ["dep:reqwest", "dep:rustls", "dep:rustls-platform-verifier", "dep:tokio", "dep:hpke"]
