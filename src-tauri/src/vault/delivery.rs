@@ -2119,8 +2119,7 @@ mod approval_recovery_tests {
                         ReceiptOutcome::Gone => "delivery_not_found",
                     });
                     for (event, how) in std::iter::once((HistoryEvent::DeliveryFiled, None)).chain(
-                        settled_how
-                            .map(|how| (HistoryEvent::DeliveryReceiptSettled, Some(how))),
+                        settled_how.map(|how| (HistoryEvent::DeliveryReceiptSettled, Some(how))),
                     ) {
                         let mut entry = record_entry(event, record.imported_at_ms, record);
                         entry.portal_link_id = Some(link.id);
