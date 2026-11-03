@@ -114,6 +114,14 @@ impl ReadyHint {
         Ok(value)
     }
 
+    #[cfg(feature = "android-push")]
+    pub(crate) fn sequence(&self) -> u64 { self.sequence }
+
+    #[cfg(feature = "android-push")]
+    pub(crate) fn matches_destination(&self, id: Uuid, epoch: Uuid) -> bool {
+        self.subscription_id == id && self.epoch == epoch
+    }
+
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
         serde_json::to_vec(self).map_err(|_| Error::InvalidInput)
     }

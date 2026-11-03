@@ -1,5 +1,10 @@
+#[cfg(test)]
+#[path = "../android_push_profile.rs"]
+mod android_push_profile;
+#[cfg(feature = "android-push")]
+pub mod android_push_owner;
 #[cfg(all(target_os = "android", feature = "android-push"))]
-mod android_push;
+pub mod android_push;
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
 mod ui_text;

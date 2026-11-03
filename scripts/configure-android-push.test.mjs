@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configureAndroidPush, firebaseResources, patchManifest } from './configure-android-push.mjs';
+import { configureAndroidPush, firebaseResources, patchManifest, patchGradle } from './configure-android-push.mjs';
 const config = {project_info:{project_number:'123',project_id:'synthetic-only'},client:[{
   client_info:{android_client_info:{package_name:'ca.carlos.mycarlos'},mobilesdk_app_id:'synthetic-app'},
   api_key:[{current_key:'synthetic-public-client-value'}]}]};
@@ -32,8 +32,31 @@ test('generated project receives service/resources/dependency once; invalid conf
     await assert.rejects(configureAndroidPush(root,path));
     assert.equal(await readFile(join(root,'src/main/AndroidManifest.xml'),'utf8'),manifest);
     await writeFile(path,JSON.stringify(config));
-    await configureAndroidPush(root,path);await configureAndroidPush(root,path);
+    await configureAndroidPush(root,path);
+    const outputs = ['src/main/AndroidManifest.xml', 'build.gradle.kts',
+      'src/main/res/values/mycarlos_firebase.xml', 'src/main/res/drawable/mycarlos_push.xml',
+      ...['PushPlugin.kt','PushState.kt','ReadyMessagingService.kt','ScopedCredentialStore.kt'].map(file =>
+        `src/main/java/ca/carlos/mycarlos/push/${file}`)];
+    const once = await Promise.all(outputs.map(file => readFile(join(root,file))));
+    await configureAndroidPush(root,path);
+    const twice = await Promise.all(outputs.map(file => readFile(join(root,file))));
+    for (let index = 0; index < outputs.length; index++)
+      assert.deepEqual(twice[index], once[index], `Repeated hook changed ${outputs[index]}`);
     assert.equal((await readFile(join(root,'build.gradle.kts'),'utf8')).match(/firebase-messaging:/g).length,1);
     assert.match(await readFile(join(root,'src/main/java/ca/carlos/mycarlos/push/ReadyMessagingService.kt'),'utf8'),/override fun onNewToken/);
   } finally { await rm(root,{recursive:true,force:true}); }
+});
+
+test('unmanaged Gradle messaging dependencies fail before touching the project', async () => {
+  assert.throws(() => patchGradle('dependencies { implementation("com.google.firebase:firebase-messaging:25.0.0") }'));
+  assert.throws(() => patchGradle('implementation(libs.firebase.messaging)'));
+  for (const dependency of [
+    'implementation(platform("com.google.firebase:firebase-bom:35.1.0"))',
+    'implementation(enforcedPlatform("com.google.firebase:firebase-bom:35.1.0"))',
+    'implementation(platform(libs.firebase.bom))',
+    'implementation(enforcedPlatform(libs.firebaseBom))',
+    'implementation(platform(libs.FirebasePlatform))',
+  ]) assert.throws(() => patchGradle(dependency));
+  const managed = patchGradle('plugins {}\n');
+  assert.equal(patchGradle(managed),managed);
 });
