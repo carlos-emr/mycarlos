@@ -1,3 +1,5 @@
+#[path = "android_push_profile.rs"]
+mod android_push_profile;
 // Every storage domain, excluded from both cloud backup and device-to-device
 // transfer. Keep in step with DOMAINS in scripts/configure-android-security.mjs.
 const EXCLUDED_DOMAINS: &[&str] = &[
@@ -57,15 +59,27 @@ fn main() {
         println!("cargo:rerun-if-changed={}", rules.display());
         let contents = std::fs::read_to_string(&manifest)
             .unwrap_or_else(|_| panic!("Android manifest missing at {}", manifest.display()));
-        if std::env::var_os("CARGO_FEATURE_ANDROID_PUSH").is_some() {
-            let main = manifest.parent().unwrap();
-            assert!(contents.contains("<!-- MYCARLOS_PUSH_BEGIN -->")
-                && contents.contains("ca.carlos.mycarlos.push.ReadyMessagingService")
-                && contents.contains("firebase_messaging_auto_init_enabled\" android:value=\"false\"")
-                && main.join("res/values/mycarlos_firebase.xml").is_file()
-                && main.join("java/ca/carlos/mycarlos/push/PushPlugin.kt").is_file(),
-                "Apply the reviewed android:push config hook before building the android-push feature");
+        let main = manifest.parent().unwrap();
+        let app_gradle = main.join("../../build.gradle.kts");
+        let generated_sources = main.join("java/ca/carlos/mycarlos/push");
+        let canonical = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("android-push/kotlin");
+        let names = ["PushPlugin.kt", "PushState.kt", "ReadyMessagingService.kt", "ScopedCredentialStore.kt"];
+        let config = main.join("res/values/mycarlos_firebase.xml");
+        let icon = main.join("res/drawable/mycarlos_push.xml");
+        for path in [&app_gradle, &generated_sources, &canonical, &config, &icon] {
+            println!("cargo:rerun-if-changed={}", path.display());
         }
+        let any_source = names.iter().any(|n| generated_sources.join(n).exists());
+        let sources_match = names.iter().all(|n| {
+            std::fs::read(generated_sources.join(n)).ok().zip(std::fs::read(canonical.join(n)).ok())
+                .is_some_and(|(generated, source)| generated == source)
+        });
+        assert!(android_push_profile::consistent(
+            std::env::var_os("CARGO_FEATURE_ANDROID_PUSH").is_some(), &contents,
+            &std::fs::read_to_string(&app_gradle).unwrap_or_default(),
+            android_push_profile::Files { any_source, sources_match, client_config:config.is_file(), icon:icon.is_file() }),
+            "Android push profile mismatch: feature OFF requires a clean generated project; feature ON requires the reviewed android:push hook and matching sources/config/dependency. Regenerate Android packaging when switching profiles");
         // Android 12 and later ignore the first two for device-to-device
         // transfer, which only the data extraction rules exclude.
         assert!(
@@ -91,6 +105,7 @@ fn main() {
         "android-push",
         tauri_build::InlinedPlugin::new().commands(&[
             "snapshot", "requestPermission", "enableTransport", "disableTransport",
+            "storeCredential", "loadCredential", "removeCredential", "showGeneric",
         ]),
     );
     if windows_msvc {

@@ -25,7 +25,9 @@ After generated Android initialization and the existing android:secure hook,
 adds the messaging dependency and patches the manifest idempotently. The hook fails
 on absent/wrong client config or unmanaged messaging declarations. Review generated
 output before a guarded `tauri android build --features android-push`. Default CI
-is unchanged. Do not use this hook in a default build without the corresponding
+is unchanged. Feature-OFF builds reject any residual push sources, manifest
+metadata, dependency, icon or client config. Regenerate the generated Android
+project before switching profiles; no ON artifact is silently reused by OFF. Do not use this hook in a default build without the corresponding
 reviewed feature/profile. No cloud provisioning is performed by the hook.
 
 Native token/event boundary:
@@ -67,7 +69,12 @@ ID, epoch and positive sequence. Provider must use a stable tag for replacement 
 server freshness/sequence controls. The app never copies provider text into a local
 notification. Background HTTP v1 notifications are displayed by FCM/OS directly;
 local Policy cannot inspect those before display. Server consent/revocation is part
-of the display boundary. Foreground messages use a constant local generic template.
+of the display boundary. Foreground callbacks only populate the native inbox. Local generic display requires
+Lifecycle::display_foreground with current native owner, consent, enrolled destination,
+subscription epoch, OS permission and sequence checks. The native owner holds its
+serialization/ownership lock through the synchronous display closure; Kotlin then
+rechecks transport enabled, permission and foreground window focus. No callback
+displays directly.
 Data-only messages set the native reconcile flag opportunistically; they do not
 promise a wake, background Rust/webview execution or document collection.
 

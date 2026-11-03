@@ -34,7 +34,13 @@ export function patchManifest(manifest) {
   if (manifest.includes('com.google.firebase.MESSAGING_EVENT') || manifest.includes('firebase_messaging_auto_init_enabled'))
     throw new Error('Unmanaged Firebase manifest configuration; review before replacing');
   return manifest.replace(/<manifest\b[^>]*>/, x => `${x}\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />`)
-    .replace('</application>', `    ${block}\n    </application>`);
+    .replace(/\s*<\/application>/, `\n        ${block}\n    </application>`);
+}
+export function patchGradle(gradle) {
+  const clean = gradle.replace(/\n\/\/ MYCARLOS_PUSH_BEGIN[\s\S]*?\/\/ MYCARLOS_PUSH_END\n/g, '');
+  if (/firebase/i.test(clean))
+    throw new Error('Unmanaged Firebase dependency, BOM or catalog alias; review before replacing');
+  return clean + '\n// MYCARLOS_PUSH_BEGIN\ndependencies.add("implementation", "com.google.firebase:firebase-messaging:26.0.1")\n// MYCARLOS_PUSH_END\n';
 }
 export async function configureAndroidPush(appDir, firebaseConfig) {
   // Validate all inputs before touching generated output. No network or account setup.
@@ -42,11 +48,10 @@ export async function configureAndroidPush(appDir, firebaseConfig) {
   const manifestPath = join(appDir, 'src/main/AndroidManifest.xml');
   const manifest = patchManifest(await readFile(manifestPath, 'utf8'));
   const gradlePath = join(appDir, 'build.gradle.kts');
-  const gradle = (await readFile(gradlePath, 'utf8')).replace(/\n\/\/ MYCARLOS_PUSH_BEGIN[\s\S]*?\/\/ MYCARLOS_PUSH_END\n/g, '') +
-    '\n// MYCARLOS_PUSH_BEGIN\ndependencies.add("implementation", "com.google.firebase:firebase-messaging:26.0.1")\n// MYCARLOS_PUSH_END\n';
+  const gradle = patchGradle(await readFile(gradlePath, 'utf8'));
   const kotlin = join(appDir, 'src/main/java/ca/carlos/mycarlos/push');
   await mkdir(kotlin, { recursive: true });
-  for (const file of ['PushState.kt', 'PushPlugin.kt', 'ReadyMessagingService.kt'])
+  for (const file of ['PushState.kt', 'PushPlugin.kt', 'ReadyMessagingService.kt', 'ScopedCredentialStore.kt'])
     await copyFile(join(source, 'kotlin', file), join(kotlin, file));
   const res = join(appDir, 'src/main/res');
   await mkdir(join(res, 'values'), { recursive: true });
