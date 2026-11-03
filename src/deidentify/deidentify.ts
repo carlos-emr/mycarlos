@@ -1547,6 +1547,25 @@ export function deidentify(
   });
 }
 
+function nextPlaceholder(
+  source: string,
+  label: string,
+  first: number,
+  reserved: Set<string>,
+): { number: number; replacement: string } {
+  let number = first;
+  // Check the complete candidate directly: custom labels can contain any
+  // other marker, including an overlapping marker at the same position.
+  while (
+    source.includes(`[${label} ${number}]`) ||
+    reserved.has(`[${label} ${number}]`)
+  )
+    number++;
+  const replacement = `[${label} ${number}]`;
+  reserved.add(replacement);
+  return { number, replacement };
+}
+
 function build(
   source: string,
   findings: Finding[],
@@ -1557,6 +1576,11 @@ function build(
   // names), numbered in the order first seen.
   const numbers = new Map<string, number>();
   const counts = new Map<string, number>();
+  const reserved = new Set(
+    findings.flatMap((finding) =>
+      finding.replacement === undefined ? [] : [finding.replacement],
+    ),
+  );
   const placeholder = (finding: Finding, original: string) => {
     const kind = finding.kind as Exclude<RemovedKind, "manual">;
     // A doctor is one placeholder by surname: "Dr. Blake Sample" and "Dr.
@@ -1569,7 +1593,12 @@ function build(
     }`;
     let number = numbers.get(identity);
     if (number === undefined) {
-      number = (counts.get(kind) ?? 0) + 1;
+      number = nextPlaceholder(
+        source,
+        labels[kind],
+        (counts.get(kind) ?? 0) + 1,
+        reserved,
+      ).number;
       counts.set(kind, number);
       numbers.set(identity, number);
     }
@@ -1687,6 +1716,12 @@ export function removeMore(
   if (start < 0 || end > source.length || end <= start)
     throw new RangeError("outside the text");
   const manual = removed.filter((part) => part.kind === "manual");
+  const replacement = nextPlaceholder(
+    source,
+    settings.labels.manual,
+    manual.length + 1,
+    new Set(removed.map((part) => part.replacement)),
+  ).replacement;
   // Everything already decided stays as it was; only the new part is new.
   // A flagged word stays flagged unless the new part takes it.
   const findings: Finding[] = [
@@ -1709,7 +1744,7 @@ export function removeMore(
       kind: "manual" as const,
       start,
       end,
-      replacement: `[${settings.labels.manual} ${manual.length + 1}]`,
+      replacement,
     },
   ].sort((a, b) => a.start - b.start);
   return build(source, findings, settings);
@@ -1719,12 +1754,42 @@ export function removeMore(
  * Puts the details back into an answer that came back with the placeholders
  * (#72), on the device: each placeholder becomes what it stood for, and each
  * shifted date the date it was. A date the answer wrote some other way is
- * left shifted.
+ * left shifted. Ambiguous placeholders from older snapshots (literal source
+ * markers or conflicting manual IDs) stay unresolved.
  */
 export function restore(answer: string, deidentified: Deidentified): string {
   const back = new Map<string, string>();
-  for (const part of deidentified.onDevice.removed)
-    if (!back.has(part.replacement)) back.set(part.replacement, part.original);
+  const manualTokens = new Set(
+    deidentified.onDevice.removed
+      .filter((part) => part.kind === "manual")
+      .map((part) => part.replacement),
+  );
+  const conflictingManual = new Set<string>();
+  // Old overlapping removals could reuse a manual ID for a different detail.
+  // Automatic names can intentionally share a canonical placeholder even
+  // when their spelling differs; retain that existing grouping behavior.
+  for (const part of deidentified.onDevice.removed) {
+    const previous = back.get(part.replacement);
+    if (
+      manualTokens.has(part.replacement) &&
+      previous !== undefined &&
+      previous !== part.original
+    )
+      conflictingManual.add(part.replacement);
+    if (previous === undefined) back.set(part.replacement, part.original);
+  }
+  for (const part of deidentified.onDevice.removed) {
+    // Older snapshots may reuse a literal marker from the source. An answer
+    // cannot tell its occurrences apart: leave that marker unresolved rather
+    // than insert a person's detail into literal text. New allocations avoid
+    // that ambiguity.
+    if (
+      conflictingManual.has(part.replacement) ||
+      (part.kind !== "date" &&
+        deidentified.onDevice.source.includes(part.replacement))
+    )
+      back.delete(part.replacement);
+  }
   // Longest first, so that "[NAME 1]" never stands inside "[NAME 10]"'s place.
   const keys = [...back.keys()].sort((a, b) => b.length - a.length);
   if (!keys.length) return answer;
