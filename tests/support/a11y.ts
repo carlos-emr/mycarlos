@@ -112,6 +112,17 @@ export async function fakeVault(
               return { platform: "windows" };
             case "vault_status":
               return status;
+            case "vault_notification_status":
+              return {
+                supported: false,
+                available: false,
+                enabled: false,
+                permission: "unavailable",
+                automaticChecksEnabled: false,
+                automaticChecksSupported: false,
+                automaticChecksPaused: false,
+                lastOutcome: null,
+              };
             // These accessibility journeys have no files waiting to be shared.
             // The app still polls the intake while locked and after unlocking.
             case "received_list":
