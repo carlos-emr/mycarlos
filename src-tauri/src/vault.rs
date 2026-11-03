@@ -625,9 +625,21 @@ pub struct VaultRecord {
     pub clinic_service_date: Option<String>,
 }
 
+// JSON numbers must remain exact when the renderer compares capture order.
+const MAX_SNAPSHOT_SEQUENCE: u64 = (1_u64 << 53) - 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotCapture {
+    pub epoch: Uuid,
+    pub sequence: u64,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultSnapshot {
+    /// Runtime capture order, never part of the encrypted vault format.
+    pub capture: SnapshotCapture,
     pub profiles: Vec<PatientProfile>,
     pub folders: Vec<VaultFolder>,
     pub records: Vec<VaultRecord>,
@@ -842,6 +854,8 @@ impl Drop for KdfWork<'_> {
 pub struct VaultStore {
     root: PathBuf,
     unlocked: Mutex<Option<UnlockedVault>>,
+    snapshot_epoch: Uuid,
+    snapshot_sequence: AtomicU64,
     kdf_running: AtomicBool,
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
@@ -865,6 +879,8 @@ impl VaultStore {
         Self {
             root,
             unlocked: Mutex::new(None),
+            snapshot_epoch: Uuid::new_v4(),
+            snapshot_sequence: AtomicU64::new(0),
             kdf_running: AtomicBool::new(false),
             portal_session: AtomicU64::new(0),
             #[cfg(feature = "portal-linking")]
@@ -1349,10 +1365,27 @@ impl VaultStore {
 
     pub fn snapshot(&self) -> Result<VaultSnapshot, VaultError> {
         let guard = self.session();
-        Ok(Self::snapshot_of(
-            &self.root,
-            guard.as_ref().ok_or(VaultError::Locked)?,
-        ))
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let capture = self.reserve_snapshot_capture()?;
+        Ok(Self::snapshot_of(&self.root, unlocked, capture))
+    }
+
+    /// Called only under the session mutex, which orders reservation and
+    /// capture together. Reserve before an irreversible write so exhaustion
+    /// cannot make an already stored recovery key look like a failed write.
+    fn reserve_snapshot_capture(&self) -> Result<SnapshotCapture, VaultError> {
+        let previous = self
+            .snapshot_sequence
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value
+                    .checked_add(1)
+                    .filter(|next| *next <= MAX_SNAPSHOT_SEQUENCE)
+            })
+            .map_err(|_| VaultError::Storage)?;
+        Ok(SnapshotCapture {
+            epoch: self.snapshot_epoch,
+            sequence: previous + 1,
+        })
     }
 
     /// The strict read: the whole history, or `Corrupt` when any of it does not check out.
@@ -1462,8 +1495,13 @@ impl VaultStore {
         })
     }
 
-    fn snapshot_of(root: &Path, unlocked: &UnlockedVault) -> VaultSnapshot {
+    fn snapshot_of(
+        root: &Path,
+        unlocked: &UnlockedVault,
+        capture: SnapshotCapture,
+    ) -> VaultSnapshot {
         VaultSnapshot {
+            capture,
             portal_linking_enabled: crate::portal_client::available(),
             portal_links: unlocked
                 .manifest
@@ -3141,6 +3179,7 @@ impl VaultStore {
             &unlocked.master_key,
             Some(&envelope),
         )?;
+        let capture = self.reserve_snapshot_capture()?;
         let written = write_header_pair(
             &self.root,
             &first,
@@ -3161,7 +3200,7 @@ impl VaultStore {
         // Taken under the same session guard: a lock that came between the
         // key being stored and a snapshot taken apart would report a key
         // that was stored as a failure.
-        Ok(Self::snapshot_of(&self.root, unlocked))
+        Ok(Self::snapshot_of(&self.root, unlocked, capture))
     }
 
     /// Opens a locked vault with its recovery key and replaces the forgotten
@@ -7979,6 +8018,123 @@ pub(crate) fn history_events_for_test(store: &VaultStore) -> Vec<HistoryEntry> {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn snapshot_capture_orders_reads_and_changes_epoch_only_with_runtime() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let first = store.snapshot().unwrap();
+        let second = store.snapshot().unwrap();
+        assert_eq!(first.capture.epoch, second.capture.epoch);
+        assert_eq!(second.capture.sequence, first.capture.sequence + 1);
+        let json = serde_json::to_value(&second).unwrap();
+        assert_eq!(json["capture"]["epoch"], second.capture.epoch.to_string());
+        assert_eq!(
+            json["capture"]["sequence"].as_u64(),
+            Some(second.capture.sequence)
+        );
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let reopened = store.snapshot().unwrap();
+        assert_eq!(reopened.capture.epoch, first.capture.epoch);
+        assert!(reopened.capture.sequence > second.capture.sequence);
+        drop(store);
+        let restarted = VaultStore::new(root);
+        restarted.unlock(PASSWORD).unwrap();
+        let next_runtime = restarted.snapshot().unwrap();
+        assert_ne!(next_runtime.capture.epoch, first.capture.epoch);
+        assert_eq!(next_runtime.capture.sequence, 1);
+    }
+
+    #[test]
+    fn snapshot_capture_key_commit_precedes_later_mutation() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let before = store.snapshot().unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap();
+        let groups = recovery_key_groups(&key);
+        let stored = store.confirm_recovery_key(&typed_back(&groups), 5).unwrap();
+        store.create_profile("FAKE Second", 6).unwrap();
+        let later = store.snapshot().unwrap();
+        assert!(before.capture.sequence < stored.capture.sequence);
+        assert!(stored.capture.sequence < later.capture.sequence);
+        assert_eq!(stored.capture.epoch, later.capture.epoch);
+        assert_eq!(stored.profiles.len(), 1);
+        assert_eq!(later.profiles.len(), 2);
+        assert_eq!(stored.recovery_key_set_at_ms, Some(5));
+        store.lock();
+        assert!(matches!(store.snapshot(), Err(VaultError::Locked)));
+        // The successful receipt remains usable without reading the locked vault.
+        assert_eq!(
+            serde_json::to_value(stored).unwrap()["recoveryKeySetAtMs"],
+            5
+        );
+    }
+
+    #[test]
+    fn snapshot_capture_exhaustion_refuses_before_key_write() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap();
+        let groups = recovery_key_groups(&key);
+        let files = || {
+            fs::read_dir(&root)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| path.is_file())
+                .map(|path| {
+                    (
+                        path.file_name().unwrap().to_owned(),
+                        fs::read(path).unwrap(),
+                    )
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        let before = files();
+        store
+            .snapshot_sequence
+            .store(MAX_SNAPSHOT_SEQUENCE, Ordering::Relaxed);
+        assert!(matches!(
+            store.confirm_recovery_key(&typed_back(&groups), 5),
+            Err(VaultError::Storage)
+        ));
+        assert_eq!(files(), before);
+        assert!(!store.check_recovery_key(&typed_back(&groups)).unwrap());
+        assert!(matches!(store.snapshot(), Err(VaultError::Storage)));
+        assert_eq!(
+            store.snapshot_sequence.load(Ordering::Relaxed),
+            MAX_SNAPSHOT_SEQUENCE
+        );
+    }
+
+    #[test]
+    fn snapshot_capture_last_safe_value_and_partial_key_write_are_returned() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let key = store.begin_recovery_key(PASSWORD).unwrap();
+        let groups = recovery_key_groups(&key);
+        store
+            .snapshot_sequence
+            .store(MAX_SNAPSHOT_SEQUENCE - 1, Ordering::Relaxed);
+        let stored = {
+            let _fail = FailAt::new("recovery-key.after-first-write");
+            store.confirm_recovery_key(&typed_back(&groups), 5).unwrap()
+        };
+        assert_eq!(stored.capture.sequence, MAX_SNAPSHOT_SEQUENCE);
+        assert_eq!(stored.recovery, Some(RecoveryReason::WriteFailed));
+        assert_eq!(stored.recovery_key_set_at_ms, Some(5));
+        assert_eq!(
+            serde_json::to_value(&stored).unwrap()["capture"]["sequence"].as_u64(),
+            Some(MAX_SNAPSHOT_SEQUENCE)
+        );
+        assert!(matches!(store.snapshot(), Err(VaultError::Storage)));
+    }
 
     #[cfg(not(feature = "portal-linking"))]
     #[test]
@@ -12882,6 +13038,181 @@ mod tests {
     }
 
     #[test]
+    fn locking_cancels_a_confirmed_restore_without_replacing_the_current_vault() {
+        struct GatedBackup {
+            data: Cursor<Vec<u8>>,
+            after_object: u64,
+            entered: Option<mpsc::Sender<()>>,
+            release: mpsc::Receiver<()>,
+        }
+        impl Read for GatedBackup {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                if self.data.position() == self.after_object {
+                    if let Some(entered) = self.entered.take() {
+                        entered.send(()).map_err(io::Error::other)?;
+                        self.release
+                            .recv_timeout(Duration::from_secs(10))
+                            .map_err(io::Error::other)?;
+                    }
+                }
+                let count = if self.data.position() < self.after_object {
+                    buffer
+                        .len()
+                        .min((self.after_object - self.data.position()) as usize)
+                } else {
+                    buffer.len()
+                };
+                self.data.read(&mut buffer[..count])
+            }
+        }
+        struct Transfers {
+            release: Option<mpsc::Sender<()>>,
+            restoring: Option<std::thread::JoinHandle<Result<(), VaultError>>>,
+            locking: Option<std::thread::JoinHandle<()>>,
+        }
+        impl Transfers {
+            fn release(&mut self) {
+                if let Some(release) = self.release.take() {
+                    let _ = release.send(());
+                }
+            }
+        }
+        impl Drop for Transfers {
+            fn drop(&mut self) {
+                // Also on assertion failure: unblock the reader, then join both
+                // workers before their store or temporary files can be dropped.
+                self.release();
+                if let Some(restoring) = self.restoring.take() {
+                    let _ = restoring.join();
+                }
+                if let Some(locking) = self.locking.take() {
+                    let _ = locking.join();
+                }
+            }
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, backup) = changed_since_its_backup(&root);
+        let confirmed = store
+            .inspect_backup(
+                Cursor::new(backup.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+            )
+            .unwrap();
+        assert!(confirmed.differs_from_this_device);
+
+        // Stop at an actual entry boundary, after one object has been copied
+        // and synced, rather than guessing an offset in the backup format.
+        let mut framing = BackupReader::new(Cursor::new(backup.clone())).unwrap();
+        framing
+            .small_entry(BACKUP_KIND_HEADER, MAX_HEADER_BYTES)
+            .unwrap();
+        framing
+            .small_entry(BACKUP_KIND_MANIFEST, MAX_MANIFEST_BYTES)
+            .unwrap();
+        let (kind, name, length) = framing.next_entry().unwrap().unwrap();
+        assert_eq!(kind, BACKUP_KIND_OBJECT);
+        framing
+            .copy_entry(kind, &name, length, &mut io::sink())
+            .unwrap();
+        let after_object = framing.inner.position();
+        let store = Arc::new(store);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let restoring_store = Arc::clone(&store);
+        let mut transfers = Transfers {
+            release: Some(release_tx),
+            restoring: Some(std::thread::spawn(move || {
+                restoring_store.restore_confirmed(
+                    GatedBackup {
+                        data: Cursor::new(backup),
+                        after_object,
+                        entered: Some(entered_tx),
+                        release: release_rx,
+                    },
+                    RestoreCredential::Passphrase(PASSWORD),
+                    &confirmed,
+                )
+            })),
+            locking: None,
+        };
+        entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        // The restore owns the session mutex here: inspect only its files.
+        let stages = restore_leftovers(&root);
+        assert_eq!(stages.len(), 1);
+        assert!(root
+            .parent()
+            .unwrap()
+            .join(&stages[0])
+            .join("objects")
+            .join(name)
+            .is_file());
+        assert!(!restore_ready_path(&root).unwrap().exists());
+        let locking_store = Arc::clone(&store);
+        transfers.locking = Some(std::thread::spawn(move || locking_store.lock()));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !store.cancel_io.load(Ordering::Acquire) {
+            assert!(
+                Instant::now() < deadline,
+                "lock did not request cancellation"
+            );
+            std::thread::yield_now();
+        }
+        transfers.release();
+        let restored = transfers.restoring.take().unwrap().join();
+        let locked = transfers.locking.take().unwrap().join();
+        assert!(locked.is_ok());
+        assert!(matches!(restored.unwrap(), Err(VaultError::Cancelled)));
+        assert!(!store.cancel_io.load(Ordering::Acquire));
+        assert_eq!(store.status().unwrap(), VaultStatus::Locked);
+        assert!(restore_leftovers(&root).is_empty());
+        assert!(!reset_path(&root).unwrap().exists());
+        drop(store);
+
+        // A later start must keep the newer current vault, not complete the
+        // cancelled restore. Allow legitimate lock and unlock history entries.
+        let restarted = VaultStore::new(root.clone());
+        assert_eq!(restarted.status().unwrap(), VaultStatus::Locked);
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().records.len(), 3);
+        assert_eq!(exported(&restarted, "first.pdf"), CANARY);
+        assert_eq!(
+            exported(&restarted, "second.pdf"),
+            b"second synthetic record"
+        );
+        assert_eq!(exported(&restarted, "later.pdf"), b"later record");
+        restarted.lock();
+
+        // An explicitly requested restore still works with a fresh preview.
+        // Read the original backup again from the framing reader's owned bytes.
+        let retry = framing.inner.into_inner();
+        let preview = restarted
+            .inspect_backup(
+                Cursor::new(retry.clone()),
+                RestoreCredential::Passphrase(PASSWORD),
+            )
+            .unwrap();
+        restarted
+            .restore_confirmed(
+                Cursor::new(retry),
+                RestoreCredential::Passphrase(PASSWORD),
+                &preview,
+            )
+            .unwrap();
+        assert_eq!(restarted.status().unwrap(), VaultStatus::Locked);
+        restarted.unlock(PASSWORD).unwrap();
+        assert_eq!(restarted.snapshot().unwrap().records.len(), 2);
+        assert_eq!(exported(&restarted, "first.pdf"), CANARY);
+        assert_eq!(
+            exported(&restarted, "second.pdf"),
+            b"second synthetic record"
+        );
+        assert!(restore_leftovers(&root).is_empty());
+        assert!(!reset_path(&root).unwrap().exists());
+    }
+
+    #[test]
     fn a_restore_that_fails_before_it_is_verified_leaves_nothing() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("home").join("vault");
@@ -15112,6 +15443,58 @@ mod tests {
             second_store.export(second_record, io::sink()),
             Err(VaultError::Corrupt)
         ));
+    }
+
+    #[test]
+    fn atomic_backup_preserves_a_restorable_destination_after_source_corruption() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let out = temp.path().join("backups");
+        fs::create_dir(&out).unwrap();
+        let destination = out.join("kept.mycarlosbackup");
+        let (store, records, objects) = vault_with_records(&root, &["first.pdf", "second.pdf"]);
+        store.unlock(PASSWORD).unwrap();
+        store.backup_atomic(&destination, 3).unwrap();
+        let kept = fs::read(&destination).unwrap();
+        let saved_backups = |store: &VaultStore| {
+            history_events(store)
+                .iter()
+                .filter(|entry| entry.event == HistoryEvent::BackupSaved)
+                .count()
+        };
+        let saved_before = saved_backups(&store);
+        assert!(saved_before > 0);
+
+        // A source file can rot after a good backup was saved. The writer has
+        // already staged headers and earlier objects before it detects this;
+        // reporting the failure must not sacrifice the last usable backup.
+        let mut damaged = fs::read(&objects[1]).unwrap();
+        *damaged.last_mut().unwrap() ^= 1;
+        fs::write(&objects[1], damaged).unwrap();
+        assert!(matches!(
+            store.backup_atomic(&destination, 4),
+            Err(VaultError::DamagedDocument(id)) if id == records[1]
+        ));
+        assert_eq!(fs::read(&destination).unwrap(), kept);
+        assert!(leftovers(&out, &["kept.mycarlosbackup"]).is_empty());
+        // A failure may be audited, but it must not be recorded as a saved backup.
+        assert_eq!(saved_backups(&store), saved_before);
+
+        // Preserve a usable encrypted backup, not just a file with the same
+        // name: restore the actual destination in an independent vault home.
+        let restored = VaultStore::new(temp.path().join("restored-home").join("vault"));
+        restored
+            .restore(
+                File::open(&destination).unwrap(),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        assert_eq!(restored.status().unwrap(), VaultStatus::Locked);
+        restored.unlock(PASSWORD).unwrap();
+        assert_eq!(exported(&restored, "first.pdf"), b"first.pdf");
+        assert_eq!(exported(&restored, "second.pdf"), b"second.pdf");
+        assert_eq!(restored.snapshot().unwrap().recovery, None);
     }
 
     #[test]

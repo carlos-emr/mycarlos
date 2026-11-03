@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { humanText } from "../test/humanText";
 import {
@@ -7,6 +13,7 @@ import {
   trimmedDetails,
 } from "./PersonDetails";
 import { localDateText } from "../vault";
+import { setLocaleOverride, translate } from "../i18n";
 
 describe("required profile identity details", () => {
   const fullName = "Mary Smith";
@@ -102,5 +109,84 @@ describe("required profile identity details", () => {
         name: humanText("Edit details for FAKE Mary"),
       }),
     ).toBeDisabled();
+  });
+
+  it("rewords validation without losing identity drafts or the unknown-date choice across languages", async () => {
+    setLocaleOverride("en");
+    const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    render(
+      <PersonDetailsList
+        people={[
+          {
+            id: "p1",
+            displayName: "FAKE Avery",
+            createdAtMs: 1,
+            birthDate: "2000-02-29",
+          },
+        ]}
+        busy={false}
+        onSave={save}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Avery"),
+      }),
+    );
+    const name = screen.getByLabelText("Full name, as on clinic documents");
+    const date = screen.getByLabelText("Date of birth");
+    const unknown = screen.getByRole("checkbox");
+    const form = screen.getByRole("form", {
+      name: humanText("Details for FAKE Avery"),
+    });
+
+    act(() => setLocaleOverride("pl"));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Proszę wpisać imię i nazwisko tej osoby.",
+    );
+    expect(screen.getByRole("button", { name: "Zapisz dane" })).toBeDisabled();
+    const draft = "  FAKE אבג { $name }  ";
+    fireEvent.change(name, { target: { value: draft } });
+    name.focus();
+    act(() => setLocaleOverride("pt-BR"));
+    expect(
+      screen.getByLabelText(translate("pt-BR", "personDetails.fullName")),
+    ).toBe(name);
+    expect(name).toHaveValue(draft);
+    expect(name).toHaveFocus();
+    expect(date).toHaveValue("2000-02-29");
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    fireEvent.change(date, { target: { value: "" } });
+    act(() => setLocaleOverride("pl"));
+    expect(screen.getByLabelText("Data urodzenia")).toBe(date);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Proszę wpisać datę urodzenia lub zaznaczyć, że jest nieznana.",
+    );
+    expect(screen.getByRole("button", { name: "Zapisz dane" })).toBeDisabled();
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(unknown);
+    expect(date).toBeDisabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    act(() => setLocaleOverride("pt-BR"));
+    expect(unknown).toBeChecked();
+    expect(date).toBeDisabled();
+    expect(name).toHaveValue(draft);
+    fireEvent.click(screen.getByRole("button", { name: "Salvar dados" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save).toHaveBeenLastCalledWith("p1", { fullName: draft.trim() });
+    expect(form).toBeInTheDocument();
+    expect(name).toHaveValue(draft);
+    expect(unknown).toBeChecked();
+
+    act(() => setLocaleOverride("pl"));
+    expect(
+      screen.getByRole("form", { name: humanText("Dane osoby FAKE Avery") }),
+    ).toBe(form);
+    expect(save).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz dane" }));
+    await waitFor(() => expect(form).not.toBeInTheDocument());
+    expect(save).toHaveBeenNthCalledWith(2, "p1", { fullName: draft.trim() });
   });
 });

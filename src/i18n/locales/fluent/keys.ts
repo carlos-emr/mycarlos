@@ -565,6 +565,7 @@ export const MESSAGE_KEYS = [
   "security.title",
   "sidebar.documents",
   "sidebar.folderCount",
+  "sidebar.folderOfPerson",
   "sidebar.label",
   "sidebar.myRecords",
   "sidebar.preferences",
@@ -1487,6 +1488,7 @@ const FLUENT_IDS_BY_KEY = {
   "security.title": "security-title",
   "sidebar.documents": "sidebar-documents",
   "sidebar.folderCount": "sidebar-folderCount",
+  "sidebar.folderOfPerson": "sidebar-folderOfPerson",
   "sidebar.label": "sidebar-label",
   "sidebar.myRecords": "sidebar-myRecords",
   "sidebar.preferences": "sidebar-preferences",
@@ -2436,6 +2438,7 @@ export interface MessageArgsByKey {
   "security.title": undefined;
   "sidebar.documents": { count: FluentArgument };
   "sidebar.folderCount": { count: FluentArgument };
+  "sidebar.folderOfPerson": { folder: FluentArgument; person: FluentArgument };
   "sidebar.label": undefined;
   "sidebar.myRecords": undefined;
   "sidebar.preferences": undefined;

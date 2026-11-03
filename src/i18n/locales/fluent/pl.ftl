@@ -114,7 +114,7 @@ frame-state-settingUp = Konfiguracja
 
 frame-window-label = Prywatny sejf myCarlos
 
-interface-camera-denied = myCarlos nie może używać aparatu. { $help } Następnie wybierz Spróbuj ponownie.
+interface-camera-denied = myCarlos nie może używać aparatu. { $help } Następnie proszę wybrać Spróbuj ponownie.
 
 interface-CameraDialog-cameraReady = Aparat gotowy.
 
@@ -122,7 +122,7 @@ interface-CameraDialog-cameraView = Podgląd aparatu
 
 interface-CameraDialog-myCarlosUsesTheCameraToSavePhotos = myCarlos używa aparatu do zapisywania zdjęć dokumentów dotyczących zdrowia. Zdjęcia pozostają zabezpieczone w myCarlos.
 
-interface-CameraDialog-photoTakenRetakeOrUseThePhoto = Zdjęcie zrobione. Zrób je ponownie lub użyj tego zdjęcia.
+interface-CameraDialog-photoTakenRetakeOrUseThePhoto = Zdjęcie zrobione. Proszę zrobić je ponownie lub użyć tego zdjęcia.
 
 interface-CameraDialog-retake = Zrób ponownie
 
@@ -134,7 +134,7 @@ interface-CameraDialog-takePhoto = Zrób zdjęcie
 
 interface-CameraDialog-theCameraIsOnOnlyWhileYou = Aparat działa tylko podczas robienia zdjęcia. Wyłącza się po zrobieniu zdjęcia, zamknięciu tego okna lub zablokowaniu myCarlos.
 
-interface-CameraDialog-thePhotoCouldNotBePreparedChoose = Nie udało się przygotować zdjęcia. Wybierz Zrób ponownie.
+interface-CameraDialog-thePhotoCouldNotBePreparedChoose = Nie udało się przygotować zdjęcia. Proszę wybrać Zrób ponownie.
 
 interface-CameraDialog-thePhotoYouTook = Zrobione zdjęcie
 
@@ -354,15 +354,15 @@ interface-photo-openYourPhonesSettingsThenAppsThen = Proszę otworzyć Ustawieni
 
 interface-photo-openYourPhonesSettingsThenMyCarlosAnd = Proszę otworzyć Ustawienia telefonu, następnie myCarlos i włączyć Aparat.
 
-interface-photo-theCameraCouldNotBeStartedChoose = Nie udało się uruchomić aparatu. Wybierz Spróbuj ponownie.
+interface-photo-theCameraCouldNotBeStartedChoose = Nie udało się uruchomić aparatu. Proszę wybrać Spróbuj ponownie.
 
 interface-photo-theCameraIsInUseByAnother = Inna aplikacja używa aparatu. Proszę ją zamknąć, a następnie wybrać Spróbuj ponownie.
 
 interface-photo-theCameraStoppedCheckThatItIs = Aparat przestał działać. Proszę sprawdzić, czy jest podłączony, a następnie wybrać Spróbuj ponownie.
 
-interface-photo-theCameraStoppedChooseTryAgain = Aparat przestał działać. Wybierz Spróbuj ponownie.
+interface-photo-theCameraStoppedChooseTryAgain = Aparat przestał działać. Proszę wybrać Spróbuj ponownie.
 
-interface-photo-thisPhonesCameraCouldNotBeFound = Nie znaleziono aparatu tego telefonu. Wybierz Spróbuj ponownie.
+interface-photo-thisPhonesCameraCouldNotBeFound = Nie znaleziono aparatu tego telefonu. Proszę wybrać Spróbuj ponownie.
 
 interface-reader-opening = Otwieranie strony { $page }…
 
@@ -577,7 +577,7 @@ interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteka zaszyfrowanyc
 
 interface-VaultLibrary-nameAZ = Nazwa A–Z
 
-interface-VaultLibrary-new = Nowe
+interface-VaultLibrary-new = Nowy
 
 interface-VaultLibrary-newestFirst = Od najnowszych
 
@@ -751,7 +751,7 @@ native-error-07 = Ten klucz odzyskiwania nie otwiera tej kopii zapasowej. Kopię
 
 native-error-08 = To hasło główne nie otwiera tej kopii zapasowej. Kopię zapasową otwiera hasło główne użyte przy jej utworzeniu (a nie zmienione później) albo klucz odzyskiwania, który sejf miał w chwili jej zapisania, jeśli go miał.
 
-native-error-09 = Zdjęcie nie dotarło do sejfu, więc nie zostało zapisane. Wybierz Użyj zdjęcia, aby spróbować ponownie.
+native-error-09 = Zdjęcie nie dotarło do sejfu, więc nie zostało zapisane. Proszę wybrać Użyj zdjęcia, aby spróbować ponownie.
 
 native-error-10 = Nic nie zostało ukryte. Obecnie nie można wprowadzać zmian w sejfie; komunikat nad dokumentami wyjaśnia dlaczego.
 
@@ -761,7 +761,7 @@ native-error-12 = Na tym urządzeniu już istnieje sejf.
 
 native-error-13 = Na tym urządzeniu nie ma sejfu.
 
-native-error-14 = Odblokuj sejf, aby kontynuować.
+native-error-14 = Proszę odblokować sejf, aby kontynuować.
 
 native-error-15 = Ten sejf jest otwarty w innym oknie myCarlos. Proszę zablokować lub zamknąć tamto okno i spróbować ponownie.
 
@@ -977,7 +977,7 @@ record-kind-document = Dokument
 
 record-source-manual = Import ręczny — niezweryfikowany
 
-recover-intro = Użyj klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło główne.
+recover-intro = Proszę użyć klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło główne.
 
 recover-key-format = 28 liter i cyfr, w 7 grupach po 4, tak jak na zestawie lub tak, jak zostały zapisane. Myślniki, spacje i inne znaki interpunkcyjne nie mają znaczenia.
 
@@ -1321,6 +1321,8 @@ sidebar-folderCount =
     *[other] { $count } folderu
     }
 
+sidebar-folderOfPerson = { $folder } ({ $person })
+
 sidebar-label = Biblioteka dokumentów
 
 sidebar-myRecords = Moje dokumenty
@@ -1385,7 +1387,7 @@ unlock-waiting =
 
 unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
 
-language-error-formatting = myCarlos nie może poprawnie wyświetlić tego komunikatu. Wybierz inny język lub uruchom aplikację ponownie, a przed kolejną próbą sprawdź swoje dokumenty.
+language-error-formatting = myCarlos nie może poprawnie wyświetlić tego komunikatu. Proszę wybrać inny język lub uruchomić aplikację ponownie, a przed kolejną próbą sprawdzić swoje dokumenty.
 
 error-newerFormat-backup = Ta kopia zapasowa została zapisana przez nowszą wersję myCarlos. Proszę zaktualizować myCarlos, aby ją przywrócić. Nic na tym urządzeniu nie zostało zmienione.
 
@@ -1393,7 +1395,7 @@ error-newerFormat-vault = Ten sejf został zapisany przez nowszą wersję myCarl
 
 personDetails-birthDate = Data urodzenia
 
-personDetails-birthDateRequired = Wpisz datę urodzenia lub zaznacz, że jej nie znasz.
+personDetails-birthDateRequired = Proszę wpisać datę urodzenia lub zaznaczyć, że jest nieznana.
 
 personDetails-birthDateUnknown = Nie znam daty urodzenia tej osoby
 
@@ -1407,13 +1409,13 @@ personDetails-for = Dane osoby { $name }
 
 personDetails-fullName = Imię i nazwisko, jak na dokumentach z przychodni
 
-personDetails-fullNameRequired = Wpisz imię i nazwisko tej osoby.
+personDetails-fullNameRequired = Proszę wpisać imię i nazwisko tej osoby.
 
 personDetails-futureDate = Data urodzenia nie może być w przyszłości.
 
 personDetails-help = Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.
 
-personDetails-invalidDate = Wpisz prawidłową datę urodzenia: rok, miesiąc i dzień.
+personDetails-invalidDate = Proszę wpisać prawidłową datę urodzenia: rok, miesiąc i dzień.
 
 personDetails-list = Dane osób
 
