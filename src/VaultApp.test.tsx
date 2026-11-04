@@ -11016,7 +11016,7 @@ describe("Automatic arrival snapshot ownership", () => {
     });
     expect(bridge.snapshot).toHaveBeenCalledTimes(initial);
   });
-  it("refreshes when Clinic documents opens and keeps that route until the patient leaves", async () => {
+  it("refreshes when Security (where Clinic documents lives) opens and keeps that route until the patient leaves", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi.fn(async () => captureSnapshot(supported)),

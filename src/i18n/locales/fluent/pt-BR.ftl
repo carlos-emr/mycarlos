@@ -867,6 +867,7 @@ native-setAside-title = Deixar este cofre do myCarlos de lado e começar de novo
 native-setAside-warning = Isso deixa todo o cofre de lado e começa de novo com um cofre vazio. { $kept } O myCarlos nunca o exclui. Se você está começando de novo porque outra pessoa pode saber sua frase secreta, ela ainda pode abri-lo, então remova-o. { $removal }
 
 native-vault-keep = Manter este cofre
+native-notice-arrival = Um documento da clínica chegou ao myCarlos. Abra o myCarlos para lê-lo.
 
 notice-autoLockSet =
     { $count ->

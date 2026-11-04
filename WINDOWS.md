@@ -43,11 +43,13 @@ exports.
 
 Document arrival notices are an optional Windows evaluation feature. Normal builds leave them disabled. The controls are available only in builds that explicitly enable the relevant evaluation features.
 
-In Clinic documents, turn on **Allow document arrival notices** to allow a generic Windows notice after a clinic document is verified and saved in your vault. Open myCarlos normally to read the document. A notice does not include patient, clinic, or document details, and a successful submission to Windows does not guarantee that you will see it.
+In Settings > Preferences, turn on **Allow document arrival notices** to allow a generic Windows notice after a clinic document is verified and saved in your vault. Open myCarlos normally to read the document. The notice is one fixed sentence in the language myCarlos was last using when Preferences was open; it does not include patient, clinic, or document details, and a successful submission to Windows does not guarantee that you will see it.
 
 Automatic checks require a build with that additional feature enabled and a separate choice: **Check for clinic documents automatically while unlocked**. This allows checks of saved, approved clinic links while myCarlos is running and the vault is unlocked, with at least two minutes between attempts. Locking the vault or closing the app stops further checks. Turning off document arrival notices also turns off automatic checks. Windows blocking notices does not itself turn off automatic checks you have allowed.
 
-If automatic checks are paused, open Clinic documents and choose **Check for new documents**. This feature does not deliver notices or fetch documents while the app is closed.
+If automatic checks are paused, open Security > Clinic documents and choose **Check for new documents**. This feature does not deliver notices or fetch documents while the app is closed.
+
+myCarlos keeps a small plain file beside its settings (`vault-home/document-notifications-v1.json`) with your two choices, the language, and a fingerprint and outcome for each of the newest 512 notices so the same arrival is not announced twice; it holds no document names or contents.
 
 ## Opening locked documents and reading documents
 

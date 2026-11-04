@@ -1845,9 +1845,10 @@ async fn vault_check_documents(
 #[tauri::command]
 async fn vault_notification_status(
     store: State<'_, Arc<VaultStore>>,
+    locale: Option<UiLocale>,
 ) -> CommandResult<document_notification_runtime::Status> {
     let store = Arc::clone(store.inner());
-    tauri::async_runtime::spawn_blocking(move || store.notification_status())
+    tauri::async_runtime::spawn_blocking(move || store.notification_status(locale))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))
 }

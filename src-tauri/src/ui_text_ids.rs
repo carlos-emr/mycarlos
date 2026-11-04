@@ -420,6 +420,7 @@ pub enum MessageId {
     NativeFilterBackups,
     NativeFilterPdf,
     NativeKitText,
+    NativeNoticeArrival,
     NativeRecoveryKeep,
     NativeRecoveryReplace,
     NativeRecoveryTitle,
@@ -1167,6 +1168,7 @@ impl MessageId {
         Self::NativeFilterBackups,
         Self::NativeFilterPdf,
         Self::NativeKitText,
+        Self::NativeNoticeArrival,
         Self::NativeRecoveryKeep,
         Self::NativeRecoveryReplace,
         Self::NativeRecoveryTitle,
@@ -2110,6 +2112,7 @@ impl MessageId {
             Self::NativeFilterBackups => "native-filter-backups",
             Self::NativeFilterPdf => "native-filter-pdf",
             Self::NativeKitText => "native-kit-text",
+            Self::NativeNoticeArrival => "native-notice-arrival",
             Self::NativeRecoveryKeep => "native-recovery-keep",
             Self::NativeRecoveryReplace => "native-recovery-replace",
             Self::NativeRecoveryTitle => "native-recovery-title",
@@ -3424,6 +3427,7 @@ impl MessageId {
             "notifications.autoHelp" => Some(Self::NotificationsAutoHelp),
             "notifications.autoPaused" => Some(Self::NotificationsAutoPaused),
             "notifications.checkBusy" => Some(Self::NotificationsCheckBusy),
+            "native.notice.arrival" => Some(Self::NativeNoticeArrival),
             _ => None,
         }
     }

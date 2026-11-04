@@ -165,6 +165,7 @@ impl crate::document_notification_runtime::active::Backend for Notices {
     }
     fn accept(
         &self,
+        _body: &str,
         current: &dyn Fn() -> bool,
     ) -> Result<(), crate::document_notification_runtime::Error> {
         if current() {

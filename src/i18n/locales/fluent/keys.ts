@@ -743,6 +743,7 @@ export const MESSAGE_KEYS = [
   "notifications.autoHelp",
   "notifications.autoPaused",
   "notifications.checkBusy",
+  "native.notice.arrival",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1612,6 +1613,7 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.autoHelp": "notifications-autoHelp",
   "notifications.autoPaused": "notifications-autoPaused",
   "notifications.checkBusy": "notifications-checkBusy",
+  "native.notice.arrival": "native-notice-arrival",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2442,6 +2444,7 @@ export interface MessageArgsByKey {
   "notifications.autoHelp": undefined;
   "notifications.autoPaused": undefined;
   "notifications.checkBusy": undefined;
+  "native.notice.arrival": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -926,11 +926,17 @@ impl VaultStore {
                 .is_some_and(|n| n.automatic_eligible())
     }
 
-    pub(crate) fn notification_status(&self) -> crate::document_notification_runtime::Status {
+    pub(crate) fn notification_status(
+        &self,
+        locale: Option<crate::ui_text::UiLocale>,
+    ) -> crate::document_notification_runtime::Status {
         let mut status = self
             .notifications
             .get()
-            .map(|n| n.status())
+            .map(|n| {
+                n.observe_locale(locale);
+                n.status()
+            })
             .unwrap_or_else(crate::document_notification_runtime::Status::unavailable);
         status.automatic_checks_paused = self.collection.paused();
         status
@@ -6732,7 +6738,7 @@ mod collection_object_tests {
             fn permission(&self) -> Permission {
                 Permission::Allowed
             }
-            fn accept(&self, current: &dyn Fn() -> bool) -> Result<(), Error> {
+            fn accept(&self, _body: &str, current: &dyn Fn() -> bool) -> Result<(), Error> {
                 if current() {
                     Ok(())
                 } else {

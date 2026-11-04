@@ -888,6 +888,7 @@ native-setAside-title = Odstawić ten sejf myCarlos na bok i zacząć od nowa?
 native-setAside-warning = Cały sejf zostanie odstawiony na bok i rozpocznie się praca z pustym sejfem. { $kept } myCarlos nigdy go nie usuwa. Jeśli powodem rozpoczęcia od nowa jest podejrzenie, że ktoś zna Twoje hasło główne, ta osoba nadal może go otworzyć, więc proszę go usunąć. { $removal }
 
 native-vault-keep = Zachowaj ten sejf
+native-notice-arrival = Do myCarlos dotarł dokument z przychodni. Otwórz myCarlos, aby go przeczytać.
 
 notice-autoLockSet =
     { $count ->

@@ -846,6 +846,7 @@ native-setAside-title = Set this myCarlos vault aside and start again?
 native-setAside-warning = This sets the whole vault aside and starts again with an empty one. { $kept } myCarlos never deletes it. If you are starting again because someone else may know your passphrase, they can still open it, so remove it. { $removal }
 
 native-vault-keep = Keep this vault
+native-notice-arrival = A clinic document has arrived in myCarlos. Open myCarlos to read it.
 
 notice-autoLockSet =
     { $count ->

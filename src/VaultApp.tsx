@@ -1158,7 +1158,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         covered={lockWarning !== null}
         sharedNew={sharedNew}
         onSharedSeen={clearSharedNew}
-        onClinicDocumentsEntry={refreshAutomaticArrivals}
+        onSecurityEntry={refreshAutomaticArrivals}
       />
       {lockWarning !== null && (
         <LockWarning

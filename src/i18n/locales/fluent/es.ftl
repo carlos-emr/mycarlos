@@ -867,6 +867,7 @@ native-setAside-title = ¿Apartar esta bóveda de myCarlos y empezar de nuevo?
 native-setAside-warning = Esto aparta la bóveda entera y empieza de nuevo con una vacía. { $kept } myCarlos nunca la elimina. Si está empezando de nuevo porque otra persona podría conocer su frase de contraseña, esa persona todavía puede abrir la bóveda apartada, así que elimine esa bóveda. { $removal }
 
 native-vault-keep = Conservar esta bóveda
+native-notice-arrival = Ha llegado un documento de la clínica a myCarlos. Abra myCarlos para leerlo.
 
 notice-autoLockSet =
     { $count ->

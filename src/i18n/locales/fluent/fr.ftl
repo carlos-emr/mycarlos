@@ -867,6 +867,7 @@ native-setAside-title = Mettre ce coffre-fort myCarlos de côté et recommencer?
 native-setAside-warning = Cela met tout le coffre-fort de côté et recommence avec un coffre-fort vide. { $kept } myCarlos ne le supprime jamais. Si vous recommencez parce qu’une autre personne pourrait connaître votre phrase secrète, elle peut toujours ouvrir le coffre-fort mis de côté; supprimez donc celui-ci. { $removal }
 
 native-vault-keep = Conserver ce coffre-fort
+native-notice-arrival = Un document de la clinique est arrivé dans myCarlos. Ouvrez myCarlos pour le lire.
 
 notice-autoLockSet =
     { $count ->

@@ -1,6 +1,7 @@
 //! Best-effort LOCAL ARRIVAL notices for the running Windows evaluation app.
 //! Not remote readiness, push delivery, an activation grant, or proof of display.
 //! Native callers alone supply identities after durable authenticated custody.
+use crate::ui_text::UiLocale;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -81,12 +82,26 @@ pub(crate) mod active {
     use uuid::Uuid;
 
     const MAX_BYTES: usize = 64 * 1024;
+    /// Dedupe window: the newest settled arrivals kept on disk. Older entries are dropped as
+    /// new ones arrive, so a full ledger never stops notices; a delivery older than the window
+    /// could be noticed again if it were verified again, which is bounded and harmless.
     const MAX_EVENTS: usize = 512;
 
     pub trait Backend: Send + Sync {
         fn permission(&self) -> Permission;
-        /// A successful OS API acceptance, never a claim that a person saw it.
-        fn accept(&self, still_current: &dyn Fn() -> bool) -> Result<(), Error>;
+        /// A successful OS API acceptance, never a claim that a person saw it. `body` is the
+        /// fixed catalogue sentence for the language the app last reported, never data.
+        fn accept(&self, body: &str, still_current: &dyn Fn() -> bool) -> Result<(), Error>;
+    }
+
+    /// The notice sentence for `locale`, falling back to English; identical for every arrival.
+    fn arrival_notice(locale: Option<UiLocale>) -> Option<String> {
+        let id = crate::ui_text_ids::MessageId::NativeNoticeArrival;
+        locale
+            .unwrap_or_default()
+            .text(id)
+            .ok()
+            .or_else(|| UiLocale::default().text(id).ok())
     }
 
     #[derive(Clone, Serialize, Deserialize)]
@@ -104,6 +119,9 @@ pub(crate) mod active {
         events: Vec<Entry>,
         automatic_checks_enabled: bool,
         automatic_consent_version: u8,
+        /// The language the app last reported through the Settings page; absent in older files.
+        #[serde(default)]
+        locale: Option<UiLocale>,
     }
 
     #[derive(Deserialize)]
@@ -129,6 +147,7 @@ pub(crate) mod active {
                 automatic_consent_version: 0,
                 enabled: false,
                 events: Vec::new(),
+                locale: None,
             }
         }
     }
@@ -172,7 +191,11 @@ pub(crate) mod active {
                 fn permission(&self) -> Permission {
                     Permission::Unavailable
                 }
-                fn accept(&self, _still_current: &dyn Fn() -> bool) -> Result<(), Error> {
+                fn accept(
+                    &self,
+                    _body: &str,
+                    _still_current: &dyn Fn() -> bool,
+                ) -> Result<(), Error> {
                     Err(Error::Unavailable)
                 }
             }
@@ -246,10 +269,7 @@ pub(crate) mod active {
             let state = read().ok();
             let accepting = state.as_ref().is_some_and(|s| s.enabled);
             let automatic_ready = state.as_ref().is_some_and(|s| {
-                s.enabled
-                    && s.automatic_checks_enabled
-                    && s.automatic_consent_version == 1
-                    && s.events.len() < MAX_EVENTS
+                s.enabled && s.automatic_checks_enabled && s.automatic_consent_version == 1
             });
             Self {
                 path,
@@ -295,8 +315,7 @@ pub(crate) mod active {
                 self.accepting.load(Ordering::Acquire)
                     && s.enabled
                     && s.automatic_checks_enabled
-                    && s.automatic_consent_version == 1
-                    && s.events.len() < MAX_EVENTS,
+                    && s.automatic_consent_version == 1,
                 Ordering::Release,
             );
         }
@@ -323,7 +342,7 @@ pub(crate) mod active {
             };
             Status {
                 supported: true,
-                available: guard.as_ref().is_some_and(|s| s.events.len() < MAX_EVENTS),
+                available: guard.as_ref().is_some(),
                 enabled: self.accepting.load(Ordering::Acquire)
                     && guard.as_ref().is_some_and(|s| s.enabled),
                 automatic_checks_enabled: self.accepting.load(Ordering::Acquire)
@@ -344,6 +363,28 @@ pub(crate) mod active {
                 last_outcome: guard
                     .as_ref()
                     .and_then(|s| s.events.last().map(|e| e.outcome)),
+            }
+        }
+
+        /// Remembers the language the app reports so a later notice is worded in it. Not
+        /// consent: a failed write keeps notices running with the language already on disk.
+        pub(crate) fn observe_locale(&self, locale: Option<UiLocale>) {
+            let Some(locale) = locale else {
+                return;
+            };
+            let Ok(mut guard) = self.state.lock() else {
+                return;
+            };
+            let Some(state) = guard.as_mut() else {
+                return;
+            };
+            if state.locale == Some(locale) {
+                return;
+            }
+            let mut next = state.clone();
+            next.locale = Some(locale);
+            if self.persist(&next).is_ok() {
+                *state = next;
             }
         }
 
@@ -447,13 +488,16 @@ pub(crate) mod active {
             let Some(state) = guard.as_ref() else {
                 return;
             };
-            if !state.enabled
-                || state.events.len() >= MAX_EVENTS
-                || state.events.iter().any(|e| e.key == key)
-            {
+            if !state.enabled || state.events.iter().any(|e| e.key == key) {
                 return;
             }
             let mut next = state.clone();
+            if next.events.len() >= MAX_EVENTS {
+                // Every entry is settled (the lock is held for the whole acceptance below), so
+                // the oldest ones leave the dedupe window to make room.
+                let excess = next.events.len() + 1 - MAX_EVENTS;
+                next.events.drain(..excess);
+            }
             next.events.push(Entry {
                 key,
                 outcome: Outcome::Queued,
@@ -466,10 +510,13 @@ pub(crate) mod active {
             }
             // Serialize the opt-out and side effect. No detached task can revive a disabled notice.
             let outcome = match self.backend.permission() {
-                Permission::Allowed if current() => match self.backend.accept(&current) {
-                    Ok(()) => Outcome::OsAccepted,
-                    Err(Error::Cancelled) => Outcome::Unknown,
-                    Err(_) => Outcome::Failed,
+                Permission::Allowed if current() => match arrival_notice(next.locale) {
+                    Some(body) => match self.backend.accept(&body, &current) {
+                        Ok(()) => Outcome::OsAccepted,
+                        Err(Error::Cancelled) => Outcome::Unknown,
+                        Err(_) => Outcome::Failed,
+                    },
+                    None => Outcome::Failed,
                 },
                 _ => Outcome::Unknown,
             };
@@ -500,7 +547,7 @@ pub(crate) mod active {
             fn permission(&self) -> Permission {
                 Permission::Allowed
             }
-            fn accept(&self, still_current: &dyn Fn() -> bool) -> Result<(), Error> {
+            fn accept(&self, _body: &str, still_current: &dyn Fn() -> bool) -> Result<(), Error> {
                 if !still_current() {
                     return Err(Error::Cancelled);
                 }
@@ -676,7 +723,7 @@ pub(crate) mod active {
                 fn permission(&self) -> Permission {
                     Permission::Allowed
                 }
-                fn accept(&self, current: &dyn Fn() -> bool) -> Result<(), Error> {
+                fn accept(&self, _body: &str, current: &dyn Fn() -> bool) -> Result<(), Error> {
                     assert!(current());
                     self.current.store(false, Ordering::Release);
                     if !current() {
@@ -755,7 +802,7 @@ pub(crate) mod active {
                     }
                     Permission::Allowed
                 }
-                fn accept(&self, current: &dyn Fn() -> bool) -> Result<(), Error> {
+                fn accept(&self, _body: &str, current: &dyn Fn() -> bool) -> Result<(), Error> {
                     if !current() {
                         return Err(Error::Cancelled);
                     }
@@ -843,12 +890,130 @@ pub(crate) mod active {
                     fail: false,
                 }),
             );
-            assert!(!runtime.automatic_eligible());
-            assert!(!runtime.status().available);
+            // A full dedupe window is not a fault: notices and automatic checks stay available,
+            // and an explicit opt-out still works.
+            assert!(runtime.automatic_eligible());
+            assert!(runtime.status().available);
             assert!(runtime.status().automatic_checks_enabled);
             runtime.set_automatic_checks(false).ok().unwrap();
             assert!(!runtime.status().automatic_checks_enabled);
             assert!(runtime.status().enabled);
+        }
+
+        struct Recording {
+            bodies: Arc<Mutex<Vec<String>>>,
+        }
+        impl Backend for Recording {
+            fn permission(&self) -> Permission {
+                Permission::Allowed
+            }
+            fn accept(&self, body: &str, current: &dyn Fn() -> bool) -> Result<(), Error> {
+                if !current() {
+                    return Err(Error::Cancelled);
+                }
+                self.bodies.lock().unwrap().push(body.to_string());
+                Ok(())
+            }
+        }
+        fn saved(path: &std::path::Path) -> Ledger {
+            serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+        }
+
+        #[test]
+        fn full_ledger_keeps_the_newest_entries_and_still_notifies() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("state.json");
+            let ledger = Ledger {
+                enabled: true,
+                events: (0..MAX_EVENTS)
+                    .map(|i| Entry {
+                        key: format!("{i:064x}"),
+                        outcome: Outcome::Unknown,
+                    })
+                    .collect(),
+                ..Ledger::default()
+            };
+            fs::write(&path, serde_json::to_vec(&ledger).unwrap()).unwrap();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let runtime = Runtime::load(
+                path.clone(),
+                Box::new(Mock {
+                    calls: Arc::clone(&calls),
+                    fail: false,
+                }),
+            );
+            assert!(runtime.status().available);
+            arrival(&runtime);
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            let after = saved(&path);
+            assert_eq!(after.events.len(), MAX_EVENTS);
+            assert_ne!(
+                after.events[0].key,
+                format!("{:064x}", 0),
+                "the oldest entry left"
+            );
+            assert_eq!(after.events[1].key, format!("{:064x}", 2));
+            assert_eq!(after.events.last().unwrap().outcome, Outcome::OsAccepted);
+            // The newest entries still deduplicate.
+            arrival(&runtime);
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            assert_eq!(saved(&path).events.len(), MAX_EVENTS);
+            assert_eq!(runtime.status().last_outcome, Some(Outcome::OsAccepted));
+        }
+
+        #[test]
+        fn notice_is_worded_in_the_language_the_app_last_reported() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("state.json");
+            let bodies = Arc::new(Mutex::new(Vec::new()));
+            let runtime = Runtime::load(
+                path.clone(),
+                Box::new(Recording {
+                    bodies: Arc::clone(&bodies),
+                }),
+            );
+            runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(saved(&path).locale, None);
+            // Reporting no language changes nothing; reporting one is remembered on disk.
+            runtime.observe_locale(None);
+            assert_eq!(saved(&path).locale, None);
+            runtime.observe_locale(Some(UiLocale::Fr));
+            assert_eq!(saved(&path).locale, Some(UiLocale::Fr));
+            arrival(&runtime);
+            let french = UiLocale::Fr
+                .text(crate::ui_text_ids::MessageId::NativeNoticeArrival)
+                .unwrap();
+            let english = UiLocale::En
+                .text(crate::ui_text_ids::MessageId::NativeNoticeArrival)
+                .unwrap();
+            assert_ne!(french, english);
+            // The backend got the French sentence and nothing else.
+            assert_eq!(*bodies.lock().unwrap(), vec![french.clone()]);
+            assert_eq!(saved(&path).events.len(), 1);
+            assert_eq!(saved(&path).events[0].outcome, Outcome::OsAccepted);
+            // A later language is used from the next arrival on; an unchanged one writes nothing new.
+            runtime.observe_locale(Some(UiLocale::Fr));
+            runtime.observe_locale(Some(UiLocale::ZhTw));
+            assert_eq!(saved(&path).locale, Some(UiLocale::ZhTw));
+            // A ledger written before the language field is still read, with no language.
+            let old = serde_json::json!({
+                "version": 2, "enabled": true, "events": [],
+                "automatic_checks_enabled": false, "automatic_consent_version": 0
+            });
+            fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+            let reloaded = Runtime::load(
+                path.clone(),
+                Box::new(Recording {
+                    bodies: Arc::new(Mutex::new(Vec::new())),
+                }),
+            );
+            assert!(reloaded.status().enabled);
+            assert_eq!(saved(&path).locale, None);
+            assert_eq!(arrival_notice(None).as_deref(), Some(english.as_str()));
+            assert_eq!(
+                arrival_notice(Some(UiLocale::Fr)).as_deref(),
+                Some(french.as_str())
+            );
         }
     }
 }
@@ -891,6 +1056,7 @@ impl Runtime {
         Status::unavailable()
     }
     pub fn suspend_notices(&self) {}
+    pub(crate) fn observe_locale(&self, _locale: Option<UiLocale>) {}
     pub fn set_enabled(&self, _enabled: bool) -> Result<Status, Error> {
         Err(Error::Unavailable)
     }

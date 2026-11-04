@@ -741,5 +741,6 @@
   "notifications.autoAllow",
   "notifications.autoHelp",
   "notifications.autoPaused",
-  "notifications.checkBusy"
+  "notifications.checkBusy",
+  "native.notice.arrival"
 ]

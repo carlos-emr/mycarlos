@@ -34,7 +34,54 @@ describe("Document notice preference", () => {
     render(<NotificationSetting />);
     await waitFor(() => expect(native.invoke).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("checkbox")).toBeNull();
-    expect(native.invoke).toHaveBeenCalledWith("vault_notification_status");
+    expect(native.invoke).toHaveBeenCalledWith("vault_notification_status", {
+      locale: "en",
+    });
+  });
+
+  it("reports the current language with each status request so a notice can use it", async () => {
+    native.invoke.mockResolvedValue({ ...allowed });
+    render(<NotificationSetting />);
+    await screen.findByRole("checkbox", {
+      name: humanText("Allow document arrival notices"),
+    });
+    expect(native.invoke).toHaveBeenLastCalledWith(
+      "vault_notification_status",
+      {
+        locale: "en",
+      },
+    );
+    act(() => setLocaleOverride("fr"));
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenLastCalledWith(
+        "vault_notification_status",
+        { locale: "fr" },
+      ),
+    );
+    expect(
+      native.invoke.mock.calls.every(
+        ([command]) => command === "vault_notification_status",
+      ),
+    ).toBe(true);
+  });
+
+  it("reads the permission line with the box it disables", async () => {
+    native.invoke.mockResolvedValue({
+      ...allowed,
+      available: false,
+      permission: "blocked",
+    });
+    render(<NotificationSetting />);
+    const checkbox = await screen.findByRole("checkbox", {
+      name: humanText("Allow document arrival notices"),
+    });
+    expect(checkbox).toBeDisabled();
+    expect(checkbox).toHaveHumanAccessibleDescription(
+      /Windows is blocking notifications/,
+    );
+    expect(checkbox).toHaveHumanAccessibleDescription(
+      /Documents are not checked automatically/,
+    );
   });
 
   it("keeps consent off until a person acts and bounds the native call to one boolean", async () => {
