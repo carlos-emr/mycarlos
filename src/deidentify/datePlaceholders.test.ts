@@ -158,7 +158,144 @@ describe("dates become placeholders in calendar order", () => {
   });
 });
 
+describe("more ways a date is written", () => {
+  it("replaces the date in an ISO timestamp and keeps the time", () => {
+    expect(send("Seen 2026-10-08T07:40 and 2026-10-09T08:00:00Z.").toSend).toBe(
+      "Seen [DATE 1]T07:40 and [DATE 2, 1 day after DATE 1]T08:00:00Z.",
+    );
+  });
+
+  it("reads ordinals, with or without a comma, and the same day is one number", () => {
+    expect(
+      send(
+        "October 8th, 2026; Oct 1st 2026; 8th October 2026; 8th of October 2026; 1er mars 2026.",
+      ).toSend,
+    ).toBe(
+      "[DATE 3, 221 days after DATE 1]; [DATE 2, 214 days after DATE 1]; [DATE 3, 221 days after DATE 1]; [DATE 3, 221 days after DATE 1]; [DATE 1].",
+    );
+  });
+
+  it("reads numeric dates with hyphens, compact and dotted forms, and a lab timestamp", () => {
+    expect(send("25-12-2026 and 08-10-2026.").toSend).toBe(
+      "[DATE 1] and [DATE 2].",
+    );
+    expect(send("20261008 and 2026.10.08.").toSend).toBe(
+      "[DATE 1] and [DATE 1].",
+    );
+    expect(send("Reported 20261009074500.").toSend).toBe(
+      "Reported [DATE 1]074500.",
+    );
+    // Eight digits that are not a calendar day stay.
+    expect(send("Order 12345678 and 20261399.").toSend).toBe(
+      "Order 12345678 and 20261399.",
+    );
+  });
+
+  it("gives a day and a month with no year a plain mark, the same for any spelling", () => {
+    expect(
+      send("Seen Oct 8 and 8 October, le 8 octobre; 8th Oct; Oct 9.").toSend,
+    ).toBe("Seen [DATE 1] and [DATE 1], le [DATE 1]; [DATE 1]; [DATE 2].");
+    // The lower-case word "may" is not a month.
+    expect(send("Take may 5 mg. Seen May 5.").toSend).toBe(
+      "Take may 5 mg. Seen [DATE 1].",
+    );
+  });
+
+  it("reads the hyphen look-alikes PDFs write, and keeps the original character in a restore", () => {
+    for (const hyphen of ["\u2010", "\u2011", "\u2012", "\u2013", "\u2212"]) {
+      const source = `Seen 2026${hyphen}10${hyphen}08.`;
+      const result = send(source);
+      expect(result.toSend, hyphen).toBe("Seen [DATE 1].");
+      expect(restore(result.toSend, result)).toBe(source);
+    }
+  });
+
+  it("replaces both ends of a range of days", () => {
+    expect(send("From 8 to 12 October 2026.").toSend).toBe(
+      "From [DATE 1] to [DATE 2, 4 days after DATE 1].",
+    );
+    expect(send("Admitted 8\u201312 Oct 2026.").toSend).toBe(
+      "Admitted [DATE 1]\u2013[DATE 2, 4 days after DATE 1].",
+    );
+    expect(send("Oct 8-12, 2026 and 8th-12th October 2026.").toSend).toBe(
+      "[DATE 1]-[DATE 2, 4 days after DATE 1] and [DATE 1]-[DATE 2, 4 days after DATE 1].",
+    );
+    expect(send("Vu du 8 au 12 octobre 2026.").toSend).toBe(
+      "Vu du [DATE 1] au [DATE 2, 4 days after DATE 1].",
+    );
+    const source = "Oct 8-12, 2026";
+    const result = send(source);
+    expect(restore(result.toSend, result)).toBe(source);
+    // A day that is not in that month is no range.
+    expect(send("From 30 to 31 April 2026.").toSend).not.toContain("[DATE 2");
+  });
+
+  it("takes a weekday after a date with it, and reads the years 0000 to 0099 as they are", () => {
+    expect(send("2026-10-08 (Thursday) and 2026-10-09 Friday.").toSend).toBe(
+      "[DATE 1] and [DATE 2, 1 day after DATE 1].",
+    );
+    expect(send("0050-01-01 then 0050-01-02.").toSend).toBe(
+      "[DATE 1] then [DATE 2, 1 day after DATE 1].",
+    );
+  });
+
+  it("round-trips every one of these forms exactly", () => {
+    const source =
+      "A 2026-10-08T07:40, B October 9th, 2026, C 10-11-2026, D 20261012, E Oct 13, F le 14 octobre, G 15\u201316 Oct 2026, H 2026-10-17 (Thursday).";
+    const result = send(source);
+    expect(result.toSend).not.toMatch(/\b20\d\d\b/);
+    expect(restore(result.toSend, result)).toBe(source);
+  });
+});
+
+describe("near misses of a placeholder in an answer", () => {
+  const result = send(
+    "Seen 2026-10-08 and 2026-10-22 by Dr. Ward. A 92-year-old.",
+  );
+
+  it("flags a mark written loosely, in brackets or not, and never restores it", () => {
+    for (const answer of [
+      "[DATE2]",
+      "[DATE 2,14 days after DATE 1]",
+      "(DATE 1)",
+      "[date 1]",
+      "[ DATE 2 , 14 days after DATE 1 ]",
+      "Mentions DATE 1 here",
+      "On DATE 2.",
+      "AGE 1",
+      "and DOCTOR 1 said",
+    ]) {
+      const checked = restoreChecked(answer, result);
+      expect(checked.text, answer).toBe(answer);
+      expect(checked.flagged.length, answer).toBeGreaterThan(0);
+    }
+  });
+
+  it("does not flag ordinary words, and still restores the exact marks beside a near miss", () => {
+    for (const answer of [
+      "date 1 in lower case",
+      "age 1",
+      "the DATES 1",
+      "a date of 5 mg",
+    ]) {
+      expect(restoreChecked(answer, result).flagged, answer).toEqual([]);
+    }
+    const checked = restoreChecked(
+      "Seen [DATE 1], later DATE 2 and [DATE 2, 14 days after DATE 1].",
+      result,
+    );
+    expect(checked.text).toBe("Seen 2026-10-08, later DATE 2 and 2026-10-22.");
+    expect(checked.flagged).toEqual(["DATE 2"]);
+  });
+});
+
 describe("ages of 90 and over", () => {
+  it("reads an age after a label and the y/o form", () => {
+    expect(send("Age: 93; 90 y/o; Âge : 97; age 65; Package 90.").toSend).toBe(
+      "[AGE 1, 90+]; [AGE 2, 90+]; [AGE 3, 90+]; age 65; Package 90.",
+    );
+  });
+
   it("numbers each distinct age with the 90+ note, and leaves a younger age alone", () => {
     const result = send(
       "A 92-year-old man, aged 95, 101 yo; une femme âgée de 90 ans; 65-year-old; again 92 years old.",

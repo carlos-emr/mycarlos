@@ -217,6 +217,9 @@ interface Finding {
   /** The matching copy's text for this range (digits and letters folded),
    * which a date is read from. */
   folded?: string;
+  /** For one end of a range ("8" in "8-12 October 2026"), whose own text
+   * cannot be read alone: the date it stands for. */
+  reading?: DateReading;
 }
 
 // ---------------------------------------------------------------- dates
@@ -306,14 +309,18 @@ interface DateForm {
     | "mdy"
     | "numeric"
     | "numeric2"
+    | "dotYmd"
+    | "compact"
     | "monthYear"
+    | "dayMonth"
+    | "monthDay"
     | "year";
   pattern: string;
   /** Read only after a date label (see RULES). */
   labelOnly?: true;
-  /** A month and a year, or a year alone: never a date of birth, and a
-   * year only after a cue word ("in 2019"). */
-  partial?: "monthYear" | "year";
+  /** A month and a year, a day and a month with no year, or a year alone:
+   * never a date of birth, and a year only after a cue word ("in 2019"). */
+  partial?: "monthYear" | "monthDay" | "year";
   read: (
     match: RegExpExecArray,
     dayFirst: boolean,
@@ -330,8 +337,9 @@ const twoDigitYear = (year: number) => {
 const DATE_FORMS: DateForm[] = [
   {
     // 2026-10-08
+    // 2026-10-08, and 2026-10-08T07:40 (the time stays beside the mark)
     id: "iso",
-    pattern: "\\b(\\d{4})-(\\d{2})-(\\d{2})\\b",
+    pattern: "\\b(\\d{4})-(\\d{2})-(\\d{2})(?=T\\d|\\b)",
     read: (m) => ({ year: +m[1], month: +m[2], day: +m[3] }),
   },
   {
@@ -347,15 +355,16 @@ const DATE_FORMS: DateForm[] = [
     read: (m) => ({ year: +m[1], month: monthOf(m[2]), day: +m[3] }),
   },
   {
-    // 8 October 2026, 17-Apr-1961, 2 mars 1958, 1er mars 1958
+    // 8 October 2026, 17-Apr-1961, 2 mars 1958, 1er mars 1958, 8th October
+    // 2026, 8th of October 2026
     id: "dmy",
-    pattern: `\\b(\\d{1,2})(?:er)?([ -])(${MONTH})[ ,-]*(\\d{4})\\b`,
+    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th)?(?:[ ]+of)?([ -])(${MONTH})[ ,-]*(\\d{4})\\b`,
     read: (m) => ({ year: +m[4], month: monthOf(m[3]), day: +m[1] }),
   },
   {
-    // October 8, 2026 and Oct. 8 2026
+    // October 8, 2026, Oct. 8 2026 and October 8th, 2026
     id: "mdy",
-    pattern: `(?<![\\p{L}])(${MONTH}) (\\d{1,2}),? (\\d{4})\\b`,
+    pattern: `(?<![\\p{L}])(${MONTH}) (\\d{1,2})(?:st|nd|rd|th)?,? (\\d{4})\\b`,
     read: (m) => ({ year: +m[3], month: monthOf(m[1]), day: +m[2] }),
   },
   {
@@ -363,8 +372,22 @@ const DATE_FORMS: DateForm[] = [
     // No backreference: the forms are joined into one pattern for dates of
     // birth, where group numbers move.
     id: "numeric",
-    pattern: "\\b(\\d{1,2})([/.])(\\d{1,2})[/.](\\d{4})\\b",
+    pattern: "\\b(\\d{1,2})([/.-])(\\d{1,2})[/.-](\\d{4})\\b",
     read: (m, dayFirst) => dayMonth(+m[1], +m[3], +m[4], dayFirst),
+  },
+  {
+    // 2026.10.08
+    id: "dotYmd",
+    pattern: "\\b(\\d{4})\\.(\\d{1,2})\\.(\\d{1,2})\\b",
+    read: (m) => ({ year: +m[1], month: +m[2], day: +m[3] }),
+  },
+  {
+    // 20261008, and a lab or HL7 timestamp 20261008074000 (the date part
+    // only: the time stays). Eight digits that read as a calendar day.
+    id: "compact",
+    pattern:
+      "\\b((?:19|20)\\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])(?=(?:\\d{4}(?:\\d{2})?)?(?!\\d))",
+    read: (m) => ({ year: +m[1], month: +m[2], day: +m[3] }),
   },
   {
     // 08/10/26: slashes only, so that a range such as 12.5-15.0 is not one.
@@ -382,6 +405,21 @@ const DATE_FORMS: DateForm[] = [
     pattern: `(?<![\\p{L}\\d]|\\d[ -])(${MONTH})[ ,]+(\\d{4})\\b`,
     partial: "monthYear",
     read: (m) => ({ year: +m[2], month: monthOf(m[1]), day: 15 }),
+  },
+  {
+    // 8 October, 8th October, le 8 octobre: no year, so a plain mark.
+    id: "dayMonth",
+    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th)?(?:[ ]+of)?[ ]+(${MONTH})(?![\\p{L}\\d])`,
+    partial: "monthDay",
+    read: (m) => ({ year: 2000, month: monthOf(m[2]), day: +m[1] }),
+  },
+  {
+    // Oct 8, October 8th: no year, so a plain mark. The year 2000 only
+    // makes 29 February a valid day.
+    id: "monthDay",
+    pattern: `(?<![\\p{L}\\d])(${MONTH})[ ]+(\\d{1,2})(?:st|nd|rd|th)?(?![\\p{L}\\d])`,
+    partial: "monthDay",
+    read: (m) => ({ year: 2000, month: monthOf(m[1]), day: +m[2] }),
   },
   {
     // A year alone, only after a cue ("in 2019", "depuis 2019"): moved
@@ -454,6 +492,12 @@ const WEEKDAY = `(?:${[...WEEKDAY_WORDS.keys()]
 /** A weekday, a full stop and a comma, before the date itself. */
 const WEEKDAY_BEFORE = `(?:(?<![\\p{L}])${WEEKDAY}\\.?,?[ \\t]+)?`;
 const WEEKDAY_PREFIX = new RegExp(`^(${WEEKDAY})(\\.?,?[ \\t]+)`, "iu");
+/** A weekday after a date, plain or in brackets: "2026-10-08 (Thursday)". */
+const WEEKDAY_AFTER = `(?:[ \\t]*[(,]?[ \\t]*(?<![\\p{L}])${WEEKDAY}(?![\\p{L}])\\.?\\)?)?`;
+const WEEKDAY_SUFFIX = new RegExp(
+  `[ \\t]*[(,]?[ \\t]*(?<![\\p{L}])${WEEKDAY}(?![\\p{L}])\\.?\\)?$`,
+  "iu",
+);
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
@@ -466,7 +510,7 @@ type DateReading =
   | { kind: "unclear"; key: string };
 
 function readDateText(text: string, dayFirst: boolean): DateReading | null {
-  const dateText = text.replace(WEEKDAY_PREFIX, "");
+  const dateText = text.replace(WEEKDAY_PREFIX, "").replace(WEEKDAY_SUFFIX, "");
   for (const form of DATE_FORMS) {
     const match = new RegExp(`^${form.pattern}$`, "iu").exec(dateText);
     if (!match) continue;
@@ -479,16 +523,23 @@ function readDateText(text: string, dayFirst: boolean): DateReading | null {
       };
     const { year, month, day } = parts;
     if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-    const date = new Date(Date.UTC(year, month - 1, day));
+    // Not Date.UTC(year, ...), which reads the years 0 to 99 as 1900 to 1999.
+    const date = new Date(0);
+    date.setUTCFullYear(year, month - 1, day);
     if (date.getUTCMonth() !== month - 1) return null;
     if (form.partial)
       return {
         kind: "partial",
-        key: form.partial === "year" ? String(year) : `${year}-${pad(month)}`,
+        key:
+          form.partial === "year"
+            ? String(year)
+            : form.partial === "monthDay"
+              ? `md${pad(month)}-${pad(day)}`
+              : `${year}-${pad(month)}`,
       };
     return {
       kind: "full",
-      iso: `${year}-${pad(month)}-${pad(day)}`,
+      iso: `${String(year).padStart(4, "0")}-${pad(month)}-${pad(day)}`,
       epochDay: Math.round(date.getTime() / 86_400_000),
     };
   }
@@ -949,6 +1000,9 @@ interface Rule {
   /** Relational prose can also introduce a disease: flag that conflict. */
   reviewClinicalConflict?: true;
   upperPrefix?: true;
+  /** A day and a month: not when the month is the lower-case word "may"
+   * ("may 5 mg"). */
+  notLowerCaseMay?: true;
 }
 
 const HEALTH_CARD_LABEL =
@@ -1044,7 +1098,7 @@ const RULES: Rule[] = [
   {
     kind: "age",
     pattern:
-      /\b(?:(?:9\d|1[01]\d)[ -](?:years?|yrs?|y)[ -]?old|(?:9\d|1[01]\d)[ \t]?(?:y\.?o\.?|yo)|aged?[ \t]+(?:9\d|1[01]\d)|(?:âgée?[ \t]+de[ \t]+)?(?:9\d|1[01]\d)[ \t]+ans)(?![\p{L}\d])/giu,
+      /\b(?:(?:9\d|1[01]\d)[ -](?:years?|yrs?|y)[ -]?old|(?:9\d|1[01]\d)[ \t]?(?:y\.?o\.?|yo|y\/o)|aged?[ \t]*:?[ \t]*(?:9\d|1[01]\d)|(?:âgée?[ \t]+de[ \t]+)?(?:9\d|1[01]\d)[ \t]+ans)(?![\p{L}\d])/giu,
   },
   {
     kind: "postalCode",
@@ -1208,7 +1262,10 @@ const RULES: Rule[] = [
   ...DATE_FORMS.filter((form) => !form.labelOnly && !form.partial).map(
     (form) => ({
       kind: "date" as const,
-      pattern: new RegExp(`${WEEKDAY_BEFORE}${form.pattern}`, "giu"),
+      pattern: new RegExp(
+        `${WEEKDAY_BEFORE}${form.pattern}${WEEKDAY_AFTER}`,
+        "giu",
+      ),
     }),
   ),
   // "Date: 17/10/26", "Visit date: …", "Date de la visite : …", "dated …".
@@ -1225,7 +1282,13 @@ const RULES: Rule[] = [
     kind: "date" as const,
     pattern: new RegExp(form.pattern, "giu"),
   })),
-  // "in 2019", "depuis 2019": the year moved with its 1 July.
+  // "Oct 8", "8 octobre": a day and a month, no year, so a plain mark.
+  ...DATE_FORMS.filter((form) => form.partial === "monthDay").map((form) => ({
+    kind: "date" as const,
+    pattern: new RegExp(form.pattern, "giu"),
+    notLowerCaseMay: true as const,
+  })),
+  // "in 2019", "depuis 2019": a year after a cue word, a plain mark.
   ...DATE_FORMS.filter((form) => form.partial === "year").map((form) => ({
     kind: "date" as const,
     pattern: new RegExp(
@@ -1243,8 +1306,81 @@ for (const rule of RULES)
   rule.pattern = new RegExp(fold(rule.pattern.source), rule.pattern.flags);
 for (const form of DATE_FORMS) form.pattern = fold(form.pattern);
 
-function find(text: string, options: DeidentifyOptions): Finding[] {
+const DAY_WITH_ORDINAL = "(\\d{1,2}(?:er|st|nd|rd|th)?)";
+const RANGE_JOINER = "[ ]*(?:-|to|through|au|et|and)[ ]*";
+/** "8-12 October 2026", "from 8 to 12 October 2026", "du 8 au 12 octobre 2026",
+ * and "Oct 8-12, 2026": a range of days in one month. Each end is a date. */
+const RANGES = [
+  {
+    // groups: 1 first day, 2 second day, 3 month, 4 year
+    pattern: new RegExp(
+      `\\b${DAY_WITH_ORDINAL}${RANGE_JOINER}${DAY_WITH_ORDINAL}(?:[ ]+of)?[ ]+(${MONTH})[ ,-]*(\\d{4})\\b`,
+      "giud",
+    ),
+    order: { first: 1, second: 2, month: 3, year: 4 },
+    monthFirst: false,
+  },
+  {
+    // groups: 1 month, 2 first day, 3 second day, 4 year
+    pattern: new RegExp(
+      `(?<![\\p{L}])(${MONTH})[ ]+${DAY_WITH_ORDINAL}${RANGE_JOINER}${DAY_WITH_ORDINAL},?[ ]+(\\d{4})\\b`,
+      "giud",
+    ),
+    order: { first: 2, second: 3, month: 1, year: 4 },
+    monthFirst: true,
+  },
+];
+for (const range of RANGES)
+  range.pattern = new RegExp(fold(range.pattern.source), range.pattern.flags);
+
+function findRanges(text: string): Finding[] {
   const found: Finding[] = [];
+  for (const range of RANGES) {
+    for (const match of text.matchAll(range.pattern)) {
+      const spans = match.indices;
+      if (!spans) continue;
+      const month = monthOf(match[range.order.month]);
+      const year = +match[range.order.year];
+      const ends = [range.order.first, range.order.second].map((group) => {
+        const day = parseInt(match[group], 10);
+        const date = new Date(0);
+        date.setUTCFullYear(year, month - 1, day);
+        return month >= 1 && date.getUTCMonth() === month - 1 && day >= 1
+          ? ({
+              kind: "full",
+              iso: `${String(year).padStart(4, "0")}-${pad(month)}-${pad(day)}`,
+              epochDay: Math.round(date.getTime() / 86_400_000),
+            } as DateReading)
+          : null;
+      });
+      if (!ends[0] || !ends[1]) continue;
+      const matchEnd = match.index + match[0].length;
+      // The first end is its day (with its month in front, written month
+      // first); the second runs from its day to the end of the match.
+      const firstStart = range.monthFirst
+        ? spans[range.order.month][0]
+        : spans[range.order.first][0];
+      found.push(
+        {
+          kind: "date",
+          start: firstStart,
+          end: spans[range.order.first][1],
+          reading: ends[0],
+        },
+        {
+          kind: "date",
+          start: spans[range.order.second][0],
+          end: matchEnd,
+          reading: ends[1],
+        },
+      );
+    }
+  }
+  return found;
+}
+
+function find(text: string, options: DeidentifyOptions): Finding[] {
+  const found: Finding[] = findRanges(text);
   for (const rule of RULES) {
     for (const match of text.matchAll(rule.pattern)) {
       const detail = rule.group ? match[rule.group] : match[0];
@@ -1252,6 +1388,8 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
       // The pattern runs case-insensitively; a letter prefix must really be capitals
       // ("Order number: see 2024 notes" is a sentence, not an ID).
       if (rule.upperPrefix && !/^[A-Z]{1,5}[ \t]/u.test(detail)) continue;
+      if (rule.notLowerCaseMay && /(?<![\p{L}])may(?![\p{L}])/u.test(detail))
+        continue;
       const offset = rule.group ? match[0].indexOf(detail) : 0;
       const start = match.index + offset;
       // A label's value may run past the detail into trailing punctuation,
@@ -1687,10 +1825,12 @@ function build(
   const readings = new Map<Finding, DateReading>();
   for (const finding of findings) {
     if (finding.kind !== "date" || finding.replacement !== undefined) continue;
-    const reading = readDateText(
-      finding.folded ?? source.slice(finding.start, finding.end),
-      dayFirst,
-    );
+    const reading =
+      finding.reading ??
+      readDateText(
+        finding.folded ?? source.slice(finding.start, finding.end),
+        dayFirst,
+      );
     if (reading) readings.set(finding, reading);
   }
   const wholeDates = new Map<string, number>();
@@ -1952,8 +2092,27 @@ export function restoreChecked(
   // What this export sent is matched exactly, note and all; any other
   // placeholder-shaped text is flagged, never guessed.
   const keys = [...back.keys()].sort((x, y) => y.length - x.length);
+  // A near miss is flagged too: this export's label words followed by a
+  // number, in brackets or parentheses with any spacing and case, or bare in
+  // capitals ("DATE 1" in a sentence). An answer often refers to a mark that
+  // way, and it must not pass as "all matched".
+  const labelWords = [
+    ...new Set(Object.values(deidentified.onDevice.labels)),
+  ].sort((x, y) => y.length - x.length);
+  const caseless = (word: string) =>
+    [...word]
+      .map((character) =>
+        character.toLowerCase() === character.toUpperCase()
+          ? escapeRegExp(character)
+          : `[${character.toLowerCase()}${character.toUpperCase()}]`,
+      )
+      .join("");
+  const nearMiss = labelWords.length
+    ? `|[\\[(][ \\t]*(?:${labelWords.map(caseless).join("|")})[ \\t]*\\d+[^\\])\\n]{0,80}[\\])]` +
+      `|(?<![\\p{L}\\p{N}])(?:${labelWords.map(escapeRegExp).join("|")})[ \\u00a0]?\\d+(?!\\p{N})`
+    : "";
   const pattern = new RegExp(
-    `${keys.length ? `(${keys.map(escapeRegExp).join("|")})|` : "()(?!)|"}${PLACEHOLDER_SHAPE.source}`,
+    `${keys.length ? `(${keys.map(escapeRegExp).join("|")})|` : "()(?!)|"}${PLACEHOLDER_SHAPE.source}${nearMiss}`,
     "gu",
   );
   for (const found of answer.matchAll(pattern)) {
