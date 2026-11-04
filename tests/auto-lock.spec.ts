@@ -1,11 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
-import { translate } from "./support/fluent";
+import { messagePattern, translate } from "./support/fluent";
 import {
   FAKE_PASSPHRASE,
   fakeCalls,
+  fakeSettle,
   fakeVaultWith,
   myRecords,
+  scriptFake,
   sidebar,
 } from "./support/vaultFake";
 
@@ -18,6 +20,22 @@ const en = (
   key: Parameters<typeof translate>[1],
   params?: Parameters<typeof translate>[2],
 ) => translate("en", key, params);
+
+/** The window minimized or sent to the background, or brought back: what
+ * the webview tells the page. */
+async function shown(page: Page, visible: boolean) {
+  await page.evaluate((visible) => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => (visible ? "visible" : "hidden"),
+    });
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => !visible,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, visible);
+}
 
 test.beforeEach(({}, testInfo) => {
   test.skip(
@@ -102,5 +120,57 @@ test("the lock delay is set in Security; the warning comes before the lock, Keep
     .fill(FAKE_PASSPHRASE);
   await page.getByRole("button", { name: en("unlock.submit") }).click();
   await expect(myRecords(page)).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
+
+test("minimized under a picker it opened, the vault stays open; once the picker closes with myCarlos still minimized, it locks and says why", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  const unlockTitle = page.getByRole("heading", {
+    name: en("unlock.title"),
+    exact: true,
+  });
+
+  // The file picker is open (natively, it may even hide the page, as on
+  // Android) when myCarlos is minimized: no lock, the chosen files would be
+  // lost with the session.
+  await scriptFake(page, "vault_import_pick", { pending: true });
+  await page
+    .getByRole("button", {
+      name: en("interface.VaultApp.chooseFilesToImport"),
+      exact: true,
+    })
+    .click();
+  await expect
+    .poll(async () => (await fakeCalls(page, "vault_import_pick")).length)
+    .toBe(1);
+  await shown(page, false);
+  // A lock would show the unlock screen within a few frames: give it time.
+  await page.waitForTimeout(500);
+  await expect(myRecords(page)).toBeVisible();
+  await expect(unlockTitle).toHaveCount(0);
+  expect(await fakeCalls(page, "vault_lock")).toEqual([]);
+
+  // The picker closes without a choice while myCarlos is still minimized:
+  // locked at once, for that reason, with no warning first.
+  await fakeSettle(page, "vault_import_pick", { resolve: null });
+  await expect(unlockTitle).toBeVisible();
+  await expect(
+    page.getByLabel(en("passphrase.label"), { exact: true }),
+  ).toHaveAccessibleDescription(messagePattern("en", "notice.lockedHidden"));
+  expect(await fakeCalls(page, "vault_lock")).toHaveLength(1);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+
+  // Brought back and unlocked: the library, and no second lock.
+  await shown(page, true);
+  await page
+    .getByLabel(en("passphrase.label"), { exact: true })
+    .fill(FAKE_PASSPHRASE);
+  await page.getByRole("button", { name: en("unlock.submit") }).click();
+  await expect(myRecords(page)).toBeVisible();
+  expect(await fakeCalls(page, "vault_lock")).toHaveLength(1);
   await expectOnlyFakedCommands(page);
 });

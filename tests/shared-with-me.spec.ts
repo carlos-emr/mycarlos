@@ -6,8 +6,10 @@ import {
   fakeUuid,
   FAKE_PASSPHRASE,
   fakeCalls,
+  fakeShare,
   fakeSnapshot,
   fakeVaultWith,
+  myRecords,
   sidebar,
 } from "./support/vaultFake";
 
@@ -180,5 +182,61 @@ test("shared files wait for the unlock, the PDFs go into Shared with me, a non-P
   await expect(
     page.getByRole("button", { name: SHARED_LETTER, exact: true }),
   ).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
+
+test("a file shared again is not added twice: it is said, Shared with me keeps the one copy, and the count stays", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked", received: [SHARED_LETTER] });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+
+  // Unlocked already: the shared file is added as soon as the library asks.
+  await expect(
+    page.getByText(en("interface.notice.sharedAdded", { count: 1 }), {
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(await fakeCalls(page, "received_accept")).toHaveLength(1);
+  const shared = page.getByRole("button", {
+    name: new RegExp(en("interface.LibrarySidebar.sharedWithMe")),
+  });
+  await expect(shared).toContainText(en("interface.count.new", { count: 1 }));
+
+  // The same file, shared once more while myCarlos is open: the next ask
+  // (on focus) takes it, the native side finds it already there, and the
+  // library says so instead of adding a second copy.
+  await fakeShare(page, [SHARED_LETTER]);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(
+    page.getByText(
+      en("interface.notice.alreadyShared", { name: SHARED_LETTER }),
+      { exact: true },
+    ),
+  ).toBeVisible();
+  expect(await fakeCalls(page, "received_accept")).toHaveLength(2);
+  const copies = (await fakeSnapshot(page)).records.filter(
+    (record) => record.displayName === SHARED_LETTER,
+  );
+  expect(copies).toHaveLength(1);
+  expect(copies[0].profileId).toBe(FAKE_IDS.shared);
+  // Nothing new was added, so the count did not grow.
+  await expect(shared).toContainText(en("interface.count.new", { count: 1 }));
+  await expect(shared).not.toContainText(
+    en("interface.count.new", { count: 2 }),
+  );
+
+  // Shared with me lists the one copy.
+  await shared.click();
+  await expect(
+    page.getByRole("heading", {
+      name: en("interface.LibrarySidebar.sharedWithMe"),
+      level: 1,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: SHARED_LETTER, exact: true }),
+  ).toHaveCount(1);
   await expectOnlyFakedCommands(page);
 });

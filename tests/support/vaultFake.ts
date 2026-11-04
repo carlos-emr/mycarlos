@@ -314,6 +314,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         importQueue: string[];
         /** Files shared to myCarlos, waiting (#61). */
         received: { id: string; name: string; sourceLabel: string }[];
+        /** The next id for a file shared while the page is open. */
+        nextReceivedId: number;
         /** What the vault wrote down (#71), as the native side would. */
         history: HistoryEntry[];
         /** Backups saved and the one the restore picker chooses. */
@@ -348,6 +350,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         confirmed?: string[];
         pickId?: string;
         replace?: boolean;
+        confirmation?: string;
       };
       type Args = {
         request?: Request;
@@ -499,6 +502,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             name,
             sourceLabel: "Shared to myCarlos",
           })),
+          nextReceivedId: 700,
           history,
           status: setup.start,
           passphrase: setup.passphrase,
@@ -522,6 +526,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       }
       state.captureEpoch ??= crypto.randomUUID();
       state.captureSequence ??= 0;
+      state.nextReceivedId ??= 700;
       const save = () => {
         try {
           window.sessionStorage.setItem(STORE, JSON.stringify(state));
@@ -641,6 +646,14 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
 
       // Promises and command guards belong to this window, not sessionStorage.
       const pendingViews = new Set<(reason: unknown) => void>();
+      // Scripted answers still pending, oldest first, for __fakeVault.settle.
+      const pendingScripts: Record<
+        string,
+        {
+          resolve: (value: unknown) => void;
+          reject: (reason: unknown) => void;
+        }[]
+      > = {};
       let cancelledViews = 0;
       let checkingDocuments = false;
       const cancelViews = () => {
@@ -699,13 +712,11 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         const queued = state.script[command]?.shift();
         if (queued) {
           save();
-          if (queued.pending) {
-            if (command === "vault_view_page")
-              return new Promise((_resolve, reject) =>
-                pendingViews.add(reject),
-              );
-            return new Promise(() => undefined);
-          }
+          if (queued.pending)
+            return new Promise((resolve, reject) => {
+              if (command === "vault_view_page") pendingViews.add(reject);
+              (pendingScripts[command] ??= []).push({ resolve, reject });
+            });
           if ("reject" in queued) throw queued.reject;
           // Scripted snapshots are already captured. Never stamp them when
           // their reply is delivered, including an intentionally old reply.
@@ -863,6 +874,32 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             state.picks = {};
             state.pendingKey = null;
             return;
+          // --- Starting again (#71): the typed words are checked first, then
+          // a native dialog asks once more. "Keep this vault" there answers
+          // false: script it with { resolve: false }. ---
+          case "vault_reset":
+            if (request.confirmation !== setup.resetPhrase)
+              throw refuse("invalid", "native.error.19");
+            if (state.status === "absent")
+              throw refuse("missing", "native.error.13");
+            cancelViews();
+            state.status = "absent";
+            state.passphrase = "";
+            state.recoveryKey = null;
+            state.pendingKey = null;
+            state.documentPasswords = {};
+            state.picks = {};
+            state.importQueue = [];
+            state.received = [];
+            state.history = [];
+            snapshot.profiles = [];
+            snapshot.folders = [];
+            snapshot.records = [];
+            snapshot.recovery = null;
+            snapshot.recoveryKeySetAtMs = null;
+            snapshot.recoveryKeyLabel = null;
+            if (snapshot.portalLinks) snapshot.portalLinks = [];
+            return true;
           case "vault_recovery_key_begin":
             if (request.passphrase !== state.passphrase)
               throw refuse("wrong_passphrase", "native.error.16");
@@ -1289,6 +1326,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           state.importQueue = names;
           save();
         },
+        settle: (command: string, outcome: Outcome) => {
+          const waiting = pendingScripts[command]?.shift();
+          if (!waiting) throw new Error(`Nothing pending for ${command}`);
+          if ("reject" in outcome) waiting.reject(outcome.reject);
+          else waiting.resolve(outcome.resolve);
+        },
+        share: (names: string[]) => {
+          for (const name of names)
+            state.received.push({
+              id: makeUuid(state.nextReceivedId++),
+              name,
+              sourceLabel: "Shared to myCarlos",
+            });
+          save();
+        },
       });
       Reflect.set(window, "__TAURI_INTERNALS__", {
         metadata: {
@@ -1338,6 +1390,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       damagedHistory: setup.damagedHistory ?? false,
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
+      resetPhrase: translate("en", "native.reset.phrase"),
       messages: Object.fromEntries(
         NATIVE_MESSAGES.map((key) => [key, translate("en", key)]),
       ) as Record<string, string>,
@@ -1425,6 +1478,38 @@ export async function scriptFake(
         }
       ).script(command, outcome),
     { command, outcome },
+  );
+}
+
+/** Settles the oldest pending scripted answer of `command`, as the native
+ * side finishing it would: a picker closing, for one. */
+export async function fakeSettle(
+  page: Page,
+  command: string,
+  outcome: Exclude<FakeOutcome, { pending: true }>,
+) {
+  await page.evaluate(
+    ({ command, outcome }) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          settle: (command: string, outcome: FakeOutcome) => void;
+        }
+      ).settle(command, outcome),
+    { command, outcome },
+  );
+}
+
+/** Files another app shares to myCarlos while the page is open (#61): they
+ * wait for the next ask, as on focus. */
+export async function fakeShare(page: Page, names: string[]) {
+  await page.evaluate(
+    (names) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          share: (names: string[]) => void;
+        }
+      ).share(names),
+    names,
   );
 }
 
