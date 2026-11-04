@@ -1,13 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
+import { FAKE_IDS, fakeCalls, fakeVaultWith } from "./support/vaultFake";
 
 // Chromium's fake camera stands in for a real one. The headless shell
 // Playwright uses by default has no camera support at all (getUserMedia fails
 // with NotSupportedError), so this runs on the full Chromium build, which
-// `playwright install chromium` also installs. The native side is faked as in
-// native-rename.spec.ts: Rust tests check the cleaning, encryption and
-// storage of a photo; this checks the dialog, the IPC wiring and the view.
+// `playwright install chromium` also installs. The native side is faked
+// (support/vaultFake.ts, which keeps the JPEG and gives it back to the
+// viewer): Rust tests check the cleaning, encryption and storage of a photo;
+// this checks the dialog, the IPC wiring and the view.
 test.use({
   channel: "chromium",
   launchOptions: { args: ["--use-fake-device-for-media-stream"] },
@@ -15,70 +18,16 @@ test.use({
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
-async function fakeVault(page: Page, platform = "windows") {
-  await page.addInitScript((platform) => {
-    const captureEpoch = crypto.randomUUID();
-    let captureSequence = 0;
-    const snapshot = {
-      profiles: [
-        { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
-      ],
-      folders: [] as unknown[],
-      records: [] as Record<string, unknown>[],
-      recovery: null,
-    };
-    let photoUrl = "";
-    Reflect.set(window, "__TAURI_INTERNALS__", {
-      invoke: async (
-        command: string,
-        args?: unknown,
-        options?: { headers?: Record<string, string> },
-      ) => {
-        if (command === "vault_status") return "unlocked";
-        if (command === "vault_snapshot")
-          return {
-            ...structuredClone(snapshot),
-            capture: { epoch: captureEpoch, sequence: ++captureSequence },
-          };
-        if (command === "runtime_info") return { platform };
-        if (command === "vault_touch" || command === "vault_set_auto_lock")
-          return;
-        if (command === "vault_save_photo" && args instanceof Uint8Array) {
-          // The vault's framing: the target's length, the target, the JPEG.
-          const length = new DataView(args.buffer, args.byteOffset).getUint32(
-            0,
-          );
-          const target = JSON.parse(
-            new TextDecoder().decode(args.slice(4, 4 + length)),
-          );
-          const jpeg = args.slice(4 + length);
-          let binary = "";
-          for (const byte of jpeg) binary += String.fromCharCode(byte);
-          photoUrl = `data:image/jpeg;base64,${btoa(binary)}`;
-          Reflect.set(window, "__savedPhoto", {
-            start: Array.from(jpeg.slice(0, 3)),
-            target,
-            headers: options?.headers ?? null,
-          });
-          snapshot.records.push({
-            id: "photo",
-            profileId: target.profileId,
-            folderIds: target.folderIds,
-            displayName: target.name,
-            sourceLabel: "Manual import — unverified",
-            mediaType: "application/octet-stream",
-            plaintextSize: jpeg.length,
-            importedAtMs: Date.now(),
-            available: true,
-          });
-          return { imported: ["photo"], skippedDuplicates: [] };
-        }
-        if (command === "vault_is_photo") return Boolean(photoUrl);
-        if (command === "vault_view_photo" && photoUrl) return photoUrl;
-        throw new Error(`Unexpected IPC command: ${command}`);
-      },
-    });
-  }, platform);
+/** What the vault was sent for the photo: the JPEG's first bytes, the
+ * target and any custom headers, as the fake recorded the one call. */
+async function savedPhoto(page: Page) {
+  const calls = await fakeCalls(page, "vault_save_photo");
+  expect(calls).toHaveLength(1);
+  return calls[0].photo as {
+    start: number[];
+    target: { profileId: string; folderIds: string[]; name: string };
+    headers: Record<string, string> | null;
+  };
 }
 
 for (const [computerLocale, expectedName] of [
@@ -97,7 +46,7 @@ for (const [computerLocale, expectedName] of [
       await page.clock.setFixedTime(
         await page.evaluate(() => new Date(2026, 9, 17, 15, 5).getTime()),
       );
-      await fakeVault(page);
+      await fakeVaultWith(page, { start: "unlocked" });
       await page.goto("/");
       await page.getByRole("button", { name: "Take a photo" }).click();
       const camera = page.getByRole("dialog", { name: "Take a photo" });
@@ -135,12 +84,10 @@ for (const [computerLocale, expectedName] of [
 
       const details = page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ });
       await expect(details).toBeVisible();
-      const saved = await page.evaluate(() =>
-        Reflect.get(window, "__savedPhoto"),
-      );
+      const saved = await savedPhoto(page);
       expect(saved.start).toEqual([0xff, 0xd8, 0xff]);
       expect(saved.target).toEqual({
-        profileId: "profile",
+        profileId: FAKE_IDS.profile,
         folderIds: [],
         name: expectedName,
       });
@@ -169,6 +116,8 @@ for (const [computerLocale, expectedName] of [
       await expect(
         details.getByRole("button", { name: "View photo" }),
       ).toBeVisible();
+      expect(await fakeCalls(page, "vault_view_photo")).toHaveLength(1);
+      await expectOnlyFakedCommands(page);
     });
   });
 }
@@ -177,7 +126,7 @@ test("says how to allow the camera when it is refused", async ({
   page,
 }, testInfo) => {
   // No camera permission is granted, so Chromium refuses the request.
-  await fakeVault(page);
+  await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
   await page.getByRole("button", { name: "Take a photo" }).click();
   const camera = page.getByRole("dialog", { name: "Take a photo" });
@@ -199,6 +148,8 @@ test("says how to allow the camera when it is refused", async ({
   await expect(
     page.getByRole("button", { name: "Take a photo" }),
   ).toBeFocused();
+  expect(await fakeCalls(page, "vault_save_photo")).toEqual([]);
+  await expectOnlyFakedCommands(page);
 });
 
 test("on a phone, says the phone asks once, takes a photo and says where to allow the camera (D97)", async ({
@@ -207,7 +158,7 @@ test("on a phone, says the phone asks once, takes a photo and says where to allo
 }, testInfo) => {
   test.skip(testInfo.project.name !== "phone", "a phone's own words");
   await context.grantPermissions(["camera"]);
-  await fakeVault(page, "android");
+  await fakeVaultWith(page, { start: "unlocked", platform: "android" });
   await page.goto("/");
   await page.getByRole("button", { name: "Take a photo" }).click();
   const camera = page.getByRole("dialog", { name: "Take a photo" });
@@ -233,8 +184,7 @@ test("on a phone, says the phone asks once, takes a photo and says where to allo
   await expect(
     page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ }),
   ).toBeVisible();
-  const saved = await page.evaluate(() => Reflect.get(window, "__savedPhoto"));
-  expect(saved.start).toEqual([0xff, 0xd8, 0xff]);
+  expect((await savedPhoto(page)).start).toEqual([0xff, 0xd8, 0xff]);
 
   // Refused: where to allow it on the phone.
   await context.clearPermissions();
@@ -248,4 +198,5 @@ test("on a phone, says the phone asks once, takes a photo and says where to allo
       ),
     }),
   );
+  await expectOnlyFakedCommands(page);
 });
