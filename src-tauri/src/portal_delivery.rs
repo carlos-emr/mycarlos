@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 
 pub const MAX_SEALED: usize = 20 * 1024 * 1024;
 #[cfg(feature = "portal-linking")]
-const MAX_COMPACT: usize = 16 * 1024;
+pub(crate) const MAX_COMPACT: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -44,8 +44,21 @@ pub enum Refusal {
     DocumentHashMismatch,
     #[cfg(feature = "portal-linking")]
     Expired,
-    #[cfg(all(test, feature = "portal-linking"))]
+    #[cfg(feature = "portal-linking")]
     Replayed,
+    /// Reading aids (delivery contract, "Reading aids"): refusals of the second copy.
+    #[cfg(feature = "portal-linking")]
+    #[allow(dead_code)]
+    TooLarge,
+    #[cfg(feature = "portal-linking")]
+    #[allow(dead_code)]
+    BadReadingAid,
+    #[cfg(feature = "portal-linking")]
+    #[allow(dead_code)]
+    ReadingAidHashMismatch,
+    #[cfg(feature = "portal-linking")]
+    #[allow(dead_code)]
+    PairMismatch,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +80,10 @@ pub struct Outer {
     pub ciphertext_sha256: String,
     pub created_at: u64,
     pub expires_at: u64,
+    /// Absent on an original. A reading aid's is `reading-aid/1`; a copy of a kind this build
+    /// does not implement is never opened as an original.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 impl Outer {
     pub fn validate(&self) -> Result<(), Refusal> {
@@ -88,11 +105,25 @@ impl Outer {
             || self.created_at >= self.expires_at
             || self.expires_at - self.created_at > 604800
             || self.expires_at > 9_007_199_254_740_991
+            || self.kind.as_deref().is_some_and(|kind| !kind_ok(kind))
         {
             return Err(Refusal::BadPackage);
         }
         Ok(())
     }
+}
+/// An outer record's `kind`: printable ASCII, at most 64 characters, `name/version`.
+pub fn kind_ok(kind: &str) -> bool {
+    let Some((name, version)) = kind.split_once('/') else {
+        return false;
+    };
+    kind.len() <= 64
+        && !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !version.is_empty()
+        && version.bytes().all(|b| b.is_ascii_digit())
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -189,6 +220,10 @@ pub fn open(
     now: u64,
 ) -> Result<Opened, Refusal> {
     outer.validate()?;
+    // An original has no `kind`: a copy of any kind is opened by its own receiver, never as a PDF.
+    if outer.kind.is_some() {
+        return Err(Refusal::BadPackage);
+    }
     if sealed.len() as u64 != outer.size || sha256(sealed) != outer.ciphertext_sha256 {
         return Err(Refusal::HashMismatch);
     }
@@ -276,7 +311,7 @@ pub fn open(
 }
 
 #[cfg(feature = "portal-linking")]
-fn unframe(mut bytes: &[u8]) -> Result<Vec<&[u8]>, Refusal> {
+pub(crate) fn unframe(mut bytes: &[u8]) -> Result<Vec<&[u8]>, Refusal> {
     let mut parts = Vec::new();
     while !bytes.is_empty() {
         if parts.len() == 4 || bytes.len() < 8 {
@@ -335,7 +370,7 @@ pub fn uuid4(s: &str) -> bool {
     Uuid::parse_str(s).is_ok_and(|u| u.get_version_num() == 4 && u.to_string() == s)
 }
 #[cfg(feature = "portal-linking")]
-fn label(s: &str, max: usize) -> bool {
+pub(crate) fn label(s: &str, max: usize) -> bool {
     !s.is_empty() && s.chars().count() <= max && !s.chars().any(char::is_control)
 }
 pub(crate) fn service_date(s: &str) -> bool {

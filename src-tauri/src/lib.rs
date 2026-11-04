@@ -17,6 +17,9 @@ mod portal_client;
 mod portal_delivery;
 mod portal_link;
 mod portal_pickup;
+#[cfg(feature = "portal-linking")]
+#[allow(dead_code)] // Receiver checks only; the vault custody and pickup wiring is a separate step.
+mod reading_aid;
 mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
