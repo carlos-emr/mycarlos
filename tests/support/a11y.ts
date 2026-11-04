@@ -37,6 +37,12 @@ export async function fakeVault(
   await page.addInitScript(
     ({ start, recoveryKey }) => {
       let status = start;
+      const captureEpoch = crypto.randomUUID();
+      let captureSequence = 0;
+      const captured = () => ({
+        ...structuredClone(snapshot),
+        capture: { epoch: captureEpoch, sequence: ++captureSequence },
+      });
       const snapshot = {
         profiles: [
           { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
@@ -112,6 +118,17 @@ export async function fakeVault(
               return { platform: "windows" };
             case "vault_status":
               return status;
+            case "vault_notification_status":
+              return {
+                supported: false,
+                available: false,
+                enabled: false,
+                permission: "unavailable",
+                automaticChecksEnabled: false,
+                automaticChecksSupported: false,
+                automaticChecksPaused: false,
+                lastOutcome: null,
+              };
             // These accessibility journeys have no files waiting to be shared.
             // The app still polls the intake while locked and after unlocking.
             case "received_list":
@@ -120,13 +137,13 @@ export async function fakeVault(
             case "vault_is_locked_pdf":
               return false;
             case "vault_snapshot":
-              return structuredClone(snapshot);
+              return captured();
             case "vault_passphrase_rules":
               return { longEnough: true, notAName: true, hardToGuess: true };
             case "vault_create":
             case "vault_unlock":
               status = "unlocked";
-              return structuredClone(snapshot);
+              return captured();
             case "vault_lock":
               status = "locked";
               return;

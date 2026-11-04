@@ -64,11 +64,15 @@ export function RestoreBackup({
   const [shown, setShown] = useState(false);
   // State is a render behind: two clicks in one tick must not both restore.
   const working = useRef(false);
+  // A pending inspection loses ownership when its credential or visibility changes.
+  const inspectionRef = useRef<symbol | null>(null);
   // Nothing locks this screen, so a secret typed here is cleared when the app
   // is hidden.
   useEffect(() => {
     const clearWhenHidden = () => {
       if (document.visibilityState !== "hidden") return;
+      inspectionRef.current = null;
+      setStatus("");
       setSecret("");
       setShown(false);
       setPreview(null);
@@ -102,6 +106,7 @@ export function RestoreBackup({
   }, [busy]);
   // A preview belongs to the secret it was checked with.
   const forgetPreview = () => {
+    inspectionRef.current = null;
     setPreview(null);
     setAgreed(false);
     setStatus("");
@@ -146,12 +151,15 @@ export function RestoreBackup({
   const check = async (event: FormEvent) => {
     event.preventDefault();
     if (!pickId || !secret || busy) return;
+    const inspection = Symbol();
+    inspectionRef.current = inspection;
     setBusy(true);
     setError("");
     setStatus(deferredText(() => translateCurrent("restore.checking")));
     setAgreed(false);
     try {
       const found = await bridge.inspectRestore(pickId, credential());
+      if (inspectionRef.current !== inspection) return;
       setPreview(found);
       setStatus(
         deferredText(() =>
@@ -162,6 +170,7 @@ export function RestoreBackup({
         ),
       );
     } catch (failure) {
+      if (inspectionRef.current !== inspection) return;
       setPreview(null);
       setStatus("");
       setError(deferredText(() => vaultErrorMessage(failure, [typedBox])));

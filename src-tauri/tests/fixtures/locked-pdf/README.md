@@ -7,13 +7,14 @@ a generated picture and made-up form values. No real person or record is in them
 CARLOS's `PDFEncryptionUtil`: a `StandardProtectionPolicy` with the same user and owner password
 and default permissions. At 256 bits that is AES-256, revision 6.
 
-| File | What it is |
-| --- | --- |
-| `*-original.pdf` | The unencrypted originals: two pages of text, a picture, a form with filled fields, and an eForm printed to PDF |
-| `*-aes256.pdf` | Each original as CARLOS sends it, password `FAKE-portal-2026` |
-| `text-aes256-non-ascii.pdf` | The text original, password `FAKE-mot-de-passe-éàç-Łódź-日本` |
-| `text-aes128.pdf`, `text-rc4-128.pdf`, `text-rc4-40.pdf` | The text original in older schemes another sender might use |
-| `text-aes256-damaged.pdf` | `text-aes256.pdf` cut to three fifths, like a broken download |
+| File                                                     | What it is                                                                                                                                                |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `*-original.pdf`                                         | The unencrypted originals: two pages of text, a picture, a form with filled fields, and an eForm printed to PDF                                           |
+| `*-aes256.pdf`                                           | Each original as CARLOS sends it, password `FAKE-portal-2026`                                                                                             |
+| `image-aes256-spaced.pdf`                                | The picture original, AES-256; password `"  FAKE-portal-2026  "` without the quotes: two ASCII spaces at each end. The trimmed password must not open it. |
+| `text-aes256-non-ascii.pdf`                              | The text original, password `FAKE-mot-de-passe-éàç-Łódź-日本`                                                                                             |
+| `text-aes128.pdf`, `text-rc4-128.pdf`, `text-rc4-40.pdf` | The text original in older schemes another sender might use                                                                                               |
+| `text-aes256-damaged.pdf`                                | `text-aes256.pdf` cut to three fifths, like a broken download                                                                                             |
 
 The passwords are fixture values, not secrets.
 
@@ -32,6 +33,7 @@ SHA-256 of the committed files:
 4b99a2ddd022381a1005927583a11eedea56bd1b392e924119b9deb1cf3b20af  eform-original.pdf
 11fe58ba9a98c39fe3b88852e43a6b0e749c38c31aa8bb0c7cf701ff050fb726  form-aes256.pdf
 d84d6642a2d9e37d5f8d68f835cb49d1671f6bcba97c8e6590613d2dc24c1c46  form-original.pdf
+ddee7f163612ef7b893fafa12baeaf9970650850dcc5fcc65789b8b6f230cc72  image-aes256-spaced.pdf
 7921742a30fd9d65268c489d77b2a13c5f07d8c8b5d1d671342a1b77cebaf5d1  image-aes256.pdf
 6da81c6ff12d65baf8d78ef1fc5fd473f107f30a9212de45d94719857bda132e  image-original.pdf
 f5233b9e2659d776e449cbfa71dafb7c5a2d1ae91f98a186cf9b8e124c4f6506  text-aes128.pdf
