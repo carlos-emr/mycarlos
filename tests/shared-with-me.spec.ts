@@ -185,7 +185,7 @@ test("shared files wait for the unlock, the PDFs go into Shared with me, a non-P
   await expectOnlyFakedCommands(page);
 });
 
-test("a file shared again is not added twice: it is said, Shared with me keeps the one copy, and the count stays", async ({
+test("a file shared again, reported as already there by the native side, is not added twice: it is said, Shared with me keeps the one copy, and the count stays", async ({
   page,
 }) => {
   await fakeVaultWith(page, { start: "unlocked", received: [SHARED_LETTER] });
@@ -205,8 +205,9 @@ test("a file shared again is not added twice: it is said, Shared with me keeps t
   await expect(shared).toContainText(en("interface.count.new", { count: 1 }));
 
   // The same file, shared once more while myCarlos is open: the next ask
-  // (on focus) takes it, the native side finds it already there, and the
-  // library says so instead of adding a second copy.
+  // (on focus) takes it, the native side reports it as already there (the
+  // fake by its name; the real one by its content), and the library says so
+  // instead of adding a second copy.
   await fakeShare(page, [SHARED_LETTER]);
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(

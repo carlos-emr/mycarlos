@@ -647,13 +647,14 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       // Promises and command guards belong to this window, not sessionStorage.
       const pendingViews = new Set<(reason: unknown) => void>();
       // Scripted answers still pending, oldest first, for __fakeVault.settle.
-      const pendingScripts: Record<
-        string,
-        {
-          resolve: (value: unknown) => void;
-          reject: (reason: unknown) => void;
-        }[]
-      > = {};
+      // One cancelled by cancelViews() is marked settled, so a later settle
+      // skips it instead of resolving a dead promise silently.
+      type Pending = {
+        settled: boolean;
+        resolve: (value: unknown) => void;
+        reject: (reason: unknown) => void;
+      };
+      const pendingScripts: Record<string, Pending[]> = {};
       let cancelledViews = 0;
       let checkingDocuments = false;
       const cancelViews = () => {
@@ -714,8 +715,19 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           save();
           if (queued.pending)
             return new Promise((resolve, reject) => {
-              if (command === "vault_view_page") pendingViews.add(reject);
-              (pendingScripts[command] ??= []).push({ resolve, reject });
+              const entry: Pending = {
+                settled: false,
+                resolve: (value) => {
+                  entry.settled = true;
+                  resolve(value);
+                },
+                reject: (reason) => {
+                  entry.settled = true;
+                  reject(reason);
+                },
+              };
+              if (command === "vault_view_page") pendingViews.add(entry.reject);
+              (pendingScripts[command] ??= []).push(entry);
             });
           if ("reject" in queued) throw queued.reject;
           // Scripted snapshots are already captured. Never stamp them when
@@ -784,6 +796,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                 continue;
               }
               const profileId = sharedProfile();
+              // The fake knows a duplicate by its name; the native side by
+              // the encrypted content's fingerprint. A test here proves what
+              // the library does with skippedDuplicates, not native matching.
               if (
                 snapshot.records.some(
                   (r) =>
@@ -883,6 +898,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             if (state.status === "absent")
               throw refuse("missing", "native.error.13");
             cancelViews();
+            // The capture epoch and sequence carry on across the reset here;
+            // the native side likely starts a new epoch with the new vault.
+            // Align this once #193 (native capture ordering) lands.
             state.status = "absent";
             state.passphrase = "";
             state.recoveryKey = null;
@@ -1327,7 +1345,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           save();
         },
         settle: (command: string, outcome: Outcome) => {
-          const waiting = pendingScripts[command]?.shift();
+          let waiting = pendingScripts[command]?.shift();
+          while (waiting?.settled) waiting = pendingScripts[command]?.shift();
           if (!waiting) throw new Error(`Nothing pending for ${command}`);
           if ("reject" in outcome) waiting.reject(outcome.reject);
           else waiting.resolve(outcome.resolve);

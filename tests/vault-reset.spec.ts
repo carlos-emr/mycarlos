@@ -68,14 +68,15 @@ test("Set vault aside: the native side keeping the vault, or refusing, changes n
   const asked = await fakeCalls(page, "vault_reset");
   expect(asked).toHaveLength(1);
   expect(asked[0].request).toEqual({ confirmation: PHRASE });
+  // The typed words stay, so a second try needs no retyping.
+  await expect(words).toHaveValue(PHRASE);
+  await expect(setAside).toBeEnabled();
 
   // The native side did not accept the words: the box to check is named,
   // and nothing is erased.
   await scriptFake(page, "vault_reset", {
     reject: refusal("invalid", "native.error.19"),
   });
-  await words.fill(PHRASE);
-  await expect(setAside).toBeEnabled();
   await setAside.click();
   await expect(
     page.getByText(en("error.checkBoxes", { boxes: en("box.typedWords") }), {

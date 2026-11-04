@@ -155,7 +155,8 @@ test("minimized under a picker it opened, the vault stays open; once the picker 
   expect(await fakeCalls(page, "vault_lock")).toEqual([]);
 
   // The picker closes without a choice while myCarlos is still minimized:
-  // locked at once, for that reason, with no warning first.
+  // locked at once, for that reason, with no warning first. (null is what
+  // a cancelled picker answers: vault.ts's invoke<string | null>.)
   await fakeSettle(page, "vault_import_pick", { resolve: null });
   await expect(unlockTitle).toBeVisible();
   await expect(
