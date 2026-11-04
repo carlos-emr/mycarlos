@@ -179,8 +179,17 @@ export interface FakeVaultSetup {
   /** Adds FAKE Locked.pdf, locked with FAKE_DOCUMENT_PASSWORD. */
   lockedPdf?: boolean;
   /** Clinic linking is built in: with no clinic linked yet, or with one
-   * linked and approved. */
+   * linked and approved, unless `approval` says the request did not end in
+   * approval. */
   portal?: "unlinked" | "linked";
+  /** With a clinic linked ("linked" only; anything else is refused by
+   * fakeVaultWith) but not approved: the current approval request's state,
+   * and whether a new request may be started (natively: an expired or
+   * cancelled one, within the request limit; never a refused one). */
+  approval?: {
+    status: "pending" | "refused" | "expired" | "cancelled";
+    canRestart?: boolean;
+  };
   /** The backup file a restore would choose: what it replaces on this
    * device, whether the vault here differs, the documents it holds (FAKE
    * names), and the passphrase it was made with (the vault's by default). */
@@ -203,6 +212,12 @@ export interface FakeVaultSetup {
   /** The history opens damaged: entries before `checkedFromMs` are gone,
    * the later ones proven by the pinned end (D129/D146). */
   damagedHistory?: boolean;
+  /** Photos taken with the camera, already in the vault, by name (FAKE
+   * names ending in .jpg): each has a small JPEG made at run time. */
+  photos?: string[];
+  /** What runtime_info reports: "windows" (default), "macos", "linux",
+   * "android" or "ios". A computer has the app's own zoom; a phone has not. */
+  platform?: string;
 }
 
 // The refusals the fake makes itself, by message key, in English as the
@@ -234,6 +249,8 @@ const NATIVE_MESSAGES: MessageKey[] = [
  * a11y.ts's fakeVault, opened with FAKE_PASSPHRASE.
  */
 export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
+  if (setup.approval && setup.portal !== "linked")
+    throw new Error('an approval state needs portal: "linked"');
   await page.addInitScript(
     (setup) => {
       const STORE = "mycarlos-e2e-fake-vault";
@@ -264,6 +281,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         approvalRequested: boolean;
         clinicApproved: boolean;
         approvalStatus: string | null;
+        approvalReason?: string | null;
+        approvalCanRestart?: boolean;
       };
       type Snapshot = {
         profiles: {
@@ -331,6 +350,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         received: { id: string; name: string; sourceLabel: string }[];
         /** The next id for a file shared while the page is open. */
         nextReceivedId: number;
+        /** The JPEG each photo record shows, as a data: URL, by record id. */
+        photoUrls: Record<string, string>;
         /** What the vault wrote down (#71), as the native side would. */
         history: HistoryEntry[];
         /** Backups saved and the one the restore picker chooses. */
@@ -372,6 +393,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         linkId?: string;
         recordId?: string;
         locale?: string;
+        /** vault_save_photo's body, parsed: the name and the JPEG. */
+        photo?: { name: string; jpeg: Uint8Array };
       };
 
       const copy = <T>(value: T): T =>
@@ -393,6 +416,26 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         clinicApproved: approved,
         approvalStatus: approved ? "accepted" : null,
       });
+
+      /** A small JPEG, made here rather than kept as bytes in the test. It
+       * must stay tiny: the whole state, URLs included, is written to
+       * sessionStorage on every save. */
+      const makeJpegUrl = (): string => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 16;
+        canvas.height = 16;
+        const context = canvas.getContext("2d");
+        if (context) {
+          context.fillStyle = "#4466aa";
+          context.fillRect(0, 0, 16, 16);
+        }
+        return canvas.toDataURL("image/jpeg");
+      };
+      const jpegUrlOf = (jpeg: Uint8Array): string => {
+        let binary = "";
+        for (const byte of jpeg) binary += String.fromCharCode(byte);
+        return `data:image/jpeg;base64,${btoa(binary)}`;
+      };
 
       const initial = (): State => {
         const records: FakeRecord[] = [
@@ -437,6 +480,24 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           });
           documentPasswords[setup.ids.locked] = setup.documentPassword;
         }
+        const photoUrls: Record<string, string> = {};
+        for (const [index, name] of setup.photos.entries()) {
+          const id = makeUuid(800 + index + 1);
+          records.push({
+            id,
+            profileId: setup.ids.profile,
+            folderIds: [],
+            displayName: name,
+            sourceLabel: "Manual import — unverified",
+            sourceKind: "manual",
+            // As the vault stores a photo: bytes it does not name.
+            mediaType: "application/octet-stream",
+            plaintextSize: 1234,
+            importedAtMs: Date.UTC(2026, 9, 5, 12),
+            available: true,
+          });
+          photoUrls[id] = makeJpegUrl();
+        }
         for (const record of records) {
           if (setup.missingFiles.includes(record.displayName))
             record.available = false;
@@ -473,9 +534,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         };
         if (setup.portal) {
           snapshot.portalLinkingEnabled = true;
+          const approval = setup.approval;
           snapshot.portalLinks =
             setup.portal === "linked"
-              ? [link(1, "https://fake-clinic.example.com", true)]
+              ? [
+                  approval
+                    ? {
+                        ...link(1, "https://fake-clinic.example.com", false),
+                        approvalRequested: true,
+                        approvalStatus: approval.status,
+                        approvalCanRestart:
+                          approval.canRestart ??
+                          ["expired", "cancelled"].includes(approval.status),
+                      }
+                    : link(1, "https://fake-clinic.example.com", true),
+                ]
               : [];
         }
         for (const [index, person] of setup.people.entries()) {
@@ -518,6 +591,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             sourceLabel: "Shared to myCarlos",
           })),
           nextReceivedId: 700,
+          photoUrls,
           history,
           status: setup.start,
           passphrase: setup.passphrase,
@@ -542,6 +616,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       state.captureEpoch ??= crypto.randomUUID();
       state.captureSequence ??= 0;
       state.nextReceivedId ??= 700;
+      state.photoUrls ??= {};
       const save = () => {
         try {
           window.sessionStorage.setItem(STORE, JSON.stringify(state));
@@ -791,9 +866,23 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         const snapshot = state.snapshot;
         switch (command) {
           case "runtime_info":
-            return { platform: "windows" };
+            return { platform: setup.platform };
+          // Preferences on a computer asks whether an AI model is installed (#72).
+          case "ai_model_status":
+            return { state: "notInstalled" };
           case "vault_status":
             return state.status;
+          case "vault_notification_status":
+            return {
+              supported: false,
+              available: false,
+              enabled: false,
+              permission: "unavailable",
+              automaticChecksEnabled: false,
+              automaticChecksSupported: false,
+              automaticChecksPaused: false,
+              lastOutcome: null,
+            };
           // Files shared to myCarlos wait until the vault is unlocked (#61).
           case "received_list":
             return {
@@ -1090,6 +1179,43 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             record.displayName = request.name ?? "";
             return;
           }
+          // --- Photos taken with the camera (#95): the vault keeps the JPEG;
+          // the viewer gets it back as a data: URL ---
+          case "vault_save_photo": {
+            refuseLocked();
+            refusePaused();
+            const photo = args.photo;
+            if (!photo) throw refuse("invalid", "native.error.19");
+            const profileId = request.profileId ?? setup.ids.profile;
+            const duplicate = snapshot.records.find(
+              (r) => r.profileId === profileId && r.displayName === photo.name,
+            );
+            if (duplicate)
+              return { imported: [], skippedDuplicates: [duplicate.id] };
+            const record = fakeRecord(
+              photo.name,
+              profileId,
+              request.folderIds ?? [],
+            );
+            record.mediaType = "application/octet-stream";
+            record.plaintextSize = photo.jpeg.length;
+            snapshot.records.push(record);
+            state.photoUrls[record.id] = jpegUrlOf(photo.jpeg);
+            wrote("imported", { name: photo.name, how: "camera" });
+            return { imported: [record.id], skippedDuplicates: [] };
+          }
+          case "vault_is_photo": {
+            refuseLocked();
+            const record = recordById(request.recordId);
+            return Boolean(state.photoUrls[record.id]);
+          }
+          case "vault_view_photo": {
+            refuseLocked();
+            const record = recordById(request.recordId);
+            const url = state.photoUrls[record.id];
+            if (!url) throw refuse("not_found", "native.error.18");
+            return url;
+          }
           case "vault_hide_record": {
             const record = recordById(request.recordId);
             if (record.hidden) return;
@@ -1117,6 +1243,29 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             if (!found) throw refuse("not_found", "native.error.18");
             found.approvalRequested = true;
             found.approvalStatus = "pending";
+            return;
+          }
+          // A new approval request after an expired or cancelled one: the
+          // old one goes into the link's history natively, and a fresh one
+          // is pending. Offered only while the link says it can restart.
+          // Not modelled yet (a later round): the history entry native
+          // writes for the restart, and approvalRequestLimitReached.
+          case "vault_restart_device_approval": {
+            const found = snapshot.portalLinks?.find(
+              (candidate) => candidate.id === args.linkId,
+            );
+            if (!found) throw refuse("not_found", "native.error.18");
+            // A refused request is answered as native does, by its own code
+            // (the app words it as the clinic's decision); reachable here
+            // only with a canRestart override.
+            if (found.approvalStatus === "refused")
+              throw refuse("approval_refused", "portal.approvalRefused");
+            if (!found.approvalCanRestart)
+              throw refuse("invalid", "native.error.19");
+            found.approvalRequested = true;
+            found.approvalStatus = "pending";
+            found.approvalReason = null;
+            found.approvalCanRestart = false;
             return;
           }
           case "vault_check_documents":
@@ -1385,18 +1534,54 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           currentWindow: { label: "main" },
           currentWebview: { label: "main", windowLabel: "main" },
         },
-        invoke: async (command: string, args?: Args) => {
-          state.calls.push({ command, args: copy(args ?? {}) });
+        invoke: async (
+          command: string,
+          body?: Args | Uint8Array,
+          options?: { headers?: Record<string, string> },
+        ) => {
+          let args: Args = {};
+          if (body instanceof Uint8Array) {
+            // vault_save_photo's one body: the target's length (4 bytes,
+            // big-endian), the target as JSON, then the JPEG. Recorded as
+            // what a test checks, not as the bytes.
+            const length = new DataView(body.buffer, body.byteOffset).getUint32(
+              0,
+            );
+            const target = JSON.parse(
+              new TextDecoder().decode(body.slice(4, 4 + length)),
+            ) as { profileId: string; folderIds: string[]; name: string };
+            const jpeg = body.slice(4 + length);
+            args = {
+              request: {
+                profileId: target.profileId,
+                folderIds: target.folderIds,
+              },
+              photo: { name: target.name, jpeg },
+            };
+            state.calls.push({
+              command,
+              args: {
+                photo: {
+                  start: Array.from(jpeg.slice(0, 3)),
+                  target,
+                  headers: options?.headers ?? null,
+                },
+              },
+            });
+          } else {
+            args = body ?? {};
+            state.calls.push({ command, args: copy(args) });
+          }
           save();
           let ownsCheck = false;
           try {
-            validateIds(args ?? {});
+            validateIds(args);
             if (command === "vault_check_documents") {
               if (checkingDocuments) throw refuse("invalid", "native.error.19");
               checkingDocuments = true;
               ownsCheck = true;
             }
-            return await answer(command, args ?? {});
+            return await answer(command, args);
           } finally {
             if (ownsCheck) checkingDocuments = false;
             save();
@@ -1420,12 +1605,15 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       pageText: PAGE_TEXT,
       pageCount: FAKE_PAGE_COUNT,
       portal: setup.portal ?? null,
+      approval: setup.approval ?? null,
       backup: setup.backup ?? null,
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
       received: setup.received ?? [],
       identities: setup.identities ?? {},
       damagedHistory: setup.damagedHistory ?? false,
+      photos: setup.photos ?? [],
+      platform: setup.platform ?? "windows",
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
       resetPhrase: translate("en", "native.reset.phrase"),

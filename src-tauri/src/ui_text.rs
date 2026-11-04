@@ -1,7 +1,7 @@
 //! Shared, fallible native Fluent formatting. Native consent never uses renderer text.
 use crate::ui_text_ids::MessageId;
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource, FluentValue};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::{hash_map::Entry, HashMap};
 use unicode_normalization::UnicodeNormalization;
@@ -14,7 +14,7 @@ pub(crate) enum UiTextError {
     Formatting,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub(crate) enum UiLocale {
     #[default]
     #[serde(rename = "en")]
