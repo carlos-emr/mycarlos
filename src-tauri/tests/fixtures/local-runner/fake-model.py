@@ -8,6 +8,8 @@ file or opens a connection. Modes, by argument:
   --slow SECONDS    waits that long before each answer (for cancel tests)
   --mute            never greets (for the start timeout test)
   --unlocated       answers with a quote the document does not contain
+  --long-line       answers with one line far over the runner's limit
+  --refuse          answers every request with a long error text
 """
 import json
 import sys
@@ -29,6 +31,13 @@ for line in sys.stdin:
     request = json.loads(line)
     if slow:
         time.sleep(slow)
+    if "--long-line" in args:
+        print(json.dumps({"id": request["id"], "text": "x" * (5 * 1024 * 1024)}), flush=True)
+        continue
+    if "--refuse" in args:
+        print(json.dumps({"id": request["id"], "error": "FAKE refusal " + "y" * 1000}),
+              flush=True)
+        continue
     if request.get("tool") == "summary":
         text = request.get("text", "")
         sentences = [s.strip() for s in text.replace("\n", " ").split(". ") if s.strip()]

@@ -6,36 +6,56 @@
 //! Model-independent: the model is whatever command [`RunnerConfig`] names,
 //! as long as it speaks the line contract below. Nothing here downloads,
 //! reads a model file, or opens a connection; the choice of model, its
-//! download and its hash check come with the model PR.
+//! download and its hash check come with the model PR. That PR's checklist,
+//! in order:
+//! 1. verify the model file against its published hash before the first
+//!    load, and refuse an unverified file;
+//! 2. name the command with an absolute path, the model's licence shown and
+//!    the "Built with Llama" line if that is the model;
+//! 3. bound the process (threads, memory) as the PDF helper is bounded;
+//! 4. fill [`install`] from the app state so that a lock stops the process;
+//! 5. wire `ai_model_status` and the reader's actions to [`Runner`].
 //!
 //! The contract (JSON, one object per line, over the process's stdin and
-//! stdout):
+//! stdout; a line is at most [`MAX_LINE_BYTES`], and an answer is one line,
+//! never spread over several):
 //! - on start, the model writes one hello line:
 //!   `{"hello":"mycarlos-model/1","model":{"name":…,"sha256":…}}`;
 //! - a summary request `{"id":n,"tool":"summary","lang":…,"text":…,
 //!   "maxSentences":k}` is answered by `{"id":n,"sentences":[{"text":…,
-//!   "quote":…},…]}`, each quote taken verbatim from the text;
+//!   "quote":…},…]}`, each quote taken verbatim from the text, at most k
+//!   sentences, each part at most [`MAX_SENTENCE_CHARS`];
 //! - an explain request `{"id":n,"tool":"explain","term":…,"context":…,
 //!   "lang":…}` is answered by `{"id":n,"text":…}`;
-//! - `{"id":n,"error":…}` says the model could not answer.
+//! - `{"id":n,"error":…}` says the model could not answer. Its text is cut
+//!   to [`MAX_ERROR_CHARS`] and is the model's own words: shown on its own,
+//!   never beside the document's text, and never written anywhere.
 //!
-//! A request in flight is cancelled by the vault locking ([`cancel_all`],
-//! as `pdf_view` does for pages) or by the renderer leaving the document
-//! (a newer [`Ticket`]): the model process is stopped, its partial answer
-//! discarded, nothing written anywhere. Before a start, the device budget
-//! is checked against the memory the model needs at the context asked:
-//! not enough, or not known, refuses.
+//! A request in flight is cancelled by the vault locking ([`on_lock`], which
+//! also stops the installed runner's process) or by the reader leaving the
+//! document (a newer [`Ticket`] from the same runner): the model process is
+//! stopped, its partial answer discarded, nothing written anywhere. Before a
+//! start, the device budget is checked against the memory the model needs
+//! at the context asked: not enough, or not known, refuses.
 
 use std::ffi::OsString;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+
+/// The longest line the model may write; a longer one ends the exchange
+/// and the process.
+pub(crate) const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
+/// The longest sentence or quote taken from an answer.
+pub(crate) const MAX_SENTENCE_CHARS: usize = 2_000;
+/// How much of a model's error text is kept.
+pub(crate) const MAX_ERROR_CHARS: usize = 200;
 
 /// Which model answers: its name and the hash of its file, as the renderer
 /// shows them with every result.
@@ -48,8 +68,8 @@ pub(crate) struct ModelInfo {
 /// What a runner starts and how much it may use.
 #[derive(Debug, Clone)]
 pub(crate) struct RunnerConfig {
-    /// The model process: an executable, or an interpreter with its script in
-    /// `args`.
+    /// The model process, by absolute path: an executable, or an interpreter
+    /// with its script in `args`.
     pub(crate) command: PathBuf,
     pub(crate) args: Vec<OsString>,
     /// The memory the model needs at the context the app asks for: its
@@ -164,7 +184,8 @@ pub(crate) enum RunnerError {
     Timeout,
     /// The model answered, but not as the contract says.
     Protocol(String),
-    /// The model said it could not answer.
+    /// The model said it could not answer: its own words, cut short, to be
+    /// shown on their own and never beside the document's text.
     Model(String),
     /// Every sentence's quote was missing from the document: nothing to show.
     Unlocated,
@@ -199,30 +220,36 @@ pub(crate) struct Summary {
 
 // --- Cancellation -------------------------------------------------------
 
-/// The generation of requests still wanted. A lock, or the reader leaving
-/// the document, moves it on; a request from before then is cancelled.
-static REQUEST_GENERATION: AtomicU64 = AtomicU64::new(0);
-
-/// A request's claim on the runner: current until the vault locks or the
-/// reader asks for something else.
+/// A request's claim on its runner: current until the vault locks or the
+/// reader asks that runner for something else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Ticket(u64);
-
-impl Ticket {
-    /// A new claim, which ends every older one.
-    pub(crate) fn new() -> Self {
-        Self(REQUEST_GENERATION.fetch_add(1, Ordering::SeqCst) + 1)
-    }
-
-    pub(crate) fn is_current(&self) -> bool {
-        REQUEST_GENERATION.load(Ordering::SeqCst) == self.0
-    }
+pub(crate) struct Ticket {
+    runner: usize,
+    generation: u64,
 }
 
-/// Ends every request in flight: when the vault locks, and when the reader
-/// closes the panel or changes document.
-pub(crate) fn cancel_all() {
-    REQUEST_GENERATION.fetch_add(1, Ordering::SeqCst);
+/// The runner the app installed, for the lock to stop. Filled by the state
+/// wiring; empty until then, when a lock has nothing to stop.
+static INSTALLED: Mutex<Option<Arc<Runner>>> = Mutex::new(None);
+
+/// Makes `runner` the one a lock stops.
+pub(crate) fn install(runner: Arc<Runner>) {
+    *INSTALLED.lock().unwrap_or_else(|e| e.into_inner()) = Some(runner);
+}
+
+/// Forgets the installed runner, without stopping it.
+pub(crate) fn uninstall() {
+    *INSTALLED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// The vault locked: the installed runner's request in flight is cancelled
+/// and its process stopped. Called from the manual and the idle lock.
+pub(crate) fn on_lock() {
+    let installed = INSTALLED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if let Some(runner) = installed {
+        runner.cancel_all();
+        runner.stop();
+    }
 }
 
 // --- The process --------------------------------------------------------
@@ -256,6 +283,8 @@ pub(crate) struct Runner {
     config: RunnerConfig,
     sidecar: Mutex<Option<Sidecar>>,
     status: Mutex<RunnerStatus>,
+    /// The generation of requests still wanted from this runner.
+    generation: AtomicU64,
 }
 
 #[derive(Deserialize)]
@@ -285,6 +314,7 @@ impl Runner {
             config,
             sidecar: Mutex::new(None),
             status: Mutex::new(RunnerStatus::NotInstalled),
+            generation: AtomicU64::new(0),
         }
     }
 
@@ -299,6 +329,27 @@ impl Runner {
         *self.status.lock().unwrap_or_else(|e| e.into_inner()) = status;
     }
 
+    /// A new claim on this runner, which ends every older one: the reader
+    /// takes one when it asks for a document, and the old document's request
+    /// is cancelled by it.
+    pub(crate) fn ticket(&self) -> Ticket {
+        Ticket {
+            runner: self as *const Self as usize,
+            generation: self.generation.fetch_add(1, Ordering::SeqCst) + 1,
+        }
+    }
+
+    fn is_current(&self, ticket: Ticket) -> bool {
+        ticket.runner == self as *const Self as usize
+            && self.generation.load(Ordering::SeqCst) == ticket.generation
+    }
+
+    /// Ends every request in flight on this runner: when the vault locks,
+    /// and when the reader closes the panel.
+    pub(crate) fn cancel_all(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+    }
+
     /// Starts the model process if it is not running: the budget first, then
     /// the process, then its hello within `start_timeout`. The model it names
     /// is what every answer is attributed to.
@@ -310,6 +361,13 @@ impl Runner {
             }
             // It ended on its own: start afresh below.
             *slot = None;
+        }
+        if !self.config.command.is_absolute() {
+            let reason = "command must be an absolute path".to_owned();
+            self.set_status(RunnerStatus::Failed {
+                reason: reason.clone(),
+            });
+            return Err(RunnerError::Start(reason));
         }
         if let Budget::Refused {
             needed_bytes,
@@ -366,14 +424,7 @@ impl Runner {
             return Err(RunnerError::Start("no pipes".to_owned()));
         };
         let (sender, lines) = mpsc::channel();
-        std::thread::spawn(move || {
-            let reader = BufReader::new(output);
-            for line in reader.lines() {
-                if sender.send(line).is_err() {
-                    break;
-                }
-            }
-        });
+        std::thread::spawn(move || read_lines(output, &sender));
         let mut sidecar = Sidecar {
             child,
             input,
@@ -399,15 +450,18 @@ impl Runner {
                 return Err(RunnerError::Start("ended before its hello".to_owned()));
             }
         };
-        let hello: Hello = serde_json::from_str(&hello).map_err(|_| {
-            sidecar.stop();
-            RunnerError::Start("hello not understood".to_owned())
-        })?;
+        let hello: Hello = match serde_json::from_str(&hello) {
+            Ok(hello) => hello,
+            Err(_) => {
+                sidecar.stop();
+                return Err(RunnerError::Start("hello not understood".to_owned()));
+            }
+        };
         if hello.hello != HELLO {
             sidecar.stop();
             return Err(RunnerError::Start(format!(
                 "unknown contract {}",
-                hello.hello
+                cut(&hello.hello, 64)
             )));
         }
         sidecar.model = hello.model;
@@ -441,7 +495,7 @@ impl Runner {
     /// Asks for a summary under `ticket`. One request at a time: a second
     /// caller waits for the first. Cancelled as soon as the ticket is no
     /// longer current; the model process is then stopped and its partial
-    /// answer discarded.
+    /// answer discarded. At most `max_sentences` come back.
     pub(crate) fn summarize(
         &self,
         ticket: Ticket,
@@ -449,25 +503,25 @@ impl Runner {
     ) -> Result<Summary, RunnerError> {
         let request_json = serde_json::to_value(request)
             .map_err(|error| RunnerError::Protocol(error.to_string()))?;
-        let answer = self.ask(ticket, "summary", request_json)?;
+        let (answer, model) = self.ask(ticket, "summary", request_json)?;
         let Some(sentences) = answer.sentences else {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
         };
-        let written = sentences.len();
+        if sentences.iter().any(|sentence| {
+            sentence.text.chars().count() > MAX_SENTENCE_CHARS
+                || sentence.quote.chars().count() > MAX_SENTENCE_CHARS
+        }) {
+            return Err(RunnerError::Protocol("sentence too long".to_owned()));
+        }
+        let written = sentences.len().min(request.max_sentences);
         let located: Vec<Sentence> = sentences
             .into_iter()
+            .take(request.max_sentences)
             .filter(|sentence| quote_in(&request.text, &sentence.quote))
             .collect();
         if located.is_empty() {
             return Err(RunnerError::Unlocated);
         }
-        let model = self
-            .sidecar
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .map(|running| running.model.clone())
-            .ok_or(RunnerError::NotRunning)?;
         Ok(Summary {
             dropped: written - located.len(),
             sentences: located,
@@ -483,25 +537,30 @@ impl Runner {
         context: &str,
         lang: &str,
     ) -> Result<String, RunnerError> {
-        let answer = self.ask(
+        let (answer, _model) = self.ask(
             ticket,
             "explain",
             serde_json::json!({ "term": term, "context": context, "lang": lang }),
         )?;
-        answer
+        let text = answer
             .text
-            .ok_or_else(|| RunnerError::Protocol("no text".to_owned()))
+            .ok_or_else(|| RunnerError::Protocol("no text".to_owned()))?;
+        if text.chars().count() > MAX_SENTENCE_CHARS {
+            return Err(RunnerError::Protocol("text too long".to_owned()));
+        }
+        Ok(text)
     }
 
     /// One request, one answer, bounded by `answer_timeout` and by the
-    /// ticket. Holds the process for the whole exchange.
+    /// ticket. Holds the process for the whole exchange; the answer comes
+    /// with the model it is attributed to.
     fn ask(
         &self,
         ticket: Ticket,
         tool: &str,
         mut request: serde_json::Value,
-    ) -> Result<Answer, RunnerError> {
-        if !ticket.is_current() {
+    ) -> Result<(Answer, ModelInfo), RunnerError> {
+        if !self.is_current(ticket) {
             return Err(RunnerError::Cancelled);
         }
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
@@ -518,15 +577,32 @@ impl Runner {
         self.set_status(RunnerStatus::Working {
             model: model.clone(),
         });
-        let outcome = exchange(running, ticket, &request, self.config.answer_timeout, id);
+        let mut outcome = exchange(
+            running,
+            || self.is_current(ticket),
+            &request,
+            self.config.answer_timeout,
+            id,
+        );
+        // Cancelled while the answer was already in: the reader has left,
+        // and the answer belongs to nobody.
+        if outcome.is_ok() && !self.is_current(ticket) {
+            outcome = Err(RunnerError::Cancelled);
+        }
         match &outcome {
-            Ok(_) => self.set_status(RunnerStatus::Ready { model }),
+            Ok(_) => self.set_status(RunnerStatus::Ready {
+                model: model.clone(),
+            }),
             Err(RunnerError::Cancelled) | Err(RunnerError::Timeout) => {
                 // Whatever it was still writing is not wanted: stop it.
                 *slot = None;
-                self.set_status(RunnerStatus::Installed { model });
+                self.set_status(RunnerStatus::Installed {
+                    model: model.clone(),
+                });
             }
-            Err(RunnerError::Model(_)) => self.set_status(RunnerStatus::Ready { model }),
+            Err(RunnerError::Model(_)) => self.set_status(RunnerStatus::Ready {
+                model: model.clone(),
+            }),
             Err(error) => {
                 *slot = None;
                 self.set_status(RunnerStatus::Failed {
@@ -534,7 +610,7 @@ impl Runner {
                 });
             }
         }
-        outcome
+        outcome.map(|answer| (answer, model))
     }
 }
 
@@ -544,11 +620,56 @@ impl Drop for Runner {
     }
 }
 
+/// Feeds the model's output to the channel, one line at a time, each at
+/// most `MAX_LINE_BYTES`: a longer one is an error, and the end of reading.
+fn read_lines(output: std::process::ChildStdout, sender: &mpsc::Sender<std::io::Result<String>>) {
+    let mut reader = BufReader::new(output).take(0);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        reader.set_limit(MAX_LINE_BYTES as u64 + 1);
+        let read = match reader.read_until(b'\n', &mut line) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) => {
+                let _ = sender.send(Err(error));
+                break;
+            }
+        };
+        if read > MAX_LINE_BYTES {
+            let _ = sender.send(Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "line too long",
+            )));
+            break;
+        }
+        if line.last() == Some(&b'\n') {
+            line.pop();
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+        }
+        let text = match String::from_utf8(line.clone()) {
+            Ok(text) => text,
+            Err(_) => {
+                let _ = sender.send(Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "line not UTF-8",
+                )));
+                break;
+            }
+        };
+        if sender.send(Ok(text)).is_err() {
+            break;
+        }
+    }
+}
+
 /// Writes the request and waits for its answer, looking at the ticket every
 /// `CANCEL_POLL`.
 fn exchange(
     running: &mut Sidecar,
-    ticket: Ticket,
+    current: impl Fn() -> bool,
     request: &serde_json::Value,
     timeout: Duration,
     id: u64,
@@ -563,7 +684,7 @@ fn exchange(
         .map_err(|error| RunnerError::Protocol(format!("cannot write: {error}")))?;
     let deadline = Instant::now() + timeout;
     loop {
-        if !ticket.is_current() {
+        if !current() {
             return Err(RunnerError::Cancelled);
         }
         let now = Instant::now();
@@ -574,12 +695,15 @@ fn exchange(
             Ok(Ok(text)) => {
                 let answer: Answer = serde_json::from_str(&text)
                     .map_err(|_| RunnerError::Protocol("answer not understood".to_owned()))?;
+                if answer.sentences.is_none() && answer.text.is_none() && answer.error.is_none() {
+                    return Err(RunnerError::Protocol("empty answer".to_owned()));
+                }
                 if answer.id != id {
                     // An answer to an earlier, abandoned request: not this one's.
                     continue;
                 }
                 if let Some(error) = answer.error {
-                    return Err(RunnerError::Model(error));
+                    return Err(RunnerError::Model(cut(&error, MAX_ERROR_CHARS)));
                 }
                 return Ok(answer);
             }
@@ -590,6 +714,11 @@ fn exchange(
             }
         }
     }
+}
+
+/// The first `chars` characters of `text`.
+fn cut(text: &str, chars: usize) -> String {
+    text.chars().take(chars).collect()
 }
 
 /// Whether the document contains the quote, word for word: whitespace runs
@@ -615,12 +744,11 @@ mod tests {
 
     const GIB: u64 = 1024 * 1024 * 1024;
 
-    /// Tickets are process-wide, so the tests that depend on one being
-    /// current run one at a time.
-    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
-
-    fn serial() -> std::sync::MutexGuard<'static, ()> {
-        ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner())
+    fn model() -> ModelInfo {
+        ModelInfo {
+            name: "FAKE model".to_owned(),
+            sha256: "0".repeat(64),
+        }
     }
 
     #[test]
@@ -656,19 +784,12 @@ mod tests {
 
     #[test]
     fn the_status_keeps_the_shape_the_renderer_reads_today() {
-        let model = ModelInfo {
-            name: "FAKE model".to_owned(),
-            sha256: "0".repeat(64),
-        };
         assert_eq!(
             serde_json::to_value(RunnerStatus::NotInstalled).unwrap(),
             serde_json::json!({ "state": "notInstalled" })
         );
         assert_eq!(
-            serde_json::to_value(RunnerStatus::Installed {
-                model: model.clone()
-            })
-            .unwrap(),
+            serde_json::to_value(RunnerStatus::Installed { model: model() }).unwrap(),
             serde_json::json!({ "state": "installed", "model": { "name": "FAKE model", "sha256": "0".repeat(64) } })
         );
         assert_eq!(
@@ -680,7 +801,7 @@ mod tests {
             serde_json::json!({ "state": "budgetRefused", "neededBytes": 3 * GIB, "availableBytes": null })
         );
         assert_eq!(
-            serde_json::to_value(RunnerStatus::Ready { model }).unwrap()["state"],
+            serde_json::to_value(RunnerStatus::Ready { model: model() }).unwrap()["state"],
             "ready"
         );
     }
@@ -692,16 +813,54 @@ mod tests {
         assert!(!quote_in("Anything.", "   "));
     }
 
+    fn idle_config() -> RunnerConfig {
+        RunnerConfig {
+            command: PathBuf::from("/nonexistent/FAKE-model"),
+            args: Vec::new(),
+            needed_bytes: GIB,
+            start_timeout: Duration::from_secs(1),
+            answer_timeout: Duration::from_secs(1),
+        }
+    }
+
     #[test]
-    fn a_newer_ticket_ends_an_older_one_and_a_lock_ends_them_all() {
-        let _serial = serial();
-        let first = Ticket::new();
-        assert!(first.is_current());
-        let second = Ticket::new();
-        assert!(!first.is_current());
-        assert!(second.is_current());
-        cancel_all();
-        assert!(!second.is_current());
+    fn a_newer_ticket_ends_an_older_one_of_the_same_runner_only() {
+        let runner = Runner::new(idle_config());
+        let other = Runner::new(idle_config());
+        let first = runner.ticket();
+        assert!(runner.is_current(first));
+        let second = runner.ticket();
+        assert!(!runner.is_current(first));
+        assert!(runner.is_current(second));
+        // The other runner's claims are its own.
+        let elsewhere = other.ticket();
+        assert!(runner.is_current(second));
+        assert!(other.is_current(elsewhere));
+        assert!(!runner.is_current(elsewhere));
+        runner.cancel_all();
+        assert!(!runner.is_current(second));
+        assert!(other.is_current(elsewhere));
+    }
+
+    #[test]
+    fn a_command_that_is_not_an_absolute_path_is_refused_before_the_budget() {
+        let mut config = idle_config();
+        config.command = PathBuf::from("python3");
+        let runner = Runner::new(config);
+        assert_eq!(
+            runner.start(&Fixed(Some(8 * GIB))),
+            Err(RunnerError::Start(
+                "command must be an absolute path".to_owned()
+            ))
+        );
+        assert!(matches!(runner.status(), RunnerStatus::Failed { .. }));
+    }
+
+    #[test]
+    fn a_lock_with_no_runner_installed_has_nothing_to_stop() {
+        // Other tests may install one meanwhile; this only proves the call
+        // is safe either way.
+        on_lock();
     }
 
     /// The fake model, through the Python on the test machine (Linux and
@@ -713,13 +872,23 @@ mod tests {
         const TEXT: &str =
             "The blood test was normal. The next visit is in June. Take one tablet each morning.";
 
+        /// The interpreter, found once on PATH: the runner wants an absolute
+        /// path.
+        fn python3() -> PathBuf {
+            let path = std::env::var_os("PATH").expect("PATH");
+            std::env::split_paths(&path)
+                .map(|dir| dir.join("python3"))
+                .find(|candidate| candidate.is_file())
+                .expect("python3 on PATH")
+        }
+
         fn config(fake_args: &[&str], needed_bytes: u64) -> RunnerConfig {
             let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/fixtures/local-runner/fake-model.py");
             let mut args = vec![script.into_os_string()];
             args.extend(fake_args.iter().map(OsString::from));
             RunnerConfig {
-                command: PathBuf::from("python3"),
+                command: python3(),
                 args,
                 needed_bytes,
                 start_timeout: Duration::from_secs(10),
@@ -737,14 +906,13 @@ mod tests {
 
         #[test]
         fn starts_answers_with_located_quotes_and_stops() {
-            let _serial = serial();
             let runner = Runner::new(config(&[], GIB));
             let model = runner.start(&Fixed(Some(8 * GIB))).unwrap();
             assert_eq!(model.name, "FAKE model");
             assert!(runner.is_running());
             assert!(matches!(runner.status(), RunnerStatus::Ready { .. }));
 
-            let summary = runner.summarize(Ticket::new(), &request()).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
             assert_eq!(summary.sentences.len(), 3);
             assert_eq!(summary.dropped, 0);
             for sentence in &summary.sentences {
@@ -754,9 +922,22 @@ mod tests {
             assert_eq!(summary.model, model);
             assert!(matches!(runner.status(), RunnerStatus::Ready { .. }));
 
+            // No more sentences than asked for.
+            let two = runner
+                .summarize(
+                    runner.ticket(),
+                    &SummaryRequest {
+                        max_sentences: 2,
+                        ..request()
+                    },
+                )
+                .unwrap();
+            assert_eq!(two.sentences.len(), 2);
+            assert_eq!(two.dropped, 0);
+
             let explained = runner
                 .explain(
-                    Ticket::new(),
+                    runner.ticket(),
                     "tablet",
                     "Take one tablet each morning.",
                     "en",
@@ -772,17 +953,16 @@ mod tests {
             assert!(!runner.is_running());
             assert_eq!(runner.status(), RunnerStatus::Installed { model });
             assert_eq!(
-                runner.summarize(Ticket::new(), &request()),
+                runner.summarize(runner.ticket(), &request()),
                 Err(RunnerError::NotRunning)
             );
         }
 
         #[test]
         fn a_lock_cancels_the_request_in_flight_and_stops_the_model() {
-            let _serial = serial();
-            let runner = std::sync::Arc::new(Runner::new(config(&["--slow", "30"], GIB)));
+            let runner = Arc::new(Runner::new(config(&["--slow", "30"], GIB)));
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
-            let ticket = Ticket::new();
+            let ticket = runner.ticket();
             let asked = {
                 let runner = runner.clone();
                 std::thread::spawn(move || runner.summarize(ticket, &request()))
@@ -791,7 +971,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(300));
             assert!(matches!(runner.status(), RunnerStatus::Working { .. }));
             let locked_at = Instant::now();
-            cancel_all();
+            runner.cancel_all();
             let outcome = asked.join().unwrap();
             assert_eq!(outcome, Err(RunnerError::Cancelled));
             assert!(locked_at.elapsed() < Duration::from_secs(5));
@@ -800,18 +980,32 @@ mod tests {
         }
 
         #[test]
-        fn the_reader_leaving_the_document_cancels_the_same_way() {
-            let _serial = serial();
-            let runner = std::sync::Arc::new(Runner::new(config(&["--slow", "30"], GIB)));
+        fn the_installed_runner_is_stopped_by_the_lock_even_when_idle() {
+            let runner = Arc::new(Runner::new(config(&[], GIB)));
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
-            let ticket = Ticket::new();
+            let ticket = runner.ticket();
+            install(runner.clone());
+            // As vault_lock and lock_if_idle call it. (Another test's lock
+            // may run meanwhile, which only stops it sooner.)
+            on_lock();
+            uninstall();
+            assert!(!runner.is_running());
+            assert!(!runner.is_current(ticket));
+            assert!(matches!(runner.status(), RunnerStatus::Installed { .. }));
+        }
+
+        #[test]
+        fn the_reader_leaving_the_document_cancels_the_same_way() {
+            let runner = Arc::new(Runner::new(config(&["--slow", "30"], GIB)));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let ticket = runner.ticket();
             let asked = {
                 let runner = runner.clone();
                 std::thread::spawn(move || runner.summarize(ticket, &request()))
             };
             std::thread::sleep(Duration::from_millis(300));
             // Another document: a newer ticket, as the panel would take.
-            let _newer = Ticket::new();
+            let _newer = runner.ticket();
             assert_eq!(asked.join().unwrap(), Err(RunnerError::Cancelled));
             assert!(!runner.is_running());
         }
@@ -863,15 +1057,43 @@ mod tests {
 
         #[test]
         fn sentences_whose_quotes_are_not_in_the_document_are_dropped() {
-            let _serial = serial();
             let runner = Runner::new(config(&["--unlocated"], GIB));
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
             assert_eq!(
-                runner.summarize(Ticket::new(), &request()),
+                runner.summarize(runner.ticket(), &request()),
                 Err(RunnerError::Unlocated)
             );
             // The model is fine; only its answer was unusable.
             assert!(runner.is_running());
+        }
+
+        #[test]
+        fn a_line_too_long_ends_the_exchange_and_the_process() {
+            let runner = Runner::new(config(&["--long-line"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let outcome = runner.summarize(runner.ticket(), &request());
+            assert!(
+                matches!(&outcome, Err(RunnerError::Protocol(reason)) if reason.contains("line too long")),
+                "{outcome:?}"
+            );
+            assert!(!runner.is_running());
+            assert!(matches!(runner.status(), RunnerStatus::Failed { .. }));
+        }
+
+        #[test]
+        fn a_model_refusal_is_kept_short_and_leaves_the_model_running() {
+            let runner = Runner::new(config(&["--refuse"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let outcome = runner.summarize(runner.ticket(), &request());
+            match outcome {
+                Err(RunnerError::Model(text)) => {
+                    assert_eq!(text.chars().count(), MAX_ERROR_CHARS);
+                    assert!(text.starts_with("FAKE refusal"));
+                }
+                other => panic!("{other:?}"),
+            }
+            assert!(runner.is_running());
+            assert!(matches!(runner.status(), RunnerStatus::Ready { .. }));
         }
     }
 }
