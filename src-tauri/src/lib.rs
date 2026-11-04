@@ -9,6 +9,9 @@ mod camera_permission;
 mod document_identity;
 mod history;
 mod idle;
+#[allow(dead_code)]
+// Wired to the reader's AI actions and ai_model_status by #172; only its cancel is used here.
+mod local_runner;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -1658,14 +1661,17 @@ async fn vault_lock(
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
     picks.clear();
-    // A page still being drawn, and a text being read, stop with the lock.
+    // A page still being drawn, a text being read, and an AI answer being
+    // written, stop with the lock.
     pdf_view::cancel_views();
     pdf_view::cancel_text_reads();
+    local_runner::cancel_all();
     run_blocking(store.inner(), |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
         pdf_view::cancel_views();
         pdf_view::cancel_text_reads();
+        local_runner::cancel_all();
         Ok(())
     })
     .await
@@ -1689,6 +1695,7 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
     if locked {
         pdf_view::cancel_views();
         pdf_view::cancel_text_reads();
+        local_runner::cancel_all();
         picks.clear();
     }
     locked
