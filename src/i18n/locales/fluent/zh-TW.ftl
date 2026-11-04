@@ -835,6 +835,24 @@ photo-zoomed = 已放大至 { $percent }%。
 
 preferences-subtitle = 此電腦上 myCarlos 的外觀
 
+readingAid-available = 您的診所也為這份文件傳送了閱讀輔助。
+
+readingAid-checked = 已由臨床人員於 { $date } 核對。
+
+readingAid-evidence = 摘自文件：
+
+readingAid-open = 查看閱讀輔助
+
+readingAid-openOriginal = 開啟原始文件
+
+readingAid-overview = 概述
+
+readingAid-points = 重點
+
+readingAid-title = 診所提供的閱讀輔助
+
+readingAid-unavailable = 無法安全顯示此閱讀輔助。請改為開啟原始文件。
+
 record-kind-document = 文件
 
 record-source-manual = 手動匯入 — 未驗證

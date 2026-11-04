@@ -950,6 +950,24 @@ photo-zoomOut = Alejar
 
 preferences-subtitle = Cómo se ve myCarlos en este equipo
 
+readingAid-available = Su clínica también envió una ayuda de lectura para este documento.
+
+readingAid-checked = Revisado por un clínico el { $date }.
+
+readingAid-evidence = Del documento:
+
+readingAid-open = Leer la ayuda de lectura
+
+readingAid-openOriginal = Abrir el documento original
+
+readingAid-overview = Resumen general
+
+readingAid-points = Puntos principales
+
+readingAid-title = Ayuda de lectura de su clínica
+
+readingAid-unavailable = Esta ayuda de lectura no se puede mostrar de forma segura. Abra el documento original.
+
 record-kind-document = Documento
 
 record-source-manual = Importación manual — sin verificar
