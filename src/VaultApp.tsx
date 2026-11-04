@@ -800,10 +800,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     )
       return;
     const startedIn = sessionRef.current;
-    const request = ++refreshIssuedRef.current;
     try {
       const next = await bridge.snapshot();
       const current = refreshOwner.current;
+      const applied = appliedCaptureRef.current;
       if (
         refreshMounted.current &&
         !lockingRef.current &&
@@ -813,9 +813,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         current.snapshot?.sharedProfileId === owner &&
         next.sharedProfileId === owner &&
         next.recovery === null &&
-        request > refreshAppliedRef.current
+        applied?.owner === startedIn &&
+        next.capture.epoch === applied.epoch &&
+        next.capture.sequence > applied.sequence
       ) {
-        refreshAppliedRef.current = request;
+        appliedCaptureRef.current = { ...next.capture, owner: startedIn };
         setSnapshot((previous) =>
           previous?.sharedProfileId === owner ? next : previous,
         );
