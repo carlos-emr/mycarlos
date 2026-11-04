@@ -440,6 +440,358 @@ fn find_all(folded: &Folded, needle: &[char], hits: &mut Vec<Hit>) {
     }
 }
 
+// ------------------------------------------------------------ real dates
+//
+// The remover sends no date: each becomes a placeholder (#72, AI-01). This
+// refuses a text in which a date the remover reads still stands. It reads the
+// same forms, in the same order, as the page code's `DATE_FORMS` in
+// `deidentify.ts`; `fixtures/date-forms.json` holds cases both sides must
+// agree on, and a test on each side runs them.
+
+fn month_number(word: &str) -> Option<u32> {
+    // English in full and by its first three letters ("may" is whole), "sept",
+    // and French in full and by the short forms, all folded (no accents).
+    for (index, english) in MONTHS_EN.iter().enumerate() {
+        let number = index as u32 + 1;
+        if word == *english || (english.len() > 3 && word == &english[..3]) {
+            return Some(number);
+        }
+    }
+    if word == "sept" {
+        return Some(9);
+    }
+    for (index, french) in MONTHS_FR.iter().enumerate() {
+        if word == *french {
+            return Some(index as u32 + 1);
+        }
+    }
+    for (index, short) in MONTHS_FR_SHORT.iter().enumerate() {
+        if word == short.trim_end_matches('.') {
+            return Some(index as u32 + 1);
+        }
+    }
+    None
+}
+
+fn is_word(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+fn calendar_day(year: u32, month: u32, day: u32) -> bool {
+    if !(1..=12).contains(&month) || day < 1 {
+        return false;
+    }
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let days = match month {
+        2 => {
+            if leap {
+                29
+            } else {
+                28
+            }
+        }
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    day <= days
+}
+
+/// Reads up to `max` digits at `at` (at least `min`): the value and the end.
+fn digits(text: &[char], at: usize, min: usize, max: usize) -> Option<(u32, usize)> {
+    let mut end = at;
+    let mut value = 0u32;
+    while end < text.len() && end - at < max && text[end].is_ascii_digit() {
+        value = value * 10 + text[end].to_digit(10)?;
+        end += 1;
+    }
+    (end - at >= min).then_some((value, end))
+}
+
+/// Four digits not followed by a word character.
+fn year_at(text: &[char], at: usize) -> Option<(u32, usize)> {
+    let (year, end) = digits(text, at, 4, 4)?;
+    (end == text.len() || !is_word(text[end])).then_some((year, end))
+}
+
+/// A month word (and its full stop, if any) at `at`: the number and the end.
+fn month_at(text: &[char], at: usize) -> Option<(u32, usize)> {
+    let mut end = at;
+    while end < text.len() && text[end].is_alphabetic() {
+        end += 1;
+    }
+    if end == at {
+        return None;
+    }
+    let word: String = text[at..end].iter().collect();
+    let month = month_number(&word)?;
+    if end < text.len() && text[end] == '.' {
+        end += 1;
+    }
+    Some((month, end))
+}
+
+fn skip(text: &[char], mut at: usize, allowed: &[char]) -> usize {
+    while at < text.len() && allowed.contains(&text[at]) {
+        at += 1;
+    }
+    at
+}
+
+fn numeric_date(a: u32, b: u32, year: u32) -> bool {
+    // Either part over 12 settles it; both 12 or under and different cannot
+    // be told apart and are a date all the same (the remover gives it a plain
+    // placeholder). Otherwise the day-first reading is checked.
+    if a <= 12 && b <= 12 && a != b {
+        return true;
+    }
+    let (day, month) = if a > 12 || b <= 12 { (a, b) } else { (b, a) };
+    calendar_day(year, month, day)
+}
+
+/// The cue words a year alone follows, folded.
+const YEAR_CUES: [&str; 17] = [
+    "in",
+    "since",
+    "from",
+    "until",
+    "till",
+    "by",
+    "during",
+    "before",
+    "after",
+    "en",
+    "depuis",
+    "des",
+    "avant",
+    "apres",
+    "jusqu'en",
+    "jusqu\u{2019}en",
+    "vers",
+];
+
+fn after_date_label(text: &[char], at: usize) -> bool {
+    // "Date: ", "Visit date: ", "dated ", "Collected:" and the like, on this line.
+    let mut end = at;
+    while end > 0 && (text[end - 1] == ' ' || text[end - 1] == '\t') {
+        end -= 1;
+    }
+    let line_start = text[..end]
+        .iter()
+        .rposition(|&c| c == '\n')
+        .map_or(0, |i| i + 1);
+    let before: String = text[line_start..end].iter().collect();
+    if let Some(label) = before.strip_suffix(':') {
+        for word in [
+            "collected",
+            "received",
+            "reported",
+            "admitted",
+            "discharged",
+            "signed",
+        ] {
+            if label.trim_end_matches([' ', '\t']).ends_with(word) {
+                return true;
+            }
+        }
+        // "date" then up to 30 characters that are not a colon.
+        let mut from = 0;
+        while let Some(found) = label[from..].find("date") {
+            let position = from + found;
+            let tail = &label[position + 4..];
+            let separated = label[..position]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_alphabetic());
+            let next_ok = tail.chars().next().is_none_or(|c| !c.is_alphabetic());
+            if separated && next_ok && tail.chars().count() <= 30 && !tail.contains(':') {
+                return true;
+            }
+            from = position + 4;
+        }
+        false
+    } else {
+        before.ends_with("dated")
+            && !before
+                .strip_suffix("dated")
+                .and_then(|rest| rest.chars().next_back())
+                .is_some_and(|c| c.is_alphabetic())
+    }
+}
+
+/// The end of a date that starts at `at`, if one does.
+fn date_at(text: &[char], at: usize) -> Option<usize> {
+    let first = text[at];
+    let before = if at == 0 { None } else { Some(text[at - 1]) };
+    if first.is_ascii_digit() && before.is_none_or(|c| !is_word(c)) {
+        if let Some((a, i)) = digits(text, at, 1, 4) {
+            // 2026-10-08, 2026/10/08, 2026-Oct-08
+            if i - at == 4 {
+                if i < text.len() && text[i] == '-' {
+                    if let Some((m, j)) = digits(text, i + 1, 2, 2) {
+                        if j < text.len() && text[j] == '-' {
+                            if let Some((d, k)) = digits(text, j + 1, 2, 2) {
+                                if (k == text.len() || !is_word(text[k])) && calendar_day(a, m, d) {
+                                    return Some(k);
+                                }
+                            }
+                        }
+                    }
+                    if let Some((m, j)) = month_at(text, i + 1) {
+                        if j < text.len() && text[j] == '-' {
+                            if let Some((d, k)) = digits(text, j + 1, 1, 2) {
+                                if (k == text.len() || !is_word(text[k])) && calendar_day(a, m, d) {
+                                    return Some(k);
+                                }
+                            }
+                        }
+                    }
+                }
+                if i < text.len() && text[i] == '/' {
+                    if let Some((m, j)) = digits(text, i + 1, 1, 2) {
+                        if j < text.len() && text[j] == '/' {
+                            if let Some((d, k)) = digits(text, j + 1, 1, 2) {
+                                if (k == text.len() || !is_word(text[k])) && calendar_day(a, m, d) {
+                                    return Some(k);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((day, mut i)) = digits(text, at, 1, 2) {
+            // 8 October 2026, 17-Apr-1961, 1er mars 1958
+            let mut j = i;
+            if text[j..].starts_with(&['e', 'r']) && day == 1 {
+                j += 2;
+            }
+            for start in [i, j] {
+                i = start;
+                if i < text.len() && (text[i] == ' ' || text[i] == '-') {
+                    if let Some((month, k)) = month_at(text, i + 1) {
+                        let k = skip(text, k, &[' ', ',', '-']);
+                        if let Some((year, end)) = year_at(text, k) {
+                            if calendar_day(year, month, day) {
+                                return Some(end);
+                            }
+                        }
+                    }
+                }
+            }
+            // 08/10/2026 or 10.08.2026
+            let i = digits(text, at, 1, 2).map(|(_, e)| e)?;
+            if i < text.len() && (text[i] == '/' || text[i] == '.') {
+                if let Some((b, j)) = digits(text, i + 1, 1, 2) {
+                    if j < text.len() && (text[j] == '/' || text[j] == '.') {
+                        if let Some((year, end)) = year_at(text, j + 1) {
+                            if numeric_date(day, b, year) {
+                                return Some(end);
+                            }
+                        }
+                        // 08/10/26, slashes only, after a date label
+                        if text[i] == '/' && text[j] == '/' {
+                            if let Some((yy, end)) = digits(text, j + 1, 2, 2) {
+                                if (end == text.len() || !is_word(text[end]))
+                                    && after_date_label(text, at)
+                                    && {
+                                        let year = 2000 + yy;
+                                        numeric_date(day, b, year)
+                                    }
+                                {
+                                    return Some(end);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return None;
+    }
+    if first.is_alphabetic() && before.is_none_or(|c| !c.is_alphabetic()) {
+        // October 8, 2026 and Oct. 8 2026
+        if let Some((month, i)) = month_at(text, at) {
+            if i < text.len() && text[i] == ' ' {
+                if let Some((day, j)) = digits(text, i + 1, 1, 2) {
+                    let mut k = j;
+                    if k < text.len() && text[k] == ',' {
+                        k += 1;
+                    }
+                    if k < text.len() && text[k] == ' ' {
+                        if let Some((year, end)) = year_at(text, k + 1) {
+                            if calendar_day(year, month, day) {
+                                return Some(end);
+                            }
+                        }
+                    }
+                }
+            }
+            // October 2026: not after a digit or a digit and a space or hyphen
+            let after_digit = before.is_some_and(|c| c.is_ascii_digit())
+                || (at >= 2
+                    && (text[at - 1] == ' ' || text[at - 1] == '-')
+                    && text[at - 2].is_ascii_digit());
+            if !after_digit {
+                let k = {
+                    let mut k = i;
+                    while k < text.len() && (text[k] == ' ' || text[k] == ',') {
+                        k += 1;
+                    }
+                    (k > i).then_some(k)
+                };
+                if let Some(k) = k {
+                    if let Some((year, end)) = year_at(text, k) {
+                        let _ = year;
+                        return Some(end);
+                    }
+                }
+            }
+        }
+        // A year alone after a cue: "in 2019", "depuis 2019"
+        for cue in YEAR_CUES {
+            let cue: Vec<char> = cue.chars().collect();
+            if text[at..].starts_with(&cue) {
+                let mut k = at + cue.len();
+                let spaced = k;
+                while k < text.len() && (text[k] == ' ' || text[k] == '\t') {
+                    k += 1;
+                }
+                if k > spaced && k + 4 <= text.len() {
+                    let century = (text[k] == '1' && text[k + 1] == '9')
+                        || (text[k] == '2' && text[k + 1] == '0');
+                    if century {
+                        if let Some((_, end)) = year_at(text, k) {
+                            return Some(end);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The dates still standing in `text`, as ranges of it: a whole date, a month
+/// and year, or a year after a cue word, in the forms the remover reads.
+pub(crate) fn date_hits(text: &str) -> Vec<Hit> {
+    let folded = fold(text);
+    let characters = &folded.characters;
+    let mut hits = Vec::new();
+    let mut at = 0;
+    while at < characters.len() {
+        if let Some(end) = date_at(characters, at) {
+            hits.push(Hit {
+                start: folded.ranges[at].0,
+                end: folded.ranges[end - 1].1,
+            });
+            at = end;
+        } else {
+            at += 1;
+        }
+    }
+    hits
+}
+
 /// The vault's identifiers still standing in `text`, as ranges of it.
 pub(crate) fn identifier_hits(text: &str, names: &[String], birth_dates: &[String]) -> Vec<Hit> {
     let folded = fold(text);
@@ -547,5 +899,25 @@ mod tests {
         let names = vec!["Avery".to_owned()];
         let hits = identifier_hits("😀 Avery", &names, &[]);
         assert_eq!(ranges(&hits), vec![(3, 8)]);
+    }
+
+    #[test]
+    fn date_hits_agree_with_the_remover_on_the_shared_cases() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../src/deidentify/fixtures/date-forms.json"
+        ))
+        .unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let text = case["text"].as_str().unwrap();
+            let expected = case["date"].as_bool().unwrap();
+            assert_eq!(!date_hits(text).is_empty(), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn date_hits_cover_the_whole_date_and_count_utf16_units() {
+        let hits = date_hits("😀 Seen 8 October 2026 at 07:40.");
+        assert_eq!(ranges(&hits), vec![(8, 22)]);
+        assert!(date_hits("[DATE 2, 14 days after DATE 1]").is_empty());
     }
 }

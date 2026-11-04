@@ -4,8 +4,7 @@ import { deidentify, restore } from "./deidentify";
 // Identifier shapes the fresh24 scoring found left in place (Q11 memo, option 1):
 // a social insurance number whose groups are joined with points, as French
 // documents write it, and record-number labels in both languages. FAKE values.
-const out = (text: string) =>
-  deidentify(text, { knownNames: [], dateShiftDays: 0 });
+const out = (text: string) => deidentify(text, { knownNames: [] });
 const sent = (text: string) => out(text).toSend;
 
 describe("social insurance numbers with pointed groups", () => {

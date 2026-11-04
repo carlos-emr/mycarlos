@@ -105,6 +105,16 @@ pub enum MessageId {
     InterfaceAnonymizePreviewKindUnclearDate,
     InterfaceAnonymizePreviewKindWeb,
     InterfaceAnonymizePreviewMovedDate,
+    InterfaceAnonymizePreviewNoteAgeOver90,
+    InterfaceAnonymizePreviewNoteDaysAfter,
+    InterfaceAnonymizePreviewPasteAllMatched,
+    InterfaceAnonymizePreviewPasteButton,
+    InterfaceAnonymizePreviewPasteFlagged,
+    InterfaceAnonymizePreviewPasteFlaggedSr,
+    InterfaceAnonymizePreviewPasteHelp,
+    InterfaceAnonymizePreviewPasteLabel,
+    InterfaceAnonymizePreviewPasteResult,
+    InterfaceAnonymizePreviewPasteTitle,
     InterfaceAnonymizePreviewPhrase,
     InterfaceAnonymizePreviewPhraseNotFound,
     InterfaceAnonymizePreviewPlaceholderAddress,
@@ -933,6 +943,16 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewKindUnclearDate,
         Self::InterfaceAnonymizePreviewKindWeb,
         Self::InterfaceAnonymizePreviewMovedDate,
+        Self::InterfaceAnonymizePreviewNoteAgeOver90,
+        Self::InterfaceAnonymizePreviewNoteDaysAfter,
+        Self::InterfaceAnonymizePreviewPasteAllMatched,
+        Self::InterfaceAnonymizePreviewPasteButton,
+        Self::InterfaceAnonymizePreviewPasteFlagged,
+        Self::InterfaceAnonymizePreviewPasteFlaggedSr,
+        Self::InterfaceAnonymizePreviewPasteHelp,
+        Self::InterfaceAnonymizePreviewPasteLabel,
+        Self::InterfaceAnonymizePreviewPasteResult,
+        Self::InterfaceAnonymizePreviewPasteTitle,
         Self::InterfaceAnonymizePreviewPhrase,
         Self::InterfaceAnonymizePreviewPhraseNotFound,
         Self::InterfaceAnonymizePreviewPlaceholderAddress,
@@ -1773,6 +1793,26 @@ impl MessageId {
             }
             Self::InterfaceAnonymizePreviewKindWeb => "interface-AnonymizePreview-kind-web",
             Self::InterfaceAnonymizePreviewMovedDate => "interface-AnonymizePreview-movedDate",
+            Self::InterfaceAnonymizePreviewNoteAgeOver90 => {
+                "interface-AnonymizePreview-note-ageOver90"
+            }
+            Self::InterfaceAnonymizePreviewNoteDaysAfter => {
+                "interface-AnonymizePreview-note-daysAfter"
+            }
+            Self::InterfaceAnonymizePreviewPasteAllMatched => {
+                "interface-AnonymizePreview-pasteAllMatched"
+            }
+            Self::InterfaceAnonymizePreviewPasteButton => "interface-AnonymizePreview-pasteButton",
+            Self::InterfaceAnonymizePreviewPasteFlagged => {
+                "interface-AnonymizePreview-pasteFlagged"
+            }
+            Self::InterfaceAnonymizePreviewPasteFlaggedSr => {
+                "interface-AnonymizePreview-pasteFlaggedSr"
+            }
+            Self::InterfaceAnonymizePreviewPasteHelp => "interface-AnonymizePreview-pasteHelp",
+            Self::InterfaceAnonymizePreviewPasteLabel => "interface-AnonymizePreview-pasteLabel",
+            Self::InterfaceAnonymizePreviewPasteResult => "interface-AnonymizePreview-pasteResult",
+            Self::InterfaceAnonymizePreviewPasteTitle => "interface-AnonymizePreview-pasteTitle",
             Self::InterfaceAnonymizePreviewPhrase => "interface-AnonymizePreview-phrase",
             Self::InterfaceAnonymizePreviewPhraseNotFound => {
                 "interface-AnonymizePreview-phraseNotFound"
@@ -3880,6 +3920,36 @@ impl MessageId {
             "interface.AiHelperNotice.continue" => Some(Self::InterfaceAiHelperNoticeContinue),
             "interface.AnonymizePreview.footerNote" => {
                 Some(Self::InterfaceAnonymizePreviewFooterNote)
+            }
+            "interface.AnonymizePreview.note.daysAfter" => {
+                Some(Self::InterfaceAnonymizePreviewNoteDaysAfter)
+            }
+            "interface.AnonymizePreview.note.ageOver90" => {
+                Some(Self::InterfaceAnonymizePreviewNoteAgeOver90)
+            }
+            "interface.AnonymizePreview.pasteTitle" => {
+                Some(Self::InterfaceAnonymizePreviewPasteTitle)
+            }
+            "interface.AnonymizePreview.pasteHelp" => {
+                Some(Self::InterfaceAnonymizePreviewPasteHelp)
+            }
+            "interface.AnonymizePreview.pasteLabel" => {
+                Some(Self::InterfaceAnonymizePreviewPasteLabel)
+            }
+            "interface.AnonymizePreview.pasteButton" => {
+                Some(Self::InterfaceAnonymizePreviewPasteButton)
+            }
+            "interface.AnonymizePreview.pasteResult" => {
+                Some(Self::InterfaceAnonymizePreviewPasteResult)
+            }
+            "interface.AnonymizePreview.pasteFlagged" => {
+                Some(Self::InterfaceAnonymizePreviewPasteFlagged)
+            }
+            "interface.AnonymizePreview.pasteAllMatched" => {
+                Some(Self::InterfaceAnonymizePreviewPasteAllMatched)
+            }
+            "interface.AnonymizePreview.pasteFlaggedSr" => {
+                Some(Self::InterfaceAnonymizePreviewPasteFlaggedSr)
             }
             "notifications.allow" => Some(Self::NotificationsAllow),
             "notifications.blocked" => Some(Self::NotificationsBlocked),

@@ -18,7 +18,7 @@ describe("the AI helper notice", () => {
       "sends nothing over the internet",
       "synthetic (made-up) files only",
       "Saving text for another AI service",
-      "moves the other dates back",
+      "Dates are not sent",
       "Nothing is saved until you choose to save it",
       "Removing details is never perfect",
       "It is not encrypted, and myCarlos cannot erase it later",

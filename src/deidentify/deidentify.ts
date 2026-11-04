@@ -9,9 +9,12 @@
  * credentials such as "MD", or after a title such as "Nurse Practitioner"),
  * health card and record numbers, dates of birth, addresses, postal codes,
  * phone numbers, email addresses, and clinic and doctor names, in English and
- * French. Every other date is shifted by the same number of days, so the gaps
- * between them stay. Each removed detail becomes a placeholder, such as
- * "[NAME 1]", the same one each time the same detail appears.
+ * French. No date is sent: every date but a date of birth becomes a
+ * placeholder numbered in calendar order, "[DATE 2, 14 days after DATE 1]",
+ * the same real date always the same one, so the gaps between dates stay
+ * without the dates. An age of 90 or over becomes "[AGE 1, 90+]". Each
+ * removed detail becomes a placeholder, such as "[NAME 1]", the same one each
+ * time the same detail appears, and `restoreChecked` puts them back.
  *
  * It is rules, not understanding: a rare condition, an unusual job or a small
  * town in free text can still point to a person, and a name that never has a
@@ -47,20 +50,21 @@ export type RemovedKind =
   | "phone"
   | "email"
   | "web"
-  /** A numeric date that could be read two ways (03/04/2025): removed, not
-   * shifted. */
+  /** A numeric date that could be read two ways (03/04/2025): a plain
+   * placeholder, with no gap, since nothing has to be read to put it back. */
   | "unclearDate"
   | "manual";
 
 /** The words inside the placeholders, in the app's language: "[NAME 1]". */
 export type PlaceholderLabels = Record<RemovedKind, string>;
 
-/** One detail taken out, or one date shifted. */
+/** One detail taken out, or one date replaced by a placeholder. */
 export interface Removed {
   kind: RemovedKind | "date";
   /** The text as it was in the document. */
   original: string;
-  /** What stands in its place: a placeholder, or the shifted date. */
+  /** What stands in its place: a placeholder such as "[NAME 1]", or with a
+   * note after the number, "[DATE 2, 14 days after DATE 1]". */
   replacement: string;
   /** Where it was in the document. */
   start: number;
@@ -85,16 +89,16 @@ export interface PossibleName {
 /** What stays on the device: everything needed to show the preview, remove
  * more and put the details back. Never sent. */
 export interface OnDevice {
-  /** Everything taken out or shifted, in the order it appears. */
+  /** Everything taken out, in the order it appears. */
   removed: Removed[];
   /** Words left in that may be names, in the order they appear. */
   possibleNames: PossibleName[];
-  /** How many days every date was moved: always earlier (negative). */
-  dateShiftDays: number;
   /** How an ambiguous numeric date was read, kept for `removeMore`. */
   dayFirst: boolean;
   /** The placeholder words used, kept for `removeMore`. */
   labels: PlaceholderLabels;
+  /** The notes written after a placeholder's number, kept for `removeMore`. */
+  notes: PlaceholderNotes;
   /** The document as the file will hold it before any removal: the text
    * given, cleaned (`cleanText`). */
   source: string;
@@ -103,7 +107,8 @@ export interface OnDevice {
 }
 
 export interface Deidentified {
-  /** The text that may be sent, with placeholders and shifted dates. */
+  /** The text that may be sent: placeholders only, no real date but the
+   * ones the vault never sees (none). */
   readonly toSend: string;
   /** Kept on the device. Not enumerable: serializing the result, by mistake,
    * gives only `toSend`. */
@@ -124,17 +129,33 @@ export interface DeidentifyOptions {
   knownClinics?: string[];
   /** Doctor names the vault knows (a delivery's provider). */
   knownDoctors?: string[];
-  /** Days to move every other date by. Chosen at random (30 to 365 days
-   * earlier) when not given; tests give one. */
-  dateShiftDays?: number;
   /** How to read a date such as 03/04/2026 when either part could be the
    * month: day first (Canadian and most of the world) unless told. Such a
-   * date is removed rather than shifted; this only decides which day it is
-   * when it is a known birth date. */
+   * date becomes a plain placeholder with no gap; this only decides which
+   * day it is when it is a known birth date. */
   dayFirst?: boolean;
   /** The placeholder words, in the app's language; English when not given. */
   labels?: Partial<PlaceholderLabels>;
+  /** The notes after a placeholder's number, in the app's language. */
+  notes?: Partial<PlaceholderNotes>;
 }
+
+/** The notes a placeholder can carry after its number: "[DATE 2, 14 days
+ * after DATE 1]", "[AGE 1, 90+]". One grammar for all of them (`parsePlaceholder`);
+ * a new note is a rule that names it and a line of text here. */
+export interface PlaceholderNotes {
+  /** How far a date is after the earliest date in the text. `label` and
+   * `number` name that earliest date's placeholder. */
+  daysAfter: (days: number, label: string, number: number) => string;
+  /** An age of 90 or over: the age itself stays on the device. */
+  ageOver90: string;
+}
+
+export const DEFAULT_NOTES: PlaceholderNotes = {
+  daysAfter: (days, label, number) =>
+    `${days} ${days === 1 ? "day" : "days"} after ${label} ${number}`,
+  ageOver90: "90+",
+};
 
 export const DEFAULT_LABELS: PlaceholderLabels = {
   name: "NAME",
@@ -436,71 +457,40 @@ const WEEKDAY_PREFIX = new RegExp(`^(${WEEKDAY})(\\.?,?[ \\t]+)`, "iu");
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
-/** A word written as the original one was: in capitals, capitalized or in
- * lower case. */
-function caseLike(original: string, word: string): string {
-  if (original === original.toUpperCase() && /\p{L}/u.test(original))
-    return word.toUpperCase();
-  if (original[0] === original[0].toUpperCase())
-    return word[0].toUpperCase() + word.slice(1);
-  return word;
-}
+/** How a date found in the text reads (#72): a whole date with its day, a
+ * month and year or a year alone, or a numeric date that could be read two
+ * ways. null if it is no date. A weekday before it is ignored. */
+type DateReading =
+  | { kind: "full"; iso: string; epochDay: number }
+  | { kind: "partial"; key: string }
+  | { kind: "unclear"; key: string };
 
-/** A month word written as the original one was: its language, full or
- * short, its full stop and its capitals. */
-function monthLike(original: string, month: number): string {
-  const bare = original.replace(/\.$/, "");
-  const known = MONTH_WORDS.get(bare.toLowerCase());
-  const language = known?.language ?? "en";
-  let word: string;
-  if (language === "fr")
-    word = (known?.full ? FRENCH : FRENCH_SHORT)[month - 1];
-  else if (known?.full) word = ENGLISH[month - 1];
-  else
-    word = ENGLISH[month - 1].slice(0, 3) + (original.endsWith(".") ? "." : "");
-  return caseLike(bare, word);
-}
-
-/** A weekday written as the original one was. */
-function weekdayLike(original: string, day: number): string {
-  const known = WEEKDAY_WORDS.get(original.toLowerCase());
-  const word =
-    known?.language === "fr"
-      ? WEEKDAYS_FR[day]
-      : known?.full
-        ? WEEKDAYS_EN[day]
-        : WEEKDAYS_EN[day].slice(0, 3);
-  return caseLike(original, word);
-}
-
-/** The date in `text`, moved by `days` and written as it was; "unclear" for
- * a numeric date that could be read two ways; null if it is no date. A
- * weekday before it is recomputed. */
-function shiftDate(
-  text: string,
-  days: number,
-  dayFirst: boolean,
-): string | "unclear" | null {
-  const weekday = WEEKDAY_PREFIX.exec(text);
-  const dateText = weekday ? text.slice(weekday[0].length) : text;
+function readDateText(text: string, dayFirst: boolean): DateReading | null {
+  const dateText = text.replace(WEEKDAY_PREFIX, "");
   for (const form of DATE_FORMS) {
     const match = new RegExp(`^${form.pattern}$`, "iu").exec(dateText);
     if (!match) continue;
     const parts = form.read(match, dayFirst);
     if (!parts) return null;
-    if (parts.unclear) return "unclear";
+    if (parts.unclear)
+      return {
+        kind: "unclear",
+        key: dateText.toLowerCase().replace(/\s+/g, " "),
+      };
     const { year, month, day } = parts;
     if (month < 1 || month > 12 || day < 1 || day > 31) return null;
     const date = new Date(Date.UTC(year, month - 1, day));
     if (date.getUTCMonth() !== month - 1) return null;
-    const shifted = new Date(date.getTime() + days * 86_400_000);
-    const y = shifted.getUTCFullYear();
-    const m = shifted.getUTCMonth() + 1;
-    const d = shifted.getUTCDate();
-    // Each part replaced in place, so that the separators and the order stay.
-    const written = rewrite(dateText, match, form, { y, m, d }, dayFirst);
-    if (!weekday) return written;
-    return weekdayLike(weekday[1], shifted.getUTCDay()) + weekday[2] + written;
+    if (form.partial)
+      return {
+        kind: "partial",
+        key: form.partial === "year" ? String(year) : `${year}-${pad(month)}`,
+      };
+    return {
+      kind: "full",
+      iso: `${year}-${pad(month)}-${pad(day)}`,
+      epochDay: Math.round(date.getTime() / 86_400_000),
+    };
   }
   return null;
 }
@@ -521,57 +511,6 @@ function readDate(text: string, dayFirst: boolean): string[] {
     return other ? [iso(parts), iso(other)] : [iso(parts)];
   }
   return [];
-}
-
-function rewrite(
-  text: string,
-  match: RegExpExecArray,
-  form: DateForm,
-  { y, m, d }: { y: number; m: number; d: number },
-  dayFirst: boolean,
-): string {
-  switch (form.id) {
-    case "iso":
-      return `${y}-${pad(m)}-${pad(d)}`;
-    case "slashYmd":
-      return `${y}/${pad(m)}/${pad(d)}`;
-    case "ymdWord":
-      return `${y}-${monthLike(match[2], m)}-${pad(d)}`;
-    case "dmy": {
-      const separator = match[2];
-      const ordinal = /^\d{1,2}er/.test(text) && d === 1 ? "er" : "";
-      const between = text.slice(
-        text.indexOf(match[3]) + match[3].length,
-        text.lastIndexOf(match[4]),
-      );
-      return `${d}${ordinal}${separator}${monthLike(match[3], m)}${between}${y}`;
-    }
-    case "mdy":
-      return `${monthLike(match[1], m)} ${d}${text.includes(",") ? "," : ""} ${y}`;
-    case "numeric": {
-      const separator = match[2];
-      const firstIsDay = +match[1] > 12 || (+match[3] <= 12 && dayFirst);
-      return firstIsDay
-        ? `${pad(d)}${separator}${pad(m)}${separator}${y}`
-        : `${pad(m)}${separator}${pad(d)}${separator}${y}`;
-    }
-    case "numeric2": {
-      const firstIsDay = +match[1] > 12 || (+match[2] <= 12 && dayFirst);
-      const yy = pad(y % 100);
-      return firstIsDay
-        ? `${pad(d)}/${pad(m)}/${yy}`
-        : `${pad(m)}/${pad(d)}/${yy}`;
-    }
-    case "monthYear": {
-      const between = text.slice(
-        text.indexOf(match[1]) + match[1].length,
-        text.lastIndexOf(match[2]),
-      );
-      return `${monthLike(match[1], m)}${between}${y}`;
-    }
-    case "year":
-      return String(y);
-  }
 }
 
 // ---------------------------------------------------------------- names, places
@@ -1324,8 +1263,10 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
       if (
         rule.kind === "recordNumber" &&
         /^Encounter[ \t]*:?[ \t]*$/iu.test(match[0].slice(0, offset)) &&
-        shiftDate(trimmed, 0, options.dayFirst ?? true) !== null &&
-        shiftDate(trimmed, 0, options.dayFirst ?? true) !== "unclear"
+        (() => {
+          const reading = readDateText(trimmed, options.dayFirst ?? true);
+          return reading !== null && reading.kind !== "unclear";
+        })()
       )
         continue;
       if (rule.kind === "clinic") {
@@ -1614,13 +1555,6 @@ function resolve(findings: Finding[]): Finding[] {
   return kept.sort((a, b) => a.start - b.start);
 }
 
-/** A whole number of days, 30 to 365, always earlier. */
-function randomShift(): number {
-  const values = new Uint32Array(1);
-  crypto.getRandomValues(values);
-  return -(30 + (values[0] % 336));
-}
-
 function result(toSend: string, onDevice: OnDevice): Deidentified {
   const value = { toSend } as Deidentified;
   Object.defineProperty(value, "onDevice", {
@@ -1638,9 +1572,9 @@ export function deidentify(
   text: string,
   options: DeidentifyOptions,
 ): Deidentified {
-  const dateShiftDays = options.dateShiftDays ?? randomShift();
   const dayFirst = options.dayFirst ?? true;
   const labels = { ...DEFAULT_LABELS, ...options.labels };
+  const notes = { ...DEFAULT_NOTES, ...options.notes };
   const cleaned = cleanText(text);
   const matching = matchingCopy(cleaned.text);
   const copy = matching.copy;
@@ -1658,9 +1592,9 @@ export function deidentify(
     };
   });
   return build(cleaned.text, findings, {
-    dateShiftDays,
     dayFirst,
     labels,
+    notes,
     cleaning: {
       replacedRuns: cleaned.replacedRuns,
       droppedCodePoints: cleaned.droppedCodePoints,
@@ -1679,6 +1613,7 @@ function nextPlaceholder(
   // other marker, including an overlapping marker at the same position.
   while (
     source.includes(`[${label} ${number}]`) ||
+    source.includes(`[${label} ${number},`) ||
     reserved.has(`[${label} ${number}]`)
   )
     number++;
@@ -1687,44 +1622,103 @@ function nextPlaceholder(
   return { number, replacement };
 }
 
+/** A placeholder without its note: "[DATE 2, 14 days after DATE 1]" is
+ * "[DATE 2]". */
+const baseOf = (replacement: string) =>
+  replacement.replace(/,[^\][]*\]$/u, "]");
+
 function build(
   source: string,
   findings: Finding[],
   settings: Omit<OnDevice, "removed" | "possibleNames" | "source">,
 ): Deidentified {
-  const { dateShiftDays, dayFirst, labels } = settings;
+  const { dayFirst, labels, notes } = settings;
   // One placeholder per distinct detail of a kind (and per person, for
   // names), numbered in the order first seen.
   const numbers = new Map<string, number>();
   const counts = new Map<string, number>();
   const reserved = new Set(
     findings.flatMap((finding) =>
-      finding.replacement === undefined ? [] : [finding.replacement],
+      finding.replacement === undefined ? [] : [baseOf(finding.replacement)],
     ),
   );
+  /** The number for a detail: its own, once, then the same again. */
+  const numberFor = (counter: string, label: string, identity: string) => {
+    let number = numbers.get(identity);
+    if (number === undefined) {
+      number = nextPlaceholder(
+        source,
+        label,
+        (counts.get(counter) ?? 0) + 1,
+        reserved,
+      ).number;
+      counts.set(counter, number);
+      numbers.set(identity, number);
+    }
+    return number;
+  };
   const placeholder = (finding: Finding, original: string) => {
     const kind = finding.kind as Exclude<RemovedKind, "manual">;
     // A doctor is one placeholder by surname: "Dr. Blake Sample" and "Dr.
     // Sample" are the same person, as far as the text can tell.
     const words = original.toLowerCase().split(/\s+/);
+    // An age of 90 or over: one number per age, so that two ages in one
+    // document come back as their own.
+    const age = kind === "age" ? /\d+/.exec(original)?.[0] : undefined;
     const identity = `${kind}:${
+      age ??
       finding.person ??
       finding.group ??
       (kind === "doctor" ? words[words.length - 1] : words.join(" "))
     }`;
-    let number = numbers.get(identity);
-    if (number === undefined) {
-      number = nextPlaceholder(
-        source,
-        labels[kind],
-        (counts.get(kind) ?? 0) + 1,
-        reserved,
-      ).number;
-      counts.set(kind, number);
-      numbers.set(identity, number);
-    }
-    return `[${labels[kind]} ${number}]`;
+    const number = numberFor(kind, labels[kind], identity);
+    return noted(
+      labels[kind],
+      number,
+      kind === "age" ? notes.ageOver90 : undefined,
+    );
   };
+
+  // Dates (#72): none is sent. Each distinct whole date gets a number in
+  // calendar order, the same date always the same one, and a note with its
+  // gap from the earliest date. A month and year, a year alone and a
+  // numeric date that could be read two ways get a plain placeholder.
+  const dateWord = labels.unclearDate;
+  const readings = new Map<Finding, DateReading>();
+  for (const finding of findings) {
+    if (finding.kind !== "date" || finding.replacement !== undefined) continue;
+    const reading = readDateText(
+      finding.folded ?? source.slice(finding.start, finding.end),
+      dayFirst,
+    );
+    if (reading) readings.set(finding, reading);
+  }
+  const wholeDates = new Map<string, number>();
+  for (const reading of readings.values())
+    if (reading.kind === "full") wholeDates.set(reading.iso, reading.epochDay);
+  const calendar = [...wholeDates.entries()].sort((a, b) => a[1] - b[1]);
+  const earliestDay = calendar.length ? calendar[0][1] : 0;
+  let earliestNumber = 0;
+  calendar.forEach(([iso], index) => {
+    const number = numberFor("date", dateWord, `date:${iso}`);
+    if (index === 0) earliestNumber = number;
+  });
+  const datePlaceholder = (reading: DateReading) => {
+    if (reading.kind === "full") {
+      const number = numberFor("date", dateWord, `date:${reading.iso}`);
+      const days = reading.epochDay - earliestDay;
+      return noted(
+        dateWord,
+        number,
+        days > 0 ? notes.daysAfter(days, dateWord, earliestNumber) : undefined,
+      );
+    }
+    return noted(
+      dateWord,
+      numberFor("date", dateWord, `${reading.kind}:${reading.key}`),
+    );
+  };
+
   // A profile name seen in full (or in part) after a title is still that
   // person: names found by a rule take the placeholder of a known person
   // whose words they contain.
@@ -1762,16 +1756,10 @@ function build(
     if (finding.replacement !== undefined) {
       replacement = finding.replacement;
     } else if (finding.kind === "date") {
-      const shifted = shiftDate(
-        finding.folded ?? original,
-        dateShiftDays,
-        dayFirst,
-      );
-      if (shifted === null) continue;
-      if (shifted === "unclear") {
-        kind = "unclearDate";
-        replacement = placeholder({ ...finding, kind }, original);
-      } else replacement = shifted;
+      const reading = readings.get(finding);
+      if (!reading) continue;
+      if (reading.kind === "unclear") kind = "unclearDate";
+      replacement = datePlaceholder(reading);
     } else {
       const person =
         finding.kind === "name" || finding.kind === "doctor"
@@ -1800,12 +1788,16 @@ function build(
   return result(text, { ...settings, removed, possibleNames, source });
 }
 
+/** "[LABEL n]", or "[LABEL n, note]". */
+const noted = (label: string, number: number, note?: string) =>
+  note ? `[${label} ${number}, ${note}]` : `[${label} ${number}]`;
+
 /**
  * The patient removes more from the preview (#72): the part of the text to
  * send from `sentStart` to `sentEnd`, which must lie outside every
- * placeholder and shifted date already there, unless `over` is set: then
+ * placeholder (a date included) already there, unless `over` is set: then
  * the parts it touches are taken into the new removal, whole (the native
- * re-check found a detail inside a moved date or a placeholder, AI-02). It
+ * re-check found a detail inside a placeholder, AI-02). It
  * becomes "[REMOVED n]".
  */
 export function removeMore(
@@ -1841,7 +1833,7 @@ export function removeMore(
     source,
     settings.labels.manual,
     manual.length + 1,
-    new Set(removed.map((part) => part.replacement)),
+    new Set(removed.map((part) => baseOf(part.replacement))),
   ).replacement;
   // Everything already decided stays as it was; only the new part is new.
   // A flagged word stays flagged unless the new part takes it.
@@ -1871,14 +1863,51 @@ export function removeMore(
   return build(source, findings, settings);
 }
 
+/** A placeholder as written, split into its parts (#72): the word, the
+ * number and the note after the number, if any. One grammar for every kind:
+ * "[NAME 1]", "[DATE 2, 14 days after DATE 1]", "[AGE 1, 90+]". */
+export function parsePlaceholder(
+  text: string,
+): { label: string; number: number; note?: string } | null {
+  const found = PLACEHOLDER_SHAPE.exec(text);
+  PLACEHOLDER_SHAPE.lastIndex = 0;
+  if (!found || found[0] !== text) return null;
+  return {
+    label: found[1],
+    number: Number(found[2]),
+    ...(found[3] === undefined ? {} : { note: found[3] }),
+  };
+}
+/** Anything shaped like one of ours: a word that is not a number, a number,
+ * and perhaps a note. Square brackets and line ends never stand inside. */
+const PLACEHOLDER_SHAPE =
+  /\[([^\][,\d\n][^\][,\n]*?) (\d+)(?:, ([^\][\n]+))?\]/gu;
+
+/** One stretch of a pasted answer: as it was, put back, or placeholder-shaped
+ * text that is not one of this export's. */
+export interface RestoredPart {
+  text: string;
+  /** "restored": a placeholder of this export, put back exactly.
+   * "flagged": shaped like one but not matching one, or one whose note was
+   * changed: left as written, for the patient to check against the original. */
+  kind: "plain" | "restored" | "flagged";
+}
+
 /**
  * Puts the details back into an answer that came back with the placeholders
- * (#72), on the device: each placeholder becomes what it stood for, and each
- * shifted date the date it was. A date the answer wrote some other way is
- * left shifted. Ambiguous placeholders from older snapshots (literal source
- * markers or conflicting manual IDs) stay unresolved.
+ * (#72), on the device, and says what it could not (never guessing): each
+ * placeholder of this export, written exactly as it was sent, becomes what it
+ * stood for. A placeholder-shaped text that is not one of this export's, or
+ * one of this export's whose note after the number was changed or left out,
+ * is left as written and marked "flagged". A date that stood in several
+ * spellings comes back as the first one. Ambiguous placeholders from older
+ * snapshots (literal source markers or conflicting manual IDs) stay
+ * unresolved, and are flagged.
  */
-export function restore(answer: string, deidentified: Deidentified): string {
+export function restoreChecked(
+  answer: string,
+  deidentified: Deidentified,
+): { text: string; parts: RestoredPart[]; flagged: string[] } {
   const back = new Map<string, string>();
   const manualTokens = new Set(
     deidentified.onDevice.removed
@@ -1899,21 +1928,53 @@ export function restore(answer: string, deidentified: Deidentified): string {
       conflictingManual.add(part.replacement);
     if (previous === undefined) back.set(part.replacement, part.original);
   }
+  const source = deidentified.onDevice.source;
   for (const part of deidentified.onDevice.removed) {
     // Older snapshots may reuse a literal marker from the source. An answer
     // cannot tell its occurrences apart: leave that marker unresolved rather
     // than insert a person's detail into literal text. New allocations avoid
     // that ambiguity.
+    const base = baseOf(part.replacement);
     if (
       conflictingManual.has(part.replacement) ||
-      (part.kind !== "date" &&
-        deidentified.onDevice.source.includes(part.replacement))
+      source.includes(base) ||
+      source.includes(base.slice(0, -1) + ",")
     )
       back.delete(part.replacement);
   }
+  const parts: RestoredPart[] = [];
+  const flagged: string[] = [];
+  let at = 0;
+  const plain = (end: number) => {
+    if (end > at) parts.push({ text: answer.slice(at, end), kind: "plain" });
+  };
   // Longest first, so that "[NAME 1]" never stands inside "[NAME 10]"'s place.
-  const keys = [...back.keys()].sort((a, b) => b.length - a.length);
-  if (!keys.length) return answer;
-  const pattern = new RegExp(keys.map(escapeRegExp).join("|"), "g");
-  return answer.replace(pattern, (found) => back.get(found) ?? found);
+  // What this export sent is matched exactly, note and all; any other
+  // placeholder-shaped text is flagged, never guessed.
+  const keys = [...back.keys()].sort((x, y) => y.length - x.length);
+  const pattern = new RegExp(
+    `${keys.length ? `(${keys.map(escapeRegExp).join("|")})|` : "()(?!)|"}${PLACEHOLDER_SHAPE.source}`,
+    "gu",
+  );
+  for (const found of answer.matchAll(pattern)) {
+    plain(found.index);
+    if (found[1] !== undefined && found[1] !== "") {
+      parts.push({ text: back.get(found[1]) ?? found[1], kind: "restored" });
+    } else {
+      parts.push({ text: found[0], kind: "flagged" });
+      flagged.push(found[0]);
+    }
+    at = found.index + found[0].length;
+  }
+  plain(answer.length);
+  return {
+    text: parts.map((part) => part.text).join(""),
+    parts,
+    flagged,
+  };
+}
+
+/** `restoreChecked`, as plain text. */
+export function restore(answer: string, deidentified: Deidentified): string {
+  return restoreChecked(answer, deidentified).text;
 }

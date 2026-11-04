@@ -3533,6 +3533,12 @@ async fn vault_export_text_picked(
     if !hits.is_empty() {
         return Ok(TextSaveOutcome { saved: false, hits });
     }
+    // The remover sends no date: each is a placeholder. One still standing
+    // means page code skipped it (AI-01, AI-02).
+    let hits = text_recheck::date_hits(&request.text);
+    if !hits.is_empty() {
+        return Ok(TextSaveOutcome { saved: false, hits });
+    }
     let locale = locale.unwrap_or_default();
     let mut content = locale.text(MessageId::AiHelperExportHeader)?;
     content.push_str("\n\n");

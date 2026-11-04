@@ -1656,15 +1656,15 @@ aiHelper-notice-testBuild = Esta versión de desarrollo es solo para archivos fi
 
 aiHelper-notice-shareHeading = Guardar el texto para otro servicio de IA
 
-aiHelper-notice-shareBody = myCarlos puede guardar el texto de un documento quitando los datos que permiten identificar a una persona, para que usted pueda dárselo al servicio de IA que elija. Busca los nombres de las personas de sus perfiles y de «Datos de las personas», y los nombres que siguen a un título o una etiqueta como «Dr.». También busca los números de tarjeta de salud y de historia clínica, las fechas de nacimiento, las edades de 90 años o más, las direcciones, los códigos postales, los números de teléfono y de fax, las direcciones de correo electrónico y web, los nombres de clínicas y médicos, y otros números de identificación, como los números de solicitud de análisis, y quita lo que encuentra. Desplaza las demás fechas hacia atrás el mismo número de días, para que el tiempo entre ellas no cambie.
+aiHelper-notice-shareBody = myCarlos puede guardar el texto de un documento quitando los datos que permiten identificar a una persona, para que usted pueda dárselo al servicio de IA que elija. Busca los nombres de las personas de sus perfiles y de «Datos de las personas», y los nombres que siguen a un título o una etiqueta como «Dr.». También busca los números de tarjeta de salud y de historia clínica, las fechas de nacimiento, las edades de 90 años o más, las direcciones, los códigos postales, los números de teléfono y de fax, las direcciones de correo electrónico y web, los nombres de clínicas y médicos, y otros números de identificación, como los números de solicitud de análisis, y quita lo que encuentra. Las fechas no se envían. Cada fecha se sustituye por una marca numerada, como «FECHA 2, 14 días después de FECHA 1», para que el tiempo entre las fechas siga claro sin las fechas reales. Una edad de 90 años o más se sustituye por una marca numerada que dice «90+».
 
-aiHelper-notice-previewBody = Primero verá el texto, con las partes quitadas y las fechas desplazadas marcadas, y podrá quitar más. Una fecha que no esté marcada no se ha desplazado. La vista previa muestra todo el texto que tendrá el archivo, incluso el texto oculto en el documento. No se guarda nada hasta que usted decida guardarlo.
+aiHelper-notice-previewBody = Primero verá el texto, con las partes quitadas y las fechas sustituidas marcadas, y podrá quitar más. Una fecha que no esté marcada no se reconoció y sigue en el texto. La vista previa muestra todo el texto que tendrá el archivo, incluso el texto oculto en el documento. No se guarda nada hasta que usted decida guardarlo.
 
 aiHelper-notice-limitsBody = Quitar estos datos nunca es perfecto. myCarlos solo encuentra los nombres que conoce y los nombres que siguen a un título o una etiqueta en inglés o en francés, así que otros nombres pueden quedar. También puede pasar por alto un número, o una fecha escrita de otra forma o en otro idioma. Una enfermedad poco común, un trabajo poco habitual o un pueblo pequeño aún pueden señalarle a usted o a otra persona. Lea todo el texto antes de guardarlo.
 
 aiHelper-notice-fileBody = El texto se guarda como un archivo de texto sin formato, en el lugar que usted elija. No está cifrado, y myCarlos no puede borrarlo después. Si ese lugar es una carpeta que se sincroniza con un almacenamiento en la nube, el archivo también se copia allí. El guardado queda anotado en el historial de auditoría.
 
-aiHelper-notice-serviceBody = Una vez que dé el texto a otro servicio, lo que pase con él depende de ese servicio. Si usa ese servicio con su cuenta, el servicio sabe quién es usted, aunque se hayan quitado datos, y aunque no use su cuenta, ve su dirección IP. Las fechas que myCarlos desplazó siguen desplazadas en sus respuestas. Un documento también puede contener instrucciones dirigidas a una IA. Por eso, use una IA que no pueda actuar por usted (enviar mensajes, abrir enlaces o leer sus archivos), o desactive esas funciones.
+aiHelper-notice-serviceBody = Una vez que dé el texto a otro servicio, lo que pase con él depende de ese servicio. Si usa ese servicio con su cuenta, el servicio sabe quién es usted, aunque se hayan quitado datos, y aunque no use su cuenta, ve su dirección IP. Sus respuestas usarán las marcas, como FECHA 2, y no las fechas reales. En myCarlos, mientras esta ventana siga abierta, puede pegar su respuesta para recuperar los datos reales. Un documento también puede contener instrucciones dirigidas a una IA. Por eso, use una IA que no pueda actuar por usted (enviar mensajes, abrir enlaces o leer sus archivos), o desactive esas funciones.
 
 aiHelper-notice-adviceBody = Las respuestas escritas por una IA pueden estar equivocadas. No las tome como un diagnóstico ni como un consejo sobre tratamientos o medicamentos, y no cambie un medicamento ni un tratamiento por lo que diga una IA. Pregunte a su médico.
 
@@ -1703,13 +1703,13 @@ interface-AnonymizePreview-replaced = { $count } signos ilegibles se reemplazaro
 
 interface-AnonymizePreview-headerNote = El archivo comenzará con esta línea:
 
-interface-AnonymizePreview-howMarked = Los datos eliminados están marcados y nombrados. Las fechas desplazadas también están marcadas; una fecha sin marca no se ha desplazado.
+interface-AnonymizePreview-howMarked = Los datos eliminados y las fechas sustituidas están marcados y nombrados. Una fecha sin marca no se reconoció y sigue en el texto.
 
 interface-AnonymizePreview-textRegion = El texto que se guardará
 
 interface-AnonymizePreview-removedKind = eliminado: { $kind }
 
-interface-AnonymizePreview-movedDate = fecha desplazada
+interface-AnonymizePreview-movedDate = fecha sustituida
 
 interface-AnonymizePreview-kind-name = nombre
 
@@ -1770,6 +1770,29 @@ interface-AnonymizePreview-placeholder-web = DIRECCIÓN WEB
 interface-AnonymizePreview-placeholder-unclearDate = FECHA
 
 interface-AnonymizePreview-placeholder-manual = ELIMINADO
+
+interface-AnonymizePreview-note-daysAfter = { $days ->
+    [one] { $days } día después de { $label } { $number }
+   *[other] { $days } días después de { $label } { $number }
+}
+
+interface-AnonymizePreview-note-ageOver90 = 90+
+
+interface-AnonymizePreview-pasteTitle = Recuperar los datos
+
+interface-AnonymizePreview-pasteHelp = Pegue abajo la respuesta de la IA. myCarlos vuelve a poner los nombres, las fechas y los números que sustituyó. Guarda la lista de lo que sustituyó solo en la memoria, mientras la bóveda siga desbloqueada y esta ventana siga abierta. No se guarda nada.
+
+interface-AnonymizePreview-pasteLabel = La respuesta de la IA
+
+interface-AnonymizePreview-pasteButton = Recuperar los datos
+
+interface-AnonymizePreview-pasteResult = La respuesta con los datos recuperados
+
+interface-AnonymizePreview-pasteFlagged = Las marcas que no se pudieron asociar a este texto, o que fueron modificadas, están resaltadas ({ $count }). Compárelas con el original.
+
+interface-AnonymizePreview-pasteAllMatched = Todas las marcas se reconocieron y se volvieron a poner.
+
+interface-AnonymizePreview-pasteFlaggedSr = (compruébelo con el original)
 
 interface-AnonymizePreview-possibleNames = Palabras que podrían ser nombres
 
