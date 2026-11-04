@@ -90,6 +90,7 @@ fn main() {
     tauri_build::try_build(
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
             "runtime_info",
+            "ai_model_status",
             "kdf_benchmark",
             "vault_status",
             "vault_passphrase_rules",
