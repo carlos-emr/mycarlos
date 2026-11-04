@@ -375,12 +375,22 @@ fn language_primary(language: &str) -> Option<&str> {
     (primary_ok && rest_ok).then_some(primary)
 }
 
-/// A notice version is `<scheme>-<language>-<n>`; the language tag is read by that shape.
+/// A notice version is `<scheme>-<language>-<n>`; the language tag is read by that shape. The
+/// language is a lower-case primary subtag; an upper-case two-letter region may follow it when the
+/// notice is for a region (`carlos-5537-pt-BR-1`), and is not part of the tag returned.
 fn notice_language(version: &str) -> Option<&str> {
     let (rest, number) = version.rsplit_once('-')?;
     if number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
+    let rest = match rest.rsplit_once('-') {
+        Some((before, region))
+            if region.len() == 2 && region.bytes().all(|b| b.is_ascii_uppercase()) =>
+        {
+            before
+        }
+        _ => rest,
+    };
     let (scheme, tag) = rest.rsplit_once('-')?;
     let scheme_ok = !scheme.is_empty()
         && scheme
@@ -792,7 +802,18 @@ mod tests {
     fn should_read_the_notice_language_by_shape() {
         assert_eq!(notice_language("carlos-5537-en-1"), Some("en"));
         assert_eq!(notice_language("clinic-notice-fr-12"), Some("fr"));
+        assert_eq!(notice_language("carlos-5537-es-1"), Some("es"));
+        assert_eq!(notice_language("carlos-5537-pl-1"), Some("pl"));
+        // A region follows the primary subtag and is not part of the tag.
+        assert_eq!(notice_language("carlos-5537-pt-BR-1"), Some("pt"));
+        // A lower-case "br" is a language of its own: scheme "carlos-5537-pt", tag "br".
+        assert_eq!(notice_language("carlos-5537-pt-br-1"), Some("br"));
         for bad in [
+            "carlos-5537-pt-BRA-1",
+            "carlos-5537-pt-B-1",
+            "carlos-5537-BR-1",
+            "carlos-5537-PT-1",
+            "carlos-5537-pt-BR",
             "carlos-5537-1",
             "carlos-5537-en",
             "CARLOS-5537-en-1",
