@@ -339,9 +339,32 @@ where
                     }
                 }
             }
+            // Aids kept waiting are looked at again now that this check's originals are filed.
+            let rechecked = store.recheck_waiting_aids(&link, session)?;
+            result.refused += rechecked.refused;
+            for (delivery_id, receipt) in &rechecked.not_filed {
+                result.refused += 1;
+                // Not filed because a newer-reviewed aid is held: the receipt only tells the portal
+                // to stop offering it, so a failed post is simply tried again on the next check.
+                let _ = post_receipt(&link, delivery_id, receipt);
+            }
+            if rechecked.filed > 0 {
+                send_pending(&link)?;
+            }
             for outer in aids {
                 if cancelled() {
                     return Err(VaultError::Cancelled);
+                }
+                match store.aid_listed(&outer, &link, session)? {
+                    // Kept or filed under this ID and hash: never downloaded again.
+                    crate::reading_aid::Listed::Kept | crate::reading_aid::Listed::Filed => {
+                        continue
+                    }
+                    crate::reading_aid::Listed::Replayed => {
+                        result.refused += 1;
+                        continue;
+                    }
+                    crate::reading_aid::Listed::New => {}
                 }
                 let response = match exchange(
                     &link,
@@ -365,8 +388,10 @@ where
                     }
                 };
                 match store.receive_aid(&outer, &response.body, &link, session) {
-                    // Waiting for its original: kept on the portal, no receipt, looked at
-                    // again by the next check.
+                    Ok(crate::vault::AidFiling::NotFiled(receipt)) => {
+                        result.refused += 1;
+                        let _ = post_receipt(&link, &outer.delivery_id, &receipt);
+                    }
                     Ok(_) => send_pending(&link)?,
                     Err(VaultError::PickupRefused) => result.refused += 1,
                     Err(error) => return Err(error),

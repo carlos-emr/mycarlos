@@ -26,7 +26,7 @@ pub const MAX_JSON: usize = 64 * 1024;
 pub const MAX_SEALED_AID: u64 = 1024 * 1024;
 const MAX_POINTS: usize = 50;
 const MAX_EVIDENCE: usize = 5;
-const SKEW_SECONDS: u64 = 86_400;
+pub const SKEW_SECONDS: u64 = 86_400;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -204,6 +204,18 @@ pub fn open(
     if now > manifest.expires_at.saturating_add(SKEW_SECONDS) {
         return Err(Refusal::Expired);
     }
+    let outcome = decide(outer, &manifest, state)?;
+    Ok(opened(manifest, compact, json, outcome))
+}
+
+/// What a verified aid's id and pair claims allow, given what the device holds: the contract's
+/// steps for one delivery-ID space, the filed and waiting copies, and the pair check. Used for a
+/// fresh download and again, from the kept copy, after each original is filed.
+pub fn decide(
+    outer: &Outer,
+    manifest: &AidManifest,
+    state: &PairState,
+) -> Result<Outcome, Refusal> {
     let id = &manifest.delivery_id;
     // One delivery-ID space: an aid never reuses a filed original's ID.
     if state.filed_originals.contains_key(id) {
@@ -211,7 +223,7 @@ pub fn open(
     }
     if let Some(filed) = state.filed_aids.get(id) {
         return if filed == &outer.ciphertext_sha256 {
-            Ok(opened(manifest, compact, json, Outcome::AlreadyFiled))
+            Ok(Outcome::AlreadyFiled)
         } else {
             Err(Refusal::Replayed)
         };
@@ -227,14 +239,56 @@ pub fn open(
         .filed_originals
         .get(&manifest.pair.original_delivery_id)
     else {
-        return Ok(opened(manifest, compact, json, Outcome::WaitingForOriginal));
+        return Ok(Outcome::WaitingForOriginal);
     };
     if original.document_sha256 != manifest.pair.original_document_sha256
         || (original.created_at, original.expires_at) != (manifest.created_at, manifest.expires_at)
     {
         return Err(Refusal::PairMismatch);
     }
-    Ok(opened(manifest, compact, json, Outcome::File))
+    Ok(Outcome::File)
+}
+
+/// What a listed aid needs before anything is downloaded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Listed {
+    /// Not seen before: download and check it.
+    New,
+    /// Already kept waiting by this ID and hash: never downloaded again, checked from the kept copy.
+    Kept,
+    /// Filed with this ID and hash: nothing to download, its receipt is sent from the vault.
+    Filed,
+    /// The same ID with a different hash, or an original's ID: replayed, no download.
+    Replayed,
+}
+
+/// The listing-only answer (contract, step 12): a copy already kept or filed under its ID and
+/// ciphertext hash is not downloaded again, and a different hash under a known ID is replayed.
+pub fn listed(outer: &Outer, state: &PairState) -> Listed {
+    let id = &outer.delivery_id;
+    if state.filed_originals.contains_key(id) {
+        return Listed::Replayed;
+    }
+    for (known, listed_as) in [
+        (&state.filed_aids, Listed::Filed),
+        (&state.waiting_aids, Listed::Kept),
+    ] {
+        if let Some(hash) = known.get(id) {
+            return if hash == &outer.ciphertext_sha256 {
+                listed_as
+            } else {
+                Listed::Replayed
+            };
+        }
+    }
+    Listed::New
+}
+
+/// The manifest of a copy this device verified before keeping it. It checks no signature again:
+/// the vault re-checks the kept copy's claims on every read.
+pub fn kept_manifest(compact: &str) -> Result<AidManifest, Refusal> {
+    let (payload, _) = split_compact(compact, MAX_COMPACT)?;
+    serde_json::from_slice(&payload).map_err(|_| Refusal::BadManifest)
 }
 
 fn opened(manifest: AidManifest, compact: &str, json: &[u8], outcome: Outcome) -> OpenedAid {

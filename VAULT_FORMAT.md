@@ -977,9 +977,41 @@ format 10 or later, only with a clinic delivery, and only when the aid's pair
 claims name that delivery and the PDF hash of its original.
 
 A reading aid is filed only while its original is filed, in one commit with a
-`readingAidFiled` history event; an aid whose original is not filed yet is not
-kept and gets no receipt, because the portal still lists it for the next check.
+`readingAidFiled` history event. An aid whose original is not filed yet is kept
+in the manifest's `waitingAids` list (format 10, at most 32) by its delivery ID
+and ciphertext hash, with no receipt: the same copy is never downloaded again, a
+different copy under that ID is replayed, and the kept copy is checked again
+after each original is filed. It holds the verified manifest and JSON, not the
+sealed copy, and is deleted silently once it is past its expiry and the
+device's 24 hour skew. A kept aid shares the one delivery-ID space with filed
+deliveries.
+
+A record holds one aid. A second aid for the same original replaces the held one
+only when its signed review time (`approval.reviewed_at`) is strictly later; the
+summary version is an opaque hash and cannot be ordered. The replacement is one
+commit whose `readingAidFiled` entry has `how` "replaced". An earlier or equal
+review is not filed: it is answered with its own signed receipt, sent once and
+not kept, so the portal stops offering it.
 Its receipt is retried like an original's, only while the original's saved file
 reads back. The check names `accept=reading-aid/1` in every listing, and files
 aids after the originals of the same check. Header, object and original-PDF
 formats are unchanged, and the aid adds no object file.
+
+##### Renumbering formats 8, 9 and 10 at merge
+
+Format numbers are assigned at merge, not when a branch is written. Three open
+branches each need one: 8 is remembered refused deliveries (#161), 9 is the AI
+summary branches and 10 is reading aids (#200). Whichever merges second or
+third takes the next free number and must, in the same change:
+
+1. set `VAULT_FORMAT` and this heading to its new number;
+2. move every gate it wrote for its own field (`format_version < 10` for
+   `readingAid` and `waitingAids`) to its new number, and check each against what
+   the formats on main actually introduced, because an older build that accepts
+   a newer number must never be able to drop a field it does not know;
+3. update the format test matrices' "from" lists and the upgrade checks, which
+   iterate `VAULT_FORMAT` symbolically, so only hand-written lists change;
+4. keep the unsupported-newer check (`VAULT_FORMAT + 1` is refused) passing.
+
+Do not leave a gap by merging a branch under a number its predecessors have not
+reached: a vault written at 10 is refused by an older build, which is intended.

@@ -36,6 +36,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 mod delivery;
+#[cfg(feature = "portal-linking")]
+pub(crate) use delivery::AidFiling;
 #[cfg(all(test, feature = "portal-linking"))]
 mod native_portal_flow;
 mod original_pdf;
@@ -569,6 +571,9 @@ struct Manifest {
     /// Format 3 only.
     #[serde(default, skip_serializing_if = "HistoryState::is_empty")]
     history: HistoryState,
+    /// Format 10. Reading aids verified and kept until their original is filed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    waiting_aids: Vec<crate::portal_delivery::WaitingAid>,
 }
 
 /// Where the history's entries are, and what pins its chain: how many there
@@ -1062,6 +1067,7 @@ impl VaultStore {
                 records: Vec::new(),
                 history: HistoryState::default(),
                 portal_links: Vec::new(),
+                waiting_aids: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -4321,6 +4327,16 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         {
             return Err(VaultError::Corrupt);
         }
+    }
+    // A waiting reading aid (format 10) shares the one delivery-ID space with filed deliveries.
+    if (manifest.format_version < 10 && !manifest.waiting_aids.is_empty())
+        || !delivery::valid_waiting_aids(
+            &manifest.waiting_aids,
+            &manifest.portal_links,
+            &mut delivery_ids,
+        )
+    {
+        return Err(VaultError::Corrupt);
     }
     validate_history(manifest, &mut object_names, &mut object_ids)
 }
@@ -8605,6 +8621,7 @@ mod tests {
             ],
             history: HistoryState::default(),
             portal_links: Vec::new(),
+            waiting_aids: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -14322,6 +14339,7 @@ mod tests {
                 .collect(),
             history: HistoryState::default(),
             portal_links: Vec::new(),
+            waiting_aids: Vec::new(),
         }
     }
 

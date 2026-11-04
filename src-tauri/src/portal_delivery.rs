@@ -48,16 +48,12 @@ pub enum Refusal {
     Replayed,
     /// Reading aids (delivery contract, "Reading aids"): refusals of the second copy.
     #[cfg(feature = "portal-linking")]
-    #[allow(dead_code)]
     TooLarge,
     #[cfg(feature = "portal-linking")]
-    #[allow(dead_code)]
     BadReadingAid,
     #[cfg(feature = "portal-linking")]
-    #[allow(dead_code)]
     ReadingAidHashMismatch,
     #[cfg(feature = "portal-linking")]
-    #[allow(dead_code)]
     PairMismatch,
 }
 
@@ -770,6 +766,20 @@ pub struct AidCustody {
     pub receipt: String,
     pub receipt_outcome: Option<ReceiptOutcome>,
 }
+/// A verified reading aid kept while its original is not filed (contract, step 12): by its
+/// delivery ID and ciphertext hash, so the same copy is never downloaded again and a different
+/// copy under that ID is replayed. It holds the checked manifest and JSON, not the sealed copy,
+/// and is deleted silently at expiry. Format 10; at most `MAX_WAITING_AIDS` in a vault.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WaitingAid {
+    pub link_id: Uuid,
+    pub outer: Outer,
+    pub manifest_compact: String,
+    pub json: String,
+    pub kept_at_ms: u64,
+}
+pub const MAX_WAITING_AIDS: usize = 32;
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReceiptOutcome {
