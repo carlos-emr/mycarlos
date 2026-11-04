@@ -4,6 +4,7 @@ import { translate } from "./support/fluent";
 import {
   FAKE_PASSPHRASE,
   escapeRegExp,
+  fakeCalls,
   fakeVaultWith,
   myRecords,
 } from "./support/vaultFake";
@@ -118,5 +119,55 @@ test("on a phone: unlock, the section tabs, details, hide, Hidden and Restore, b
   await expect(
     page.getByRole("button", { name: LETTER, exact: true }),
   ).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
+
+const PHOTO = "FAKE Photo, Oct 5, 2026.jpg";
+
+test("on a phone: a photo's details offer View photo, the viewer fits the screen, and Close goes back", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, {
+    start: "unlocked",
+    platform: "android",
+    photos: [PHOTO],
+  });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await page.getByRole("button", { name: PHOTO, exact: true }).click();
+  const details = page.getByRole("dialog", { name: PHOTO, exact: true });
+  await expect(details).toBeVisible();
+  const view = details.getByRole("button", {
+    name: en("interface.RecordDetails.viewPhoto"),
+    exact: true,
+  });
+  await view.click();
+  const photo = page
+    .getByRole("dialog", { name: PHOTO, exact: true })
+    .getByRole("img", { name: en("photo.alt", { name: PHOTO }) });
+  await expect(photo).toBeVisible();
+  expect(
+    await photo.evaluate((image: HTMLImageElement) => image.naturalWidth),
+  ).toBeGreaterThan(0);
+  // On the phone's width, nothing runs off the screen: the page, and the
+  // image itself.
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  const box = await photo.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(
+    await page.evaluate(() => window.innerWidth),
+  );
+  expect(await fakeCalls(page, "vault_view_photo")).toHaveLength(1);
+  await page
+    .getByRole("dialog", { name: PHOTO, exact: true })
+    .getByRole("button", { name: en("photo.close"), exact: true })
+    .click();
+  await expect(photo).toBeHidden();
+  await expect(view).toBeVisible();
   await expectOnlyFakedCommands(page);
 });
