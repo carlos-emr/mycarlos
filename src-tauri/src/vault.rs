@@ -48,7 +48,7 @@ mod original_pdf;
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 10;
+const VAULT_FORMAT: u32 = 8;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -484,7 +484,7 @@ struct StoredRecord {
     original_pdf: Option<StoredOriginalPdf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     delivery: Option<crate::portal_delivery::Custody>,
-    /// The clinician-approved reading aid paired with this delivery (format 10).
+    /// The clinician-approved reading aid paired with this delivery (format 8).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reading_aid: Option<crate::portal_delivery::AidCustody>,
 }
@@ -574,7 +574,7 @@ struct Manifest {
     /// Format 3 only.
     #[serde(default, skip_serializing_if = "HistoryState::is_empty")]
     history: HistoryState,
-    /// Format 10. Reading aids verified and kept until their original is filed.
+    /// Format 8. Reading aids verified and kept until their original is filed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     waiting_aids: Vec<crate::portal_delivery::WaitingAid>,
 }
@@ -4682,9 +4682,9 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
                 .as_ref()
                 .is_some_and(|c| !delivery_ids.insert((c.link_id, c.outer.delivery_id.as_str())))
             || !delivery::valid_custody(record, &manifest.portal_links)
-            // Format 10 is the first that can hold a reading aid; an older
+            // Format 8 is the first that can hold a reading aid; an older
             // build would drop the unknown field and with it the receipt.
-            || (manifest.format_version < 10 && record.reading_aid.is_some())
+            || (manifest.format_version < 8 && record.reading_aid.is_some())
             || !delivery::valid_aid_custody(record, &manifest.portal_links)
             || record.reading_aid.as_ref().is_some_and(|a| {
                 !delivery_ids.insert((a.link_id, a.outer.delivery_id.as_str()))
@@ -4703,8 +4703,8 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             return Err(VaultError::Corrupt);
         }
     }
-    // A waiting reading aid (format 10) shares the one delivery-ID space with filed deliveries.
-    if (manifest.format_version < 10 && !manifest.waiting_aids.is_empty())
+    // A waiting reading aid (format 8) shares the one delivery-ID space with filed deliveries.
+    if (manifest.format_version < 8 && !manifest.waiting_aids.is_empty())
         || !delivery::valid_waiting_aids(
             &manifest.waiting_aids,
             &manifest.portal_links,

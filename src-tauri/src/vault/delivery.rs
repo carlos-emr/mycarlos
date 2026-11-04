@@ -2425,7 +2425,7 @@ mod approval_recovery_tests {
             .unwrap()
             .receipt_outcome
             .is_some());
-        // It survives a restart: the validation of format 10 accepts what was written.
+        // It survives a restart: the validation of format 8 accepts what was written.
         let store = restart(store);
         let kept = stored_aid(&store, record_id).unwrap();
         assert_eq!(kept.outer.delivery_id, outer.delivery_id);
