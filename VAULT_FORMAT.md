@@ -509,6 +509,11 @@ right after that unlock's entry, in the same commit). No passphrase or key is ev
 `toTotal`; a place longer than 256 characters is cut there and `placeSha256` holds the SHA-256 of
 the whole, so that no entry can outgrow a segment.
 
+The AI helper's text export (#72 part B) is `copySaved` with `how: "anonymizedText"`, the
+document's `recordId` and `name`, and the `place` the text file was saved, cut and hashed
+as for any copy. Never the text, the details removed or the number of days the dates
+were moved. Older readers show it as a copy saved, with its method as written.
+
 - `hash(entry) = SHA-256("mycarlos/history/v1" ‖ 0x00 ‖ canonical JSON)`, in lower-case hex.
 - `prev` is the previous entry's hash. The first entry's is the genesis value,
   `SHA-256("mycarlos/history/genesis/v1" ‖ the vault id's 16 bytes)`.

@@ -63,6 +63,9 @@ interface SecuritySettingsProps {
   onOpenHidden: () => void;
   focusAuditEntry?: boolean;
   onOpenAuditHistory: () => void;
+  /** Opens the notice about the AI helper (#72), when the helper is offered
+   * on this platform. */
+  onOpenAiHelperNotice?: () => void;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -160,6 +163,7 @@ export function SecuritySettings({
   onOpenHidden,
   focusAuditEntry = false,
   onOpenAuditHistory,
+  onOpenAiHelperNotice,
   people = [],
   onUpdateProfileDetails,
   recoveryKeySetAtMs,
@@ -347,6 +351,19 @@ export function SecuritySettings({
             </p>
           </div>
         </section>
+        {onOpenAiHelperNotice && (
+          <section className="native-setting">
+            <h3>{translateNow("aiHelper.notice.title")}</h3>
+            <p>{translateNow("aiHelper.notice.introShare")}</p>
+            <button
+              className="button"
+              type="button"
+              onClick={onOpenAiHelperNotice}
+            >
+              {translateNow("aiHelper.notice.title")}
+            </button>
+          </section>
+        )}
         <section className="setting-row native-setting-form">
           <div>
             <div className="native-auto-lock-heading">
