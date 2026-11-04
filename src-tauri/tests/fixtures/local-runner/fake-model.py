@@ -10,6 +10,8 @@ file or opens a connection. Modes, by argument:
   --unlocated       answers with a quote the document does not contain
   --long-line       answers with one line far over the runner's limit
   --refuse          answers every request with a long error text
+  --spawn-child F   starts a long-running child and writes its pid to F
+  --allocate N      takes N bytes of memory before greeting
 """
 import json
 import sys
@@ -17,6 +19,17 @@ import time
 
 args = sys.argv[1:]
 slow = float(args[args.index("--slow") + 1]) if "--slow" in args else 0.0
+if "--allocate" in args:
+    try:
+        held = bytearray(int(args[args.index("--allocate") + 1]))
+    except MemoryError:
+        sys.exit(3)
+if "--spawn-child" in args:
+    import subprocess
+
+    child = subprocess.Popen(["sleep", "600"])
+    with open(args[args.index("--spawn-child") + 1], "w") as pid_file:
+        pid_file.write(str(child.pid))
 if "--mute" in args:
     time.sleep(3600)
     sys.exit(0)

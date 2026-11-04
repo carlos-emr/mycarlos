@@ -12,7 +12,12 @@
 //!    load, and refuse an unverified file;
 //! 2. name the command with an absolute path, the model's licence shown and
 //!    the "Built with Llama" line if that is the model;
-//! 3. bound the process (threads, memory) as the PDF helper is bounded;
+//! 3. set the model's thread count in its arguments, and bound it on
+//!    Windows with a job object as the PDF helper is bounded (on unix the
+//!    runner already starts it in its own process group, stops the whole
+//!    group, and on Linux caps its data size: [`RunnerConfig::memory_limit_bytes`]);
+//!    add the macOS and Windows memory probes, which until then report
+//!    unknown, so the budget refuses there;
 //! 4. fill [`install`] from the app state so that a lock stops the process;
 //! 5. wire `ai_model_status` and the reader's actions to [`Runner`].
 //!
@@ -79,6 +84,10 @@ pub(crate) struct RunnerConfig {
     pub(crate) start_timeout: Duration,
     /// The longest wait for one answer.
     pub(crate) answer_timeout: Duration,
+    /// The most data memory the process may take (Linux, `RLIMIT_DATA`):
+    /// above it, allocations fail and the model ends instead of taking the
+    /// computer down. `None` sets no limit. Other platforms do not enforce it.
+    pub(crate) memory_limit_bytes: Option<u64>,
 }
 
 /// Reads how much memory this device has free for a model.
@@ -267,6 +276,14 @@ struct Sidecar {
 impl Sidecar {
     /// Stops the process and waits for it, so that nothing of it is left.
     fn stop(&mut self) {
+        // On unix the model is its own process group (see `bound`): a wrapper
+        // and anything it started go with it.
+        #[cfg(unix)]
+        if let Ok(group) = libc::pid_t::try_from(self.child.id()) {
+            // SAFETY: the group is the model's own, made by setpgid before it
+            // started; a group already gone only makes this fail.
+            unsafe { libc::killpg(group, libc::SIGKILL) };
+        }
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -413,6 +430,7 @@ impl Runner {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        bound(&mut command, self.config.memory_limit_bytes);
         let mut child = command
             .spawn()
             .map_err(|error| RunnerError::Start(format!("cannot start: {error}")))?;
@@ -620,6 +638,47 @@ impl Drop for Runner {
     }
 }
 
+/// Starts the model in its own process group, so that stopping it stops
+/// whatever it started too, without core dumps, and on Linux with its data
+/// size capped.
+#[cfg(unix)]
+fn bound(command: &mut Command, memory_limit_bytes: Option<u64>) {
+    use std::os::unix::process::CommandExt;
+    // Computed before the fork: nothing is allocated between fork and exec.
+    #[cfg(target_os = "linux")]
+    let data = memory_limit_bytes.map(|bytes| (libc::RLIMIT_DATA, bytes as libc::rlim_t));
+    #[cfg(not(target_os = "linux"))]
+    let data: Option<(libc::c_int, libc::rlim_t)> = {
+        let _ = memory_limit_bytes;
+        None
+    };
+    let limits = [Some((libc::RLIMIT_CORE, 0 as libc::rlim_t)), data];
+    // SAFETY: only setpgid and setrlimit, which are async-signal-safe, run
+    // between fork and exec, on values computed before the fork.
+    unsafe {
+        command.pre_exec(move || {
+            if libc::setpgid(0, 0) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            for (resource, value) in limits.into_iter().flatten() {
+                let limit = libc::rlimit {
+                    rlim_cur: value,
+                    rlim_max: value,
+                };
+                if libc::setrlimit(resource as _, &limit) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+            Ok(())
+        });
+    }
+}
+
+/// Elsewhere the model starts as it is; the model PR bounds it (see the
+/// checklist at the top).
+#[cfg(not(unix))]
+fn bound(_command: &mut Command, _memory_limit_bytes: Option<u64>) {}
+
 /// Feeds the model's output to the channel, one line at a time, each at
 /// most `MAX_LINE_BYTES`: a longer one is an error, and the end of reading.
 fn read_lines(output: std::process::ChildStdout, sender: &mpsc::Sender<std::io::Result<String>>) {
@@ -820,6 +879,7 @@ mod tests {
             needed_bytes: GIB,
             start_timeout: Duration::from_secs(1),
             answer_timeout: Duration::from_secs(1),
+            memory_limit_bytes: None,
         }
     }
 
@@ -893,6 +953,7 @@ mod tests {
                 needed_bytes,
                 start_timeout: Duration::from_secs(10),
                 answer_timeout: Duration::from_secs(10),
+                memory_limit_bytes: None,
             }
         }
 
@@ -1078,6 +1139,57 @@ mod tests {
             );
             assert!(!runner.is_running());
             assert!(matches!(runner.status(), RunnerStatus::Failed { .. }));
+        }
+
+        #[test]
+        fn stopping_the_model_stops_what_it_started() {
+            let dir = tempfile::tempdir().unwrap();
+            let pid_file = dir.path().join("child.pid");
+            let pid_arg = pid_file.to_str().unwrap().to_owned();
+            let runner = Runner::new(config(&["--spawn-child", &pid_arg], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let child: libc::pid_t = std::fs::read_to_string(&pid_file)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            // SAFETY: signal 0 only asks whether the process exists.
+            assert_eq!(unsafe { libc::kill(child, 0) }, 0);
+            runner.stop();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            // Gone, or a zombie its new parent has yet to reap: either way not
+            // running. Read its state where /proc has it.
+            loop {
+                let state = std::fs::read_to_string(format!("/proc/{child}/stat")).ok();
+                // SAFETY: as above.
+                let exists = unsafe { libc::kill(child, 0) } == 0;
+                let zombie = state
+                    .as_deref()
+                    .and_then(|stat| stat.rsplit(')').next())
+                    .is_some_and(|rest| rest.trim_start().starts_with('Z'));
+                if !exists || zombie {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "the model's child still runs");
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn a_model_over_its_memory_limit_ends_instead_of_starting() {
+            let mut limited = config(&["--allocate", "536870912"], GIB);
+            limited.memory_limit_bytes = Some(256 * 1024 * 1024);
+            let runner = Runner::new(limited);
+            assert_eq!(
+                runner.start(&Fixed(Some(8 * GIB))),
+                Err(RunnerError::Start("ended before its hello".to_owned()))
+            );
+            assert!(!runner.is_running());
+            // The same model with no limit starts.
+            let free = Runner::new(config(&["--allocate", "536870912"], GIB));
+            free.start(&Fixed(Some(8 * GIB))).unwrap();
+            assert!(free.is_running());
         }
 
         #[test]
