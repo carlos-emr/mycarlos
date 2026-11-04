@@ -113,14 +113,19 @@ where
     };
     use serde::Deserialize;
     let cancelled = || store.portal_link_ticket() != session;
-    let send = |link: &StoredLink, c: &crate::portal_delivery::Custody| -> Result<(), VaultError> {
+    // Posts one kept receipt (an original's or a reading aid's) and returns what the
+    // portal answered; settling it in the vault is the caller's step.
+    let post_receipt = |link: &StoredLink,
+                        delivery_id: &str,
+                        receipt: &str|
+     -> Result<ReceiptOutcome, VaultError> {
         let anchor = store.delivery_anchor(link, session)?;
-        let body = serde_json::to_vec(&serde_json::json!({"receipt":c.receipt}))
+        let body = serde_json::to_vec(&serde_json::json!({"receipt":receipt}))
             .map_err(|_| VaultError::Storage)?;
         let response = exchange(
             link,
             "POST",
-            &format!("/api/mycarlos/deliveries/{}/receipt", c.outer.delivery_id),
+            &format!("/api/mycarlos/deliveries/{delivery_id}/receipt"),
             body,
             Some(&anchor),
             8192,
@@ -137,22 +142,41 @@ where
         struct Code {
             code: String,
         }
-        let outcome = match response.status {
+        match response.status {
             200 if serde_json::from_slice::<Status>(&response.body)
                 .ok()
                 .is_some_and(|v| v.status == "picked_up") =>
             {
-                ReceiptOutcome::PickedUp
+                Ok(ReceiptOutcome::PickedUp)
             }
             404 if serde_json::from_slice::<Code>(&response.body)
                 .ok()
                 .is_some_and(|v| v.code == "delivery_not_found") =>
             {
-                ReceiptOutcome::Gone
+                Ok(ReceiptOutcome::Gone)
             }
-            _ => return Err(VaultError::Portal(LinkError::Network)),
-        };
+            _ => Err(VaultError::Portal(LinkError::Network)),
+        }
+    };
+    let send = |link: &StoredLink, c: &crate::portal_delivery::Custody| -> Result<(), VaultError> {
+        let outcome = post_receipt(link, &c.outer.delivery_id, &c.receipt)?;
         store.settle_receipt(link, c, outcome, session)
+    };
+    let send_aid =
+        |link: &StoredLink, a: &crate::portal_delivery::AidCustody| -> Result<(), VaultError> {
+            let outcome = post_receipt(link, &a.outer.delivery_id, &a.receipt)?;
+            store.settle_aid_receipt(link, a, outcome, session)
+        };
+    // Both kinds of kept receipt for one link, in one place.
+    let send_pending = |link: &StoredLink| -> Result<(), VaultError> {
+        let pending = store.pending_receipts_checked(link, session)?;
+        for c in &pending.ready {
+            send(link, c)?;
+        }
+        for a in &pending.ready_aids {
+            send_aid(link, a)?;
+        }
+        Ok(())
     };
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -181,9 +205,7 @@ where
             // Known durable custody is independent of advisory approval refresh.
             // Retry it first, including for a link whose new request was refused.
             // Damaged records are skipped here and reported once below.
-            for c in store.pending_receipts_checked(&original, session)?.ready {
-                send(&original, &c)?;
-            }
+            send_pending(&original)?;
             let (link, warning) =
                 store.refresh_staff_approval_for_check(&original, session, approval)?;
             if let Some(error) = warning {
@@ -193,14 +215,22 @@ where
             let mut through = None;
             let mut seen = std::collections::HashSet::new();
             let mut download_failures = 0;
+            // The kinds this device understands, named in every listing: the portal only
+            // lists a reading aid to a device that asks for it (a format-version guard).
+            let accept = format!("accept={}", crate::reading_aid::accepted_kinds().join(","));
+            // Reading aids wait until every original of this check is filed, so an aid
+            // delivered with its original is filed in the same check.
+            let mut aids: Vec<Outer> = Vec::new();
             for page_number in 0..100 {
                 if cancelled() {
                     return Err(VaultError::Cancelled);
                 }
                 let suffix = match through {
-                    None => "/api/mycarlos/deliveries?limit=50".to_owned(),
+                    None => format!("/api/mycarlos/deliveries?limit=50&{accept}"),
                     Some(t) => {
-                        format!("/api/mycarlos/deliveries?after={after}&through={t}&limit=50")
+                        format!(
+                            "/api/mycarlos/deliveries?after={after}&through={t}&limit=50&{accept}"
+                        )
                     }
                 };
                 let anchor = store.delivery_anchor(&link, session)?;
@@ -234,6 +264,13 @@ where
                         .map_err(|_| VaultError::Portal(LinkError::InvalidResponse))?;
                     if !seen.insert(outer.delivery_id.clone()) {
                         return Err(VaultError::Portal(LinkError::InvalidResponse));
+                    }
+                    if outer.kind.is_some() {
+                        match crate::reading_aid::check_listing(&outer) {
+                            Ok(()) => aids.push(outer),
+                            Err(_) => result.refused += 1,
+                        }
+                        continue;
                     }
                     // A delivery that can't be downloaded is reported and
                     // skipped: the clinic's later deliveries are still fetched,
@@ -285,9 +322,7 @@ where
                     match store.receive_delivery(&outer, &response.body, &link, session) {
                         Ok((_, added)) => {
                             result.added += usize::from(added);
-                            for c in store.pending_receipts_checked(&link, session)?.ready {
-                                send(&link, &c)?;
-                            }
+                            send_pending(&link)?;
                         }
                         Err(VaultError::PickupRefused) => result.refused += 1,
                         Err(error) => return Err(error),
@@ -302,6 +337,39 @@ where
                         }
                         after = next;
                     }
+                }
+            }
+            for outer in aids {
+                if cancelled() {
+                    return Err(VaultError::Cancelled);
+                }
+                let response = match exchange(
+                    &link,
+                    "GET",
+                    &format!("/api/mycarlos/deliveries/{}", outer.delivery_id),
+                    Vec::new(),
+                    None,
+                    outer.size as usize,
+                    &cancelled,
+                ) {
+                    Ok(response) if response.status == 200 => response,
+                    // Gone or unavailable: the next check asks again.
+                    Ok(_) => continue,
+                    Err(error) => {
+                        let error = VaultError::Portal(error);
+                        if !is_per_link_failure(&error) {
+                            return Err(error);
+                        }
+                        add_issue(&mut result, &link, error);
+                        continue;
+                    }
+                };
+                match store.receive_aid(&outer, &response.body, &link, session) {
+                    // Waiting for its original: kept on the portal, no receipt, looked at
+                    // again by the next check.
+                    Ok(_) => send_pending(&link)?,
+                    Err(VaultError::PickupRefused) => result.refused += 1,
+                    Err(error) => return Err(error),
                 }
             }
             Ok(())

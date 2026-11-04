@@ -961,3 +961,25 @@ issues while independent links continue. Global lock, cancellation, corruption,
 recovery or storage failures still stop the operation. Saved documents with an
 unconfirmed receipt remain pending and preserve the exact compact bytes for the
 next check; pending count and clinic guidance are shown together with progress.
+
+#### Format 10: reading aids kept with their original
+
+Formats 8 and 9 are taken by other branches (8: remembered refused deliveries,
+#161; 9: the AI summary branches). Format 10 adds one optional field to a
+record, `readingAid`: the clinician-approved reading aid paired with that
+record's clinic delivery (carlos-portal delivery contract, "Reading aids"). It
+holds the aid's outer record (`kind` "reading-aid/1"), the signed compact
+manifest, the aid's JSON exactly as hashed, when it was checked, the anchored
+history head, the receipt signed at filing and the receipt outcome once the
+portal answers. An older build refuses a format 10 vault, so none can drop the
+field and with it an unsent receipt. A record can hold a reading aid only in
+format 10 or later, only with a clinic delivery, and only when the aid's pair
+claims name that delivery and the PDF hash of its original.
+
+A reading aid is filed only while its original is filed, in one commit with a
+`readingAidFiled` history event; an aid whose original is not filed yet is not
+kept and gets no receipt, because the portal still lists it for the next check.
+Its receipt is retried like an original's, only while the original's saved file
+reads back. The check names `accept=reading-aid/1` in every listing, and files
+aids after the originals of the same check. Header, object and original-PDF
+formats are unchanged, and the aid adds no object file.

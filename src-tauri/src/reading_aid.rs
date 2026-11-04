@@ -9,7 +9,7 @@ use crate::portal_delivery::{
     Receipt, Refusal, MAX_COMPACT,
 };
 use crate::portal_link::{frame, StoredLink};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use zeroize::Zeroizing;
@@ -28,20 +28,20 @@ const MAX_POINTS: usize = 50;
 const MAX_EVIDENCE: usize = 5;
 const SKEW_SECONDS: u64 = 86_400;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Patient {
     pub name: String,
     pub birth_date: String,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pair {
     pub pair_id: String,
     pub original_delivery_id: String,
     pub original_document_sha256: String,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AidClaim {
     pub media_type: String,
@@ -53,7 +53,7 @@ pub struct AidClaim {
     pub revised_at: Option<u64>,
     pub notice_version: String,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Approval {
     pub id: String,
@@ -61,7 +61,7 @@ pub struct Approval {
     pub reviewed_at: u64,
 }
 /// The aid's signed manifest: exactly the contract's fifteen claims.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AidManifest {
     pub v: u8,

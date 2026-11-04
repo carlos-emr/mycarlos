@@ -753,6 +753,23 @@ pub struct Custody {
     pub receipt: String,
     pub receipt_outcome: Option<ReceiptOutcome>,
 }
+/// A reading aid the vault holds (format 10), kept on the record of the original it reads:
+/// the signed manifest, the checked JSON and the receipt signed at filing. Like `Custody`
+/// it lives inside the encrypted manifest. The manifest is kept as its signed compact form
+/// and parsed where its claims are needed, so this type exists in every build.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AidCustody {
+    pub link_id: Uuid,
+    pub outer: Outer,
+    pub manifest_compact: String,
+    /// The aid's JSON, exactly the bytes whose hash the manifest signs.
+    pub json: String,
+    pub checked_at_ms: u64,
+    pub anchor_head: String,
+    pub receipt: String,
+    pub receipt_outcome: Option<ReceiptOutcome>,
+}
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReceiptOutcome {

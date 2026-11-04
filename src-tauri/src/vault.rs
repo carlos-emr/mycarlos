@@ -46,7 +46,7 @@ mod original_pdf;
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 7;
+const VAULT_FORMAT: u32 = 10;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -479,6 +479,9 @@ struct StoredRecord {
     original_pdf: Option<StoredOriginalPdf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     delivery: Option<crate::portal_delivery::Custody>,
+    /// The clinician-approved reading aid paired with this delivery (format 10).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reading_aid: Option<crate::portal_delivery::AidCustody>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2083,6 +2086,7 @@ impl VaultStore {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
                 };
                 // Preserve raw bytes before helper parsing/rendering, including
                 // unsigned or too-large PDFs whose signatures cannot be ruled
@@ -4297,6 +4301,13 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
                 .as_ref()
                 .is_some_and(|c| !delivery_ids.insert((c.link_id, c.outer.delivery_id.as_str())))
             || !delivery::valid_custody(record, &manifest.portal_links)
+            // Format 10 is the first that can hold a reading aid; an older
+            // build would drop the unknown field and with it the receipt.
+            || (manifest.format_version < 10 && record.reading_aid.is_some())
+            || !delivery::valid_aid_custody(record, &manifest.portal_links)
+            || record.reading_aid.as_ref().is_some_and(|a| {
+                !delivery_ids.insert((a.link_id, a.outer.delivery_id.as_str()))
+            })
         {
             return Err(VaultError::Corrupt);
         }
@@ -8572,6 +8583,7 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
                 },
                 StoredRecord {
                     id: second_record,
@@ -8588,6 +8600,7 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
                 },
             ],
             history: HistoryState::default(),
@@ -14304,6 +14317,7 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
                 })
                 .collect(),
             history: HistoryState::default(),
