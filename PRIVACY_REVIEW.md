@@ -413,7 +413,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     date (a birth, or an event named in the text) can still work out all the others from the
     gaps, and the same document gives the same marks and gaps every time it is exported (there is
     no random number to differ between exports). A very old date also makes every gap large. Is
-    that acceptable, or should the gaps be left out, or only some dates be given a gap?
+    that acceptable, or should the gaps be left out, or only some dates be given a gap? And a year
+    on its own with no cue word ("Appendectomy 2019", "(2019)") is not removed, because treating
+    every 19xx or 20xx as a date would also hit "2019 tablets": together with the gaps, one dated
+    event a reader knows can anchor every mark. Should a bare year be treated as a date, accepting
+    that cost, or left as it is and named in the notice, as now?
 19. **How the model reaches the device:** #72 has the patient download the model. To keep
     myCarlos from making any network connection, the design proposes that the patient adds the
     file instead (`THREAT_MODEL.md` D-10). Either way the download site sees the device's address
@@ -448,13 +452,16 @@ and French text, health card and medical record numbers (after any of 24 labels)
 (such as lab order numbers), social insurance numbers (SIN, NAS) written with points, spaces or
 hyphens, dates of birth, ages of 90 and over, addresses, postal codes, phone and fax
 numbers, email and web addresses, and the names of clinics and doctors, and removes them. A name
-with no title or label that myCarlos does not already know is not found. No date is sent. Each other date that myCarlos recognises (written in English or French) is
+with no title or label that myCarlos does not already know is not found. No date that myCarlos recognises is sent (written in English or French, in the common forms:
+ISO dates and timestamps, ordinals, day-month-year with hyphens, slashes or full stops, eight
+digits such as 20261008, a day and month with no year, and a range of days). Each such date is
 replaced by a numbered mark in calendar order, such as "DATE 2, 14 days after DATE 1": the same
 real date always has the same number, and the note says how far it falls after the earliest date,
 so the time between dates stays clear without the dates. A numeric date that could be read two
 ways (03/04/2025), a month and year and a year alone get a plain numbered mark with no gap. An age
 of 90 or over becomes a numbered mark that says "90+". A date it does not recognise (for
-example one written in Spanish, Polish, Portuguese or Chinese) stays as it was, unmarked.
+example one written in Spanish, Polish, Portuguese or Chinese) stays as it was, unmarked, and so
+does a year on its own, such as the 2019 in "Appendectomy 2019". The notice says both.
 
 **Putting the details back.** The app can put the details back into an answer that came back
 with the placeholders, on the device. After the text is saved, the preview has a box for the
