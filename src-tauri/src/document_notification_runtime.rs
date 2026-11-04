@@ -59,14 +59,7 @@ impl Status {
     }
 }
 
-#[cfg(any(
-    test,
-    all(
-        windows,
-        feature = "document-notifications",
-        feature = "portal-linking"
-    )
-))]
+#[cfg(any(test, windows))]
 pub(crate) mod active {
     use super::*;
     use atomicwrites::{AllowOverwrite, AtomicFile};
@@ -169,11 +162,7 @@ pub(crate) mod active {
     }
 
     impl Runtime {
-        #[cfg(all(
-            windows,
-            feature = "document-notifications",
-            feature = "portal-linking"
-        ))]
+        #[cfg(windows)]
         pub fn new(path: PathBuf, app_id: String) -> Self {
             Self::load(
                 path,
@@ -183,14 +172,7 @@ pub(crate) mod active {
             )
         }
 
-        #[cfg(all(
-            test,
-            not(all(
-                windows,
-                feature = "document-notifications",
-                feature = "portal-linking"
-            ))
-        ))]
+        #[cfg(all(test, not(windows)))]
         pub fn new(path: PathBuf, _app_id: String) -> Self {
             struct Unavailable;
             impl Backend for Unavailable {
@@ -327,7 +309,7 @@ pub(crate) mod active {
                 Ordering::Release,
             );
         }
-        #[cfg(all(test, feature = "portal-linking"))]
+        #[cfg(test)]
         pub(crate) fn load_for_test(path: PathBuf, backend: Box<dyn Backend>) -> Self {
             Self::load(path, backend)
         }
@@ -362,15 +344,7 @@ pub(crate) mod active {
                     && guard.as_ref().is_some_and(|s| {
                         s.enabled && s.automatic_checks_enabled && s.automatic_consent_version == 1
                     }),
-                automatic_checks_supported: cfg!(any(
-                    test,
-                    all(
-                        windows,
-                        feature = "document-notifications",
-                        feature = "portal-linking",
-                        feature = "document-automatic-checks"
-                    )
-                )),
+                automatic_checks_supported: cfg!(any(test, windows)),
                 automatic_checks_paused: false,
                 permission: self.backend.permission(),
                 last_outcome: guard
@@ -1099,33 +1073,12 @@ pub(crate) mod active {
     }
 }
 
-#[cfg(any(
-    test,
-    all(
-        windows,
-        feature = "document-notifications",
-        feature = "portal-linking"
-    )
-))]
+#[cfg(any(test, windows))]
 pub use active::Runtime;
 
-#[cfg(not(any(
-    test,
-    all(
-        windows,
-        feature = "document-notifications",
-        feature = "portal-linking"
-    )
-)))]
+#[cfg(not(any(test, windows)))]
 pub struct Runtime;
-#[cfg(not(any(
-    test,
-    all(
-        windows,
-        feature = "document-notifications",
-        feature = "portal-linking"
-    )
-)))]
+#[cfg(not(any(test, windows)))]
 impl Runtime {
     pub fn new(_path: PathBuf, _app_id: String) -> Self {
         Self

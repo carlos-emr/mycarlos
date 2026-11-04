@@ -6,33 +6,13 @@ use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
-#[cfg_attr(
-    not(all(
-        windows,
-        feature = "document-notifications",
-        feature = "portal-linking",
-        feature = "document-automatic-checks"
-    )),
-    allow(dead_code)
-)]
+#[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection;
-#[cfg(feature = "portal-linking")]
-#[cfg_attr(
-    not(all(
-        windows,
-        feature = "document-notifications",
-        feature = "document-automatic-checks"
-    )),
-    allow(dead_code)
-)]
+#[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection_pickup;
 mod document_identity;
 pub mod document_notification_runtime;
-#[cfg(all(
-    windows,
-    feature = "document-notifications",
-    feature = "portal-linking"
-))]
+#[cfg(windows)]
 mod document_notification_windows;
 pub mod document_notifications;
 mod history;
@@ -286,7 +266,6 @@ impl From<VaultError> for PublicText {
                 code: "invalid",
                 message_key: "language.error.formatting",
             },
-            #[cfg(feature = "portal-linking")]
             VaultError::ApprovalTerminal(state, reason) => match state {
                 portal_approval::ApprovalState::Expired => Self {
                     code: "approval_expired",
@@ -305,17 +284,14 @@ impl From<VaultError> for PublicText {
                     message_key: "portal.approvalRefused",
                 },
             },
-            #[cfg(feature = "portal-linking")]
             VaultError::ApprovalRequestMissing => Self {
                 code: "approval_missing",
                 message_key: "portal.approvalMissing",
             },
-            #[cfg(feature = "portal-linking")]
             VaultError::ApprovalNeedsClinic => Self {
                 code: "approval_contact_clinic",
                 message_key: "portal.approvalContact",
             },
-            #[cfg(feature = "portal-linking")]
             VaultError::PickupRefused => Self {
                 code: "pickup_refused",
                 message_key: "portal.errorRefused",
@@ -323,10 +299,6 @@ impl From<VaultError> for PublicText {
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
                 match reason {
-                    LinkError::Disabled => Self {
-                        code: "portal_link_disabled",
-                        message_key: "portal.errorDisabled",
-                    },
                     LinkError::Unavailable => Self {
                         code: "portal_link_unavailable",
                         message_key: "portal.errorUnavailable",
@@ -470,7 +442,6 @@ impl From<VaultError> for PublicText {
                 code: "storage",
                 message_key: "native.error.35",
             },
-            #[cfg(feature = "portal-linking")]
             VaultError::DocumentCheckBusy => Self {
                 code: "document_check_busy",
                 message_key: "notifications.checkBusy",
@@ -1857,9 +1828,6 @@ async fn vault_portal_link(
     store: State<'_, Arc<VaultStore>>,
     request: PortalLinkRequest,
 ) -> CommandResult<portal_link::LinkSummary> {
-    if !portal_link::enabled() {
-        return Err(VaultError::Portal(portal_link::LinkError::Disabled).into());
-    }
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
@@ -1889,20 +1857,12 @@ async fn vault_request_device_approval(
     store: State<'_, Arc<VaultStore>>,
     link_id: Uuid,
 ) -> CommandResult<()> {
-    #[cfg(not(feature = "portal-linking"))]
-    {
-        let _ = (store, link_id);
-        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
-    }
-    #[cfg(feature = "portal-linking")]
-    {
-        let session = store.portal_link_ticket();
-        let store = Arc::clone(store.inner());
-        tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
-            .await
-            .map_err(|_| PublicError::from(VaultError::Storage))?
-            .map_err(Into::into)
-    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -1910,40 +1870,24 @@ async fn vault_restart_device_approval(
     store: State<'_, Arc<VaultStore>>,
     link_id: Uuid,
 ) -> CommandResult<()> {
-    #[cfg(not(feature = "portal-linking"))]
-    {
-        let _ = (store, link_id);
-        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
-    }
-    #[cfg(feature = "portal-linking")]
-    {
-        let session = store.portal_link_ticket();
-        let store = Arc::clone(store.inner());
-        tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
-            .await
-            .map_err(|_| PublicError::from(VaultError::Storage))?
-            .map_err(Into::into)
-    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
 }
 
 #[tauri::command]
 async fn vault_check_documents(
     store: State<'_, Arc<VaultStore>>,
 ) -> CommandResult<portal_pickup::CheckResult> {
-    #[cfg(not(feature = "portal-linking"))]
-    {
-        let _ = store;
-        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
-    }
-    #[cfg(feature = "portal-linking")]
-    {
-        let session = store.portal_link_ticket();
-        let store = Arc::clone(store.inner());
-        tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
-            .await
-            .map_err(|_| PublicError::from(VaultError::Storage))?
-            .map_err(Into::into)
-    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -4035,12 +3979,7 @@ pub fn run() {
                     .join("document-notifications-v1.json"),
                 app.config().identifier.clone(),
             );
-            #[cfg(all(
-                windows,
-                feature = "document-notifications",
-                feature = "portal-linking",
-                feature = "document-automatic-checks"
-            ))]
+            #[cfg(windows)]
             store.start_document_collection()?;
             app.manage(store);
             // Wrong tries at a secret, counted beside the vault in
@@ -6494,7 +6433,6 @@ mod native_localization_tests {
         for error in [
             VaultError::NewerFormat,
             VaultError::BackupNewerFormat,
-            VaultError::Portal(LinkError::Disabled),
             VaultError::Portal(LinkError::Unavailable),
             VaultError::Portal(LinkError::InvalidPortal),
             VaultError::Portal(LinkError::InvalidCode),
@@ -6509,7 +6447,6 @@ mod native_localization_tests {
             let text = PublicText::from(error);
             assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
         }
-        #[cfg(feature = "portal-linking")]
         {
             use crate::portal_approval::{ApprovalReason, ApprovalState};
             for error in [

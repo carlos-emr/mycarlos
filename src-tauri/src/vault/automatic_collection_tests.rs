@@ -1,8 +1,7 @@
-//! SOURCE ONLY: import as a cfg(test, portal-linking) child of vault.
+//! SOURCE ONLY: import as a cfg(test) child of vault.
 //! Uses the actual VaultStore and check_cycle with checked-in signed approvals.
 //! HTTP is a deterministic synthetic exchange; no socket, PDF helper, timer,
 //! successful custody, installed Windows or execution claim is made here.
-#![cfg(feature = "portal-linking")]
 
 use super::*;
 use crate::{

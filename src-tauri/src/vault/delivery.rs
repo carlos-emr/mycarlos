@@ -1,15 +1,10 @@
 //! Native custody transaction. No network call is permitted while a vault lock is held.
 use super::*;
 use crate::portal_delivery::{self as wire, Receipt};
-#[cfg(feature = "portal-linking")]
 use crate::portal_delivery::{Custody, ReceiptOutcome};
 use crate::portal_link::KeyStatus;
 
-#[cfg(all(
-    windows,
-    feature = "document-notifications",
-    feature = "portal-linking"
-))]
+#[cfg(windows)]
 impl VaultStore {
     /// Only a freshly committed local custody record, never a renderer count or remote hint.
     pub(crate) fn notify_local_arrival(&self, record_id: Uuid, link: &StoredLink, session: u64) {
@@ -141,7 +136,6 @@ pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool
 /// One link's unsettled receipts: the ones whose documents still read back,
 /// and how many were skipped because a document the vault still shows is
 /// damaged.
-#[cfg(feature = "portal-linking")]
 #[derive(Default)]
 pub(crate) struct PendingReceipts {
     pub ready: Vec<Custody>,
@@ -161,7 +155,6 @@ pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Op
         .then(|| clinic.clinic_name.clone())
 }
 
-#[cfg(feature = "portal-linking")]
 impl VaultStore {
     pub(crate) fn check_documents(
         &self,
@@ -772,7 +765,7 @@ impl VaultStore {
     }
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 mod unknown_service_date_tests {
     use super::*;
     use serde_json::{json, Value};
@@ -975,7 +968,7 @@ mod unknown_service_date_tests {
     }
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::Value;
@@ -1193,15 +1186,12 @@ mod tests {
     }
 }
 
-#[cfg(feature = "portal-linking")]
 use crate::portal_approval::{ApprovalExchange, ApprovalHttp};
-#[cfg(feature = "portal-linking")]
 struct ApprovalReconciliation {
     saved: StoredLink,
     missing: bool,
     deferred: Option<VaultError>,
 }
-#[cfg(feature = "portal-linking")]
 impl VaultStore {
     pub(crate) fn request_staff_approval(
         &self,
@@ -1494,7 +1484,7 @@ impl VaultStore {
     }
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 mod approval_recovery_tests {
     use super::*;
     use crate::portal_approval::{self, ApprovalReason as Reason, ApprovalState as State, Attempt};
@@ -2865,7 +2855,7 @@ mod approval_recovery_tests {
 
 // Narrow existing saved-custody input seam for automatic collection fault tests.
 // This is absent from product builds and never grants new clinic signature trust.
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(super) fn automatic_pending_fixture_for_test(store: &VaultStore, link: &StoredLink) -> Uuid {
     approval_recovery_tests::add_unsent_delivery_for(store, link)
 }
