@@ -867,6 +867,7 @@ native-setAside-title = ¿Apartar esta bóveda de myCarlos y empezar de nuevo?
 native-setAside-warning = Esto aparta la bóveda entera y empieza de nuevo con una vacía. { $kept } myCarlos nunca la elimina. Si está empezando de nuevo porque otra persona podría conocer su frase de contraseña, esa persona todavía puede abrir la bóveda apartada, así que elimine esa bóveda. { $removal }
 
 native-vault-keep = Conservar esta bóveda
+native-notice-arrival = Ha llegado un documento de la clínica a myCarlos. Abra myCarlos para leerlo.
 
 notice-autoLockSet =
     { $count ->
@@ -1644,3 +1645,16 @@ interface-history-title = Historial de auditoría
 interface-history-to = Hasta
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos también conserva un historial: cuándo se abrió la bóveda; cuándo se configuró o cambió su frase de contraseña o clave de recuperación, y cuándo se guardó o restauró una copia de seguridad; cuándo se añadió cada perfil de paciente y se creó, cambió de nombre o movió cada carpeta; y cuándo se añadió, cambió de nombre, movió, ocultó, restauró o guardó fuera de myCarlos cada documento, y dónde se guardó. Se cifra junto con todo lo demás. Puede consultarlo aquí; myCarlos nunca lo modifica ni lo elimina.
+
+notifications-title = Avisos después de revisar los documentos
+notifications-help = Cuando se guarda un documento de la clínica tras una revisión manual, Windows puede mostrar un aviso general. Abra myCarlos normalmente para leerlo. Los documentos no se revisan automáticamente.
+notifications-allow = Permitir avisos de llegada de documentos
+notifications-blocked = Windows está bloqueando las notificaciones. Revise sus ajustes de notificaciones.
+notifications-unknown = No se pudo comprobar el permiso de notificaciones de Windows.
+notifications-error = No se pudo guardar este ajuste. Los avisos están desactivados durante esta sesión.
+notifications-unavailable = Los avisos de documentos no están disponibles. Abra myCarlos normalmente para consultar sus documentos.
+notifications-helpAutomatic = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
+notifications-autoAllow = Buscar documentos de las clínicas automáticamente mientras la bóveda esté desbloqueada
+notifications-autoHelp = Con su permiso, myCarlos consulta los enlaces guardados y aprobados de las clínicas mientras esta aplicación está abierta y la bóveda está desbloqueada, con al menos dos minutos entre intentos. Las consultas pueden continuar si Windows bloquea los avisos. Bloquear la bóveda o cerrar la aplicación detiene las consultas posteriores.
+notifications-autoPaused = Se necesita una consulta manual para continuar las consultas automáticas. Abra Documentos de la clínica y elija Buscar documentos nuevos.
+notifications-checkBusy = Se está deteniendo una consulta de documentos. Vuelva a elegir Buscar documentos nuevos dentro de un momento.

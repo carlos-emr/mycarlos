@@ -15,6 +15,13 @@ default = []
 # Evaluation only. The native link command refuses before any write or request
 # unless this build feature is explicitly selected; renderer state cannot enable it.
 portal-linking = ["dep:reqwest", "dep:rustls", "dep:rustls-platform-verifier", "dep:tokio", "dep:hpke"]
+# Windows local-arrival evaluation; does not enable portal-linking or remote push.
+# Both evaluation features must be explicitly selected.
+document-notifications = ["windows/UI_Notifications", "windows/Data_Xml_Dom", "windows/Win32_System_WinRT"]
+
+# Separate evaluation timer gate: never selected by the normal notice feature.
+# Select all three explicitly only after source/fault/native validation release.
+document-automatic-checks = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

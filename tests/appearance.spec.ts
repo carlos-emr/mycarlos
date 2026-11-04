@@ -23,6 +23,17 @@ async function fakeVault(
           calls.push(command);
           if (command === "runtime_info") return { platform };
           if (command === "vault_status") return status;
+          if (command === "vault_notification_status")
+            return {
+              supported: false,
+              available: false,
+              enabled: false,
+              permission: "unavailable",
+              automaticChecksEnabled: false,
+              automaticChecksSupported: false,
+              automaticChecksPaused: false,
+              lastOutcome: null,
+            };
           if (command === "vault_snapshot")
             return {
               capture: { epoch: captureEpoch, sequence: ++captureSequence },
@@ -360,6 +371,7 @@ test("remembers appearance and follows live system changes without vault mutatio
         command.startsWith("vault_") &&
         ![
           "vault_status",
+          "vault_notification_status",
           "vault_snapshot",
           "vault_touch",
           "vault_set_auto_lock",

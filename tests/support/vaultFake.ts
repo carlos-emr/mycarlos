@@ -869,6 +869,17 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return { platform: setup.platform };
           case "vault_status":
             return state.status;
+          case "vault_notification_status":
+            return {
+              supported: false,
+              available: false,
+              enabled: false,
+              permission: "unavailable",
+              automaticChecksEnabled: false,
+              automaticChecksSupported: false,
+              automaticChecksPaused: false,
+              lastOutcome: null,
+            };
           // Files shared to myCarlos wait until the vault is unlocked (#61).
           case "received_list":
             return {

@@ -260,6 +260,17 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return current;
+        if (command === "vault_notification_status")
+          return {
+            supported: false,
+            available: false,
+            enabled: false,
+            permission: "unavailable",
+            automaticChecksEnabled: false,
+            automaticChecksSupported: false,
+            automaticChecksPaused: false,
+            lastOutcome: null,
+          };
         if (command === "vault_unlock") {
           current = "unlocked";
           return {

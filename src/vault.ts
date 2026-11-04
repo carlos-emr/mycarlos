@@ -75,6 +75,7 @@ export interface VaultSnapshot {
   records: VaultRecord[];
   /** Native compile capability; absent/false keeps the linking flow hidden. */
   portalLinkingEnabled?: boolean;
+  automaticDocumentChecksSupported?: boolean;
   portalLinks?: PortalLinkSummary[];
   recovery: RecoveryReason | null;
   /** When the vault's recovery key was set up, if it has one. */
@@ -545,6 +546,7 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     portal_link_incomplete: "portal.errorIncomplete",
     pickup_refused: "portal.errorRefused",
     pickup_damaged: "portal.errorDamaged",
+    document_check_busy: "notifications.checkBusy",
   } as const;
   for (const [code, key] of Object.entries(portalErrors))
     if (hasErrorCode(error, code)) return t(key);

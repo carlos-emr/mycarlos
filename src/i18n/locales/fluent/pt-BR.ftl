@@ -867,6 +867,7 @@ native-setAside-title = Deixar este cofre do myCarlos de lado e começar de novo
 native-setAside-warning = Isso deixa todo o cofre de lado e começa de novo com um cofre vazio. { $kept } O myCarlos nunca o exclui. Se você está começando de novo porque outra pessoa pode saber sua frase secreta, ela ainda pode abri-lo, então remova-o. { $removal }
 
 native-vault-keep = Manter este cofre
+native-notice-arrival = Um documento da clínica chegou ao myCarlos. Abra o myCarlos para lê-lo.
 
 notice-autoLockSet =
     { $count ->
@@ -1644,3 +1645,16 @@ interface-history-title = Histórico de auditoria
 interface-history-to = Para
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também guarda um histórico: quando o cofre foi aberto; quando a frase secreta ou a chave de recuperação foi configurada ou alterada e quando uma cópia de segurança foi salva ou restaurada; quando cada perfil de paciente foi adicionado e cada pasta foi criada, renomeada ou movida; e quando cada documento foi adicionado, renomeado, movido, ocultado, restaurado ou salvo fora do myCarlos e onde. Ele fica criptografado junto com todo o resto. Você pode consultá-lo aqui; o myCarlos nunca o altera nem o remove.
+
+notifications-title = Avisos após verificar documentos
+notifications-help = Quando um documento da clínica é salvo após uma verificação manual, o Windows pode mostrar um aviso genérico. Abra o myCarlos normalmente para lê-lo. Os documentos não são verificados automaticamente.
+notifications-allow = Permitir avisos de chegada de documentos
+notifications-blocked = O Windows está bloqueando as notificações. Verifique as configurações de notificação.
+notifications-unknown = Não foi possível verificar a permissão de notificações do Windows.
+notifications-error = Não foi possível salvar esta configuração. Os avisos estão desativados nesta sessão.
+notifications-unavailable = Os avisos de documentos estão indisponíveis. Abra o myCarlos normalmente para verificar seus documentos.
+notifications-helpAutomatic = O Windows pode mostrar um aviso genérico depois que um documento da clínica for salvo. Abra o myCarlos normalmente para lê-lo.
+notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
+notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
+notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
+notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.

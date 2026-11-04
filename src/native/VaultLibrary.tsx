@@ -118,6 +118,7 @@ export function VaultLibrary({
   cameraAsking,
   sharedNew = 0,
   onSharedSeen,
+  onSecurityEntry,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -166,12 +167,17 @@ export function VaultLibrary({
   sharedNew?: number;
   /** The patient opened Shared with me: its new files have been seen. */
   onSharedSeen?: () => void;
+  /** Security opened (Clinic documents lives there): a chance to show arrivals. */
+  onSecurityEntry?: () => Promise<void>;
 }) {
   const { t } = useI18n();
   const [profileId, setProfileId] = useState(
     () => peopleOf(snapshot)[0]?.id ?? "",
   );
   const [section, setSection] = useState<NativeSection>("records");
+  useEffect(() => {
+    if (section === "security") void onSecurityEntry?.();
+  }, [section, onSecurityEntry]);
   // Keep Security’s Hidden entry scoped to the location it was opened from,
   // including Shared; returning from Hidden must retain that location.
   const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
