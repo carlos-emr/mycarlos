@@ -1357,19 +1357,20 @@ function findRanges(text: string): Finding[] {
       const matchEnd = match.index + match[0].length;
       // The first end is its day (with its month in front, written month
       // first); the second runs from its day to the end of the match.
+      const at = (group: number) => spans[group] as [number, number];
       const firstStart = range.monthFirst
-        ? spans[range.order.month][0]
-        : spans[range.order.first][0];
+        ? at(range.order.month)[0]
+        : at(range.order.first)[0];
       found.push(
         {
           kind: "date",
           start: firstStart,
-          end: spans[range.order.first][1],
+          end: at(range.order.first)[1],
           reading: ends[0],
         },
         {
           kind: "date",
-          start: spans[range.order.second][0],
+          start: at(range.order.second)[0],
           end: matchEnd,
           reading: ends[1],
         },
