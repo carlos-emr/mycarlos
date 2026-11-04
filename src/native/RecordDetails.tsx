@@ -226,7 +226,7 @@ export function RecordDetails({
                 .map((id) => folderNameById.get(id))
                 .filter(Boolean)
                 .join(", ") ||
-                (moveTargets
+                (inShared
                   ? translateNow("interface.LibrarySidebar.sharedWithMe")
                   : translateNow("sidebar.myRecords"))}
             </dd>

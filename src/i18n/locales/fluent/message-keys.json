@@ -564,6 +564,7 @@
   "security.title",
   "sidebar.documents",
   "sidebar.folderCount",
+  "sidebar.folderOfPerson",
   "sidebar.label",
   "sidebar.myRecords",
   "sidebar.preferences",
@@ -828,5 +829,18 @@
   "interface.AnonymizePreview.refused",
   "interface.AnonymizePreview.close",
   "interface.AiHelperNotice.continue",
-  "interface.AnonymizePreview.footerNote"
+  "interface.AnonymizePreview.footerNote",
+  "notifications.allow",
+  "notifications.blocked",
+  "notifications.error",
+  "notifications.help",
+  "notifications.title",
+  "notifications.unknown",
+  "notifications.unavailable",
+  "notifications.helpAutomatic",
+  "notifications.autoAllow",
+  "notifications.autoHelp",
+  "notifications.autoPaused",
+  "notifications.checkBusy",
+  "native.notice.arrival"
 ]

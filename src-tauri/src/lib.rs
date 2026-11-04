@@ -6,7 +6,35 @@ use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+#[cfg_attr(
+    not(all(
+        windows,
+        feature = "document-notifications",
+        feature = "portal-linking",
+        feature = "document-automatic-checks"
+    )),
+    allow(dead_code)
+)]
+mod document_collection;
+#[cfg(feature = "portal-linking")]
+#[cfg_attr(
+    not(all(
+        windows,
+        feature = "document-notifications",
+        feature = "document-automatic-checks"
+    )),
+    allow(dead_code)
+)]
+mod document_collection_pickup;
 mod document_identity;
+pub mod document_notification_runtime;
+#[cfg(all(
+    windows,
+    feature = "document-notifications",
+    feature = "portal-linking"
+))]
+mod document_notification_windows;
+pub mod document_notifications;
 mod history;
 mod idle;
 mod local_model;
@@ -439,6 +467,11 @@ impl From<VaultError> for PublicText {
             VaultError::Storage => Self {
                 code: "storage",
                 message_key: "native.error.35",
+            },
+            #[cfg(feature = "portal-linking")]
+            VaultError::DocumentCheckBusy => Self {
+                code: "document_check_busy",
+                message_key: "notifications.checkBusy",
             },
             VaultError::Cancelled => Self {
                 code: "cancelled",
@@ -1912,6 +1945,41 @@ async fn vault_check_documents(
             .map_err(|_| PublicError::from(VaultError::Storage))?
             .map_err(Into::into)
     }
+}
+
+#[tauri::command]
+async fn vault_notification_status(
+    store: State<'_, Arc<VaultStore>>,
+    locale: Option<UiLocale>,
+) -> CommandResult<document_notification_runtime::Status> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.notification_status(locale))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))
+}
+
+#[tauri::command]
+async fn vault_set_notifications(
+    store: State<'_, Arc<VaultStore>>,
+    enabled: bool,
+) -> CommandResult<document_notification_runtime::Status> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.set_notifications(enabled))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_set_automatic_document_checks(
+    enabled: bool,
+    store: tauri::State<'_, Arc<VaultStore>>,
+) -> CommandResult<document_notification_runtime::Status> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.set_automatic_checks(enabled))
+        .await
+        .map_err(|_| VaultError::Storage)?
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -3955,12 +4023,27 @@ pub fn run() {
             // would lock its own copy of the lock file. Earlier evaluation builds
             // kept the vault at `<data>/vault-v1`; that is left untouched and
             // never read.
-            app.manage(Arc::new(VaultStore::new(
+            let store = Arc::new(VaultStore::new(
                 app.path()
                     .app_local_data_dir()?
                     .join("vault-home")
                     .join("vault-v1"),
-            )));
+            ));
+            store.configure_notifications(
+                app.path()
+                    .app_local_data_dir()?
+                    .join("vault-home")
+                    .join("document-notifications-v1.json"),
+                app.config().identifier.clone(),
+            );
+            #[cfg(all(
+                windows,
+                feature = "document-notifications",
+                feature = "portal-linking",
+                feature = "document-automatic-checks"
+            ))]
+            store.start_document_collection()?;
+            app.manage(store);
             // Wrong tries at a secret, counted beside the vault in
             // `attempts.json`, and read only when needed, not here.
             app.manage(Arc::new(AttemptThrottle::new(Some(
@@ -4003,6 +4086,9 @@ pub fn run() {
             vault_history,
             vault_portal_link,
             vault_check_documents,
+            vault_notification_status,
+            vault_set_notifications,
+            vault_set_automatic_document_checks,
             vault_request_device_approval,
             vault_restart_device_approval,
             vault_change_passphrase,
@@ -4053,6 +4139,12 @@ pub fn run() {
         .build(production_context())
         .expect("error while building myCarlos")
         .run(|_app, _event| {
+            if matches!(
+                _event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                _app.state::<Arc<VaultStore>>().stop_document_collection();
+            }
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = _event {
                 receive_opened(_app, &urls);
@@ -4633,11 +4725,12 @@ mod tests {
         // file by file. `app_local_data_dir` never roams, and on every other
         // platform it is the same directory.
         let library = include_str!("lib.rs");
-        let setup = library
-            .split("app.manage(Arc::new(VaultStore::new(")
-            .nth(1)
-            .unwrap();
-        let root = &setup[..setup.find(")))").unwrap()];
+        let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        let setup = startup
+            .split_once("let store = Arc::new(VaultStore::new(")
+            .unwrap()
+            .1;
+        let root = setup.split_once("));").unwrap().0;
         assert!(root.contains("app_local_data_dir()"), "{root}");
         assert!(!root.contains("app_data_dir()"), "{root}");
         // Earlier evaluation builds kept the vault itself at `<data>/vault-v1`,
@@ -4647,6 +4740,7 @@ mod tests {
         let home = root.split(".join(\"").nth(1).unwrap();
         let home = &home[..home.find('"').unwrap()];
         assert_ne!(home, "vault-v1");
+        assert_eq!(home, "vault-home");
     }
 
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
@@ -4767,6 +4861,28 @@ mod tests {
         assert!(warning.contains("Backups saved before now still open"));
         assert!(warning.contains("myCarlos says what to do about them"));
         assert!(!warning.contains("delete"));
+    }
+
+    #[test]
+    fn snapshot_capture_confirmation_follows_reads_during_native_question() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, groups) = key_being_set_up(&temp.path().join("vault"), true);
+        let during = std::cell::Cell::new(None);
+        let stored = confirm_recovery_key_asking(
+            &store,
+            &typed_back(&groups),
+            || 6,
+            || {
+                during.set(Some(store.snapshot().unwrap().capture));
+                true
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let earlier = during.get().unwrap();
+        assert_eq!(earlier.epoch, stored.capture.epoch);
+        assert!(earlier.sequence < stored.capture.sequence);
+        assert_eq!(stored.recovery_key_set_at_ms, Some(6));
     }
 
     #[test]

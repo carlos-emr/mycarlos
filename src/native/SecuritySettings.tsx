@@ -267,7 +267,7 @@ export function SecuritySettings({
         : onCreateProfile(profileName)
     ).then((created) => {
       if (created) {
-        setProfileName("");
+        setProfileName((current) => (current === profileName ? "" : current));
         setProfileDetails({});
         setProfileBirthDateUnknown(false);
       }

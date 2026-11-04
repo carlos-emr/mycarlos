@@ -614,7 +614,7 @@ const CREDENTIAL =
   "(?:MD|M\\.D\\.|NP|RN|RPN|FRCPC|FRCSC|CCFP|PhD|Ph\\.D\\.|PharmD|RPh|MSW|RSW)";
 // Who wrote, signed or sent a document.
 const BY =
-  "(?:(?:[Rr]eferred|[Ss]igned|[Rr]eported|[Dd]ictated|[Tt]ranscribed) by|(?:[Rr]éféré|[Ss]igné|[Dd]icté) par)";
+  "(?:(?:[Rr]eferred|[Ss]igned|[Rr]eported|[Dd]ictated|[Tt]ranscribed) by|(?:[Rr]éféré|[Ss]igné|[Dd]icté)e? par)";
 /** Labels as written, With Capitals and IN CAPITALS, longest first. */
 const anyCase = (labels: string[]) =>
   `(?:${[
@@ -1007,6 +1007,9 @@ interface Rule {
   pattern: RegExp;
   /** The capture group holding the detail; the whole match when absent. */
   group?: number;
+  /** Relational prose can also introduce a disease: flag that conflict. */
+  reviewClinicalConflict?: true;
+  upperPrefix?: true;
 }
 
 const HEALTH_CARD_LABEL =
@@ -1039,8 +1042,21 @@ const RULES: Rule[] = [
   {
     kind: "recordNumber",
     pattern:
-      /\b(?:MRN|Medical record(?: number| no\.?| #)?|Chart(?: number| no\.?| #)?|Record(?: number| no\.?| #)|Hospital(?: number| no\.?| #)|Patient ID|Accession(?: number| no\.?| #)?|Requisition(?: number| no\.?| #)?|Lab(?: number| no\.?| #)|Encounter(?: number| no\.?| #)?|Visit(?: number| no\.?| #)|Case(?: number| no\.?| #)|File(?: number| no\.?| #)|Specimen(?: number| no\.?| #| ID)?|Sample(?: number| no\.?| #| ID)|Spécimen(?: no\.?| n°| #)?|Échantillon(?: no\.?| n°| #)?|Dossier(?: no\.?| n°| #)?|N[o°] de dossier|Numéro de dossier)[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
+      /\b(?:MRN|HRN|Medical record(?: number| no\.?| #)?|Health record(?: number| no\.?| #)?|Chart(?: number| no\.?| #)?|Record(?: number| no\.?| #)|Hospital(?: number| no\.?| #)|Patient(?: ID| number| no\.?| #)|Pt(?: ID| number| no\.?| #)|Account(?: number| no\.?| #)|Acct(?: number| no\.?| #)|Unit(?: number| no\.?| #)|Client(?: ID| number| no\.?| #)|Order(?: number| no\.?| #)|Report(?: number| no\.?| #)|Reference(?: number| no\.?| #)|Ref(?: no\.?| #)|Accession(?: number| no\.?| #)?|Requisition(?: number| no\.?| #)?|Lab(?: number| no\.?| #)|Encounter(?: number| no\.?| #)?|Visit(?: number| no\.?| #)|Case(?: number| no\.?| #)|File(?: number| no\.?| #)|Specimen(?: number| no\.?| #| ID)?|Sample(?: number| no\.?| #| ID)|Spécimen(?: no\.?| n°| #)?|Échantillon(?: no\.?| n°| #)?|Dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?(?: no\.?| n°| #)?|ID[ \t]+patient|Identifiant(?: du)?[ \t]+patient|(?:N[o°]|Numéro)[ \t]+(?:de[ \t]+|du[ \t]+|d['’][ \t]*)(?:dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?|patient|hôpital|requête|demande|laboratoire|visite|épisode|rapport|référence|prélèvement|spécimen|échantillon))[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
     group: 1,
+  },
+  // The same labels when they carry an explicit qualifier ("number", "no.",
+  // "#", "ID", "n°", or the French "No/Numéro de …"): the value may then
+  // start with a short letter prefix before a space ("REF 12345"). Without
+  // the qualifier a following word is clinical text ("Specimen: blood 10 mL",
+  // "Chart: see 2024 notes") and stays. Known cost: "Patient no 12" removes
+  // the 12, as "Lab no 12" always did.
+  {
+    kind: "recordNumber",
+    pattern:
+      /\b(?:(?:MRN|HRN|Medical record|Health record|Chart|Record|Hospital|Patient|Pt|Account|Acct|Unit|Client|Order|Report|Reference|Ref|Accession|Requisition|Lab|Encounter|Visit|Case|File|Specimen|Sample|Spécimen|Échantillon|Dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?)(?: number| no\.?| #| ID| n°)|ID[ \t]+patient|Identifiant(?: du)?[ \t]+patient|(?:N[o°]|Numéro)[ \t]+(?:de[ \t]+|du[ \t]+|d['’][ \t]*)(?:dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?|patient|hôpital|requête|demande|laboratoire|visite|épisode|rapport|référence|prélèvement|spécimen|échantillon))[ \t]*[:#]?[ \t]*([A-Z]{1,5}[ \t][A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
+    group: 1,
+    upperPrefix: true,
   },
   {
     kind: "dateOfBirth",
@@ -1055,16 +1071,28 @@ const RULES: Rule[] = [
     pattern:
       /(?:\+?1[ .-]?)?(?:\(\d{3}\)[ ]?|\b\d{3}[ .-]?)\d{3}[ .-]?\d{4}\b(?:[ \t]*(?:ext\.?|x|poste)[ \t]*\d{1,5}\b)?/gi,
   },
-  // A social insurance number: nine digits in threes, or after its label.
+  // A social insurance number: nine digits in threes (joined by a space, a
+  // hyphen or, as French documents write it, a point), or after its label.
   {
     kind: "sin",
     pattern:
-      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber| [Nn]o\.?| #)?|[Nn]uméro d'assurance sociale)[ \t]*[:#]?[ \t]*(\d{3}[ -]?\d{3}[ -]?\d{3})\b/gu,
+      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber| [Nn]o\.?| #)?|[Nn]uméro d['’]assurance sociale)[ \t]*[:#]?[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/gu,
     group: 1,
   },
+  // A sensitive field may describe a value as valid, invalid or mistyped.
+  // Its label, not a checksum, identifies the field. Descriptors stay on
+  // this line, contain no digits or sentence punctuation, and are bounded.
   {
     kind: "sin",
-    pattern: /(?<![\d-])\d{3}[ -]\d{3}[ -]\d{3}(?![\d-])/g,
+    pattern:
+      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber)?|[Nn]uméro d['’]assurance sociale)[ \t]+[\p{L}][\p{L}'’ -]{0,47}[ \t]*[:#]?[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/gu,
+    group: 1,
+  },
+  // Known cost: any nine digits in equal threes match, so "Lot 123.456.789"
+  // is removed too, as "Lot 123 456 789" always was.
+  {
+    kind: "sin",
+    pattern: /(?<![\d-])(?<!\d\.)\d{3}([ .-])\d{3}\1\d{3}(?![\d-])(?!\.\d)/g,
   },
   // A web address: with its scheme or "www.", or a bare domain with a common
   // ending, and whatever follows it.
@@ -1180,6 +1208,26 @@ const RULES: Rule[] = [
     ),
     group: 1,
   },
+  // Explicit relationships fill gaps left by a supplied PERSON list.
+  // Require a full name; a disease in this position remains a preview flag.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:[Cc]opied to|[Cc]opy to|[Ss]poke with|[Mm]et with|[Aa] rencontré|[Aa]ccompanying relative|[Pp]roche accompagnante)[ \\t]+(${SURNAME_FIRST}|${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+    reviewClinicalConflict: true,
+  },
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:[Cc]hecked by|[Vv]érifiée? par)[ \\t]+${CAPITALIZED_NAME}[ \\t]+(?:with|avec)[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+    reviewClinicalConflict: true,
+  },
   // A name with credentials after it: "Jane Doe, MD" (#80 review). Two
   // words, so a word before the name ("Signed Jane Doe, MD") stays.
   {
@@ -1262,11 +1310,24 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
     for (const match of text.matchAll(rule.pattern)) {
       const detail = rule.group ? match[rule.group] : match[0];
       if (!detail) continue;
+      // The pattern runs case-insensitively; a letter prefix must really be capitals
+      // ("Order number: see 2024 notes" is a sentence, not an ID).
+      if (rule.upperPrefix && !/^[A-Z]{1,5}[ \t]/u.test(detail)) continue;
       const offset = rule.group ? match[0].indexOf(detail) : 0;
       const start = match.index + offset;
       // A label's value may run past the detail into trailing punctuation,
       // and a French clinic's name into connecting words.
       let trimmed = detail.replace(/[\s,;.]+$/u, "");
+      // An unqualified Encounter followed by a valid whole date is a date
+      // field. Explicit record labels and invalid date-shaped IDs retain
+      // record-number protection.
+      if (
+        rule.kind === "recordNumber" &&
+        /^Encounter[ \t]*:?[ \t]*$/iu.test(match[0].slice(0, offset)) &&
+        shiftDate(trimmed, 0, options.dayFirst ?? true) !== null &&
+        shiftDate(trimmed, 0, options.dayFirst ?? true) !== "unclear"
+      )
+        continue;
       if (rule.kind === "clinic") {
         trimmed = trimmed.replace(
           /(?:[ \t]+(?:de|du|des|la|le|l['’]|d['’]|of))+$/u,
@@ -1289,7 +1350,35 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
         NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
       )
         continue;
-      found.push({ kind: rule.kind, start, end: start + trimmed.length });
+      const end = start + trimmed.length;
+      found.push({
+        kind:
+          rule.reviewClinicalConflict &&
+          (clinicalNameOccurrence(text, start, end) ||
+            /\b(?:syndrome|disease|maladie|palsy|paralysis|paralysie|tenosynovitis|tenosynovite|sign|signe)\b/iu.test(
+              trimmed,
+            ))
+            ? "possibleName"
+            : rule.kind,
+        start,
+        end,
+      });
+      // Only an immediately linked checksum control inherits a SIN/NAS
+      // field. An unrelated nine-digit measurement never inherits it.
+      if (rule.kind === "sin") {
+        const control =
+          /^[ \t]*;[ \t]*(?:checksum[- ](?:in)?valid[ \t]+control|controle[ \t]+a[ \t]+somme[ \t]+(?:in)?valide)[ \t]*:[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/iu.exec(
+            text.slice(end),
+          );
+        if (control) {
+          const controlStart = end + control[0].lastIndexOf(control[1]);
+          found.push({
+            kind: "sin",
+            start: controlStart,
+            end: controlStart + control[1].length,
+          });
+        }
+      }
     }
   }
   // Each known name: whole wherever it stands (even across a line break),
@@ -1385,6 +1474,34 @@ const wordPattern = (word: string) =>
     ? new RegExp(escapeRegExp(word), "gu")
     : new RegExp(`(?<![\\p{L}])${escapeRegExp(word)}(?![\\p{L}])`, "giu");
 
+/** A clinical role belongs to this occurrence, never to a surname globally.
+ * Matching-copy accents have already been folded. Direct identity findings
+ * still win; this prevents their alias sweep from consuming an eponym. */
+function clinicalNameOccurrence(
+  text: string,
+  start: number,
+  end: number,
+): boolean {
+  const before = text.slice(text.lastIndexOf("\n", start - 1) + 1, start);
+  const lineEnd = text.indexOf("\n", end);
+  const after = text.slice(end, lineEnd < 0 ? undefined : lineEnd);
+  const clinicalBefore = [
+    ...before.matchAll(
+      /\b(?:syndrome|disease|maladie|paralysis|paralysie|tenosynovitis|tenosynovite)[ \t]+(?:of|de|d['’])[ \t]*/giu,
+    ),
+  ].some((match) =>
+    /^(?:\p{Lu}[\p{L}'’-]*[ \t]+){0,2}(?:\p{Lu}[\p{L}'’]*-)?$/u.test(
+      before.slice(match.index + match[0].length),
+    ),
+  );
+  return (
+    clinicalBefore ||
+    /^[ \t]*(?:['’]s[ \t]+)?(?:syndrome|disease|maladie|palsy|paralysis|paralysie|tenosynovitis|tenosynovite|sign|signe)\b/iu.test(
+      after,
+    )
+  );
+}
+
 /**
  * A name a rule found (after a title, a label, a family word or a closing) is
  * that person wherever else it stands, with or without one (#72 review): the
@@ -1437,18 +1554,22 @@ function otherPlaces(
       groups.push({ words: new Set(lower), key: group });
     }
     finding.group = group;
-    const place = (match: RegExpExecArray | RegExpMatchArray, as: string) =>
+    const place = (match: RegExpExecArray | RegExpMatchArray, as: string) => {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      if (clinicalNameOccurrence(text, start, end)) return;
       places.push({
         kind:
           /\s/u.test(match[0]) || writtenAsName(match[0])
             ? finding.kind
             : "possibleName",
-        start: match.index ?? 0,
-        end: (match.index ?? 0) + match[0].length,
+        start,
+        end,
         group: as,
         whole,
         swept: true,
       });
+    };
     const pattern = whole.trim().split(/\s+/).map(escapeRegExp).join("\\s+");
     for (const match of text.matchAll(
       new RegExp(`(?<![\\p{L}])${pattern}(?![\\p{L}])`, "giu"),
@@ -1547,6 +1668,25 @@ export function deidentify(
   });
 }
 
+function nextPlaceholder(
+  source: string,
+  label: string,
+  first: number,
+  reserved: Set<string>,
+): { number: number; replacement: string } {
+  let number = first;
+  // Check the complete candidate directly: custom labels can contain any
+  // other marker, including an overlapping marker at the same position.
+  while (
+    source.includes(`[${label} ${number}]`) ||
+    reserved.has(`[${label} ${number}]`)
+  )
+    number++;
+  const replacement = `[${label} ${number}]`;
+  reserved.add(replacement);
+  return { number, replacement };
+}
+
 function build(
   source: string,
   findings: Finding[],
@@ -1557,6 +1697,11 @@ function build(
   // names), numbered in the order first seen.
   const numbers = new Map<string, number>();
   const counts = new Map<string, number>();
+  const reserved = new Set(
+    findings.flatMap((finding) =>
+      finding.replacement === undefined ? [] : [finding.replacement],
+    ),
+  );
   const placeholder = (finding: Finding, original: string) => {
     const kind = finding.kind as Exclude<RemovedKind, "manual">;
     // A doctor is one placeholder by surname: "Dr. Blake Sample" and "Dr.
@@ -1569,7 +1714,12 @@ function build(
     }`;
     let number = numbers.get(identity);
     if (number === undefined) {
-      number = (counts.get(kind) ?? 0) + 1;
+      number = nextPlaceholder(
+        source,
+        labels[kind],
+        (counts.get(kind) ?? 0) + 1,
+        reserved,
+      ).number;
       counts.set(kind, number);
       numbers.set(identity, number);
     }
@@ -1687,6 +1837,12 @@ export function removeMore(
   if (start < 0 || end > source.length || end <= start)
     throw new RangeError("outside the text");
   const manual = removed.filter((part) => part.kind === "manual");
+  const replacement = nextPlaceholder(
+    source,
+    settings.labels.manual,
+    manual.length + 1,
+    new Set(removed.map((part) => part.replacement)),
+  ).replacement;
   // Everything already decided stays as it was; only the new part is new.
   // A flagged word stays flagged unless the new part takes it.
   const findings: Finding[] = [
@@ -1709,7 +1865,7 @@ export function removeMore(
       kind: "manual" as const,
       start,
       end,
-      replacement: `[${settings.labels.manual} ${manual.length + 1}]`,
+      replacement,
     },
   ].sort((a, b) => a.start - b.start);
   return build(source, findings, settings);
@@ -1719,12 +1875,42 @@ export function removeMore(
  * Puts the details back into an answer that came back with the placeholders
  * (#72), on the device: each placeholder becomes what it stood for, and each
  * shifted date the date it was. A date the answer wrote some other way is
- * left shifted.
+ * left shifted. Ambiguous placeholders from older snapshots (literal source
+ * markers or conflicting manual IDs) stay unresolved.
  */
 export function restore(answer: string, deidentified: Deidentified): string {
   const back = new Map<string, string>();
-  for (const part of deidentified.onDevice.removed)
-    if (!back.has(part.replacement)) back.set(part.replacement, part.original);
+  const manualTokens = new Set(
+    deidentified.onDevice.removed
+      .filter((part) => part.kind === "manual")
+      .map((part) => part.replacement),
+  );
+  const conflictingManual = new Set<string>();
+  // Old overlapping removals could reuse a manual ID for a different detail.
+  // Automatic names can intentionally share a canonical placeholder even
+  // when their spelling differs; retain that existing grouping behavior.
+  for (const part of deidentified.onDevice.removed) {
+    const previous = back.get(part.replacement);
+    if (
+      manualTokens.has(part.replacement) &&
+      previous !== undefined &&
+      previous !== part.original
+    )
+      conflictingManual.add(part.replacement);
+    if (previous === undefined) back.set(part.replacement, part.original);
+  }
+  for (const part of deidentified.onDevice.removed) {
+    // Older snapshots may reuse a literal marker from the source. An answer
+    // cannot tell its occurrences apart: leave that marker unresolved rather
+    // than insert a person's detail into literal text. New allocations avoid
+    // that ambiguity.
+    if (
+      conflictingManual.has(part.replacement) ||
+      (part.kind !== "date" &&
+        deidentified.onDevice.source.includes(part.replacement))
+    )
+      back.delete(part.replacement);
+  }
   // Longest first, so that "[NAME 1]" never stands inside "[NAME 10]"'s place.
   const keys = [...back.keys()].sort((a, b) => b.length - a.length);
   if (!keys.length) return answer;

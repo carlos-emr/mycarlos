@@ -3,6 +3,7 @@ import { LanguageSetting } from "./LanguageSetting";
 import { AppearanceSetting } from "./AppearanceSetting";
 import { useI18n } from "../i18n";
 import type { ModelStatus } from "../ai/types";
+import { NotificationSetting } from "./NotificationSetting";
 
 /** Settings > Preferences: how myCarlos looks on this computer. Nothing here
  * is kept in the vault. `aiStatus` is given on a computer, where the AI
@@ -25,6 +26,7 @@ export function PreferencesSettings({
       <div className="setting-list">
         <LanguageSetting />
         <AppearanceSetting />
+        <NotificationSetting />
         {native ? (
           <TextSizeSetting zoom={native.zoom} mac={native.mac} />
         ) : (
