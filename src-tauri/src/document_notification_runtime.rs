@@ -95,6 +95,8 @@ pub(crate) mod active {
     }
 
     /// The notice sentence for `locale`, falling back to English; identical for every arrival.
+    /// `None` means no catalogue text could be rendered: the arrival is then recorded as Failed
+    /// and nothing reaches the OS.
     fn arrival_notice(locale: Option<UiLocale>) -> Option<String> {
         let id = crate::ui_text_ids::MessageId::NativeNoticeArrival;
         locale
@@ -111,8 +113,10 @@ pub(crate) mod active {
         outcome: Outcome,
     }
 
+    /// Fields a later build adds (as `locale` was) are ignored by this one, so a downgrade of the
+    /// evaluation app keeps reading the file; the version number and the legacy probe below still
+    /// decide the shape. Entries keep their strict shape.
     #[derive(Clone, Serialize, Deserialize)]
-    #[serde(deny_unknown_fields)]
     struct Ledger {
         version: u8,
         enabled: bool,
@@ -156,6 +160,8 @@ pub(crate) mod active {
         path: PathBuf,
         state: Mutex<Option<Ledger>>,
         backend: Box<dyn Backend>,
+        /// The catalogue lookup for the notice sentence; tests swap in one that fails.
+        notice: fn(Option<UiLocale>) -> Option<String>,
         supported: bool,
         accepting: AtomicBool,
         automatic_ready: AtomicBool,
@@ -202,6 +208,7 @@ pub(crate) mod active {
             Self {
                 path,
                 state: Mutex::new(None),
+                notice: arrival_notice,
                 backend: Box::new(Unavailable),
                 supported: false,
                 accepting: AtomicBool::new(false),
@@ -275,6 +282,7 @@ pub(crate) mod active {
                 path,
                 state: Mutex::new(state),
                 backend,
+                notice: arrival_notice,
                 supported: true,
                 accepting: AtomicBool::new(accepting),
                 automatic_ready: AtomicBool::new(automatic_ready),
@@ -322,6 +330,11 @@ pub(crate) mod active {
         #[cfg(all(test, feature = "portal-linking"))]
         pub(crate) fn load_for_test(path: PathBuf, backend: Box<dyn Backend>) -> Self {
             Self::load(path, backend)
+        }
+        #[cfg(test)]
+        fn with_notice(mut self, notice: fn(Option<UiLocale>) -> Option<String>) -> Self {
+            self.notice = notice;
+            self
         }
 
         pub fn status(&self) -> Status {
@@ -510,7 +523,7 @@ pub(crate) mod active {
             }
             // Serialize the opt-out and side effect. No detached task can revive a disabled notice.
             let outcome = match self.backend.permission() {
-                Permission::Allowed if current() => match arrival_notice(next.locale) {
+                Permission::Allowed if current() => match (self.notice)(next.locale) {
                     Some(body) => match self.backend.accept(&body, &current) {
                         Ok(()) => Outcome::OsAccepted,
                         Err(Error::Cancelled) => Outcome::Unknown,
@@ -959,6 +972,68 @@ pub(crate) mod active {
             assert_eq!(calls.load(Ordering::SeqCst), 1);
             assert_eq!(saved(&path).events.len(), MAX_EVENTS);
             assert_eq!(runtime.status().last_outcome, Some(Outcome::OsAccepted));
+        }
+
+        #[test]
+        fn a_ledger_with_a_field_this_build_does_not_know_still_loads() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("state.json");
+            let newer = serde_json::json!({
+                "version": 2, "enabled": true, "events": [],
+                "automatic_checks_enabled": false, "automatic_consent_version": 0,
+                "locale": "fr", "a_field_from_a_later_build": {"x": 1}
+            });
+            fs::write(&path, serde_json::to_vec(&newer).unwrap()).unwrap();
+            let runtime = Runtime::load(
+                path.clone(),
+                Box::new(Mock {
+                    calls: Arc::new(AtomicUsize::new(0)),
+                    fail: false,
+                }),
+            );
+            assert!(runtime.status().enabled);
+            assert!(runtime.status().available);
+            assert_eq!(saved(&path).locale, Some(UiLocale::Fr));
+            // An entry keeps its strict shape: an unknown field there is still a corrupt file.
+            let bad_entry = serde_json::json!({
+                "version": 2, "enabled": true,
+                "events": [{"key": format!("{:064x}", 1), "outcome": "unknown", "extra": true}],
+                "automatic_checks_enabled": false, "automatic_consent_version": 0
+            });
+            fs::write(&path, serde_json::to_vec(&bad_entry).unwrap()).unwrap();
+            let runtime = Runtime::load(
+                path,
+                Box::new(Mock {
+                    calls: Arc::new(AtomicUsize::new(0)),
+                    fail: false,
+                }),
+            );
+            assert!(!runtime.status().available);
+        }
+
+        #[test]
+        fn an_unrenderable_notice_is_recorded_as_failed_and_never_reaches_the_os() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("state.json");
+            let calls = Arc::new(AtomicUsize::new(0));
+            let runtime = Runtime::load(
+                path.clone(),
+                Box::new(Mock {
+                    calls: Arc::clone(&calls),
+                    fail: false,
+                }),
+            )
+            .with_notice(|_| None);
+            runtime.set_enabled(true).ok().unwrap();
+            arrival(&runtime);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            assert_eq!(saved(&path).events.len(), 1);
+            assert_eq!(saved(&path).events[0].outcome, Outcome::Failed);
+            assert_eq!(runtime.status().last_outcome, Some(Outcome::Failed));
+            // The real lookup renders for every shipped language and never falls through to None.
+            for locale in UiLocale::ALL {
+                assert!(arrival_notice(Some(locale)).is_some_and(|s| s.contains("myCarlos")));
+            }
         }
 
         #[test]

@@ -762,7 +762,7 @@ native-setAside-title = 要擱置此 myCarlos 保險庫並重新開始嗎？
 native-setAside-warning = 這會擱置整個保險庫，並以空白保險庫重新開始。{ $kept } myCarlos 絕不會刪除擱置的保險庫。如果您是因為擔心他人知道密語而重新開始，對方仍能開啟舊保險庫，因此請將它移除。{ $removal }
 
 native-vault-keep = 保留此保險庫
-native-notice-arrival = 一份診所文件已送達 myCarlos。請開啟 myCarlos 查看。
+native-notice-arrival = 一份診所文件已送達 myCarlos。請開啟 myCarlos 閱讀。
 
 notice-autoLockSet = 自動鎖定時間已設為 { $count } 分鐘。
 

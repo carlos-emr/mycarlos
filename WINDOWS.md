@@ -49,7 +49,7 @@ Automatic checks require a build with that additional feature enabled and a sepa
 
 If automatic checks are paused, open Security > Clinic documents and choose **Check for new documents**. This feature does not deliver notices or fetch documents while the app is closed.
 
-myCarlos keeps a small plain file beside its settings (`vault-home/document-notifications-v1.json`) with your two choices, the language, and a fingerprint and outcome for each of the newest 512 notices so the same arrival is not announced twice; it holds no document names or contents.
+myCarlos keeps a small plain file beside its settings (`vault-home/document-notifications-v1.json`) with your two choices, the language, and a fingerprint and outcome for each of the newest 512 notices so the same arrival is not announced twice; it holds no document names or contents. An older myCarlos build still reads the file and ignores the parts it does not know.
 
 ## Opening locked documents and reading documents
 
