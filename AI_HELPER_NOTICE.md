@@ -283,7 +283,8 @@ for the reviewer who checks the notice against the code.
 
 - **Numbers removed.** A social insurance number (SIN in English, NAS in French) written with
   points, spaces or hyphens between its groups, whether it follows a label or stands alone (a bare
-  one only when its check digit is right and it uses one separator throughout); and the numbers
+  one needs three groups of three digits with the same separator twice, and no check digit is used,
+  so a lot number of that shape is removed too); and the numbers
   after 24 record-number labels (record, chart, file, accession, requisition and similar, in
   English and French). The notice says "health card and medical record numbers ... and other
   identifying numbers", which covers both.
