@@ -399,3 +399,14 @@ Unchanged shared M0 package vectors and RFC 9180 A.2.1 sequence zero have passed
 on Linux. Actual Java-produced PAdES package opening and retained receipt
 verification have also passed with explicit FAKE test trust. This is neither
 an independent dependency approval nor Windows/native portal enablement.
+
+### Linking dependencies in every build (4 November 2026)
+
+The `portal-linking`, `document-notifications` and `document-automatic-checks`
+Cargo features are gone. `reqwest`, `rustls`, `rustls-platform-verifier`,
+`tokio` and `hpke` are normal dependencies with the same versions and features,
+so `Cargo.lock` is unchanged; every build, Android and iOS included, now
+compiles them, and `ring` 0.17.14 with them. The Windows notice APIs
+(`Data_Xml_Dom`, `UI_Notifications`, `Win32_System_WinRT`) moved into the
+`windows` dependency's own feature list. Android still does not call the
+platform verifier (see SECURITY_OPERATIONS.md).

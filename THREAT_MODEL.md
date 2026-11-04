@@ -278,12 +278,12 @@ Member presence is still mandatory, and relaxing descriptive metadata does not r
 signer, exact digest, clinic or recipient binding. A signed PDF with no clinic/recipient
 claim remains unbound under an explicit test pin and unverified without authenticated pins.
 
-## Authenticated portal link implementation (#55, evaluation feature)
+## Authenticated portal link implementation (#55)
 
-The future linking build is selected natively with Cargo feature `portal-linking`,
-which is absent from default features. A renderer value cannot turn it on. The
-native command refuses before generating keys, changing the vault or making a
-request when the feature is off. This separate future branch includes held profile
+Every build includes the linking code; until 4 November 2026 it was selected by a
+Cargo feature, `portal-linking`. A renderer value cannot change what is built. On
+Android the native command refuses before generating keys, changing the vault or
+making a request, until the platform verifier is integrated. This separate future branch includes held profile
 format 4 and reserves manifest format 5; it does not authorize that migration for
 the current demo.
 
@@ -308,7 +308,7 @@ the whole #55 key lifecycle or the send/pickup/delete flow complete.
 
 ### Private first-device pickup candidate (26 October 2026)
 
-The same default-off feature now includes explicit mailbox checks and first-device
+The same linking code now includes explicit mailbox checks and first-device
 approval requests. All destinations remain the saved consented HTTPS portal.
 The renderer receives redacted native summaries, never seeds, decrypted packages,
 receipts or recipient IDs. Native code validates original signed package/PDF

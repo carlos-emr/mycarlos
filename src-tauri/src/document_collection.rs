@@ -65,6 +65,13 @@ impl CycleControl {
         value
     }
 
+    /// Moves the cycle's deadline, for tests of the byte budget rather than the clock.
+    #[cfg(test)]
+    pub(crate) fn with_test_deadline(mut self, deadline: Instant) -> Self {
+        self.deadline = deadline;
+        self
+    }
+
     pub(crate) fn new(now: Instant, cancelled: Arc<AtomicBool>) -> Self {
         Self {
             deadline: now + CYCLE_TIME,

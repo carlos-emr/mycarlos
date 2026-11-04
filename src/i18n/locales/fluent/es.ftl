@@ -1484,8 +1484,6 @@ portal-errorDamaged = Un documento guardado de esta clínica está dañado o no 
 
 portal-errorDeviceName = Elija un nombre de dispositivo de 1 a 64 caracteres sin caracteres de control.
 
-portal-errorDisabled = La vinculación con el portal no está habilitada en esta versión.
-
 portal-errorExists = Este dispositivo ya está registrado. Revise los dispositivos vinculados en su portal de pacientes.
 
 portal-errorIncomplete = No se pudo completar la solicitud al portal. Revise la conexión y el reloj del dispositivo y vuelva a intentarlo.

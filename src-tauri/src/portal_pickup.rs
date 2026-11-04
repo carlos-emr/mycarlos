@@ -18,13 +18,10 @@ pub struct CheckIssue {
     pub code: String,
 }
 
-#[cfg(feature = "portal-linking")]
 pub(crate) fn is_per_link_failure(error: &crate::vault::VaultError) -> bool {
     use crate::{portal_link::LinkError, vault::VaultError};
     match error {
-        VaultError::Portal(LinkError::Cancelled | LinkError::Disabled | LinkError::Unavailable) => {
-            false
-        }
+        VaultError::Portal(LinkError::Cancelled | LinkError::Unavailable) => false,
         VaultError::Portal(_)
         | VaultError::ApprovalTerminal(_, _)
         | VaultError::ApprovalRequestMissing
@@ -34,7 +31,6 @@ pub(crate) fn is_per_link_failure(error: &crate::vault::VaultError) -> bool {
         _ => false,
     }
 }
-#[cfg(feature = "portal-linking")]
 fn add_issue(
     result: &mut CheckResult,
     link: &crate::portal_link::StoredLink,
@@ -50,14 +46,11 @@ fn add_issue(
 }
 /// A saved clinic document that no longer reads back: its receipt is held,
 /// never sent, and the rest of the check goes on.
-#[cfg(feature = "portal-linking")]
 pub(crate) const DAMAGED_CODE: &str = "pickup_damaged";
 /// Download failures in a row (no reply at all) after which the portal or
 /// the connection is taken to be down for this clinic, rather than waiting
 /// out a timeout for every delivery still listed.
-#[cfg(feature = "portal-linking")]
 const MAX_DOWNLOAD_FAILURES_IN_A_ROW: usize = 3;
-#[cfg(feature = "portal-linking")]
 fn add_issue_code(result: &mut CheckResult, link: &crate::portal_link::StoredLink, code: &str) {
     if result
         .issues
@@ -76,7 +69,6 @@ fn add_issue_code(result: &mut CheckResult, link: &crate::portal_link::StoredLin
         code: code.into(),
     });
 }
-#[cfg(feature = "portal-linking")]
 pub(crate) fn check(
     store: &crate::vault::VaultStore,
     session: u64,
@@ -88,7 +80,6 @@ pub(crate) fn check(
         crate::portal_client::api,
     )
 }
-#[cfg(feature = "portal-linking")]
 pub(crate) fn check_using<F>(
     store: &crate::vault::VaultStore,
     session: u64,
@@ -322,11 +313,11 @@ where
                     match store.receive_delivery(&outer, &response.body, &link, session) {
                         Ok((record_id, added)) => {
                             result.added += usize::from(added);
-                            #[cfg(all(windows, feature = "document-notifications"))]
+                            #[cfg(windows)]
                             if added {
                                 store.notify_local_arrival(record_id, &link, session);
                             }
-                            #[cfg(not(all(windows, feature = "document-notifications")))]
+                            #[cfg(not(windows))]
                             let _ = record_id;
                             send_pending(&link)?;
                         }

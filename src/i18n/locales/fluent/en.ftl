@@ -1452,8 +1452,6 @@ portal-errorDamaged = A saved document from this clinic is damaged or missing, s
 
 portal-errorDeviceName = Choose a device name of 1 to 64 characters without control characters.
 
-portal-errorDisabled = Portal linking is not enabled in this build.
-
 portal-errorExists = This device is already registered. Check Linked devices in your patient portal.
 
 portal-errorIncomplete = The portal request could not be completed. Check your connection and device clock, then try again.
