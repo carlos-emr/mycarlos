@@ -408,12 +408,12 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 17. **Keeping AI answers:** answers are kept with their document, encrypted, and are only hidden
     with it, never deleted (#71). Is that acceptable, or should the patient be able to remove an
     answer they do not want?
-18. **Shifted dates:** all dates move back by the same random number of days, which keeps the gaps
-    between them. A reader who knows one real date (a birth, or an event named in the text) can
-    work out the rest. A new number is drawn for each export, so a service given several exports of
-    one document could narrow down the real dates; one fixed number per document, worked out from a
-    vault key and never stored, would stop that, but then one known date gives away every export of
-    that document. Which is better, and is shifting acceptable at all, or should dates be removed?
+18. **Dates replaced by marks:** no real date is sent. Each date is a numbered mark with its gap in
+    days from the earliest date, so the time between dates stays clear. A reader who knows one real
+    date (a birth, or an event named in the text) can still work out all the others from the
+    gaps, and the same document gives the same marks and gaps every time it is exported (there is
+    no random number to differ between exports). A very old date also makes every gap large. Is
+    that acceptable, or should the gaps be left out, or only some dates be given a gap?
 19. **How the model reaches the device:** #72 has the patient download the model. To keep
     myCarlos from making any network connection, the design proposes that the patient adds the
     file instead (`THREAT_MODEL.md` D-10). Either way the download site sees the device's address
@@ -448,17 +448,21 @@ and French text, health card and medical record numbers (after any of 24 labels)
 (such as lab order numbers), social insurance numbers (SIN, NAS) written with points, spaces or
 hyphens, dates of birth, ages of 90 and over, addresses, postal codes, phone and fax
 numbers, email and web addresses, and the names of clinics and doctors, and removes them. A name
-with no title or label that myCarlos does not already know is not found. A numeric date that could be read two ways (03/04/2025) is removed. Other dates that myCarlos
-recognises (written in English or French) are moved back by one random number of days (30 to 365),
-the same for every date in that text, so the time between them stays the same. The number is new
-each time and is not kept. Dates it moved stay moved in another AI's answer; a date it does not
-recognise (for example one written in Spanish, Polish, Portuguese or Chinese) stays as it was,
-unmarked.
+with no title or label that myCarlos does not already know is not found. No date is sent. Each other date that myCarlos recognises (written in English or French) is
+replaced by a numbered mark in calendar order, such as "DATE 2, 14 days after DATE 1": the same
+real date always has the same number, and the note says how far it falls after the earliest date,
+so the time between dates stays clear without the dates. A numeric date that could be read two
+ways (03/04/2025), a month and year and a year alone get a plain numbered mark with no gap. An age
+of 90 or over becomes a numbered mark that says "90+". A date it does not recognise (for
+example one written in Spanish, Polish, Portuguese or Chinese) stays as it was, unmarked.
 
 **Putting the details back.** The app can put the details back into an answer that came back
-with the placeholders, on the device: each placeholder becomes what it stood for, and each moved
-date the date it was. A date the answer wrote another way stays moved, and names that shared one
-placeholder come back as the first spelling seen.
+with the placeholders, on the device. After the text is saved, the preview has a box for the
+AI's answer: each placeholder written exactly as it was sent becomes what it stood for. A
+placeholder-shaped mark that is not one of this export's, or whose note was changed or left out,
+is left as written and highlighted, never guessed. Names or dates that shared one placeholder
+come back as the first spelling seen. The list of what was replaced is kept in memory while the
+vault stays unlocked and the window stays open, and is never saved.
 
 **Who removes them, and how well.** The app's own remover, written in Rust and TypeScript, and
 nothing else. Ben decided (D9, 4 November 2026) not to ship Presidio to patients; it may later be an
@@ -469,8 +473,8 @@ targets. The documents were synthetic and not typical, so these counts show wher
 do not predict real use. The preview is the safety net for what is missed.
 
 **The preview.** Before anything is saved, the patient sees all of the text the file will hold,
-with the removed parts and the moved dates marked, and can remove more. Nothing is saved until the
-patient chooses to save it.
+with the removed parts and the replaced dates marked, and can remove more. Nothing is saved until
+the patient chooses to save it.
 
 **The text file.** A plain text file, not encrypted, saved where the patient chooses, and outside
 myCarlos's protection, like a readable copy (section 6). myCarlos cannot delete it later, and a

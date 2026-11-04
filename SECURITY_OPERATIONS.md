@@ -172,7 +172,7 @@ on 29 October 2026 that the helper uses no cloud provider, so:
   instructions (AI-02, AI-09); when the text was cut, the last line says so (AI-02, AI-10). The history
   records it as `copySaved` with
   `how: "anonymizedText"`: the document, where the file was saved (cut to 256 characters, and then
-  with a SHA-256 of the whole) and when; never the text, the removed details or the date offset.
+  with a SHA-256 of the whole) and when; never the text or the removed details.
   Security shows it with a label of its own; an older build shows "Readable copy saved".
 - **The model file** holds no patient data. It is kept in a model folder beside, not inside, the
   vault folder, not in myCarlos's encrypted backups, and marked to be left out of device backups
