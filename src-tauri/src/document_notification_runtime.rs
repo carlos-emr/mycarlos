@@ -984,16 +984,22 @@ pub(crate) mod active {
                 "locale": "fr", "a_field_from_a_later_build": {"x": 1}
             });
             fs::write(&path, serde_json::to_vec(&newer).unwrap()).unwrap();
+            let bodies = Arc::new(Mutex::new(Vec::new()));
             let runtime = Runtime::load(
                 path.clone(),
-                Box::new(Mock {
-                    calls: Arc::new(AtomicUsize::new(0)),
-                    fail: false,
+                Box::new(Recording {
+                    bodies: Arc::clone(&bodies),
                 }),
             );
             assert!(runtime.status().enabled);
             assert!(runtime.status().available);
-            assert_eq!(saved(&path).locale, Some(UiLocale::Fr));
+            // The language in that file is in force: an arrival gets the French sentence.
+            arrival(&runtime);
+            let french = UiLocale::Fr
+                .text(crate::ui_text_ids::MessageId::NativeNoticeArrival)
+                .unwrap();
+            assert_eq!(*bodies.lock().unwrap(), vec![french]);
+            assert_eq!(runtime.status().last_outcome, Some(Outcome::OsAccepted));
             // An entry keeps its strict shape: an unknown field there is still a corrupt file.
             let bad_entry = serde_json::json!({
                 "version": 2, "enabled": true,
