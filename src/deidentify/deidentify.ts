@@ -1041,7 +1041,7 @@ const RULES: Rule[] = [
   {
     kind: "recordNumber",
     pattern:
-      /\b(?:MRN|Medical record(?: number| no\.?| #)?|Chart(?: number| no\.?| #)?|Record(?: number| no\.?| #)|Hospital(?: number| no\.?| #)|Patient ID|Accession(?: number| no\.?| #)?|Requisition(?: number| no\.?| #)?|Lab(?: number| no\.?| #)|Encounter(?: number| no\.?| #)?|Visit(?: number| no\.?| #)|Case(?: number| no\.?| #)|File(?: number| no\.?| #)|Specimen(?: number| no\.?| #| ID)?|Sample(?: number| no\.?| #| ID)|Spécimen(?: no\.?| n°| #)?|Échantillon(?: no\.?| n°| #)?|Dossier(?: no\.?| n°| #)?|N[o°] de dossier|Numéro de dossier)[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
+      /\b(?:MRN|HRN|Medical record(?: number| no\.?| #)?|Health record(?: number| no\.?| #)?|Chart(?: number| no\.?| #)?|Record(?: number| no\.?| #)|Hospital(?: number| no\.?| #)|Patient(?: ID| number| no\.?| #)|Pt(?: ID| number| no\.?| #)|Account(?: number| no\.?| #)|Acct(?: number| no\.?| #)|Unit(?: number| no\.?| #)|Client(?: ID| number| no\.?| #)|Order(?: number| no\.?| #)|Report(?: number| no\.?| #)|Reference(?: number| no\.?| #)|Ref(?: no\.?| #)|Accession(?: number| no\.?| #)?|Requisition(?: number| no\.?| #)?|Lab(?: number| no\.?| #)|Encounter(?: number| no\.?| #)?|Visit(?: number| no\.?| #)|Case(?: number| no\.?| #)|File(?: number| no\.?| #)|Specimen(?: number| no\.?| #| ID)?|Sample(?: number| no\.?| #| ID)|Spécimen(?: no\.?| n°| #)?|Échantillon(?: no\.?| n°| #)?|Dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?(?: no\.?| n°| #)?|ID[ \t]+patient|Identifiant(?: du)?[ \t]+patient|(?:N[o°]|Numéro)[ \t]+(?:de[ \t]+|du[ \t]+|d['’][ \t]*)(?:dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?|patient|hôpital|requête|demande|laboratoire|visite|épisode|rapport|référence|prélèvement|spécimen|échantillon))[ \t]*[:#]?[ \t]*((?:[A-Z]{1,5}[ \t])?[A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
     group: 1,
   },
   {
@@ -1057,11 +1057,12 @@ const RULES: Rule[] = [
     pattern:
       /(?:\+?1[ .-]?)?(?:\(\d{3}\)[ ]?|\b\d{3}[ .-]?)\d{3}[ .-]?\d{4}\b(?:[ \t]*(?:ext\.?|x|poste)[ \t]*\d{1,5}\b)?/gi,
   },
-  // A social insurance number: nine digits in threes, or after its label.
+  // A social insurance number: nine digits in threes (joined by a space, a
+  // hyphen or, as French documents write it, a point), or after its label.
   {
     kind: "sin",
     pattern:
-      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber| [Nn]o\.?| #)?|[Nn]uméro d'assurance sociale)[ \t]*[:#]?[ \t]*(\d{3}[ -]?\d{3}[ -]?\d{3})\b/gu,
+      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber| [Nn]o\.?| #)?|[Nn]uméro d['’]assurance sociale)[ \t]*[:#]?[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/gu,
     group: 1,
   },
   // A sensitive field may describe a value as valid, invalid or mistyped.
@@ -1070,12 +1071,12 @@ const RULES: Rule[] = [
   {
     kind: "sin",
     pattern:
-      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber)?|[Nn]uméro d'assurance sociale)[ \t]+[\p{L}][\p{L}'’ -]{0,47}[ \t]*[:#]?[ \t]*(\d{3}[ -]?\d{3}[ -]?\d{3})\b/gu,
+      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber)?|[Nn]uméro d['’]assurance sociale)[ \t]+[\p{L}][\p{L}'’ -]{0,47}[ \t]*[:#]?[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/gu,
     group: 1,
   },
   {
     kind: "sin",
-    pattern: /(?<![\d-])\d{3}[ -]\d{3}[ -]\d{3}(?![\d-])/g,
+    pattern: /(?<![\d-])(?<!\d\.)\d{3}([ .-])\d{3}\1\d{3}(?![\d-])(?!\.\d)/g,
   },
   // A web address: with its scheme or "www.", or a bare domain with a common
   // ending, and whatever follows it.
@@ -1347,7 +1348,7 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
       // field. An unrelated nine-digit measurement never inherits it.
       if (rule.kind === "sin") {
         const control =
-          /^[ \t]*;[ \t]*(?:checksum[- ](?:in)?valid[ \t]+control|controle[ \t]+a[ \t]+somme[ \t]+(?:in)?valide)[ \t]*:[ \t]*(\d{3}[ -]?\d{3}[ -]?\d{3})\b/iu.exec(
+          /^[ \t]*;[ \t]*(?:checksum[- ](?:in)?valid[ \t]+control|controle[ \t]+a[ \t]+somme[ \t]+(?:in)?valide)[ \t]*:[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/iu.exec(
             text.slice(end),
           );
         if (control) {
