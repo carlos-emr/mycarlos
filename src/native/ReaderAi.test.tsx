@@ -205,6 +205,51 @@ describe("the reader's AI helper", () => {
     expect(document.querySelector(".native-reader-text mark")).toBeNull();
   });
 
+  it("closes the page text on a page turn, and opens it on the page a summary sentence points to", async () => {
+    const model = fakeLocalModel({
+      sentences: () => [
+        {
+          text: "FAKE: repeat the test in two weeks.",
+          quote: "Repeat in 2 weeks.",
+        },
+      ],
+    });
+    renderReader(model);
+    await firstPage();
+    const user = userEvent.setup();
+    const pageText = () =>
+      document.querySelector(
+        "details.native-reader-text",
+      ) as HTMLDetailsElement;
+    await user.click(screen.getByText(humanText("Text on this page")));
+    expect(pageText().open).toBe(true);
+    expect(await screen.findByText(pageTexts[0])).toBeVisible();
+    // A page turn by hand closes the text, as the reader does without the AI
+    // helper; one click on "Text on this page" opens it again on the new page.
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
+    await waitFor(() => expect(pageText().open).toBe(false));
+    await user.click(screen.getByText(humanText("Text on this page")));
+    expect(pageText().open).toBe(true);
+    expect(await screen.findByText(pageTexts[1].trim())).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Previous page" }));
+    await firstPage();
+    await waitFor(() => expect(pageText().open).toBe(false));
+    // "Show in document" turns to the sentence's page with the text open.
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Show in document" }),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
+    await waitFor(() => expect(pageText().open).toBe(true));
+    const mark = await waitFor(() => {
+      const found = document.querySelector(".native-reader-text mark");
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(mark).toBeVisible();
+  });
+
   it("asks the model for a summary once, even where React runs effects twice", async () => {
     const model = fakeLocalModel();
     renderReader(model, { strict: true });

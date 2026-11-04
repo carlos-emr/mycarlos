@@ -368,6 +368,7 @@ function ReadingDocument({
             disabled={loading || page === 0}
             onClick={() => {
               setHighlight(null);
+              setTextOpen(false);
               setPage((current) => current - 1);
             }}
           >
@@ -380,6 +381,7 @@ function ReadingDocument({
             disabled={loading || last === null || page >= last}
             onClick={() => {
               setHighlight(null);
+              setTextOpen(false);
               setPage((current) => current + 1);
             }}
           >
