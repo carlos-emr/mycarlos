@@ -546,11 +546,18 @@ fn replace_primary_with_physical_fixture(store: &VaultStore, id: Uuid, bytes: u6
         .sum()
 }
 
+/// These fixtures test the byte budget, not the clock. A debug build reading tens of MiB of
+/// them on a busy machine can outlast the 30-second cycle, which then stops on Deadline first.
+fn physical_fixture_deadline() -> Instant {
+    Instant::now() + std::time::Duration::from_secs(15 * 60)
+}
+
 fn physical_fixture_control(store: &VaultStore) -> crate::document_collection::CycleControl {
     crate::document_collection::CycleControl::new(
         std::time::Instant::now(),
         std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )
+    .with_test_deadline(physical_fixture_deadline())
     .with_session(store.portal_session.clone(), store.portal_link_ticket())
 }
 
@@ -722,6 +729,7 @@ fn actual_picker_physical_deferral_prioritizes_other_link_before_repeated_failed
     for round in 0..2 {
         let token = Arc::new(AtomicBool::new(false));
         let control = CycleControl::new(Instant::now(), token.clone())
+            .with_test_deadline(physical_fixture_deadline())
             .with_session(store.portal_session.clone(), store.portal_link_ticket());
         let result = check_cycle(
             &store,
