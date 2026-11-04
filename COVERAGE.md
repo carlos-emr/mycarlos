@@ -20,6 +20,12 @@ Vitest. Vitest starts coverage before importing the test and application modules
 this is not a profiler attached after test setup.
 Update Vitest and its coverage provider together; their versions must match.
 
+Run it from a checkout whose `node_modules` is a real directory, or allow Vite to
+serve the link's real path (`server.fs.allow`). With `node_modules` symlinked to
+another checkout, Chromium cannot fetch `@vitest/coverage-v8/browser` (Vite refuses
+files outside the project root), every test file reports a prepare error, and no
+report is written.
+
 ## What the percentage measures
 
 The report covers hand-maintained TypeScript and TSX under `src/`, including
