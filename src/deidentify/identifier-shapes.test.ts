@@ -95,8 +95,24 @@ describe("record-number labels", () => {
       "Patient reports no chest pain. Account for the delay.",
       "Dossier à compléter; demande de consultation en cardiologie.",
       "Épisode de fibrillation auriculaire; visite de suivi dans 3 mois.",
-    ])
+      // A label without "number", "no.", "#" or "ID" followed by a word is clinical text.
+      "Specimen: blood 10 mL sent.",
+      "Chart: see 2024 notes.",
+      "Encounter: ED 24h ago.",
+      "Requisition: CBC x2 tomorrow.",
+    ]) {
       expect(sent(text)).toBe(text);
+      const result = out(text);
+      expect(restore(result.toSend, result)).toBe(text);
+    }
+  });
+  it("restores the bare pointed number exactly", () => {
+    const source = "Patiente dont le NAS, 046.454.286, figure au dossier.";
+    const result = out(source);
+    expect(result.toSend).toBe(
+      "Patiente dont le NAS, [SIN 1], figure au dossier.",
+    );
+    expect(restore(result.toSend, result)).toBe(source);
   });
   it("round-trips every removed value", () => {
     for (const [source] of [...french, ...english]) {

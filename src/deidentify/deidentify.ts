@@ -1041,7 +1041,19 @@ const RULES: Rule[] = [
   {
     kind: "recordNumber",
     pattern:
-      /\b(?:MRN|HRN|Medical record(?: number| no\.?| #)?|Health record(?: number| no\.?| #)?|Chart(?: number| no\.?| #)?|Record(?: number| no\.?| #)|Hospital(?: number| no\.?| #)|Patient(?: ID| number| no\.?| #)|Pt(?: ID| number| no\.?| #)|Account(?: number| no\.?| #)|Acct(?: number| no\.?| #)|Unit(?: number| no\.?| #)|Client(?: ID| number| no\.?| #)|Order(?: number| no\.?| #)|Report(?: number| no\.?| #)|Reference(?: number| no\.?| #)|Ref(?: no\.?| #)|Accession(?: number| no\.?| #)?|Requisition(?: number| no\.?| #)?|Lab(?: number| no\.?| #)|Encounter(?: number| no\.?| #)?|Visit(?: number| no\.?| #)|Case(?: number| no\.?| #)|File(?: number| no\.?| #)|Specimen(?: number| no\.?| #| ID)?|Sample(?: number| no\.?| #| ID)|Spécimen(?: no\.?| n°| #)?|Échantillon(?: no\.?| n°| #)?|Dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?(?: no\.?| n°| #)?|ID[ \t]+patient|Identifiant(?: du)?[ \t]+patient|(?:N[o°]|Numéro)[ \t]+(?:de[ \t]+|du[ \t]+|d['’][ \t]*)(?:dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?|patient|hôpital|requête|demande|laboratoire|visite|épisode|rapport|référence|prélèvement|spécimen|échantillon))[ \t]*[:#]?[ \t]*((?:[A-Z]{1,5}[ \t])?[A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
+      /\b(?:MRN|HRN|Medical record(?: number| no\.?| #)?|Health record(?: number| no\.?| #)?|Chart(?: number| no\.?| #)?|Record(?: number| no\.?| #)|Hospital(?: number| no\.?| #)|Patient(?: ID| number| no\.?| #)|Pt(?: ID| number| no\.?| #)|Account(?: number| no\.?| #)|Acct(?: number| no\.?| #)|Unit(?: number| no\.?| #)|Client(?: ID| number| no\.?| #)|Order(?: number| no\.?| #)|Report(?: number| no\.?| #)|Reference(?: number| no\.?| #)|Ref(?: no\.?| #)|Accession(?: number| no\.?| #)?|Requisition(?: number| no\.?| #)?|Lab(?: number| no\.?| #)|Encounter(?: number| no\.?| #)?|Visit(?: number| no\.?| #)|Case(?: number| no\.?| #)|File(?: number| no\.?| #)|Specimen(?: number| no\.?| #| ID)?|Sample(?: number| no\.?| #| ID)|Spécimen(?: no\.?| n°| #)?|Échantillon(?: no\.?| n°| #)?|Dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?(?: no\.?| n°| #)?|ID[ \t]+patient|Identifiant(?: du)?[ \t]+patient|(?:N[o°]|Numéro)[ \t]+(?:de[ \t]+|du[ \t]+|d['’][ \t]*)(?:dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?|patient|hôpital|requête|demande|laboratoire|visite|épisode|rapport|référence|prélèvement|spécimen|échantillon))[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
+    group: 1,
+  },
+  // The same labels when they carry an explicit qualifier ("number", "no.",
+  // "#", "ID", "n°", or the French "No/Numéro de …"): the value may then
+  // start with a short letter prefix before a space ("REF 12345"). Without
+  // the qualifier a following word is clinical text ("Specimen: blood 10 mL",
+  // "Chart: see 2024 notes") and stays. Known cost: "Patient no 12" removes
+  // the 12, as "Lab no 12" always did.
+  {
+    kind: "recordNumber",
+    pattern:
+      /\b(?:(?:MRN|HRN|Medical record|Health record|Chart|Record|Hospital|Patient|Pt|Account|Acct|Unit|Client|Order|Report|Reference|Ref|Accession|Requisition|Lab|Encounter|Visit|Case|File|Specimen|Sample|Spécimen|Échantillon|Dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?)(?: number| no\.?| #| ID| n°)|ID[ \t]+patient|Identifiant(?: du)?[ \t]+patient|(?:N[o°]|Numéro)[ \t]+(?:de[ \t]+|du[ \t]+|d['’][ \t]*)(?:dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?|patient|hôpital|requête|demande|laboratoire|visite|épisode|rapport|référence|prélèvement|spécimen|échantillon))[ \t]*[:#]?[ \t]*([A-Z]{1,5}[ \t][A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
     group: 1,
   },
   {
@@ -1074,6 +1086,8 @@ const RULES: Rule[] = [
       /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber)?|[Nn]uméro d['’]assurance sociale)[ \t]+[\p{L}][\p{L}'’ -]{0,47}[ \t]*[:#]?[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/gu,
     group: 1,
   },
+  // Known cost: any nine digits in equal threes match, so "Lot 123.456.789"
+  // is removed too, as "Lot 123 456 789" always was.
   {
     kind: "sin",
     pattern: /(?<![\d-])(?<!\d\.)\d{3}([ .-])\d{3}\1\d{3}(?![\d-])(?!\.\d)/g,
