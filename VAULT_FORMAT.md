@@ -987,10 +987,12 @@ device's 24 hour skew. A kept aid shares the one delivery-ID space with filed
 deliveries.
 
 A record holds one aid. A second aid for the same original replaces the held one
-only when its signed review time (`approval.reviewed_at`) is strictly later; the
-summary version is an opaque hash and cannot be ordered. The replacement is one
-commit whose `readingAidFiled` entry has `how` "replaced". An earlier or equal
-review is not filed: it is answered with its own signed receipt, sent once and
+only when it is greater by (`approval.reviewed_at`, `approval.id`): the later
+review, and within the same second the larger approval ID compared byte by byte,
+so two devices always keep the same aid. The summary version is an opaque hash
+and cannot be ordered. The replacement is one commit whose `readingAidFiled`
+entry has `how` "replaced". A lesser or equal aid (the same approval under
+another delivery ID is equal) is not filed: it is answered with its own signed receipt, sent once and
 not kept, so the portal stops offering it.
 Its receipt is retried like an original's, only while the original's saved file
 reads back. The check names `accept=reading-aid/1` in every listing, and files
