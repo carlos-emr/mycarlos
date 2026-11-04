@@ -149,12 +149,19 @@ test("on a phone: a photo's details offer View photo, the viewer fits the screen
   expect(
     await photo.evaluate((image: HTMLImageElement) => image.naturalWidth),
   ).toBeGreaterThan(0);
-  // On the phone's width, nothing runs off the screen.
+  // On the phone's width, nothing runs off the screen: the page, and the
+  // image itself.
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  const box = await photo.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(
+    await page.evaluate(() => window.innerWidth),
+  );
   expect(await fakeCalls(page, "vault_view_photo")).toHaveLength(1);
   await page
     .getByRole("dialog", { name: PHOTO, exact: true })

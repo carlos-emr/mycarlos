@@ -2,7 +2,12 @@ import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
-import { FAKE_IDS, fakeCalls, fakeVaultWith } from "./support/vaultFake";
+import {
+  FAKE_IDS,
+  fakeCalls,
+  fakeSnapshot,
+  fakeVaultWith,
+} from "./support/vaultFake";
 
 // Chromium's fake camera stands in for a real one. The headless shell
 // Playwright uses by default has no camera support at all (getUserMedia fails
@@ -82,8 +87,10 @@ for (const [computerLocale, expectedName] of [
       });
       await camera.getByRole("button", { name: "Use photo" }).click();
 
+      // Saving encodes the JPEG and stores it: longer than a click's worth
+      // on a loaded machine.
       const details = page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ });
-      await expect(details).toBeVisible();
+      await expect(details).toBeVisible({ timeout: 20_000 });
       const saved = await savedPhoto(page);
       expect(saved.start).toEqual([0xff, 0xd8, 0xff]);
       expect(saved.target).toEqual({
@@ -117,6 +124,36 @@ for (const [computerLocale, expectedName] of [
         details.getByRole("button", { name: "View photo" }),
       ).toBeVisible();
       expect(await fakeCalls(page, "vault_view_photo")).toHaveLength(1);
+
+      // The history's newest event: the photo, added with the camera.
+      await page.keyboard.press("Escape");
+      await expect(details).toBeHidden();
+      // The sidebar on a computer, the section tabs on a phone.
+      await page
+        .getByRole("navigation", {
+          name: new RegExp(
+            `^(${translate("en", "sidebar.label")}|${translate("en", "interface.VaultLibrary.section")})$`,
+          ),
+        })
+        .getByRole("button", {
+          name: translate("en", "security.title"),
+          exact: true,
+        })
+        .click();
+      await page
+        .getByRole("button", {
+          name: translate("en", "interface.history.title"),
+          exact: true,
+        })
+        .click();
+      const newest = page.locator("ol.audit-history-list > li").first();
+      await expect(newest.locator("h2")).toHaveText(
+        translate("en", "interface.history.event.imported"),
+      );
+      await expect(newest).toContainText(expectedName);
+      await expect(newest).toContainText(
+        translate("en", "interface.history.how.camera"),
+      );
       await expectOnlyFakedCommands(page);
     });
   });
@@ -199,4 +236,63 @@ test("on a phone, says the phone asks once, takes a photo and says where to allo
     }),
   );
   await expectOnlyFakedCommands(page);
+});
+
+test.describe("computer locale en-US, twice", () => {
+  test.use({ locale: "en-US", timezoneId: "UTC" });
+  const NAME = "Photo, Oct 17, 2026, 3.05 PM.jpg";
+
+  test("the same photo taken twice is not saved twice: the second is said to be in the vault already, and nothing changes", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["camera"]);
+    // The same instant for both photos, so they get the same name, as the
+    // vault names a photo by when it was taken.
+    await page.clock.setFixedTime(
+      await page.evaluate(() => new Date(2026, 9, 17, 15, 5).getTime()),
+    );
+    await fakeVaultWith(page, { start: "unlocked" });
+    await page.goto("/");
+    const take = async (again: boolean) => {
+      await page.getByRole("button", { name: "Take a photo" }).click();
+      const camera = page.getByRole("dialog", { name: "Take a photo" });
+      const use = camera.getByRole("button", { name: "Use the camera" });
+      // Once the camera is allowed, the next time it goes live at once.
+      if (again) await expect(use).toHaveCount(0);
+      else await use.click();
+      const shutter = camera.getByRole("button", { name: "Take photo" });
+      await expect(shutter).toBeEnabled();
+      await shutter.click();
+      await camera.getByRole("button", { name: "Use photo" }).click();
+      await expect(camera).toBeHidden({ timeout: 20_000 });
+    };
+
+    // The first is saved, and its details open.
+    await take(false);
+    const details = page.getByRole("dialog", { name: NAME, exact: true });
+    await expect(details).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(details).toBeHidden();
+
+    // The second, the same: said, no details, and still one photo.
+    await take(true);
+    await expect(
+      page.getByText(
+        translate("en", "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault"),
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(details).toHaveCount(0);
+    expect(await fakeCalls(page, "vault_save_photo")).toHaveLength(2);
+    expect(
+      (await fakeSnapshot(page)).records.filter(
+        (record) => record.displayName === NAME,
+      ),
+    ).toHaveLength(1);
+    await expect(
+      page.getByRole("button", { name: NAME, exact: true }),
+    ).toHaveCount(1);
+    await expectOnlyFakedCommands(page);
+  });
 });

@@ -417,7 +417,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         approvalStatus: approved ? "accepted" : null,
       });
 
-      /** A small JPEG, made here rather than kept as bytes in the test. */
+      /** A small JPEG, made here rather than kept as bytes in the test. It
+       * must stay tiny: the whole state, URLs included, is written to
+       * sessionStorage on every save. */
       const makeJpegUrl = (): string => {
         const canvas = document.createElement("canvas");
         canvas.width = 16;

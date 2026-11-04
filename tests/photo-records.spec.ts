@@ -15,8 +15,10 @@ import {
 // any other, except that its details offer View photo instead of Read: the
 // viewer shows it and closes back to the details; it is moved from its
 // details and hidden, Security > Hidden lists it with where it was, and the
-// history records each event under its name. The native side is faked
-// (support/vaultFake.ts): the photo is a small JPEG made at run time.
+// history records each event under its name. On the phone project, the
+// viewer is checked in phone-flows.spec.ts and the camera itself in
+// camera-photo.spec.ts. The native side is faked (support/vaultFake.ts):
+// the photo is a small JPEG made at run time.
 
 const en = (
   key: Parameters<typeof translate>[1],
