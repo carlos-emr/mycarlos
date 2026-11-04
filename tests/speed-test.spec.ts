@@ -52,7 +52,10 @@ async function openSpeedTest(page: Page) {
   return { run, status };
 }
 
-/** The line as Security writes it (speedTestLine in SecuritySettings.tsx). */
+/** The line as Security writes it (speedTestLine in SecuritySettings.tsx).
+ * The samples are joined as plain numbers where Security formats each for
+ * the locale: the same text only because FAKE_SPEED_REPORT stays under a
+ * thousand, where no locale puts a separator. */
 function reportLine(report: typeof FAKE_SPEED_REPORT) {
   return [
     en("interface.speed.runs", {
@@ -77,12 +80,12 @@ function reportLine(report: typeof FAKE_SPEED_REPORT) {
   ].join(" ");
 }
 
-test("the speed test says it is measuring, cannot be started twice, then gives the device's line; a native side busy with another check is said", async ({
+test("the speed test says it is measuring and holds its button until the device answers, then gives the device's line; a native side busy with another check is said", async ({
   page,
 }) => {
   const { run, status } = await openSpeedTest(page);
 
-  // Running: measuring, and the button waits for it.
+  // Running: measuring, and the button is held until the answer comes.
   await scriptFake(page, "kdf_benchmark", { pending: true });
   await run.click();
   await expect(status).toHaveText(en("security.speed.measuring"));
@@ -132,5 +135,57 @@ test("a speed test answered 'locked' locks the app too, and the vault unlocks ag
   await page.getByRole("button", { name: en("unlock.submit") }).click();
   await expect(myRecords(page)).toBeVisible();
   expect(await fakeCalls(page, "vault_lock")).toHaveLength(1);
+  await expectOnlyFakedCommands(page);
+});
+
+test("a late 'locked' answer, after leaving Security or after the vault locked by itself, locks nothing more", async ({
+  page,
+}) => {
+  const { run } = await openSpeedTest(page);
+
+  // Still measuring when the patient leaves Security: its answer, "locked",
+  // lands on a screen that is gone, and the library stays open.
+  await scriptFake(page, "kdf_benchmark", { pending: true });
+  await run.click();
+  await sidebar(page)
+    .getByRole("button", { name: /^My records\b/ })
+    .click();
+  await expect(myRecords(page)).toBeVisible();
+  await fakeSettle(page, "kdf_benchmark", {
+    reject: refusal("locked", "native.error.36"),
+  });
+  await expect(myRecords(page)).toBeVisible();
+  expect(await fakeCalls(page, "vault_lock")).toEqual([]);
+
+  // Still measuring when the vault is locked by hand: the late "locked"
+  // answer must not lock a second time.
+  await sidebar(page)
+    .getByRole("button", { name: en("security.title"), exact: true })
+    .click();
+  await scriptFake(page, "kdf_benchmark", { pending: true });
+  await run.click();
+  await page
+    .getByRole("button", {
+      name: en("interface.VaultLibrary.unlockedLockNow"),
+      exact: true,
+    })
+    .click();
+  const unlockTitle = page.getByRole("heading", {
+    name: en("unlock.title"),
+    exact: true,
+  });
+  await expect(unlockTitle).toBeVisible();
+  expect(await fakeCalls(page, "vault_lock")).toHaveLength(1);
+  await fakeSettle(page, "kdf_benchmark", {
+    reject: refusal("locked", "native.error.36"),
+  });
+  await expect(unlockTitle).toBeVisible();
+  await page
+    .getByLabel(en("passphrase.label"), { exact: true })
+    .fill(FAKE_PASSPHRASE);
+  await page.getByRole("button", { name: en("unlock.submit") }).click();
+  await expect(myRecords(page)).toBeVisible();
+  expect(await fakeCalls(page, "vault_lock")).toHaveLength(1);
+  expect(await fakeCalls(page, "kdf_benchmark")).toHaveLength(2);
   await expectOnlyFakedCommands(page);
 });
