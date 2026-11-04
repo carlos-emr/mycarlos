@@ -179,11 +179,13 @@ export interface FakeVaultSetup {
   /** Adds FAKE Locked.pdf, locked with FAKE_DOCUMENT_PASSWORD. */
   lockedPdf?: boolean;
   /** Clinic linking is built in: with no clinic linked yet, or with one
-   * linked and approved. */
+   * linked and approved, unless `approval` says the request did not end in
+   * approval. */
   portal?: "unlinked" | "linked";
-  /** With a clinic linked but not approved: the current approval request's
-   * state, and whether a new request may be started (natively: an expired
-   * or cancelled one, within the request limit; never a refused one). */
+  /** With a clinic linked ("linked" only; anything else is refused by
+   * fakeVaultWith) but not approved: the current approval request's state,
+   * and whether a new request may be started (natively: an expired or
+   * cancelled one, within the request limit; never a refused one). */
   approval?: {
     status: "pending" | "refused" | "expired" | "cancelled";
     canRestart?: boolean;
@@ -241,6 +243,8 @@ const NATIVE_MESSAGES: MessageKey[] = [
  * a11y.ts's fakeVault, opened with FAKE_PASSPHRASE.
  */
 export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
+  if (setup.approval && setup.portal !== "linked")
+    throw new Error('an approval state needs portal: "linked"');
   await page.addInitScript(
     (setup) => {
       const STORE = "mycarlos-e2e-fake-vault";
@@ -1143,11 +1147,18 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // A new approval request after an expired or cancelled one: the
           // old one goes into the link's history natively, and a fresh one
           // is pending. Offered only while the link says it can restart.
+          // Not modelled yet (a later round): the history entry native
+          // writes for the restart, and approvalRequestLimitReached.
           case "vault_restart_device_approval": {
             const found = snapshot.portalLinks?.find(
               (candidate) => candidate.id === args.linkId,
             );
             if (!found) throw refuse("not_found", "native.error.18");
+            // A refused request is answered as native does, by its own code
+            // (the app words it as the clinic's decision); reachable here
+            // only with a canRestart override.
+            if (found.approvalStatus === "refused")
+              throw refuse("approval_refused", "portal.approvalRefused");
             if (!found.approvalCanRestart)
               throw refuse("invalid", "native.error.19");
             found.approvalRequested = true;

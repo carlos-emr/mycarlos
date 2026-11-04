@@ -50,8 +50,11 @@ async function zoomsAsked(page: Page): Promise<number[]> {
 const storedZoom = (page: Page) =>
   page.evaluate((key) => window.localStorage.getItem(key), ZOOM_STORAGE);
 
+/** The size, said in the live region a screen reader listens to. */
 const announced = (page: Page, percent: string) =>
-  page.getByText(en("textSize.announce", { percent }), { exact: true });
+  page
+    .getByRole("status")
+    .filter({ hasText: en("textSize.announce", { percent }) });
 
 test("Text size: the buttons step through the sizes and ask the platform, a typed size is read, Back to normal size returns, and the size is kept across a restart", async ({
   page,
