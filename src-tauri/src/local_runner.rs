@@ -87,6 +87,9 @@ pub(crate) struct RunnerConfig {
     /// The most data memory the process may take (Linux, `RLIMIT_DATA`):
     /// above it, allocations fail and the model ends instead of taking the
     /// computer down. `None` sets no limit. Other platforms do not enforce it.
+    /// It counts the heap and private writable mappings only: weights the
+    /// model maps read-only from its file are outside it, so a budget for
+    /// those belongs to `needed_bytes` and the device check, not this cap.
     pub(crate) memory_limit_bytes: Option<u64>,
 }
 
