@@ -455,6 +455,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // page under it, as under a picker.
   const pickersOpenRef = useRef(0);
   const pickerOpenedAtRef = useRef(0);
+  // True only while the settled picker re-dispatches visibilitychange below.
+  const pickerSettlingRef = useRef(false);
   const track = useCallback(async <T,>(picker: Promise<T>): Promise<T> => {
     if (pickersOpenRef.current === 0) pickerOpenedAtRef.current = Date.now();
     pickersOpenRef.current += 1;
@@ -467,7 +469,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // under Android's picker activity.
       document.dispatchEvent(new Event(PICKER_SETTLED_EVENT));
       // Let the visibility handler decide again now that the picker is gone.
-      document.dispatchEvent(new Event("visibilitychange"));
+      // The automatic arrival check ignores this app-made event: the import
+      // that follows, or the real focus/visibility event, asks native itself.
+      pickerSettlingRef.current = true;
+      try {
+        document.dispatchEvent(new Event("visibilitychange"));
+      } finally {
+        pickerSettlingRef.current = false;
+      }
     }
   }, []);
   const trackedBridge = useMemo<VaultBridge>(() => {
@@ -832,7 +841,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       void refreshAutomaticArrivals();
     };
     const onVisible = () => {
-      if (document.visibilityState === "visible") onFocus();
+      if (!pickerSettlingRef.current && document.visibilityState === "visible")
+        onFocus();
     };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);

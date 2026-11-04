@@ -10837,6 +10837,8 @@ describe("Automatic arrival snapshot ownership", () => {
     await act(async () => finishAutomatic());
     expect(screen.getByText(humanText("FAKE newer manual.pdf"))).toBeVisible();
     expect(screen.queryByText(humanText("FAKE old automatic.pdf"))).toBeNull();
+    // Opening, the automatic check, the import's own refresh: nothing else.
+    expect(snapshot).toHaveBeenCalledTimes(3);
   });
 
   it("keeps a newer automatic snapshot after an older manual response arrives", async () => {
@@ -10877,6 +10879,8 @@ describe("Automatic arrival snapshot ownership", () => {
       screen.getByText(humanText("FAKE newer automatic.pdf")),
     ).toBeVisible();
     expect(screen.queryByText(humanText("FAKE old manual.pdf"))).toBeNull();
+    // Opening, the import's own refresh, the automatic check: nothing else.
+    expect(snapshot).toHaveBeenCalledTimes(3);
   });
 
   it.each(["equal", "foreign epoch"] as const)(
