@@ -5,6 +5,7 @@ import {
   t as translateNow,
 } from "../i18n";
 import { recordSource } from "./recordPresentation";
+import { ReadingAidView } from "./ReadingAidView";
 import { ClinicServiceDate } from "./ClinicServiceDate";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -62,6 +63,9 @@ type DocumentReaderProps = {
   ) => Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView?: () => void;
+  /** Opens on the clinic's reading aid, under its notice, when the record has one. The original is
+   * always one tap away, and the notice comes first every time the aid is shown. */
+  startWithAid?: boolean;
   onClose: () => void;
 };
 
@@ -79,9 +83,15 @@ function ReadingDocument({
   record,
   viewPage,
   cancelView,
+  startWithAid = false,
   onClose,
 }: DocumentReaderProps) {
   useI18n();
+  const aid = record.readingAid;
+  const [view, setView] = useState<"aid" | "original">(
+    aid && startWithAid ? "aid" : "original",
+  );
+  const showingAid = view === "aid" && Boolean(aid);
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -125,6 +135,8 @@ function ReadingDocument({
   );
 
   useEffect(() => {
+    // The page area exists only while the original is shown; measure again when it comes back.
+    if (showingAid) return;
     // The width inside the page area's padding, so that a page fitted to it
     // does not scroll.
     const measure = () => {
@@ -146,8 +158,10 @@ function ReadingDocument({
     return () => {
       window.clearTimeout(settle);
       observer.disconnect();
+      // A stale width must not draw a page the moment the original returns.
+      setFitWidth(0);
     };
-  }, []);
+  }, [showingAid]);
 
   const remember = (key: string, result: ViewedPage) =>
     cacheDrawnPage(drawn.current, key, result);
@@ -159,7 +173,7 @@ function ReadingDocument({
   );
 
   useEffect(() => {
-    if (!fitWidth || asking) return;
+    if (showingAid || !fitWidth || asking) return;
     const key = `${page}:${pictureWidth}`;
     const known = drawn.current.get(key);
     if (known) {
@@ -217,7 +231,16 @@ function ReadingDocument({
         cancelViewRef.current?.();
       }
     };
-  }, [asking, fitWidth, page, password, pictureWidth]);
+  }, [asking, fitWidth, page, password, pictureWidth, showingAid]);
+
+  // After a switch, focus lands on the new view's start, so a screen reader hears the notice first.
+  const shownBefore = useRef(showingAid);
+  useEffect(() => {
+    if (shownBefore.current === showingAid) return;
+    shownBefore.current = showingAid;
+    if (showingAid) document.getElementById("reading-aid-title")?.focus();
+    else pageRef.current?.focus();
+  }, [showingAid]);
 
   const giveDocumentPassword = (event: FormEvent) => {
     event.preventDefault();
@@ -265,158 +288,185 @@ function ReadingDocument({
               </p>
             )}
           </div>
-          <button
-            ref={closeRef}
-            className="button"
-            type="button"
-            onClick={onClose}
-          >
-            {translateNow("photo.close")}
-          </button>
-        </header>
-        <div className="native-reader-controls">
-          <button
-            className="button"
-            type="button"
-            disabled={loading || page === 0}
-            onClick={() => setPage((current) => current - 1)}
-          >
-            {translateNow("interface.DocumentReader.previousPage")}
-          </button>
-          <span className="native-reader-where">{where}</span>
-          <button
-            className="button"
-            type="button"
-            disabled={loading || last === null || page >= last}
-            onClick={() => setPage((current) => current + 1)}
-          >
-            {translateNow("interface.DocumentReader.nextPage")}
-          </button>
-          <span className="native-reader-zoom">
+          <span className="native-reader-head-actions">
+            {aid && !showingAid && (
+              <button
+                className="button"
+                type="button"
+                onClick={() => setView("aid")}
+              >
+                {translateNow("readingAid.open")}
+              </button>
+            )}
             <button
+              ref={closeRef}
               className="button"
               type="button"
-              disabled={!zoomable || zoom <= ZOOM_MIN}
-              onClick={() =>
-                setZoom((current) => Math.max(ZOOM_MIN, current / ZOOM_STEP))
-              }
+              onClick={onClose}
             >
-              {translateNow("interface.DocumentReader.smaller")}
-            </button>
-            <span aria-live="polite">
-              {translateNow("interface.reader.zoom", {
-                percent: Math.round(zoom * 100),
-              })}
-            </span>
-            <button
-              className="button"
-              type="button"
-              disabled={!zoomable || zoom >= ZOOM_MAX}
-              onClick={() =>
-                setZoom((current) => Math.min(ZOOM_MAX, current * ZOOM_STEP))
-              }
-            >
-              {translateNow("interface.DocumentReader.larger")}
-            </button>
-            <button
-              className="button"
-              type="button"
-              disabled={!zoomable || zoom === 1}
-              onClick={() => setZoom(1)}
-            >
-              {translateNow("interface.DocumentReader.fitWidth")}
+              {translateNow("photo.close")}
             </button>
           </span>
-        </div>
-        <p
-          className={loading && !asking ? "native-dialog-status" : "sr-only"}
-          role="status"
-        >
-          {loading && !asking
-            ? translateNow("interface.reader.opening", { page: page + 1 })
-            : current
-              ? translateNow("interface.reader.where", {
-                  page: shown.page + 1,
-                  total: shown.pageCount,
-                })
-              : ""}
-        </p>
-        {asking && (
-          <form
-            className="native-reader-password"
-            onSubmit={giveDocumentPassword}
-          >
-            <p id="reader-password-help">
-              {translateNow(
-                "interface.DocumentReader.thisDocumentIsLockedWithItsOwn",
-              )}
-            </p>
-            <label htmlFor="reader-password">
-              {translateNow("interface.DocumentReader.documentPassword")}
-            </label>
-            <input
-              ref={passwordRef}
-              id="reader-password"
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={typed}
-              aria-describedby={
-                wrongTries
-                  ? "reader-password-help reader-password-error"
-                  : "reader-password-help"
-              }
-              aria-invalid={wrongTries ? true : undefined}
-              onChange={(event) => setTyped(event.target.value)}
-            />
-            {wrongTries > 0 && (
-              <p id="reader-password-error" role="alert" key={wrongTries}>
-                {translateNow(
-                  "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
-                )}
-              </p>
-            )}
-            <button className="button primary" disabled={!typed}>
-              {translateNow("interface.DocumentReader.open")}
-            </button>
-          </form>
-        )}
-        {error && <p role="alert">{error}</p>}
-        {/* Focusable, so that a zoomed page can be moved with the arrow keys
-            where the webview does not focus scrolling areas itself. */}
-        <div
-          className="native-reader-page"
-          aria-busy={loading}
-          ref={pageRef}
-          tabIndex={0}
-          role="region"
-          aria-label={translateNow("interface.reader.page", {
-            page: current ? shown.page + 1 : page + 1,
-          })}
-        >
-          {current && (
-            <img
-              src={shown.image}
-              alt={translateNow("interface.reader.textFollows", {
-                page: shown.page + 1,
-                total: shown.pageCount,
-              })}
-              style={{ width: `${cssWidth}px` }}
-            />
-          )}
-        </div>
-        {current && (
-          <details className="native-reader-text">
-            <summary>
-              {translateNow("interface.DocumentReader.textOnThisPage")}
-            </summary>
-            <div>
-              {(shown.readableText ?? shown.text).trim() ||
-                translateNow(
-                  "interface.DocumentReader.noTextCouldBeReadOnThis",
-                )}
+        </header>
+        {showingAid && aid ? (
+          <ReadingAidView
+            aid={aid}
+            reviewedAtMs={aid.reviewedAtMs}
+            onOpenOriginal={() => setView("original")}
+          />
+        ) : (
+          <>
+            <div className="native-reader-controls">
+              <button
+                className="button"
+                type="button"
+                disabled={loading || page === 0}
+                onClick={() => setPage((current) => current - 1)}
+              >
+                {translateNow("interface.DocumentReader.previousPage")}
+              </button>
+              <span className="native-reader-where">{where}</span>
+              <button
+                className="button"
+                type="button"
+                disabled={loading || last === null || page >= last}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                {translateNow("interface.DocumentReader.nextPage")}
+              </button>
+              <span className="native-reader-zoom">
+                <button
+                  className="button"
+                  type="button"
+                  disabled={!zoomable || zoom <= ZOOM_MIN}
+                  onClick={() =>
+                    setZoom((current) =>
+                      Math.max(ZOOM_MIN, current / ZOOM_STEP),
+                    )
+                  }
+                >
+                  {translateNow("interface.DocumentReader.smaller")}
+                </button>
+                <span aria-live="polite">
+                  {translateNow("interface.reader.zoom", {
+                    percent: Math.round(zoom * 100),
+                  })}
+                </span>
+                <button
+                  className="button"
+                  type="button"
+                  disabled={!zoomable || zoom >= ZOOM_MAX}
+                  onClick={() =>
+                    setZoom((current) =>
+                      Math.min(ZOOM_MAX, current * ZOOM_STEP),
+                    )
+                  }
+                >
+                  {translateNow("interface.DocumentReader.larger")}
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  disabled={!zoomable || zoom === 1}
+                  onClick={() => setZoom(1)}
+                >
+                  {translateNow("interface.DocumentReader.fitWidth")}
+                </button>
+              </span>
             </div>
-          </details>
+            <p
+              className={
+                loading && !asking ? "native-dialog-status" : "sr-only"
+              }
+              role="status"
+            >
+              {loading && !asking
+                ? translateNow("interface.reader.opening", { page: page + 1 })
+                : current
+                  ? translateNow("interface.reader.where", {
+                      page: shown.page + 1,
+                      total: shown.pageCount,
+                    })
+                  : ""}
+            </p>
+            {asking && (
+              <form
+                className="native-reader-password"
+                onSubmit={giveDocumentPassword}
+              >
+                <p id="reader-password-help">
+                  {translateNow(
+                    "interface.DocumentReader.thisDocumentIsLockedWithItsOwn",
+                  )}
+                </p>
+                <label htmlFor="reader-password">
+                  {translateNow("interface.DocumentReader.documentPassword")}
+                </label>
+                <input
+                  ref={passwordRef}
+                  id="reader-password"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={typed}
+                  aria-describedby={
+                    wrongTries
+                      ? "reader-password-help reader-password-error"
+                      : "reader-password-help"
+                  }
+                  aria-invalid={wrongTries ? true : undefined}
+                  onChange={(event) => setTyped(event.target.value)}
+                />
+                {wrongTries > 0 && (
+                  <p id="reader-password-error" role="alert" key={wrongTries}>
+                    {translateNow(
+                      "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+                    )}
+                  </p>
+                )}
+                <button className="button primary" disabled={!typed}>
+                  {translateNow("interface.DocumentReader.open")}
+                </button>
+              </form>
+            )}
+            {error && <p role="alert">{error}</p>}
+            {/* Focusable, so that a zoomed page can be moved with the arrow keys
+            where the webview does not focus scrolling areas itself. */}
+            <div
+              className="native-reader-page"
+              aria-busy={loading}
+              ref={pageRef}
+              tabIndex={0}
+              role="region"
+              aria-label={translateNow("interface.reader.page", {
+                page: current ? shown.page + 1 : page + 1,
+              })}
+            >
+              {current && (
+                <img
+                  src={shown.image}
+                  alt={translateNow("interface.reader.textFollows", {
+                    page: shown.page + 1,
+                    total: shown.pageCount,
+                  })}
+                  style={{ width: `${cssWidth}px` }}
+                />
+              )}
+            </div>
+            {current && (
+              <details className="native-reader-text">
+                <summary>
+                  {translateNow("interface.DocumentReader.textOnThisPage")}
+                </summary>
+                <div>
+                  {(shown.readableText ?? shown.text).trim() ||
+                    translateNow(
+                      "interface.DocumentReader.noTextCouldBeReadOnThis",
+                    )}
+                </div>
+              </details>
+            )}
+          </>
         )}
       </section>
     </div>

@@ -631,6 +631,10 @@ pub struct VaultRecord {
     /// clinic did not record one. This is independent of the date added here.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clinic_service_date: Option<String>,
+    /// The clinician-approved reading aid filed with this delivery, if any (format 10). It is
+    /// reached from this record only, never listed as a document of its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reading_aid: Option<crate::portal_delivery::ReadingAidView>,
 }
 
 // JSON numbers must remain exact when the renderer compares capture order.
@@ -1533,6 +1537,10 @@ impl VaultStore {
                         record,
                         &unlocked.manifest.portal_links,
                     ),
+                    reading_aid: record
+                        .reading_aid
+                        .as_ref()
+                        .and_then(crate::portal_delivery::AidCustody::view),
                     clinic_service_date: record
                         .delivery
                         .as_ref()

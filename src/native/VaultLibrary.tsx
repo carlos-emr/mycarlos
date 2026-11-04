@@ -215,6 +215,8 @@ export function VaultLibrary({
   activeRecordIdRef.current = activeRecordId;
   // The document open in the reader, if any.
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
+  // Whether the reader opens on the clinic's reading aid (under its notice) rather than the original.
+  const [readerShowsAid, setReaderShowsAid] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
@@ -2392,6 +2394,16 @@ export function VaultLibrary({
                 onRead={
                   namedAsPdf(activeRecord.displayName)
                     ? () => {
+                        setReaderShowsAid(false);
+                        setReaderRecordId(activeRecord.id);
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
+                onReadAid={
+                  activeRecord.readingAid
+                    ? () => {
+                        setReaderShowsAid(true);
                         setReaderRecordId(activeRecord.id);
                         setActiveRecordId(null);
                       }
@@ -2402,6 +2414,7 @@ export function VaultLibrary({
           {readerRecord && (
             <DocumentReader
               record={readerRecord}
+              startWithAid={readerShowsAid}
               viewPage={(page, width, password) =>
                 bridge
                   .viewPage(readerRecord.id, page, width, password)
