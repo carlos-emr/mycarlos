@@ -1009,6 +1009,7 @@ interface Rule {
   group?: number;
   /** Relational prose can also introduce a disease: flag that conflict. */
   reviewClinicalConflict?: true;
+  upperPrefix?: true;
 }
 
 const HEALTH_CARD_LABEL =
@@ -1055,6 +1056,7 @@ const RULES: Rule[] = [
     pattern:
       /\b(?:(?:MRN|HRN|Medical record|Health record|Chart|Record|Hospital|Patient|Pt|Account|Acct|Unit|Client|Order|Report|Reference|Ref|Accession|Requisition|Lab|Encounter|Visit|Case|File|Specimen|Sample|Spécimen|Échantillon|Dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?)(?: number| no\.?| #| ID| n°)|ID[ \t]+patient|Identifiant(?: du)?[ \t]+patient|(?:N[o°]|Numéro)[ \t]+(?:de[ \t]+|du[ \t]+|d['’][ \t]*)(?:dossier(?:[ \t]+(?:médical|patient|hospitalier|clinique))?|patient|hôpital|requête|demande|laboratoire|visite|épisode|rapport|référence|prélèvement|spécimen|échantillon))[ \t]*[:#]?[ \t]*([A-Z]{1,5}[ \t][A-Z0-9][A-Z0-9-]*\d[A-Z0-9-]*)/giu,
     group: 1,
+    upperPrefix: true,
   },
   {
     kind: "dateOfBirth",
@@ -1308,6 +1310,9 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
     for (const match of text.matchAll(rule.pattern)) {
       const detail = rule.group ? match[rule.group] : match[0];
       if (!detail) continue;
+      // The pattern runs case-insensitively; a letter prefix must really be capitals
+      // ("Order number: see 2024 notes" is a sentence, not an ID).
+      if (rule.upperPrefix && !/^[A-Z]{1,5}[ \t]/u.test(detail)) continue;
       const offset = rule.group ? match[0].indexOf(detail) : 0;
       const start = match.index + offset;
       // A label's value may run past the detail into trailing punctuation,

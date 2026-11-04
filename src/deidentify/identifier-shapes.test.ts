@@ -100,6 +100,7 @@ describe("record-number labels", () => {
       "Chart: see 2024 notes.",
       "Encounter: ED 24h ago.",
       "Requisition: CBC x2 tomorrow.",
+      "Order number: see 2024 notes.",
     ]) {
       expect(sent(text)).toBe(text);
       const result = out(text);
