@@ -732,10 +732,11 @@ impl VaultStore {
     }
 
     /// Files a verified aid whose original is filed, or refuses it. A record holds one aid. A
-    /// second aid for the same original (a new review) replaces the held one only when its signed
-    /// review time (`approval.reviewed_at`) is strictly later; the summary version is an opaque
-    /// hash and cannot be ordered. An earlier or equal one is not filed and is answered with its
-    /// own signed receipt, so the portal stops offering it.
+    /// second aid for the same original (a new review) replaces the held one only when it is
+    /// greater by (`approval.reviewed_at`, `approval.id`): the later review, and within the same
+    /// second the larger approval ID. The summary version is an opaque hash and cannot be
+    /// ordered. A lesser or equal one is not filed and is answered with its own signed receipt,
+    /// so the portal stops offering it.
     #[allow(clippy::too_many_arguments)]
     fn file_or_refuse(
         &self,
@@ -763,11 +764,17 @@ impl VaultStore {
         let replace = match &unlocked.manifest.records[index].reading_aid {
             None => false,
             Some(held) => {
-                let held_at = aid::kept_manifest(&held.manifest_compact)
+                let held_approval = aid::kept_manifest(&held.manifest_compact)
                     .map_err(|_| VaultError::Corrupt)?
-                    .approval
-                    .reviewed_at;
-                if manifest.approval.reviewed_at <= held_at {
+                    .approval;
+                // Review time first; within the same second the larger approval ID, byte by byte,
+                // so that two devices always keep the same aid. The same approval under another
+                // delivery ID is not greater and is not filed.
+                if (
+                    manifest.approval.reviewed_at,
+                    manifest.approval.id.as_bytes(),
+                ) <= (held_approval.reviewed_at, held_approval.id.as_bytes())
+                {
                     let head = wire::head_bytes(&unlocked.manifest.history.head)
                         .ok_or(VaultError::Corrupt)?;
                     let anchor = link.keys.anchor(&head).map_err(VaultError::Portal)?;
@@ -2352,18 +2359,28 @@ mod approval_recovery_tests {
         assert!(waiting_aids(&store).is_empty());
         assert!(stored_aid(&store, record_id).is_none());
     }
+    fn aid_approval_id(custody: &wire::AidCustody) -> String {
+        crate::reading_aid::kept_manifest(&custody.manifest_compact)
+            .unwrap()
+            .approval
+            .id
+    }
     /// A second aid for the filed original: the contract's aid with another delivery ID and review
     /// time, its signed manifest re-encoded (the vault checks signatures on arrival, not here).
     fn second_aid(
         first: &wire::AidCustody,
         id: &str,
         reviewed_at: u64,
+        approval_id: Option<String>,
     ) -> (wire::Outer, crate::reading_aid::AidManifest, String) {
         use base64::Engine;
         let (payload, signature) = wire::split_compact(&first.manifest_compact, 16 * 1024).unwrap();
         let mut claims: serde_json::Value = serde_json::from_slice(&payload).unwrap();
         claims["delivery_id"] = id.into();
         claims["approval"]["reviewed_at"] = reviewed_at.into();
+        if let Some(approval_id) = approval_id {
+            claims["approval"]["id"] = approval_id.into();
+        }
         let compact = format!(
             "{}.{}",
             base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -2394,8 +2411,8 @@ mod approval_recovery_tests {
             .approval
             .reviewed_at;
         let session_of = |s: &VaultStore| s.portal_link_ticket();
-        let attempt = |id: &str, at: u64| {
-            let (o, m, c) = second_aid(&held, id, at);
+        let attempt = |id: &str, at: u64, approval: Option<String>| {
+            let (o, m, c) = second_aid(&held, id, at, approval);
             let mut guard = store.session();
             let unlocked = guard.as_mut().unwrap();
             store.file_or_refuse(
@@ -2412,7 +2429,7 @@ mod approval_recovery_tests {
         // Equal and earlier reviews: not filed, a signed receipt for the new aid only.
         for at in [held_at, held_at - 10] {
             let id = "11111111-1111-4111-8111-111111111111";
-            let AidFiling::NotFiled(receipt) = attempt(id, at).unwrap() else {
+            let AidFiling::NotFiled(receipt) = attempt(id, at, None).unwrap() else {
                 panic!("an equal or earlier review must not replace the held aid");
             };
             let (payload, _) = wire::split_compact(&receipt, 4096).unwrap();
@@ -2423,9 +2440,36 @@ mod approval_recovery_tests {
                 held.outer.delivery_id
             );
         }
+        // Within the same second the larger approval ID wins, byte by byte: a smaller one is not
+        // filed and a larger one replaces the held aid, so devices cannot disagree.
+        let held_id = aid_approval_id(&held);
+        let mut smaller = held_id.clone();
+        smaller.pop();
+        assert!(matches!(
+            attempt(
+                "44444444-4444-4444-8444-444444444444",
+                held_at,
+                Some(smaller)
+            )
+            .unwrap(),
+            AidFiling::NotFiled(_)
+        ));
+        let larger = format!("{held_id}z");
+        assert_eq!(
+            attempt(
+                "33333333-3333-4333-8333-333333333333",
+                held_at,
+                Some(larger)
+            )
+            .unwrap(),
+            AidFiling::Replaced
+        );
         // A strictly later review replaces it, in a commit that says so, and keeps the validation happy.
         let id = "22222222-2222-4222-8222-222222222222";
-        assert_eq!(attempt(id, held_at + 10).unwrap(), AidFiling::Replaced);
+        assert_eq!(
+            attempt(id, held_at + 10, None).unwrap(),
+            AidFiling::Replaced
+        );
         let now_held = stored_aid(&store, record_id).unwrap();
         assert_eq!(now_held.outer.delivery_id, id);
         assert!(now_held.receipt_outcome.is_none());
