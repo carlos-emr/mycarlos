@@ -1,9 +1,11 @@
 # AI helper: the in-app privacy notice (#72)
 
-- **Status:** draft text for review, by Ben and by a native speaker of each language, for the
-  planned AI helper. It is **not in the app yet**. The change that first shows it (#72 part B, the
-  anonymized text export) copies these messages word for word into the seven `.ftl` files and
-  `src/i18n/locales/fluent/message-keys.json`, then runs `npm run i18n:generate`.
+- **Status:** the export messages (part B) are in the app on main (#171, desktop only), in the
+  seven `.ftl` files and `src/i18n/locales/fluent/message-keys.json`, still for review by Ben and by
+  a native speaker of each language. The messages below are those texts. `modelHeading`,
+  `modelBody` and `resultsBody` (part D) are **not in the app yet**. The notice text was checked
+  against the remover as it is on main and still tells the truth, so it did not change: see
+  "What the notice does not say in detail" at the end.
 - **Date:** 2026-10-29
 - **Data restriction:** synthetic (made-up) files only, until the pilot privacy review (#25)
   approves real health information.
@@ -273,3 +275,37 @@ Notes:
   say "IP address" (adresse IP, dirección IP, adres IP, endereço IP, IP 地址 / IP 位址), the usual
   term in each.
 - **`exportCut`** takes the page number as `{ $page }`.
+
+## What the notice does not say in detail
+
+The notice is short on purpose. These are the facts behind it, as the remover is on main (#171),
+for the reviewer who checks the notice against the code.
+
+- **Numbers removed.** A social insurance number (SIN in English, NAS in French) written with
+  points, spaces or hyphens between its groups, whether it follows a label or stands alone (a bare
+  one only when its check digit is right and it uses one separator throughout); and the numbers
+  after 24 record-number labels (record, chart, file, accession, requisition and similar, in
+  English and French). The notice says "health card and medical record numbers ... and other
+  identifying numbers", which covers both.
+- **Dates.** A date of birth is removed. Every other date that the remover reads moves back by one
+  whole number of days, 30 to 365, drawn again for each preview and never kept. A numeric date that
+  could be read two ways (03/04/2025) is removed instead of moved. A date the remover cannot read
+  stays as it is, unmarked; the preview says so.
+- **Ages.** An age of 90 or over is removed. (Ben is still deciding on the age and date rules, so
+  this text does not promise more than the notice does.)
+- **Putting the details back.** The app can put the details back into an answer that came back
+  with the placeholders, on the device: each placeholder becomes what it stood for and each moved
+  date the date it was. A date the answer wrote another way stays moved. Names that the remover
+  gives one shared placeholder come back as the first spelling seen, not each original spelling.
+  The notice only says that moved dates stay moved in the other service's answers.
+- **Who runs it.** Rust only, for now: the remover is the one in the app. Ben decided (D9, 4
+  November 2026) not to ship Presidio, an open-source text-analysis tool, to patients. It may come
+  later as an optional tool on the clinic side. No text goes to it today.
+- **Computers only.** The text comes from the PDF helper, so the whole workflow is hidden on phones.
+- **What was measured.** On 24 synthetic documents, 12 English and 12 French, holding 36 identifier
+  targets, the app's remover alone fully removed 28, partly removed 3 and missed 5. With a known
+  patient identity (linked record, 24 targets) the counts were 20, 3 and 1. With none (a loose PDF,
+  12 targets) they were 8, 0 and 4. It damaged 2 of 64 clinical targets. These documents are
+  synthetic and were not chosen to be typical, so the numbers say where the gaps were and do not
+  predict how it does on real documents. That is why the notice says that removing details is never
+  perfect and tells the patient to read all of the text before saving.

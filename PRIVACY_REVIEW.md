@@ -423,10 +423,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     design has none: each export is chosen for one document, after a preview and a save dialog.
     Is that enough, or should it also be switched on first?
 
-## 11. The planned AI helper (#72)
+## 11. The AI helper (#72)
 
-Not built yet. This section describes what is planned, so that the assessment can cover it. It is
-for synthetic data only until this assessment approves real information (#25). The security side
+The text export (part B) is built on main (#171) and works on computers only; it is hidden on
+phones. The model and its tools are planned. This section describes both, so that the assessment
+can cover them. It is for synthetic data only until this assessment approves real information (#25). The security side
 is in `THREAT_MODEL.md` (AI-01 to AI-10) and `SECURITY_OPERATIONS.md`, and the notice the patient
 sees is in `AI_HELPER_NOTICE.md`.
 
@@ -443,15 +444,29 @@ helper is meant to explain one document in plain words. It can be used in two wa
 
 **What is removed.** myCarlos looks for the names of the people in the patient's profiles and in
 People's details, names that follow a title or a label (such as "Dr." or "Patient:") in English
-and French text, health card and medical record numbers and other identifying numbers (such as
-lab order numbers), dates of birth, ages of 90 and over, addresses, postal codes, phone and fax
+and French text, health card and medical record numbers (after any of 24 labels) and other identifying numbers
+(such as lab order numbers), social insurance numbers (SIN, NAS) written with points, spaces or
+hyphens, dates of birth, ages of 90 and over, addresses, postal codes, phone and fax
 numbers, email and web addresses, and the names of clinics and doctors, and removes them. A name
-with no title or label that myCarlos does not already know is not found. Other dates that myCarlos
+with no title or label that myCarlos does not already know is not found. A numeric date that could be read two ways (03/04/2025) is removed. Other dates that myCarlos
 recognises (written in English or French) are moved back by one random number of days (30 to 365),
 the same for every date in that text, so the time between them stays the same. The number is new
 each time and is not kept. Dates it moved stay moved in another AI's answer; a date it does not
 recognise (for example one written in Spanish, Polish, Portuguese or Chinese) stays as it was,
 unmarked.
+
+**Putting the details back.** The app can put the details back into an answer that came back
+with the placeholders, on the device: each placeholder becomes what it stood for, and each moved
+date the date it was. A date the answer wrote another way stays moved, and names that shared one
+placeholder come back as the first spelling seen.
+
+**Who removes them, and how well.** The app's own remover, written in Rust and TypeScript, and
+nothing else. Ben decided (D9, 4 November 2026) not to ship Presidio to patients; it may later be an
+optional tool on the clinic's side. On 24 synthetic documents (12 English, 12 French) with 36
+identifier targets, the remover alone fully removed 28, partly removed 3 and missed 5; with a known
+patient identity 20, 3 and 1 of 24; without one 8, 0 and 4 of 12; it damaged 2 of 64 clinical
+targets. The documents were synthetic and not typical, so these counts show where the gaps were and
+do not predict real use. The preview is the safety net for what is missed.
 
 **The preview.** Before anything is saved, the patient sees all of the text the file will hold,
 with the removed parts and the moved dates marked, and can remove more. Nothing is saved until the

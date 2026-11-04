@@ -155,7 +155,7 @@ was not active in the key list it pinned at linking (it does not yet learn of a 
 
 ## AI helper (#72): nothing leaves the device
 
-Planned with #72 and not built yet ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
+The anonymized text export (part B) is built on main (#171, computers only); the model and its tools (part D) are planned ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
 on 29 October 2026 that the helper uses no cloud provider, so:
 
 - **What may leave the device: nothing.** The AI helper makes no network connection, its model runs
