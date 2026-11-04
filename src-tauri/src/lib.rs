@@ -37,8 +37,11 @@ mod document_notification_windows;
 pub mod document_notifications;
 mod history;
 mod idle;
+mod local_model;
 #[allow(dead_code)]
-// Wired to the reader's AI actions and ai_model_status by #172; only its lock hook is used here.
+// Only the lock hook is used here. Wiring the reader's AI actions and
+// ai_model_status to local_runner::Runner is a follow-up once the model is
+// chosen; until then ai_model_status answers "not installed" (local_model).
 mod local_runner;
 mod pdf_unlock;
 mod pdf_view;
@@ -1495,6 +1498,13 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
 #[tauri::command]
 fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
+}
+
+/// Whether the AI helper (#72) has a model on this computer. None can be
+/// installed yet: getting one comes in a later version.
+#[tauri::command]
+fn ai_model_status() -> local_model::ModelStatus {
+    local_model::status()
 }
 
 #[derive(Serialize)]
@@ -4072,6 +4082,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            ai_model_status,
             kdf_benchmark,
             vault_status,
             vault_passphrase_rules,

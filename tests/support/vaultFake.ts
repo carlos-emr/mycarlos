@@ -867,6 +867,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         switch (command) {
           case "runtime_info":
             return { platform: setup.platform };
+          // Preferences on a computer asks whether an AI model is installed (#72).
+          case "ai_model_status":
+            return { state: "notInstalled" };
           case "vault_status":
             return state.status;
           case "vault_notification_status":
