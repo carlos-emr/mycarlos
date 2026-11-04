@@ -28,6 +28,8 @@ const CACHED_PAGES = 6;
 const CACHED_CHARACTERS = 48 * 1024 * 1024;
 /** A resize settles before the page is measured again. */
 const RESIZE_SETTLE_MS = 150;
+/** Let a burst of zoom input settle before sharpening the visible page. */
+const ZOOM_SETTLE_MS = 120;
 
 /** Retains drawn pages within the reader's count and character budgets. */
 export function cacheDrawnPage(
@@ -51,31 +53,39 @@ export function cacheDrawnPage(
   }
 }
 
-/** Reads a stored document inside myCarlos, one page at a time. Each page is
- * drawn by the separate PDF helper, as a picture with its text beside it for
- * screen readers and copying: nothing in the document runs here, and nothing
- * is saved. A document locked with its own password asks for it; the
- * password is held only while the reader is open. */
-export function DocumentReader({
-  record,
-  viewPage,
-  cancelView,
-  onClose,
-}: {
+type DocumentReaderProps = {
   record: VaultRecord;
   viewPage: (
     page: number,
     width: number,
     password?: string,
   ) => Promise<ViewedPage>;
-  /** Stops a page still being drawn, when the reader closes. */
+  /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView?: () => void;
   onClose: () => void;
-}) {
+};
+
+/** Reads a stored document inside myCarlos, one page at a time. Each page is
+ * drawn by the separate PDF helper, as a picture with its text beside it for
+ * screen readers and copying: nothing in the document runs here, and nothing
+ * is saved. A document locked with its own password asks for it; the
+ * password is held only while the reader is open. */
+export function DocumentReader(props: DocumentReaderProps) {
+  // A document change starts a new reading session, including its password/cache.
+  return <ReadingDocument key={props.record.id} {...props} />;
+}
+
+function ReadingDocument({
+  record,
+  viewPage,
+  cancelView,
+  onClose,
+}: DocumentReaderProps) {
   useI18n();
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
   useModalFocus(true, dialogRef, onClose, closeRef);
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState(1);
@@ -92,6 +102,10 @@ export function DocumentReader({
   const [asking, setAsking] = useState(false);
   const [wrongTries, setWrongTries] = useState(0);
   const [typed, setTyped] = useState("");
+  // A refused attempt remounts the field; keep keyboard retry in that field.
+  useEffect(() => {
+    if (asking && wrongTries > 0) passwordRef.current?.focus();
+  }, [asking, wrongTries]);
   // Pages already drawn at a width, so that going back is quick. Memory only.
   const drawn = useRef(new Map<string, ViewedPage>());
   // The latest way to ask for a page; a new function alone asks for nothing.
@@ -99,8 +113,16 @@ export function DocumentReader({
   viewPageRef.current = viewPage;
   const cancelViewRef = useRef(cancelView);
   cancelViewRef.current = cancelView;
-  // A page still being drawn when the reader closes is stopped.
-  useEffect(() => () => cancelViewRef.current?.(), []);
+  const pendingDraw = useRef<symbol | null>(null);
+  // Clear retained pages and stop native work before disposing this reading session.
+  useEffect(
+    () => () => {
+      pendingDraw.current = null;
+      drawn.current.clear();
+      cancelViewRef.current?.();
+    },
+    [],
+  );
 
   useEffect(() => {
     // The width inside the page area's padding, so that a page fitted to it
@@ -148,30 +170,52 @@ export function DocumentReader({
       return;
     }
     let current = true;
+    let request: symbol | undefined;
     setLoading(true);
     setError("");
-    viewPageRef.current(page, pictureWidth, password).then(
-      (result) => {
-        if (!current) return;
-        remember(key, result);
-        setShown({ ...result, page });
-        setPageCount(result.pageCount);
-        setLoading(false);
-      },
-      (failure: unknown) => {
-        if (!current) return;
-        setLoading(false);
-        const wrong = hasVaultErrorCode(failure, "pdf_wrong_password");
-        if (wrong || hasVaultErrorCode(failure, "pdf_locked")) {
-          if (wrong) setWrongTries((count) => count + 1);
-          setAsking(true);
-          return;
-        }
-        setError(deferredText(() => vaultErrorMessage(failure)));
-      },
-    );
+    const draw = () => {
+      request = Symbol();
+      pendingDraw.current = request;
+      const settled = () => {
+        if (pendingDraw.current === request) pendingDraw.current = null;
+      };
+      viewPageRef.current(page, pictureWidth, password).then(
+        (result) => {
+          settled();
+          if (!current) return;
+          remember(key, result);
+          setShown({ ...result, page });
+          setPageCount(result.pageCount);
+          setLoading(false);
+        },
+        (failure: unknown) => {
+          settled();
+          if (!current) return;
+          setLoading(false);
+          const wrong = hasVaultErrorCode(failure, "pdf_wrong_password");
+          if (wrong || hasVaultErrorCode(failure, "pdf_locked")) {
+            if (wrong) setWrongTries((count) => count + 1);
+            setAsking(true);
+            return;
+          }
+          setError(deferredText(() => vaultErrorMessage(failure)));
+        },
+      );
+    };
+    // Opening/navigating/password attempts start immediately. A visible page
+    // scales with the controls while a burst of zooms settles to one new size.
+    const timer =
+      shown?.page === page
+        ? window.setTimeout(draw, ZOOM_SETTLE_MS)
+        : undefined;
+    if (timer === undefined) draw();
     return () => {
       current = false;
+      window.clearTimeout(timer);
+      if (request !== undefined && pendingDraw.current === request) {
+        pendingDraw.current = null;
+        cancelViewRef.current?.();
+      }
     };
   }, [asking, fitWidth, page, password, pictureWidth]);
 
@@ -192,7 +236,9 @@ export function DocumentReader({
           total: pageCount,
         });
   // The picture shown is the page asked for, not one left from before.
-  const current = shown && shown.page === page && !asking && !error;
+  const zoomable = shown && shown.page === page && !asking;
+  // A failed sharpening attempt can still return to a cached size.
+  const current = zoomable && !error;
   return (
     <div className="dialog-backdrop" role="presentation">
       <section
@@ -250,7 +296,7 @@ export function DocumentReader({
             <button
               className="button"
               type="button"
-              disabled={loading || zoom <= ZOOM_MIN}
+              disabled={!zoomable || zoom <= ZOOM_MIN}
               onClick={() =>
                 setZoom((current) => Math.max(ZOOM_MIN, current / ZOOM_STEP))
               }
@@ -265,7 +311,7 @@ export function DocumentReader({
             <button
               className="button"
               type="button"
-              disabled={loading || zoom >= ZOOM_MAX}
+              disabled={!zoomable || zoom >= ZOOM_MAX}
               onClick={() =>
                 setZoom((current) => Math.min(ZOOM_MAX, current * ZOOM_STEP))
               }
@@ -275,7 +321,7 @@ export function DocumentReader({
             <button
               className="button"
               type="button"
-              disabled={loading || zoom === 1}
+              disabled={!zoomable || zoom === 1}
               onClick={() => setZoom(1)}
             >
               {translateNow("interface.DocumentReader.fitWidth")}
@@ -309,6 +355,7 @@ export function DocumentReader({
               {translateNow("interface.DocumentReader.documentPassword")}
             </label>
             <input
+              ref={passwordRef}
               id="reader-password"
               type="password"
               autoComplete="off"
@@ -339,6 +386,7 @@ export function DocumentReader({
             where the webview does not focus scrolling areas itself. */}
         <div
           className="native-reader-page"
+          aria-busy={loading}
           ref={pageRef}
           tabIndex={0}
           role="region"

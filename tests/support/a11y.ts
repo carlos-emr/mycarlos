@@ -37,6 +37,12 @@ export async function fakeVault(
   await page.addInitScript(
     ({ start, recoveryKey }) => {
       let status = start;
+      const captureEpoch = crypto.randomUUID();
+      let captureSequence = 0;
+      const captured = () => ({
+        ...structuredClone(snapshot),
+        capture: { epoch: captureEpoch, sequence: ++captureSequence },
+      });
       const snapshot = {
         profiles: [
           { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
@@ -120,13 +126,13 @@ export async function fakeVault(
             case "vault_is_locked_pdf":
               return false;
             case "vault_snapshot":
-              return structuredClone(snapshot);
+              return captured();
             case "vault_passphrase_rules":
               return { longEnough: true, notAName: true, hardToGuess: true };
             case "vault_create":
             case "vault_unlock":
               status = "unlocked";
-              return structuredClone(snapshot);
+              return captured();
             case "vault_lock":
               status = "locked";
               return;

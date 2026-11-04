@@ -3,11 +3,15 @@ import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
   FAKE_IDS,
+  FAKE_PAGE_COUNT,
   FAKE_PASSPHRASE,
+  FAKE_VAULT_KEY,
   fakeCalls,
   fakeCommands,
+  fakePageText,
   fakeVaultWith,
   myRecords,
+  openDetails,
   scriptFake,
   sidebar,
 } from "./support/vaultFake";
@@ -201,6 +205,146 @@ test("Restore from a backup: a wrong passphrase is said, the check says what res
   await expect(
     page.getByRole("button", { name: "FAKE Letter.pdf", exact: true }),
   ).toHaveCount(0);
+  await expectOnlyFakedCommands(page);
+});
+
+test("restores a backup with its recovery key, then uses the same key to set a new passphrase and read the restored letter", async ({
+  page,
+}, testInfo) => {
+  const letter = "FAKE Restored letter.pdf";
+  const results = "FAKE Restored results.pdf";
+  const key = FAKE_VAULT_KEY.split("-").join(" ");
+  const newPassphrase = "FAKE new passphrase after recovery";
+  await fakeVaultWith(page, {
+    start: "locked",
+    recoveryKey: FAKE_VAULT_KEY,
+    backup: {
+      replaces: "sameVault",
+      documents: [letter, results],
+      passphrase: BACKUP_PASSPHRASE,
+    },
+  });
+  await page.goto("/");
+  await page.getByText(en("restore.summary"), { exact: true }).click();
+  const form = page.locator("form.restore-backup");
+  await form
+    .getByRole("button", { name: en("restore.choose"), exact: true })
+    .click();
+  const useKey = form.getByRole("radio", {
+    name: en("restore.method.recoveryKey"),
+    exact: true,
+  });
+  await useKey.check();
+  await expect(useKey).toBeChecked();
+  await form.getByLabel(en("recover.key.label"), { exact: true }).fill(key);
+  await form
+    .getByRole("button", { name: en("restore.check"), exact: true })
+    .click();
+  await expect(form.getByRole("status")).toHaveText(
+    en("restore.checked", {
+      count: 2,
+      consequence: en("restore.consequence.same"),
+    }),
+  );
+  expect(await fakeCalls(page, "vault_restore_inspect")).toEqual([
+    { request: { pickId: FAKE_IDS.restorePick, recoveryKey: key } },
+  ]);
+  const restore = form.getByRole("button", {
+    name: en("restore.submit"),
+    exact: true,
+  });
+  await expect(restore).toBeEnabled();
+  await page.screenshot({
+    path: testInfo.outputPath("key-backup-checked.png"),
+  });
+
+  await restore.click();
+  await expect(
+    page.getByText(en("notice.restored"), { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: en("unlock.title"), exact: true }),
+  ).toBeVisible();
+  await expect(myRecords(page)).toHaveCount(0);
+  expect(await fakeCalls(page, "vault_restore")).toEqual([
+    {
+      locale: "en",
+      request: {
+        pickId: FAKE_IDS.restorePick,
+        recoveryKey: key,
+        replace: true,
+      },
+    },
+  ]);
+  await page.screenshot({
+    path: testInfo.outputPath("key-backup-restored-locked.png"),
+  });
+
+  // Restoring does not reveal the forgotten passphrase. The same kit opens
+  // the restored vault through recovery, with a new passphrase chosen here.
+  const summary = en("unlock.forgot.summary");
+  await page.getByText(summary, { exact: true }).click();
+  const forgot = page
+    .getByRole("group")
+    .filter({ has: page.getByText(summary, { exact: true }) });
+  await forgot.getByLabel(en("recover.key.label"), { exact: true }).fill(key);
+  await forgot
+    .getByLabel(en("passphrase.new.label"), { exact: true })
+    .fill(newPassphrase);
+  await forgot
+    .getByLabel(en("passphrase.confirmNew.label"), { exact: true })
+    .fill(newPassphrase);
+  await forgot
+    .getByRole("button", { name: en("recover.submit"), exact: true })
+    .click();
+  await expect(myRecords(page)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: letter, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: results, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "FAKE Letter.pdf", exact: true }),
+  ).toHaveCount(0);
+  expect(await fakeCalls(page, "vault_recover")).toEqual([
+    { request: { recoveryKey: key, newPassphrase } },
+  ]);
+  expect(await fakeCalls(page, "vault_unlock")).toEqual([]);
+
+  const details = await openDetails(page, letter);
+  await details
+    .getByRole("button", {
+      name: en("interface.RecordDetails.read"),
+      exact: true,
+    })
+    .click();
+  const reader = page.getByRole("dialog", { name: letter, exact: true });
+  await expect(
+    reader.getByRole("img", {
+      name: en("interface.reader.textFollows", {
+        page: 1,
+        total: FAKE_PAGE_COUNT,
+      }),
+      exact: true,
+    }),
+  ).toBeVisible();
+  await reader
+    .getByText(en("interface.DocumentReader.textOnThisPage"), { exact: true })
+    .click();
+  await expect(
+    reader.getByText(fakePageText(letter, 1), { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("key-backup-restored-reader.png"),
+  });
+  await reader
+    .getByRole("button", { name: en("photo.close"), exact: true })
+    .click();
+  await expect(reader).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: letter, exact: true }),
+  ).toBeFocused();
   await expectOnlyFakedCommands(page);
 });
 

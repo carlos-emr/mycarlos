@@ -17,6 +17,8 @@ const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 async function fakeVault(page: Page, platform = "windows") {
   await page.addInitScript((platform) => {
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const snapshot = {
       profiles: [
         { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
@@ -33,7 +35,11 @@ async function fakeVault(page: Page, platform = "windows") {
         options?: { headers?: Record<string, string> },
       ) => {
         if (command === "vault_status") return "unlocked";
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform };
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
