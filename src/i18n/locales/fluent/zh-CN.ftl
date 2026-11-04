@@ -762,6 +762,7 @@ native-setAside-title = 要搁置此 myCarlos 保险库并重新开始吗？
 native-setAside-warning = 这会搁置整个保险库，并以空白保险库重新开始。{ $kept } myCarlos 绝不会删除搁置的保险库。如果您是因为担心他人知道密码短语而重新开始，对方仍能打开旧保险库，因此请将它移除。{ $removal }
 
 native-vault-keep = 保留此保险库
+native-notice-arrival = 一份诊所文档已送达 myCarlos。请打开 myCarlos 阅读。
 
 notice-autoLockSet = 自动锁定时间已设为 { $count } 分钟。
 
@@ -1635,3 +1636,16 @@ interface-AnonymizePreview-close = 关闭
 interface-AiHelperNotice-continue = 继续
 
 interface-AnonymizePreview-footerNote = 文件将以这一行结尾：
+
+notifications-title = 检查文档后的通知
+notifications-help = 手动检查后，诊所文档保存到 myCarlos 时，Windows 可显示一条通用通知。请按通常方式打开 myCarlos 阅读文档。系统不会自动检查文档。
+notifications-allow = 允许文档到达通知
+notifications-blocked = Windows 正在阻止通知。请查看 Windows 通知设置。
+notifications-unknown = 无法检查 Windows 通知权限。
+notifications-error = 无法保存此设置。本次会话的通知已关闭。
+notifications-unavailable = 文档通知不可用。请按通常方式打开 myCarlos 查看文档。
+notifications-helpAutomatic = 保存诊所文档后，Windows 可以显示不含具体内容的通知。请照常打开 myCarlos 阅读文档。
+notifications-autoAllow = 保险库解锁时自动检查诊所文档
+notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
+notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
+notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。

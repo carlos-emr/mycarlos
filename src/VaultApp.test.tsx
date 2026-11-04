@@ -10799,3 +10799,324 @@ describe("the warning before the automatic lock (#68)", () => {
     ).toBeVisible();
   });
 });
+
+describe("Automatic arrival snapshot ownership", () => {
+  const supported = {
+    ...emptySnapshot,
+    sharedProfileId: "FAKE_NATIVE_VAULT_OWNER",
+    automaticDocumentChecksSupported: true,
+  };
+  const withArrival = (name: string): VaultSnapshot => ({
+    ...supported,
+    records: [{ ...snapshotWithRecord.records[0], displayName: name }],
+  });
+
+  it("keeps a newer manual snapshot after an older automatic response arrives", async () => {
+    const user = userEvent.setup();
+    let finishAutomatic!: () => void;
+    const snapshot = vi
+      .fn()
+      .mockImplementationOnce(async () => captureSnapshot(supported))
+      .mockImplementationOnce(() => {
+        const captured = captureSnapshot(withArrival("FAKE old automatic.pdf"));
+        return new Promise<VaultSnapshot>((resolve) => {
+          finishAutomatic = () => resolve(captured);
+        });
+      })
+      .mockImplementationOnce(async () =>
+        captureSnapshot(withArrival("FAKE newer manual.pdf")),
+      );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot,
+      importPickedFiles: vi.fn().mockResolvedValue({
+        imported: [],
+        skippedDuplicates: ["FAKE existing.pdf"],
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Choose files to import"),
+      }),
+    );
+    await screen.findByText(humanText("FAKE newer manual.pdf"));
+    await act(async () => finishAutomatic());
+    expect(screen.getByText(humanText("FAKE newer manual.pdf"))).toBeVisible();
+    expect(screen.queryByText(humanText("FAKE old automatic.pdf"))).toBeNull();
+    // Opening, the automatic check, the import's own refresh: nothing else.
+    expect(snapshot).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps a newer automatic snapshot after an older manual response arrives", async () => {
+    const user = userEvent.setup();
+    let finishManual!: () => void;
+    const snapshot = vi
+      .fn()
+      .mockImplementationOnce(async () => captureSnapshot(supported))
+      .mockImplementationOnce(() => {
+        const captured = captureSnapshot(withArrival("FAKE old manual.pdf"));
+        return new Promise<VaultSnapshot>((resolve) => {
+          finishManual = () => resolve(captured);
+        });
+      })
+      .mockImplementationOnce(async () =>
+        captureSnapshot(withArrival("FAKE newer automatic.pdf")),
+      );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot,
+      importPickedFiles: vi.fn().mockResolvedValue({
+        imported: [],
+        skippedDuplicates: ["FAKE existing.pdf"],
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Choose files to import"),
+      }),
+    );
+    await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await screen.findByText(humanText("FAKE newer automatic.pdf"));
+    await act(async () => finishManual());
+    expect(
+      screen.getByText(humanText("FAKE newer automatic.pdf")),
+    ).toBeVisible();
+    expect(screen.queryByText(humanText("FAKE old manual.pdf"))).toBeNull();
+    // Opening, the import's own refresh, the automatic check: nothing else.
+    expect(snapshot).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["equal", "foreign epoch"] as const)(
+    "rejects an automatic %s capture without blocking a later valid arrival",
+    async (kind) => {
+      const opening = captureSnapshot(supported);
+      const rejected = {
+        ...withArrival("FAKE rejected capture.pdf"),
+        capture:
+          kind === "equal"
+            ? opening.capture
+            : {
+                epoch: "00000000-0000-4000-8000-000000000186",
+                sequence: Number.MAX_SAFE_INTEGER,
+              },
+      };
+      const snapshot = vi
+        .fn()
+        .mockResolvedValueOnce(opening)
+        .mockResolvedValueOnce(rejected)
+        .mockImplementationOnce(async () =>
+          captureSnapshot(withArrival("FAKE valid capture.pdf")),
+        );
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot,
+      });
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      expect(snapshot).toHaveBeenCalledTimes(2);
+      expect(
+        screen.queryByText(humanText("FAKE rejected capture.pdf")),
+      ).toBeNull();
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      await screen.findByText(humanText("FAKE valid capture.pdf"));
+    },
+  );
+
+  it("uses native capture order when automatic requests enter native in reverse order", async () => {
+    let finishFirst!: () => void;
+    const snapshot = vi
+      .fn()
+      .mockImplementationOnce(async () => captureSnapshot(supported))
+      .mockImplementationOnce(
+        () =>
+          new Promise<VaultSnapshot>((resolve) => {
+            finishFirst = () =>
+              resolve(
+                captureSnapshot(withArrival("FAKE latest native capture.pdf")),
+              );
+          }),
+      )
+      .mockImplementationOnce(async () =>
+        captureSnapshot(withArrival("FAKE earlier native capture.pdf")),
+      );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await screen.findByText(humanText("FAKE earlier native capture.pdf"));
+    await act(async () => finishFirst());
+    expect(
+      screen.getByText(humanText("FAKE latest native capture.pdf")),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText("FAKE earlier native capture.pdf")),
+    ).toBeNull();
+  });
+  it("refreshes on focus while preserving the current search input", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(supported)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const search = await screen.findByRole("searchbox");
+    fireEvent.change(search, { target: { value: "FAKE" } });
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot({
+        ...supported,
+        records: [
+          { ...snapshotWithRecord.records[0], displayName: "FAKE arrived.pdf" },
+        ],
+      }),
+    );
+    act(() => window.dispatchEvent(new Event("focus")));
+    await screen.findByText(humanText("FAKE arrived.pdf"));
+    expect(search).toHaveValue("FAKE");
+  });
+  it("ignores a response from a different native vault owner", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(supported)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const initial = vi.mocked(bridge.snapshot).mock.calls.length;
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot({
+        ...supported,
+        sharedProfileId: "FAKE_OTHER_OWNER",
+        profiles: [
+          { ...supported.profiles[0], displayName: "FAKE must not merge" },
+        ],
+      }),
+    );
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(bridge.snapshot).toHaveBeenCalledTimes(initial + 1),
+    );
+    expect(screen.queryByText(humanText("FAKE must not merge"))).toBeNull();
+  });
+  it("does not request an automatic snapshot refresh without native build support", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(emptySnapshot)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const initial = vi.mocked(bridge.snapshot).mock.calls.length;
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    expect(bridge.snapshot).toHaveBeenCalledTimes(initial);
+  });
+  it("refreshes when Security (where Clinic documents lives) opens and keeps that route until the patient leaves", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(supported)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const initial = vi.mocked(bridge.snapshot).mock.calls.length;
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot({
+        ...supported,
+        records: [
+          {
+            ...snapshotWithRecord.records[0],
+            displayName: "FAKE clinic arrival.pdf",
+          },
+        ],
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Security") }),
+    );
+    await waitFor(() =>
+      expect(bridge.snapshot).toHaveBeenCalledTimes(initial + 1),
+    );
+    expect(
+      screen.getByRole("heading", { name: humanText("Security") }),
+    ).toBeVisible();
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: humanText("Record library") }),
+      ).getByRole("button", { name: humanText(/^My records/) }),
+    );
+    await screen.findByText(humanText("FAKE clinic arrival.pdf"));
+  });
+  it("rejects a deferred response after re-unlocking the same owner and does not refresh while locked", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(supported)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    let finish!: (value: VaultSnapshot) => void;
+    vi.mocked(bridge.snapshot).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const before = vi.mocked(bridge.snapshot).mock.calls.length;
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() =>
+      expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Unlocked · Lock now") }),
+    );
+    await screen.findByLabelText(humanText("Passphrase"));
+    act(() => window.dispatchEvent(new Event("focus")));
+    await Promise.resolve();
+    expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1);
+    vi.mocked(bridge.unlock).mockImplementation(async () =>
+      captureSnapshot({
+        ...supported,
+        recoveryKeySetAtMs: 5,
+      }),
+    );
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+    });
+    await screen.findByRole("heading", { name: humanText("My records") });
+    await act(async () => {
+      finish(
+        captureSnapshot({
+          ...supported,
+          records: [
+            {
+              ...snapshotWithRecord.records[0],
+              displayName: "FAKE stale arrival.pdf",
+            },
+          ],
+        }),
+      );
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(humanText("FAKE stale arrival.pdf"))).toBeNull();
+    expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1);
+  });
+});

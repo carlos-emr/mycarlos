@@ -846,6 +846,7 @@ native-setAside-title = Set this myCarlos vault aside and start again?
 native-setAside-warning = This sets the whole vault aside and starts again with an empty one. { $kept } myCarlos never deletes it. If you are starting again because someone else may know your passphrase, they can still open it, so remove it. { $removal }
 
 native-vault-keep = Keep this vault
+native-notice-arrival = A clinic document has arrived in myCarlos. Open myCarlos to read it.
 
 notice-autoLockSet =
     { $count ->
@@ -1771,3 +1772,16 @@ interface-AnonymizePreview-close = Close
 interface-AiHelperNotice-continue = Continue
 
 interface-AnonymizePreview-footerNote = The file will end with this line:
+
+notifications-title = Notices after document checks
+notifications-help = When a clinic document is saved after a manual check, Windows can show a generic notice. Open myCarlos normally to read it. Documents are not checked automatically.
+notifications-allow = Allow document arrival notices
+notifications-blocked = Windows is blocking notifications. Review its notification settings.
+notifications-unknown = Windows notification permission could not be checked.
+notifications-error = This setting could not be saved. Notices are off for this session.
+notifications-unavailable = Document notices are unavailable. Open myCarlos normally to check your documents.
+notifications-helpAutomatic = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
+notifications-autoAllow = Check for clinic documents automatically while unlocked
+notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
+notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
+notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.

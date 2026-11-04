@@ -257,6 +257,9 @@ pub enum VaultError {
     ApprovalNeedsClinic,
     #[error("another passphrase operation or speed test is running")]
     Busy,
+    #[cfg(feature = "portal-linking")]
+    #[error("a document check is stopping; please try again")]
+    DocumentCheckBusy,
     #[error("the vault has already been created")]
     AlreadyExists,
     #[error("the vault has not been created")]
@@ -644,6 +647,7 @@ pub struct VaultSnapshot {
     pub folders: Vec<VaultFolder>,
     pub records: Vec<VaultRecord>,
     pub portal_linking_enabled: bool,
+    pub automatic_document_checks_supported: bool,
     pub portal_links: Vec<LinkSummary>,
     /// Why the session is read-only, if it is.
     pub recovery: Option<RecoveryReason>,
@@ -853,13 +857,17 @@ impl Drop for KdfWork<'_> {
 
 pub struct VaultStore {
     root: PathBuf,
+    collection: crate::document_collection::Controller,
+    #[cfg(feature = "portal-linking")]
+    collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
+    notifications: std::sync::OnceLock<Arc<crate::document_notification_runtime::Runtime>>,
     unlocked: Mutex<Option<UnlockedVault>>,
     snapshot_epoch: Uuid,
     snapshot_sequence: AtomicU64,
     kdf_running: AtomicBool,
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
-    portal_session: AtomicU64,
+    portal_session: Arc<AtomicU64>,
     #[cfg(feature = "portal-linking")]
     portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
@@ -878,17 +886,241 @@ impl VaultStore {
     pub fn new(root: PathBuf) -> Self {
         Self {
             root,
+            collection: crate::document_collection::Controller::new(Instant::now()),
+            #[cfg(feature = "portal-linking")]
+            collection_resume: Mutex::new(None),
+            notifications: std::sync::OnceLock::new(),
             unlocked: Mutex::new(None),
             snapshot_epoch: Uuid::new_v4(),
             snapshot_sequence: AtomicU64::new(0),
             kdf_running: AtomicBool::new(false),
-            portal_session: AtomicU64::new(0),
+            portal_session: Arc::new(AtomicU64::new(0)),
             #[cfg(feature = "portal-linking")]
             portal_check_running: AtomicBool::new(false),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
+        }
+    }
+
+    pub(crate) fn configure_notifications(&self, path: PathBuf, app_id: String) {
+        let _ = self.notifications.set(Arc::new(
+            crate::document_notification_runtime::Runtime::new(path, app_id),
+        ));
+        if self
+            .notifications
+            .get()
+            .is_some_and(|n| n.automatic_eligible())
+        {
+            self.collection.permit_after(0);
+        }
+    }
+
+    fn drop_idle_collection_cache(&self) {
+        #[cfg(feature = "portal-linking")]
+        {
+            *self
+                .collection_resume
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = None;
+        }
+    }
+    fn invalidate_collection_cache(&self) {
+        self.collection.invalidate_cache();
+        self.drop_idle_collection_cache();
+    }
+    #[cfg(feature = "portal-linking")]
+    pub(crate) fn automatic_collection_allowed(&self) -> bool {
+        self.collection.allowed()
+            && self
+                .notifications
+                .get()
+                .is_some_and(|n| n.automatic_eligible())
+    }
+
+    pub(crate) fn notification_status(
+        &self,
+        locale: Option<crate::ui_text::UiLocale>,
+    ) -> crate::document_notification_runtime::Status {
+        let mut status = self
+            .notifications
+            .get()
+            .map(|n| {
+                n.observe_locale(locale);
+                n.status()
+            })
+            .unwrap_or_else(crate::document_notification_runtime::Status::unavailable);
+        status.automatic_checks_paused = self.collection.paused();
+        status
+    }
+
+    pub(crate) fn set_notifications(
+        &self,
+        enabled: bool,
+    ) -> Result<crate::document_notification_runtime::Status, VaultError> {
+        if !enabled {
+            // Revoke final OS acceptance before even an in-memory cache lock.
+            if let Some(runtime) = self.notifications.get() {
+                runtime.suspend_notices();
+            }
+            self.collection.suspend();
+            self.drop_idle_collection_cache();
+        }
+        self.notifications
+            .get()
+            .ok_or(VaultError::Invalid)?
+            .set_enabled(enabled)
+            .map_err(|_| VaultError::Storage)
+    }
+
+    pub(crate) fn set_automatic_checks(
+        &self,
+        enabled: bool,
+    ) -> Result<crate::document_notification_runtime::Status, VaultError> {
+        // Atomically close NEW-cycle admission before cancelling an old cycle
+        // or waiting for persistence. A stale enable completion cannot reopen it.
+        let stamp = self.collection.suspend();
+        self.drop_idle_collection_cache();
+        run_at_test_boundary("notifications.after-automatic-suspend");
+        if !cfg!(any(
+            test,
+            all(
+                windows,
+                feature = "document-notifications",
+                feature = "portal-linking",
+                feature = "document-automatic-checks"
+            )
+        )) {
+            return Err(VaultError::Invalid);
+        }
+        let status = self
+            .notifications
+            .get()
+            .ok_or(VaultError::Invalid)?
+            .set_automatic_checks(enabled)
+            .map_err(|_| VaultError::Storage)?;
+        if enabled && status.automatic_checks_enabled && status.available {
+            self.collection.permit_after(stamp);
+        }
+        Ok(status)
+    }
+
+    pub(crate) fn stop_document_collection(&self) {
+        self.collection.shutdown();
+        self.drop_idle_collection_cache();
+    }
+
+    /// Defined but launched only by the separate default-off build feature.
+    /// One weak app-owned worker; no strong vault reference while sleeping.
+    #[cfg(all(
+        windows,
+        feature = "document-notifications",
+        feature = "portal-linking",
+        feature = "document-automatic-checks"
+    ))]
+    pub(crate) fn start_document_collection(self: &Arc<Self>) -> std::io::Result<()> {
+        let weak = Arc::downgrade(self);
+        std::thread::Builder::new()
+            .name("document-checks".into())
+            .spawn(move || loop {
+                std::thread::sleep(Duration::from_secs(1));
+                let Some(store) = weak.upgrade() else {
+                    break;
+                };
+                if store.collection.is_shutdown() {
+                    break;
+                }
+                store.automatic_document_tick();
+            })
+            .map(|_| ())
+    }
+
+    #[cfg(all(
+        windows,
+        feature = "document-notifications",
+        feature = "portal-linking",
+        feature = "document-automatic-checks"
+    ))]
+    fn automatic_document_tick(&self) {
+        if !self.automatic_collection_allowed() {
+            return;
+        }
+        let session = self.portal_link_ticket();
+        let vault = {
+            let guard = self.session();
+            let Some(open) = guard.as_ref() else {
+                return;
+            };
+            if open.recovery.is_some()
+                || !open
+                    .manifest
+                    .portal_links
+                    .iter()
+                    .any(crate::portal_approval::currently_approved)
+            {
+                return;
+            }
+            open.manifest.vault_id
+        };
+        let Some(epoch) = self.collection.attempt(Instant::now()) else {
+            return;
+        };
+        let Some(_running) =
+            crate::document_collection::CheckLease::try_acquire(&self.portal_check_running)
+        else {
+            return;
+        };
+        let Some(control) = self.collection.activate(epoch, Instant::now()) else {
+            return;
+        };
+        let control = control.with_session(Arc::clone(&self.portal_session), session);
+        struct Active<'a>(
+            &'a crate::document_collection::Controller,
+            &'a crate::document_collection::CycleControl,
+        );
+        impl Drop for Active<'_> {
+            fn drop(&mut self) {
+                self.0.finished(self.1);
+            }
+        }
+        let _active = Active(&self.collection, &control);
+        if control.stopped()
+            || self.portal_link_ticket() != session
+            || !self.automatic_collection_allowed()
+        {
+            return;
+        }
+        let cache_epoch = self.collection.cache_epoch();
+        // Take ownership under a short lock; no cache mutex spans network,
+        // filesystem, PDF helper, vault lock or OS acceptance.
+        let mut cache = {
+            let Ok(mut idle) = self.collection_resume.lock() else {
+                return;
+            };
+            idle.take().unwrap_or_default()
+        };
+        cache.bind(vault, session, cache_epoch);
+        let _ = crate::document_collection_pickup::check_cycle(
+            self,
+            session,
+            &control,
+            &mut cache,
+            &crate::portal_approval::ApprovalHttp,
+            crate::portal_client::api,
+        );
+        // Manual preemption preserves progress. Consent/session invalidation
+        // drops this bounded active work buffer after cooperative cancellation;
+        // it can never be restored as a later session's resume state.
+        let Ok(mut idle) = self.collection_resume.lock() else {
+            return;
+        };
+        if self.collection.cache_epoch() == cache_epoch
+            && self.portal_link_ticket() == session
+            && self.automatic_collection_allowed()
+        {
+            self.collection.set_paused(cache.needs_manual());
+            *idle = Some(cache);
         }
     }
 
@@ -944,6 +1176,7 @@ impl VaultStore {
     fn session(&self) -> MutexGuard<'_, Option<UnlockedVault>> {
         self.unlocked.lock().unwrap_or_else(|poisoned| {
             let mut guard = poisoned.into_inner();
+            self.invalidate_collection_cache();
             self.portal_session.fetch_add(1, Ordering::AcqRel);
             *guard = None;
             self.idle.disarm();
@@ -1309,6 +1542,7 @@ impl VaultStore {
     /// Every unlocked session has an idle deadline, started with it under the
     /// session lock.
     fn open_session(&self, guard: &mut Option<UnlockedVault>, vault: UnlockedVault) {
+        self.invalidate_collection_cache();
         self.portal_session.fetch_add(1, Ordering::AcqRel);
         *guard = Some(vault);
         self.idle.arm(Instant::now());
@@ -1331,6 +1565,7 @@ impl VaultStore {
     /// a new session starts, or activity arrives, while it waits, it can stop
     /// a transfer without locking.
     fn lock_if(&self, due: impl Fn() -> bool, by: &str) -> bool {
+        self.invalidate_collection_cache();
         self.portal_session.fetch_add(1, Ordering::AcqRel);
         run_at_test_boundary("portal.lock-after-ticket");
         self.cancel_io.store(true, Ordering::Release);
@@ -1503,6 +1738,12 @@ impl VaultStore {
         VaultSnapshot {
             capture,
             portal_linking_enabled: crate::portal_client::available(),
+            automatic_document_checks_supported: cfg!(all(
+                windows,
+                feature = "document-notifications",
+                feature = "portal-linking",
+                feature = "document-automatic-checks"
+            )),
             portal_links: unlocked
                 .manifest
                 .portal_links
@@ -3324,6 +3565,7 @@ impl VaultStore {
     /// recovery key it had still opens it. Nothing is erased. An open,
     /// writable vault records it in its history first.
     pub fn reset(&self) -> Result<(), VaultError> {
+        self.invalidate_collection_cache();
         self.portal_session.fetch_add(1, Ordering::AcqRel);
         self.cancel_io.store(true, Ordering::Release);
         let mut guard = self.session();
@@ -6434,41 +6676,82 @@ fn read_object_ref<W: Write>(
     object: RecordObject<'_>,
     writer: W,
 ) -> Result<(), VaultError> {
+    read_object_ref_controlled(path, vault_id, keys, object, writer, None)
+}
+
+fn read_object_ref_controlled<W: Write>(
+    path: &Path,
+    vault_id: Uuid,
+    keys: &DerivedKeys,
+    object: RecordObject<'_>,
+    writer: W,
+    control: Option<&crate::document_collection::CycleControl>,
+) -> Result<(), VaultError> {
     let key = unwrap_secret(&keys.object_wrap, object.wrapped_key, object.id.as_bytes())?;
     if let Some(expected) = object.sha256 {
         let mut hashed = original_pdf::HashWriter::new(writer);
-        verify_object(
+        verify_object_controlled(
             path,
             &mut hashed,
             vault_id,
             object.id,
             &key,
             object.plaintext_size,
+            control,
         )?;
         if hashed.digest() != expected {
             return Err(VaultError::Corrupt);
         }
         Ok(())
     } else {
-        verify_object(
+        verify_object_controlled(
             path,
             writer,
             vault_id,
             object.id,
             &key,
             object.plaintext_size,
+            control,
         )
     }
 }
 
 fn verify_object<W: Write>(
     path: &Path,
-    mut writer: W,
+    writer: W,
     vault_id: Uuid,
     record_id: Uuid,
     object_key: &[u8; 32],
     expected_size: u64,
 ) -> Result<(), VaultError> {
+    verify_object_controlled(
+        path,
+        writer,
+        vault_id,
+        record_id,
+        object_key,
+        expected_size,
+        None,
+    )
+}
+
+fn verify_object_controlled<W: Write>(
+    path: &Path,
+    mut writer: W,
+    vault_id: Uuid,
+    record_id: Uuid,
+    object_key: &[u8; 32],
+    expected_size: u64,
+    control: Option<&crate::document_collection::CycleControl>,
+) -> Result<(), VaultError> {
+    let stop = || -> Result<(), VaultError> {
+        if control.is_some_and(|c| c.stopped()) {
+            Err(VaultError::Cancelled)
+        } else {
+            Ok(())
+        }
+    };
+    stop()?;
     // An object that is gone, like one that is no longer a regular file, is
     // damage to the vault and not a storage operation that could be retried.
     let file = open_regular_read(path).map_err(|error| {
@@ -6481,20 +6764,28 @@ fn verify_object<W: Write>(
             error.into()
         }
     })?;
-    let mut reader = BufReader::new(file);
+    // Automatic mode has no BufReader outside or inside PhysicalRead. Even a
+    // five-byte header and the one-byte EOF probe are charged physical reads.
+    let mut reader: Box<dyn Read + '_> = match control {
+        Some(c) => Box::new(crate::document_collection::PhysicalRead::new(file, c)),
+        None => Box::new(BufReader::new(file)),
+    };
     // An object cut short, such as the empty file a power loss can leave, is
     // damaged ciphertext. Any other read error is a failed storage operation
     // that a retry can get past, not damage to the vault.
-    let read_object = |reader: &mut BufReader<File>, buffer: &mut [u8]| {
+    let read_object = |reader: &mut dyn Read, buffer: &mut [u8]| {
+        stop()?;
         reader.read_exact(buffer).map_err(|error| {
-            if error.kind() == io::ErrorKind::UnexpectedEof {
+            if control.is_some_and(|c| c.stopped()) {
+                VaultError::Cancelled
+            } else if error.kind() == io::ErrorKind::UnexpectedEof {
                 VaultError::Corrupt
             } else {
                 error.into()
             }
         })
     };
-    let mut read_header = |buffer: &mut [u8]| read_object(&mut reader, buffer);
+    let mut read_header = |buffer: &mut [u8]| read_object(reader.as_mut(), buffer);
     let mut magic = [0_u8; 5];
     read_header(&mut magic)?;
     if &magic != OBJECT_MAGIC {
@@ -6512,19 +6803,24 @@ fn verify_object<W: Write>(
     let mut index = 0_u64;
     loop {
         let mut length_bytes = [0_u8; 4];
-        read_object(&mut reader, &mut length_bytes)?;
+        read_object(reader.as_mut(), &mut length_bytes)?;
         let length = u32::from_be_bytes(length_bytes) as usize;
         if !(16..=CHUNK_SIZE + 16).contains(&length) {
             return Err(VaultError::Corrupt);
         }
         let mut final_byte = [0_u8; 1];
-        read_object(&mut reader, &mut final_byte)?;
+        read_object(reader.as_mut(), &mut final_byte)?;
         if final_byte[0] > 1 {
             return Err(VaultError::Corrupt);
         }
         let final_chunk = final_byte[0] == 1;
+        stop()?;
+        if control.is_some_and(|c| !c.chunk_fits(length)) {
+            return Err(VaultError::Cancelled);
+        }
         let mut ciphertext = vec![0_u8; length];
-        read_object(&mut reader, &mut ciphertext)?;
+        read_object(reader.as_mut(), &mut ciphertext)?;
+        stop()?; // After physical read, before the irreducible <=1MiB+16 AEAD unit.
         let mut nonce = [0_u8; 24];
         nonce[..16].copy_from_slice(&nonce_prefix);
         nonce[16..].copy_from_slice(&index.to_be_bytes());
@@ -6540,19 +6836,153 @@ fn verify_object<W: Write>(
                 )
                 .map_err(|_| VaultError::Corrupt)?,
         );
+        stop()?; // Cancelled verification never reaches the plaintext sink.
         total = total
             .checked_add(plaintext.len() as u64)
             .ok_or(VaultError::Corrupt)?;
-        writer.write_all(&plaintext)?;
+        for part in plaintext.chunks(64 * 1024) {
+            stop()?;
+            writer.write_all(part)?;
+        }
         if final_chunk {
             let mut trailing = [0_u8; 1];
-            if reader.read(&mut trailing)? != 0 || total != expected_size {
+            let trailing_read = reader.read(&mut trailing);
+            stop()?;
+            if trailing_read? != 0 || total != expected_size {
                 return Err(VaultError::Corrupt);
             }
             writer.flush()?;
             return Ok(());
         }
         index = index.checked_add(1).ok_or(VaultError::Corrupt)?;
+    }
+}
+
+#[cfg(test)]
+mod collection_object_tests {
+    use super::*;
+    use crate::document_collection::{CycleControl, StopReason};
+
+    #[cfg(feature = "portal-linking")]
+    fn consent_store(path: &Path) -> Arc<VaultStore> {
+        use crate::document_notification_runtime::{active::Backend, Error, Permission, Runtime};
+        struct BackendMock;
+        impl Backend for BackendMock {
+            fn permission(&self) -> Permission {
+                Permission::Allowed
+            }
+            fn accept(&self, _body: &str, current: &dyn Fn() -> bool) -> Result<(), Error> {
+                if current() {
+                    Ok(())
+                } else {
+                    Err(Error::Cancelled)
+                }
+            }
+        }
+        let store = Arc::new(VaultStore::new(path.join("vault")));
+        let runtime = Runtime::load_for_test(path.join("state.json"), Box::new(BackendMock));
+        assert!(store.notifications.set(Arc::new(runtime)).is_ok());
+        store.set_notifications(true).ok().unwrap();
+        store.set_automatic_checks(true).ok().unwrap();
+        store
+    }
+    #[test]
+    #[cfg(feature = "portal-linking")]
+    fn native_opt_out_suspends_new_cycle_before_persistence_and_drops_idle_resume() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = consent_store(temp.path());
+        assert!(store.automatic_collection_allowed());
+        *store.collection_resume.lock().unwrap() =
+            Some(crate::document_collection_pickup::ResumeCache::default());
+        store.collection.set_paused(true);
+        let captured = store.clone();
+        AT_TEST_BOUNDARY.with(|slot| {
+            *slot.borrow_mut() = Some((
+                "notifications.after-automatic-suspend",
+                Box::new(move || {
+                    assert!(
+                        captured.notifications.get().unwrap().automatic_eligible(),
+                        "old ledger still permits in forced gap"
+                    );
+                    assert!(!captured.automatic_collection_allowed());
+                    assert!(captured.collection.attempt(Instant::now()).is_none());
+                    assert!(captured.collection_resume.lock().unwrap().is_none());
+                    assert!(!captured.collection.paused());
+                }),
+            ))
+        });
+        store.set_automatic_checks(false).ok().unwrap();
+        assert!(!store.automatic_collection_allowed());
+    }
+    #[test]
+    #[cfg(feature = "portal-linking")]
+    #[allow(clippy::disallowed_methods)] // Simulated storage failure, no patient vault.
+    fn failed_native_automatic_opt_out_persistence_cannot_restore_eligibility() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = consent_store(temp.path());
+        fs::remove_file(temp.path().join("state.json")).unwrap();
+        fs::create_dir(temp.path().join("state.json")).unwrap();
+        assert!(matches!(
+            store.set_automatic_checks(false),
+            Err(VaultError::Storage)
+        ));
+        assert!(!store.automatic_collection_allowed());
+        assert!(!store.notifications.get().unwrap().automatic_eligible());
+    }
+
+    #[test]
+    fn actual_encrypted_object_defers_before_maximum_chunk_and_charges_eof_probe() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("synthetic.mcobj");
+        let vault = Uuid::from_u128(1);
+        let record = Uuid::from_u128(2);
+        let key = [7; 32];
+        encrypt_object(
+            Box::new(io::Cursor::new(vec![3; CHUNK_SIZE])),
+            &path,
+            ObjectContext {
+                vault_id: vault,
+                record_id: record,
+                profile_id: Uuid::from_u128(3),
+            },
+            &key,
+            &[9; 32],
+        )
+        .unwrap();
+        let original = fs::read(&path).unwrap();
+        // Exactly the fixed header plus chunk framing, no space for ciphertext.
+        let control = CycleControl::with_physical_remaining(30);
+        let mut output = Vec::new();
+        assert!(matches!(
+            verify_object_controlled(
+                &path,
+                &mut output,
+                vault,
+                record,
+                &key,
+                CHUNK_SIZE as u64,
+                Some(&control)
+            ),
+            Err(VaultError::Cancelled)
+        ));
+        assert_eq!(control.reason(), Some(StopReason::Budget));
+        assert!(output.is_empty());
+        // Physical EOF probing also needs a reservation; no uncharged BufReader.
+        let control = CycleControl::with_physical_remaining(original.len());
+        assert!(matches!(
+            verify_object_controlled(
+                &path,
+                io::sink(),
+                vault,
+                record,
+                &key,
+                CHUNK_SIZE as u64,
+                Some(&control)
+            ),
+            Err(VaultError::Cancelled)
+        ));
+        assert_eq!(control.reason(), Some(StopReason::Budget));
+        assert_eq!(fs::read(path).unwrap(), original);
     }
 }
 
@@ -19122,3 +19552,6 @@ mod tests {
         ));
     }
 }
+
+#[cfg(all(test, feature = "portal-linking"))]
+mod automatic_collection_tests;

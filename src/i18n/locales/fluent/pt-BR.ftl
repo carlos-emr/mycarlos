@@ -867,6 +867,7 @@ native-setAside-title = Deixar este cofre do myCarlos de lado e começar de novo
 native-setAside-warning = Isso deixa todo o cofre de lado e começa de novo com um cofre vazio. { $kept } O myCarlos nunca o exclui. Se você está começando de novo porque outra pessoa pode saber sua frase secreta, ela ainda pode abri-lo, então remova-o. { $removal }
 
 native-vault-keep = Manter este cofre
+native-notice-arrival = Um documento da clínica chegou ao myCarlos. Abra o myCarlos para lê-lo.
 
 notice-autoLockSet =
     { $count ->
@@ -1805,3 +1806,16 @@ interface-AnonymizePreview-close = Fechar
 interface-AiHelperNotice-continue = Continuar
 
 interface-AnonymizePreview-footerNote = O arquivo terminará com esta linha:
+
+notifications-title = Avisos após verificar documentos
+notifications-help = Quando um documento da clínica é salvo após uma verificação manual, o Windows pode mostrar um aviso genérico. Abra o myCarlos normalmente para lê-lo. Os documentos não são verificados automaticamente.
+notifications-allow = Permitir avisos de chegada de documentos
+notifications-blocked = O Windows está bloqueando as notificações. Verifique as configurações de notificação.
+notifications-unknown = Não foi possível verificar a permissão de notificações do Windows.
+notifications-error = Não foi possível salvar esta configuração. Os avisos estão desativados nesta sessão.
+notifications-unavailable = Os avisos de documentos estão indisponíveis. Abra o myCarlos normalmente para verificar seus documentos.
+notifications-helpAutomatic = O Windows pode mostrar um aviso genérico depois que um documento da clínica for salvo. Abra o myCarlos normalmente para lê-lo.
+notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
+notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
+notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
+notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.

@@ -762,6 +762,7 @@ native-setAside-title = 要擱置此 myCarlos 保險庫並重新開始嗎？
 native-setAside-warning = 這會擱置整個保險庫，並以空白保險庫重新開始。{ $kept } myCarlos 絕不會刪除擱置的保險庫。如果您是因為擔心他人知道密語而重新開始，對方仍能開啟舊保險庫，因此請將它移除。{ $removal }
 
 native-vault-keep = 保留此保險庫
+native-notice-arrival = 一份診所文件已送達 myCarlos。請開啟 myCarlos 閱讀。
 
 notice-autoLockSet = 自動鎖定時間已設為 { $count } 分鐘。
 
@@ -1635,3 +1636,16 @@ interface-AnonymizePreview-close = 關閉
 interface-AiHelperNotice-continue = 繼續
 
 interface-AnonymizePreview-footerNote = 檔案將以這一行結尾：
+
+notifications-title = 檢查文件後的通知
+notifications-help = 手動檢查後，診所文件儲存至 myCarlos 時，Windows 可顯示一則一般通知。請依平常方式開啟 myCarlos 閱讀文件。系統不會自動檢查文件。
+notifications-allow = 允許文件送達通知
+notifications-blocked = Windows 正在封鎖通知。請查看 Windows 通知設定。
+notifications-unknown = 無法檢查 Windows 通知權限。
+notifications-error = 無法儲存此設定。本次工作階段的通知已關閉。
+notifications-unavailable = 文件通知無法使用。請依平常方式開啟 myCarlos 查看文件。
+notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。
+notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
+notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
+notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
+notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。

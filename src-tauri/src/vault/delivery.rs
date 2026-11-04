@@ -5,6 +5,67 @@ use crate::portal_delivery::{self as wire, Receipt};
 use crate::portal_delivery::{Custody, ReceiptOutcome};
 use crate::portal_link::KeyStatus;
 
+#[cfg(all(
+    windows,
+    feature = "document-notifications",
+    feature = "portal-linking"
+))]
+impl VaultStore {
+    /// Only a freshly committed local custody record, never a renderer count or remote hint.
+    pub(crate) fn notify_local_arrival(&self, record_id: Uuid, link: &StoredLink, session: u64) {
+        self.notify_local_arrival_controlled(record_id, link, session, &|| false)
+    }
+
+    pub(crate) fn notify_local_arrival_controlled(
+        &self,
+        record_id: Uuid,
+        link: &StoredLink,
+        session: u64,
+        stop: &dyn Fn() -> bool,
+    ) {
+        let Some(runtime) = self.notifications.get() else {
+            return;
+        };
+        let current = || {
+            if stop() {
+                return None;
+            }
+            let guard = self.session();
+            let open = guard.as_ref()?;
+            if self.portal_link_ticket() != session
+                || open.recovery.is_some()
+                || !open.manifest.portal_links.contains(link)
+            {
+                return None;
+            }
+            let record = open
+                .manifest
+                .records
+                .iter()
+                .find(|r| r.id == record_id && r.hidden.is_none())?;
+            if record.delivery.as_ref()?.link_id != link.id
+                || !valid_custody(record, &open.manifest.portal_links)
+            {
+                return None;
+            }
+            let custody = record.delivery.as_ref()?;
+            Some((
+                open.manifest.vault_id,
+                custody.outer.delivery_id.clone(),
+                link.keys.device_key_id(),
+            ))
+        };
+        let Some((vault, delivery, device)) = current() else {
+            return;
+        };
+        // Do not hold the vault lock across filesystem or OS API calls. A later unlink/lock can
+        // still race OS acceptance; this generic notice is not instantly recallable or a grant.
+        runtime.arrived(vault, link.id, &device, &delivery, record_id, || {
+            current().is_some_and(|now| now == (vault, delivery.clone(), device.clone()))
+        });
+    }
+}
+
 pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool {
     let Some(c) = &record.delivery else {
         return true;
@@ -85,6 +146,8 @@ pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool
 pub(crate) struct PendingReceipts {
     pub ready: Vec<Custody>,
     pub damaged: usize,
+    pub budget_deferred: bool,
+    pub manual_required: bool,
 }
 
 pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Option<String> {
@@ -104,21 +167,20 @@ impl VaultStore {
         &self,
         session: u64,
     ) -> Result<crate::portal_pickup::CheckResult, VaultError> {
-        if self
-            .portal_check_running
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err(VaultError::Invalid);
-        }
-        struct Running<'a>(&'a AtomicBool);
-        impl Drop for Running<'_> {
-            fn drop(&mut self) {
-                self.0.store(false, Ordering::Release);
+        let _running = self
+            .collection
+            .manual_acquire(&self.portal_check_running, Instant::now, || {
+                std::thread::sleep(Duration::from_millis(20))
+            })
+            .ok_or(VaultError::DocumentCheckBusy)?;
+        let result = crate::portal_pickup::check(self, session);
+        if result.as_ref().is_ok_and(|r| r.issues.is_empty()) {
+            if let Ok(mut cache) = self.collection_resume.lock() {
+                *cache = None;
+                self.collection.set_paused(false);
             }
         }
-        let _running = Running(&self.portal_check_running);
-        crate::portal_pickup::check(self, session)
+        result
     }
 
     /// A snapshot is cloned under the lock, used for HTTP/parsing outside it,
@@ -225,6 +287,92 @@ impl VaultStore {
         }
         Ok(pending)
     }
+    /// Automatic path: every raw metadata entry is charged before inspection.
+    /// Direct Vec indexing is bounded even with a long nonpending prefix.
+    pub(crate) fn pending_receipts_controlled(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        control: &crate::document_collection::CycleControl,
+        cursor: &mut crate::document_collection::ScanCursor,
+    ) -> Result<PendingReceipts, VaultError> {
+        if control.stopped() || self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        let guard = self.session();
+        let open = guard.as_ref().ok_or(VaultError::Locked)?;
+        if open.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        if !open.manifest.portal_links.contains(link) {
+            return Err(VaultError::Invalid);
+        }
+        let keys = derive_keys(open.manifest.vault_id, &open.master_key)?;
+        let mut pending = PendingReceipts::default();
+        let mut window = cursor.window(open.manifest.records.len());
+        while let Some(index) = window.next(control) {
+            if self.portal_link_ticket() != session {
+                control.session_changed();
+                return Err(VaultError::Cancelled);
+            }
+            let record = &open.manifest.records[index];
+            let Some(c) = &record.delivery else {
+                continue;
+            };
+            if c.link_id != link.id || c.receipt_outcome.is_some() {
+                continue;
+            }
+            if !control.candidate() {
+                window.defer(index);
+                break;
+            }
+            let physical_before = control.physical_read_bytes();
+            let readable = record.objects().try_for_each(|object| {
+                read_object_ref_controlled(
+                    &self.root.join("objects").join(object.object_name),
+                    open.manifest.vault_id,
+                    &keys,
+                    object,
+                    io::sink(),
+                    Some(control),
+                )
+            });
+            // Preserve interruption before the damage classifier. A record that
+            // merely lacks residual budget must lead the next fresh cycle.
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if control.reason() == Some(crate::document_collection::StopReason::Budget) {
+                if physical_before == 0 {
+                    // This item exhausted a FRESH40MiB allowance. Pause only its
+                    // link for explicit manual review rather than pinning all
+                    // later records/clinics behind an impossible automatic read.
+                    pending.manual_required = true;
+                } else {
+                    window.defer(index);
+                    pending.budget_deferred = true;
+                }
+                return Ok(pending);
+            }
+            if control.stopped() {
+                return Err(VaultError::Cancelled);
+            }
+            match readable {
+                Ok(()) => {
+                    pending.ready.push(c.clone());
+                    break;
+                }
+                Err(VaultError::Corrupt) => {
+                    if object_required(record) {
+                        pending.damaged += 1;
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(pending)
+    }
+
     pub(crate) fn settle_receipt(
         &self,
         link: &StoredLink,
@@ -232,8 +380,19 @@ impl VaultStore {
         outcome: ReceiptOutcome,
         session: u64,
     ) -> Result<(), VaultError> {
+        self.settle_receipt_controlled(link, c, outcome, session, &|| false)
+    }
+
+    pub(crate) fn settle_receipt_controlled(
+        &self,
+        link: &StoredLink,
+        c: &Custody,
+        outcome: ReceiptOutcome,
+        session: u64,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<(), VaultError> {
         self.mutate_recorded(|manifest, entries| {
-            if self.portal_link_ticket() != session {
+            if stop() || self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
             }
             if !manifest.portal_links.contains(link) {
@@ -269,6 +428,9 @@ impl VaultStore {
                 );
                 entries.push(entry);
             }
+            if stop() {
+                return Err(VaultError::Cancelled);
+            }
             Ok(())
         })
     }
@@ -279,7 +441,18 @@ impl VaultStore {
         link: &StoredLink,
         session: u64,
     ) -> Result<(Uuid, bool), VaultError> {
-        let cancelled = || self.portal_link_ticket() != session;
+        self.receive_delivery_controlled(outer, sealed, link, session, &|| false)
+    }
+
+    pub(crate) fn receive_delivery_controlled(
+        &self,
+        outer: &wire::Outer,
+        sealed: &[u8],
+        link: &StoredLink,
+        session: u64,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<(Uuid, bool), VaultError> {
+        let cancelled = || stop() || self.portal_link_ticket() != session;
         if cancelled() {
             return Err(VaultError::Cancelled);
         }
@@ -290,8 +463,21 @@ impl VaultStore {
             .filter_map(|l| l.clinic.as_ref())
             .flat_map(|c| c.clinic_keys.iter().map(|k| k.kid.clone()))
             .collect::<Vec<_>>();
-        let opened = wire::open(outer, sealed, link, &others, crate::now_ms() / 1000)
-            .map_err(|_| VaultError::PickupRefused)?;
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
+        let opened = wire::open(outer, sealed, link, &others, crate::now_ms() / 1000);
+        run_at_test_boundary("notifications.after-delivery-open");
+        let opened = opened.map_err(|_| {
+            if cancelled() {
+                VaultError::Cancelled
+            } else {
+                VaultError::PickupRefused
+            }
+        })?;
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
         let clinic = link.clinic.as_ref().ok_or(VaultError::Invalid)?;
         let pins = crate::signed_pdf::PinnedLink {
             clinic_id: clinic.clinic_id.clone(),
@@ -304,7 +490,16 @@ impl VaultStore {
                 .collect(),
         };
         let checked = crate::signed_pdf_helper::verify(&opened.pdf, "", &[pins], &cancelled)
-            .map_err(|_| VaultError::PickupRefused)?;
+            .map_err(|_| {
+                if cancelled() {
+                    VaultError::Cancelled
+                } else {
+                    VaultError::PickupRefused
+                }
+            })?;
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
         let crate::signed_pdf::Verdict::Verified { kid, manifest: pdf } = checked else {
             return Err(VaultError::PickupRefused);
         };
@@ -342,9 +537,18 @@ impl VaultStore {
         if cancelled() {
             return Err(VaultError::Cancelled);
         }
-        self.commit_delivery(outer, opened, link, &pdf, crate::now_ms(), session)
+        self.commit_delivery_controlled(
+            outer,
+            opened,
+            link,
+            &pdf,
+            crate::now_ms(),
+            session,
+            &cancelled,
+        )
     }
 
+    #[cfg(test)]
     fn commit_delivery(
         &self,
         outer: &wire::Outer,
@@ -354,9 +558,26 @@ impl VaultStore {
         now: u64,
         session: u64,
     ) -> Result<(Uuid, bool), VaultError> {
+        self.commit_delivery_controlled(outer, opened, link, pdf, now, session, &|| false)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Existing custody inputs plus the same stop predicate.
+    fn commit_delivery_controlled(
+        &self,
+        outer: &wire::Outer,
+        opened: wire::Opened,
+        link: &StoredLink,
+        pdf: &crate::signed_pdf::Manifest,
+        now: u64,
+        session: u64,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<(Uuid, bool), VaultError> {
+        if stop() {
+            return Err(VaultError::Cancelled);
+        }
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
-        if self.portal_link_ticket() != session {
+        if stop() || self.portal_link_ticket() != session {
             return Err(VaultError::Cancelled);
         }
         if unlocked.recovery.is_some() {
@@ -406,6 +627,9 @@ impl VaultStore {
         let mut history_written = Vec::new();
         let mut commit_attempted = false;
         let result = (|| {
+            if stop() {
+                return Err(VaultError::Cancelled);
+            }
             let encrypted = encrypt_object(
                 Box::new(io::Cursor::new(opened.pdf)),
                 &stage.join(&object_name),
@@ -417,6 +641,9 @@ impl VaultStore {
                 &key,
                 &keys.fingerprint,
             )?;
+            if stop() {
+                return Err(VaultError::Cancelled);
+            }
             let mut record = StoredRecord {
                 id,
                 profile_id,
@@ -440,6 +667,9 @@ impl VaultStore {
                 &stage.join(&record.object_name),
                 &stage,
             )?);
+            if stop() {
+                return Err(VaultError::Cancelled);
+            }
             let original = record.original_pdf.as_ref().ok_or(VaultError::Corrupt)?;
             if original.sha256 != opened.manifest.document.sha256
                 || original.plaintext_size != opened.manifest.document.size
@@ -497,7 +727,7 @@ impl VaultStore {
             }
             next.history = prepared.state;
             next.records.push(record);
-            if self.portal_link_ticket() != session {
+            if stop() || self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
             }
             terminate_at_test_boundary("delivery.before-custody-commit");
@@ -1076,6 +1306,19 @@ impl VaultStore {
         session: u64,
         http: &impl ApprovalExchange,
     ) -> Result<ApprovalReconciliation, VaultError> {
+        self.reconcile_approvals_controlled(link, session, http, &|| false)
+    }
+
+    fn reconcile_approvals_controlled(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        http: &impl ApprovalExchange,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<ApprovalReconciliation, VaultError> {
+        if stop() {
+            return Err(VaultError::Cancelled);
+        }
         if crate::portal_approval::currently_approved(link) {
             return Ok(ApprovalReconciliation {
                 saved: link.clone(),
@@ -1083,7 +1326,7 @@ impl VaultStore {
                 deferred: None,
             });
         }
-        let cancelled = || self.portal_link_ticket() != session;
+        let cancelled = || stop() || self.portal_link_ticket() != session;
         let mut saved = link.clone();
         let mut missing = false;
         let mut deferred = None;
@@ -1222,7 +1465,17 @@ impl VaultStore {
         session: u64,
         http: &impl ApprovalExchange,
     ) -> Result<(StoredLink, Option<VaultError>), VaultError> {
-        let recovery = self.reconcile_approvals(link, session, http)?;
+        self.refresh_staff_approval_controlled(link, session, http, &|| false)
+    }
+
+    pub(crate) fn refresh_staff_approval_controlled(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        http: &impl ApprovalExchange,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<(StoredLink, Option<VaultError>), VaultError> {
+        let recovery = self.reconcile_approvals_controlled(link, session, http, stop)?;
         Self::approval_error(&recovery.saved, recovery.missing)?;
         Ok((recovery.saved, recovery.deferred))
     }
@@ -1641,6 +1894,316 @@ mod approval_recovery_tests {
             .clone();
         (link, id, receipt)
     }
+    // SOURCE ONLY: insert these two functions INSIDE the existing cfg(test)
+    // vault::delivery::approval_recovery_tests module. They use its actual encrypted
+    // saved-custody fixture helpers. As documented by add_unsent_delivery_for, the
+    // fixture derives local custody/receipt identities AFTER validation; it is not
+    // a new proof of clinic signatures, pickup authentication, HTTP or OS display.
+    // Requires source04 CycleControl::test_counts() and Arc portal_session.
+
+    #[test]
+    fn actual_pending_candidate_cap_retains_the_unadmitted_sixty_fifth_record() {
+        use crate::document_collection::{CycleControl, ScanCursor};
+        use std::{
+            sync::{atomic::AtomicBool, Arc},
+            time::Instant,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Approval Patient", 1).unwrap();
+        let (link, seed, _) = add_signed_pending_delivery(&store);
+        let ids = add_scan_prefix(&store, &link, seed, 64, None);
+        // A short corrupt physical file keeps this a candidate-boundary test,
+        // rather than accidentally exhausting40MiB before reaching candidate64.
+        for id in &ids[..64] {
+            let (path, _, permissions) = object_file(&store, *id);
+            replace_object(&path, b"", permissions);
+        }
+        let last = ids[64];
+        let (last_delivery, ciphertext_bytes) = {
+            let guard = store.session();
+            let record = guard
+                .as_ref()
+                .unwrap()
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == last)
+                .unwrap();
+            let bytes: usize = record
+                .objects()
+                .map(|object| {
+                    std::fs::metadata(store.root.join("objects").join(object.object_name))
+                        .unwrap()
+                        .len() as usize
+                })
+                .sum();
+            (
+                record.delivery.as_ref().unwrap().outer.delivery_id.clone(),
+                bytes,
+            )
+        };
+        assert!(ciphertext_bytes > 0 && ciphertext_bytes < 40 * 1024 * 1024);
+        let ticket = store.portal_link_ticket();
+        let mut cursor = ScanCursor::default();
+        let first = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)))
+            .with_session(store.portal_session.clone(), ticket);
+        let pending = store
+            .pending_receipts_controlled(&link, ticket, &first, &mut cursor)
+            .unwrap();
+        assert!(pending.ready.is_empty());
+        assert_eq!(pending.damaged, 64);
+        assert_eq!(first.test_counts(), (65, 64, 0));
+        assert_eq!(first.reason(), None, "scan allowance is not corrupt data");
+
+        let next = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)))
+            .with_session(store.portal_session.clone(), ticket);
+        let pending = store
+            .pending_receipts_controlled(&link, ticket, &next, &mut cursor)
+            .unwrap();
+        assert_eq!(pending.damaged, 0);
+        assert_eq!(pending.ready.len(), 1);
+        assert_eq!(pending.ready[0].outer.delivery_id, last_delivery);
+        assert_eq!(next.test_counts(), (1, 1, ciphertext_bytes));
+        assert!(pending.ready[0].receipt_outcome.is_none());
+        // Reading pending custody never acknowledges it or invents another record.
+        let guard = store.session();
+        assert_eq!(guard.as_ref().unwrap().manifest.records.len(), 65);
+        assert!(guard
+            .as_ref()
+            .unwrap()
+            .manifest
+            .records
+            .iter()
+            .all(|record| { record.delivery.as_ref().unwrap().receipt_outcome.is_none() }));
+    }
+
+    /// Build this scan's settled input in one validated commit, rather than
+    /// revalidating every earlier receipt after each individual fixture write.
+    /// Each record still has its own encrypted objects and genuine signatures.
+    /// This constructs local saved custody, not a claim of receipt HTTP.
+    fn add_settled_scan_prefix(store: &VaultStore, link: &StoredLink, pending_id: Uuid) {
+        let _ = add_scan_prefix(store, link, pending_id, 257, Some(ReceiptOutcome::PickedUp));
+    }
+
+    /// Prepend independently encrypted and signed custody in one normal commit.
+    /// Return ids in scan order, including the untouched pending seed last.
+    fn add_scan_prefix(
+        store: &VaultStore,
+        link: &StoredLink,
+        pending_id: Uuid,
+        prefix_count: usize,
+        receipt_outcome: Option<ReceiptOutcome>,
+    ) -> Vec<Uuid> {
+        use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+        use sha2::Digest as _;
+
+        let (template, vault_id, keys, pdf) = {
+            let guard = store.session();
+            let open = guard.as_ref().unwrap();
+            assert_eq!(open.manifest.records.len(), 1);
+            let record = open.manifest.records[0].clone();
+            assert_eq!(record.id, pending_id);
+            let keys = derive_keys(open.manifest.vault_id, &open.master_key).unwrap();
+            let mut pdf = Zeroizing::new(Vec::new());
+            read_object_ref(
+                &store.root.join("objects").join(&record.object_name),
+                open.manifest.vault_id,
+                &keys,
+                record.objects().next().unwrap(),
+                &mut *pdf,
+            )
+            .unwrap();
+            (record, open.manifest.vault_id, keys, pdf)
+        };
+        // Same documented FAKE key derivation as portal_delivery::tests.
+        // Every derived manifest is checked against this link's pinned key.
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/delivery-contract.json"))
+                .unwrap();
+        let mut scalar: [u8; 32] = Sha256::digest(
+            fixture["keys"]["clinic_a"]["seed_text"]
+                .as_str()
+                .unwrap()
+                .as_bytes(),
+        )
+        .into();
+        for byte in scalar.iter_mut().rev() {
+            let (value, carry) = byte.overflowing_add(1);
+            *byte = value;
+            if !carry {
+                break;
+            }
+        }
+        let signer = SigningKey::from_slice(&scalar).unwrap();
+        let objects = store.root.join("objects");
+        let mut prefix = Vec::with_capacity(prefix_count);
+        for _ in 0..prefix_count {
+            let mut record = template.clone();
+            record.id = Uuid::new_v4();
+            record.object_name = format!("{}.mcobj", Uuid::new_v4());
+            let mut key = Zeroizing::new([0; 32]);
+            OsRng.fill_bytes(key.as_mut());
+            let encrypted = encrypt_object(
+                Box::new(io::Cursor::new(pdf.to_vec())),
+                &objects.join(&record.object_name),
+                ObjectContext {
+                    vault_id,
+                    record_id: record.id,
+                    profile_id: record.profile_id,
+                },
+                &key,
+                &keys.fingerprint,
+            )
+            .unwrap();
+            record.plaintext_size = encrypted.plaintext_size;
+            record.fingerprint = BASE64.encode(encrypted.fingerprint);
+            record.wrapped_object_key =
+                wrap_secret(&keys.object_wrap, &key, record.id.as_bytes()).unwrap();
+            record.original_pdf = Some(
+                store
+                    .stage_original_pdf(
+                        vault_id,
+                        &keys,
+                        &record,
+                        &objects.join(&record.object_name),
+                        &objects,
+                    )
+                    .unwrap(),
+            );
+            let custody = record.delivery.as_mut().unwrap();
+            custody.outer.delivery_id = Uuid::new_v4().to_string();
+            custody.manifest.delivery_id = custody.outer.delivery_id.clone();
+            let payload = serde_json::to_vec(&custody.manifest).unwrap();
+            let signature: Signature = signer.sign(&payload);
+            custody.manifest_compact = format!(
+                "{}.{}",
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&payload),
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes())
+            );
+            assert_eq!(
+                wire::signed_payload(
+                    &custody.manifest_compact,
+                    &link.clinic.as_ref().unwrap().clinic_keys,
+                    16 * 1024,
+                )
+                .unwrap(),
+                payload
+            );
+            let head = wire::head_bytes(&custody.anchor_head).unwrap();
+            let receipt = Receipt::new(
+                &custody.outer,
+                &custody.manifest,
+                link.keys.anchor(&head).unwrap(),
+                custody.checked_at_ms / 1000,
+            );
+            custody.receipt = link.keys.sign(&serde_json::to_vec(&receipt).unwrap());
+            custody.receipt_outcome = receipt_outcome;
+            prefix.push(record);
+        }
+        sync_dir(&objects).unwrap();
+        let ids = prefix
+            .iter()
+            .map(|record| record.id)
+            .chain(std::iter::once(pending_id))
+            .collect();
+        store
+            .mutate_recorded(|manifest, entries| {
+                assert_eq!(manifest.records.len(), 1);
+                assert_eq!(manifest.records[0].id, pending_id);
+                for record in &prefix {
+                    let custody = record.delivery.as_ref().unwrap();
+                    let settled_how = custody.receipt_outcome.map(|outcome| match outcome {
+                        ReceiptOutcome::PickedUp => "picked_up",
+                        ReceiptOutcome::Gone => "delivery_not_found",
+                    });
+                    for (event, how) in std::iter::once((HistoryEvent::DeliveryFiled, None)).chain(
+                        settled_how.map(|how| (HistoryEvent::DeliveryReceiptSettled, Some(how))),
+                    ) {
+                        let mut entry = record_entry(event, record.imported_at_ms, record);
+                        entry.portal_link_id = Some(link.id);
+                        entry.delivery_id = Some(custody.outer.delivery_id.clone());
+                        entry.ciphertext_sha256 = Some(custody.outer.ciphertext_sha256.clone());
+                        entry.how = how.map(str::to_owned);
+                        entries.push(entry);
+                    }
+                }
+                prefix.append(&mut manifest.records);
+                manifest.records = prefix;
+                Ok(())
+            })
+            .unwrap();
+        ids
+    }
+
+    #[test]
+    fn actual_pending_scan_charges_the_settled_prefix_and_resumes_beyond_raw_256() {
+        use crate::document_collection::{CycleControl, ScanCursor};
+        use std::{
+            sync::{atomic::AtomicBool, Arc},
+            time::Instant,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Approval Patient", 1).unwrap();
+        let (link, last, _) = add_signed_pending_delivery(&store);
+        add_settled_scan_prefix(&store, &link, last);
+        // Reopen through the real reader after both validated manifest writes.
+        let store = restart(store);
+        let ticket = store.portal_link_ticket();
+        let expected = {
+            let guard = store.session();
+            guard
+                .as_ref()
+                .unwrap()
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == last)
+                .unwrap()
+                .delivery
+                .as_ref()
+                .unwrap()
+                .outer
+                .delivery_id
+                .clone()
+        };
+        let mut cursor = ScanCursor::default();
+        let first = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)))
+            .with_session(store.portal_session.clone(), ticket);
+        let pending = store
+            .pending_receipts_controlled(&link, ticket, &first, &mut cursor)
+            .unwrap();
+        assert!(pending.ready.is_empty());
+        assert_eq!(pending.damaged, 0);
+        assert_eq!(first.test_counts(), (256, 0, 0));
+
+        let second = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)))
+            .with_session(store.portal_session.clone(), ticket);
+        let pending = store
+            .pending_receipts_controlled(&link, ticket, &second, &mut cursor)
+            .unwrap();
+        assert_eq!(pending.damaged, 0);
+        assert_eq!(pending.ready.len(), 1);
+        assert_eq!(pending.ready[0].outer.delivery_id, expected);
+        let (raw, candidates, physical) = second.test_counts();
+        assert_eq!((raw, candidates), (2, 1));
+        assert!(physical > 0 && physical <= 40 * 1024 * 1024);
+        assert!(pending.ready[0].receipt_outcome.is_none());
+        let guard = store.session();
+        let records = &guard.as_ref().unwrap().manifest.records;
+        assert_eq!(records.len(), 258);
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.delivery.as_ref().unwrap().receipt_outcome.is_none())
+                .count(),
+            1
+        );
+    }
+
     fn empty_page() -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
             status: 200,
@@ -1678,7 +2241,7 @@ mod approval_recovery_tests {
     /// the checked-in package with that clinic's ids. Its manifest signature
     /// is not the clinic's: tests use only its saved custody and receipt,
     /// never a pickup.
-    fn add_unsent_delivery_for(store: &VaultStore, other: &StoredLink) -> Uuid {
+    pub(super) fn add_unsent_delivery_for(store: &VaultStore, other: &StoredLink) -> Uuid {
         let (fixture, mut outer, sealed, now) = fixture_package();
         let (mut opened, checked) = opened_fixture(&fixture, &outer, &sealed, now);
         let clinic = other.clinic.as_ref().unwrap();
@@ -2298,4 +2861,11 @@ mod approval_recovery_tests {
             portal_approval::MAX_APPROVAL_REQUESTS - 1
         );
     }
+}
+
+// Narrow existing saved-custody input seam for automatic collection fault tests.
+// This is absent from product builds and never grants new clinic signature trust.
+#[cfg(all(test, feature = "portal-linking"))]
+pub(super) fn automatic_pending_fixture_for_test(store: &VaultStore, link: &StoredLink) -> Uuid {
+    approval_recovery_tests::add_unsent_delivery_for(store, link)
 }

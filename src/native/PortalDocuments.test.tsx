@@ -5,6 +5,7 @@ import { humanValue } from "../test/humanText";
 import { page } from "vitest/browser";
 import { PortalDocuments } from "./PortalDocuments";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
+import { vaultErrorMessage } from "../vault";
 import { LOCALES, setLocaleOverride, translate, resolveText } from "../i18n";
 
 const deviceCode = "Ebz2sH2jVoqcdFhl1BmIOBRm1xuT-zW5bvFBcCeERPY";
@@ -578,4 +579,33 @@ describe("native clinic document controls", () => {
       ).toHaveValue(fingerprint);
     }
   });
+});
+
+it("keeps manual check available for an explicit retry after bounded preemption is busy", async () => {
+  setLocaleOverride("en");
+  try {
+    const { bridge, failures, props } = fixture();
+    const user = userEvent.setup();
+    vi.mocked(bridge.checkDocuments!)
+      .mockRejectedValueOnce({
+        code: "document_check_busy",
+        message: "FAKE raw native detail",
+      })
+      .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 });
+    const button = screen.getByRole("button", {
+      name: "Check for new documents",
+    });
+    await user.click(button);
+    await waitFor(() => expect(failures).toHaveLength(1));
+    expect(vaultErrorMessage(failures[0])).toBe(
+      "A document check is stopping. Choose Check for new documents again in a moment.",
+    );
+    expect(button).toBeEnabled();
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(1);
+    await user.click(button);
+    await waitFor(() => expect(bridge.checkDocuments).toHaveBeenCalledTimes(2));
+    expect(props.setNotice).toHaveBeenCalled();
+  } finally {
+    setLocaleOverride(null);
+  }
 });

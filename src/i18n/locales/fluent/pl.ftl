@@ -888,6 +888,7 @@ native-setAside-title = Odstawić ten sejf myCarlos na bok i zacząć od nowa?
 native-setAside-warning = Cały sejf zostanie odstawiony na bok i rozpocznie się praca z pustym sejfem. { $kept } myCarlos nigdy go nie usuwa. Jeśli powodem rozpoczęcia od nowa jest podejrzenie, że ktoś zna Twoje hasło główne, ta osoba nadal może go otworzyć, więc proszę go usunąć. { $removal }
 
 native-vault-keep = Zachowaj ten sejf
+native-notice-arrival = Do myCarlos dotarł dokument z przychodni. Otwórz myCarlos, aby go przeczytać.
 
 notice-autoLockSet =
     { $count ->
@@ -1839,3 +1840,16 @@ interface-AnonymizePreview-close = Zamknij
 interface-AiHelperNotice-continue = Dalej
 
 interface-AnonymizePreview-footerNote = Plik będzie kończył się tym wierszem:
+
+notifications-title = Powiadomienia po sprawdzeniu dokumentów
+notifications-help = Gdy po ręcznym sprawdzeniu zostanie zapisany dokument z przychodni, system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument. Dokumenty nie są sprawdzane automatycznie.
+notifications-allow = Zezwalaj na powiadomienia o nowych dokumentach
+notifications-blocked = System Windows blokuje powiadomienia. Proszę sprawdzić ustawienia powiadomień.
+notifications-unknown = Nie można sprawdzić uprawnień do powiadomień w systemie Windows.
+notifications-error = Nie można zapisać tego ustawienia. Powiadomienia są wyłączone w tej sesji.
+notifications-unavailable = Powiadomienia o dokumentach są niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
+notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
+notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy sejf jest odblokowany
+notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Sprawdzanie może trwać, gdy Windows blokuje powiadomienia. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie.
+notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Dokumenty z przychodni” i wybrać „Sprawdź nowe dokumenty”.
+notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za chwilę ponownie wybrać „Sprawdź nowe dokumenty”.

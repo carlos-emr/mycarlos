@@ -867,6 +867,7 @@ native-setAside-title = Mettre ce coffre-fort myCarlos de côté et recommencer?
 native-setAside-warning = Cela met tout le coffre-fort de côté et recommence avec un coffre-fort vide. { $kept } myCarlos ne le supprime jamais. Si vous recommencez parce qu’une autre personne pourrait connaître votre phrase secrète, elle peut toujours ouvrir le coffre-fort mis de côté; supprimez donc celui-ci. { $removal }
 
 native-vault-keep = Conserver ce coffre-fort
+native-notice-arrival = Un document de la clinique est arrivé dans myCarlos. Ouvrez myCarlos pour le lire.
 
 notice-autoLockSet =
     { $count ->
@@ -1805,3 +1806,16 @@ interface-AnonymizePreview-close = Fermer
 interface-AiHelperNotice-continue = Continuer
 
 interface-AnonymizePreview-footerNote = Le fichier se terminera par cette ligne :
+
+notifications-title = Avis après la vérification des documents
+notifications-help = Lorsqu’un document de la clinique est enregistré après une vérification manuelle, Windows peut afficher un avis général. Ouvrez myCarlos normalement pour le lire. Les documents ne sont pas vérifiés automatiquement.
+notifications-allow = Autoriser les avis d’arrivée de documents
+notifications-blocked = Windows bloque les notifications. Vérifiez ses paramètres de notification.
+notifications-unknown = Impossible de vérifier l’autorisation de notification de Windows.
+notifications-error = Ce réglage n’a pas pu être enregistré. Les avis sont désactivés pour cette session.
+notifications-unavailable = Les avis de documents ne sont pas disponibles. Ouvrez myCarlos normalement pour consulter vos documents.
+notifications-helpAutomatic = Windows peut afficher un avis générique après l’enregistrement d’un document de la clinique. Ouvrez myCarlos normalement pour le lire.
+notifications-autoAllow = Vérifier automatiquement les documents des cliniques lorsque le coffre est déverrouillé
+notifications-autoHelp = Avec votre accord, myCarlos vérifie les liens enregistrés et approuvés des cliniques lorsque cette application est ouverte et le coffre déverrouillé, avec au moins deux minutes entre les tentatives. Les vérifications peuvent continuer si Windows bloque les avis. Verrouiller le coffre ou fermer l’application arrête les vérifications suivantes.
+notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Documents de la clinique et choisissez Rechercher de nouveaux documents.
+notifications-checkBusy = Une vérification de documents est en cours d’arrêt. Choisissez à nouveau Rechercher de nouveaux documents dans un instant.
