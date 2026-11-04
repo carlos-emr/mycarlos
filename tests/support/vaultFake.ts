@@ -35,6 +35,21 @@ export const FAKE_CLINIC_DOCUMENT = "FAKE Clinic letter.pdf";
 export const FAKE_DEVICE_CODE = "FAKE-DEVICE-1";
 /** Labels of the vault's recovery key, and of a key being set up. */
 export const FAKE_KEY_LABEL = "FAKE-KEY1";
+/** What the fake device reports for the passphrase speed test (#39): round
+ * numbers, under a thousand, so that no locale puts separators in them. */
+export const FAKE_SPEED_REPORT = {
+  memoryKib: 65536,
+  iterations: 3,
+  lanes: 1,
+  samplesMs: [312, 298, 305],
+  medianMs: 305,
+  maxMs: 312,
+  release: false,
+  simulator: false,
+  platform: "windows",
+  architecture: "x86_64",
+  appVersion: "0.0.0-FAKE",
+};
 export const FAKE_NEW_KEY_LABEL = "FAKE-KEY2";
 
 // Fixed synthetic UUIDs, in the wire format accepted by native Uuid fields.
@@ -1311,6 +1326,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             snapshot.recovery = null;
             return missing;
           }
+          // --- The speed test, for testers (#39): the device's timings ---
+          case "kdf_benchmark":
+            refuseLocked();
+            return copy(setup.speedReport);
           case "vault_touch":
           case "vault_set_auto_lock":
           case "plugin:window|set_theme":
@@ -1410,6 +1429,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
       resetPhrase: translate("en", "native.reset.phrase"),
+      speedReport: FAKE_SPEED_REPORT,
       messages: Object.fromEntries(
         NATIVE_MESSAGES.map((key) => [key, translate("en", key)]),
       ) as Record<string, string>,
