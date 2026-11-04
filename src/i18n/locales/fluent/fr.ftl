@@ -1466,8 +1466,6 @@ portal-errorDamaged = Un document enregistré de cette clinique est endommagé o
 
 portal-errorDeviceName = Choisissez un nom d’appareil de 1 à 64 caractères sans caractères de contrôle.
 
-portal-errorDisabled = L’association au portail n’est pas activée dans cette version.
-
 portal-errorExists = Cet appareil est déjà enregistré. Consultez les appareils associés dans votre portail patient.
 
 portal-errorIncomplete = La demande au portail n’a pas abouti. Vérifiez votre connexion et l’horloge de l’appareil, puis réessayez.

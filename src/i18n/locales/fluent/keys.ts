@@ -647,7 +647,6 @@ export const MESSAGE_KEYS = [
   "portal.errorCodeRejected",
   "portal.errorDamaged",
   "portal.errorDeviceName",
-  "portal.errorDisabled",
   "portal.errorExists",
   "portal.errorIncomplete",
   "portal.errorKeys",
@@ -1603,7 +1602,6 @@ const FLUENT_IDS_BY_KEY = {
   "portal.errorCodeRejected": "portal-errorCodeRejected",
   "portal.errorDamaged": "portal-errorDamaged",
   "portal.errorDeviceName": "portal-errorDeviceName",
-  "portal.errorDisabled": "portal-errorDisabled",
   "portal.errorExists": "portal-errorExists",
   "portal.errorIncomplete": "portal-errorIncomplete",
   "portal.errorKeys": "portal-errorKeys",
@@ -2593,7 +2591,6 @@ export interface MessageArgsByKey {
   "portal.errorCodeRejected": undefined;
   "portal.errorDamaged": undefined;
   "portal.errorDeviceName": undefined;
-  "portal.errorDisabled": undefined;
   "portal.errorExists": undefined;
   "portal.errorIncomplete": undefined;
   "portal.errorKeys": undefined;

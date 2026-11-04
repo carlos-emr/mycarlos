@@ -1498,8 +1498,6 @@ portal-errorDamaged = Zapisany dokument z tej przychodni jest uszkodzony lub go 
 
 portal-errorDeviceName = Wybierz nazwę urządzenia o długości od 1 do 64 znaków, bez znaków sterujących.
 
-portal-errorDisabled = Łączenie z portalem nie jest włączone w tej wersji.
-
 portal-errorExists = To urządzenie jest już zarejestrowane. Sprawdź połączone urządzenia w portalu pacjenta.
 
 portal-errorIncomplete = Nie udało się wykonać żądania do portalu. Sprawdź połączenie i zegar urządzenia, a następnie spróbuj ponownie.

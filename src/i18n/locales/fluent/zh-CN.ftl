@@ -1306,8 +1306,6 @@ portal-errorDamaged = 此诊所的一份已保存文档已损毁或遗失，因�
 
 portal-errorDeviceName = 请选择 1 到 64 个字符的设备名称，且不得包含控制字符。
 
-portal-errorDisabled = 此版本未启用门户网站关联功能。
-
 portal-errorExists = 此设备已注册。请在患者门户网站查看「Linked devices」（已关联的设备）页面。
 
 portal-errorIncomplete = 无法完成门户网站请求。请检查网络连接和设备时钟，然后重试。

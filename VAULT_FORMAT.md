@@ -890,8 +890,8 @@ need implementation, and no full #55 or platform claim follows from these edits.
 
 Format 6 prevents older writers from discarding delivery or approval evidence.
 Writable unlock upgrades formats 1–5 before adding it. Header and object formats
-are unchanged. Default builds still disable all portal network commands, and
-can open and back up this encrypted evidence without enabling network access.
+are unchanged. Opening and backing up this encrypted evidence needs no network
+access, so a build that cannot link (Android today) still can.
 
 A received record's optional `delivery` contains its saved link UUID, complete
 outer identity, authenticated delivery manifest and exact compact signature,
