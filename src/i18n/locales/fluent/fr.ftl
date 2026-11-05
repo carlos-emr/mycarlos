@@ -1605,7 +1605,7 @@ interface-history-gap = Les événements à cet endroit ne peuvent pas être vé
 
 interface-history-how = Méthode
 
-interface-history-how-aidReplaced = Remplace une aide à la lecture précédente
+interface-history-how-aidReplaced = A remplacé une aide à la lecture précédente
 
 interface-history-how-camera = Ajouté avec l’appareil photo
 
