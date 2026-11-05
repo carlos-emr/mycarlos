@@ -51,6 +51,7 @@ function renderReader(
     page(index),
   ),
   shownRecord: VaultRecord = record,
+  startWithAid = false,
 ) {
   const onClose = vi.fn();
   const cancelView = vi.fn();
@@ -59,6 +60,7 @@ function renderReader(
       record={shownRecord}
       viewPage={viewPage}
       cancelView={cancelView}
+      startWithAid={startWithAid}
       onClose={onClose}
     />,
   );
@@ -1054,5 +1056,82 @@ describe("the document reader", () => {
     expect(failure).toBeVisible();
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.queryByText(humanText("Text on this page"))).toBeNull();
+  });
+
+  describe("with a clinic reading aid", () => {
+    const withAid: VaultRecord = {
+      ...record,
+      readingAid: {
+        deliveryId: "aid-1",
+        language: "en",
+        reviewedAtMs: 1_792_450_680_000,
+        notice: {
+          version: "carlos-5537-en-1",
+          heading: "FAKE notice heading",
+          body: "FAKE notice body: this was produced by software.",
+        },
+        overview: "FAKE overview of the report.",
+        points: [{ text: "FAKE point one.", evidence: ["FAKE quote."] }],
+      },
+    };
+    const originalButton = () =>
+      screen.getByRole("button", {
+        name: humanText("Open the original document"),
+      });
+
+    it("opens on the notice, draws nothing of the original, and keeps the original one tap away", async () => {
+      const { viewPage } = renderReader(undefined, withAid, true);
+      const notice = screen.getByRole("note");
+      expect(within(notice).getByText("FAKE notice heading")).toBeVisible();
+      expect(screen.getByText("FAKE overview of the report.")).toBeVisible();
+      // The notice comes before the overview and points in the page order.
+      expect(
+        notice.compareDocumentPosition(
+          screen.getByText("FAKE overview of the report."),
+        ) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(viewPage).not.toHaveBeenCalled();
+      await click(originalButton());
+      await waitFor(() => expect(viewPage).toHaveBeenCalled());
+      expect(screen.queryByRole("note")).toBeNull();
+      expect(screen.getByRole("img")).toBeVisible();
+    });
+
+    it("shows the notice first again every time the aid is opened", async () => {
+      renderReader(undefined, withAid, true);
+      await click(originalButton());
+      await waitFor(() => expect(screen.getByRole("img")).toBeVisible());
+      await click(
+        screen.getByRole("button", { name: humanText("Read the reading aid") }),
+      );
+      const notice = screen.getByRole("note");
+      expect(within(notice).getByText("FAKE notice heading")).toBeVisible();
+      expect(
+        within(notice).getByRole("button", {
+          name: humanText("Open the original document"),
+        }),
+      ).toBeVisible();
+    });
+
+    it("opens on the original when asked, with the aid one tap away", async () => {
+      const { viewPage } = renderReader(undefined, withAid, false);
+      await waitFor(() => expect(viewPage).toHaveBeenCalled());
+      expect(screen.queryByRole("note")).toBeNull();
+      await click(
+        screen.getByRole("button", { name: humanText("Read the reading aid") }),
+      );
+      expect(screen.getByRole("note")).toBeVisible();
+    });
+
+    it("offers no aid for a document without one", async () => {
+      const { viewPage } = renderReader(undefined, record, true);
+      await waitFor(() => expect(viewPage).toHaveBeenCalled());
+      expect(
+        screen.queryByRole("button", {
+          name: humanText("Read the reading aid"),
+        }),
+      ).toBeNull();
+      expect(screen.queryByRole("note")).toBeNull();
+    });
   });
 });

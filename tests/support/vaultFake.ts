@@ -178,6 +178,8 @@ export interface FakeVaultSetup {
   newRecoveryKey?: string;
   /** Adds FAKE Locked.pdf, locked with FAKE_DOCUMENT_PASSWORD. */
   lockedPdf?: boolean;
+  /** FAKE Letter.pdf also holds a clinic reading aid (vault format 10). */
+  readingAid?: boolean;
   /** Clinic linking is built in: with no clinic linked yet, or with one
    * linked and approved, unless `approval` says the request did not end in
    * approval. */
@@ -267,6 +269,14 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         available: boolean;
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
+        readingAid?: {
+          deliveryId: string;
+          language: string;
+          reviewedAtMs: number;
+          notice: { version: string; heading: string; body: string };
+          overview: string;
+          points: { text: string; evidence: string[] }[];
+        };
       };
       type Link = {
         id: string;
@@ -462,6 +472,27 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             plaintextSize: 1024,
             importedAtMs: Date.UTC(2026, 9, 3, 12),
             available: true,
+            ...(setup.readingAid
+              ? {
+                  readingAid: {
+                    deliveryId: "00000000-0000-4000-8000-0000000000a1",
+                    language: "en",
+                    reviewedAtMs: Date.UTC(2026, 9, 3, 11),
+                    notice: {
+                      version: "carlos-5537-en-1",
+                      heading: "FAKE notice heading",
+                      body: "FAKE notice body: this reading aid was produced by software.\n\nFAKE second paragraph: open the original for what your clinic recorded.",
+                    },
+                    overview: "FAKE overview of the letter.",
+                    points: [
+                      {
+                        text: "FAKE point: a follow-up is planned.",
+                        evidence: ["FAKE quote from the letter."],
+                      },
+                    ],
+                  },
+                }
+              : {}),
           },
         ];
         const documentPasswords: Record<string, string> = {};
@@ -870,6 +901,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // Preferences on a computer asks whether an AI model is installed (#72).
           case "ai_model_status":
             return { state: "notInstalled" };
+          case "ai_model_catalog":
+            return [];
           case "vault_status":
             return state.status;
           case "vault_notification_status":
@@ -1600,6 +1633,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       keyLabel: FAKE_KEY_LABEL,
       newKeyLabel: FAKE_NEW_KEY_LABEL,
       lockedPdf: setup.lockedPdf ?? false,
+      readingAid: setup.readingAid ?? false,
       documentPassword: FAKE_DOCUMENT_PASSWORD,
       lockedOriginal: lockedOriginalName("{name}.pdf"),
       pageText: PAGE_TEXT,

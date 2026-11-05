@@ -123,9 +123,6 @@ impl ResumeCache {
             self.owner = Some((vault, session, consent_epoch));
         }
     }
-    pub(crate) fn manual_success(&mut self) {
-        *self = Self::default();
-    }
     pub(crate) fn needs_manual(&self) -> bool {
         self.slots.iter().flatten().any(|s| s.manual_required)
     }
@@ -532,11 +529,11 @@ where
                 ) {
                     Ok((record, added)) => {
                         result.added += usize::from(added);
-                        #[cfg(all(windows, feature = "document-notifications"))]
+                        #[cfg(windows)]
                         if added {
                             store.notify_local_arrival_controlled(record, &link, session, &stopped);
                         }
-                        #[cfg(not(all(windows, feature = "document-notifications")))]
+                        #[cfg(not(windows))]
                         let _ = record;
                         // Receipt verification and settlement is bounded on the
                         // next scan/cycle; custody already committed truthfully.

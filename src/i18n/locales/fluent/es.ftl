@@ -951,6 +951,24 @@ photo-zoomOut = Alejar
 
 preferences-subtitle = Cómo se ve myCarlos en este equipo
 
+readingAid-available = Su clínica también envió una ayuda de lectura para este documento.
+
+readingAid-checked = Revisado por un clínico el { $date }.
+
+readingAid-evidence = Del documento:
+
+readingAid-open = Leer la ayuda de lectura
+
+readingAid-openOriginal = Abrir el documento original
+
+readingAid-overview = Resumen general
+
+readingAid-points = Puntos principales
+
+readingAid-title = Ayuda de lectura de su clínica
+
+readingAid-unavailable = Esta ayuda de lectura no se puede mostrar de forma segura. Abra el documento original.
+
 record-kind-document = Documento
 
 record-source-manual = Importación manual — sin verificar
@@ -1466,8 +1484,6 @@ portal-errorDamaged = Un documento guardado de esta clínica está dañado o no 
 
 portal-errorDeviceName = Elija un nombre de dispositivo de 1 a 64 caracteres sin caracteres de control.
 
-portal-errorDisabled = La vinculación con el portal no está habilitada en esta versión.
-
 portal-errorExists = Este dispositivo ya está registrado. Revise los dispositivos vinculados en su portal de pacientes.
 
 portal-errorIncomplete = No se pudo completar la solicitud al portal. Revise la conexión y el reloj del dispositivo y vuelva a intentarlo.
@@ -1526,6 +1542,18 @@ hidden-backToSecurity = Volver a Seguridad
 
 interface-history-appVersion = Versión de myCarlos
 
+interface-history-approval-accepted = Aprobada
+
+interface-history-approval-cancelled = Cancelada
+
+interface-history-approval-challengeReady = Esperando el código del correo de la clínica
+
+interface-history-approval-expired = Caducada
+
+interface-history-approval-pending = Esperando a la clínica
+
+interface-history-approval-refused = Rechazada por la clínica
+
 interface-history-damaged = Parte de este historial está dañada. Los eventos posteriores al { $date } no se pueden verificar y no se muestran.
 
 interface-history-damagedAll = Parte de este historial está dañada. Sus eventos no se pueden verificar, así que no se muestra ninguno.
@@ -1546,6 +1574,18 @@ interface-history-event-copySaved = Copia legible guardada
 
 interface-history-event-created = Bóveda creada
 
+interface-history-event-deliveryFiled = Documento de la clínica guardado
+
+interface-history-event-deliveryReceiptSettled = Acuse de recibo cerrado
+
+interface-history-event-deviceApprovalRequestRestarted = Otra solicitud de aprobación iniciada
+
+interface-history-event-deviceApprovalRequested = Aprobación de la clínica solicitada
+
+interface-history-event-deviceApprovalStatusChanged = Aprobación de la clínica actualizada
+
+interface-history-event-deviceApprovalVerified = Dispositivo aprobado por la clínica
+
 interface-history-event-folderCreated = Carpeta creada
 
 interface-history-event-folderMoved = Carpeta movida
@@ -1562,7 +1602,15 @@ interface-history-event-moved = Documento movido
 
 interface-history-event-passphraseChanged = Frase de contraseña cambiada
 
+interface-history-event-portalLinkStarted = Vinculación con la clínica iniciada
+
+interface-history-event-portalLinked = Clínica vinculada
+
 interface-history-event-profileCreated = Perfil de paciente añadido
+
+interface-history-event-profileDetailsChanged = Datos personales cambiados
+
+interface-history-event-readingAidFiled = Ayuda de lectura guardada
 
 interface-history-event-recoveryKeySet = Clave de recuperación configurada
 
@@ -1586,6 +1634,8 @@ interface-history-from = Desde
 interface-history-gap = Los eventos de esta parte no se pueden verificar y no se muestran.
 
 interface-history-how = Cómo
+
+interface-history-how-aidReplaced = Sustituyó una ayuda de lectura anterior
 
 interface-history-how-camera = Añadido con la cámara
 
@@ -1654,7 +1704,7 @@ ai-explain-title = Explicar un término
 
 ai-notInstalled-title = El asistente de IA todavía no está en este equipo
 
-ai-notInstalled-body = Cuando esté instalado, le explicará sus documentos en palabras sencillas con un modelo de IA que funciona en este equipo. La descarga del modelo llegará en una versión posterior de myCarlos.
+ai-notInstalled-body = Cuando esté instalado, le explicará sus documentos en palabras sencillas con un modelo de IA que funciona en este equipo. En Preferencias puede descargar el modelo o agregar un archivo de modelo que ya tenga.
 
 ai-notInstalled-openPreferences = Abrir Preferencias
 
@@ -1676,22 +1726,78 @@ ai-explain-submit = Explicar
 
 ai-preferences-title = Asistente de IA
 
-ai-preferences-body = Explica sus documentos en palabras sencillas con un modelo de IA que funciona en este equipo. La descarga del modelo llegará en una versión posterior de myCarlos.
+ai-preferences-body = Explica sus documentos en palabras sencillas con un modelo de IA que funciona en este equipo. Puede descargar el modelo o agregar un archivo de modelo que ya tenga; permanece en este equipo.
 
 ai-preferences-notInstalled = No instalado
+
+ai-model-add = Agregar un archivo de modelo…
+
+ai-model-accepted = { $name }, { $size } MB. Licencia: { $licence }.
+
+ai-model-where = Dónde obtener el archivo
+
+ai-model-copy = Copiar dirección
+
+ai-model-copied = Dirección copiada
+
+ai-model-checking = Comprobando el archivo… { $done } de { $total } MB
+
+ai-model-added = Modelo agregado
+
+ai-model-installed = Instalado: { $name }
+
+ai-model-remove = Quitar el modelo
+
+ai-model-removeConfirm = ¿Quitar el modelo de este equipo? Podrá agregarlo de nuevo más tarde.
+
+ai-model-damaged = El archivo del modelo está dañado o ha cambiado. Quítelo y vuelva a agregarlo.
+
+ai-model-unsupportedRam = Este equipo no tiene memoria suficiente para el asistente de IA (necesita unos 8 GB).
+
+ai-model-unsupportedCpu = El procesador de este equipo no es compatible con el asistente de IA.
+
+ai-model-unsupportedPlatform = El asistente de IA todavía no está disponible en este tipo de equipo.
+
+ai-model-refusedList = Este archivo no es uno que myCarlos acepte. Elija el archivo de modelo indicado arriba.
+
+ai-model-refusedHash = Este no es el archivo esperado. Descárguelo de nuevo y agregue la copia nueva.
+
+ai-model-refusedIncomplete = No se pudo leer el archivo completo. Compruebe que la descarga haya terminado e inténtelo de nuevo.
+
+ai-model-refusedDisk = No hay espacio libre suficiente en este equipo. El modelo necesita unos 4 GB.
+
+ai-model-refusedStorage = No se pudo guardar el modelo en este equipo.
+
+ai-model-refusedBusy = El asistente de IA está trabajando. Inténtelo de nuevo cuando termine.
+
+ai-model-download = Descargar el modelo predeterminado
+
+ai-model-downloadNote = Descarga un archivo ({ $size } MB), una sola vez, desde { $host }, solo cuando usted hace clic. No se envía nada sobre usted ni sobre sus documentos. El sitio de descarga ve su dirección de internet, como en cualquier descarga.
+
+ai-model-downloading = Descargando y comprobando… { $done } de { $total } MB
+
+ai-model-refusedNetwork = La descarga no terminó. Compruebe su conexión a internet e inténtelo de nuevo.
+
+ai-model-refusedUnavailable = El modelo no está disponible ahora en su dirección. Inténtelo más tarde o agregue un archivo que ya tenga.
+
+native-filter-models = Archivos de modelo
 
 ai-working = El asistente de IA está trabajando…
 
 ai-failed = El asistente de IA no pudo terminar. Intente de nuevo.
+
+ai-error-memory = Ahora mismo no hay suficiente memoria libre para el asistente de IA. Cierre otros programas e intente de nuevo.
+
+ai-error-busy = Se está agregando o quitando el modelo del asistente de IA. Intente de nuevo cuando termine.
 
 ai-summary-pagesMissing = Algunas páginas no se pudieron leer completas, así que puede que este resumen omita partes.
 
 ai-summary-noSource = No se encontró la fuente
 aiHelper-notice-title = Acerca del asistente de IA
 
-aiHelper-notice-introShare = myCarlos puede preparar el texto de un documento para el servicio de IA que usted elija. El asistente de IA no envía nada por internet.
+aiHelper-notice-introShare = myCarlos puede preparar el texto de un documento para el servicio de IA que usted elija. El asistente de IA nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este equipo.
 
-aiHelper-notice-intro = El asistente de IA explica un documento con palabras sencillas, aquí en este dispositivo, y puede preparar el texto de un documento para el servicio de IA que usted elija. No envía nada por internet.
+aiHelper-notice-intro = El asistente de IA explica un documento con palabras sencillas, aquí en este dispositivo, y puede preparar el texto de un documento para el servicio de IA que usted elija. Nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este equipo.
 
 aiHelper-notice-testBuild = Esta versión de desarrollo es solo para archivos ficticios. No la use con información de salud real.
 
@@ -1711,7 +1817,7 @@ aiHelper-notice-adviceBody = Las respuestas escritas por una IA pueden estar equ
 
 aiHelper-notice-modelHeading = La IA en este dispositivo
 
-aiHelper-notice-modelBody = La IA usa un archivo de modelo que solo se añade si usted decide añadirlo. El archivo se guarda fuera de la bóveda, porque no contiene nada sobre usted. myCarlos lo comprueba antes de cada uso y no usará un archivo que haya sido modificado. La IA no puede usar internet ni abrir sus otros archivos.
+aiHelper-notice-modelBody = La IA usa un archivo de modelo. Usted decide cómo obtenerlo: myCarlos puede descargar ese único archivo, una sola vez y cuando usted lo decida, desde la dirección que se muestra en Preferencias (no se envía nada sobre usted ni sobre sus documentos), o usted puede agregar un archivo que ya tenga. El archivo se guarda fuera de la bóveda, porque no contiene nada sobre usted. myCarlos lo comprueba antes de cada uso y no usará un archivo que haya sido modificado. La IA en sí no puede usar internet ni abrir sus otros archivos.
 
 aiHelper-notice-resultsBody = Las respuestas de la IA se guardan en la bóveda, cifradas, con el documento, la herramienta, el modelo y la fecha. Cada respuesta lleva la nota «Escrito por IA; puede contener errores. Consulte con su médico.»
 
@@ -1722,6 +1828,12 @@ aiHelper-exportCut = [Texto cortado después de la página { $page }]
 aiHelper-exportFileName = Texto anonimizado.txt
 
 interface-history-how-anonymizedText = Texto anonimizado guardado
+
+interface-history-receipt-notFound = El documento ya no estaba en el portal
+
+interface-history-receipt-pickedUp = La clínica registró la recogida
+
+interface-history-status = Estado
 
 interface-RecordDetails-anonymizeText = Preparar el texto para una IA…
 

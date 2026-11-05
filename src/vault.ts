@@ -1,7 +1,7 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
-import type { ModelStatus } from "./ai/types";
-import type { DocumentText } from "./documentText";
+import type { ModelInfo, ModelStatus, ModelSummary } from "./ai/types";
+import type { DocumentPageText, DocumentText } from "./documentText";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -50,6 +50,20 @@ export interface VaultRecord {
   verifiedClinicName?: string;
   /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
   clinicServiceDate?: string;
+  /** The clinician-approved reading aid filed with this delivery (vault format 10). Reached from
+   * this document only; never a document of its own. */
+  readingAid?: ReadingAidRecord;
+}
+
+/** A filed reading aid as the reader shows it (the native receiver verified it). */
+export interface ReadingAidRecord {
+  deliveryId: string;
+  language: string;
+  /** When the clinician's review was recorded: the signed approval's time. */
+  reviewedAtMs: number;
+  notice: { version: string; heading: string; body: string };
+  overview: string;
+  points: { text: string; evidence: string[] }[];
 }
 
 /** When, and why, a document was hidden (#71). */
@@ -289,7 +303,17 @@ export interface AuditHistoryEntry {
     | "folderCreated"
     | "folderRenamed"
     | "folderMoved"
-    | "setAside";
+    | "setAside"
+    | "profileDetailsChanged"
+    | "portalLinkStarted"
+    | "portalLinked"
+    | "deviceApprovalRequested"
+    | "deviceApprovalVerified"
+    | "deviceApprovalStatusChanged"
+    | "deviceApprovalRequestRestarted"
+    | "deliveryFiled"
+    | "deliveryReceiptSettled"
+    | "readingAidFiled";
   name: string | null;
   oldName: string | null;
   from: string[] | null;
@@ -476,6 +500,17 @@ export interface VaultBridge {
   cancelView(): Promise<void>;
   /** Whether the AI helper (#72) has a model on this computer. */
   aiModelStatus(): Promise<ModelStatus>;
+  /** A plain-words summary of a document's pages, written by the model on
+   * this computer. One run at a time; `aiCancel` stops it. */
+  aiSummarize(pages: DocumentPageText[], lang: string): Promise<ModelSummary>;
+  /** A term explained in plain words, with the sentence it is in. */
+  aiExplain(
+    term: string,
+    context: string,
+    lang: string,
+  ): Promise<{ text: string; model: ModelInfo }>;
+  /** Stops the model's answer in flight, if any. */
+  aiCancel(): Promise<void>;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -921,6 +956,13 @@ export function createVaultBridge(): VaultBridge {
       return cancellation;
     },
     aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
+    aiSummarize: (pages, lang) =>
+      invoke<ModelSummary>("ai_summarize", { request: { pages, lang } }),
+    aiExplain: (term, context, lang) =>
+      invoke<{ text: string; model: ModelInfo }>("ai_explain", {
+        request: { term, context, lang },
+      }),
+    aiCancel: () => invoke<void>("ai_cancel"),
     documentText: (recordId, password) =>
       invoke<DocumentText>("vault_document_text", {
         request: { recordId, password: password ?? null },

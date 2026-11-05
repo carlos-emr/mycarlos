@@ -566,3 +566,88 @@ test("the reader closes, and stops the page being drawn, when the vault locks as
   );
   await expectOnlyFakedCommands(page);
 });
+
+test("a clinic reading aid opens under its notice before the original, and the original is always one tap away", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked", readingAid: true });
+  await page.goto("/");
+  const details = await openDetails(page, LETTER);
+  // The aid is offered next to Read, and opening it draws nothing of the original.
+  await details
+    .getByRole("button", { name: en("readingAid.open"), exact: true })
+    .click();
+  const { reader, button, picture } = readerOf(page, LETTER);
+  const notice = reader.getByRole("note");
+  await expect(notice).toBeVisible();
+  await expect(notice.getByText("FAKE notice heading")).toBeVisible();
+  await expect(
+    notice.getByText("FAKE second paragraph", { exact: false }),
+  ).toBeVisible();
+  await expect(reader.getByText("FAKE overview of the letter.")).toBeVisible();
+  await expect(
+    reader.getByText("FAKE point: a follow-up is planned."),
+  ).toBeVisible();
+  expect(await fakeCalls(page, "vault_view_page")).toEqual([]);
+  // The notice itself carries the way to the original.
+  const original = notice.getByRole("button", {
+    name: en("readingAid.openOriginal"),
+    exact: true,
+  });
+  await expect(original).toBeVisible();
+  await original.click();
+  await expect(picture(1)).toBeVisible();
+  await expect(reader.getByRole("note")).toHaveCount(0);
+  // Back to the aid from the original: the notice comes first again.
+  await button("readingAid.open").click();
+  await expect(reader.getByRole("note")).toBeVisible();
+  await expect(
+    reader.getByRole("note").getByText("FAKE notice heading"),
+  ).toBeVisible();
+  await reader
+    .getByRole("button", { name: en("photo.close"), exact: true })
+    .click();
+  await expect(reader).toHaveCount(0);
+});
+
+test("Read still opens the original, with the aid one tap away; a document without an aid offers none", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked", readingAid: true });
+  await page.goto("/");
+  const details = await openDetails(page, LETTER);
+  await details
+    .getByRole("button", {
+      name: en("interface.RecordDetails.read"),
+      exact: true,
+    })
+    .click();
+  const { reader, button, picture } = readerOf(page, LETTER);
+  await expect(picture(1)).toBeVisible();
+  await expect(reader.getByRole("note")).toHaveCount(0);
+  await expect(button("readingAid.open")).toBeVisible();
+  await reader
+    .getByRole("button", { name: en("photo.close"), exact: true })
+    .click();
+});
+
+test("a document without an aid offers no reading aid in its details", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, {
+    start: "unlocked",
+    readingAid: true,
+    lockedPdf: true,
+  });
+  await page.goto("/");
+  const other = await openDetails(page, LOCKED);
+  await expect(
+    other.getByRole("button", {
+      name: en("interface.RecordDetails.read"),
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    other.getByRole("button", { name: en("readingAid.open"), exact: true }),
+  ).toHaveCount(0);
+});
