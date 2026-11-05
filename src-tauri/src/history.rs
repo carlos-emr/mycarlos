@@ -81,6 +81,7 @@ pub enum HistoryEvent {
     DeviceApprovalRequestRestarted,
     DeliveryFiled,
     DeliveryReceiptSettled,
+    ReadingAidFiled,
 }
 
 /// A folder as it was named at the time of the event.

@@ -966,3 +966,59 @@ issues while independent links continue. Global lock, cancellation, corruption,
 recovery or storage failures still stop the operation. Saved documents with an
 unconfirmed receipt remain pending and preserve the exact compact bytes for the
 next check; pending count and clinic guidance are shown together with progress.
+
+#### Format 8: reading aids kept with their original
+
+Format 8 adds one optional field to a
+record, `readingAid`: the clinician-approved reading aid paired with that
+record's clinic delivery (carlos-portal delivery contract, "Reading aids"). It
+holds the aid's outer record (`kind` "reading-aid/1"), the signed compact
+manifest, the aid's JSON exactly as hashed, when it was checked, the anchored
+history head, the receipt signed at filing and the receipt outcome once the
+portal answers. An older build refuses a format 8 vault, so none can drop the
+field and with it an unsent receipt. A record can hold a reading aid only in
+format 8 or later, only with a clinic delivery, and only when the aid's pair
+claims name that delivery and the PDF hash of its original.
+
+A reading aid is filed only while its original is filed, in one commit with a
+`readingAidFiled` history event. An aid whose original is not filed yet is kept
+in the manifest's `waitingAids` list (format 8, at most 32) by its delivery ID
+and ciphertext hash, with no receipt: the same copy is never downloaded again, a
+different copy under that ID is replayed, and the kept copy is checked again
+after each original is filed. It holds the verified manifest and JSON, not the
+sealed copy, and is deleted silently once it is past its expiry and the
+device's 24 hour skew. A kept aid shares the one delivery-ID space with filed
+deliveries.
+
+A record holds one aid. A second aid for the same original replaces the held one
+only when it is greater by (`approval.reviewed_at`, `approval.id`): the later
+review, and within the same second the larger approval ID compared byte by byte,
+so two devices always keep the same aid. The summary version is an opaque hash
+and cannot be ordered. The replacement is one commit whose `readingAidFiled`
+entry has `how` "replaced". A lesser or equal aid (the same approval under
+another delivery ID is equal) is not filed: it is answered with its own signed receipt, sent once and
+not kept, so the portal stops offering it.
+Its receipt is retried like an original's, only while the original's saved file
+reads back. The check names `accept=reading-aid/1` in every listing, and files
+aids after the originals of the same check. Header, object and original-PDF
+formats are unchanged, and the aid adds no object file.
+
+##### Format numbers are taken at merge
+
+Format numbers are assigned when a branch merges, not when it is written. Each
+branch takes main's next number when it merges, with no gap, and renumbers in
+the same change:
+
+1. set `VAULT_FORMAT` and its section heading to the new number;
+2. set each gate it wrote for its own field to that number (`format_version < 8`
+   for `readingAid` and `waitingAids`), so a field's gate always equals the
+   format that introduced it and an older build that accepts a newer number can
+   never drop a field it does not know;
+3. update any hand-written format lists in the test matrices; the upgrade
+   checks iterate `VAULT_FORMAT` symbolically, so nothing else changes;
+4. keep the unsupported-newer check (`VAULT_FORMAT + 1` is refused) passing.
+
+Other open branches that also need a format (remembered refused deliveries,
+#161, and the AI summary branches) take the numbers after this one, in the order
+they merge. A vault written at the new number is refused by an older build,
+which is intended.

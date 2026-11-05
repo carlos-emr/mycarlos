@@ -412,6 +412,15 @@ export const MESSAGE_KEYS = [
   "photo.zoomOut",
   "photo.zoomed",
   "preferences.subtitle",
+  "readingAid.available",
+  "readingAid.checked",
+  "readingAid.evidence",
+  "readingAid.open",
+  "readingAid.openOriginal",
+  "readingAid.overview",
+  "readingAid.points",
+  "readingAid.title",
+  "readingAid.unavailable",
   "record.kind.document",
   "record.source.manual",
   "recover.intro",
@@ -1365,6 +1374,15 @@ const FLUENT_IDS_BY_KEY = {
   "photo.zoomOut": "photo-zoomOut",
   "photo.zoomed": "photo-zoomed",
   "preferences.subtitle": "preferences-subtitle",
+  "readingAid.available": "readingAid-available",
+  "readingAid.checked": "readingAid-checked",
+  "readingAid.evidence": "readingAid-evidence",
+  "readingAid.open": "readingAid-open",
+  "readingAid.openOriginal": "readingAid-openOriginal",
+  "readingAid.overview": "readingAid-overview",
+  "readingAid.points": "readingAid-points",
+  "readingAid.title": "readingAid-title",
+  "readingAid.unavailable": "readingAid-unavailable",
   "record.kind.document": "record-kind-document",
   "record.source.manual": "record-source-manual",
   "recover.intro": "recover-intro",
@@ -2336,6 +2354,15 @@ export interface MessageArgsByKey {
   "photo.zoomOut": undefined;
   "photo.zoomed": { percent: FluentArgument };
   "preferences.subtitle": undefined;
+  "readingAid.available": undefined;
+  "readingAid.checked": { date: FluentArgument };
+  "readingAid.evidence": undefined;
+  "readingAid.open": undefined;
+  "readingAid.openOriginal": undefined;
+  "readingAid.overview": undefined;
+  "readingAid.points": undefined;
+  "readingAid.title": undefined;
+  "readingAid.unavailable": undefined;
   "record.kind.document": undefined;
   "record.source.manual": undefined;
   "recover.intro": undefined;

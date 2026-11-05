@@ -36,6 +36,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 mod delivery;
+pub(crate) use delivery::AidFiling;
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
@@ -46,7 +47,7 @@ mod original_pdf;
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 7;
+const VAULT_FORMAT: u32 = 8;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -477,6 +478,9 @@ struct StoredRecord {
     original_pdf: Option<StoredOriginalPdf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     delivery: Option<crate::portal_delivery::Custody>,
+    /// The clinician-approved reading aid paired with this delivery (format 8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reading_aid: Option<crate::portal_delivery::AidCustody>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -564,6 +568,9 @@ struct Manifest {
     /// Format 3 only.
     #[serde(default, skip_serializing_if = "HistoryState::is_empty")]
     history: HistoryState,
+    /// Format 8. Reading aids verified and kept until their original is filed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    waiting_aids: Vec<crate::portal_delivery::WaitingAid>,
 }
 
 /// Where the history's entries are, and what pins its chain: how many there
@@ -1276,6 +1283,7 @@ impl VaultStore {
                 records: Vec::new(),
                 history: HistoryState::default(),
                 portal_links: Vec::new(),
+                waiting_aids: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -2300,6 +2308,7 @@ impl VaultStore {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
                 };
                 // Preserve raw bytes before helper parsing/rendering, including
                 // unsigned or too-large PDFs whose signatures cannot be ruled
@@ -4635,6 +4644,13 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
                 .as_ref()
                 .is_some_and(|c| !delivery_ids.insert((c.link_id, c.outer.delivery_id.as_str())))
             || !delivery::valid_custody(record, &manifest.portal_links)
+            // Format 8 is the first that can hold a reading aid; an older
+            // build would drop the unknown field and with it the receipt.
+            || (manifest.format_version < 8 && record.reading_aid.is_some())
+            || !delivery::valid_aid_custody(record, &manifest.portal_links)
+            || record.reading_aid.as_ref().is_some_and(|a| {
+                !delivery_ids.insert((a.link_id, a.outer.delivery_id.as_str()))
+            })
         {
             return Err(VaultError::Corrupt);
         }
@@ -4648,6 +4664,16 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         {
             return Err(VaultError::Corrupt);
         }
+    }
+    // A waiting reading aid (format 8) shares the one delivery-ID space with filed deliveries.
+    if (manifest.format_version < 8 && !manifest.waiting_aids.is_empty())
+        || !delivery::valid_waiting_aids(
+            &manifest.waiting_aids,
+            &manifest.portal_links,
+            &mut delivery_ids,
+        )
+    {
+        return Err(VaultError::Corrupt);
     }
     validate_history(manifest, &mut object_names, &mut object_ids)
 }
@@ -9075,6 +9101,7 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
                 },
                 StoredRecord {
                     id: second_record,
@@ -9091,10 +9118,12 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
                 },
             ],
             history: HistoryState::default(),
             portal_links: Vec::new(),
+            waiting_aids: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -14807,10 +14836,12 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
                 })
                 .collect(),
             history: HistoryState::default(),
             portal_links: Vec::new(),
+            waiting_aids: Vec::new(),
         }
     }
 

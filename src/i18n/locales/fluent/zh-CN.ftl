@@ -836,6 +836,24 @@ photo-zoomed = 已放大至 { $percent }%。
 
 preferences-subtitle = 此电脑上 myCarlos 的外观
 
+readingAid-available = 您的诊所还为这份文档发送了阅读辅助。
+
+readingAid-checked = 已由临床人员于 { $date } 核对。
+
+readingAid-evidence = 摘自文档：
+
+readingAid-open = 查看阅读辅助
+
+readingAid-openOriginal = 打开原始文档
+
+readingAid-overview = 概述
+
+readingAid-points = 要点
+
+readingAid-title = 诊所提供的阅读辅助
+
+readingAid-unavailable = 无法安全显示此阅读辅助。请改为打开原始文档。
+
 record-kind-document = 文档
 
 record-source-manual = 手动导入 — 未验证
