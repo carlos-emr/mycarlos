@@ -247,7 +247,9 @@ export function VaultLibrary({
   );
   // Each screen that reads a document's whole text names its reads, so that
   // closing one (the reader's Summary) never stops the other's (the
-  // preview's): a new id each time the preview or the reader opens.
+  // preview's): a new id each time the preview or the reader opens. While
+  // neither is open the id is "", and nothing reads or cancels with it: both
+  // uses below are inside the open preview or reader.
   const previewReadId = useMemo(
     () => (anonymizeRecordId ? crypto.randomUUID() : ""),
     [anonymizeRecordId],

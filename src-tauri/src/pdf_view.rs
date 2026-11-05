@@ -17,8 +17,8 @@ use crate::pdf_unlock::{self, Refusal, Request};
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
-#[cfg(desktop)]
 use uuid::Uuid;
+#[cfg(desktop)]
 use zeroize::Zeroizing;
 
 /// The latest page request; an older one still drawing is stopped.
