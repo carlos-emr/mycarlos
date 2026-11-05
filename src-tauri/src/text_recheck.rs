@@ -454,24 +454,62 @@ fn find_all(folded: &Folded, needle: &[char], hits: &mut Vec<Hit>) {
 // writes it ("14 maja 2026"), and the nominative.
 const MONTHS_OTHER: [[&str; 12]; 5] = [
     [
-        "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
-        "octubre", "noviembre", "diciembre",
+        "enero",
+        "febrero",
+        "marzo",
+        "abril",
+        "mayo",
+        "junio",
+        "julio",
+        "agosto",
+        "septiembre",
+        "octubre",
+        "noviembre",
+        "diciembre",
     ],
     [
-        "janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho", "agosto", "setembro",
-        "outubro", "novembro", "dezembro",
+        "janeiro",
+        "fevereiro",
+        "marco",
+        "abril",
+        "maio",
+        "junho",
+        "julho",
+        "agosto",
+        "setembro",
+        "outubro",
+        "novembro",
+        "dezembro",
     ],
     [
-        "stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia",
-        "wrzesnia", "pazdziernika", "listopada", "grudnia",
+        "stycznia",
+        "lutego",
+        "marca",
+        "kwietnia",
+        "maja",
+        "czerwca",
+        "lipca",
+        "sierpnia",
+        "wrzesnia",
+        "pazdziernika",
+        "listopada",
+        "grudnia",
     ],
     [
-        "styczen", "luty", "marzec", "kwiecien", "maj", "czerwiec", "lipiec", "sierpien",
-        "wrzesien", "pazdziernik", "listopad", "grudzien",
+        "styczen",
+        "luty",
+        "marzec",
+        "kwiecien",
+        "maj",
+        "czerwiec",
+        "lipiec",
+        "sierpien",
+        "wrzesien",
+        "pazdziernik",
+        "listopad",
+        "grudzien",
     ],
-    [
-        "", "", "", "", "", "", "", "", "setiembre", "", "", "",
-    ],
+    ["", "", "", "", "", "", "", "", "setiembre", "", "", ""],
 ];
 
 fn month_number(word: &str) -> Option<u32> {
@@ -689,7 +727,13 @@ fn iso_end_ok(text: &[char], at: usize) -> bool {
 /// A Chinese date: 2026年5月14日, 2026年5月 (a month and year) or 5月14日 (no year).
 fn zh_date_at(text: &[char], at: usize) -> Option<usize> {
     let (first, i) = digits(text, at, 1, 4)?;
-    let after_space = |from: usize| if text.get(from) == Some(&' ') { from + 1 } else { from };
+    let after_space = |from: usize| {
+        if text.get(from) == Some(&' ') {
+            from + 1
+        } else {
+            from
+        }
+    };
     if i - at == 4 && text.get(i) == Some(&'年') {
         let (month, k) = digits(text, after_space(i + 1), 1, 2)?;
         if text.get(k) != Some(&'月') || !(1..=12).contains(&month) {
