@@ -3,6 +3,8 @@ pub const FORMATTING_FAILURE_EN: &str =
     "myCarlos could not display this message correctly. Choose another language or restart the app, then check your records before trying again.";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MessageId {
+    AiErrorBusy,
+    AiErrorMemory,
     AiExplainBox,
     AiExplainHint,
     AiExplainSubmit,
@@ -861,6 +863,8 @@ pub enum MessageId {
 
 impl MessageId {
     pub const ALL: &'static [Self] = &[
+        Self::AiErrorBusy,
+        Self::AiErrorMemory,
         Self::AiExplainBox,
         Self::AiExplainHint,
         Self::AiExplainSubmit,
@@ -1719,6 +1723,8 @@ impl MessageId {
 
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::AiErrorBusy => "ai-error-busy",
+            Self::AiErrorMemory => "ai-error-memory",
             Self::AiExplainBox => "ai-explain-box",
             Self::AiExplainHint => "ai-explain-hint",
             Self::AiExplainSubmit => "ai-explain-submit",
@@ -3830,6 +3836,8 @@ impl MessageId {
             "ai.preferences.notInstalled" => Some(Self::AiPreferencesNotInstalled),
             "ai.working" => Some(Self::AiWorking),
             "ai.failed" => Some(Self::AiFailed),
+            "ai.error.memory" => Some(Self::AiErrorMemory),
+            "ai.error.busy" => Some(Self::AiErrorBusy),
             "ai.summary.pagesMissing" => Some(Self::AiSummaryPagesMissing),
             "ai.summary.noSource" => Some(Self::AiSummaryNoSource),
             "aiHelper.notice.title" => Some(Self::AiHelperNoticeTitle),

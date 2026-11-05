@@ -26,10 +26,13 @@
 //! never spread over several):
 //! - on start, the model writes one hello line:
 //!   `{"hello":"mycarlos-model/1","model":{"name":…,"sha256":…}}`;
-//! - a summary request `{"id":n,"tool":"summary","lang":…,"text":…,
-//!   "maxSentences":k}` is answered by `{"id":n,"sentences":[{"text":…,
-//!   "quote":…},…]}`, each quote taken verbatim from the text, at most k
-//!   sentences, each part at most [`MAX_SENTENCE_CHARS`];
+//! - a summary request `{"id":n,"tool":"summary","lang":…,"pages":[{"index":…,
+//!   "text":…},…],"maxSentences":k}` is answered by `{"id":n,"sentences":[{"text":…,
+//!   "quote":…},…],"lastPage":p,"lastPageCut":c}`: at most k sentences, each part at
+//!   most [`MAX_SENTENCE_CHARS`], each quote taken verbatim from the pages read; the
+//!   model reads whole pages in order while they fit, and `lastPage` is the index of
+//!   the last one (`lastPageCut`: only its start, when the first page alone is too
+//!   long);
 //! - an explain request `{"id":n,"tool":"explain","term":…,"context":…,
 //!   "lang":…}` is answered by `{"id":n,"text":…}`;
 //! - `{"id":n,"error":…}` says the model could not answer. Its text is cut
@@ -46,7 +49,7 @@
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
@@ -91,6 +94,18 @@ pub(crate) struct RunnerConfig {
     /// model maps read-only from its file are outside it, so a budget for
     /// those belongs to `needed_bytes` and the device check, not this cap.
     pub(crate) memory_limit_bytes: Option<u64>,
+    /// The model the process must name in its hello, exactly: the verified one, which every
+    /// answer is attributed to. A process that names any other (the test stub, which says
+    /// all zeros, among them) is refused and stopped. `None` takes whatever it names: tests
+    /// with a fake model only.
+    pub(crate) expected_model: Option<ModelInfo>,
+    /// The verified model file. On unix it is handed to the process as descriptor 3 and let
+    /// go once the process has greeted; on Windows it is held, writers denied, until the
+    /// process ends.
+    pub(crate) model_file: Option<Arc<std::fs::File>>,
+    /// Started through the helpers' launcher (Windows: its own AppContainer and a job that
+    /// caps its memory at `memory_limit_bytes`); on unix the helper sandboxes itself.
+    pub(crate) sandboxed: bool,
 }
 
 /// Reads how much memory this device has free for a model.
@@ -199,16 +214,21 @@ pub(crate) enum RunnerError {
     /// The model said it could not answer: its own words, cut short, to be
     /// shown on their own and never beside the document's text.
     Model(String),
-    /// Every sentence's quote was missing from the document: nothing to show.
-    Unlocated,
 }
 
-/// A summary request, as the renderer sends it.
+/// One page of a document's text, by its index from 0.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Page {
+    pub(crate) index: u32,
+    pub(crate) text: String,
+}
+
+/// A summary request: the pages in order, as the reader read them.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SummaryRequest {
     pub(crate) lang: String,
-    pub(crate) text: String,
+    pub(crate) pages: Vec<Page>,
     pub(crate) max_sentences: usize,
 }
 
@@ -220,14 +240,18 @@ pub(crate) struct Sentence {
     pub(crate) quote: String,
 }
 
-/// A summary as given back: the sentences whose quotes are in the document.
+/// A summary as given back. A sentence whose quote is not in the pages read keeps its words,
+/// with an empty quote: the reader then says no source was found (AI-05).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Summary {
     pub(crate) sentences: Vec<Sentence>,
     pub(crate) model: ModelInfo,
-    /// How many sentences the model wrote whose quote was not in the
-    /// document, and were dropped.
-    pub(crate) dropped: usize,
+    /// The index of the last page the model read.
+    pub(crate) last_page: u32,
+    /// Only the start of that page fitted.
+    pub(crate) last_page_cut: bool,
+    /// How many quotes were not in the pages read, and were emptied.
+    pub(crate) unlocated: usize,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -250,17 +274,19 @@ pub(crate) fn install(runner: Arc<Runner>) {
 }
 
 /// Forgets the installed runner, without stopping it.
+#[cfg_attr(not(any(test, feature = "ai-helper-stub")), allow(dead_code))]
 pub(crate) fn uninstall() {
     *INSTALLED.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
-/// The vault locked: the installed runner's request in flight is cancelled
-/// and its process stopped. Called from the manual and the idle lock.
+/// The vault locked: the installed runner's request in flight, or its start, is
+/// cancelled and its process stopped. Called from the manual and the idle lock,
+/// which it never keeps waiting (see [`Runner::stop_without_waiting`]).
 pub(crate) fn on_lock() {
     let installed = INSTALLED.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if let Some(runner) = installed {
         runner.cancel_all();
-        runner.stop();
+        runner.stop_without_waiting();
     }
 }
 
@@ -269,26 +295,57 @@ pub(crate) fn on_lock() {
 /// The model process while it runs: its input, and its output line by line
 /// through a reader thread, so that a wait can be bounded and interrupted.
 struct Sidecar {
-    child: Child,
-    input: ChildStdin,
+    process: Process,
+    input: Box<dyn Write + Send>,
     lines: Receiver<std::io::Result<String>>,
     model: ModelInfo,
     next_id: u64,
+    answer_timeout: Duration,
+    /// The model file while the process may still read it (see `RunnerConfig::model_file`).
+    model_file: Option<Arc<std::fs::File>>,
+}
+
+/// The model process: started as it is, or through the helpers' launcher.
+enum Process {
+    Plain(Child),
+    #[cfg(windows)]
+    Confined(crate::pdf_unlock::ConfinedHelper),
+}
+
+impl Process {
+    fn running(&mut self) -> bool {
+        match self {
+            Self::Plain(child) => matches!(child.try_wait(), Ok(None)),
+            #[cfg(windows)]
+            Self::Confined(helper) => matches!(helper.try_wait(), Ok(None)),
+        }
+    }
+
+    /// Stops the process and waits for it, so that nothing of it is left.
+    fn stop(&mut self) {
+        match self {
+            Self::Plain(child) => {
+                // On unix the model is its own process group (see `bound`): a
+                // wrapper and anything it started go with it.
+                #[cfg(unix)]
+                if let Ok(group) = libc::pid_t::try_from(child.id()) {
+                    // SAFETY: the group is the model's own, made by setpgid before
+                    // it started; a group already gone only makes this fail.
+                    unsafe { libc::killpg(group, libc::SIGKILL) };
+                }
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            #[cfg(windows)]
+            Self::Confined(helper) => helper.stop(),
+        }
+    }
 }
 
 impl Sidecar {
-    /// Stops the process and waits for it, so that nothing of it is left.
     fn stop(&mut self) {
-        // On unix the model is its own process group (see `bound`): a wrapper
-        // and anything it started go with it.
-        #[cfg(unix)]
-        if let Ok(group) = libc::pid_t::try_from(self.child.id()) {
-            // SAFETY: the group is the model's own, made by setpgid before it
-            // started; a group already gone only makes this fail.
-            unsafe { libc::killpg(group, libc::SIGKILL) };
-        }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.process.stop();
+        self.model_file = None;
     }
 }
 
@@ -314,17 +371,24 @@ struct Hello {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Answer {
     id: u64,
     #[serde(default)]
     sentences: Option<Vec<Sentence>>,
+    #[serde(default)]
+    last_page: Option<u32>,
+    #[serde(default)]
+    last_page_cut: bool,
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
     error: Option<String>,
 }
 
-const HELLO: &str = "mycarlos-model/1";
+const HELLO: &str = crate::model_helper::CONTRACT;
+/// The pages' separator in a document's joined text (`documentText.ts`'s PAGE_SEPARATOR).
+pub(crate) const PAGE_SEPARATOR: &str = "\n\n";
 /// How often a waiting request looks at its ticket.
 const CANCEL_POLL: Duration = Duration::from_millis(50);
 
@@ -370,19 +434,43 @@ impl Runner {
         self.generation.fetch_add(1, Ordering::SeqCst);
     }
 
-    /// Starts the model process if it is not running: the budget first, then
-    /// the process, then its hello within `start_timeout`. The model it names
-    /// is what every answer is attributed to.
+    /// Starts the model process if it is not running, with the config it was made with.
     pub(crate) fn start(&self, probe: &dyn MemoryProbe) -> Result<ModelInfo, RunnerError> {
+        self.start_with(probe, || Ok(self.config.clone()))
+    }
+
+    /// Starts the model process if it is not running: `prepare` gives the config for this
+    /// start (the model verified again, its file opened), then the budget, then the process,
+    /// then its hello within `start_timeout`. The model it names, which must be the expected
+    /// one when there is one, is what every answer is attributed to.
+    ///
+    /// A cancel meanwhile (a lock, a closing reader, a newer request) ends the
+    /// start: the process, if started, is stopped, and nothing is kept.
+    pub(crate) fn start_with(
+        &self,
+        probe: &dyn MemoryProbe,
+        prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
+    ) -> Result<ModelInfo, RunnerError> {
+        let generation = self.generation.load(Ordering::SeqCst);
+        let wanted = || self.generation.load(Ordering::SeqCst) == generation;
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(running) = slot.as_mut() {
-            if matches!(running.child.try_wait(), Ok(None)) {
+            if running.process.running() {
                 return Ok(running.model.clone());
             }
             // It ended on its own: start afresh below.
             *slot = None;
         }
-        if !self.config.command.is_absolute() {
+        let config = match prepare() {
+            Ok(config) => config,
+            Err(error) => {
+                self.set_status(RunnerStatus::Failed {
+                    reason: format!("{error:?}"),
+                });
+                return Err(error);
+            }
+        };
+        if !config.command.is_absolute() {
             let reason = "command must be an absolute path".to_owned();
             self.set_status(RunnerStatus::Failed {
                 reason: reason.clone(),
@@ -392,7 +480,7 @@ impl Runner {
         if let Budget::Refused {
             needed_bytes,
             available_bytes,
-        } = check_budget(self.config.needed_bytes, probe)
+        } = check_budget(config.needed_bytes, probe)
         {
             self.set_status(RunnerStatus::BudgetRefused {
                 needed_bytes,
@@ -403,9 +491,26 @@ impl Runner {
                 available_bytes,
             });
         }
+        let not_started = || match config.expected_model.clone() {
+            Some(model) => RunnerStatus::Installed { model },
+            None => RunnerStatus::NotInstalled,
+        };
+        if !wanted() {
+            self.set_status(not_started());
+            return Err(RunnerError::Cancelled);
+        }
         self.set_status(RunnerStatus::Starting);
-        let started = self.spawn();
+        let started = spawn(&config, &wanted);
         match started {
+            // Cancelled as it greeted: not kept (dropping it stops it).
+            Ok(_) if !wanted() => {
+                self.set_status(not_started());
+                Err(RunnerError::Cancelled)
+            }
+            Err(RunnerError::Cancelled) => {
+                self.set_status(not_started());
+                Err(RunnerError::Cancelled)
+            }
             Ok(sidecar) => {
                 let model = sidecar.model.clone();
                 *slot = Some(sidecar);
@@ -426,69 +531,6 @@ impl Runner {
         }
     }
 
-    fn spawn(&self) -> Result<Sidecar, RunnerError> {
-        let mut command = Command::new(&self.config.command);
-        command
-            .args(&self.config.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        bound(&mut command, self.config.memory_limit_bytes);
-        let mut child = command
-            .spawn()
-            .map_err(|error| RunnerError::Start(format!("cannot start: {error}")))?;
-        let input = child.stdin.take();
-        let output = child.stdout.take();
-        let (Some(input), Some(output)) = (input, output) else {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(RunnerError::Start("no pipes".to_owned()));
-        };
-        let (sender, lines) = mpsc::channel();
-        std::thread::spawn(move || read_lines(output, &sender));
-        let mut sidecar = Sidecar {
-            child,
-            input,
-            lines,
-            model: ModelInfo {
-                name: String::new(),
-                sha256: String::new(),
-            },
-            next_id: 1,
-        };
-        let hello = match sidecar.lines.recv_timeout(self.config.start_timeout) {
-            Ok(Ok(line)) => line,
-            Ok(Err(error)) => {
-                sidecar.stop();
-                return Err(RunnerError::Start(format!("cannot read: {error}")));
-            }
-            Err(RecvTimeoutError::Timeout) => {
-                sidecar.stop();
-                return Err(RunnerError::Start("no hello in time".to_owned()));
-            }
-            Err(RecvTimeoutError::Disconnected) => {
-                sidecar.stop();
-                return Err(RunnerError::Start("ended before its hello".to_owned()));
-            }
-        };
-        let hello: Hello = match serde_json::from_str(&hello) {
-            Ok(hello) => hello,
-            Err(_) => {
-                sidecar.stop();
-                return Err(RunnerError::Start("hello not understood".to_owned()));
-            }
-        };
-        if hello.hello != HELLO {
-            sidecar.stop();
-            return Err(RunnerError::Start(format!(
-                "unknown contract {}",
-                cut(&hello.hello, 64)
-            )));
-        }
-        sidecar.model = hello.model;
-        Ok(sidecar)
-    }
-
     /// Stops the model process, if any: on lock, on exit, and after a
     /// cancelled request. The model stays installed; the next use starts it.
     pub(crate) fn stop(&self) {
@@ -504,11 +546,29 @@ impl Runner {
         });
     }
 
+    /// Stops the model process now if nothing holds it; otherwise as soon as its
+    /// holder lets go (a start or a request, which a cancel has ended by then), on
+    /// a thread of its own. A lock calls this, and must never wait for a model.
+    pub(crate) fn stop_without_waiting(self: &Arc<Self>) {
+        match self.sidecar.try_lock() {
+            Ok(slot) => {
+                drop(slot);
+                self.stop();
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => self.stop(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                let runner = Arc::clone(self);
+                std::thread::spawn(move || runner.stop());
+            }
+        }
+    }
+
     /// Whether a model process is running now.
+    #[cfg_attr(not(any(test, feature = "ai-helper-stub")), allow(dead_code))]
     pub(crate) fn is_running(&self) -> bool {
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
         match slot.as_mut() {
-            Some(running) => matches!(running.child.try_wait(), Ok(None)),
+            Some(running) => running.process.running(),
             None => false,
         }
     }
@@ -516,7 +576,8 @@ impl Runner {
     /// Asks for a summary under `ticket`. One request at a time: a second
     /// caller waits for the first. Cancelled as soon as the ticket is no
     /// longer current; the model process is then stopped and its partial
-    /// answer discarded. At most `max_sentences` come back.
+    /// answer discarded. At most `max_sentences` come back; a quote that is not
+    /// in the pages read is emptied, its sentence kept.
     pub(crate) fn summarize(
         &self,
         ticket: Ticket,
@@ -528,37 +589,61 @@ impl Runner {
         let Some(sentences) = answer.sentences else {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
         };
+        if sentences.is_empty() {
+            return Err(RunnerError::Protocol("no sentences".to_owned()));
+        }
         if sentences.iter().any(|sentence| {
             sentence.text.chars().count() > MAX_SENTENCE_CHARS
                 || sentence.quote.chars().count() > MAX_SENTENCE_CHARS
         }) {
             return Err(RunnerError::Protocol("sentence too long".to_owned()));
         }
-        let written = sentences.len().min(request.max_sentences);
-        let located: Vec<Sentence> = sentences
+        let last_page = answer
+            .last_page
+            .ok_or_else(|| RunnerError::Protocol("no last page".to_owned()))?;
+        let Some(read) = request
+            .pages
+            .iter()
+            .position(|page| page.index == last_page)
+        else {
+            return Err(RunnerError::Protocol("last page not sent".to_owned()));
+        };
+        let text = request.pages[..=read]
+            .iter()
+            .map(|page| page.text.as_str())
+            .collect::<Vec<_>>()
+            .join(PAGE_SEPARATOR);
+        let mut unlocated = 0;
+        let sentences = sentences
             .into_iter()
             .take(request.max_sentences)
-            .filter(|sentence| quote_in(&request.text, &sentence.quote))
+            .map(|mut sentence| {
+                if !quote_in(&text, &sentence.quote) {
+                    sentence.quote = String::new();
+                    unlocated += 1;
+                }
+                sentence
+            })
             .collect();
-        if located.is_empty() {
-            return Err(RunnerError::Unlocated);
-        }
         Ok(Summary {
-            dropped: written - located.len(),
-            sentences: located,
+            sentences,
             model,
+            last_page,
+            last_page_cut: answer.last_page_cut,
+            unlocated,
         })
     }
 
-    /// Asks what a term means in its sentence, under `ticket`.
+    /// Asks what a term means in its sentence, under `ticket`: the answer, and the model it is
+    /// attributed to.
     pub(crate) fn explain(
         &self,
         ticket: Ticket,
         term: &str,
         context: &str,
         lang: &str,
-    ) -> Result<String, RunnerError> {
-        let (answer, _model) = self.ask(
+    ) -> Result<(String, ModelInfo), RunnerError> {
+        let (answer, model) = self.ask(
             ticket,
             "explain",
             serde_json::json!({ "term": term, "context": context, "lang": lang }),
@@ -569,7 +654,16 @@ impl Runner {
         if text.chars().count() > MAX_SENTENCE_CHARS {
             return Err(RunnerError::Protocol("text too long".to_owned()));
         }
-        Ok(text)
+        Ok((text, model))
+    }
+
+    /// Test builds only: asks the stub helper what its sandbox allows (`model_helper`).
+    #[cfg(feature = "ai-helper-stub")]
+    pub(crate) fn probe(&self, ticket: Ticket, what: &str) -> Result<String, RunnerError> {
+        let (answer, _model) = self.ask(ticket, "probe", serde_json::json!({ "what": what }))?;
+        answer
+            .text
+            .ok_or_else(|| RunnerError::Protocol("no text".to_owned()))
     }
 
     /// One request, one answer, bounded by `answer_timeout` and by the
@@ -598,11 +692,12 @@ impl Runner {
         self.set_status(RunnerStatus::Working {
             model: model.clone(),
         });
+        let answer_timeout = running.answer_timeout;
         let mut outcome = exchange(
             running,
             || self.is_current(ticket),
             &request,
-            self.config.answer_timeout,
+            answer_timeout,
             id,
         );
         // Cancelled while the answer was already in: the reader has left,
@@ -641,12 +736,139 @@ impl Drop for Runner {
     }
 }
 
+/// Starts the process `config` names and waits for its hello, which must name the expected
+/// model when there is one, looking every `CANCEL_POLL` whether it is still `wanted`.
+fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, RunnerError> {
+    let mut command = Command::new(&config.command);
+    command.args(&config.args);
+    let (process, input, output) = start_process(command, config)?;
+    let (sender, lines) = mpsc::channel();
+    std::thread::spawn(move || read_lines(output, &sender));
+    let mut sidecar = Sidecar {
+        process,
+        input,
+        lines,
+        model: ModelInfo {
+            name: String::new(),
+            sha256: String::new(),
+        },
+        next_id: 1,
+        answer_timeout: config.answer_timeout,
+        model_file: config.model_file.clone(),
+    };
+    let deadline = Instant::now() + config.start_timeout;
+    let hello = loop {
+        let now = Instant::now();
+        if now >= deadline {
+            sidecar.stop();
+            return Err(RunnerError::Start("no hello in time".to_owned()));
+        }
+        match sidecar.lines.recv_timeout(CANCEL_POLL.min(deadline - now)) {
+            Ok(Ok(line)) => break line,
+            Ok(Err(error)) => {
+                sidecar.stop();
+                return Err(RunnerError::Start(format!("cannot read: {error}")));
+            }
+            Err(RecvTimeoutError::Timeout) if !wanted() => {
+                sidecar.stop();
+                return Err(RunnerError::Cancelled);
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => {
+                sidecar.stop();
+                return Err(RunnerError::Start("ended before its hello".to_owned()));
+            }
+        }
+    };
+    let hello: Hello = match serde_json::from_str(&hello) {
+        Ok(hello) => hello,
+        Err(_) => {
+            sidecar.stop();
+            return Err(RunnerError::Start("hello not understood".to_owned()));
+        }
+    };
+    if hello.hello != HELLO {
+        sidecar.stop();
+        return Err(RunnerError::Start(format!(
+            "unknown contract {}",
+            cut(&hello.hello, 64)
+        )));
+    }
+    if config
+        .expected_model
+        .as_ref()
+        .is_some_and(|expected| *expected != hello.model)
+    {
+        sidecar.stop();
+        return Err(RunnerError::Start("not the verified model".to_owned()));
+    }
+    sidecar.model = hello.model;
+    // The process holds its own copy of the descriptor now, closed once it has loaded.
+    #[cfg(unix)]
+    {
+        sidecar.model_file = None;
+    }
+    Ok(sidecar)
+}
+
+/// The started process, its input, and its output.
+type Started = (Process, Box<dyn Write + Send>, Box<dyn Read + Send>);
+
+/// Starts `command` as `config` says: through the helpers' launcher on Windows when
+/// sandboxed, otherwise with pipes and `bound`; a sandboxed one gets no environment.
+fn start_process(mut command: Command, config: &RunnerConfig) -> Result<Started, RunnerError> {
+    if config.sandboxed {
+        command.env_clear();
+    }
+    #[cfg(windows)]
+    if config.sandboxed {
+        let limit = config
+            .memory_limit_bytes
+            .ok_or_else(|| RunnerError::Start("no memory limit".to_owned()))?;
+        let (helper, input, output) = crate::pdf_unlock::start_confined(
+            command,
+            crate::pdf_unlock::HelperProfile::Model {
+                memory_limit_bytes: limit,
+            },
+        )
+        .map_err(|_| RunnerError::Start("cannot start in its sandbox".to_owned()))?;
+        return Ok((Process::Confined(helper), Box::new(input), Box::new(output)));
+    }
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    bound(
+        &mut command,
+        config.memory_limit_bytes,
+        config.model_file.as_deref(),
+    );
+    let mut child = command
+        .spawn()
+        .map_err(|error| RunnerError::Start(format!("cannot start: {error}")))?;
+    let input = child.stdin.take();
+    let output = child.stdout.take();
+    let (Some(input), Some(output)) = (input, output) else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(RunnerError::Start("no pipes".to_owned()));
+    };
+    Ok((Process::Plain(child), Box::new(input), Box::new(output)))
+}
+
 /// Starts the model in its own process group, so that stopping it stops
-/// whatever it started too, without core dumps, and on Linux with its data
-/// size capped.
+/// whatever it started too, without core dumps, on Linux with its data
+/// size capped, and with the model file, if any, as descriptor 3.
 #[cfg(unix)]
-fn bound(command: &mut Command, memory_limit_bytes: Option<u64>) {
+fn bound(
+    command: &mut Command,
+    memory_limit_bytes: Option<u64>,
+    model_file: Option<&std::fs::File>,
+) {
+    use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
+    const MODEL_FD: libc::c_int = crate::model_helper::MODEL_FD;
+    let model = model_file.map(|file| file.as_raw_fd());
     // Computed before the fork: nothing is allocated between fork and exec.
     #[cfg(target_os = "linux")]
     let data = memory_limit_bytes.map(|bytes| (libc::RLIMIT_DATA, bytes as libc::rlim_t));
@@ -656,8 +878,8 @@ fn bound(command: &mut Command, memory_limit_bytes: Option<u64>) {
         None
     };
     let limits = [Some((libc::RLIMIT_CORE, 0 as libc::rlim_t)), data];
-    // SAFETY: only setpgid and setrlimit, which are async-signal-safe, run
-    // between fork and exec, on values computed before the fork.
+    // SAFETY: only setpgid, setrlimit, dup2 and fcntl, which are async-signal-safe,
+    // run between fork and exec, on values computed before the fork.
     unsafe {
         command.pre_exec(move || {
             if libc::setpgid(0, 0) != 0 {
@@ -672,19 +894,34 @@ fn bound(command: &mut Command, memory_limit_bytes: Option<u64>) {
                     return Err(std::io::Error::last_os_error());
                 }
             }
+            let handed_over = match model {
+                // Already there: it only has to survive the exec.
+                Some(MODEL_FD) => libc::fcntl(MODEL_FD, libc::F_SETFD, 0) == 0,
+                // The copy dup2 makes is not closed on exec.
+                Some(fd) => libc::dup2(fd, MODEL_FD) == MODEL_FD,
+                None => true,
+            };
+            if !handed_over {
+                return Err(std::io::Error::last_os_error());
+            }
             Ok(())
         });
     }
 }
 
-/// Elsewhere the model starts as it is; the model PR bounds it (see the
-/// checklist at the top).
+/// Elsewhere a plain start is not bounded: the model helper starts sandboxed
+/// there (`RunnerConfig::sandboxed`).
 #[cfg(not(unix))]
-fn bound(_command: &mut Command, _memory_limit_bytes: Option<u64>) {}
+fn bound(
+    _command: &mut Command,
+    _memory_limit_bytes: Option<u64>,
+    _model_file: Option<&std::fs::File>,
+) {
+}
 
 /// Feeds the model's output to the channel, one line at a time, each at
 /// most `MAX_LINE_BYTES`: a longer one is an error, and the end of reading.
-fn read_lines(output: std::process::ChildStdout, sender: &mpsc::Sender<std::io::Result<String>>) {
+fn read_lines(output: Box<dyn Read + Send>, sender: &mpsc::Sender<std::io::Result<String>>) {
     let mut reader = BufReader::new(output).take(0);
     let mut line = Vec::new();
     loop {
@@ -883,6 +1120,9 @@ mod tests {
             start_timeout: Duration::from_secs(1),
             answer_timeout: Duration::from_secs(1),
             memory_limit_bytes: None,
+            expected_model: None,
+            model_file: None,
+            sandboxed: false,
         }
     }
 
@@ -957,13 +1197,26 @@ mod tests {
                 start_timeout: Duration::from_secs(10),
                 answer_timeout: Duration::from_secs(10),
                 memory_limit_bytes: None,
+                expected_model: None,
+                model_file: None,
+                sandboxed: false,
             }
         }
 
+        /// The text on page 0, and a page 2 the fake model reads only when asked to.
         fn request() -> SummaryRequest {
             SummaryRequest {
                 lang: "en".to_owned(),
-                text: TEXT.to_owned(),
+                pages: vec![
+                    Page {
+                        index: 0,
+                        text: TEXT.to_owned(),
+                    },
+                    Page {
+                        index: 2,
+                        text: "FAKE page three says the clinic phoned.".to_owned(),
+                    },
+                ],
                 max_sentences: 5,
             }
         }
@@ -978,7 +1231,8 @@ mod tests {
 
             let summary = runner.summarize(runner.ticket(), &request()).unwrap();
             assert_eq!(summary.sentences.len(), 3);
-            assert_eq!(summary.dropped, 0);
+            assert_eq!(summary.unlocated, 0);
+            assert_eq!((summary.last_page, summary.last_page_cut), (0, false));
             for sentence in &summary.sentences {
                 assert!(TEXT.contains(&sentence.quote), "{}", sentence.quote);
                 assert!(sentence.text.starts_with("In short: "));
@@ -997,9 +1251,9 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(two.sentences.len(), 2);
-            assert_eq!(two.dropped, 0);
+            assert_eq!(two.unlocated, 0);
 
-            let explained = runner
+            let (explained, attributed) = runner
                 .explain(
                     runner.ticket(),
                     "tablet",
@@ -1008,6 +1262,7 @@ mod tests {
                 )
                 .unwrap();
             assert!(explained.starts_with("FAKE: tablet"));
+            assert_eq!(attributed, model);
 
             // A second start while it runs keeps the same process.
             let again = runner.start(&Fixed(Some(8 * GIB))).unwrap();
@@ -1056,6 +1311,29 @@ mod tests {
             assert!(!runner.is_running());
             assert!(!runner.is_current(ticket));
             assert!(matches!(runner.status(), RunnerStatus::Installed { .. }));
+        }
+
+        #[test]
+        fn a_lock_during_a_start_ends_it_and_never_waits_for_it() {
+            // A model that takes its time to greet, as a large one loading does.
+            let mut slow = config(&["--greet-after", "30"], GIB);
+            slow.start_timeout = Duration::from_secs(60);
+            let runner = Arc::new(Runner::new(slow));
+            let starting = {
+                let runner = runner.clone();
+                std::thread::spawn(move || runner.start(&Fixed(Some(8 * GIB))))
+            };
+            std::thread::sleep(Duration::from_millis(500));
+            assert!(matches!(runner.status(), RunnerStatus::Starting));
+            install(runner.clone());
+            let locked_at = Instant::now();
+            on_lock();
+            // The lock itself returns at once.
+            assert!(locked_at.elapsed() < Duration::from_millis(200));
+            uninstall();
+            assert_eq!(starting.join().unwrap(), Err(RunnerError::Cancelled));
+            assert!(locked_at.elapsed() < Duration::from_secs(5));
+            assert!(!runner.is_running());
         }
 
         #[test]
@@ -1120,15 +1398,91 @@ mod tests {
         }
 
         #[test]
-        fn sentences_whose_quotes_are_not_in_the_document_are_dropped() {
+        fn a_quote_not_in_the_pages_read_is_emptied_and_its_sentence_kept() {
             let runner = Runner::new(config(&["--unlocated"], GIB));
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
-            assert_eq!(
-                runner.summarize(runner.ticket(), &request()),
-                Err(RunnerError::Unlocated)
-            );
-            // The model is fine; only its answer was unusable.
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(summary.unlocated, 3);
+            assert!(summary
+                .sentences
+                .iter()
+                .all(|sentence| sentence.quote.is_empty() && !sentence.text.is_empty()));
             assert!(runner.is_running());
+        }
+
+        #[test]
+        fn a_quote_from_a_page_the_model_did_not_read_is_not_located() {
+            // The fake model reads page 0 only, but quotes page 2.
+            let runner = Runner::new(config(&["--quote-unread"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(summary.last_page, 0);
+            assert_eq!(summary.unlocated, 1);
+        }
+
+        #[test]
+        fn the_last_page_read_and_its_cut_come_back_and_must_be_a_page_sent() {
+            let runner = Runner::new(config(&["--read-all"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!((summary.last_page, summary.last_page_cut), (2, false));
+            let cut = Runner::new(config(&["--cut-first"], GIB));
+            cut.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = cut.summarize(cut.ticket(), &request()).unwrap();
+            assert_eq!((summary.last_page, summary.last_page_cut), (0, true));
+            let wrong = Runner::new(config(&["--last-page", "1"], GIB));
+            wrong.start(&Fixed(Some(8 * GIB))).unwrap();
+            assert_eq!(
+                wrong.summarize(wrong.ticket(), &request()),
+                Err(RunnerError::Protocol("last page not sent".to_owned()))
+            );
+        }
+
+        #[test]
+        fn a_model_that_greets_as_another_model_is_refused_and_stopped() {
+            // The fake greets as "FAKE model" with an all-zero hash, as the stub does: a
+            // production config expects the verified model's own hash.
+            let mut expecting = config(&[], GIB);
+            expecting.expected_model = Some(ModelInfo {
+                name: "FAKE model".to_owned(),
+                sha256: "ab".repeat(32),
+            });
+            let runner = Runner::new(expecting);
+            assert_eq!(
+                runner.start(&Fixed(Some(8 * GIB))),
+                Err(RunnerError::Start("not the verified model".to_owned()))
+            );
+            assert!(!runner.is_running());
+            assert!(matches!(runner.status(), RunnerStatus::Failed { .. }));
+            // The same model, expected as it greets, starts.
+            let mut matching = config(&[], GIB);
+            matching.expected_model = Some(model());
+            Runner::new(matching).start(&Fixed(Some(8 * GIB))).unwrap();
+        }
+
+        #[test]
+        fn a_start_prepared_per_use_hands_over_the_model_file_as_descriptor_3() {
+            let dir = tempfile::tempdir().unwrap();
+            let model_path = dir.path().join("FAKE-model.gguf");
+            std::fs::write(&model_path, b"GGUF FAKE weights").unwrap();
+            let runner = Runner::new(idle_config());
+            let prepared = || {
+                let mut config = config(&["--read-fd"], GIB);
+                config.model_file = Some(Arc::new(std::fs::File::open(&model_path).unwrap()));
+                Ok(config)
+            };
+            runner.start_with(&Fixed(Some(8 * GIB)), prepared).unwrap();
+            let (explained, _) = runner
+                .explain(runner.ticket(), "fd", "descriptor three", "en")
+                .unwrap();
+            assert_eq!(explained, "GGUF FAKE weights");
+            // A refused preparation starts nothing.
+            runner.stop();
+            assert_eq!(
+                runner.start_with(&Fixed(Some(8 * GIB)), || Err(RunnerError::NotRunning)),
+                Err(RunnerError::NotRunning)
+            );
+            assert!(!runner.is_running());
         }
 
         #[test]

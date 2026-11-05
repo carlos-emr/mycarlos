@@ -1670,6 +1670,10 @@ ai-working = The AI helper is working…
 
 ai-failed = The AI helper could not finish. Try again.
 
+ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.
+
+ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
+
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 
 ai-summary-noSource = No source found

@@ -1704,6 +1704,10 @@ ai-working = El asistente de IA está trabajando…
 
 ai-failed = El asistente de IA no pudo terminar. Intente de nuevo.
 
+ai-error-memory = Ahora no hay suficiente memoria libre para el asistente de IA. Cierre otros programas e intente de nuevo.
+
+ai-error-busy = Se está agregando o quitando el modelo del asistente de IA. Intente de nuevo cuando termine.
+
 ai-summary-pagesMissing = Algunas páginas no se pudieron leer completas, así que puede que este resumen omita partes.
 
 ai-summary-noSource = No se encontró la fuente

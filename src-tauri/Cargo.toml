@@ -14,6 +14,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # Portal linking, document pickup, arrival notices and automatic checks are always
 # built. Notices and automatic checks stay off until the patient turns them on.
 default = []
+# Test builds only: the model helper's stub mode, which answers canned FAKE text after a delay
+# (src/model_helper.rs), so CI tests the launcher, sandbox, cancel and lock without a model. No
+# installer enables it; CI fails a build of the app that accepts the stub argument.
+ai-helper-stub = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -81,6 +85,8 @@ seccompiler = "=0.5.0"
 
 # Match the WebView2 bindings already used by the pinned Tauri/Wry runtime. Data_Xml_Dom,
 # UI_Notifications and Win32_System_WinRT show document arrival notices.
+# Win32_System_Diagnostics_Debug and Win32_System_Kernel turn crash reports off in the AI
+# helper's model process (src/model_helper/confine.rs).
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.38.2"
 windows = { version = "=0.61.3", features = [
@@ -90,7 +96,9 @@ windows = { version = "=0.61.3", features = [
     "Win32_Security",
     "Win32_Security_Isolation",
     "Win32_System_Com",
+    "Win32_System_Diagnostics_Debug",
     "Win32_System_JobObjects",
+    "Win32_System_Kernel",
     "Win32_System_Threading",
     "Win32_System_WinRT",
 ] }
@@ -102,6 +110,15 @@ objc2 = "=0.6.4"
 block2 = "=0.6.2"
 objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "NSNotification"] }
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSEvent", "NSResponder", "NSView", "NSWindow"] }
+
+# The AI helper's model runtime (#72): llama.cpp, built from the source these crates vendor and
+# run only in the model helper process (src/model_helper.rs). Computers only: no helper runs on
+# phones. Pinned, both: llama.cpp parses the model file, so an update is a reviewed change. No
+# default features: ggml's own threads instead of OpenMP. On x86_64, .cargo/config.toml builds
+# ggml for AVX2, FMA and F16C; the helper checks the processor has them before it loads anything.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+llama-cpp-2 = { version = "=0.1.160", default-features = false }
+llama-cpp-sys-2 = "=0.1.160"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
@@ -130,6 +147,11 @@ opt-level = 3
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
+
+[[test]]
+name = "model_helper"
+path = "tests/model_helper.rs"
+required-features = ["ai-helper-stub"]
 
 [[test]]
 name = "native_dialog_macos"

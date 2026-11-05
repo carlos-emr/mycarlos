@@ -435,6 +435,39 @@ pub(crate) fn unlock_in_helper(pdf: &[u8], password: &str) -> Outcome {
     }
 }
 
+/// Which helper a confined start is for: its AppContainer and its memory cap (Windows).
+#[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HelperProfile {
+    Pdf,
+    /// The model helper (`model_helper`): an AppContainer of its own, and the memory the model
+    /// needs.
+    Model {
+        memory_limit_bytes: u64,
+    },
+}
+
+/// The running model helper, in its job (Windows).
+#[cfg(windows)]
+pub(crate) type ConfinedHelper = confine::Helper;
+
+/// Starts `command` confined as `profile` says (Windows: its AppContainer and job), with pipes
+/// to its stdin and from its stdout.
+#[cfg(windows)]
+pub(crate) fn start_confined(
+    command: std::process::Command,
+    profile: HelperProfile,
+) -> Result<(ConfinedHelper, io::PipeWriter, io::PipeReader), Unanswered> {
+    confine::start_as(command, profile)
+}
+
+/// For the model helper (Windows): whether this process is in an AppContainer, as
+/// `start_confined` puts it. Started any other way, it reads nothing.
+#[cfg(windows)]
+pub(crate) fn check_confined() -> io::Result<()> {
+    confine::this_process()
+}
+
 /// For tests/pdf_helper.rs only: `unlock_in_helper` with the helper at `executable`, so that
 /// CI starts the real helper, limits it and reads its answer exactly as myCarlos does, on each
 /// desktop system. It is no command, so nothing in the webview can reach it.
@@ -994,21 +1027,28 @@ mod confine {
     /// capabilities: no network, and no files but those any app may read, such as Windows'
     /// own and myCarlos's program, which the installer allows.
     #[cfg(windows)]
-    fn app_container() -> windows::core::Result<AppContainer> {
+    fn app_container(profile: super::HelperProfile) -> windows::core::Result<AppContainer> {
         use windows::core::w;
         use windows::Win32::Foundation::ERROR_ALREADY_EXISTS;
         use windows::Win32::Security::Isolation::{
             CreateAppContainerProfile, DeriveAppContainerSidFromAppContainerName,
         };
-        let name = w!("mycarlos.pdfhelper");
-        // SAFETY: constant names; the SID returned is owned by `AppContainer`.
-        unsafe {
-            match CreateAppContainerProfile(
-                name,
+        let (name, display, description) = match profile {
+            super::HelperProfile::Pdf => (
+                w!("mycarlos.pdfhelper"),
                 w!("myCarlos PDF helper"),
                 w!("Opens PDF documents for myCarlos, with no access to files or the network."),
-                None,
-            ) {
+            ),
+            // Its own, so that the model file's read access names it alone.
+            super::HelperProfile::Model { .. } => (
+                w!("mycarlos.modelhelper"),
+                w!("myCarlos AI helper"),
+                w!("Runs the AI model for myCarlos, with no access to files or the network."),
+            ),
+        };
+        // SAFETY: constant names; the SID returned is owned by `AppContainer`.
+        unsafe {
+            match CreateAppContainerProfile(name, display, description, None) {
                 Ok(sid) => Ok(AppContainer(sid)),
                 Err(error) if error.code() == ERROR_ALREADY_EXISTS.to_hresult() => {
                     DeriveAppContainerSidFromAppContainerName(name).map(AppContainer)
@@ -1030,8 +1070,17 @@ mod confine {
     pub(super) fn start(
         command: std::process::Command,
     ) -> Result<(Helper, io::PipeWriter, io::PipeReader), Unanswered> {
+        start_as(command, super::HelperProfile::Pdf)
+    }
+
+    /// `start`, for the helper `profile` names.
+    #[cfg(windows)]
+    pub(super) fn start_as(
+        command: std::process::Command,
+        profile: super::HelperProfile,
+    ) -> Result<(Helper, io::PipeWriter, io::PipeReader), Unanswered> {
         use windows::Win32::Foundation::ERROR_ACCESS_DENIED;
-        try_start(command).map_err(|(step, error)| match step {
+        try_start(command, profile).map_err(|(step, error)| match step {
             Step::AppContainer => Unanswered::NoSandbox,
             Step::Create if error.code() == ERROR_ACCESS_DENIED.to_hresult() => {
                 Unanswered::NoSandbox
@@ -1058,13 +1107,14 @@ mod confine {
     #[cfg(windows)]
     pub(super) fn try_start(
         command: std::process::Command,
+        profile: super::HelperProfile,
     ) -> Result<(Helper, io::PipeWriter, io::PipeReader), (Step, windows::core::Error)> {
         use std::os::windows::io::AsRawHandle;
         use windows::Win32::Foundation::HANDLE;
         use windows::Win32::System::JobObjects::AssignProcessToJobObject;
         use windows::Win32::System::Threading::ResumeThread;
-        let container = app_container().map_err(|error| (Step::AppContainer, error))?;
-        let job = job().map_err(|error| (Step::Job, error))?;
+        let container = app_container(profile).map_err(|error| (Step::AppContainer, error))?;
+        let job = job(profile).map_err(|error| (Step::Job, error))?;
         let pipe = || io::pipe().map_err(|error| (Step::Pipes, error.into()));
         let (helper_reads, input) = pipe()?;
         let (output, helper_writes) = pipe()?;
@@ -1289,7 +1339,7 @@ mod confine {
 
     /// The running helper, in its job.
     #[cfg(windows)]
-    pub(super) struct Helper {
+    pub(crate) struct Helper {
         process: std::os::windows::io::OwnedHandle,
         /// Closed after the process handle, which ends the helper if it still runs.
         job: Job,
@@ -1303,7 +1353,7 @@ mod confine {
         }
 
         /// Its exit code once it has ended, `None` while it runs.
-        pub(super) fn try_wait(&mut self) -> io::Result<Option<i32>> {
+        pub(crate) fn try_wait(&mut self) -> io::Result<Option<i32>> {
             use windows::Win32::Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT};
             use windows::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
             // SAFETY: the process handle is live while `self` is.
@@ -1334,7 +1384,7 @@ mod confine {
         }
 
         /// Stops the helper; the job allows it no other process.
-        pub(super) fn stop(&mut self) {
+        pub(crate) fn stop(&mut self) {
             use windows::Win32::System::Threading::{TerminateProcess, WaitForSingleObject};
             // SAFETY: the process handle is live while `self` is.
             unsafe {
@@ -1360,7 +1410,7 @@ mod confine {
 
     /// The helper's job: its memory capped, one process, ended when closed or if it crashes.
     #[cfg(windows)]
-    fn job() -> windows::core::Result<Job> {
+    fn job(profile: super::HelperProfile) -> windows::core::Result<Job> {
         use windows::core::PCWSTR;
         use windows::Win32::System::JobObjects::{
             CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
@@ -1377,7 +1427,10 @@ mod confine {
                 | JOB_OBJECT_LIMIT_PROCESS_MEMORY
                 | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
             limits.BasicLimitInformation.ActiveProcessLimit = 1;
-            limits.ProcessMemoryLimit = super::HELPER_MEMORY_LIMIT as usize;
+            limits.ProcessMemoryLimit = match profile {
+                super::HelperProfile::Pdf => super::HELPER_MEMORY_LIMIT,
+                super::HelperProfile::Model { memory_limit_bytes } => memory_limit_bytes,
+            } as usize;
             SetInformationJobObject(
                 job.0,
                 JobObjectExtendedLimitInformation,
@@ -2035,8 +2088,9 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn the_helper_starts_in_its_app_container() {
-        let (mut helper, input, output) = confine::try_start(helper_running("app_container_child"))
-            .unwrap_or_else(|(step, error)| panic!("{step:?}: {error:?}"));
+        let (mut helper, input, output) =
+            confine::try_start(helper_running("app_container_child"), HelperProfile::Pdf)
+                .unwrap_or_else(|(step, error)| panic!("{step:?}: {error:?}"));
         drop((input, output));
         helper.stop();
     }
