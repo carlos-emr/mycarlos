@@ -411,6 +411,11 @@ impl From<VaultError> for PublicText {
                 code: "invalid",
                 message_key: "native.error.19",
             },
+            // The reader says it on this code: the answer is shown, not kept.
+            VaultError::AiResultsFull => Self {
+                code: "ai_results_full",
+                message_key: "ai.keepFull",
+            },
             VaultError::WeakPassphrase => Self {
                 code: "weak_passphrase",
                 message_key: "native.error.20",
@@ -6839,6 +6844,7 @@ mod native_localization_tests {
             VaultError::Corrupt,
             VaultError::NotFound,
             VaultError::Invalid,
+            VaultError::AiResultsFull,
             VaultError::WeakPassphrase,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,

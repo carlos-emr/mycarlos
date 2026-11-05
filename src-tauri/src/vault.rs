@@ -292,6 +292,10 @@ pub enum VaultError {
     NotFound,
     #[error("the requested change is not valid")]
     Invalid,
+    /// A document keeps at most 32 AI answers, hidden ones included, and
+    /// none is ever deleted (D3): a new one is refused, said as such.
+    #[error("the document keeps the most AI answers it can")]
+    AiResultsFull,
     #[error("the passphrase is too easy to guess")]
     WeakPassphrase,
     #[error("too many files were selected for one import")]

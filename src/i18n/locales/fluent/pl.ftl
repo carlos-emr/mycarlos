@@ -2014,3 +2014,5 @@ notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za
 ai-summary-again = Podsumuj ponownie
 
 ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.
+
+ai-keepFull = Ten dokument przechowuje już maksymalną liczbę odpowiedzi AI. Nowe odpowiedzi są wyświetlane, ale nie są zachowywane.

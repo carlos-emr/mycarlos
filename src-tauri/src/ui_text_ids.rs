@@ -11,6 +11,7 @@ pub enum MessageId {
     AiExplainTitle,
     AiFailed,
     AiKeepFailed,
+    AiKeepFull,
     AiModelAccepted,
     AiModelAdd,
     AiModelAdded,
@@ -920,6 +921,7 @@ impl MessageId {
         Self::AiExplainTitle,
         Self::AiFailed,
         Self::AiKeepFailed,
+        Self::AiKeepFull,
         Self::AiModelAccepted,
         Self::AiModelAdd,
         Self::AiModelAdded,
@@ -1829,6 +1831,7 @@ impl MessageId {
             Self::AiExplainTitle => "ai-explain-title",
             Self::AiFailed => "ai-failed",
             Self::AiKeepFailed => "ai-keepFailed",
+            Self::AiKeepFull => "ai-keepFull",
             Self::AiModelAccepted => "ai-model-accepted",
             Self::AiModelAdd => "ai-model-add",
             Self::AiModelAdded => "ai-model-added",
@@ -4256,6 +4259,7 @@ impl MessageId {
             "interface.history.how.explain" => Some(Self::InterfaceHistoryHowExplain),
             "ai.summary.again" => Some(Self::AiSummaryAgain),
             "ai.keepFailed" => Some(Self::AiKeepFailed),
+            "ai.keepFull" => Some(Self::AiKeepFull),
             _ => None,
         }
     }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { formatDate, getLocale, t as translateNow, useI18n } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
+import { hasVaultErrorCode } from "../vault";
 import { keptInput, keptSummary, type KeptAnswers } from "../ai/kept";
 import {
   ModelCancelled,
@@ -67,7 +68,10 @@ export function ReaderAiPanel({
   // Whether the summary shown is one the vault kept, and whether keeping
   // the latest answer failed (it is still shown).
   const [fromKept, setFromKept] = useState(false);
-  const [keepFailed, setKeepFailed] = useState(false);
+  // Why the answer on screen was not kept, if it was not.
+  const [keepFailed, setKeepFailed] = useState<
+    "ai.keepFailed" | "ai.keepFull" | null
+  >(null);
   const [again, setAgain] = useState(0);
   const live = useRef(true);
   useEffect(() => {
@@ -132,8 +136,15 @@ export function ReaderAiPanel({
     if (!kept) return;
     try {
       await kept.save(keptInput(result), JSON.stringify(result));
-    } catch {
-      if (live.current) setKeepFailed(true);
+    } catch (failure) {
+      // A document full of kept answers (32, hidden ones included: nothing
+      // is deleted, D3) says so; any other failure is the general one.
+      if (live.current)
+        setKeepFailed(
+          hasVaultErrorCode(failure, "ai_results_full")
+            ? "ai.keepFull"
+            : "ai.keepFailed",
+        );
     }
   };
 
@@ -150,7 +161,7 @@ export function ReaderAiPanel({
     startedFor.current = request;
     setWorking(true);
     setFailed(false);
-    setKeepFailed(false);
+    setKeepFailed(null);
     const fresh = again > 0;
     Promise.resolve(
       !fresh && aiRef.current.kept
@@ -196,7 +207,7 @@ export function ReaderAiPanel({
     if (!asked || working) return;
     setWorking(true);
     setFailed(false);
-    setKeepFailed(false);
+    setKeepFailed(null);
     asModel(() =>
       explainTerm(aiRef.current.model, asked, contextFor(asked), lang),
     )
@@ -295,7 +306,7 @@ export function ReaderAiPanel({
             model={summary.model}
             at={summary.createdAt}
           />
-          {keepFailed && <p role="alert">{t("ai.keepFailed")}</p>}
+          {keepFailed && <p role="alert">{t(keepFailed)}</p>}
           {fromKept && (
             <button
               className="button"
@@ -317,7 +328,7 @@ export function ReaderAiPanel({
             model={explained.model}
             at={explained.createdAt}
           />
-          {keepFailed && <p role="alert">{t("ai.keepFailed")}</p>}
+          {keepFailed && <p role="alert">{t(keepFailed)}</p>}
         </div>
       )}
     </section>

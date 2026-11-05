@@ -1946,3 +1946,5 @@ notifications-checkBusy = A document check is stopping. Choose Check for new doc
 ai-summary-again = Summarize again
 
 ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
+
+ai-keepFull = This document already keeps the most AI answers it can. New answers are shown but not kept.

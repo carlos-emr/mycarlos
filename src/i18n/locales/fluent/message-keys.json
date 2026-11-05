@@ -903,5 +903,6 @@
   "interface.history.how.summary",
   "interface.history.how.explain",
   "ai.summary.again",
-  "ai.keepFailed"
+  "ai.keepFailed",
+  "ai.keepFull"
 ]

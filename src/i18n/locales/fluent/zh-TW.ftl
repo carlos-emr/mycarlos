@@ -1810,3 +1810,5 @@ notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢
 ai-summary-again = 重新產生摘要
 
 ai-keepFailed = myCarlos 無法將此回答與文件一起保存。此處仍會顯示該回答。
+
+ai-keepFull = 此文件保存的 AI 回答已達上限。新的回答會顯示，但不會保存。

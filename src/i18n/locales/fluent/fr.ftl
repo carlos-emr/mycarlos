@@ -1980,3 +1980,5 @@ notifications-checkBusy = Une vérification de documents est en cours d’arrêt
 ai-summary-again = Résumer à nouveau
 
 ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.
+
+ai-keepFull = Ce document conserve déjà le nombre maximal de réponses de l’IA. Les nouvelles réponses s’affichent, mais ne sont pas conservées.

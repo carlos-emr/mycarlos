@@ -427,7 +427,7 @@ impl VaultStore {
             // Full, counting the hidden ones: refused, nothing dropped.
             if next_record.ai_results.len() >= MAX_AI_RESULTS_PER_RECORD {
                 remove_objects(&self.root, &[object_name], Removable::UncommittedObject);
-                return Err(VaultError::Invalid);
+                return Err(VaultError::AiResultsFull);
             }
             for earlier in &mut next_record.ai_results {
                 if earlier.same_question(&stored) {
@@ -800,7 +800,7 @@ mod tests {
         let before = files();
         refused(
             store.save_ai_result(id, summary("en"), b"{\"v\":2}", 99),
-            "Invalid",
+            "AiResultsFull",
         );
         assert_eq!(object_names(&store, id), names, "nothing dropped");
         for name in &names {

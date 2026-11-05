@@ -905,6 +905,7 @@ export const MESSAGE_KEYS = [
   "interface.history.how.explain",
   "ai.summary.again",
   "ai.keepFailed",
+  "ai.keepFull",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1997,6 +1998,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.how.explain": "interface-history-how-explain",
   "ai.summary.again": "ai-summary-again",
   "ai.keepFailed": "ai-keepFailed",
+  "ai.keepFull": "ai-keepFull",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2997,6 +2999,7 @@ export interface MessageArgsByKey {
   "interface.history.how.explain": undefined;
   "ai.summary.again": undefined;
   "ai.keepFailed": undefined;
+  "ai.keepFull": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

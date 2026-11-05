@@ -1980,3 +1980,5 @@ notifications-checkBusy = Se está deteniendo una consulta de documentos. Vuelva
 ai-summary-again = Resumir de nuevo
 
 ai-keepFailed = myCarlos no pudo guardar esta respuesta con el documento. Se sigue mostrando aquí.
+
+ai-keepFull = Este documento ya guarda el máximo de respuestas de la IA. Las respuestas nuevas se muestran, pero no se guardan.

@@ -416,6 +416,24 @@ describe("the reader's AI helper", () => {
     expect(screen.getByText(AI_LABEL)).toBeVisible();
   });
 
+  it("says when the document already keeps the most answers it can, and keeps showing the new one", async () => {
+    const { kept } = fakeKept();
+    (kept.save as ReturnType<typeof vi.fn>).mockRejectedValue({
+      code: "ai_results_full",
+      messageKey: "ai.keepFull",
+      message: "the document keeps the most AI answers it can",
+    });
+    renderReader(fakeLocalModel(), { kept });
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This document already keeps the most AI answers it can. New answers are shown but not kept.",
+    );
+    expect(screen.getByText(AI_LABEL)).toBeVisible();
+  });
+
   it.each([
     ["the panel is closed", "close"],
     ["the panel switches to Explain", "explain"],
