@@ -12,18 +12,21 @@ pub fn link(
     expected_device: &str,
     cancelled: impl Fn() -> bool,
 ) -> Result<LinkedClinic, LinkError> {
-    use crate::portal_link::{parse_response, MAX_RESPONSE_BYTES};
-
     if cancelled() {
         return Err(LinkError::Cancelled);
     }
     // Android needs the verifier's Kotlin component and initialized JVM context.
     // Fail closed until that reviewed platform integration exists.
     #[cfg(target_os = "android")]
-    return Err(LinkError::Network);
+    {
+        let _ = (request, expected_device);
+        return Err(LinkError::Network);
+    }
 
     #[cfg(not(target_os = "android"))]
     {
+        use crate::portal_link::{parse_response, MAX_RESPONSE_BYTES};
+
         let client = client()?;
         let exchange = async {
             let mut response = client
