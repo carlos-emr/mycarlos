@@ -41,33 +41,50 @@ pub(crate) struct Accepted {
     pub(crate) source_url: &'static str,
     /// How the helper puts a conversation to this model.
     pub(crate) chat_format: crate::model_helper::ChatFormat,
+    /// Whether Preferences lists it (name, address, Copy). An entry that is
+    /// not listed is still accepted by "Add a model file…": its size and hash
+    /// are on the list.
+    #[serde(skip)]
+    pub(crate) listed: bool,
 }
 
 /// The models the app accepts. The demo build's pick (the bake-off's best on
 /// both blind graders, and the one that works through the engine): Qwen3.5 4B.
+// Indented by hand: rustfmt leaves this array alone (the pinned addresses are
+// longer than its line width).
 pub(crate) const CATALOG: &[Accepted] = &[
-Accepted {
-    name: "Qwen3.5 4B (Q4_K_M)",
-    file_name: "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
-    size_bytes: 3_013_027_808,
-    sha256: "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
-    licence: "Apache-2.0",
-    notices: &[],
-    source_url: "https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
-    chat_format: crate::model_helper::ChatFormat::Builtin,
-},
-// The backup: the default is the first entry. Gemma 4's chat template is not applied by
-// llama.cpp's built-in code, so its turns are written by the helper.
-Accepted {
-    name: "Gemma 4 E2B Instruct (Q4_0)",
-    file_name: "gemma-4-E2B-it-Q4_0.gguf",
-    size_bytes: 2_841_481_184,
-    sha256: "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52",
-    licence: "Apache-2.0",
-    notices: &[],
-    source_url: "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf",
-    chat_format: crate::model_helper::ChatFormat::Gemma4,
-}];
+    Accepted {
+        name: "Qwen3.5 4B (Q4_K_M)",
+        file_name: "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+        size_bytes: 3_013_027_808,
+        sha256: "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
+        licence: "Apache-2.0",
+        notices: &[],
+        source_url: "https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+        chat_format: crate::model_helper::ChatFormat::Builtin,
+        listed: true,
+    },
+    // The team's backup, not listed for patients: its file can be added, but
+    // its summary is not yet proven (listing it is a later decision). The
+    // default is the first entry. Gemma 4's chat template is not applied by
+    // llama.cpp's built-in code, so its turns are written by the helper.
+    Accepted {
+        name: "Gemma 4 E2B Instruct (Q4_0)",
+        file_name: "gemma-4-E2B-it-Q4_0.gguf",
+        size_bytes: 2_841_481_184,
+        sha256: "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52",
+        licence: "Apache-2.0",
+        notices: &[],
+        source_url: "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf",
+        chat_format: crate::model_helper::ChatFormat::Gemma4,
+        listed: false,
+    },
+];
+
+/// The entries Preferences lists, in catalog order.
+pub(crate) fn listed(catalog: &[Accepted]) -> Vec<Accepted> {
+    catalog.iter().filter(|m| m.listed).copied().collect()
+}
 
 /// What the renderer is told about the model on this computer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1101,6 +1118,7 @@ mod tests {
             notices: &[],
             source_url: "https://example.invalid/fake",
             chat_format: crate::model_helper::ChatFormat::Builtin,
+            listed: true,
         }];
         (bytes, Box::leak(list.into_boxed_slice()))
     }
@@ -1645,6 +1663,31 @@ mod tests {
         hashes.sort_unstable();
         hashes.dedup();
         assert_eq!(hashes.len(), CATALOG.len());
+    }
+
+    #[test]
+    fn preferences_lists_the_default_only_and_an_unlisted_file_is_still_accepted() {
+        // The default, which "Download" fetches, is listed; the backup is not.
+        let shown = listed(CATALOG);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].sha256, CATALOG[0].sha256);
+        assert!(CATALOG
+            .iter()
+            .any(|m| !m.listed && m.file_name.starts_with("gemma-4")));
+        // An entry left out of the list is still added from a file whose
+        // size and hash match it.
+        let temp = tempfile::tempdir().unwrap();
+        let (bytes, list) = fake(1 << 20);
+        let unlisted: &'static [Accepted] = Box::leak(Box::new([Accepted {
+            listed: false,
+            ..list[0]
+        }]));
+        assert!(listed(unlisted).is_empty());
+        let store = Store::new(temp.path().join("models"), unlisted);
+        store
+            .add(&source(&temp, &bytes), &good(), |_, _| {})
+            .unwrap();
+        assert_eq!(folder_names(&store), ["fake.gguf"]);
     }
 
     #[test]

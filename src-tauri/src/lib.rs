@@ -1502,11 +1502,12 @@ fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
 }
 
-/// The models the app accepts, for the row to show: name, size, licence,
-/// notices, and where to get the file (text only; nothing is opened).
+/// The models the row shows: name, size, licence, notices, and where to get
+/// the file (text only; nothing is opened). Only the listed entries: a backup
+/// that is not listed is still accepted by "Add a model file…".
 #[tauri::command]
-fn ai_model_catalog() -> &'static [local_model::Accepted] {
-    local_model::CATALOG
+fn ai_model_catalog() -> Vec<local_model::Accepted> {
+    local_model::listed(local_model::CATALOG)
 }
 
 /// Whether the AI helper (#72) has a model on this computer, and if not,
