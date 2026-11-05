@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { formatDate, getLocale, t as translateNow, useI18n } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
+import { keptInput, keptSummary, type KeptAnswers } from "../ai/kept";
 import {
   ModelNotInstalled,
   type AiTool,
@@ -20,6 +21,8 @@ export interface ReaderAi {
   /** The whole document's text, page by page. */
   loadText: () => Promise<DocumentText>;
   onOpenPreferences: () => void;
+  /** The answers kept with this document, where the vault keeps them. */
+  kept?: KeptAnswers;
 }
 
 const NOT_INSTALLED: ModelStatus = { state: "notInstalled" };
@@ -50,10 +53,13 @@ export function ReaderAiPanel({
   const [failed, setFailed] = useState(false);
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
-  const [pagesRead, setPagesRead] = useState(0);
-  const [someUnread, setSomeUnread] = useState(false);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
   const [term, setTerm] = useState(initialTerm);
+  // Whether the summary shown is one the vault kept, and whether keeping
+  // the latest answer failed (it is still shown).
+  const [fromKept, setFromKept] = useState(false);
+  const [keepFailed, setKeepFailed] = useState(false);
+  const [again, setAgain] = useState(0);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -83,18 +89,46 @@ export function ReaderAiPanel({
     else setFailed(true);
   };
 
+  // Keeps an answer with the document; a failure is said, not hidden, and
+  // the answer stays on screen.
+  const keep = async (result: SummaryResult | ExplainResult) => {
+    const kept = aiRef.current.kept;
+    if (!kept) return;
+    try {
+      await kept.save(keptInput(result), JSON.stringify(result));
+    } catch {
+      if (live.current) setKeepFailed(true);
+    }
+  };
+
   // A summary starts once the panel opens on an installed model: the patient
-  // asked for it by opening the panel. Once per language: React may run this
-  // effect twice (StrictMode), and a model takes a while.
+  // asked for it by opening the panel. A summary the vault kept in this
+  // language is shown instead, until "Summarize again". Once per language
+  // and request: React may run this effect twice (StrictMode), and a model
+  // takes a while.
   const startedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (tool !== "summary" || !installed || startedFor.current === lang) return;
-    startedFor.current = lang;
+    const request = `${lang}#${again}`;
+    if (tool !== "summary" || !installed || startedFor.current === request)
+      return;
+    startedFor.current = request;
     setWorking(true);
     setFailed(false);
-    aiRef.current
-      .loadText()
-      .then(async (document) => {
+    setKeepFailed(false);
+    const fresh = again > 0;
+    Promise.resolve(
+      !fresh && aiRef.current.kept
+        ? keptSummary(aiRef.current.kept, lang)
+        : null,
+    )
+      .then(async (found) => {
+        if (found) {
+          if (!live.current) return;
+          setFromKept(true);
+          setSummary(found);
+          return;
+        }
+        const document = await aiRef.current.loadText();
         if (document.pages.every((page) => !page.text.trim())) {
           if (live.current) setNoText(true);
           return;
@@ -105,23 +139,14 @@ export function ReaderAiPanel({
           lang,
         );
         if (!live.current) return;
-        // The last page read, by its number: a page that failed has no
-        // entry, so the count of entries would be short.
-        setPagesRead((document.pages.at(-1)?.index ?? -1) + 1);
-        // Pages with no text, cut short or not read at all are never left
-        // out silently.
-        setSomeUnread(
-          document.emptyPages.length +
-            document.cutPages.length +
-            document.failedPages.length >
-            0,
-        );
+        setFromKept(false);
         setSummary(result);
+        await keep(result);
       })
       .catch(stopped)
       .finally(() => live.current && setWorking(false));
-    // `stopped` only reads a ref and setters, so it is not a dependency.
-  }, [tool, installed, lang]);
+    // `stopped` and `keep` only read refs and setters: not dependencies.
+  }, [tool, installed, lang, again]);
 
   const explain = (event: FormEvent) => {
     event.preventDefault();
@@ -129,8 +154,13 @@ export function ReaderAiPanel({
     if (!asked || working) return;
     setWorking(true);
     setFailed(false);
+    setKeepFailed(false);
     explainTerm(aiRef.current.model, asked, contextFor(asked), lang)
-      .then((result) => live.current && setExplained(result))
+      .then(async (result) => {
+        if (!live.current) return;
+        setExplained(result);
+        await keep(result);
+      })
       .catch(stopped)
       .finally(() => live.current && setWorking(false));
   };
@@ -207,15 +237,28 @@ export function ReaderAiPanel({
               </li>
             ))}
           </ol>
-          {someUnread && <p>{t("ai.summary.pagesMissing")}</p>}
+          {/* Pages with no text, cut short or not read at all are never
+              left out silently, for a kept summary as for a new one. */}
+          {summary.pagesMissing && <p>{t("ai.summary.pagesMissing")}</p>}
           {summary.partial && (
-            <p>{t("ai.summary.partial", { last: pagesRead })}</p>
+            <p>{t("ai.summary.partial", { last: summary.lastPage })}</p>
           )}
           <ResultMeta
             tool={summary.tool}
             model={summary.model}
             at={summary.createdAt}
           />
+          {keepFailed && <p role="alert">{t("ai.keepFailed")}</p>}
+          {fromKept && (
+            <button
+              className="button"
+              type="button"
+              disabled={working}
+              onClick={() => setAgain((count) => count + 1)}
+            >
+              {t("ai.summary.again")}
+            </button>
+          )}
         </div>
       )}
       {explained && tool === "explain" && (
@@ -227,6 +270,7 @@ export function ReaderAiPanel({
             model={explained.model}
             at={explained.createdAt}
           />
+          {keepFailed && <p role="alert">{t("ai.keepFailed")}</p>}
         </div>
       )}
     </section>

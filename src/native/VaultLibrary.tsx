@@ -2534,6 +2534,13 @@ export function VaultLibrary({
                       // passing the reader's document password is the model
                       // step's work.
                       loadText: () => bridge.documentText(readerRecord.id),
+                      kept: {
+                        list: () => bridge.aiResults(readerRecord.id),
+                        read: (resultId) =>
+                          bridge.readAiResult(readerRecord.id, resultId),
+                        save: (input, content) =>
+                          bridge.saveAiResult(readerRecord.id, input, content),
+                      },
                       onOpenPreferences: () => {
                         setReaderRecordId(null);
                         setSection("preferences");

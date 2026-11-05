@@ -691,6 +691,7 @@ export const MESSAGE_KEYS = [
   "interface.history.damagedBetween",
   "interface.history.empty",
   "interface.history.error.unverified",
+  "interface.history.event.aiResultSaved",
   "interface.history.event.backupRestored",
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
@@ -716,6 +717,8 @@ export const MESSAGE_KEYS = [
   "interface.history.how",
   "interface.history.how.aidReplaced",
   "interface.history.how.camera",
+  "interface.history.how.summary",
+  "interface.history.how.explain",
   "interface.history.how.damaged",
   "interface.history.how.importedShared",
   "interface.history.how.movedFromShared",
@@ -854,6 +857,8 @@ export const MESSAGE_KEYS = [
   "notifications.autoPaused",
   "notifications.checkBusy",
   "native.notice.arrival",
+  "ai.summary.again",
+  "ai.keepFailed",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1657,6 +1662,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.damagedBetween": "interface-history-damagedBetween",
   "interface.history.empty": "interface-history-empty",
   "interface.history.error.unverified": "interface-history-error-unverified",
+  "interface.history.event.aiResultSaved":
+    "interface-history-event-aiResultSaved",
   "interface.history.event.backupRestored":
     "interface-history-event-backupRestored",
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
@@ -1690,6 +1697,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.how": "interface-history-how",
   "interface.history.how.aidReplaced": "interface-history-how-aidReplaced",
   "interface.history.how.camera": "interface-history-how-camera",
+  "interface.history.how.summary": "interface-history-how-summary",
+  "interface.history.how.explain": "interface-history-how-explain",
   "interface.history.how.damaged": "interface-history-how-damaged",
   "interface.history.how.importedShared":
     "interface-history-how-importedShared",
@@ -1883,6 +1892,8 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.autoPaused": "notifications-autoPaused",
   "notifications.checkBusy": "notifications-checkBusy",
   "native.notice.arrival": "native-notice-arrival",
+  "ai.summary.again": "ai-summary-again",
+  "ai.keepFailed": "ai-keepFailed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2661,6 +2672,7 @@ export interface MessageArgsByKey {
   };
   "interface.history.empty": undefined;
   "interface.history.error.unverified": undefined;
+  "interface.history.event.aiResultSaved": undefined;
   "interface.history.event.backupRestored": undefined;
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
@@ -2686,6 +2698,8 @@ export interface MessageArgsByKey {
   "interface.history.how": undefined;
   "interface.history.how.aidReplaced": undefined;
   "interface.history.how.camera": undefined;
+  "interface.history.how.summary": undefined;
+  "interface.history.how.explain": undefined;
   "interface.history.how.damaged": undefined;
   "interface.history.how.importedShared": undefined;
   "interface.history.how.movedFromShared": undefined;
@@ -2828,6 +2842,8 @@ export interface MessageArgsByKey {
   "notifications.autoPaused": undefined;
   "notifications.checkBusy": undefined;
   "native.notice.arrival": undefined;
+  "ai.summary.again": undefined;
+  "ai.keepFailed": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -57,6 +57,14 @@ export async function summarizeDocument(
     lang,
     createdAt: now(),
     partial: document.truncated,
+    // The last page read, by its number: a page that failed has no entry,
+    // so the count of entries would be short.
+    lastPage: (document.pages.at(-1)?.index ?? -1) + 1,
+    pagesMissing:
+      document.emptyPages.length +
+        document.cutPages.length +
+        document.failedPages.length >
+      0,
   };
 }
 

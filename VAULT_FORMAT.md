@@ -1022,3 +1022,32 @@ Other open branches that also need a format (remembered refused deliveries,
 #161, and the AI summary branches) take the numbers after this one, in the order
 they merge. A vault written at the new number is refused by an older build,
 which is intended.
+
+#### Format 9: the AI helper's answers (#72 part D)
+
+Format 9 adds one optional list to each record, `aiResults`: what the AI helper wrote
+about the document, a plain-words summary or the explanation of a term. Each
+answer is an encrypted object of its own beside the document's, in the same
+envelope, under a random key wrapped with the vault's object-wrap key and the
+answer's id, so backup, restore, orphan cleanup and the hidden state carry it
+with the document (a record's `objects()` lists it). The manifest names, for
+each answer: its id, the tool (`summary` or `explain`), the language, the term
+explained (explain only), the model's name and the SHA-256 of its file, when it
+was written, and its object's name, size and wrapped key. The bytes are the
+renderer's own JSON (sentences with their quotes, or an explanation), at most
+64 KiB; the vault stores and returns them as they are and never logs them.
+
+One answer is kept per question (tool, language, term): a new summary in the
+same language replaces the old one, whose object is removed once the commit
+names only the new answer, and a record keeps at most 32. An answer cannot be
+saved for a hidden document or in recovery mode. Each save is recorded in the
+history as `aiResultSaved` with the document's name and the tool as `how`,
+never the text. A manifest below format 9 that holds answers is corrupt, as is
+an answer with a nil or repeated id, an object name another object has, a
+malformed key, language, term, model name or hash, a size of zero or over
+64 KiB, or two answers to one question.
+
+A format 1–8 vault opens with no answers and is upgraded to format 9 at its
+next writable unlock, in a commit of its own, as for every earlier format. An
+older myCarlos then refuses the vault as newer: there is no downgrade. Header
+and object formats are unchanged.

@@ -1408,6 +1408,23 @@ struct RecordIdRequest {
     record_id: Uuid,
 }
 
+/// An AI answer to keep with a document (#72): what it is, and its bytes,
+/// the renderer's own JSON, as text.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveAiResultRequest {
+    record_id: Uuid,
+    result: vault::AiResultInput,
+    content: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiResultRequest {
+    record_id: Uuid,
+    result_id: Uuid,
+}
+
 #[derive(Deserialize)]
 struct ResetRequest {
     confirmation: String,
@@ -3735,6 +3752,48 @@ async fn vault_hide_record(
     .await
 }
 
+/// Keeps the AI helper's answer with its document, encrypted (#72 part D).
+#[tauri::command]
+async fn vault_ai_result_save(
+    store: State<'_, Arc<VaultStore>>,
+    request: SaveAiResultRequest,
+) -> CommandResult<vault::AiResultInfo> {
+    run_blocking(store.inner(), move |store| {
+        store.save_ai_result(
+            request.record_id,
+            request.result,
+            request.content.as_bytes(),
+            now_ms(),
+        )
+    })
+    .await
+}
+
+/// The AI helper's answers kept with a document, newest first (#72).
+#[tauri::command]
+async fn vault_ai_results(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<Vec<vault::AiResultInfo>> {
+    run_blocking(store.inner(), move |store| {
+        store.ai_results(request.record_id)
+    })
+    .await
+}
+
+/// One kept answer's text (#72).
+#[tauri::command]
+async fn vault_ai_result_read(
+    store: State<'_, Arc<VaultStore>>,
+    request: AiResultRequest,
+) -> CommandResult<String> {
+    run_blocking(store.inner(), move |store| {
+        let bytes = store.read_ai_result(request.record_id, request.result_id)?;
+        String::from_utf8(bytes).map_err(|_| vault::VaultError::Corrupt)
+    })
+    .await
+}
+
 /// Puts a hidden document back (#71).
 #[tauri::command]
 async fn vault_unhide_record(
@@ -4082,6 +4141,9 @@ pub fn run() {
             vault_unlock_pdf,
             vault_hide_record,
             vault_unhide_record,
+            vault_ai_result_save,
+            vault_ai_results,
+            vault_ai_result_read,
             vault_hide_unavailable_records,
             vault_reset
         ])

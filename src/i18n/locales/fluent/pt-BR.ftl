@@ -1554,6 +1554,8 @@ interface-history-empty = Não há eventos no histórico.
 
 interface-history-error-unverified = Não foi possível ler e verificar o histórico. Nenhum evento foi exibido.
 
+interface-history-event-aiResultSaved = Resposta da IA guardada
+
 interface-history-event-backupRestored = Backup restaurado
 
 interface-history-event-backupSaved = Backup criptografado salvo
@@ -1608,6 +1610,10 @@ interface-history-how = Como
 interface-history-how-aidReplaced = Substituiu um auxílio de leitura anterior
 
 interface-history-how-camera = Adicionado com a câmera
+
+interface-history-how-summary = Resumo em palavras simples
+
+interface-history-how-explain = Um termo explicado
 
 interface-history-how-damaged = Ocultado porque o arquivo estava ausente
 
@@ -1878,3 +1884,7 @@ notifications-autoAllow = Buscar documentos das clínicas automaticamente enquan
 notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
 notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
 notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
+
+ai-summary-again = Resumir de novo
+
+ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.

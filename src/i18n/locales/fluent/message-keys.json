@@ -690,6 +690,7 @@
   "interface.history.damagedBetween",
   "interface.history.empty",
   "interface.history.error.unverified",
+  "interface.history.event.aiResultSaved",
   "interface.history.event.backupRestored",
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
@@ -715,6 +716,8 @@
   "interface.history.how",
   "interface.history.how.aidReplaced",
   "interface.history.how.camera",
+  "interface.history.how.summary",
+  "interface.history.how.explain",
   "interface.history.how.damaged",
   "interface.history.how.importedShared",
   "interface.history.how.movedFromShared",
@@ -852,5 +855,7 @@
   "notifications.autoHelp",
   "notifications.autoPaused",
   "notifications.checkBusy",
-  "native.notice.arrival"
+  "native.notice.arrival",
+  "ai.summary.again",
+  "ai.keepFailed"
 ]
