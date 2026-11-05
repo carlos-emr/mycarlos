@@ -170,6 +170,21 @@ jobs:
           rustup toolchain install 1.98.0 --profile minimal
           --component rustfmt --component clippy
       - run: npm ci
+      # llama.cpp's C++ build (#72), restored from the last build of main for the same runner
+      # image, Rust toolchain and dependency set (main saves it; pull requests only read it).
+      # Cargo still runs llama-cpp-sys-2's build script; CMake finds its configured tree with
+      # every object current and builds nothing. .cargo/config.toml is in the key because an
+      # existing CMake tree is not configured again. Raise "v1" for a change the key cannot see,
+      # such as compiler flags or CMake settings set in this workflow.
+      - name: Key for the llama.cpp build cache
+        id: llama-key
+        run: echo "key=llama-build-v1-${{ runner.os }}-${ImageOS}-${ImageVersion}-$(rustc -V | tr -c 'A-Za-z0-9.\n' '-')-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml', 'src-tauri/.cargo/config.toml') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore the llama.cpp build
+        id: llama-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/target/debug/build/llama-cpp-sys-2-*/out
+          key: ${{ steps.llama-key.outputs.key }}
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
       # The test-only stub of the model helper (#72), with its tests.
@@ -180,6 +195,12 @@ jobs:
         run: cargo test --manifest-path security-tests/glib-variant/Cargo.toml --release --locked
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub -- --test-threads=1
       - run: npm run tauri build -- --debug --bundles deb
+      - name: Save the llama.cpp build (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.llama-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/target/debug/build/llama-cpp-sys-2-*/out
+          key: ${{ steps.llama-key.outputs.key }}
       - run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: The app as bundled has no model helper stub, and starts on a processor without AVX
         # The stub's argument is unknown outside test builds (exit 64). Under a Nehalem (no AVX)
@@ -222,6 +243,19 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal
       - run: npm ci
+      # llama.cpp's C++ build (#72), restored as on Linux (see the desktop job).
+      - name: Key for the llama.cpp build cache
+        id: llama-key
+        shell: pwsh
+        run: |
+          $rustc = (rustc -V) -replace '[^A-Za-z0-9.]', '-'
+          "key=llama-build-v1-${{ runner.os }}-$env:ImageOS-$env:ImageVersion-$rustc-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml', 'src-tauri/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
+      - name: Restore the llama.cpp build
+        id: llama-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/target/debug/build/llama-cpp-sys-2-*/out
+          key: ${{ steps.llama-key.outputs.key }}
       - name: Test Windows vault
         shell: pwsh
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub -- --test-threads=1
@@ -233,6 +267,12 @@ jobs:
         # Invoke the pinned CLI directly: npm/PowerShell can consume the build flags.
         shell: pwsh
         run: node node_modules/@tauri-apps/cli/tauri.js build --debug --bundles nsis
+      - name: Save the llama.cpp build (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.llama-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/target/debug/build/llama-cpp-sys-2-*/out
+          key: ${{ steps.llama-key.outputs.key }}
       - run: git diff --exit-code -- src-tauri/Cargo.lock
       - name: Verify Windows installation
         shell: pwsh

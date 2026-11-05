@@ -1,27 +1,27 @@
-//! Shared notification policy for foreground availability and remote-push adapters (#192).
+//! Remote "documents ready" notices (#192): the patient's consent and this vault's push
+//! destinations. No I/O here: the vault keeps this state inside the encrypted manifest
+//! (format 9, `remoteNotices`), so nothing outside the vault says which clinics, or how many,
+//! a vault is linked to.
 //!
-//! This module performs no I/O and enables no notification transport. The native owner must
-//! verify native link ownership, refresh OS permission, serialize access, and atomically
-//! persist `encode()` after mutations. Reserve a destination here BEFORE remote enrollment;
-//! the server must tombstone revocations even if they arrive before enrollment completes.
-//! Provider tokens and vault keys never enter this state.
-//! `DisplayProvider` must replace the same opaque notification ID on retry. A crash between OS
-//! display and persistence can retry that ID; exactly-once OS delivery is not promised.
+//! A destination is reserved and saved BEFORE it is enrolled at the portal, so a later opt-out
+//! always keeps its revocation, even while enrollment is still in flight. The portal tombstones a
+//! revoked id it never saw, so a late enrollment cannot bring it back.
 //!
-//! Closed-app display additionally requires a real provider and Portal after-commit outbox.
-//! Platform adapters must apply the same generic template and identity to provider-managed
-//! notifications. This policy and mocked tests are not proof of installed-device delivery.
+//! A provider message carries one opaque notice token and nothing else (carlos-portal#80): the
+//! device never sees a subscription id, epoch or sequence, and never decodes the portal's hint.
+//! It reconciles through its own authenticated document check. Provider tokens and vault keys
+//! never enter this state.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-const VERSION: u8 = 1;
-const MAX_HINT_BYTES: usize = 256;
-const MAX_STATE_BYTES: usize = 32 * 1024;
+/// The portal allows 16 destinations per linked device, and a vault holds at most 16 links.
 const MAX_ACTIVE: usize = 16;
-// Active registrations plus pending revocations are bounded together. Disabling never needs
-// extra capacity: it moves active entries into the durable revocation queue.
+// Active destinations plus pending revocations are bounded together. Opting out never needs
+// extra room: it moves active entries into the revocation queue.
 const MAX_ENTRIES: usize = 64;
+/// The portal's notice token: 16 bytes of a keyed hash, base64url without padding.
+const NOTICE_TOKEN_LEN: usize = 22;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Permission {
@@ -44,22 +44,40 @@ pub enum Error {
     InvalidState,
     Disabled,
     Capacity,
-    DisplayFailed,
 }
 
-/// Native-owned link identity, never accepted from an untrusted notification payload.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The push service a destination is registered with, named as the portal names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Platform {
+    AndroidFcm,
+    IosApns,
+    MacosApns,
+    WindowsWns,
+}
+
+impl Platform {
+    pub fn wire(self) -> &'static str {
+        match self {
+            Self::AndroidFcm => "android_fcm",
+            Self::IosApns => "ios_apns",
+            Self::MacosApns => "macos_apns",
+            Self::WindowsWns => "windows_wns",
+        }
+    }
+}
+
+/// The link a destination belongs to. Native-owned, never taken from a notification payload.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Owner {
-    vault_id: Uuid,
     link_id: Uuid,
     device_key_id: String,
 }
 
 impl Owner {
-    pub fn new(vault_id: Uuid, link_id: Uuid, device_key_id: String) -> Result<Self, Error> {
+    pub fn new(link_id: Uuid, device_key_id: String) -> Result<Self, Error> {
         let owner = Self {
-            vault_id,
             link_id,
             device_key_id,
         };
@@ -69,9 +87,16 @@ impl Owner {
         Ok(owner)
     }
 
+    pub fn link_id(&self) -> Uuid {
+        self.link_id
+    }
+
+    pub fn device_key_id(&self) -> &str {
+        &self.device_key_id
+    }
+
     fn valid(&self) -> bool {
-        !self.vault_id.is_nil()
-            && !self.link_id.is_nil()
+        !self.link_id.is_nil()
             && self.device_key_id.len() == 43
             && self
                 .device_key_id
@@ -80,181 +105,171 @@ impl Owner {
     }
 }
 
-/// No freeform text, document IDs, patient data, links, or commands are permitted.
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ReadyHint {
-    version: u8,
-    kind: HintKind,
-    subscription_id: Uuid,
-    epoch: Uuid,
-    sequence: u64,
+/// One push destination: a device-made id, the push service, and the portal's subscription id
+/// once the portal has enrolled it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Destination {
+    owner: Owner,
+    id: Uuid,
+    platform: Platform,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    subscription_id: Option<Uuid>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-enum HintKind {
-    #[serde(rename = "documents_ready")]
-    DocumentsReady,
+impl Destination {
+    pub fn owner(&self) -> &Owner {
+        &self.owner
+    }
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+    pub fn platform(&self) -> Platform {
+        self.platform
+    }
+    pub fn subscription_id(&self) -> Option<Uuid> {
+        self.subscription_id
+    }
+    fn valid(&self) -> bool {
+        self.owner.valid()
+            && !self.id.is_nil()
+            && self.subscription_id.is_none_or(|id| !id.is_nil())
+    }
 }
 
-impl ReadyHint {
-    pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
-        if bytes.len() > MAX_HINT_BYTES {
-            return Err(Error::InvalidInput);
-        }
-        let value: Self = serde_json::from_slice(bytes).map_err(|_| Error::InvalidInput)?;
-        if value.version != VERSION
-            || value.subscription_id.is_nil()
-            || value.epoch.is_nil()
-            || value.sequence == 0
-            || value.sequence > i64::MAX as u64
+/// What the manifest keeps (format 9). Read it back only through `Policy::new`, which checks it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RemoteNotices {
+    opted_in: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    active: Vec<Destination>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    revocations: Vec<Destination>,
+}
+
+impl RemoteNotices {
+    pub fn opted_in(&self) -> bool {
+        self.opted_in
+    }
+    pub fn active(&self) -> &[Destination] {
+        &self.active
+    }
+    pub fn revocations(&self) -> &[Destination] {
+        &self.revocations
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !self.opted_in && self.active.is_empty() && self.revocations.is_empty()
+    }
+
+    /// The saved shape is consistent: bounded, unique ids, one active destination per link,
+    /// nothing active without consent.
+    pub fn valid(&self) -> bool {
+        let entries = self
+            .active
+            .iter()
+            .chain(&self.revocations)
+            .collect::<Vec<_>>();
+        let ids = entries
+            .iter()
+            .map(|d| d.id)
+            .collect::<std::collections::HashSet<_>>();
+        let links = self
+            .active
+            .iter()
+            .map(|d| d.owner.link_id)
+            .collect::<std::collections::HashSet<_>>();
+        self.active.len() <= MAX_ACTIVE
+            && entries.len() <= MAX_ENTRIES
+            && ids.len() == entries.len()
+            && links.len() == self.active.len()
+            && (self.opted_in || self.active.is_empty())
+            && entries.iter().all(|d| d.valid())
+    }
+}
+
+/// The opaque token a provider message carries. Only its shape is checked: it is never decoded.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NoticeToken(String);
+
+impl NoticeToken {
+    pub fn parse(value: &str) -> Result<Self, Error> {
+        if value.len() != NOTICE_TOKEN_LEN
+            || !value
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
         {
             return Err(Error::InvalidInput);
         }
-        Ok(value)
+        Ok(Self(value.to_owned()))
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, Error> {
-        serde_json::to_vec(self).map_err(|_| Error::InvalidInput)
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
-/// The adapter receives only a fixed generic template and an opaque activation hint.
-pub struct GenericNotice<'a> {
-    hint: &'a ReadyHint,
-}
-
-impl GenericNotice<'_> {
-    pub const fn title(&self) -> &'static str {
-        "myCarlos"
-    }
-    pub const fn body(&self) -> &'static str {
-        "A new document is available in myCarlos."
-    }
-    pub fn notification_id(&self) -> Uuid {
-        self.hint.subscription_id
-    }
-    pub fn activation_hint(&self) -> Result<Vec<u8>, Error> {
-        self.hint.encode()
-    }
-}
-
-pub trait DisplayProvider {
-    /// Replace this notification ID rather than creating another alert on retry. Map failures
-    /// to the fixed error; do not log platform payloads, channel URIs or provider tokens.
-    fn show(&mut self, notice: GenericNotice<'_>) -> Result<(), Error>;
-}
-
-/// Navigation only. Neither variant authorizes unlocking or collecting content. Keep the
-/// original bounded hint and recheck it after unlock or a vault/link change; this enum must
-/// never become a saved authorization for a later session.
+/// Navigation only. Neither variant authorizes unlocking or collecting content.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Activation {
     UnlockThenClinicDocuments,
     ClinicDocuments,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Subscription {
-    owner: Owner,
-    id: Uuid,
-    epoch: Uuid,
-    last_notified: u64,
+impl Activation {
+    pub fn for_vault(unlocked: bool) -> Self {
+        if unlocked {
+            Self::ClinicDocuments
+        } else {
+            Self::UnlockThenClinicDocuments
+        }
+    }
 }
 
-#[derive(Serialize)]
-#[serde(deny_unknown_fields)]
+/// The saved state plus the OS permission seen in this run, which is never saved: a saved
+/// observation must not grant permission after a restart.
+#[derive(Clone, Debug)]
 pub struct Policy {
-    version: u8,
-    opted_in: bool,
-    active: Vec<Subscription>,
-    revocations: Vec<Subscription>,
-    // A saved permission observation never grants permission after restart.
-    #[serde(skip)]
+    saved: RemoteNotices,
     permission: Permission,
-}
-
-// Private decode shape keeps callers from bypassing restore() with public Deserialize.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SavedState {
-    version: u8,
-    opted_in: bool,
-    active: Vec<Subscription>,
-    revocations: Vec<Subscription>,
 }
 
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            version: VERSION,
-            opted_in: false,
-            active: Vec::new(),
-            revocations: Vec::new(),
+            saved: RemoteNotices::default(),
             permission: Permission::Unknown,
         }
     }
 }
 
 impl Policy {
-    pub fn restore(bytes: &[u8]) -> Result<Self, Error> {
-        if bytes.len() > MAX_STATE_BYTES {
-            return Err(Error::InvalidState);
-        }
-        let state: SavedState = serde_json::from_slice(bytes).map_err(|_| Error::InvalidState)?;
-        let entries = state
-            .active
-            .iter()
-            .chain(&state.revocations)
-            .collect::<Vec<_>>();
-        let ids = entries
-            .iter()
-            .map(|s| s.id)
-            .collect::<std::collections::HashSet<_>>();
-        let owners = state
-            .active
-            .iter()
-            .map(|s| (s.owner.vault_id, s.owner.link_id))
-            .collect::<std::collections::HashSet<_>>();
-        if state.version != VERSION
-            || state.active.len() > MAX_ACTIVE
-            || entries.len() > MAX_ENTRIES
-            || ids.len() != entries.len()
-            || owners.len() != state.active.len()
-            || (!state.opted_in && !state.active.is_empty())
-            || entries.iter().any(|s| {
-                !s.owner.valid()
-                    || s.id.is_nil()
-                    || s.epoch.is_nil()
-                    || s.last_notified > i64::MAX as u64
-            })
-        {
+    pub fn new(saved: RemoteNotices) -> Result<Self, Error> {
+        if !saved.valid() {
             return Err(Error::InvalidState);
         }
         Ok(Self {
-            version: state.version,
-            opted_in: state.opted_in,
-            active: state.active,
-            revocations: state.revocations,
+            saved,
             permission: Permission::Unknown,
         })
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>, Error> {
-        serde_json::to_vec(self).map_err(|_| Error::InvalidState)
+    pub fn saved(&self) -> &RemoteNotices {
+        &self.saved
     }
 
     pub fn opted_in(&self) -> bool {
-        self.opted_in
+        self.saved.opted_in
     }
+
     pub fn can_notify(&self) -> bool {
-        self.opted_in && self.permission == Permission::Granted
+        self.saved.opted_in && self.permission == Permission::Granted
     }
 
     /// Invoke only for the patient's explicit opt-in action, never during startup or polling.
     pub fn opt_in(&mut self) -> ConsentNext {
-        self.opted_in = true;
+        self.saved.opted_in = true;
         match self.permission {
             Permission::Unknown => ConsentNext::RequestPermission,
             Permission::Granted => ConsentNext::ConfigureDestinations,
@@ -263,148 +278,150 @@ impl Policy {
     }
 
     pub fn opt_out(&mut self) {
-        self.opted_in = false;
-        self.revocations.append(&mut self.active);
+        self.saved.opted_in = false;
+        self.saved.revocations.append(&mut self.saved.active);
     }
 
     pub fn permission_changed(&mut self, permission: Permission) {
         self.permission = permission;
         if permission == Permission::Denied {
-            self.revocations.append(&mut self.active);
+            self.saved.revocations.append(&mut self.saved.active);
         }
     }
 
-    /// Reserve a fresh native-generated destination under a verified active link, then persist
-    /// BEFORE provider/Portal enrollment. A later opt-out therefore retains its revocation even
-    /// if enrollment is still in flight. Server revocation must tombstone unknown IDs, so a late
-    /// enrollment cannot resurrect an already revoked destination. This is not server approval.
-    /// New epochs require fresh IDs; repeating this intent preserves the cursor.
+    /// The link's active destination, if it has one.
+    pub fn destination_for(&self, link_id: Uuid) -> Option<&Destination> {
+        self.saved
+            .active
+            .iter()
+            .find(|d| d.owner.link_id == link_id)
+    }
+
+    /// Reserve a fresh native-made destination for a link; save BEFORE enrolling it. A link
+    /// keeps one destination: reserving another sends the old one to revocation.
     pub fn reserve_destination(
         &mut self,
         owner: Owner,
         id: Uuid,
-        epoch: Uuid,
+        platform: Platform,
     ) -> Result<(), Error> {
         if !self.can_notify() {
             return Err(Error::Disabled);
         }
-        if !owner.valid() || id.is_nil() || epoch.is_nil() {
+        if !owner.valid() || id.is_nil() {
             return Err(Error::InvalidInput);
         }
-        if let Some(old) = self.active.iter().find(|s| s.id == id) {
-            return if old.owner == owner && old.epoch == epoch {
-                Ok(())
-            } else {
-                Err(Error::InvalidInput)
-            };
-        }
-        if self.revocations.iter().any(|s| s.id == id) {
+        if self
+            .saved
+            .active
+            .iter()
+            .chain(&self.saved.revocations)
+            .any(|d| d.id == id)
+        {
             return Err(Error::InvalidInput);
         }
         let replace = self
+            .saved
             .active
             .iter()
-            .position(|s| s.owner.vault_id == owner.vault_id && s.owner.link_id == owner.link_id);
-        if self.active.len() + self.revocations.len() >= MAX_ENTRIES
-            || (replace.is_none() && self.active.len() >= MAX_ACTIVE)
+            .position(|d| d.owner.link_id == owner.link_id);
+        if self.saved.active.len() + self.saved.revocations.len() >= MAX_ENTRIES
+            || (replace.is_none() && self.saved.active.len() >= MAX_ACTIVE)
         {
             return Err(Error::Capacity);
         }
         if let Some(index) = replace {
-            self.revocations.push(self.active.remove(index));
+            let old = self.saved.active.remove(index);
+            self.saved.revocations.push(old);
         }
-        self.active.push(Subscription {
+        self.saved.active.push(Destination {
             owner,
             id,
-            epoch,
-            last_notified: 0,
+            platform,
+            subscription_id: None,
         });
         Ok(())
     }
 
-    pub fn remove_owner(&mut self, owner: &Owner) {
-        if let Some(index) = self.active.iter().position(|s| &s.owner == owner) {
-            self.revocations.push(self.active.remove(index));
+    /// The portal enrolled this destination as `subscription_id`.
+    pub fn enrolled(&mut self, id: Uuid, subscription_id: Uuid) -> Result<(), Error> {
+        if subscription_id.is_nil() {
+            return Err(Error::InvalidInput);
         }
-    }
-
-    /// Invoke when a vault is replaced or reset, including while offline.
-    pub fn remove_vault(&mut self, vault_id: Uuid) {
-        let mut kept = Vec::new();
-        for subscription in self.active.drain(..) {
-            if subscription.owner.vault_id == vault_id {
-                self.revocations.push(subscription);
-            } else {
-                kept.push(subscription);
-            }
-        }
-        self.active = kept;
-    }
-
-    /// Pending destinations survive offline/restart. Acknowledge only after server revocation
-    /// commits; revocation authorization/credentials live in the native adapter, not this hint.
-    pub fn pending_revocations(&self) -> Vec<Uuid> {
-        self.revocations.iter().map(|s| s.id).collect()
-    }
-    pub fn revocation_owner(&self, id: Uuid) -> Option<&Owner> {
-        self.revocations
-            .iter()
-            .find(|s| s.id == id)
-            .map(|s| &s.owner)
-    }
-    pub fn revocation_acknowledged(&mut self, id: Uuid) {
-        self.revocations.retain(|s| s.id != id);
-    }
-
-    pub fn display_hint(
-        &mut self,
-        bytes: &[u8],
-        provider: &mut impl DisplayProvider,
-    ) -> Result<bool, Error> {
-        let hint = ReadyHint::decode(bytes)?;
-        if !self.can_notify() {
-            return Ok(false);
-        }
-        let Some(subscription) = self
+        let destination = self
+            .saved
             .active
             .iter_mut()
-            .find(|s| s.id == hint.subscription_id && s.epoch == hint.epoch)
-        else {
-            return Ok(false);
-        };
-        if hint.sequence <= subscription.last_notified {
-            return Ok(false);
+            .find(|d| d.id == id)
+            .ok_or(Error::InvalidInput)?;
+        match destination.subscription_id {
+            Some(known) if known != subscription_id => Err(Error::InvalidInput),
+            _ => {
+                destination.subscription_id = Some(subscription_id);
+                Ok(())
+            }
         }
-        provider
-            .show(GenericNotice { hint: &hint })
-            .map_err(|_| Error::DisplayFailed)?;
-        subscription.last_notified = hint.sequence;
-        Ok(true)
     }
 
-    pub fn activate(
-        &mut self,
-        bytes: &[u8],
-        current_vault: Uuid,
-        unlocked: bool,
-    ) -> Result<Option<Activation>, Error> {
-        let hint = ReadyHint::decode(bytes)?;
-        if !self.can_notify() {
-            return Ok(None);
+    /// Active destinations the portal has not enrolled yet.
+    pub fn unenrolled(&self) -> Vec<Destination> {
+        self.saved
+            .active
+            .iter()
+            .filter(|d| d.subscription_id.is_none())
+            .cloned()
+            .collect()
+    }
+
+    /// The portal will never enrol this id (it is revoked there, or another device holds it).
+    /// It leaves the active list without a revocation: there is nothing to stop.
+    pub fn forget_destination(&mut self, id: Uuid) {
+        self.saved.active.retain(|d| d.id != id);
+    }
+
+    /// The link is gone from this vault: its destination waits for its revocation.
+    pub fn remove_link(&mut self, link_id: Uuid) {
+        if let Some(index) = self
+            .saved
+            .active
+            .iter()
+            .position(|d| d.owner.link_id == link_id)
+        {
+            let old = self.saved.active.remove(index);
+            self.saved.revocations.push(old);
         }
-        let Some(subscription) = self.active.iter_mut().find(|s| {
-            s.id == hint.subscription_id
-                && s.epoch == hint.epoch
-                && s.owner.vault_id == current_vault
-        }) else {
-            return Ok(None);
-        };
-        subscription.last_notified = subscription.last_notified.max(hint.sequence);
-        Ok(Some(if unlocked {
-            Activation::ClinicDocuments
-        } else {
-            Activation::UnlockThenClinicDocuments
-        }))
+    }
+
+    /// Pending revocations survive locking and restarts; acknowledge each only after the portal
+    /// has committed it.
+    pub fn pending_revocations(&self) -> Vec<Destination> {
+        self.saved.revocations.clone()
+    }
+
+    pub fn revocation_acknowledged(&mut self, id: Uuid) {
+        self.saved.revocations.retain(|d| d.id != id);
+    }
+}
+
+/// Tokens already handled in this run, newest last. A duplicate push (a provider retry, or the
+/// same token on two destinations) reconciles once. Not saved: after a restart a repeat only
+/// costs one more document check.
+#[derive(Debug, Default)]
+pub struct RecentTokens(std::collections::VecDeque<NoticeToken>);
+
+impl RecentTokens {
+    const MAX: usize = 64;
+
+    /// Whether this token is new; it is remembered either way.
+    pub fn first_time(&mut self, token: &NoticeToken) -> bool {
+        if self.0.contains(token) {
+            return false;
+        }
+        if self.0.len() == Self::MAX {
+            self.0.pop_front();
+        }
+        self.0.push_back(token.clone());
+        true
     }
 }
 
@@ -412,244 +429,183 @@ impl Policy {
 mod tests {
     use super::*;
 
-    fn owner() -> Owner {
-        Owner::new(Uuid::from_u128(1), Uuid::from_u128(2), "A".repeat(43)).unwrap()
-    }
-    fn hint(id: u128, epoch: u128, sequence: u64) -> Vec<u8> {
-        serde_json::to_vec(&serde_json::json!({"version":1,"kind":"documents_ready","subscription_id":Uuid::from_u128(id),"epoch":Uuid::from_u128(epoch),"sequence":sequence})).unwrap()
+    fn owner(link: u128) -> Owner {
+        Owner::new(Uuid::from_u128(link), "A".repeat(43)).unwrap()
     }
     fn enabled() -> Policy {
         let mut p = Policy::default();
         assert_eq!(p.opt_in(), ConsentNext::RequestPermission);
         p.permission_changed(Permission::Granted);
-        p.reserve_destination(owner(), Uuid::from_u128(3), Uuid::from_u128(4))
+        p.reserve_destination(owner(2), Uuid::from_u128(3), Platform::WindowsWns)
             .unwrap();
         p
     }
-    #[derive(Default)]
-    struct RecordingProvider {
-        notices: Vec<(Uuid, String, String, Vec<u8>)>,
-        fail: bool,
-    }
-    impl DisplayProvider for RecordingProvider {
-        fn show(&mut self, notice: GenericNotice<'_>) -> Result<(), Error> {
-            if self.fail {
-                return Err(Error::DisplayFailed);
-            }
-            self.notices.push((
-                notice.notification_id(),
-                notice.title().into(),
-                notice.body().into(),
-                notice.activation_hint()?,
-            ));
-            Ok(())
-        }
+    fn restored(p: &Policy) -> Policy {
+        let json = serde_json::to_vec(p.saved()).unwrap();
+        Policy::new(serde_json::from_slice(&json).unwrap()).unwrap()
     }
 
     #[test]
-    fn os_permission_does_not_opt_in_or_prompt_on_restore() {
+    fn os_permission_neither_opts_in_nor_survives_a_restart() {
         let mut p = Policy::default();
         p.permission_changed(Permission::Granted);
         assert!(!p.opted_in());
-        assert!(!p
-            .display_hint(&hint(3, 4, 1), &mut RecordingProvider::default())
-            .unwrap());
         assert_eq!(
-            p.reserve_destination(owner(), Uuid::from_u128(3), Uuid::from_u128(4)),
+            p.reserve_destination(owner(2), Uuid::from_u128(3), Platform::WindowsWns),
             Err(Error::Disabled)
         );
         p.permission_changed(Permission::Denied);
         assert_eq!(p.opt_in(), ConsentNext::OpenSystemSettings);
-        let restored = Policy::restore(&p.encode().unwrap()).unwrap();
+        let restored = restored(&p);
         assert!(restored.opted_in());
         assert!(!restored.can_notify());
         assert_eq!(restored.permission, Permission::Unknown);
     }
 
     #[test]
-    fn hints_reject_patient_text_urls_oversize_and_future_schemas() {
-        let mut value: serde_json::Value = serde_json::from_slice(&hint(3, 4, 1)).unwrap();
-        value["filename"] = "FAKE_private_document.pdf".into();
-        assert!(ReadyHint::decode(&serde_json::to_vec(&value).unwrap()).is_err());
-        value.as_object_mut().unwrap().remove("filename");
-        value["url"] = "https://untrusted.invalid/document".into();
-        assert!(ReadyHint::decode(&serde_json::to_vec(&value).unwrap()).is_err());
-        let mut oversized = hint(3, 4, 1);
-        oversized.resize(MAX_HINT_BYTES + 1, b' '); // Otherwise valid JSON with trailing whitespace.
-        assert!(ReadyHint::decode(&oversized).is_err());
-        value.as_object_mut().unwrap().remove("url");
-        value["version"] = 2.into();
-        assert!(ReadyHint::decode(&serde_json::to_vec(&value).unwrap()).is_err());
-        assert!(ReadyHint::decode(&hint(3, 4, 0)).is_err());
-        assert!(ReadyHint::decode(&hint(3, 4, u64::MAX)).is_err());
-    }
-
-    #[test]
-    fn foreground_and_push_share_cursor_and_generic_replacement_identity() {
-        let mut p = enabled();
-        let mut provider = RecordingProvider::default();
-        assert!(p.display_hint(&hint(3, 4, 10), &mut provider).unwrap());
-        assert!(!p.display_hint(&hint(3, 4, 10), &mut provider).unwrap());
-        assert!(!p.display_hint(&hint(3, 4, 9), &mut provider).unwrap());
-        assert!(p.display_hint(&hint(3, 4, 11), &mut provider).unwrap());
-        assert_eq!(provider.notices.len(), 2);
-        for (id, title, body, payload) in provider.notices {
-            assert_eq!(id, Uuid::from_u128(3));
-            assert_eq!(title, "myCarlos");
-            assert_eq!(body, "A new document is available in myCarlos.");
-            assert!(ReadyHint::decode(&payload).is_ok());
+    fn notice_tokens_are_checked_for_shape_only() {
+        assert!(NoticeToken::parse("AbCdEfGhIjKlMnOpQr-_01").is_ok());
+        for bad in [
+            "",
+            "AbCdEfGhIjKlMnOpQr-_0",
+            "AbCdEfGhIjKlMnOpQr-_012",
+            "AbCdEfGhIjKlMnOpQr+/01",
+            "AbCdEfGhIjKlMnOpQr-_0=",
+            "{\"subscription_id\":1}..",
+        ] {
+            assert_eq!(NoticeToken::parse(bad), Err(Error::InvalidInput), "{bad}");
         }
     }
 
     #[test]
-    fn failed_display_retries_and_saved_cursor_survives_reconnect() {
-        let mut p = enabled();
-        let mut provider = RecordingProvider {
-            fail: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            p.display_hint(&hint(3, 4, 1), &mut provider),
-            Err(Error::DisplayFailed)
-        );
-        provider.fail = false;
-        assert!(p.display_hint(&hint(3, 4, 1), &mut provider).unwrap());
-        let mut restored = Policy::restore(&p.encode().unwrap()).unwrap();
-        assert!(!restored
-            .display_hint(&hint(3, 4, 2), &mut provider)
-            .unwrap());
-        restored.permission_changed(Permission::Granted);
-        assert!(!restored
-            .display_hint(&hint(3, 4, 1), &mut provider)
-            .unwrap());
-        assert!(restored
-            .display_hint(&hint(3, 4, 2), &mut provider)
-            .unwrap());
-        assert_eq!(provider.notices.len(), 2);
+    fn a_token_reconciles_once_and_the_oldest_are_forgotten() {
+        let mut recent = RecentTokens::default();
+        let token = |n: usize| NoticeToken::parse(&format!("{n:0>22}")).unwrap();
+        assert!(recent.first_time(&token(1)));
+        assert!(!recent.first_time(&token(1)));
+        for n in 2..=RecentTokens::MAX + 1 {
+            assert!(recent.first_time(&token(n)));
+        }
+        // token 1 fell out of the window: a very late repeat only costs one more check.
+        assert!(recent.first_time(&token(1)));
     }
 
     #[test]
-    fn activation_only_routes_current_owner_through_normal_unlock() {
+    fn a_destination_is_saved_before_enrollment_and_keeps_one_subscription() {
         let mut p = enabled();
+        assert_eq!(p.unenrolled().len(), 1);
+        p.enrolled(Uuid::from_u128(3), Uuid::from_u128(30)).unwrap();
+        assert!(p.unenrolled().is_empty());
+        // The same answer again is harmless; a different one is refused.
+        p.enrolled(Uuid::from_u128(3), Uuid::from_u128(30)).unwrap();
         assert_eq!(
-            p.activate(&hint(3, 4, 1), Uuid::from_u128(99), true)
-                .unwrap(),
-            None
+            p.enrolled(Uuid::from_u128(3), Uuid::from_u128(31)),
+            Err(Error::InvalidInput)
         );
         assert_eq!(
-            p.activate(&hint(3, 99, 1), owner().vault_id, true).unwrap(),
-            None
+            p.enrolled(Uuid::from_u128(99), Uuid::from_u128(30)),
+            Err(Error::InvalidInput)
         );
+        let restored = restored(&p);
         assert_eq!(
-            p.activate(&hint(3, 4, 1), owner().vault_id, false).unwrap(),
-            Some(Activation::UnlockThenClinicDocuments)
+            restored
+                .destination_for(Uuid::from_u128(2))
+                .unwrap()
+                .subscription_id(),
+            Some(Uuid::from_u128(30))
         );
-        assert_eq!(
-            p.activate(&hint(3, 4, 1), owner().vault_id, true).unwrap(),
-            Some(Activation::ClinicDocuments)
-        );
-        assert!(!p
-            .display_hint(&hint(3, 4, 1), &mut RecordingProvider::default())
-            .unwrap());
     }
 
     #[test]
-    fn removal_and_opt_out_suppress_queued_delivery_and_preserve_revocation() {
+    fn opt_out_and_denied_permission_queue_every_destination_for_revocation() {
         let mut p = enabled();
-        let other = Owner::new(owner().vault_id, Uuid::from_u128(20), "B".repeat(43)).unwrap();
-        p.reserve_destination(other, Uuid::from_u128(30), Uuid::from_u128(40))
+        p.reserve_destination(owner(20), Uuid::from_u128(30), Platform::WindowsWns)
             .unwrap();
-        p.remove_owner(&owner());
-        assert_eq!(p.pending_revocations(), vec![Uuid::from_u128(3)]);
-        assert!(p.revocation_owner(Uuid::from_u128(3)) == Some(&owner()));
-        assert_eq!(
-            p.activate(&hint(3, 4, 1), owner().vault_id, false).unwrap(),
-            None
-        );
-        let mut provider = RecordingProvider::default();
-        assert!(!p.display_hint(&hint(3, 4, 1), &mut provider).unwrap());
-        assert!(p.display_hint(&hint(30, 40, 1), &mut provider).unwrap());
         p.opt_out();
-        let mut restored = Policy::restore(&p.encode().unwrap()).unwrap();
-        restored.permission_changed(Permission::Granted);
-        assert!(!restored
-            .display_hint(&hint(30, 40, 2), &mut provider)
-            .unwrap());
-        assert_eq!(restored.pending_revocations().len(), 2);
-        restored.revocation_acknowledged(Uuid::from_u128(3));
-        assert_eq!(restored.pending_revocations(), vec![Uuid::from_u128(30)]);
-    }
+        assert!(!p.can_notify());
+        assert_eq!(p.pending_revocations().len(), 2);
+        let mut p = restored(&p);
+        p.revocation_acknowledged(Uuid::from_u128(3));
+        assert_eq!(
+            p.pending_revocations()
+                .iter()
+                .map(Destination::id)
+                .collect::<Vec<_>>(),
+            [Uuid::from_u128(30)]
+        );
 
-    #[test]
-    fn denied_permission_revokes_without_clearing_product_preference() {
         let mut p = enabled();
         p.permission_changed(Permission::Denied);
         assert!(p.opted_in());
         assert!(!p.can_notify());
-        assert_eq!(p.pending_revocations(), vec![Uuid::from_u128(3)]);
-        p.permission_changed(Permission::Granted);
-        assert!(!p
-            .display_hint(&hint(3, 4, 1), &mut RecordingProvider::default())
-            .unwrap());
+        assert_eq!(p.pending_revocations().len(), 1);
     }
 
     #[test]
-    fn reset_revokes_old_vault_and_cannot_route_its_pending_activation() {
+    fn a_link_keeps_one_destination_and_an_old_id_never_comes_back() {
         let mut p = enabled();
-        p.remove_vault(owner().vault_id);
-        assert_eq!(p.pending_revocations(), vec![Uuid::from_u128(3)]);
+        p.reserve_destination(owner(2), Uuid::from_u128(5), Platform::WindowsWns)
+            .unwrap();
         assert_eq!(
-            p.activate(&hint(3, 4, 1), owner().vault_id, true).unwrap(),
-            None
+            p.destination_for(Uuid::from_u128(2)).unwrap().id(),
+            Uuid::from_u128(5)
         );
-        assert!(!p
-            .display_hint(&hint(3, 4, 1), &mut RecordingProvider::default())
-            .unwrap());
+        assert_eq!(p.pending_revocations()[0].id(), Uuid::from_u128(3));
+        for reused in [3, 5] {
+            assert_eq!(
+                p.reserve_destination(owner(7), Uuid::from_u128(reused), Platform::WindowsWns),
+                Err(Error::InvalidInput)
+            );
+        }
+        p.remove_link(Uuid::from_u128(2));
+        assert!(p.destination_for(Uuid::from_u128(2)).is_none());
+        assert_eq!(p.pending_revocations().len(), 2);
+        p.reserve_destination(owner(8), Uuid::from_u128(9), Platform::WindowsWns)
+            .unwrap();
+        p.forget_destination(Uuid::from_u128(9));
+        assert!(p.destination_for(Uuid::from_u128(8)).is_none());
+        assert_eq!(p.pending_revocations().len(), 2);
     }
 
     #[test]
-    fn repeated_enrollment_intent_keeps_cursor_and_rotation_rejects_old_epoch() {
-        let mut p = enabled();
-        let mut provider = RecordingProvider::default();
-        assert!(p.display_hint(&hint(3, 4, 1), &mut provider).unwrap());
-        p.reserve_destination(owner(), Uuid::from_u128(3), Uuid::from_u128(4))
-            .unwrap();
-        assert!(!p.display_hint(&hint(3, 4, 1), &mut provider).unwrap());
-        assert_eq!(
-            p.reserve_destination(owner(), Uuid::from_u128(3), Uuid::from_u128(5)),
-            Err(Error::InvalidInput)
-        );
-        p.reserve_destination(owner(), Uuid::from_u128(5), Uuid::from_u128(6))
-            .unwrap();
-        assert!(!p.display_hint(&hint(3, 4, 2), &mut provider).unwrap());
-        assert!(!p.display_hint(&hint(5, 4, 1), &mut provider).unwrap());
-        assert!(p.display_hint(&hint(5, 6, 1), &mut provider).unwrap());
-    }
-
-    #[test]
-    fn offline_rotation_bound_never_prevents_opt_out() {
+    fn the_bound_never_prevents_opt_out() {
         let mut p = enabled();
         for n in 1..MAX_ENTRIES {
             p.reserve_destination(
-                owner(),
+                owner(2),
                 Uuid::from_u128(100 + n as u128),
-                Uuid::from_u128(500 + n as u128),
+                Platform::WindowsWns,
             )
             .unwrap();
         }
         assert_eq!(
-            p.reserve_destination(owner(), Uuid::from_u128(999), Uuid::from_u128(1000)),
+            p.reserve_destination(owner(2), Uuid::from_u128(999), Platform::WindowsWns),
             Err(Error::Capacity)
         );
         p.opt_out();
         assert_eq!(p.pending_revocations().len(), MAX_ENTRIES);
-        assert!(Policy::restore(&p.encode().unwrap()).is_ok());
+        let _ = restored(&p);
     }
 
     #[test]
-    fn saved_state_cannot_enable_an_opted_out_registration() {
-        let mut value = serde_json::to_value(enabled()).unwrap();
-        value["opted_in"] = false.into();
-        assert!(Policy::restore(&serde_json::to_vec(&value).unwrap()).is_err());
+    fn a_saved_state_is_checked_before_it_is_used() {
+        let mut value = serde_json::to_value(enabled().saved()).unwrap();
+        value["optedIn"] = false.into();
+        let opted_out: RemoteNotices = serde_json::from_value(value.clone()).unwrap();
+        assert!(!opted_out.valid());
+        assert_eq!(Policy::new(opted_out).unwrap_err(), Error::InvalidState);
+        value["optedIn"] = true.into();
+        value["active"][0]["subscriptionId"] = Uuid::nil().to_string().into();
+        assert!(!serde_json::from_value::<RemoteNotices>(value.clone())
+            .unwrap()
+            .valid());
+        value["active"][0]["providerToken"] = "FAKE".into();
+        assert!(serde_json::from_value::<RemoteNotices>(value).is_err());
+        assert!(RemoteNotices::default().is_empty());
+        assert!(!enabled().saved().is_empty());
+        assert_eq!(
+            serde_json::to_value(Platform::MacosApns).unwrap(),
+            Platform::MacosApns.wire()
+        );
     }
 }
