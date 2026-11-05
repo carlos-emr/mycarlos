@@ -69,6 +69,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       checkedFromMs: null,
     }),
     isLockedPdf: vi.fn().mockResolvedValue(false),
+    isPhoto: vi.fn().mockResolvedValue(false),
     aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
@@ -1084,4 +1085,75 @@ describe("Audit history keeps Security's Hidden location", () => {
       ).not.toBeInTheDocument();
     },
   );
+});
+
+describe("reading aid button in document details", () => {
+  const readingAid = {
+    deliveryId: "aid-1",
+    language: "en",
+    reviewedAtMs: 1_792_450_680_000,
+    notice: { version: "carlos-5537-en-1", heading: "FAKE", body: "FAKE" },
+    overview: "FAKE overview.",
+    points: [],
+  };
+  const openDetails = (name: string) => {
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText(`Details for ${name}`) }),
+    );
+    return screen.getByRole("dialog", { name: humanText(name) });
+  };
+
+  it("appears beside Read for a PDF delivery that has an aid", () => {
+    renderLibrary({
+      ...snapshot,
+      records: [{ ...record("with-aid", "FAKE Result.pdf", []), readingAid }],
+    });
+    const details = openDetails("FAKE Result.pdf");
+    expect(
+      within(details).getByRole("button", { name: humanText("Read") }),
+    ).toBeVisible();
+    expect(
+      within(details).getByRole("button", {
+        name: humanText("Read the reading aid"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("is absent for a PDF without an aid", () => {
+    renderLibrary({
+      ...snapshot,
+      records: [record("no-aid", "FAKE Plain.pdf", [])],
+    });
+    const details = openDetails("FAKE Plain.pdf");
+    expect(
+      within(details).getByRole("button", { name: humanText("Read") }),
+    ).toBeVisible();
+    expect(
+      within(details).queryByRole("button", {
+        name: humanText("Read the reading aid"),
+      }),
+    ).toBeNull();
+  });
+
+  it("is absent wherever Read is absent, even when an aid is filed", () => {
+    renderLibrary({
+      ...snapshot,
+      records: [
+        {
+          ...record("not-pdf", "FAKE Notes.txt", []),
+          mediaType: "text/plain",
+          readingAid,
+        },
+      ],
+    });
+    const details = openDetails("FAKE Notes.txt");
+    expect(
+      within(details).queryByRole("button", { name: humanText("Read") }),
+    ).toBeNull();
+    expect(
+      within(details).queryByRole("button", {
+        name: humanText("Read the reading aid"),
+      }),
+    ).toBeNull();
+  });
 });

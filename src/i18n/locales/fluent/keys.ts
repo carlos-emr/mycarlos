@@ -704,6 +704,7 @@ export const MESSAGE_KEYS = [
   "interface.history.event.moved",
   "interface.history.event.passphraseChanged",
   "interface.history.event.profileCreated",
+  "interface.history.event.readingAidFiled",
   "interface.history.event.recoveryKeySet",
   "interface.history.event.renamed",
   "interface.history.event.restored",
@@ -713,6 +714,7 @@ export const MESSAGE_KEYS = [
   "interface.history.from",
   "interface.history.gap",
   "interface.history.how",
+  "interface.history.how.aidReplaced",
   "interface.history.how.camera",
   "interface.history.how.damaged",
   "interface.history.how.importedShared",
@@ -1674,6 +1676,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-event-passphraseChanged",
   "interface.history.event.profileCreated":
     "interface-history-event-profileCreated",
+  "interface.history.event.readingAidFiled":
+    "interface-history-event-readingAidFiled",
   "interface.history.event.recoveryKeySet":
     "interface-history-event-recoveryKeySet",
   "interface.history.event.renamed": "interface-history-event-renamed",
@@ -1684,6 +1688,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.from": "interface-history-from",
   "interface.history.gap": "interface-history-gap",
   "interface.history.how": "interface-history-how",
+  "interface.history.how.aidReplaced": "interface-history-how-aidReplaced",
   "interface.history.how.camera": "interface-history-how-camera",
   "interface.history.how.damaged": "interface-history-how-damaged",
   "interface.history.how.importedShared":
@@ -2669,6 +2674,7 @@ export interface MessageArgsByKey {
   "interface.history.event.moved": undefined;
   "interface.history.event.passphraseChanged": undefined;
   "interface.history.event.profileCreated": undefined;
+  "interface.history.event.readingAidFiled": undefined;
   "interface.history.event.recoveryKeySet": undefined;
   "interface.history.event.renamed": undefined;
   "interface.history.event.restored": undefined;
@@ -2678,6 +2684,7 @@ export interface MessageArgsByKey {
   "interface.history.from": undefined;
   "interface.history.gap": undefined;
   "interface.history.how": undefined;
+  "interface.history.how.aidReplaced": undefined;
   "interface.history.how.camera": undefined;
   "interface.history.how.damaged": undefined;
   "interface.history.how.importedShared": undefined;
