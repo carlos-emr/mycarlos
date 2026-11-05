@@ -71,3 +71,30 @@ describe("eponyms and drug names are never taken for names", () => {
     expect(out).toMatch(/Dr\. \[DOCTOR \d\] and Dr\. \[DOCTOR \d\]/);
   });
 });
+
+describe("record-number shapes and spaced social insurance numbers", () => {
+  it.each([
+    ["Policy no. GRP-00731-554/02 on file.", "GRP-00731"],
+    ["Certificate: 7-2204518 issued.", "2204518"],
+    ["Exam #: LL9999-99999 done.", "LL9999"],
+    ["Visit: L2026001234 today.", "2026001234"],
+    ["Examen n° AB-26-004517 fait.", "004517"],
+    ["dossier 1234 5678 ouvert.", "5678"],
+    ["Usager n° 2026-LLL-99999.", "99999"],
+    ["Prontuário: 1234.567-8.", "1234.567"],
+    ["Nr księgi głównej: 2026/99999.", "99999"],
+    ["NHC: 12345678.", "12345678"],
+    ["NAS: 123  456  789", "456"],
+  ])("%s", (text, secret) => {
+    expect(send(text)).not.toContain(secret);
+  });
+
+  it.each([
+    "Visit: 2 weeks from now.",
+    "Reference: see page 12.",
+    "Dossier complet reçu.",
+    "Exam: 3 views taken.",
+  ])("leaves ordinary text alone: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});

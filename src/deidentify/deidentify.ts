@@ -1186,6 +1186,18 @@ const RULES: Rule[] = [
     group: 1,
     upperPrefix: true,
   },
+  // More record-number labels (policy, certificate, exam, visit, student, file; the French,
+  // Spanish, Portuguese and Polish words for them), then a code of four or more digits with
+  // letters, hyphens, slashes or dots: "Policy no. GRP-00731-554/02", "Examen n° AB-26-004517",
+  // "Prontuário: 1234.567-8", "dossier 1234 5678".
+  {
+    kind: "recordNumber",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice)(?:[ \\t]+(?:number|no\\.?|n°|nº|#|numéro|número))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,5})?)`,
+      "giu",
+    ),
+    group: 1,
+  },
   {
     kind: "dateOfBirth",
     pattern: new RegExp(
@@ -1225,7 +1237,7 @@ const RULES: Rule[] = [
   {
     kind: "sin",
     pattern:
-      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber| [Nn]o\.?| #)?|[Nn]uméro d['’]assurance sociale)[ \t]*[:#]?[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/gu,
+      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber| [Nn]o\.?| #)?|[Nn]uméro d['’]assurance sociale)[ \t]*[:#]?[ \t]*(\d{3}[ .-]{0,2}\d{3}[ .-]{0,2}\d{3})\b/gu,
     group: 1,
   },
   // A sensitive field may describe a value as valid, invalid or mistyped.
@@ -1234,7 +1246,7 @@ const RULES: Rule[] = [
   {
     kind: "sin",
     pattern:
-      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber)?|[Nn]uméro d['’]assurance sociale)[ \t]+[\p{L}][\p{L}'’ -]{0,47}[ \t]*[:#]?[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/gu,
+      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber)?|[Nn]uméro d['’]assurance sociale)[ \t]+[\p{L}][\p{L}'’ -]{0,47}[ \t]*[:#]?[ \t]*(\d{3}[ .-]{0,2}\d{3}[ .-]{0,2}\d{3})\b/gu,
     group: 1,
   },
   // Known cost: any nine digits in equal threes match, so "Lot 123.456.789"
@@ -1759,7 +1771,7 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       // field. An unrelated nine-digit measurement never inherits it.
       if (rule.kind === "sin") {
         const control =
-          /^[ \t]*;[ \t]*(?:checksum[- ](?:in)?valid[ \t]+control|controle[ \t]+a[ \t]+somme[ \t]+(?:in)?valide)[ \t]*:[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/iu.exec(
+          /^[ \t]*;[ \t]*(?:checksum[- ](?:in)?valid[ \t]+control|controle[ \t]+a[ \t]+somme[ \t]+(?:in)?valide)[ \t]*:[ \t]*(\d{3}[ .-]{0,2}\d{3}[ .-]{0,2}\d{3})\b/iu.exec(
             text.slice(end),
           );
         if (control) {
