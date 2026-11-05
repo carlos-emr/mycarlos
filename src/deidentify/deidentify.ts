@@ -99,6 +99,9 @@ export interface OnDevice {
   labels: PlaceholderLabels;
   /** The notes written after a placeholder's number, kept for `removeMore`. */
   notes: PlaceholderNotes;
+  /** The other languages' placeholder words and notes (#215), kept for
+   * `removeMore` and `restoreChecked`. None in a result from before #215. */
+  otherLanguages?: PlaceholderVocabulary[];
   /** The document as the file will hold it before any removal: the text
    * given, cleaned (`cleanText`). */
   source: string;
@@ -134,10 +137,22 @@ export interface DeidentifyOptions {
    * date becomes a plain placeholder with no gap; this only decides which
    * day it is when it is a known birth date. */
   dayFirst?: boolean;
-  /** The placeholder words, in the app's language; English when not given. */
+  /** The placeholder words, in the document's language (#215); English when
+   * not given. */
   labels?: Partial<PlaceholderLabels>;
-  /** The notes after a placeholder's number, in the app's language. */
+  /** The notes after a placeholder's number, in the document's language. */
   notes?: Partial<PlaceholderNotes>;
+  /** The same words and notes in the app's other languages (#215). They are
+   * never written, but a new placeholder skips a number that one of them
+   * already shows in the document, and an answer that writes one of this
+   * export's placeholders in one of them still puts its detail back. */
+  otherLanguages?: PlaceholderVocabulary[];
+}
+
+/** One language's placeholder words and notes (#215). */
+export interface PlaceholderVocabulary {
+  labels: PlaceholderLabels;
+  notes: PlaceholderNotes;
 }
 
 /** The notes a placeholder can carry after its number: "[DATE 2, 14 days
@@ -2035,6 +2050,7 @@ export function deidentify(
     dayFirst,
     labels,
     notes,
+    otherLanguages: options.otherLanguages ?? [],
     cleaning: {
       replacedRuns: cleaned.replacedRuns,
       droppedCodePoints: cleaned.droppedCodePoints,
@@ -2047,13 +2063,20 @@ function nextPlaceholder(
   label: string,
   first: number,
   reserved: Set<string>,
+  /** The same kind's word in the other languages (#215): a number one of
+   * them already shows in the document is skipped too, so that a pasted
+   * answer can read that mark in any language. */
+  otherWords: readonly string[] = [],
 ): { number: number; replacement: string } {
   let number = first;
   // Check the complete candidate directly: custom labels can contain any
   // other marker, including an overlapping marker at the same position.
+  const written = (word: string, number: number) =>
+    source.includes(`[${word} ${number}]`) ||
+    source.includes(`[${word} ${number},`);
   while (
-    source.includes(`[${label} ${number}]`) ||
-    source.includes(`[${label} ${number},`) ||
+    written(label, number) ||
+    otherWords.some((word) => written(word, number)) ||
     reserved.has(`[${label} ${number}]`)
   )
     number++;
@@ -2076,6 +2099,7 @@ function build(
   settings: Omit<OnDevice, "removed" | "possibleNames" | "source">,
 ): Deidentified {
   const { dayFirst, labels, notes } = settings;
+  const others = settings.otherLanguages ?? [];
   // One placeholder per distinct detail of a kind (and per person, for
   // names), numbered in the order first seen.
   const numbers = new Map<string, number>();
@@ -2085,15 +2109,17 @@ function build(
       finding.replacement === undefined ? [] : [baseOf(finding.replacement)],
     ),
   );
-  /** The number for a detail: its own, once, then the same again. */
-  const numberFor = (counter: string, label: string, identity: string) => {
+  /** The number for a detail: its own, once, then the same again. `word`
+   * names the placeholder word (dates use `unclearDate`'s). */
+  const numberFor = (counter: string, word: RemovedKind, identity: string) => {
     let number = numbers.get(identity);
     if (number === undefined) {
       number = nextPlaceholder(
         source,
-        label,
+        labels[word],
         (counts.get(counter) ?? 0) + 1,
         reserved,
+        others.map((other) => other.labels[word]),
       ).number;
       counts.set(counter, number);
       numbers.set(identity, number);
@@ -2114,7 +2140,7 @@ function build(
       finding.group ??
       (kind === "doctor" ? words[words.length - 1] : words.join(" "))
     }`;
-    const number = numberFor(kind, labels[kind], identity);
+    const number = numberFor(kind, kind, identity);
     return noted(
       labels[kind],
       number,
@@ -2156,12 +2182,12 @@ function build(
   const earliestDay = earliest ? earliest[1] : 0;
   let earliestNumber = 0;
   calendar.forEach(([iso]) => {
-    const number = numberFor("date", dateWord, `date:${iso}`);
+    const number = numberFor("date", "unclearDate", `date:${iso}`);
     if (earliest && iso === earliest[0]) earliestNumber = number;
   });
   const datePlaceholder = (reading: DateReading) => {
     if (reading.kind === "full") {
-      const number = numberFor("date", dateWord, `date:${reading.iso}`);
+      const number = numberFor("date", "unclearDate", `date:${reading.iso}`);
       const days = reading.epochDay - earliestDay;
       return noted(
         dateWord,
@@ -2173,7 +2199,7 @@ function build(
     }
     return noted(
       dateWord,
-      numberFor("date", dateWord, `${reading.kind}:${reading.key}`),
+      numberFor("date", "unclearDate", `${reading.kind}:${reading.key}`),
     );
   };
 
@@ -2293,6 +2319,7 @@ export function removeMore(
     settings.labels.manual,
     manual.length + 1,
     new Set(removed.map((part) => baseOf(part.replacement))),
+    (settings.otherLanguages ?? []).map((other) => other.labels.manual),
   ).replacement;
   // Everything already decided stays as it was; only the new part is new.
   // A flagged word stays flagged unless the new part takes it.
@@ -2342,6 +2369,87 @@ export function parsePlaceholder(
 const PLACEHOLDER_SHAPE =
   /\[([^\][,\d\n][^\][,\n]*?) (\d+)(?:, ([^\][\n]+))?\]/gu;
 
+/** What one of this export's placeholders says (#215): its number and its
+ * note, read back from the words it was written with. Null when it is not
+ * one of these words' placeholders (a custom label, say): it is then put
+ * back only as written. */
+interface Mark {
+  number: number;
+  ageOver90?: true;
+  daysAfter?: { days: number; ref: number };
+}
+
+function readMark(
+  replacement: string,
+  word: string,
+  dateWord: string,
+  notes: PlaceholderNotes,
+): Mark | null {
+  const head = `[${word} `;
+  if (!replacement.startsWith(head) || !replacement.endsWith("]")) return null;
+  const inner = /^(\d+)(?:, ([^]+))?$/u.exec(
+    replacement.slice(head.length, -1),
+  );
+  if (!inner) return null;
+  const number = Number(inner[1]);
+  const note = inner[2];
+  if (note === undefined) return { number };
+  if (note === notes.ageOver90) return { number, ageOver90: true };
+  // A gap note: find its two numbers by writing it again. A language may
+  // group the digits of a long gap ("1,234", "1 234").
+  const values = new Set<number>();
+  for (const run of note.matchAll(/\d+(?:[,.   ]\d{3})*/gu)) {
+    values.add(Number(run[0].replace(/\D/gu, "")));
+    for (const digits of run[0].match(/\d+/gu) ?? [])
+      values.add(Number(digits));
+  }
+  for (const days of values)
+    for (const ref of values)
+      if (notes.daysAfter(days, dateWord, ref) === note)
+        return { number, daysAfter: { days, ref } };
+  return null;
+}
+
+/** One of this export's placeholders as each language writes it: the same
+ * kind, number and note, the word from one language and the note from any
+ * (an answer may translate one and not the other). The first language is
+ * the export's own. A word that is another kind's in some language is used
+ * only when it is the export's own word for this kind. */
+function spellings(
+  part: Removed,
+  languages: PlaceholderVocabulary[],
+  kindsOf: Map<string, Set<RemovedKind>>,
+): string[] {
+  const kind: RemovedKind = part.kind === "date" ? "unclearDate" : part.kind;
+  const [own] = languages;
+  const mark = readMark(
+    part.replacement,
+    own.labels[kind],
+    own.labels.unclearDate,
+    own.notes,
+  );
+  if (!mark) return [];
+  const noteIn = (language: PlaceholderVocabulary) =>
+    mark.ageOver90
+      ? language.notes.ageOver90
+      : mark.daysAfter
+        ? language.notes.daysAfter(
+            mark.daysAfter.days,
+            language.labels.unclearDate,
+            mark.daysAfter.ref,
+          )
+        : undefined;
+  const result = new Set<string>();
+  for (const language of languages) {
+    const word = language.labels[kind];
+    if ((kindsOf.get(word)?.size ?? 0) > 1 && word !== own.labels[kind])
+      continue;
+    for (const noteLanguage of languages)
+      result.add(noted(word, mark.number, noteIn(noteLanguage)));
+  }
+  return [...result];
+}
+
 /** One stretch of a pasted answer: as it was, put back, or placeholder-shaped
  * text that is not one of this export's. */
 export interface RestoredPart {
@@ -2362,12 +2470,21 @@ export interface RestoredPart {
  * spellings comes back as the first one. Ambiguous placeholders from older
  * snapshots (literal source markers or conflicting manual IDs) stay
  * unresolved, and are flagged.
+ *
+ * The answer may write a placeholder in another of the app's languages
+ * (#215): the AI translated it, or was asked to answer in another language.
+ * It is put back when it is the same mark, word, number and note, in one of
+ * `otherLanguages`: "[DATE 2, 14 jours après DATE 1]" for "[DATE 2, 14 days
+ * after DATE 1]". A word that means another kind in another language is
+ * read only in this export's own words, and a mark that any language's
+ * wording of it already shows in the document stays unresolved.
  */
 export function restoreChecked(
   answer: string,
   deidentified: Deidentified,
 ): { text: string; parts: RestoredPart[]; flagged: string[] } {
   const back = new Map<string, string>();
+  const firstPart = new Map<string, Removed>();
   const manualTokens = new Set(
     deidentified.onDevice.removed
       .filter((part) => part.kind === "manual")
@@ -2385,22 +2502,58 @@ export function restoreChecked(
       previous !== part.original
     )
       conflictingManual.add(part.replacement);
-    if (previous === undefined) back.set(part.replacement, part.original);
+    if (previous === undefined) {
+      back.set(part.replacement, part.original);
+      firstPart.set(part.replacement, part);
+    }
   }
-  const source = deidentified.onDevice.source;
+  const { source, labels, notes } = deidentified.onDevice;
+  const languages: PlaceholderVocabulary[] = [
+    { labels, notes },
+    ...(deidentified.onDevice.otherLanguages ?? []),
+  ];
+  // Each placeholder of this export as every language writes it (#215).
+  const spelled = new Map<string, string[]>();
+  if (languages.length > 1) {
+    const kindsOf = new Map<string, Set<RemovedKind>>();
+    for (const language of languages)
+      for (const kind of Object.keys(language.labels) as RemovedKind[]) {
+        const word = language.labels[kind];
+        kindsOf.set(word, (kindsOf.get(word) ?? new Set()).add(kind));
+      }
+    for (const [replacement, part] of firstPart)
+      spelled.set(replacement, spellings(part, languages, kindsOf));
+  }
   for (const part of deidentified.onDevice.removed) {
     // Older snapshots may reuse a literal marker from the source. An answer
     // cannot tell its occurrences apart: leave that marker unresolved rather
     // than insert a person's detail into literal text. New allocations avoid
-    // that ambiguity.
-    const base = baseOf(part.replacement);
+    // that ambiguity, in every language's wording of the mark.
+    const bases = [
+      part.replacement,
+      ...(spelled.get(part.replacement) ?? []),
+    ].map(baseOf);
     if (
       conflictingManual.has(part.replacement) ||
-      source.includes(base) ||
-      source.includes(base.slice(0, -1) + ",")
+      bases.some(
+        (base) =>
+          source.includes(base) || source.includes(base.slice(0, -1) + ","),
+      )
     )
       back.delete(part.replacement);
   }
+  // The other languages' spellings of what can be put back; null when two
+  // details would share one (flagged, never guessed).
+  const elsewhere = new Map<string, string | null>();
+  for (const [replacement, original] of back)
+    for (const spelling of spelled.get(replacement) ?? []) {
+      if (spelling === replacement) continue;
+      const seen = elsewhere.get(spelling);
+      const clash =
+        (seen !== undefined && seen !== original) ||
+        (firstPart.has(spelling) && back.get(spelling) !== original);
+      elsewhere.set(spelling, clash ? null : original);
+    }
   const parts: RestoredPart[] = [];
   const flagged: string[] = [];
   let at = 0;
@@ -2414,9 +2567,9 @@ export function restoreChecked(
   // A near miss is flagged too: this export's label words followed by a
   // number, in brackets or parentheses with any spacing and case, or bare in
   // capitals ("DATE 1" in a sentence). An answer often refers to a mark that
-  // way, and it must not pass as "all matched".
+  // way, and it must not pass as "all matched". Every language's words count.
   const labelWords = [
-    ...new Set(Object.values(deidentified.onDevice.labels)),
+    ...new Set(languages.flatMap((language) => Object.values(language.labels))),
   ].sort((x, y) => y.length - x.length);
   const caseless = (word: string) =>
     [...word]
@@ -2436,8 +2589,11 @@ export function restoreChecked(
   );
   for (const found of answer.matchAll(pattern)) {
     plain(found.index);
+    const translated = elsewhere.get(found[0]);
     if (found[1] !== undefined && found[1] !== "") {
       parts.push({ text: back.get(found[1]) ?? found[1], kind: "restored" });
+    } else if (typeof translated === "string") {
+      parts.push({ text: translated, kind: "restored" });
     } else {
       parts.push({ text: found[0], kind: "flagged" });
       flagged.push(found[0]);
