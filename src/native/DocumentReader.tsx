@@ -10,7 +10,7 @@ import { ClinicServiceDate } from "./ClinicServiceDate";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
 import type { AiTool, SourceSpan } from "../ai/types";
-import { ReaderAiPanel, type ReaderAi } from "./ReaderAiPanel";
+import { ReaderAiPanel, TERM_MAX, type ReaderAi } from "./ReaderAiPanel";
 import { ReadingAidView } from "./ReadingAidView";
 import {
   hasVaultErrorCode,
@@ -31,8 +31,6 @@ const CACHED_PAGES = 6;
 const CACHED_CHARACTERS = 48 * 1024 * 1024;
 /** A resize settles before the page is measured again. */
 const RESIZE_SETTLE_MS = 150;
-/** The most of a selection taken as a term to explain. */
-const TERM_MAX = 200;
 /** The most of a page's text given to the model around a term. */
 const CONTEXT_MAX = 400;
 

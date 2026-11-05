@@ -1322,6 +1322,64 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     expect(native.aiExplain).toHaveBeenCalledTimes(1);
   });
 
+  it("still gives the device's text before the first Summary when only the export's was seen", async () => {
+    const { native, reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    // Seen from Security while the model's status could not be read: the
+    // export's text only.
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Close") }),
+    );
+    native.aiModelStatus.mockRejectedValueOnce(new Error("FAKE: no status"));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Security") }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("About the AI helper"),
+      }),
+    );
+    const shareOnly = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    expect(shareOnly).not.toHaveTextContent("The AI on this device");
+    fireEvent.click(
+      within(shareOnly).getByRole("button", { name: humanText("Close") }),
+    );
+    expect(notice()).toBeNull();
+
+    // The first Summary still waits for the device's text.
+    fireEvent.click(
+      // The sidebar's entry carries the count of documents in it.
+      screen.getByRole("button", { name: humanText(/^My records/) }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Details for FAKE Letter.pdf"),
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: humanText("FAKE Letter.pdf") }),
+      ).getByRole("button", { name: humanText("Read") }),
+    );
+    const picture = await screen.findByRole("img", {
+      name: humanText(/Page 1 of 1/),
+    });
+    const again = picture.closest<HTMLElement>('[role="dialog"]');
+    if (!again) throw new Error("the reader is a dialog");
+    fireEvent.click(
+      within(again).getByRole("button", { name: humanText("Summary") }),
+    );
+    const device = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    expect(device).toHaveTextContent("The AI on this device");
+    expect(native.aiSummarize).not.toHaveBeenCalled();
+  });
+
   it("is not shown with no model: the panel says so, and nothing is read", async () => {
     const { native, reader } = await openReader({ state: "notInstalled" });
     fireEvent.click(

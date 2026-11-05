@@ -254,7 +254,11 @@ export function VaultLibrary({
     then?: () => void;
     onThisDevice: boolean;
   } | null>(null);
-  const [aiNoticeSeen, setAiNoticeSeen] = useState(false);
+  // Which notice was seen this session: "device" when it said what the AI
+  // on this computer does, "share" when it gave only the export's text.
+  const [aiNoticeSeen, setAiNoticeSeen] = useState<"share" | "device" | null>(
+    null,
+  );
   const openAiNotice = (next: { before: string | null; then?: () => void }) =>
     void localModel.status().then(
       (status) =>
@@ -266,7 +270,9 @@ export function VaultLibrary({
   // session, when there is a model to use. With none, nothing can reach one:
   // the panel says so at once.
   const beforeFirstAiUse = (open: () => void) => {
-    if (aiNoticeSeen) {
+    // The export's text alone (a status that could not be read then) does
+    // not count: the device's text still comes first.
+    if (aiNoticeSeen === "device") {
       open();
       return;
     }
@@ -2570,7 +2576,9 @@ export function VaultLibrary({
               // Answers are not kept in the vault yet (#212).
               answersKept={false}
               onClose={() => {
-                setAiNoticeSeen(true);
+                setAiNoticeSeen((seen) =>
+                  aiNotice.onThisDevice ? "device" : (seen ?? "share"),
+                );
                 if (aiNotice.before) setAnonymizeRecordId(aiNotice.before);
                 aiNotice.then?.();
                 setAiNotice(null);

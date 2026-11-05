@@ -29,6 +29,9 @@ export interface ReaderAi {
 }
 
 const NOT_INSTALLED: ModelStatus = { state: "notInstalled" };
+/** The longest term to explain, typed or selected: the native side refuses
+ * a longer one (AGREEMENT.md). */
+export const TERM_MAX = 200;
 
 /** The AI helper's panel in the reader: a plain-words summary of the
  * document, or the explanation of a term. Until a model is installed it says
@@ -205,6 +208,7 @@ export function ReaderAiPanel({
             type="text"
             autoComplete="off"
             value={term}
+            maxLength={TERM_MAX}
             aria-describedby="reader-ai-term-hint"
             onChange={(event) => setTerm(event.target.value)}
           />

@@ -451,6 +451,18 @@ describe("the reader's AI helper", () => {
     ).toBeVisible();
   });
 
+  it("takes no longer term than the native side accepts, typed or pasted", async () => {
+    renderReader(fakeLocalModel());
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    const box = screen.getByRole("textbox", { name: "Word or phrase" });
+    expect(box).toHaveAttribute("maxLength", "200");
+    await user.click(box);
+    await user.paste("x".repeat(250));
+    expect((box as HTMLInputElement).value).toHaveLength(200);
+  });
+
   it("opens a tool only once the app lets it, and closing never waits", async () => {
     const model = fakeLocalModel();
     const opens: (() => void)[] = [];
