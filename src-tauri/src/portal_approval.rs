@@ -17,7 +17,6 @@ impl ApprovalState {
     pub fn terminal_failure(self) -> bool {
         matches!(self, Self::Refused | Self::Expired | Self::Cancelled)
     }
-    #[cfg(feature = "portal-linking")]
     pub fn code(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -44,7 +43,6 @@ pub enum ApprovalReason {
     NoAcceptedApprover,
 }
 impl ApprovalReason {
-    #[cfg(feature = "portal-linking")]
     pub fn needs_clinic(self) -> bool {
         matches!(self, Self::StaffRequired | Self::NoAcceptedApprover)
     }
@@ -159,7 +157,6 @@ mod native {
         accepted_version: String,
         kid: String,
     }
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn create(link: &StoredLink, now: u64) -> Result<Attempt, VaultError> {
         let clinic = link.clinic.as_ref().ok_or(VaultError::Invalid)?;
         if now > 9_007_199_254_740_000 {
@@ -197,7 +194,6 @@ mod native {
     }
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
-    #[cfg(feature = "portal-linking")]
     struct Status {
         #[serde(deserialize_with = "uuid4")]
         request_id: Uuid,
@@ -209,13 +205,11 @@ mod native {
         #[serde(deserialize_with = "nullable_reason")]
         reason: Option<ApprovalReason>,
     }
-    #[cfg(feature = "portal-linking")]
     fn nullable_reason<'de, D: serde::Deserializer<'de>>(
         d: D,
     ) -> Result<Option<ApprovalReason>, D::Error> {
         Option::deserialize(d)
     }
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn parse_status(
         link: &StoredLink,
         attempt: &Attempt,
@@ -276,7 +270,6 @@ mod native {
         next.reason = reply.reason;
         Ok(next)
     }
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn publish(
         link: &StoredLink,
         attempt: &Attempt,
@@ -300,7 +293,6 @@ mod native {
         }
         parse_status(link, attempt, &response.body)
     }
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn refresh(
         link: &StoredLink,
         attempt: &Attempt,
@@ -490,7 +482,7 @@ mod native {
                 verify_acceptance(link, attempt, challenge, acceptance, true).is_ok()
             })
     }
-    #[cfg(all(test, feature = "portal-linking"))]
+    #[cfg(test)]
     mod tests {
         use super::*;
         use crate::portal_link::KeyStatus;
@@ -551,14 +543,13 @@ mod native {
         }
     }
 }
-#[cfg(feature = "portal-linking")]
 pub(crate) use native::{create, publish, refresh};
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(crate) use native::parse_status;
 pub(crate) use native::{currently_approved, valid_saved};
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(crate) fn first_fixture() -> (serde_json::Value, crate::portal_link::StoredLink, Attempt) {
     use crate::portal_delivery as wire;
     use crate::portal_link::{ClinicKey, KeyStatus, LinkedClinic, PrivateKeys, StoredLink};
@@ -615,9 +606,7 @@ pub(crate) fn first_fixture() -> (serde_json::Value, crate::portal_link::StoredL
     (x, link, attempt)
 }
 
-#[cfg(feature = "portal-linking")]
 use crate::{portal_link::StoredLink, vault::VaultError};
-#[cfg(feature = "portal-linking")]
 pub(crate) trait ApprovalExchange {
     fn get(
         &self,
@@ -633,9 +622,7 @@ pub(crate) trait ApprovalExchange {
         cancelled: &dyn Fn() -> bool,
     ) -> Result<crate::portal_approval::Attempt, VaultError>;
 }
-#[cfg(feature = "portal-linking")]
 pub(crate) struct ApprovalHttp;
-#[cfg(feature = "portal-linking")]
 impl ApprovalExchange for ApprovalHttp {
     fn get(
         &self,

@@ -13,30 +13,26 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 pub const MAX_LINKS: usize = 16;
 pub const MAX_PORTAL_UTF8_BYTES: usize = 1024;
-#[cfg(any(feature = "portal-linking", test))]
+// Android fails closed before any link request (portal_client), so it never reads a reply.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub const MAX_RESPONSE_BYTES: usize = 32 * 1024;
 const CODE_ALPHABET: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
-pub const fn enabled() -> bool {
-    cfg!(feature = "portal-linking")
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkError {
-    Disabled,
     Unavailable,
     InvalidPortal,
     InvalidCode,
     InvalidDeviceName,
     InvalidResponse,
-    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
     Network,
-    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
+    // Portal replies to a link request, which Android never sends.
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     CodeRejected,
-    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     ClinicKeysMissing,
-    #[cfg_attr(not(feature = "portal-linking"), allow(dead_code))]
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     DeviceExists,
     Cancelled,
 }
@@ -76,7 +72,6 @@ impl PrivateKeys {
         B64.encode(digest.finalize())
     }
 
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn sign(&self, payload: &[u8]) -> String {
         let signature = SigningKey::from_bytes(&self.ed25519).sign(payload);
         format!(
@@ -86,7 +81,6 @@ impl PrivateKeys {
         )
     }
 
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn open_seal(&self, sealed: &[u8], aad: &[u8]) -> Result<Zeroizing<Vec<u8>>, ()> {
         use hpke::{
             aead::ChaCha20Poly1305, kdf::HkdfSha256, kem::X25519HkdfSha256, Deserializable, Kem,
@@ -421,6 +415,8 @@ impl StoredLink {
 }
 
 /// Not serializable or Debug: a one-use code must never enter IPC output or logs.
+/// Its fields are read only by the transport, which Android does not have yet.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub struct LinkRequest {
     pub endpoint: Url,
     pub body: Zeroizing<Vec<u8>>,
@@ -499,7 +495,7 @@ fn hex(bytes: &[u8]) -> String {
 
 /// Typed structs reject repeated recognized members and unknown fields, including
 /// key entries. No untyped JSON value can silently discard duplicate members.
-#[cfg(any(feature = "portal-linking", test))]
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub fn parse_response(bytes: &[u8], expected_device: &str) -> Result<LinkedClinic, LinkError> {
     if bytes.len() > MAX_RESPONSE_BYTES {
         return Err(LinkError::InvalidResponse);

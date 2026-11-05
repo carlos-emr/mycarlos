@@ -8,8 +8,9 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { setLocaleOverride } from "../i18n";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { page } from "vitest/browser";
+import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
 import { printedDate } from "./KeyLabel";
 import { SecuritySettings, speedTestLine } from "./SecuritySettings";
@@ -56,6 +57,67 @@ const change = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(humanText(label)), {
     target: { value },
   });
+
+describe("SecuritySettings profile layout", () => {
+  afterEach(async () => {
+    document.documentElement.style.fontSize = "";
+    await page.viewport(1100, 760);
+  });
+
+  it("keeps the profile name and Add profile action inside their section on a phone with enlarged text", async () => {
+    renderSettings();
+    const input = screen.getByRole("textbox", { name: "New profile name" });
+    const button = screen.getByRole("button", { name: "Add profile" });
+    input.closest("main")!.classList.add("native-vault-page");
+    fireEvent.change(input, { target: { value: "FAKE Profile" } });
+    const form = input.closest("form")!;
+    const section = form.closest<HTMLElement>(".setting-row")!;
+    const intro = section.firstElementChild!;
+    section.style.fontFamily = "'DejaVu Sans', Verdana, sans-serif";
+    const overlaps = (a: DOMRect, b: DOMRect) =>
+      Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
+      Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+    for (const width of [360, 320]) {
+      await page.viewport(width, 800);
+      for (const fontSize of ["16px", "24px", "32px"]) {
+        document.documentElement.style.fontSize = fontSize;
+        const row = section.getBoundingClientRect();
+        const introduction = intro.getBoundingClientRect();
+        expect(introduction.width).toBeGreaterThanOrEqual(
+          Math.min(220, row.width - 4),
+        );
+        for (const control of [form, input, button]) {
+          const box = control.getBoundingClientRect();
+          expect(box.left).toBeGreaterThanOrEqual(row.left - 1);
+          expect(box.right).toBeLessThanOrEqual(row.right + 1);
+        }
+        expect(overlaps(introduction, form.getBoundingClientRect())).toBe(
+          false,
+        );
+        expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth + 1);
+        expect(button.scrollHeight).toBeLessThanOrEqual(
+          button.clientHeight + 1,
+        );
+        expect(section.scrollWidth).toBeLessThanOrEqual(
+          section.clientWidth + 1,
+        );
+      }
+    }
+  });
+
+  it("keeps the profile form as wide as the other setting forms on a wide screen", () => {
+    renderSettings();
+    const input = screen.getByRole("textbox", { name: "New profile name" });
+    input.closest("main")!.classList.add("native-vault-page");
+    const profile = input.closest("form")!.getBoundingClientRect();
+    const passphrase = screen
+      .getByLabelText("Current passphrase")
+      .closest("form")!
+      .getBoundingClientRect();
+    expect(Math.abs(profile.width - passphrase.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(profile.right - passphrase.right)).toBeLessThanOrEqual(1);
+  });
+});
 
 describe("SecuritySettings speed test", () => {
   it("does not start while another vault action is busy", () => {
@@ -377,6 +439,73 @@ describe("SecuritySettings passphrase change", () => {
     expect(section).not.toHaveHumanTextContent(/delet/i);
   });
 
+  it("keeps mismatched passphrase drafts while translating and clears all three only on explicit submit", () => {
+    setLocaleOverride("en");
+    const props = renderSettings();
+    const current = screen.getByLabelText(
+      "Current passphrase",
+    ) as HTMLInputElement;
+    const replacement = screen.getByLabelText("New passphrase");
+    const confirmation = screen.getByLabelText(
+      "Confirm new passphrase",
+    ) as HTMLInputElement;
+    const button = screen.getByRole("button", { name: "Change passphrase" });
+    const form = button.closest("form")!;
+    const currentValue = "FAKE current e\u0301{ $name }";
+    const newValue = "FAKE lantern-e\u0301-orbit-cobalt-934";
+    const mismatched = "FAKE different confirmation";
+    fireEvent.change(current, { target: { value: currentValue } });
+    fireEvent.change(replacement, { target: { value: newValue } });
+    fireEvent.change(confirmation, { target: { value: mismatched } });
+    confirmation.focus();
+    confirmation.setSelectionRange(2, 5);
+
+    for (const locale of ["pl", "fr"] as const) {
+      act(() => setLocaleOverride(locale));
+      expect(
+        screen.getByLabelText(translate(locale, "security.passphrase.current")),
+      ).toBe(current);
+      expect(
+        screen.getByLabelText(translate(locale, "passphrase.new.label")),
+      ).toBe(replacement);
+      expect(
+        screen.getByLabelText(translate(locale, "passphrase.confirmNew.label")),
+      ).toBe(confirmation);
+      expect(current).toHaveValue(currentValue);
+      expect(replacement).toHaveValue(newValue);
+      expect(confirmation).toHaveValue(mismatched);
+      expect(confirmation).toHaveFocus();
+      expect([confirmation.selectionStart, confirmation.selectionEnd]).toEqual([
+        2, 5,
+      ]);
+      expect(within(form).getByRole("alert")).toHaveHumanTextContent(
+        translate(locale, "security.passphrase.mismatch"),
+      );
+      expect(
+        screen.getByRole("button", {
+          name: translate(locale, "security.passphrase.submit"),
+        }),
+      ).toBe(button);
+      expect(button).toBeDisabled();
+      expect(props.onChangePassphrase).not.toHaveBeenCalled();
+    }
+
+    fireEvent.change(confirmation, { target: { value: newValue } });
+    expect(within(form).queryByRole("alert")).toBeNull();
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(props.onChangePassphrase).toHaveBeenCalledExactlyOnceWith(
+      currentValue,
+      newValue,
+    );
+    for (const field of [current, replacement, confirmation])
+      expect(field).toHaveValue("");
+    act(() => setLocaleOverride("pt-BR"));
+    for (const field of [current, replacement, confirmation])
+      expect(field).toHaveValue("");
+    expect(props.onChangePassphrase).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses a replacement under the minimum length before sending it", () => {
     const props = renderSettings();
     change("Current passphrase", "river-azimuth-cobalt-sparrow-934");
@@ -450,6 +579,23 @@ describe("SecuritySettings backup", () => {
 });
 
 describe("Automatic lock delay (#67)", () => {
+  it("puts Lock now beside the delay, before its steps, and locks (#110)", () => {
+    const props = renderSettings({ autoLockMinutes: 5 });
+    const heading = screen.getByRole("heading", {
+      name: humanText("Lock automatically 5 minutes"),
+    });
+    const lockNow = screen.getByRole("button", { name: "Lock now" });
+    const group = screen.getByRole("group", { name: "Automatic lock delay" });
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    // Right after the heading with its value, and before the delay's steps,
+    // in reading and Tab order.
+    expect(lockNow.previousElementSibling).toBe(heading);
+    expect(follows(lockNow, group)).toBe(true);
+    fireEvent.click(lockNow);
+    expect(props.onLock).toHaveBeenCalledOnce();
+  });
+
   it("steps by one minute with minus and plus, within 1 to 15", () => {
     const props = renderSettings({ autoLockMinutes: 5 });
     const group = screen.getByRole("group", {
@@ -489,6 +635,43 @@ describe("Automatic lock delay (#67)", () => {
       fireEvent.click(end);
       expect(props.onAutoLockMinutes).not.toHaveBeenCalled();
       cleanup();
+    }
+  });
+});
+
+describe("SecuritySettings backup layout", () => {
+  it("keeps the encrypted backup action inside its row with enlarged text and a wide fallback font", () => {
+    renderSettings();
+    const button = screen.getByRole("button", {
+      name: "Save encrypted backup…",
+    });
+    // Match the native vault's appearance without involving routing or profiles.
+    button.closest("main")!.classList.add("native-vault-page");
+    const section = button.closest<HTMLElement>(".setting-row")!;
+    section.style.fontFamily = "'DejaVu Sans', Verdana, sans-serif";
+    try {
+      for (const fontSize of ["16px", "24px", "32px"]) {
+        document.documentElement.style.fontSize = fontSize;
+        for (const width of [760, 320]) {
+          section.style.width = `${width}px`;
+          section.style.maxWidth = "100%";
+          const row = section.getBoundingClientRect();
+          const action = button.getBoundingClientRect();
+          expect(action.left).toBeGreaterThanOrEqual(row.left - 1);
+          expect(action.right).toBeLessThanOrEqual(row.right + 1);
+          expect(button.scrollWidth).toBeLessThanOrEqual(
+            button.clientWidth + 1,
+          );
+          expect(button.scrollHeight).toBeLessThanOrEqual(
+            button.clientHeight + 1,
+          );
+          expect(section.scrollWidth).toBeLessThanOrEqual(
+            section.clientWidth + 1,
+          );
+        }
+      }
+    } finally {
+      document.documentElement.style.fontSize = "";
     }
   });
 });
