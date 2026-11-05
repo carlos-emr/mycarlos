@@ -3,9 +3,9 @@
 
 use super::{
     document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
-    read_explanation, read_summary, summary_grammar, summary_prompt, without_slot, ChatFormat, Fit,
-    ModelFile, Page, Sentence, Settings, BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS,
-    MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
+    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, BATCH_TOKENS, CONTEXT_TOKENS,
+    EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -97,10 +97,14 @@ impl Engine {
                 };
                 let messages = [message("system", SYSTEM_PROMPT)?, message("user", user)?];
                 let template = self.template.as_ref().ok_or_else(|| failed("template"))?;
-                self.model
+                let templated = self
+                    .model
                     .apply_chat_template(template, &messages, true)
-                    .map_err(|_| failed("prompt"))?
+                    .map_err(|_| failed("prompt"))?;
+                // A thinking model answers at once, as its template has it with thinking off.
+                thinking_off(template.to_str().unwrap_or_default(), templated)
             }
+            // Thinking is already off: Gemma 4's template adds `<|think|>` only to turn it on.
             ChatFormat::Gemma4 => gemma4_conversation(SYSTEM_PROMPT, user),
         };
         let pieces: Vec<&str> = templated.split(SLOT).collect();
