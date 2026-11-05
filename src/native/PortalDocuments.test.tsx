@@ -430,10 +430,14 @@ describe("native clinic document controls", () => {
           detect = resolve;
         }),
     );
-    const linkPortal = vi.fn().mockResolvedValue(undefined);
+    // #136: the form links and asks for approval in one native call.
+    const connectPortal = vi
+      .fn()
+      .mockResolvedValue({ link, approvalError: null });
     const bridge = {
       platform,
-      linkPortal,
+      linkPortal: vi.fn(),
+      connectPortal,
       checkDocuments: vi.fn(),
     } as unknown as VaultBridge;
     const { props } = fixture({ bridge });
@@ -444,7 +448,7 @@ describe("native clinic document controls", () => {
     await user.clear(device);
     await user.type(device, "FAKE waiting room laptop");
     expect(device).toHaveValue("FAKE waiting room laptop");
-    expect(linkPortal).not.toHaveBeenCalled();
+    expect(connectPortal).not.toHaveBeenCalled();
     await act(async () => detect("windows"));
     expect(screen.getByLabelText("Name for this device")).toHaveValue(
       "FAKE waiting room laptop",
@@ -457,9 +461,12 @@ describe("native clinic document controls", () => {
       screen.getByLabelText("Linking code"),
       "01234567-89ABCDEFGH",
     );
-    await user.click(screen.getByRole("button", { name: "Link to clinic" }));
+    await user.click(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    );
     await waitFor(() => expect(props.refresh).toHaveBeenCalledOnce());
-    expect(linkPortal).toHaveBeenCalledExactlyOnceWith({
+    expect(bridge.linkPortal).not.toHaveBeenCalled();
+    expect(connectPortal).toHaveBeenCalledExactlyOnceWith({
       portalBase: "https://portal.example.test/patient",
       code: "01234567-89ABCDEFGH",
       deviceName: "FAKE waiting room laptop",
@@ -507,9 +514,9 @@ describe("native clinic document controls", () => {
   it.each(["success", "refusal"] as const)(
     "forgets a linking code after native %s while the vault refresh still waits",
     async (outcome) => {
-      let finishLink!: (linked: PortalLinkSummary) => void;
+      let finishLink!: (linked: ConnectResult) => void;
       let refuseLink!: (error: unknown) => void;
-      const pendingLink = new Promise<PortalLinkSummary>((resolve, reject) => {
+      const pendingLink = new Promise<ConnectResult>((resolve, reject) => {
         finishLink = resolve;
         refuseLink = reject;
       });
@@ -519,7 +526,7 @@ describe("native clinic document controls", () => {
       });
       const refresh = vi.fn().mockReturnValue(pendingRefresh);
       const { bridge, failures } = fixture({ refresh });
-      vi.mocked(bridge.linkPortal!).mockReturnValue(pendingLink);
+      vi.mocked(bridge.connectPortal!).mockReturnValue(pendingLink);
       const user = userEvent.setup();
       const address = "https://portal.example.test/patient";
       const oneUseCode = "FAKE-ONE-USE-12345678";
@@ -537,9 +544,9 @@ describe("native clinic document controls", () => {
           "fake-person",
         );
         await user.click(
-          screen.getByRole("button", { name: "Link to clinic" }),
+          screen.getByRole("button", { name: "Connect and request approval" }),
         );
-        expect(bridge.linkPortal).toHaveBeenCalledExactlyOnceWith({
+        expect(bridge.connectPortal).toHaveBeenCalledExactlyOnceWith({
           portalBase: address,
           code: oneUseCode,
           deviceName,
@@ -547,7 +554,7 @@ describe("native clinic document controls", () => {
         });
         expect(refresh).not.toHaveBeenCalled();
         await act(async () => {
-          if (outcome === "success") finishLink(link);
+          if (outcome === "success") finishLink({ link, approvalError: null });
           else refuseLink(refusal);
         });
         // The native attempt ended, but its follow-up snapshot is still pending.
@@ -566,11 +573,12 @@ describe("native clinic document controls", () => {
         expect(failures).toEqual(outcome === "success" ? [] : [refusal]);
         if (outcome === "refusal") expect(failures[0]).toBe(refusal);
         expect(screen.getByLabelText("Linking code")).toHaveValue("");
-        expect(bridge.linkPortal).toHaveBeenCalledTimes(1);
+        expect(bridge.connectPortal).toHaveBeenCalledTimes(1);
+        expect(bridge.linkPortal).not.toHaveBeenCalled();
         expect(refresh).toHaveBeenCalledOnce();
       } finally {
         await act(async () => {
-          finishLink(link);
+          finishLink({ link, approvalError: null });
           finishRefresh(snapshot);
         });
       }

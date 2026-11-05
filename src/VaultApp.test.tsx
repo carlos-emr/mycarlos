@@ -8996,6 +8996,8 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi.fn(async () => captureSnapshot(vault)),
       linkPortal: vi.fn().mockResolvedValue(vault.portalLinks![0]),
+      // The clinic panel offers the one composite action (#136).
+      connectPortal: vi.fn(),
       checkDocuments: check,
     });
     render(<VaultApp bridge={bridge} />);
@@ -10864,7 +10866,9 @@ describe("clinic connection operations", () => {
     const pending = pendingConnection();
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockImplementation(async () => current),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
       connectPortal: vi.fn().mockReturnValue(pending.promise),
       linkPortal: vi.fn(),
       checkDocuments: vi.fn(),
@@ -10936,7 +10940,9 @@ describe("clinic connection operations", () => {
       let finishImport!: (value: ImportOutcome) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockImplementation(async () => current),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(current)),
         connectPortal: vi.fn().mockReturnValue(pending.promise),
         checkDocuments: vi.fn(),
         requestDeviceApproval: vi.fn(),
@@ -11003,8 +11009,10 @@ describe("clinic connection operations", () => {
     let pick!: (value: string | null) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockImplementation(async () => current),
-      unlock: vi.fn().mockImplementation(async () => current),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      unlock: vi.fn().mockImplementation(async () => captureSnapshot(current)),
       connectPortal: vi.fn().mockReturnValue(pending.promise),
       checkDocuments: vi.fn(),
       requestDeviceApproval: vi.fn(),
@@ -11062,7 +11070,9 @@ describe("clinic connection operations", () => {
     let pick!: (value: string | null) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockImplementation(async () => current),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
       connectPortal: vi
         .fn()
         .mockRejectedValueOnce({ code: "portal_link_code_rejected" })
@@ -11161,7 +11171,9 @@ describe("clinic connection operations", () => {
     let current = clinicSnapshot;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockImplementation(async () => current),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
       unlock: vi.fn().mockResolvedValue(secondSnapshot),
       connectPortal: vi
         .fn()
