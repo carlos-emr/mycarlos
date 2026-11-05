@@ -859,6 +859,8 @@ pub mod engine_testing {
 
     pub struct ModelRunner {
         runner: Arc<Runner>,
+        /// The quotes the last summary had that were not in the pages read.
+        unlocated: std::sync::Mutex<Vec<String>>,
     }
 
     impl ModelRunner {
@@ -882,7 +884,10 @@ pub mod engine_testing {
             runner
                 .start(&Plenty)
                 .map_err(|error| format!("{error:?}"))?;
-            Ok(Self { runner })
+            Ok(Self {
+                runner,
+                unlocated: std::sync::Mutex::default(),
+            })
         }
 
         /// A summary of `pages` (index, text) in `lang`: sentences (text, quote), last page.
@@ -905,6 +910,7 @@ pub mod engine_testing {
             self.runner
                 .summarize(self.runner.ticket(), &request)
                 .map(|summary| {
+                    *self.unlocated.lock().unwrap() = summary.unlocated_quotes;
                     (
                         summary
                             .sentences
@@ -915,6 +921,29 @@ pub mod engine_testing {
                     )
                 })
                 .map_err(|error| format!("{error:?}"))
+        }
+
+        /// What the last summary's quotes said where they were not in the pages read.
+        pub fn last_unlocated(&self) -> Vec<String> {
+            self.unlocated.lock().unwrap().clone()
+        }
+
+        /// How the last answer was made: prompt and answer tokens, and their times.
+        pub fn last_stats(&self) -> String {
+            self.runner.last_stats().map_or_else(
+                || "no stats".to_owned(),
+                |s| {
+                    format!(
+                        "prompt {} tokens {:.1} s, answer {} tokens {:.1} s{}, {} grammar scans",
+                        s.prompt_tokens,
+                        s.prompt_ms as f64 / 1000.0,
+                        s.answer_tokens,
+                        s.answer_ms as f64 / 1000.0,
+                        if s.capped { " (capped)" } else { "" },
+                        s.grammar_scans
+                    )
+                },
+            )
         }
 
         /// What `term` means in `context`, in `lang`.
