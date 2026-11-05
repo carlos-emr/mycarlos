@@ -126,3 +126,26 @@ describe("clinics, agencies and schools named without a clinic word", () => {
     expect(send(text)).toBe(text);
   });
 });
+
+describe("a town alone in brackets after a specialty", () => {
+  it.each([
+    ["Référée en cardiologie (Ville-Exemple) pour suivi.", "Ville-Exemple"],
+    ["Consultation : Neurologie (Saint-Exemple-sur-Mer)", "Saint-Exemple"],
+    ["Seen in Pediatrics (Sampletown) last week.", "Sampletown"],
+  ])("%s", (text, town) => {
+    const out = send(text);
+    expect(out).toMatch(/\(\[ADDRESS 1\]\)/);
+    expect(out).not.toContain(town);
+  });
+
+  it.each([
+    "Cardiologie (Urgent)",
+    "Neurologie (Suivi) dans 3 mois.",
+    "Cardiology (ECG) normal.",
+    "Radiologie (Consultation)",
+    "Imagerie (Externe)",
+    "Cardiology (Holter) booked.",
+  ])("leaves a note in brackets: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});

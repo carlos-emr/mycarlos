@@ -1320,6 +1320,8 @@ interface Rule {
   notLowerCaseMay?: true;
   /** "Mother: First Last": refused in a family-history line or section. */
   relationLabel?: true;
+  /** A town in brackets: refused for a bracket note or a medical word. */
+  townInBrackets?: true;
 }
 
 const HEALTH_CARD_LABEL =
@@ -1360,6 +1362,105 @@ const KIN_PLURAL = `(?:${KIN_PLURAL_WORDS}|kids)`;
 // Between names in a list: "Maribel and Odette", "Paul, Marc et Luc".
 const NAME_JOIN =
   "(?:[ \\t]*,[ \\t]*(?:(?:and|et|y|e|i)[ \\t]+)?|[ \\t]+(?:and|et|y|e|i)[ \\t]+)";
+// Specialties and services a town in brackets can follow: "Cardiologie (Ville-Exemple)".
+const SPECIALTY_BEFORE_TOWN = anyCase([
+  "cardiologie",
+  "neurologie",
+  "pédiatrie",
+  "radiologie",
+  "imagerie",
+  "dermatologie",
+  "orthopédie",
+  "ophtalmologie",
+  "oncologie",
+  "gériatrie",
+  "psychiatrie",
+  "gynécologie",
+  "obstétrique",
+  "urologie",
+  "néphrologie",
+  "pneumologie",
+  "gastro-entérologie",
+  "endocrinologie",
+  "rhumatologie",
+  "physiothérapie",
+  "ergothérapie",
+  "médecine interne",
+  "médecine familiale",
+  "chirurgie",
+  "urgence",
+  "clinique",
+  "CLSC",
+  "GMF",
+  "cardiology",
+  "neurology",
+  "pediatrics",
+  "paediatrics",
+  "radiology",
+  "imaging",
+  "dermatology",
+  "orthopaedics",
+  "orthopedics",
+  "ophthalmology",
+  "oncology",
+  "geriatrics",
+  "psychiatry",
+  "gynecology",
+  "obstetrics",
+  "urology",
+  "nephrology",
+  "respirology",
+  "gastroenterology",
+  "endocrinology",
+  "rheumatology",
+  "physiotherapy",
+  "internal medicine",
+  "family medicine",
+  "surgery",
+  "emergency",
+  "clinic",
+]);
+// Notes written in brackets after a specialty: never a town.
+const BRACKET_NOTES = new Set(
+  foldAll([
+    "urgent",
+    "urgente",
+    "suivi",
+    "externe",
+    "interne",
+    "adulte",
+    "adultes",
+    "pédiatrique",
+    "enfant",
+    "enfants",
+    "nouveau",
+    "nouvelle",
+    "demande",
+    "priorité",
+    "priority",
+    "new",
+    "adult",
+    "pediatric",
+    "paediatric",
+    "outpatient",
+    "inpatient",
+    "routine",
+    "semi-urgent",
+    "virtual",
+    "virtuel",
+    "virtuelle",
+    "phone",
+    "téléphone",
+    "telephone",
+    "video",
+    "vidéo",
+    "pending",
+    "en attente",
+    "annulé",
+    "cancelled",
+    "canceled",
+  ]).map((word) => word.toLowerCase()),
+);
 // Words of a family-history line, never a relative's name after "Mother:": "Mother: Breast
 // cancer at 52", "Father: Atrial Fibrillation". A list cannot hold every disease, so a word
 // with a medical ending ("Sclerosis", "Fibrillation", "Carcinoma") counts too (#228 review).
@@ -1695,6 +1796,17 @@ const RULES: Rule[] = [
       `${UNIT_FIRST}\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
       "gu",
     ),
+  },
+  // A town alone in brackets after a specialty or a service: "Cardiologie (Ville-Exemple)",
+  // "Pediatrics (Sampletown)". Not a note such as "(Urgent)" or "(Suivi)", an abbreviation
+  // such as "(ECG)", or a title.
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])${SPECIALTY_BEFORE_TOWN}[ \\t]*\\()(?!(?:Dr|Dre|Mr|Mrs|Ms|Mme|Mlle|Pr|Prof)(?![\\p{L}]))\\p{Lu}\\p{Ll}[\\p{L}'’]*(?:[ -]\\p{Lu}[\\p{L}'’]*|-(?:sur|en|lès|les|de|du|des|la|le)-\\p{Lu}[\\p{L}'’]*){0,3}(?=\\))`,
+      "gu",
+    ),
+    townInBrackets: true,
   },
   // A named residence: "Résidence Les Jardins du Parc", "Foyer Saint-Joseph", "Manoir des Pins".
   {
@@ -2279,6 +2391,19 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         }
       }
       if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
+        continue;
+      if (
+        rule.townInBrackets &&
+        (BRACKET_NOTES.has(trimmed.toLowerCase()) ||
+          trimmed.split(/[ \t-]+/u).some((word) => {
+            const lower = word.toLowerCase();
+            return (
+              FAMILY_HISTORY_WORDS.has(lower) ||
+              ORDINARY_WORDS.has(lower) ||
+              MEDICAL_ENDING.test(lower)
+            );
+          }))
+      )
         continue;
       // A bare "Nombre:" or "Nome:" is also French and Portuguese for "number":
       // only a first and a last name after it ("Nombre : Deux comprimés").
