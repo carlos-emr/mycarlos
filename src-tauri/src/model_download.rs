@@ -60,17 +60,28 @@ impl Opener for Https {
     fn open<'a>(
         &self,
         model: &Accepted,
+        from: u64,
         cancelled: &'a dyn Fn() -> bool,
     ) -> Result<Opened<'a>, OpenerError> {
         let client = client().ok_or(OpenerError::Network)?;
         let pinned = model.source_url;
         let mut url = pinned.to_owned();
+        let mut from = from;
         let handle = tauri::async_runtime::handle();
-        for _ in 0..=MAX_REDIRECTS {
+        for _ in 0..=MAX_REDIRECTS + 1 {
+            let mut request = client.get(&url);
+            if from > 0 {
+                request = request.header(reqwest::header::RANGE, format!("bytes={from}-"));
+            }
             let response = handle
-                .block_on(client.get(&url).send())
+                .block_on(request.send())
                 .map_err(|_| OpenerError::Network)?;
             let status = response.status();
+            if status.as_u16() == 416 && from > 0 {
+                // The server will not resume there: ask for the whole file.
+                from = 0;
+                continue;
+            }
             if status.is_redirection() {
                 let next = response
                     .headers()
@@ -89,6 +100,25 @@ impl Opener for Https {
                     let size = response.content_length();
                     Ok(Opened {
                         size,
+                        start: 0,
+                        reader: Box::new(Body::new(response, cancelled)),
+                    })
+                }
+                206 if from > 0 => {
+                    // `Content-Range: bytes <from>-<end>/<total>`: it must start
+                    // where asked, and the total is the whole file's size.
+                    let range = response
+                        .headers()
+                        .get(reqwest::header::CONTENT_RANGE)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(parse_content_range)
+                        .ok_or(OpenerError::Network)?;
+                    if range.0 != from {
+                        return Err(OpenerError::Network);
+                    }
+                    Ok(Opened {
+                        size: Some(range.1),
+                        start: from,
                         reader: Box::new(Body::new(response, cancelled)),
                     })
                 }
@@ -103,9 +133,24 @@ impl Opener for Https {
 
 #[cfg(target_os = "android")]
 impl Opener for Https {
-    fn open<'a>(&self, _: &Accepted, _: &'a dyn Fn() -> bool) -> Result<Opened<'a>, OpenerError> {
+    fn open<'a>(
+        &self,
+        _: &Accepted,
+        _: u64,
+        _: &'a dyn Fn() -> bool,
+    ) -> Result<Opened<'a>, OpenerError> {
         Err(OpenerError::Network)
     }
+}
+
+/// `bytes 100-199/200` → (start, total). `None` for anything else, including
+/// an unknown total (`/*`).
+#[cfg_attr(target_os = "android", allow(dead_code))]
+fn parse_content_range(value: &str) -> Option<(u64, u64)> {
+    let rest = value.strip_prefix("bytes ")?;
+    let (range, total) = rest.split_once('/')?;
+    let (start, _end) = range.split_once('-')?;
+    Some((start.parse().ok()?, total.parse().ok()?))
 }
 
 #[cfg(not(target_os = "android"))]
@@ -251,7 +296,7 @@ mod tests {
         use std::sync::atomic::{AtomicBool, Ordering};
         let stop = AtomicBool::new(false);
         let cancelled = || stop.load(Ordering::SeqCst);
-        let mut opened = Https.open(&CATALOG[0], &cancelled).unwrap();
+        let mut opened = Https.open(&CATALOG[0], 0, &cancelled).unwrap();
         assert_eq!(opened.size, Some(CATALOG[0].size_bytes));
         let mut buffer = vec![0u8; 1 << 20];
         let mut total = 0usize;
@@ -263,6 +308,30 @@ mod tests {
         stop.store(true, Ordering::SeqCst);
         let error = std::io::Read::read(&mut opened.reader, &mut buffer).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
+        // And a resume from 1 GiB: the server answers 206 from there, with the
+        // whole file's size.
+        let stop = AtomicBool::new(false);
+        let cancelled = || stop.load(Ordering::SeqCst);
+        let mut resumed = Https.open(&CATALOG[0], 1 << 30, &cancelled).unwrap();
+        assert_eq!(resumed.start, 1 << 30);
+        assert_eq!(resumed.size, Some(CATALOG[0].size_bytes));
+        let n = std::io::Read::read(&mut resumed.reader, &mut buffer).unwrap();
+        assert!(n > 0);
+    }
+
+    #[test]
+    fn a_content_range_is_read_or_refused() {
+        assert_eq!(parse_content_range("bytes 100-199/200"), Some((100, 200)));
+        assert_eq!(parse_content_range("bytes 0-9/10"), Some((0, 10)));
+        for bad in [
+            "bytes 100-199/*",
+            "items 1-2/3",
+            "bytes -5/10",
+            "bytes a-b/c",
+            "",
+        ] {
+            assert_eq!(parse_content_range(bad), None, "{bad}");
+        }
     }
 
     #[test]
