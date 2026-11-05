@@ -201,21 +201,14 @@ fn executable() -> &'static std::path::Path {
     executable
 }
 
-/// Writes `bytes` as a model file in `dir`, readable by AppContainers on Windows as the install
-/// step makes the model folder.
+/// Writes `bytes` as a model file in `dir`, which is made as the install step makes the model
+/// folder (Windows: an inheritable read ACE for the helper's AppContainer only), so the real
+/// path and the narrow SID are what CI proves.
 fn model_file(dir: &std::path::Path, bytes: &[u8]) -> std::path::PathBuf {
+    #[cfg(windows)]
+    assert!(mycarlos_tauri_poc_lib::model_folder_for_tests(dir));
     let path = dir.join("FAKE-tiny-model.gguf");
     std::fs::write(&path, bytes).unwrap();
-    #[cfg(windows)]
-    {
-        let status = std::process::Command::new("icacls")
-            .arg(&path)
-            .args(["/grant", "*S-1-15-2-1:(R)"])
-            .stdout(std::process::Stdio::null())
-            .status()
-            .unwrap();
-        assert!(status.success());
-    }
     path
 }
 

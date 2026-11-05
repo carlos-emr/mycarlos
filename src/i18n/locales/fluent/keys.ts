@@ -691,7 +691,6 @@ export const MESSAGE_KEYS = [
   "interface.history.damagedBetween",
   "interface.history.empty",
   "interface.history.error.unverified",
-  "interface.history.event.aiResultSaved",
   "interface.history.event.backupRestored",
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
@@ -717,8 +716,6 @@ export const MESSAGE_KEYS = [
   "interface.history.how",
   "interface.history.how.aidReplaced",
   "interface.history.how.camera",
-  "interface.history.how.summary",
-  "interface.history.how.explain",
   "interface.history.how.damaged",
   "interface.history.how.importedShared",
   "interface.history.how.movedFromShared",
@@ -859,6 +856,35 @@ export const MESSAGE_KEYS = [
   "notifications.autoPaused",
   "notifications.checkBusy",
   "native.notice.arrival",
+  "ai.model.add",
+  "ai.model.accepted",
+  "ai.model.where",
+  "ai.model.copy",
+  "ai.model.copied",
+  "ai.model.checking",
+  "ai.model.added",
+  "ai.model.installed",
+  "ai.model.remove",
+  "ai.model.removeConfirm",
+  "ai.model.damaged",
+  "ai.model.unsupportedRam",
+  "ai.model.unsupportedCpu",
+  "ai.model.unsupportedPlatform",
+  "ai.model.refusedList",
+  "ai.model.refusedHash",
+  "ai.model.refusedIncomplete",
+  "ai.model.refusedDisk",
+  "ai.model.refusedStorage",
+  "ai.model.refusedBusy",
+  "ai.model.download",
+  "ai.model.downloadNote",
+  "ai.model.downloading",
+  "ai.model.refusedNetwork",
+  "ai.model.refusedUnavailable",
+  "native.filter.models",
+  "interface.history.event.aiResultSaved",
+  "interface.history.how.summary",
+  "interface.history.how.explain",
   "ai.summary.again",
   "ai.keepFailed",
 ] as const;
@@ -1664,8 +1690,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.damagedBetween": "interface-history-damagedBetween",
   "interface.history.empty": "interface-history-empty",
   "interface.history.error.unverified": "interface-history-error-unverified",
-  "interface.history.event.aiResultSaved":
-    "interface-history-event-aiResultSaved",
   "interface.history.event.backupRestored":
     "interface-history-event-backupRestored",
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
@@ -1699,8 +1723,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.how": "interface-history-how",
   "interface.history.how.aidReplaced": "interface-history-how-aidReplaced",
   "interface.history.how.camera": "interface-history-how-camera",
-  "interface.history.how.summary": "interface-history-how-summary",
-  "interface.history.how.explain": "interface-history-how-explain",
   "interface.history.how.damaged": "interface-history-how-damaged",
   "interface.history.how.importedShared":
     "interface-history-how-importedShared",
@@ -1896,6 +1918,36 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.autoPaused": "notifications-autoPaused",
   "notifications.checkBusy": "notifications-checkBusy",
   "native.notice.arrival": "native-notice-arrival",
+  "ai.model.add": "ai-model-add",
+  "ai.model.accepted": "ai-model-accepted",
+  "ai.model.where": "ai-model-where",
+  "ai.model.copy": "ai-model-copy",
+  "ai.model.copied": "ai-model-copied",
+  "ai.model.checking": "ai-model-checking",
+  "ai.model.added": "ai-model-added",
+  "ai.model.installed": "ai-model-installed",
+  "ai.model.remove": "ai-model-remove",
+  "ai.model.removeConfirm": "ai-model-removeConfirm",
+  "ai.model.damaged": "ai-model-damaged",
+  "ai.model.unsupportedRam": "ai-model-unsupportedRam",
+  "ai.model.unsupportedCpu": "ai-model-unsupportedCpu",
+  "ai.model.unsupportedPlatform": "ai-model-unsupportedPlatform",
+  "ai.model.refusedList": "ai-model-refusedList",
+  "ai.model.refusedHash": "ai-model-refusedHash",
+  "ai.model.refusedIncomplete": "ai-model-refusedIncomplete",
+  "ai.model.refusedDisk": "ai-model-refusedDisk",
+  "ai.model.refusedStorage": "ai-model-refusedStorage",
+  "ai.model.refusedBusy": "ai-model-refusedBusy",
+  "ai.model.download": "ai-model-download",
+  "ai.model.downloadNote": "ai-model-downloadNote",
+  "ai.model.downloading": "ai-model-downloading",
+  "ai.model.refusedNetwork": "ai-model-refusedNetwork",
+  "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
+  "native.filter.models": "native-filter-models",
+  "interface.history.event.aiResultSaved":
+    "interface-history-event-aiResultSaved",
+  "interface.history.how.summary": "interface-history-how-summary",
+  "interface.history.how.explain": "interface-history-how-explain",
   "ai.summary.again": "ai-summary-again",
   "ai.keepFailed": "ai-keepFailed",
 } as const satisfies Record<MessageKey, string>;
@@ -2676,7 +2728,6 @@ export interface MessageArgsByKey {
   };
   "interface.history.empty": undefined;
   "interface.history.error.unverified": undefined;
-  "interface.history.event.aiResultSaved": undefined;
   "interface.history.event.backupRestored": undefined;
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
@@ -2702,8 +2753,6 @@ export interface MessageArgsByKey {
   "interface.history.how": undefined;
   "interface.history.how.aidReplaced": undefined;
   "interface.history.how.camera": undefined;
-  "interface.history.how.summary": undefined;
-  "interface.history.how.explain": undefined;
   "interface.history.how.damaged": undefined;
   "interface.history.how.importedShared": undefined;
   "interface.history.how.movedFromShared": undefined;
@@ -2848,6 +2897,39 @@ export interface MessageArgsByKey {
   "notifications.autoPaused": undefined;
   "notifications.checkBusy": undefined;
   "native.notice.arrival": undefined;
+  "ai.model.add": undefined;
+  "ai.model.accepted": {
+    licence: FluentArgument;
+    name: FluentArgument;
+    size: FluentArgument;
+  };
+  "ai.model.where": undefined;
+  "ai.model.copy": undefined;
+  "ai.model.copied": undefined;
+  "ai.model.checking": { done: FluentArgument; total: FluentArgument };
+  "ai.model.added": undefined;
+  "ai.model.installed": { name: FluentArgument };
+  "ai.model.remove": undefined;
+  "ai.model.removeConfirm": undefined;
+  "ai.model.damaged": undefined;
+  "ai.model.unsupportedRam": undefined;
+  "ai.model.unsupportedCpu": undefined;
+  "ai.model.unsupportedPlatform": undefined;
+  "ai.model.refusedList": undefined;
+  "ai.model.refusedHash": undefined;
+  "ai.model.refusedIncomplete": undefined;
+  "ai.model.refusedDisk": undefined;
+  "ai.model.refusedStorage": undefined;
+  "ai.model.refusedBusy": undefined;
+  "ai.model.download": undefined;
+  "ai.model.downloadNote": { host: FluentArgument; size: FluentArgument };
+  "ai.model.downloading": { done: FluentArgument; total: FluentArgument };
+  "ai.model.refusedNetwork": undefined;
+  "ai.model.refusedUnavailable": undefined;
+  "native.filter.models": undefined;
+  "interface.history.event.aiResultSaved": undefined;
+  "interface.history.how.summary": undefined;
+  "interface.history.how.explain": undefined;
   "ai.summary.again": undefined;
   "ai.keepFailed": undefined;
 }

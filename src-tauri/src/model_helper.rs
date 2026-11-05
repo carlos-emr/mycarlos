@@ -443,8 +443,17 @@ struct Sentences {
 }
 
 /// The sentences of a summary the model wrote, whole. When it stopped at its token cap partway,
-/// the sentences it finished; `None` when there is not one.
+/// the sentences it finished; `None` when there is not one, or when any part still carries the
+/// model's thinking.
 pub(crate) fn read_summary(written: &str, capped: bool) -> Option<Vec<Sentence>> {
+    read_sentences(written, capped).filter(|sentences| {
+        sentences
+            .iter()
+            .all(|sentence| !thinks(&sentence.text) && !thinks(&sentence.quote))
+    })
+}
+
+fn read_sentences(written: &str, capped: bool) -> Option<Vec<Sentence>> {
     if let Ok(whole) = serde_json::from_str::<Sentences>(written) {
         return Some(whole.sentences).filter(|sentences| !sentences.is_empty());
     }
@@ -462,11 +471,36 @@ pub(crate) fn read_summary(written: &str, capped: bool) -> Option<Vec<Sentence>>
         .filter(|sentences| !sentences.is_empty())
 }
 
+/// What a thinking model's template writes, with thinking off, where the answer begins (Qwen's
+/// templates: `enable_thinking` false). The template spells it with Jinja's `\n` escapes.
+const THINKING_OFF_IN_TEMPLATE: &str = r"<think>\n\n</think>\n\n";
+const THINKING_OFF: &str = "<think>\n\n</think>\n\n";
+
+/// The prompt with the model's thinking turned off, for a template that can turn it off: what
+/// the template itself writes when told so (llama.cpp's template code does not run the
+/// template's own switch). Other templates are left as they are.
+pub(crate) fn thinking_off(template: &str, templated: String) -> String {
+    if template.contains("enable_thinking") && template.contains(THINKING_OFF_IN_TEMPLATE) {
+        templated + THINKING_OFF
+    } else {
+        templated
+    }
+}
+
+/// Whether a model's words still carry its thinking: they are never shown as an answer.
+pub(crate) fn thinks(text: &str) -> bool {
+    text.contains("<think>") || text.contains("</think>")
+}
+
 /// An explanation the model wrote; when it stopped at its cap mid-sentence, up to the last
-/// sentence it finished (or all of it if none).
+/// sentence it finished (or all of it if none). A thinking block before the answer is dropped;
+/// an answer still thinking, or with thinking left in it, is none.
 pub(crate) fn read_explanation(written: &str, capped: bool) -> Option<String> {
-    let text = written.trim();
-    if text.is_empty() {
+    let mut text = written.trim();
+    if let Some(rest) = text.strip_prefix("<think>") {
+        text = rest.split_once("</think>")?.1.trim();
+    }
+    if text.is_empty() || thinks(text) {
         return None;
     }
     if !capped {
@@ -831,6 +865,34 @@ mod tests {
         );
         assert_eq!(read_explanation("No end", true).as_deref(), Some("No end"));
         assert_eq!(read_explanation("  ", false), None);
+    }
+
+    #[test]
+    fn thinking_is_turned_off_where_the_template_can_turn_it_off_and_never_shown() {
+        // Qwen3.5's own words for it, as its template spells them.
+        let qwen = r"{%- if enable_thinking is defined and enable_thinking is false %}{{- '<think>\n\n</think>\n\n' }}{%- else %}{{- '<think>\n' }}{%- endif %}";
+        assert_eq!(
+            thinking_off(qwen, "<|im_start|>assistant\n".to_owned()),
+            "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        );
+        // A template with no such switch (Qwen3-2507, the test model) is left as it is.
+        assert_eq!(
+            thinking_off("{{ '<|im_start|>assistant\n' }}", "x".to_owned()),
+            "x"
+        );
+        // A thinking block before the answer is dropped; one that never ends gives nothing.
+        assert_eq!(
+            read_explanation("<think>\nWhat is it?\n</think>\n\nIt is a test.", false).as_deref(),
+            Some("It is a test.")
+        );
+        assert_eq!(
+            read_explanation("<think>\nThinking Process:\n\n1. **Analyze", true),
+            None
+        );
+        assert_eq!(read_explanation("<think></think>", false), None);
+        assert_eq!(read_explanation("Fine. <think>more", false), None);
+        let thinking = r#"{"sentences":[{"text":"<think>plan</think>","quote":"Normal study."}]}"#;
+        assert_eq!(read_summary(thinking, false), None);
     }
 
     #[test]

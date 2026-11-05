@@ -52,6 +52,40 @@ export interface ModelSentence {
   quote: string;
 }
 
+/** One model the app accepts (`ai_model_catalog`). `sourceUrl` is shown as
+ * text with a Copy button; the app opens nothing. */
+export interface AcceptedModel {
+  name: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  licence: string;
+  notices: string[];
+  sourceUrl: string;
+}
+
+/** How `ai_model_add_picked` ended. `added` carries the new status; the
+ * others are refusals, except `cancelled`, which is silent. */
+export type ModelAddOutcome =
+  | { outcome: "added"; status: ModelStatus }
+  | { outcome: "cancelled" }
+  | {
+      outcome:
+        | "notListed"
+        | "tooBig"
+        | "incomplete"
+        | "wrongHash"
+        | "noDisk"
+        | "unreadable"
+        | "storage"
+        | "busy"
+        /** Download only: no connection, or it was lost. */
+        | "network"
+        /** Download only: the address refused (401/403/404/410). */
+        | "unavailable";
+    }
+  | { outcome: "unsupported"; reason: "ram" | "cpu" | "platform" };
+
 /** A summary sentence with its place in the document, or `null` when the
  * quote was not found there. The app never guesses a place. */
 export interface SummarySentence extends ModelSentence {

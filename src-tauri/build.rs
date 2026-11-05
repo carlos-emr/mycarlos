@@ -90,7 +90,12 @@ fn main() {
     tauri_build::try_build(
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
             "runtime_info",
+            "ai_model_catalog",
             "ai_model_status",
+            "ai_model_add_picked",
+            "ai_model_add_cancel",
+            "ai_model_download",
+            "ai_model_remove",
             "ai_summarize",
             "ai_explain",
             "ai_cancel",
