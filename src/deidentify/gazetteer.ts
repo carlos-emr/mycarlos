@@ -58,8 +58,12 @@ const LINKING_WORDS = new Set([
   "and",
   "et",
 ]);
+// A place word right before a town written in lower case: "grew up in port hope".
+const PLACE_BEFORE =
+  /(?:^|[^\p{L}])(?:in|from|to|at|near|à|a|de|en|em|w|z|na)[ \t]+$/iu;
 /** `asWritten`: each word of the name, but a linking word, starts with a capital in the text,
- * so "the west end" is not the town of West End (#239 review). */
+ * or the name stands right after a place word ("in port hope"), so "the west end" is not the
+ * town of West End (#239 review). */
 function spansOf(text: string, index: Index, asWritten = false): Span[] {
   const tokens = [...text.matchAll(WORD)].map((match) => ({
     word: match[0].toLowerCase().replace(/’/gu, "'"),
@@ -72,11 +76,19 @@ function spansOf(text: string, index: Index, asWritten = false): Span[] {
     if (!candidates) continue;
     for (const words of candidates) {
       if (at + words.length > tokens.length) continue;
+      // Not "at the north shore": "The North Shore" is a town only as written.
+      const afterPlaceWord =
+        asWritten &&
+        !LINKING_WORDS.has(words[0]) &&
+        PLACE_BEFORE.test(
+          text.slice(Math.max(0, tokens[at].start - 8), tokens[at].start),
+        );
       let all = true;
       for (let k = 0; k < words.length && all; k++) {
         if (tokens[at + k].word !== words[k]) all = false;
         else if (
           asWritten &&
+          !afterPlaceWord &&
           !LINKING_WORDS.has(words[k]) &&
           !/^\p{Lu}/u.test(text.slice(tokens[at + k].start, tokens[at + k].end))
         )

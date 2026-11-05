@@ -154,12 +154,14 @@ describe("town and facility names from the lists (#239 review)", () => {
   it.each([
     "Lives in the west end with her son.",
     "She walks along the north shore daily.",
+    "We met at the north shore beach.",
   ])("leaves an everyday phrase in lower case: %s", (text) => {
     expect(send(text)).toBe(text);
   });
 
   it.each([
     ["She moved to White Rock last year.", "White Rock", "ADDRESS"],
+    ["She moved to white rock last year.", "white rock", "ADDRESS"],
     ["Born in Saint-Jean-sur-Richelieu.", "Richelieu", "ADDRESS"],
     ["Referred to Aberdeen Health & Community Services.", "Aberdeen", "CLINIC"],
     [
