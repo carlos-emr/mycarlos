@@ -11310,8 +11310,12 @@ describe("automatic clinic approval checks in the app (#131)", () => {
   function clinicBridge(overrides: Partial<VaultBridge>) {
     return nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(vaultWith(pending)),
-      unlock: vi.fn().mockResolvedValue(vaultWith(pending)),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(vaultWith(pending))),
+      unlock: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(vaultWith(pending))),
       connectPortal: vi.fn(),
       // An unlock now checks for documents (#128): nothing new.
       checkDocuments: vi
@@ -11425,7 +11429,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       const bridge = clinicBridge({
         snapshot: vi.fn().mockImplementation(async () => {
           if (current.recovery) await reread;
-          return current;
+          return captureSnapshot(current);
         }),
         refreshDeviceApproval: vi.fn().mockImplementation(async () => {
           current = { ...vaultWith(pending), recovery: "writeFailed" };
