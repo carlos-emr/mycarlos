@@ -1534,6 +1534,8 @@ interface-history-empty = There are no history events.
 
 interface-history-error-unverified = The history could not be read and verified. No events are shown.
 
+interface-history-event-aiResultSaved = AI answer kept
+
 interface-history-event-backupRestored = Backup restored
 
 interface-history-event-backupSaved = Encrypted backup saved
@@ -1605,6 +1607,10 @@ interface-history-how = How
 interface-history-how-aidReplaced = Replaced an earlier reading aid
 
 interface-history-how-camera = Added with the camera
+
+interface-history-how-summary = Summary in plain words
+
+interface-history-how-explain = A term explained
 
 interface-history-how-damaged = Hidden because its file was missing
 
@@ -1773,15 +1779,15 @@ aiHelper-notice-testBuild = This development build is for synthetic (made-up) fi
 
 aiHelper-notice-shareHeading = Saving text for another AI service
 
-aiHelper-notice-shareBody = myCarlos can save a document's text with identifying details removed, so that you can give it to an AI service you choose. It looks for the names of the people in your profiles and in People's details, and for names that follow a title or a label such as “Dr.”. It also looks for health card and medical record numbers, dates of birth, ages of 90 and over, addresses, postal codes, phone and fax numbers, email and web addresses, the names of clinics and doctors, and other identifying numbers such as lab order numbers, and removes what it finds. It moves the other dates back by the same number of days, so the time between them stays the same.
+aiHelper-notice-shareBody = myCarlos can save a document's text with identifying details removed, so that you can give it to an AI service you choose. It looks for the names of the people in your profiles and in People's details, and for names that follow a title or a label such as “Dr.”. It also looks for health card and medical record numbers, dates of birth, ages of 90 and over, addresses, postal codes, phone and fax numbers, email and web addresses, the names of clinics and doctors, and other identifying numbers such as lab order numbers, and removes what it finds. The dates it recognizes are not sent. Each one is replaced by a numbered mark such as “DATE 2, 14 days after DATE 1”, so the time between dates stays clear without the real dates. An age of 90 or over is replaced by a numbered mark that says “90+”.
 
-aiHelper-notice-previewBody = You see the text first, with the removed parts and the moved dates marked, and you can remove more. A date that is not marked has not been moved. The preview shows all of the text the file will hold, even text that is hidden in the document. Nothing is saved until you choose to save it.
+aiHelper-notice-previewBody = You see the text first, with the removed parts and the replaced dates marked, and you can remove more. A date that is not marked was not recognized, so it is still in the text. The preview shows all of the text the file will hold, even text that is hidden in the document. Nothing is saved until you choose to save it.
 
-aiHelper-notice-limitsBody = Removing details is never perfect. myCarlos finds only the names it knows and names that follow a title or a label in English or French, so other names can stay. It can also miss a number, or a date written in another way or in another language. A rare illness, an unusual job or a small town can still point to you or to someone else. Read all of the text before you save it.
+aiHelper-notice-limitsBody = Removing details is never perfect. myCarlos finds only the names it knows and names that follow a title or a label in English or French, so other names can stay. It can also miss a number, or a date written in another way or in another language. A year on its own, as in “Appendectomy 2019”, is not removed. A rare illness, an unusual job or a small town can still point to you or to someone else. Read all of the text before you save it.
 
 aiHelper-notice-fileBody = The text is saved as a plain text file, in a place you choose. It is not encrypted, and myCarlos cannot erase it later. If that place is a folder that syncs to a cloud drive, the file is copied there too. The save is recorded in the audit history.
 
-aiHelper-notice-serviceBody = Once you give the text to another service, what happens to it is up to that service. If you are signed in to it, it knows who you are, whatever was removed, and even if you are not, it sees your internet address. Dates that myCarlos moved stay moved in its answers. A document can also contain instructions meant for an AI. So use an AI that cannot act for you (send messages, open links or read your files), or turn those features off.
+aiHelper-notice-serviceBody = Once you give the text to another service, what happens to it is up to that service. If you are signed in to it, it knows who you are, whatever was removed, and even if you are not, it sees your internet address. Its answers will use the marks, such as DATE 2, not the real dates. In myCarlos, while this window stays open, you can paste its answer to put the real details back. A document can also contain instructions meant for an AI. So use an AI that cannot act for you (send messages, open links or read your files), or turn those features off.
 
 aiHelper-notice-adviceBody = Answers written by an AI can be wrong. Do not take them as a diagnosis or as advice about treatment or medicines, and do not change a medicine or a treatment because of what an AI says. Ask your doctor.
 
@@ -1824,13 +1830,13 @@ interface-AnonymizePreview-replaced = { $count } signs that could not be read we
 
 interface-AnonymizePreview-headerNote = The file will start with this line:
 
-interface-AnonymizePreview-howMarked = Removed details are marked and named. Moved dates are marked too; a date that is not marked has not been moved.
+interface-AnonymizePreview-howMarked = Removed details and replaced dates are marked and named. A date that is not marked was not recognized and is still in the text.
 
 interface-AnonymizePreview-textRegion = The text that will be saved
 
 interface-AnonymizePreview-removedKind = removed: { $kind }
 
-interface-AnonymizePreview-movedDate = date moved
+interface-AnonymizePreview-movedDate = date replaced
 
 interface-AnonymizePreview-kind-name = name
 
@@ -1892,6 +1898,29 @@ interface-AnonymizePreview-placeholder-unclearDate = DATE
 
 interface-AnonymizePreview-placeholder-manual = REMOVED
 
+interface-AnonymizePreview-note-daysAfter = { $days ->
+    [one] { $days } day after { $label } { $number }
+   *[other] { $days } days after { $label } { $number }
+}
+
+interface-AnonymizePreview-note-ageOver90 = 90+
+
+interface-AnonymizePreview-pasteTitle = Put the details back
+
+interface-AnonymizePreview-pasteHelp = Paste the AI's answer below. myCarlos puts back the names, dates and numbers it replaced. It keeps the list of what it replaced only in memory, only while the vault stays unlocked and this window stays open. Nothing is saved.
+
+interface-AnonymizePreview-pasteLabel = The AI's answer
+
+interface-AnonymizePreview-pasteButton = Put details back
+
+interface-AnonymizePreview-pasteResult = The answer with the details put back
+
+interface-AnonymizePreview-pasteFlagged = Marks that could not be matched to this text, or that were changed, are highlighted ({ $count }). Check them against the original.
+
+interface-AnonymizePreview-pasteAllMatched = All the marks were recognized and put back.
+
+interface-AnonymizePreview-pasteFlaggedSr = (check against the original)
+
 interface-AnonymizePreview-possibleNames = Words that may be names
 
 interface-AnonymizePreview-removeWord = Remove “{ $word }”
@@ -1940,3 +1969,9 @@ notifications-autoAllow = Check for clinic documents automatically while unlocke
 notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
 notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
+
+ai-summary-again = Summarize again
+
+ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
+
+ai-keepFull = This document already keeps the most AI answers it can. New answers are shown but not kept.

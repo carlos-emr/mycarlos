@@ -863,6 +863,16 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.close",
   "interface.AiHelperNotice.continue",
   "interface.AnonymizePreview.footerNote",
+  "interface.AnonymizePreview.note.daysAfter",
+  "interface.AnonymizePreview.note.ageOver90",
+  "interface.AnonymizePreview.pasteTitle",
+  "interface.AnonymizePreview.pasteHelp",
+  "interface.AnonymizePreview.pasteLabel",
+  "interface.AnonymizePreview.pasteButton",
+  "interface.AnonymizePreview.pasteResult",
+  "interface.AnonymizePreview.pasteFlagged",
+  "interface.AnonymizePreview.pasteAllMatched",
+  "interface.AnonymizePreview.pasteFlaggedSr",
   "notifications.allow",
   "notifications.blocked",
   "notifications.error",
@@ -902,6 +912,12 @@ export const MESSAGE_KEYS = [
   "ai.model.refusedNetwork",
   "ai.model.refusedUnavailable",
   "native.filter.models",
+  "interface.history.event.aiResultSaved",
+  "interface.history.how.summary",
+  "interface.history.how.explain",
+  "ai.summary.again",
+  "ai.keepFailed",
+  "ai.keepFull",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1951,6 +1967,26 @@ const FLUENT_IDS_BY_KEY = {
   "interface.AiHelperNotice.continue": "interface-AiHelperNotice-continue",
   "interface.AnonymizePreview.footerNote":
     "interface-AnonymizePreview-footerNote",
+  "interface.AnonymizePreview.note.daysAfter":
+    "interface-AnonymizePreview-note-daysAfter",
+  "interface.AnonymizePreview.note.ageOver90":
+    "interface-AnonymizePreview-note-ageOver90",
+  "interface.AnonymizePreview.pasteTitle":
+    "interface-AnonymizePreview-pasteTitle",
+  "interface.AnonymizePreview.pasteHelp":
+    "interface-AnonymizePreview-pasteHelp",
+  "interface.AnonymizePreview.pasteLabel":
+    "interface-AnonymizePreview-pasteLabel",
+  "interface.AnonymizePreview.pasteButton":
+    "interface-AnonymizePreview-pasteButton",
+  "interface.AnonymizePreview.pasteResult":
+    "interface-AnonymizePreview-pasteResult",
+  "interface.AnonymizePreview.pasteFlagged":
+    "interface-AnonymizePreview-pasteFlagged",
+  "interface.AnonymizePreview.pasteAllMatched":
+    "interface-AnonymizePreview-pasteAllMatched",
+  "interface.AnonymizePreview.pasteFlaggedSr":
+    "interface-AnonymizePreview-pasteFlaggedSr",
   "notifications.allow": "notifications-allow",
   "notifications.blocked": "notifications-blocked",
   "notifications.error": "notifications-error",
@@ -1990,6 +2026,13 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.refusedNetwork": "ai-model-refusedNetwork",
   "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
   "native.filter.models": "native-filter-models",
+  "interface.history.event.aiResultSaved":
+    "interface-history-event-aiResultSaved",
+  "interface.history.how.summary": "interface-history-how-summary",
+  "interface.history.how.explain": "interface-history-how-explain",
+  "ai.summary.again": "ai-summary-again",
+  "ai.keepFailed": "ai-keepFailed",
+  "ai.keepFull": "ai-keepFull",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2944,6 +2987,20 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.close": undefined;
   "interface.AiHelperNotice.continue": undefined;
   "interface.AnonymizePreview.footerNote": undefined;
+  "interface.AnonymizePreview.note.daysAfter": {
+    days: FluentArgument;
+    label: FluentArgument;
+    number: FluentArgument;
+  };
+  "interface.AnonymizePreview.note.ageOver90": undefined;
+  "interface.AnonymizePreview.pasteTitle": undefined;
+  "interface.AnonymizePreview.pasteHelp": undefined;
+  "interface.AnonymizePreview.pasteLabel": undefined;
+  "interface.AnonymizePreview.pasteButton": undefined;
+  "interface.AnonymizePreview.pasteResult": undefined;
+  "interface.AnonymizePreview.pasteFlagged": { count: FluentArgument };
+  "interface.AnonymizePreview.pasteAllMatched": undefined;
+  "interface.AnonymizePreview.pasteFlaggedSr": undefined;
   "notifications.allow": undefined;
   "notifications.blocked": undefined;
   "notifications.error": undefined;
@@ -2987,6 +3044,12 @@ export interface MessageArgsByKey {
   "ai.model.refusedNetwork": undefined;
   "ai.model.refusedUnavailable": undefined;
   "native.filter.models": undefined;
+  "interface.history.event.aiResultSaved": undefined;
+  "interface.history.how.summary": undefined;
+  "interface.history.how.explain": undefined;
+  "ai.summary.again": undefined;
+  "ai.keepFailed": undefined;
+  "ai.keepFull": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -19,8 +19,7 @@ const knownNames = [
   "Renée Côté",
   "Maggie Notreal",
 ];
-const run = (text: string) =>
-  deidentify(text, { knownNames, dateShiftDays: 10 });
+const run = (text: string) => deidentify(text, { knownNames });
 
 /** Every identifying detail in each document, which must not be sent, and
  * clinical text that must be. */
@@ -258,40 +257,47 @@ describe("the name remover (#72)", () => {
     expect(text.match(/\[CLINIC 1\]/g)).toHaveLength(2);
   });
 
-  it("removes a date of birth, and shifts every other date by the same days", () => {
+  it("removes a date of birth, and numbers every other date in calendar order with its gap", () => {
     const { toSend: text, onDevice } = run(referral);
     const { removed } = onDevice;
     expect(removed.find((part) => part.kind === "dateOfBirth")?.original).toBe(
       "1961-04-17",
     );
-    // Written as they were, ten days later: the seven days between the
-    // start of the pain and the ECG stay seven.
-    expect(text).toContain("October 12, 2026");
-    expect(text).toContain("since September 28, 2026");
-    expect(text).toContain("ECG on 2026-10-05");
+    // No real date is sent. The earliest is DATE 1; the others say how far
+    // after it they fall: the seven days between the start of the pain and
+    // the ECG stay seven.
+    expect(text).toContain("since [DATE 1].");
+    expect(text).toContain("ECG on [DATE 2, 7 days after DATE 1]");
+    expect(text).toContain("[DATE 3, 14 days after DATE 1]");
+    expect(text).not.toMatch(/\b20\d\d\b/);
     const lab10 = run(lab).toSend;
-    expect(lab10).toContain("Collected: 2026-10-18 07:40");
-    expect(lab10).toContain("(on or after 2026-11-01)");
+    expect(lab10).toContain("Collected: [DATE 1] 07:40");
+    expect(lab10).toContain("Reported: [DATE 2, 1 day after DATE 1] 15:12");
+    expect(lab10).toContain("(on or after [DATE 3, 14 days after DATE 1])");
     const imaging10 = run(imaging).toSend;
-    expect(imaging10).toContain("Date: 22 October 2026");
-    expect(imaging10).toContain("CT chest, 13 Mar 2025.");
-    expect(imaging10).toContain("around Oct. 22, 2027.");
+    expect(imaging10).toContain("Date: [DATE 2, 588 days after DATE 1]");
+    expect(imaging10).toContain("CT chest, [DATE 1].");
+    expect(imaging10).toContain("around [DATE 3, 953 days after DATE 1].");
   });
 
-  it("removes a date like 03/04/2026, which could be read two ways, and moves one it can read", () => {
-    const shift = (text: string, dayFirst?: boolean) =>
-      deidentify(text, { knownNames: [], dateShiftDays: 1, dayFirst }).toSend;
-    expect(shift("Seen 03/04/2026.")).toBe("Seen [DATE 1].");
-    expect(shift("Seen 03/04/2026.", false)).toBe("Seen [DATE 1].");
+  it("gives a date like 03/04/2026, which could be read two ways, a plain placeholder, and one it can read a numbered one", () => {
+    const out = (text: string, dayFirst?: boolean) =>
+      deidentify(text, { knownNames: [], dayFirst }).toSend;
+    expect(out("Seen 03/04/2026.")).toBe("Seen [DATE 1].");
+    expect(out("Seen 03/04/2026.", false)).toBe("Seen [DATE 1].");
     // A day over 12 settles it either way, and the same day and month too.
-    expect(shift("Seen 25/12/2026.", false)).toBe("Seen 26/12/2026.");
-    expect(shift("Seen 12/25/2026.")).toBe("Seen 12/26/2026.");
-    expect(shift("Seen 04/04/2026.")).toBe("Seen 05/04/2026.");
+    expect(out("Seen 25/12/2026.", false)).toBe("Seen [DATE 1].");
+    expect(out("Seen 12/25/2026.")).toBe("Seen [DATE 1].");
+    expect(out("Seen 04/04/2026.")).toBe("Seen [DATE 1].");
+    // The unclear one has no gap, and the same text is the same placeholder.
+    expect(out("On 03/04/2026 and 25/12/2026, not 03/04/2026.")).toBe(
+      "On [DATE 2] and [DATE 1], not [DATE 2].",
+    );
   });
 
   it("takes out the details root-c2's probe found missed (#72 review)", () => {
     const out = (text: string, names: string[] = []) =>
-      deidentify(text, { knownNames: names, dateShiftDays: 40 }).toSend;
+      deidentify(text, { knownNames: names }).toSend;
     // Accented names, and surnames after a particle.
     expect(out("Patient: Émilie Tremblay")).toBe("Patient: [NAME 1]");
     expect(out("Patient: Jean de la Cruz")).toBe("Patient: [NAME 1]");
@@ -300,7 +306,7 @@ describe("the name remover (#72)", () => {
     expect(
       out("Address 1234, rue Sherbrooke Est, Montréal, QC H2X 1A1"),
     ).not.toMatch(/Sherbrooke|1234|Montréal|H2X/);
-    // Dates of birth in every common form, and other dates in them shifted.
+    // Dates of birth in every common form, and other dates in them numbered.
     for (const dob of [
       "Born 1958/03/02.",
       "DOB: 1958-Mar-02",
@@ -311,10 +317,10 @@ describe("the name remover (#72)", () => {
       "DOB: 02/03/58",
     ])
       expect(out(dob), dob).not.toMatch(/1958|\b58\b/);
-    expect(out("Seen 2026/10/17.")).toBe("Seen 2026/11/26.");
-    expect(out("Seen 2026-Oct-17.")).toBe("Seen 2026-Nov-26.");
-    expect(out("Vu le 17 octobre 2026.")).toBe("Vu le 26 novembre 2026.");
-    expect(out("Date: 17/10/26.")).toBe("Date: 26/11/26.");
+    expect(out("Seen 2026/10/17.")).toBe("Seen [DATE 1].");
+    expect(out("Seen 2026-Oct-17.")).toBe("Seen [DATE 1].");
+    expect(out("Vu le 17 octobre 2026.")).toBe("Vu le [DATE 1].");
+    expect(out("Date: 17/10/26.")).toBe("Date: [DATE 1].");
     // Bare ten-digit numbers: a phone, an Ontario card, a BC PHN.
     expect(out("Call 6135550199 or HCN 1234567890")).not.toMatch(/\d{4}/);
     expect(out("Card 1234 567 890 on file")).toBe(
@@ -344,7 +350,7 @@ describe("the name remover (#72)", () => {
   it("takes the whole name after a label, surname first or in capitals (#80 review)", () => {
     // The profile name is not the legal name, so only the label finds it.
     const out = (text: string, names = ["Maggie Notreal"]) =>
-      deidentify(text, { knownNames: names, dateShiftDays: 40 }).toSend;
+      deidentify(text, { knownNames: names }).toSend;
     for (const [text, sent] of [
       ["Patient: Notreal, Margaret", "Patient: [NAME 1]"],
       ["PATIENT: NOTREAL, MARGARET", "PATIENT: [NAME 1]"],
@@ -384,8 +390,7 @@ describe("the name remover (#72)", () => {
   });
 
   it("takes out clinicians named with initials, in a signature or by their title (#80 review)", () => {
-    const out = (text: string) =>
-      deidentify(text, { knownNames: [], dateShiftDays: 40 }).toSend;
+    const out = (text: string) => deidentify(text, { knownNames: [] }).toSend;
     expect(out("Dr. J. Testcase reviewed.")).toBe("Dr. [DOCTOR 1] reviewed.");
     expect(out("cc: Dr. A. Sample; Dr. B. Fakename")).toBe(
       "cc: Dr. [DOCTOR 1]; Dr. [DOCTOR 2]",
@@ -430,8 +435,7 @@ describe("the name remover (#72)", () => {
   });
 
   it("removes a name found once wherever else it stands (#72 review)", () => {
-    const out = (text: string) =>
-      deidentify(text, { knownNames: [], dateShiftDays: 10 }).toSend;
+    const out = (text: string) => deidentify(text, { knownNames: [] }).toSend;
     expect(out("Mrs. Avery Example and Avery")).toBe(
       "Mrs. [NAME 1] and [NAME 1]",
     );
@@ -474,7 +478,7 @@ describe("the name remover (#72)", () => {
 
   it("keeps an everyday word that is also a found name, and flags it for the preview (#72 review)", () => {
     const run10 = (text: string, names: string[] = []) =>
-      deidentify(text, { knownNames: names, dateShiftDays: 10 });
+      deidentify(text, { knownNames: names });
     /** The flagged words, checked to stand where the preview would show them. */
     const flagged = (result: ReturnType<typeof run10>) =>
       result.onDevice.possibleNames.map((possible) => {
@@ -523,9 +527,8 @@ describe("the name remover (#72)", () => {
     expect(JSON.parse(JSON.stringify(price))).toEqual({ toSend: price.toSend });
   });
 
-  it("shifts a two-digit-year date only after a date label (#72 review)", () => {
-    const out = (text: string) =>
-      deidentify(text, { knownNames: [], dateShiftDays: 40 }).toSend;
+  it("reads a two-digit-year date only after a date label (#72 review)", () => {
+    const out = (text: string) => deidentify(text, { knownNames: [] }).toSend;
     // Bare, "1/2/24" is as likely a ratio or a dose as a date.
     for (const text of [
       "Ratio 1/2/24 today.",
@@ -533,14 +536,14 @@ describe("the name remover (#72)", () => {
       "Titrate 5/10/20 mg.",
     ])
       expect(out(text)).toBe(text);
-    expect(out("Date: 17/10/26.")).toBe("Date: 26/11/26.");
-    expect(out("Visit date: 17/10/26")).toBe("Visit date: 26/11/26");
+    expect(out("Date: 17/10/26.")).toBe("Date: [DATE 1].");
+    expect(out("Visit date: 17/10/26")).toBe("Visit date: [DATE 1]");
     expect(out("Date de la visite : 17/10/26")).toBe(
-      "Date de la visite : 26/11/26",
+      "Date de la visite : [DATE 1]",
     );
-    expect(out("Letter dated 17/10/26.")).toBe("Letter dated 26/11/26.");
+    expect(out("Letter dated 17/10/26.")).toBe("Letter dated [DATE 1].");
     // A four-digit year needs no label; a date of birth is removed either way.
-    expect(out("Seen 17/10/2026.")).toBe("Seen 26/11/2026.");
+    expect(out("Seen 17/10/2026.")).toBe("Seen [DATE 1].");
     expect(out("DOB: 02/03/58")).toBe("DOB: [DATE OF BIRTH 1]");
   });
 
@@ -550,20 +553,9 @@ describe("the name remover (#72)", () => {
       "1/2 tablet twice daily, 2 x 500 mg. ICD-10 I10. Weight 72.5 kg. " +
       "Next dose in 3-4 days. Ref range 3.5-5.0, 12.5-15.0. Platelets 250 x10^9/L. " +
       "INR 1.1. Glucose 5.6. Lot 4471. Pager 2231.";
-    const result = deidentify(text, { knownNames: [], dateShiftDays: 10 });
+    const result = deidentify(text, { knownNames: [] });
     expect(result.toSend).toBe(text);
     expect(result.onDevice.removed).toEqual([]);
-  });
-
-  it("chooses a shift of 30 to 365 days, always earlier, when none is given", () => {
-    for (let round = 0; round < 20; round++) {
-      const { dateShiftDays, removed } = deidentify("Seen 2026-10-01.", {
-        knownNames: [],
-      }).onDevice;
-      expect(dateShiftDays).toBeLessThanOrEqual(-30);
-      expect(dateShiftDays).toBeGreaterThanOrEqual(-365);
-      expect(removed[0].replacement < "2026-10-01").toBe(true);
-    }
   });
 
   it("lets the patient remove more from the preview", () => {
@@ -590,7 +582,7 @@ describe("the name remover (#72)", () => {
   it("fills the details back into an answer, on the device", () => {
     const result = run(referral);
     const answer =
-      "[NAME 1] should ask [DOCTOR 1] about the ECG on 2026-10-05 " +
+      "[NAME 1] should ask [DOCTOR 1] about the ECG on [DATE 2, 7 days after DATE 1] " +
       "and bring it to [CLINIC 2].";
     expect(restore(answer, result)).toBe(
       "Avery EXAMPLE should ask Blake Sample about the ECG on 2026-09-25 " +
@@ -599,6 +591,10 @@ describe("the name remover (#72)", () => {
     // A placeholder it did not make is left as it is.
     expect(restore("[NAME 9] and [PHONE 99]", result)).toBe(
       "[NAME 9] and [PHONE 99]",
+    );
+    // A date placeholder whose note was changed is not guessed.
+    expect(restore("On [DATE 2, 8 days after DATE 1].", result)).toBe(
+      "On [DATE 2, 8 days after DATE 1].",
     );
   });
 
@@ -637,7 +633,7 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
   const out = (
     text: string,
     options: Partial<Parameters<typeof deidentify>[1]> = {},
-  ) => deidentify(text, { knownNames: [], dateShiftDays: -40, ...options });
+  ) => deidentify(text, { knownNames: [], ...options });
 
   /** Every removal stands where it says, in the source and in the text to
    * send. */
@@ -764,8 +760,8 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     expect(
       result.onDevice.removed.find((part) => part.original === "2024")?.kind,
     ).toBe("date");
-    // The weekday moved with its date, forty days earlier.
-    expect(text).toContain("Collected:   Saturday, 2026-08-29 07:40");
+    // The weekday goes with its date; the time of day stays.
+    expect(text).toContain("Collected:   [DATE 1] 07:40");
   });
 
   it("removes a known birth date wherever it stands, in any form", () => {
@@ -782,10 +778,10 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
         text,
       ).toBe(true);
     }
-    // Another date is only moved.
+    // Another date is only numbered.
     expect(
       out("Seen 1961-04-18.", { knownBirthDates: ["1961-04-17"] }).toSend,
-    ).toBe("Seen 1961-03-09.");
+    ).toBe("Seen [DATE 1].");
   });
 
   it("takes a vault name in either order, surname first, and in any case", () => {
@@ -843,46 +839,50 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     );
   });
 
-  it("moves dates back only, with the weekday, and month and year forms", () => {
-    const shift = (text: string) => out(text).toSend;
-    expect(shift("Seen Monday, October 6, 2025.")).toBe(
-      "Seen Wednesday, August 27, 2025.",
+  it("sends no date: the weekday goes with its date, and month and year forms get plain placeholders", () => {
+    const send = (text: string) => out(text).toSend;
+    expect(send("Seen Monday, October 6, 2025.")).toBe("Seen [DATE 1].");
+    expect(send("Vu le lundi 6 octobre 2025.")).toBe("Vu le [DATE 1].");
+    expect(send("Thu. 2026-01-15")).toBe("[DATE 1]");
+    // A month and a year, and a year alone after a cue, are plain
+    // placeholders with no gap, numbered as first seen after the whole dates.
+    expect(send("Started in March 2024 and in 2019; born in 2019.")).toBe(
+      "Started in [DATE 1] and in [DATE 2]; born in [DATE 2].",
     );
-    expect(shift("Vu le lundi 6 octobre 2025.")).toBe(
-      "Vu le mercredi 27 août 2025.",
+    expect(send("since 2019")).toBe("since [DATE 1]");
+    expect(send("depuis 2019 et en octobre 2026")).toBe(
+      "depuis [DATE 1] et en [DATE 2]",
     );
-    expect(shift("Thu. 2026-01-15")).toBe("Sat. 2025-12-06");
-    // A month and a year move with the 15th; a year alone, after a cue,
-    // with its 1 July.
-    expect(shift("Started in March 2024 and in 2019; born in 2019.")).toBe(
-      "Started in February 2024 and in 2019; born in 2019.",
-    );
-    expect(out("since 2019", { dateShiftDays: -200 }).toSend).toBe(
-      "since 2018",
-    );
-    expect(shift("depuis 2019 et en octobre 2026")).toBe(
-      "depuis 2019 et en septembre 2026",
+    expect(send("Seen 2026-10-08, then in October 2026 and in 2019.")).toBe(
+      "Seen [DATE 1], then in [DATE 2] and in [DATE 3].",
     );
     // No cue, no change: a bare year or a number is not a date.
-    expect(shift("Lot 2019, 2019 tablets")).toBe("Lot 2019, 2019 tablets");
-    // Every moved date is earlier.
+    expect(send("Lot 2019, 2019 tablets")).toBe("Lot 2019, 2019 tablets");
+    // The same real date in other spellings is one placeholder; times stay.
+    expect(
+      send("A 2026-10-08, B October 8, 2026, C 8 octobre 2026 at 07:40."),
+    ).toBe("A [DATE 1], B [DATE 1], C [DATE 1] at 07:40.");
     const { removed } = out(
-      "A 2026-10-08, B October 8, 2026, C 8 octobre 2026, D 28/10/2026.",
+      "A 2026-10-08, B October 9, 2026, C 10 octobre 2026, D 28/10/2026.",
     ).onDevice;
     expect(removed).toHaveLength(4);
     for (const part of removed) expect(part.kind).toBe("date");
   });
 
-  it("removes an ambiguous numeric date instead of moving it", () => {
+  it("gives an ambiguous numeric date a plain placeholder instead of dropping it", () => {
     const result = out("Echo of 03/04/2025 and 25/04/2025; Date: 1/2/24.");
     expect(result.toSend).toBe(
-      "Echo of [DATE 1] and 16/03/2025; Date: [DATE 2].",
+      "Echo of [DATE 2] and [DATE 1]; Date: [DATE 3].",
     );
     expect(result.onDevice.removed.map((part) => part.kind)).toEqual([
       "unclearDate",
       "date",
       "unclearDate",
     ]);
+    // Nothing had to be read to put it back.
+    expect(restore(result.toSend, result)).toBe(
+      "Echo of 03/04/2025 and 25/04/2025; Date: 1/2/24.",
+    );
     // A date of birth is removed as one whichever way it reads.
     expect(
       out("DOB 03/04/1961", { knownBirthDates: ["1961-03-04"] }).onDevice
@@ -898,7 +898,9 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
       out(
         "A 92-year-old man, aged 95, 101 yo; une femme âgée de 90 ans; 65-year-old.",
       ).toSend,
-    ).toBe("A [AGE 1] man, [AGE 2], [AGE 3]; une femme [AGE 4]; 65-year-old.");
+    ).toBe(
+      "A [AGE 1, 90+] man, [AGE 2, 90+], [AGE 3, 90+]; une femme [AGE 4, 90+]; 65-year-old.",
+    );
     expect(out("SIN: 046454286, NAS 046 454 286, 046-454-286.").toSend).toBe(
       "SIN: [SIN 1], NAS [SIN 2], [SIN 3].",
     );
@@ -933,20 +935,20 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     );
   });
 
-  it("takes a placeholder or a moved date into a removal when told to (AI-02)", () => {
+  it("takes a placeholder, a date included, into a removal when told to (AI-02)", () => {
     const result = out("Seen Avery on 2026-10-08 at the clinic.", {
       knownNames: ["Avery Example"],
     });
-    expect(result.toSend).toBe("Seen [NAME 1] on 2026-08-29 at the clinic.");
-    // A hit inside the moved date takes the whole date.
-    const at = result.toSend.indexOf("08-29");
+    expect(result.toSend).toBe("Seen [NAME 1] on [DATE 1] at the clinic.");
+    // A hit inside the date placeholder takes the whole placeholder.
+    const at = result.toSend.indexOf("DATE");
     const over = removeMore(result, at, at + 2, { over: true });
     expect(over.toSend).toBe("Seen [NAME 1] on [REMOVED 1] at the clinic.");
     expect(() => removeMore(result, at, at + 2)).toThrow(RangeError);
     // A range across a placeholder and text takes both.
     const across = result.toSend.indexOf("[NAME 1] on");
     const both = removeMore(result, across + 3, across + 11, { over: true });
-    expect(both.toSend).toBe("Seen [REMOVED 1] 2026-08-29 at the clinic.");
+    expect(both.toSend).toBe("Seen [REMOVED 1] [DATE 1] at the clinic.");
     expect(both.onDevice.removed.map((part) => part.kind)).toEqual([
       "manual",
       "date",

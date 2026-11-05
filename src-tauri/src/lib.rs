@@ -411,6 +411,11 @@ impl From<VaultError> for PublicText {
                 code: "invalid",
                 message_key: "native.error.19",
             },
+            // The reader says it on this code: the answer is shown, not kept.
+            VaultError::AiResultsFull => Self {
+                code: "ai_results_full",
+                message_key: "ai.keepFull",
+            },
             VaultError::WeakPassphrase => Self {
                 code: "weak_passphrase",
                 message_key: "native.error.20",
@@ -1436,6 +1441,23 @@ impl PendingPicks {
 #[serde(rename_all = "camelCase")]
 struct RecordIdRequest {
     record_id: Uuid,
+}
+
+/// An AI answer to keep with a document (#72): what it is, and its bytes,
+/// the renderer's own JSON, as text.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveAiResultRequest {
+    record_id: Uuid,
+    result: vault::AiResultInput,
+    content: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiResultRequest {
+    record_id: Uuid,
+    result_id: Uuid,
 }
 
 #[derive(Deserialize)]
@@ -3807,6 +3829,12 @@ async fn vault_export_text_picked(
     if !hits.is_empty() {
         return Ok(TextSaveOutcome { saved: false, hits });
     }
+    // The remover sends no date: each is a placeholder. One still standing
+    // means page code skipped it (AI-01, AI-02).
+    let hits = text_recheck::date_hits(&request.text);
+    if !hits.is_empty() {
+        return Ok(TextSaveOutcome { saved: false, hits });
+    }
     let locale = locale.unwrap_or_default();
     let mut content = locale.text(MessageId::AiHelperExportHeader)?;
     content.push_str("\n\n");
@@ -4050,6 +4078,58 @@ async fn vault_hide_record(
     picks.forget_texts_for(request.record_id);
     run_blocking(store.inner(), move |store| {
         store.hide_record(request.record_id, now_ms())
+    })
+    .await
+}
+
+/// Keeps the AI helper's answer with its document, encrypted (#72 part D).
+#[tauri::command]
+async fn vault_ai_result_save(
+    store: State<'_, Arc<VaultStore>>,
+    request: SaveAiResultRequest,
+) -> CommandResult<vault::AiResultInfo> {
+    // Page code chose these bytes: kept only if they are an answer as the
+    // reader writes them, from the model that last answered here (#212).
+    let answered = model_runtime::app().answered_model();
+    vault::check_ai_answer(
+        &request.result,
+        request.content.as_bytes(),
+        answered
+            .as_ref()
+            .map(|model| (model.name.as_str(), model.sha256.as_str())),
+    )?;
+    run_blocking(store.inner(), move |store| {
+        store.save_ai_result(
+            request.record_id,
+            request.result,
+            request.content.as_bytes(),
+            now_ms(),
+        )
+    })
+    .await
+}
+
+/// The AI helper's answers kept with a document, newest first (#72).
+#[tauri::command]
+async fn vault_ai_results(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<Vec<vault::AiResultInfo>> {
+    run_blocking(store.inner(), move |store| {
+        store.ai_results(request.record_id)
+    })
+    .await
+}
+
+/// One kept answer's text (#72).
+#[tauri::command]
+async fn vault_ai_result_read(
+    store: State<'_, Arc<VaultStore>>,
+    request: AiResultRequest,
+) -> CommandResult<String> {
+    run_blocking(store.inner(), move |store| {
+        let bytes = store.read_ai_result(request.record_id, request.result_id)?;
+        String::from_utf8(bytes).map_err(|_| vault::VaultError::Corrupt)
     })
     .await
 }
@@ -4429,6 +4509,9 @@ pub fn run() {
             vault_unlock_pdf,
             vault_hide_record,
             vault_unhide_record,
+            vault_ai_result_save,
+            vault_ai_results,
+            vault_ai_result_read,
             vault_hide_unavailable_records,
             vault_reset
         ])
@@ -6778,6 +6861,7 @@ mod native_localization_tests {
             VaultError::Corrupt,
             VaultError::NotFound,
             VaultError::Invalid,
+            VaultError::AiResultsFull,
             VaultError::WeakPassphrase,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,
