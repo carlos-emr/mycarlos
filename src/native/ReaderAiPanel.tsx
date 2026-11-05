@@ -279,8 +279,17 @@ export function ReaderAiPanel({
           </button>
         </form>
       )}
+      {/* Read out as it changes: the work, then that the answer came. A run
+          that failed says so in its alert, never "ready" for an earlier
+          answer. */}
       <p className={working ? "native-dialog-status" : "sr-only"} role="status">
-        {working ? t("ai.working") : ""}
+        {working
+          ? t("ai.working")
+          : !failed && tool === "summary" && summary
+            ? t("ai.summary.ready")
+            : !failed && tool === "explain" && explained
+              ? t("ai.explain.ready")
+              : ""}
       </p>
       {failed && <p role="alert">{t("ai.failed")}</p>}
       {noText && <p>{t("ai.summary.noText")}</p>}

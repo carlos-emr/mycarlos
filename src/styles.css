@@ -468,7 +468,13 @@ h1, h2, p { margin: 0; }
 .native-anonymize-fixed { display: block; margin-top: 4px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: var(--radius-sm); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .native-anonymize-text { flex: 1; min-height: 8em; overflow: auto; margin: 0 20px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas-2); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9375rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .native-anonymize-text mark { padding: 0 2px; border-radius: 3px; background: var(--teal-soft); color: var(--ink); font-weight: 700; text-decoration: underline; text-decoration-style: dotted; }
-.native-anonymize-text mark.native-anonymize-moved { background: transparent; border: 1px dashed currentColor; font-weight: 400; text-decoration: none; }
+.native-anonymize-text mark.native-anonymize-flagged { background: transparent; border: 2px solid currentColor; font-weight: 700; text-decoration: underline wavy; }
+.native-anonymize-paste { display: grid; gap: 8px; padding: 10px 20px 16px; border-top: 1px solid var(--line); }
+.native-anonymize-paste h3 { margin: 0; font-size: 0.875rem; }
+.native-anonymize-paste p { margin: 0; color: var(--ink-soft); font-size: 0.875rem; }
+.native-anonymize-paste label { color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
+.native-anonymize-paste textarea { width: 100%; min-height: 6em; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+.native-anonymize-paste .native-anonymize-text { margin: 0; }
 .native-anonymize-possible { padding: 8px 20px 0; }
 .native-anonymize-possible h3 { margin: 0 0 6px; font-size: 0.875rem; }
 .native-anonymize-possible ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }

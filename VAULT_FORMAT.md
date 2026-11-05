@@ -511,8 +511,9 @@ the whole, so that no entry can outgrow a segment.
 
 The AI helper's text export (#72 part B) is `copySaved` with `how: "anonymizedText"`, the
 document's `recordId` and `name`, and the `place` the text file was saved, cut and hashed
-as for any copy. Never the text, the details removed or the number of days the dates
-were moved. Older readers show it as a copy saved, with its method as written.
+as for any copy. Never the text or the details removed. (The anonymized text keeps no
+date, so there is no day count to record; the list of what was replaced stays in memory
+for the open window only and is never written.) Older readers show it as a copy saved, with its method as written.
 
 - `hash(entry) = SHA-256("mycarlos/history/v1" ‖ 0x00 ‖ canonical JSON)`, in lower-case hex.
 - `prev` is the previous entry's hash. The first entry's is the genesis value,

@@ -770,8 +770,12 @@ the sandbox cannot be set up, **Read** says documents cannot be shown safely on 
 Open a PDF's details and choose **Prepare text for an AI…**. myCarlos reads the
 whole text on this device and shows it with every identifying detail it found
 replaced by a placeholder such as `[NAME 1]` (marked, and named for a screen
-reader) and the other dates moved back by the same number of days (marked
-“date moved”). Try: a possible name listed under the text goes with one press;
+reader). No date is sent: each is a numbered placeholder in calendar order with
+its gap from the earliest, such as `[DATE 2, 14 days after DATE 1]` (marked “date
+replaced”), and an age of 90 or over is `[AGE 1, 90+]`. After a save, **Put
+details back** takes the AI's answer pasted in the box and puts every placeholder
+back exactly; a placeholder it does not know, or whose note was changed, is
+highlighted and left as written. Try: a possible name listed under the text goes with one press;
 select some text and press **Remove the selected text**; type a word in the box
 and press **Remove everywhere**; **Undo the last removal** undoes only your own
 removals. **Save the text…** asks first, then opens the system save dialog with

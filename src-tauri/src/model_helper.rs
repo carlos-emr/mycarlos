@@ -269,12 +269,30 @@ struct SummaryAnswer {
     sentences: Vec<Sentence>,
     last_page: u32,
     last_page_cut: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stats: Option<Stats>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct TextAnswer {
     id: u64,
     text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stats: Option<Stats>,
+}
+
+/// How an answer was made, for measuring: tokens and time for reading the prompt and for
+/// writing the answer, whether it stopped at its cap, and how often the grammar had to look at
+/// the whole vocabulary. Counts and times only, never words.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Stats {
+    pub(crate) prompt_tokens: u32,
+    pub(crate) answer_tokens: u32,
+    pub(crate) prompt_ms: u64,
+    pub(crate) answer_ms: u64,
+    pub(crate) capped: bool,
+    pub(crate) grammar_scans: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -588,6 +606,7 @@ fn serve_model(settings: &Settings) -> i32 {
                     sentences,
                     last_page: fit.last_page,
                     last_page_cut: fit.cut,
+                    stats: Some(engine.stats()),
                 }),
                 Err(error) => serde_json::to_string(&ErrorAnswer { id, error }),
             },
@@ -597,7 +616,11 @@ fn serve_model(settings: &Settings) -> i32 {
                 context,
                 lang,
             }) => match engine.explain(&term, &context, &lang) {
-                Ok(text) => serde_json::to_string(&TextAnswer { id, text }),
+                Ok(text) => serde_json::to_string(&TextAnswer {
+                    id,
+                    text,
+                    stats: Some(engine.stats()),
+                }),
                 Err(error) => serde_json::to_string(&ErrorAnswer { id, error }),
             },
             #[cfg(feature = "ai-helper-stub")]
@@ -658,10 +681,12 @@ mod stub {
                         }],
                         last_page: pages.last().map_or(0, |page| page.index),
                         last_page_cut: false,
+                        stats: None,
                     })
                 }
                 Request::Explain { id, term, .. } => serde_json::to_string(&TextAnswer {
                     id,
+                    stats: None,
                     text: format!(
                         "FAKE explanation of {}.",
                         term.chars().take(40).collect::<String>()
@@ -686,6 +711,7 @@ mod stub {
                     other => serde_json::to_string(&TextAnswer {
                         id,
                         text: confine::probe(other).to_owned(),
+                        stats: None,
                     }),
                 },
             };

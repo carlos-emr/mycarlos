@@ -7,6 +7,7 @@ pub enum MessageId {
     AiErrorMemory,
     AiExplainBox,
     AiExplainHint,
+    AiExplainReady,
     AiExplainSubmit,
     AiExplainTitle,
     AiFailed,
@@ -50,6 +51,7 @@ pub enum MessageId {
     AiSummaryNoText,
     AiSummaryPagesMissing,
     AiSummaryPartial,
+    AiSummaryReady,
     AiSummaryShowInDocument,
     AiSummaryTitle,
     AiWorking,
@@ -155,6 +157,16 @@ pub enum MessageId {
     InterfaceAnonymizePreviewKindUnclearDate,
     InterfaceAnonymizePreviewKindWeb,
     InterfaceAnonymizePreviewMovedDate,
+    InterfaceAnonymizePreviewNoteAgeOver90,
+    InterfaceAnonymizePreviewNoteDaysAfter,
+    InterfaceAnonymizePreviewPasteAllMatched,
+    InterfaceAnonymizePreviewPasteButton,
+    InterfaceAnonymizePreviewPasteFlagged,
+    InterfaceAnonymizePreviewPasteFlaggedSr,
+    InterfaceAnonymizePreviewPasteHelp,
+    InterfaceAnonymizePreviewPasteLabel,
+    InterfaceAnonymizePreviewPasteResult,
+    InterfaceAnonymizePreviewPasteTitle,
     InterfaceAnonymizePreviewPhrase,
     InterfaceAnonymizePreviewPhraseNotFound,
     InterfaceAnonymizePreviewPlaceholderAddress,
@@ -917,6 +929,7 @@ impl MessageId {
         Self::AiErrorMemory,
         Self::AiExplainBox,
         Self::AiExplainHint,
+        Self::AiExplainReady,
         Self::AiExplainSubmit,
         Self::AiExplainTitle,
         Self::AiFailed,
@@ -960,6 +973,7 @@ impl MessageId {
         Self::AiSummaryNoText,
         Self::AiSummaryPagesMissing,
         Self::AiSummaryPartial,
+        Self::AiSummaryReady,
         Self::AiSummaryShowInDocument,
         Self::AiSummaryTitle,
         Self::AiWorking,
@@ -1065,6 +1079,16 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewKindUnclearDate,
         Self::InterfaceAnonymizePreviewKindWeb,
         Self::InterfaceAnonymizePreviewMovedDate,
+        Self::InterfaceAnonymizePreviewNoteAgeOver90,
+        Self::InterfaceAnonymizePreviewNoteDaysAfter,
+        Self::InterfaceAnonymizePreviewPasteAllMatched,
+        Self::InterfaceAnonymizePreviewPasteButton,
+        Self::InterfaceAnonymizePreviewPasteFlagged,
+        Self::InterfaceAnonymizePreviewPasteFlaggedSr,
+        Self::InterfaceAnonymizePreviewPasteHelp,
+        Self::InterfaceAnonymizePreviewPasteLabel,
+        Self::InterfaceAnonymizePreviewPasteResult,
+        Self::InterfaceAnonymizePreviewPasteTitle,
         Self::InterfaceAnonymizePreviewPhrase,
         Self::InterfaceAnonymizePreviewPhraseNotFound,
         Self::InterfaceAnonymizePreviewPlaceholderAddress,
@@ -1827,6 +1851,7 @@ impl MessageId {
             Self::AiErrorMemory => "ai-error-memory",
             Self::AiExplainBox => "ai-explain-box",
             Self::AiExplainHint => "ai-explain-hint",
+            Self::AiExplainReady => "ai-explain-ready",
             Self::AiExplainSubmit => "ai-explain-submit",
             Self::AiExplainTitle => "ai-explain-title",
             Self::AiFailed => "ai-failed",
@@ -1870,6 +1895,7 @@ impl MessageId {
             Self::AiSummaryNoText => "ai-summary-noText",
             Self::AiSummaryPagesMissing => "ai-summary-pagesMissing",
             Self::AiSummaryPartial => "ai-summary-partial",
+            Self::AiSummaryReady => "ai-summary-ready",
             Self::AiSummaryShowInDocument => "ai-summary-showInDocument",
             Self::AiSummaryTitle => "ai-summary-title",
             Self::AiWorking => "ai-working",
@@ -1987,6 +2013,26 @@ impl MessageId {
             }
             Self::InterfaceAnonymizePreviewKindWeb => "interface-AnonymizePreview-kind-web",
             Self::InterfaceAnonymizePreviewMovedDate => "interface-AnonymizePreview-movedDate",
+            Self::InterfaceAnonymizePreviewNoteAgeOver90 => {
+                "interface-AnonymizePreview-note-ageOver90"
+            }
+            Self::InterfaceAnonymizePreviewNoteDaysAfter => {
+                "interface-AnonymizePreview-note-daysAfter"
+            }
+            Self::InterfaceAnonymizePreviewPasteAllMatched => {
+                "interface-AnonymizePreview-pasteAllMatched"
+            }
+            Self::InterfaceAnonymizePreviewPasteButton => "interface-AnonymizePreview-pasteButton",
+            Self::InterfaceAnonymizePreviewPasteFlagged => {
+                "interface-AnonymizePreview-pasteFlagged"
+            }
+            Self::InterfaceAnonymizePreviewPasteFlaggedSr => {
+                "interface-AnonymizePreview-pasteFlaggedSr"
+            }
+            Self::InterfaceAnonymizePreviewPasteHelp => "interface-AnonymizePreview-pasteHelp",
+            Self::InterfaceAnonymizePreviewPasteLabel => "interface-AnonymizePreview-pasteLabel",
+            Self::InterfaceAnonymizePreviewPasteResult => "interface-AnonymizePreview-pasteResult",
+            Self::InterfaceAnonymizePreviewPasteTitle => "interface-AnonymizePreview-pasteTitle",
             Self::InterfaceAnonymizePreviewPhrase => "interface-AnonymizePreview-phrase",
             Self::InterfaceAnonymizePreviewPhraseNotFound => {
                 "interface-AnonymizePreview-phraseNotFound"
@@ -4037,6 +4083,8 @@ impl MessageId {
             "ai.preferences.body" => Some(Self::AiPreferencesBody),
             "ai.preferences.notInstalled" => Some(Self::AiPreferencesNotInstalled),
             "ai.working" => Some(Self::AiWorking),
+            "ai.summary.ready" => Some(Self::AiSummaryReady),
+            "ai.explain.ready" => Some(Self::AiExplainReady),
             "ai.failed" => Some(Self::AiFailed),
             "ai.error.memory" => Some(Self::AiErrorMemory),
             "ai.error.busy" => Some(Self::AiErrorBusy),
@@ -4212,6 +4260,36 @@ impl MessageId {
             "interface.AiHelperNotice.continue" => Some(Self::InterfaceAiHelperNoticeContinue),
             "interface.AnonymizePreview.footerNote" => {
                 Some(Self::InterfaceAnonymizePreviewFooterNote)
+            }
+            "interface.AnonymizePreview.note.daysAfter" => {
+                Some(Self::InterfaceAnonymizePreviewNoteDaysAfter)
+            }
+            "interface.AnonymizePreview.note.ageOver90" => {
+                Some(Self::InterfaceAnonymizePreviewNoteAgeOver90)
+            }
+            "interface.AnonymizePreview.pasteTitle" => {
+                Some(Self::InterfaceAnonymizePreviewPasteTitle)
+            }
+            "interface.AnonymizePreview.pasteHelp" => {
+                Some(Self::InterfaceAnonymizePreviewPasteHelp)
+            }
+            "interface.AnonymizePreview.pasteLabel" => {
+                Some(Self::InterfaceAnonymizePreviewPasteLabel)
+            }
+            "interface.AnonymizePreview.pasteButton" => {
+                Some(Self::InterfaceAnonymizePreviewPasteButton)
+            }
+            "interface.AnonymizePreview.pasteResult" => {
+                Some(Self::InterfaceAnonymizePreviewPasteResult)
+            }
+            "interface.AnonymizePreview.pasteFlagged" => {
+                Some(Self::InterfaceAnonymizePreviewPasteFlagged)
+            }
+            "interface.AnonymizePreview.pasteAllMatched" => {
+                Some(Self::InterfaceAnonymizePreviewPasteAllMatched)
+            }
+            "interface.AnonymizePreview.pasteFlaggedSr" => {
+                Some(Self::InterfaceAnonymizePreviewPasteFlaggedSr)
             }
             "notifications.allow" => Some(Self::NotificationsAllow),
             "notifications.blocked" => Some(Self::NotificationsBlocked),

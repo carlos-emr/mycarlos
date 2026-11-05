@@ -673,6 +673,68 @@ describe("the reader's AI helper", () => {
     ).toBeNull();
   });
 
+  it("says in its status that the summary, and then the explanation, is ready", async () => {
+    renderReader(fakeLocalModel());
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    const summaryPanel = screen.getByRole("region", {
+      name: "Summary in plain words",
+    });
+    await waitFor(() =>
+      expect(within(summaryPanel).getByRole("status")).toHaveTextContent(
+        "The summary is ready.",
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    const explainPanel = screen.getByRole("region", { name: "Explain a term" });
+    expect(within(explainPanel).getByRole("status")).toHaveTextContent("");
+    await user.type(
+      within(explainPanel).getByRole("textbox", { name: "Word or phrase" }),
+      "potassium",
+    );
+    await user.click(
+      within(explainPanel).getByRole("button", { name: "Explain" }),
+    );
+    await waitFor(() =>
+      expect(within(explainPanel).getByRole("status")).toHaveTextContent(
+        "The explanation is ready.",
+      ),
+    );
+  });
+
+  it("does not say an earlier explanation is ready when the next one fails", async () => {
+    const model = fakeLocalModel();
+    const explained = model.explain;
+    let asked = 0;
+    model.explain = async (...args) => {
+      asked += 1;
+      if (asked > 1) throw new Error("FAKE: the model failed");
+      return explained(...args);
+    };
+    renderReader(model);
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    const explainPanel = screen.getByRole("region", { name: "Explain a term" });
+    const box = within(explainPanel).getByRole("textbox", {
+      name: "Word or phrase",
+    });
+    const ask = within(explainPanel).getByRole("button", { name: "Explain" });
+    await user.type(box, "potassium");
+    await user.click(ask);
+    await waitFor(() =>
+      expect(within(explainPanel).getByRole("status")).toHaveTextContent(
+        "The explanation is ready.",
+      ),
+    );
+    await user.clear(box);
+    await user.type(box, "creatinine");
+    await user.click(ask);
+    await within(explainPanel).findByRole("alert");
+    expect(within(explainPanel).getByRole("status")).toHaveTextContent("");
+  });
+
   it("numbers the last page read by its page, not by the count, when a page failed", async () => {
     // Pages 1, 2 and 4 read, page 3 refused, the rest left out: "pages 1 to 4".
     renderReader(fakeLocalModel(), {

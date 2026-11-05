@@ -235,9 +235,9 @@ fn within(text: &str, max_chars: usize) -> bool {
 }
 
 /// Refuses an answer to keep unless its bytes are a summary or an
-/// explanation as the reader writes them, within the helper's caps (six
-/// sentences, 300 characters of text and 240 of quote each; an explanation of
-/// at most 2,000 characters), for the same tool, language and term as `input`,
+/// explanation as the reader writes them, within the helper's caps (its
+/// constants: `MAX_SENTENCES` sentences of `MAX_TEXT_CHARS` and quotes of
+/// `MAX_QUOTE_CHARS` each; an explanation within `MAX_SENTENCE_CHARS`), for the same tool, language and term as `input`,
 /// and from the model that last answered on this computer (`answered`: its
 /// name and hash). Page code chooses the bytes, so none of this is trusted.
 pub fn check_answer(
