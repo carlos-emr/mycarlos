@@ -910,6 +910,7 @@ export const MESSAGE_KEYS = [
   "ai.model.refusedNetwork",
   "ai.model.refusedUnavailable",
   "native.filter.models",
+  "ai.settings.subtitle",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2016,6 +2017,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.refusedNetwork": "ai-model-refusedNetwork",
   "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
   "native.filter.models": "native-filter-models",
+  "ai.settings.subtitle": "ai-settings-subtitle",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3025,6 +3027,7 @@ export interface MessageArgsByKey {
   "ai.model.refusedNetwork": undefined;
   "ai.model.refusedUnavailable": undefined;
   "native.filter.models": undefined;
+  "ai.settings.subtitle": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -1738,9 +1738,9 @@ ai-explain-title = Wyjaśnij termin
 
 ai-notInstalled-title = Asystenta AI nie ma jeszcze na tym komputerze
 
-ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. W Preferencjach można pobrać model albo dodać posiadany plik modelu.
+ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. W Ustawieniach, w sekcji Asystent AI, można pobrać model albo dodać posiadany plik modelu.
 
-ai-notInstalled-openPreferences = Otwórz Preferencje
+ai-notInstalled-openPreferences = Otwórz ustawienia asystenta AI
 
 aiHelper-resultLabel = Napisane przez AI, może zawierać błędy. Proszę skonsultować się z lekarzem.
 
@@ -1763,6 +1763,8 @@ ai-preferences-title = Asystent AI
 ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Można pobrać model albo dodać posiadany plik modelu; pozostaje on na tym komputerze.
 
 ai-preferences-notInstalled = Nie zainstalowano
+
+ai-settings-subtitle = Działanie asystenta AI na tym komputerze
 
 ai-model-add = Dodaj plik modelu…
 

@@ -1534,9 +1534,9 @@ ai-explain-title = 解释术语
 
 ai-notInstalled-title = 此电脑上尚未安装 AI 助手
 
-ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“偏好设置”中下载模型，或添加您已有的模型文件。
+ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“设置”中的“AI 助手”里下载模型，或添加您已有的模型文件。
 
-ai-notInstalled-openPreferences = 打开偏好设置
+ai-notInstalled-openPreferences = 打开 AI 助手设置
 
 aiHelper-resultLabel = 由 AI 撰写，可能有误。请向您的医生核实。
 
@@ -1559,6 +1559,8 @@ ai-preferences-title = AI 助手
 ai-preferences-body = 使用在此电脑上运行的 AI 模型，以通俗易懂的文字解释您的文档。您可以下载模型，或添加您已有的模型文件；模型保存在此电脑上。
 
 ai-preferences-notInstalled = 未安装
+
+ai-settings-subtitle = AI 助手在此电脑上的运行方式
 
 ai-model-add = 添加模型文件…
 

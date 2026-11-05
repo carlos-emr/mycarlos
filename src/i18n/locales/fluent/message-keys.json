@@ -908,5 +908,6 @@
   "ai.model.downloading",
   "ai.model.refusedNetwork",
   "ai.model.refusedUnavailable",
-  "native.filter.models"
+  "native.filter.models",
+  "ai.settings.subtitle"
 ]

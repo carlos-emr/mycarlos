@@ -42,6 +42,7 @@ pub enum MessageId {
     AiPreferencesNotInstalled,
     AiPreferencesTitle,
     AiResultMeta,
+    AiSettingsSubtitle,
     AiSummaryButton,
     AiSummaryNoSource,
     AiSummaryNoText,
@@ -956,6 +957,7 @@ impl MessageId {
         Self::AiPreferencesNotInstalled,
         Self::AiPreferencesTitle,
         Self::AiResultMeta,
+        Self::AiSettingsSubtitle,
         Self::AiSummaryButton,
         Self::AiSummaryNoSource,
         Self::AiSummaryNoText,
@@ -1870,6 +1872,7 @@ impl MessageId {
             Self::AiPreferencesNotInstalled => "ai-preferences-notInstalled",
             Self::AiPreferencesTitle => "ai-preferences-title",
             Self::AiResultMeta => "ai-result-meta",
+            Self::AiSettingsSubtitle => "ai-settings-subtitle",
             Self::AiSummaryButton => "ai-summary-button",
             Self::AiSummaryNoSource => "ai-summary-noSource",
             Self::AiSummaryNoText => "ai-summary-noText",
@@ -4304,6 +4307,7 @@ impl MessageId {
             "ai.model.refusedNetwork" => Some(Self::AiModelRefusedNetwork),
             "ai.model.refusedUnavailable" => Some(Self::AiModelRefusedUnavailable),
             "native.filter.models" => Some(Self::NativeFilterModels),
+            "ai.settings.subtitle" => Some(Self::AiSettingsSubtitle),
             _ => None,
         }
     }

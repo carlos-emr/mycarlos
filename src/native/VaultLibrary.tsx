@@ -38,6 +38,7 @@ import {
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
+import { AiSettings } from "./AiSettings";
 import { PortalDocuments } from "./PortalDocuments";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
@@ -76,7 +77,8 @@ type NativeSection =
   | "hidden"
   | "history"
   | "security"
-  | "preferences";
+  | "preferences"
+  | "ai";
 /** The phone's tabs. Records holds the people and Shared with me, as the
  * sidebar's top-level folders do on a computer (Ben, 21 Oct). */
 const PHONE_TABS: ReadonlyArray<[NativeSection, MessageKey]> = [
@@ -84,6 +86,9 @@ const PHONE_TABS: ReadonlyArray<[NativeSection, MessageKey]> = [
   ["security", "security.title"],
   ["preferences", "sidebar.preferences"],
 ];
+/** Where the AI helper can run (a computer), its settings have a tab too, for
+ * narrow windows, where the sidebar is hidden (#72). */
+const AI_TAB: [NativeSection, MessageKey] = ["ai", "ai.preferences.title"];
 
 /** The people a vault keeps records for: every profile but Shared with me's
  * (#61). */
@@ -231,7 +236,7 @@ export function VaultLibrary({
   const localModel = useMemo(() => nativeLocalModel(bridge), [bridge]);
   const [aiStatus, setAiStatus] = useState<ModelStatus | null>(null);
   useEffect(() => {
-    if (section !== "preferences" || !computer) return;
+    if (section !== "ai" || !computer) return;
     let current = true;
     localModel.status().then(
       (found) => current && setAiStatus(found),
@@ -1522,32 +1527,34 @@ export function VaultLibrary({
                 recoverySetup,
             )}
           >
-            {PHONE_TABS.map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-current={
-                  section === value ||
-                  (value === "records" && inShared) ||
-                  (value === "security" &&
-                    (section === "hidden" || section === "history"))
-                    ? "page"
-                    : undefined
-                }
-                onClick={() =>
-                  value === "security" ? openSecurity() : setSection(value)
-                }
-              >
-                {value === "records" && sharedNew
-                  ? translateNow("interface.tab.withNew", {
-                      section: translateNow(label),
-                      new: translateNow("interface.count.new", {
-                        count: sharedNew,
-                      }),
-                    })
-                  : translateNow(label)}
-              </button>
-            ))}
+            {(computer ? [...PHONE_TABS, AI_TAB] : PHONE_TABS).map(
+              ([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-current={
+                    section === value ||
+                    (value === "records" && inShared) ||
+                    (value === "security" &&
+                      (section === "hidden" || section === "history"))
+                      ? "page"
+                      : undefined
+                  }
+                  onClick={() =>
+                    value === "security" ? openSecurity() : setSection(value)
+                  }
+                >
+                  {value === "records" && sharedNew
+                    ? translateNow("interface.tab.withNew", {
+                        section: translateNow(label),
+                        new: translateNow("interface.count.new", {
+                          count: sharedNew,
+                        }),
+                      })
+                    : translateNow(label)}
+                </button>
+              ),
+            )}
           </nav>
 
           <div
@@ -1596,6 +1603,7 @@ export function VaultLibrary({
               }}
               onOpenSecurity={openSecurity}
               onOpenPreferences={() => setSection("preferences")}
+              onOpenAi={computer ? () => setSection("ai") : undefined}
             />
 
             {(section === "records" || inShared) && (
@@ -2240,11 +2248,10 @@ export function VaultLibrary({
               />
             )}
 
-            {section === "preferences" && (
-              <PreferencesSettings
-                aiStatus={computer ? aiStatus : undefined}
-                onAiStatus={setAiStatus}
-              />
+            {section === "preferences" && <PreferencesSettings />}
+
+            {section === "ai" && computer && (
+              <AiSettings aiStatus={aiStatus} onAiStatus={setAiStatus} />
             )}
 
             {section === "security" && (
@@ -2579,9 +2586,10 @@ export function VaultLibrary({
                         void bridge
                           .cancelDocumentText(readerReadId)
                           .catch(() => undefined),
+                      // The model is added on the AI helper's own page.
                       onOpenPreferences: () => {
                         setReaderRecordId(null);
-                        setSection("preferences");
+                        setSection("ai");
                       },
                       beforeFirstUse: beforeFirstAiUse,
                     }
