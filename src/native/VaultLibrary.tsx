@@ -2534,6 +2534,8 @@ export function VaultLibrary({
                       // passing the reader's document password is the model
                       // step's work.
                       loadText: () => bridge.documentText(readerRecord.id),
+                      cancelText: () =>
+                        void bridge.cancelDocumentText().catch(() => undefined),
                       onOpenPreferences: () => {
                         setReaderRecordId(null);
                         setSection("preferences");
