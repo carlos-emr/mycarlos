@@ -1500,23 +1500,47 @@ const FAMILY_HISTORY_WORDS = new Set(
     "clot",
     "clots",
     "failure",
+    "embolism",
+    "alcoholism",
+    "illness",
+    "sickness",
+    "blindness",
+    "deafness",
+    "weakness",
+    "obesity",
+    "disability",
   ]).map((word) => word.toLowerCase()),
 );
 const MEDICAL_ENDING =
-  /(?:osis|itis|emia|aemia|noma|coma|rcoma|pathy|ectomy|plasia|algia|ation|ition|ciency|gnancy|ism|ity|ness|ment|logy|ure|ous|ics|philia|plegia|trophy)$/u;
+  /(?:osis|itis|emia|aemia|noma|coma|rcoma|pathy|ectomy|plasia|algia|ation|ition|ciency|philia|plegia|trophy)$/u;
 const FAMILY_HISTORY_HEADING =
   /(?:family history|family hx|\bfhx\b|\bfh\b[ \t]*:|antecedents familiaux|histoire familiale|historia familiar|antecedentes familiares|historico familiar|wywiad rodzinny)/iu;
+/** In a family-history section: the nearest heading above, within the same block of lines
+ * (a blank line or a heading alone on its line, such as "Emergency contact:", ends it), or
+ * on the same line, is a family-history heading. */
+function inFamilyHistory(text: string, at: number): boolean {
+  const lines = text.slice(Math.max(0, at - 400), at).split("\n");
+  if (FAMILY_HISTORY_HEADING.test(lines[lines.length - 1])) return true;
+  for (let k = lines.length - 2; k >= 0; k--) {
+    const line = lines[k].trim();
+    if (line === "") return false;
+    if (FAMILY_HISTORY_HEADING.test(line)) return true;
+    if (/^[^:]{1,40}:$/u.test(line)) return false;
+  }
+  return false;
+}
 function familyHistoryLabel(text: string, at: number, name: string): boolean {
-  if (FAMILY_HISTORY_HEADING.test(text.slice(Math.max(0, at - 400), at)))
-    return true;
-  return name.split(/[ \t]+/u).some((word) => {
-    const lower = word.toLowerCase().replace(/[.,;:]+$/u, "");
-    return (
-      FAMILY_HISTORY_WORDS.has(lower) ||
-      ORDINARY_WORDS.has(lower) ||
-      MEDICAL_ENDING.test(lower)
-    );
-  });
+  if (inFamilyHistory(text, at)) return true;
+  const words = name
+    .split(/[ \t]+/u)
+    .map((word) => word.toLowerCase().replace(/[.,;:]+$/u, ""));
+  return (
+    words.some(
+      (word) => FAMILY_HISTORY_WORDS.has(word) || MEDICAL_ENDING.test(word),
+    ) ||
+    // "Sudden Death" is two ordinary words; "Rose Baker" is a person.
+    words.every((word) => ORDINARY_WORDS.has(word))
+  );
 }
 const RULES: Rule[] = [
   {

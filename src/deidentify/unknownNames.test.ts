@@ -282,3 +282,30 @@ describe("the second #228 review", () => {
     );
   });
 });
+
+describe("a relative after a label, next to a family history", () => {
+  it.each([
+    [
+      "Family history: noncontributory.\nEmergency contact:\nHusband: Jordan Sampleton.",
+      ["Jordan", "Sampleton"],
+    ],
+    [
+      "Family history: none.\n\nMother: Rosalind Sampleton (613-555-0142)",
+      ["Rosalind"],
+    ],
+    ["Mother: Rose Baker.", ["Baker"]],
+    ["Father: Clement Dufour.", ["Clement", "Dufour"]],
+    ["Sister: Avery Furness.", ["Avery", "Furness"]],
+  ])("removes the relative: %j", (text, names) => {
+    gone(text, ...names);
+  });
+
+  it.each([
+    "Father: Heart Failure.",
+    "Mother: Pulmonary Embolism.",
+    "Family history: Mother: Ovarian Cancer.",
+    "FHx:\nFather: Prostate Cancer.\nBrother: Type 1 Diabetes.\nSister: Celiac Disease.",
+  ])("leaves the family history: %j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
