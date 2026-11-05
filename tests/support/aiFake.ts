@@ -340,6 +340,15 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
 
       Reflect.set(window, "__fakeAi", {
         calls: () => structuredClone(calls),
+        kept: () =>
+          kept.map((entry) => ({
+            recordId: entry.recordId,
+            tool: entry.info.tool,
+            lang: entry.info.lang,
+            term: entry.info.term,
+            hidden: entry.hidden,
+            content: entry.content,
+          })),
         cancelled: () => structuredClone(cancelled),
         held: () => held.map((entry) => entry.command),
         hold: (command: string) => holds.add(command),
@@ -498,6 +507,33 @@ export async function aiCalls(
   return calls
     .filter((call) => call.command === command)
     .map((call) => call.args as { request?: Record<string, unknown> });
+}
+
+/** Every answer the fake vault keeps, newest first, the hidden ones too. */
+export async function aiKept(page: Page): Promise<
+  {
+    recordId: string;
+    tool: string;
+    lang: string;
+    term?: string;
+    hidden: boolean;
+    content: string;
+  }[]
+> {
+  return page.evaluate(() =>
+    (
+      Reflect.get(window, "__fakeAi") as {
+        kept: () => {
+          recordId: string;
+          tool: string;
+          lang: string;
+          term?: string;
+          hidden: boolean;
+          content: string;
+        }[];
+      }
+    ).kept(),
+  );
 }
 
 /** The next call of `command` stays pending until released or cancelled. */
