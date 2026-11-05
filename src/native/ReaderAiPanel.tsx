@@ -3,6 +3,7 @@ import { formatDate, getLocale, t as translateNow, useI18n } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { keptInput, keptSummary, type KeptAnswers } from "../ai/kept";
 import {
+  ModelCancelled,
   ModelNotInstalled,
   type AiTool,
   type DocumentText,
@@ -20,12 +21,20 @@ export interface ReaderAi {
   model: LocalModel;
   /** The whole document's text, page by page. */
   loadText: () => Promise<DocumentText>;
+  /** Stops a text read still going: the panel closed before it ended. */
+  cancelText: () => void;
   onOpenPreferences: () => void;
   /** The answers kept with this document, where the vault keeps them. */
   kept?: KeptAnswers;
+  /** Runs `open` once the patient may use the helper: at once, or after the
+   * notice about it, the first time in a session that a model is there. */
+  beforeFirstUse?: (open: () => void) => void;
 }
 
 const NOT_INSTALLED: ModelStatus = { state: "notInstalled" };
+/** The longest term to explain, typed or selected: the native side refuses
+ * a longer one (AGREEMENT.md). */
+export const TERM_MAX = 200;
 
 /** The AI helper's panel in the reader: a plain-words summary of the
  * document, or the explanation of a term. Until a model is installed it says
@@ -71,6 +80,32 @@ export function ReaderAiPanel({
   // The latest model and text loader; a new object alone starts nothing.
   const aiRef = useRef(ai);
   aiRef.current = ai;
+  // A text read or an answer still going when the panel closes (the reader
+  // closed, or the panel was closed or switched) stops with it: the PDF
+  // helper would read, and the model write, for nobody.
+  const reading = useRef<symbol | null>(null);
+  const writing = useRef<symbol | null>(null);
+  useEffect(
+    () => () => {
+      if (reading.current !== null) {
+        reading.current = null;
+        aiRef.current.cancelText();
+      }
+      if (writing.current !== null) {
+        writing.current = null;
+        aiRef.current.model.cancel();
+      }
+    },
+    [],
+  );
+  /** Runs `work` as the model's one answer in flight, for the close above. */
+  const asModel = <T,>(work: () => Promise<T>): Promise<T> => {
+    const run = Symbol("model run");
+    writing.current = run;
+    return work().finally(() => {
+      if (writing.current === run) writing.current = null;
+    });
+  };
   useEffect(() => {
     let current = true;
     aiRef.current.model.status().then(
@@ -84,7 +119,8 @@ export function ReaderAiPanel({
 
   const installed = status?.state === "installed";
   const stopped = (failure: unknown) => {
-    if (!live.current) return;
+    // Stopped because the patient left, or the vault locked: nothing to say.
+    if (!live.current || failure instanceof ModelCancelled) return;
     if (failure instanceof ModelNotInstalled) setStatus(NOT_INSTALLED);
     else setFailed(true);
   };
@@ -128,15 +164,21 @@ export function ReaderAiPanel({
           setSummary(found);
           return;
         }
-        const document = await aiRef.current.loadText();
+        // Closed while the kept answers were looked up: nothing is read.
+        if (!live.current) return;
+        const read = Symbol("text read");
+        reading.current = read;
+        const document = await aiRef.current.loadText().finally(() => {
+          if (reading.current === read) reading.current = null;
+        });
+        // Closed while the text was read: no model is asked for it.
+        if (!live.current) return;
         if (document.pages.every((page) => !page.text.trim())) {
-          if (live.current) setNoText(true);
+          setNoText(true);
           return;
         }
-        const result = await summarizeDocument(
-          aiRef.current.model,
-          document,
-          lang,
+        const result = await asModel(() =>
+          summarizeDocument(aiRef.current.model, document, lang),
         );
         if (!live.current) return;
         setFromKept(false);
@@ -155,7 +197,9 @@ export function ReaderAiPanel({
     setWorking(true);
     setFailed(false);
     setKeepFailed(false);
-    explainTerm(aiRef.current.model, asked, contextFor(asked), lang)
+    asModel(() =>
+      explainTerm(aiRef.current.model, asked, contextFor(asked), lang),
+    )
       .then(async (result) => {
         if (!live.current) return;
         setExplained(result);
@@ -174,7 +218,9 @@ export function ReaderAiPanel({
       aria-busy={status === null || working}
     >
       <h3 id="reader-ai-title">{title}</h3>
-      {status?.state === "notInstalled" && (
+      {/* No model to use: not added, failed its check, or not one this
+          computer can run. Preferences says which. */}
+      {status !== null && !installed && (
         <div className="native-reader-ai-missing">
           <p>
             <strong>{t("ai.notInstalled.title")}</strong>
@@ -197,6 +243,7 @@ export function ReaderAiPanel({
             type="text"
             autoComplete="off"
             value={term}
+            maxLength={TERM_MAX}
             aria-describedby="reader-ai-term-hint"
             onChange={(event) => setTerm(event.target.value)}
           />

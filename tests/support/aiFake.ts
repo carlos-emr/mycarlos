@@ -1,0 +1,442 @@
+import { type Page } from "@playwright/test";
+import { translate } from "./fluent";
+import { FAKE_PAGE_COUNT, fakePageText, fakeUuid } from "./vaultFake";
+
+// The AI helper's native side (#72), faked over vaultFake.ts for specs that
+// follow the helper's whole path: a document's text for the preview and the
+// reader, what the vault knows about its patient, the text export, and the
+// model on this computer. Install it after fakeVaultWith: it wraps that
+// fake's `invoke`, answers the commands below itself and passes every other
+// command on, so the vault fake (and expectOnlyFakedCommands) see the rest.
+//
+// - A call can be held (holdAi): it stays pending until released
+//   (releaseAi) or cancelled, as a long read or a slow model would.
+// - Cancelling is native: vault_document_text_cancel settles a held text
+//   read, ai_cancel a held model run, and vault_lock both, each with the
+//   refusal the native side sends. A cancel that only logs a call while
+//   leaving the read pending fails the specs that wait on it (aiHeld).
+// - Nothing is kept across reloads: a reload ends what was held, as a reload
+//   of the window ends the native work it was waiting for.
+// FAKE data only.
+
+/** The AI helper's native commands, in one place. The model's work commands
+ * are the names agreed for the runtime (root-aa, 5 Nov 2026); the wiring
+ * step switches the app to them. */
+export const AI_COMMANDS = {
+  modelStatus: "ai_model_status",
+  summarize: "ai_summarize",
+  explain: "ai_explain",
+  cancel: "ai_cancel",
+  // Adding and removing the model (root-4a's side of the agreement).
+  catalog: "ai_model_catalog",
+  addPicked: "ai_model_add_picked",
+  addCancel: "ai_model_add_cancel",
+  remove: "ai_model_remove",
+  documentText: "vault_document_text",
+  cancelText: "vault_document_text_cancel",
+  knownDetails: "vault_record_known_details",
+  exportPick: "vault_export_text_pick",
+  exportPicked: "vault_export_text_picked",
+  // The answers kept with a document, in the vault (#212).
+  keptList: "vault_ai_results",
+  keptSave: "vault_ai_result_save",
+  keptRead: "vault_ai_result_read",
+} as const;
+
+type AiCommand = (typeof AI_COMMANDS)[keyof typeof AI_COMMANDS];
+
+/** The model the fake has, when one is installed. */
+export const FAKE_MODEL = { name: "FAKE test model", sha256: "test-only" };
+
+export type FakeModelStatus =
+  | { state: "notInstalled" }
+  | { state: "installed"; model: { name: string; sha256: string } }
+  | { state: "unsupported"; reason: "ram" | "cpu" | "platform" }
+  | { state: "damaged" };
+
+/** The refusals the model's commands make (PublicError codes). */
+export type FakeAiRefusal =
+  | "aiNotInstalled"
+  | "aiDamaged"
+  | "aiMemory"
+  | "aiBusy"
+  | "aiCancelled"
+  | "aiFailed";
+
+export interface FakeAiSetup {
+  /** What ai_model_status says. Default: not installed. */
+  model?: FakeModelStatus;
+  /** A document's pages, by its name. Others read as vaultFake's page text. */
+  documents?: Record<string, string[]>;
+  /** What vault_record_known_details says about every document's patient. */
+  knownDetails?: {
+    names?: string[];
+    birthDates?: string[];
+    doctorNames?: string[];
+    clinicNames?: string[];
+  };
+  /** What the model says it explains a term as. */
+  explanation?: string;
+}
+
+/** Installs the fake over the vault fake already on `page`. */
+export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
+  const defaultPages = (name: string) =>
+    Array.from({ length: FAKE_PAGE_COUNT }, (_, page) =>
+      fakePageText(name, page + 1),
+    );
+  await page.addInitScript(
+    (setup) => {
+      type Args = { request?: Record<string, unknown> } & Record<
+        string,
+        unknown
+      >;
+      type Held = {
+        command: string;
+        resolve: () => void;
+        reject: (reason: unknown) => void;
+      };
+      const internals = Reflect.get(window, "__TAURI_INTERNALS__") as {
+        invoke: (command: string, ...rest: unknown[]) => Promise<unknown>;
+      };
+      if (!internals) throw new Error("fakeAiWith needs fakeVaultWith first");
+      const vault = Reflect.get(window, "__fakeVault") as {
+        snapshot: () => { records: { id: string; displayName: string }[] };
+      };
+      const inner = internals.invoke.bind(internals);
+      const ours = new Set<string>(Object.values(setup.commands));
+      // What the model is now: adding or removing it changes it.
+      let model = structuredClone(setup.model);
+      const refusals: Record<string, string[]> = {};
+      let kept: {
+        recordId: unknown;
+        info: Record<string, unknown>;
+        content: string;
+      }[] = [];
+      const calls: { command: string; args: Args }[] = [];
+      const cancelled: { command: string; by: string }[] = [];
+      const holds = new Set<string>();
+      let held: Held[] = [];
+      let tickets = 0;
+      const refusal = (code: string, messageKey: string) => ({
+        code,
+        message: setup.messages[messageKey] ?? code,
+        messageKey,
+      });
+      const settleHeld = (
+        which: (command: string) => boolean,
+        by: string,
+        reason: unknown,
+      ) => {
+        const stopped = held.filter((entry) => which(entry.command));
+        held = held.filter((entry) => !which(entry.command));
+        for (const entry of stopped) {
+          cancelled.push({ command: entry.command, by });
+          entry.reject(reason);
+        }
+      };
+      const nameOf = (recordId: unknown) =>
+        vault.snapshot().records.find((record) => record.id === recordId)
+          ?.displayName ?? "";
+      const pagesOf = (recordId: unknown) => {
+        const name = nameOf(recordId);
+        return setup.documents[name] ?? setup.defaultPages[name] ?? [];
+      };
+      const documentText = (recordId: unknown) => {
+        const texts = pagesOf(recordId);
+        const pages = texts.map((text, index) => ({ index, text }));
+        const pageStarts: number[] = [];
+        let joined = "";
+        pages.forEach((page, position) => {
+          if (position > 0) joined += "\n\n";
+          pageStarts.push(joined.length);
+          joined += page.text;
+        });
+        tickets += 1;
+        return {
+          pageCount: texts.length,
+          pages,
+          joined,
+          pageStarts,
+          emptyPages: pages.flatMap((page) =>
+            page.text.trim() ? [] : [page.index],
+          ),
+          cutPages: [],
+          failedPages: [],
+          truncated: false,
+          ticket: `FAKE-ticket-${tickets}`,
+        };
+      };
+      const answer = (command: string, args: Args): unknown => {
+        const request = args.request ?? {};
+        const c = setup.commands;
+        switch (command) {
+          case c.modelStatus:
+            return structuredClone(model);
+          case c.catalog:
+            return [structuredClone(setup.catalogEntry)];
+          case c.addPicked:
+            model = {
+              state: "installed",
+              model: {
+                name: setup.catalogEntry.name,
+                sha256: setup.catalogEntry.sha256,
+              },
+            };
+            return { outcome: "added", status: structuredClone(model) };
+          case c.addCancel:
+            return null;
+          case c.remove:
+            model = { state: "notInstalled" };
+            return structuredClone(model);
+          case c.documentText:
+            return documentText(request.recordId);
+          case c.knownDetails:
+            return {
+              names: [],
+              birthDates: [],
+              doctorNames: [],
+              clinicNames: [],
+              ...structuredClone(setup.knownDetails),
+            };
+          case c.exportPick:
+            return setup.pickId;
+          case c.exportPicked:
+            return { saved: true, hits: [] };
+          // Kept in memory, as the vault keeps them per document: one per
+          // question (tool, language, term), the newest replacing the old.
+          case c.keptSave: {
+            const input = (request.result ?? {}) as Record<string, unknown>;
+            const same = (entry: (typeof kept)[number]) =>
+              entry.recordId === request.recordId &&
+              entry.info.tool === input.tool &&
+              entry.info.lang === input.lang &&
+              entry.info.term === input.term;
+            kept = kept.filter((entry) => !same(entry));
+            const content = String(request.content ?? "");
+            const info = {
+              ...structuredClone(input),
+              id: `FAKE-kept-${kept.length + 1}`,
+              createdAtMs: Date.now(),
+              size: content.length,
+            };
+            kept.unshift({ recordId: request.recordId, info, content });
+            return structuredClone(info);
+          }
+          case c.keptList:
+            return kept
+              .filter((entry) => entry.recordId === request.recordId)
+              .map((entry) => structuredClone(entry.info));
+          case c.keptRead: {
+            const found = kept.find(
+              (entry) =>
+                entry.recordId === request.recordId &&
+                entry.info.id === request.resultId,
+            );
+            if (!found) throw refusal("not_found", "ai.failed");
+            return found.content;
+          }
+          case c.summarize: {
+            if (model.state !== "installed")
+              throw refusal("aiNotInstalled", "ai.failed");
+            const pages = (request.pages ?? []) as {
+              index: number;
+              text: string;
+            }[];
+            // One sentence per page with text, quoting its first line.
+            const sentences = pages
+              .filter((page) => page.text.trim())
+              .map((page) => {
+                const line = page.text.trim().split("\n")[0].trim();
+                return {
+                  text: `FAKE: page ${page.index + 1} begins “${line}”.`,
+                  quote: line,
+                };
+              });
+            return {
+              sentences,
+              model: structuredClone(model.model),
+              lastPage: pages.at(-1)?.index ?? 0,
+              lastPageCut: false,
+            };
+          }
+          case c.explain:
+            if (model.state !== "installed")
+              throw refusal("aiNotInstalled", "ai.failed");
+            return {
+              text: setup.explanation ?? `FAKE explanation of ${request.term}.`,
+              model: structuredClone(model.model),
+            };
+        }
+        throw new Error(`aiFake has no answer for ${command}`);
+      };
+
+      Reflect.set(window, "__fakeAi", {
+        calls: () => structuredClone(calls),
+        cancelled: () => structuredClone(cancelled),
+        held: () => held.map((entry) => entry.command),
+        hold: (command: string) => holds.add(command),
+        refuse: (command: string, code: string) =>
+          (refusals[command] ??= []).push(code),
+        release: (command: string) => {
+          const entry = held.find((each) => each.command === command);
+          if (!entry) throw new Error(`Nothing held for ${command}`);
+          held = held.filter((each) => each !== entry);
+          entry.resolve();
+        },
+      });
+      internals.invoke = async (command: string, ...rest: unknown[]) => {
+        const c = setup.commands;
+        // The lock stops a text being read and the model with its answer
+        // (vault_lock in src-tauri/src/lib.rs), then locks the vault.
+        if (command === "vault_lock")
+          settleHeld(
+            (held) => held === c.documentText,
+            command,
+            refusal("cancelled", "native.error.36"),
+          );
+        if (command === "vault_lock")
+          settleHeld(
+            (held) => held === c.summarize || held === c.explain,
+            command,
+            refusal("aiCancelled", "ai.failed"),
+          );
+        if (!ours.has(command)) return inner(command, ...rest);
+        const args = ((rest[0] as Args | undefined) ?? {}) as Args;
+        calls.push({ command, args: structuredClone(args) });
+        if (command === c.cancelText) {
+          settleHeld(
+            (held) => held === c.documentText,
+            command,
+            refusal("cancelled", "native.error.36"),
+          );
+          return null;
+        }
+        if (command === c.cancel) {
+          settleHeld(
+            (held) => held === c.summarize || held === c.explain,
+            command,
+            refusal("aiCancelled", "ai.failed"),
+          );
+          return null;
+        }
+        if (holds.delete(command))
+          await new Promise<void>((resolve, reject) =>
+            held.push({ command, resolve, reject }),
+          );
+        const refused = refusals[command]?.shift();
+        if (refused) {
+          // A failed check at load: the status says so from then on.
+          if (refused === "aiDamaged") model = { state: "damaged" };
+          throw refusal(refused, "ai.failed");
+        }
+        return answer(command, args);
+      };
+    },
+    {
+      commands: AI_COMMANDS,
+      model: setup.model ?? { state: "notInstalled" },
+      documents: setup.documents ?? {},
+      defaultPages: Object.fromEntries(
+        ["FAKE Bloodwork.pdf", "FAKE Letter.pdf", "FAKE Clinic letter.pdf"].map(
+          (name) => [name, defaultPages(name)],
+        ),
+      ),
+      knownDetails: setup.knownDetails ?? {},
+      explanation: setup.explanation ?? null,
+      pickId: fakeUuid(1100),
+      // As ai_model_catalog lists the one accepted model. FAKE: no file.
+      catalogEntry: {
+        name: FAKE_MODEL.name,
+        fileName: "FAKE-test-model.gguf",
+        sizeBytes: 4096,
+        sha256: FAKE_MODEL.sha256,
+        licence: "FAKE licence",
+        notices: [],
+        sourceUrl: "https://example.invalid/FAKE-test-model.gguf",
+      },
+      // The refusals the fake makes, in English as the native side sends them.
+      messages: {
+        "native.error.36": translate("en", "native.error.36"),
+        "ai.failed": translate("en", "ai.failed"),
+      } as Record<string, string>,
+    },
+  );
+}
+
+/** The arguments of each call of an AI command, in order. */
+export async function aiCalls(
+  page: Page,
+  command: AiCommand,
+): Promise<{ request?: Record<string, unknown> }[]> {
+  const calls = await page.evaluate(() =>
+    (
+      Reflect.get(window, "__fakeAi") as {
+        calls: () => { command: string; args: unknown }[];
+      }
+    ).calls(),
+  );
+  return calls
+    .filter((call) => call.command === command)
+    .map((call) => call.args as { request?: Record<string, unknown> });
+}
+
+/** The next call of `command` stays pending until released or cancelled. */
+export async function holdAi(page: Page, command: AiCommand) {
+  await page.evaluate(
+    (command) =>
+      (Reflect.get(window, "__fakeAi") as { hold: (c: string) => void }).hold(
+        command,
+      ),
+    command,
+  );
+}
+
+/** Answers the oldest held call of `command`, as the native side finishing. */
+export async function releaseAi(page: Page, command: AiCommand) {
+  await page.evaluate(
+    (command) =>
+      (
+        Reflect.get(window, "__fakeAi") as { release: (c: string) => void }
+      ).release(command),
+    command,
+  );
+}
+
+/** The commands still held, in the order they were called. */
+export async function aiHeld(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    (Reflect.get(window, "__fakeAi") as { held: () => string[] }).held(),
+  );
+}
+
+/** What was cancelled, and by which command. */
+export async function aiCancelled(
+  page: Page,
+): Promise<{ command: string; by: string }[]> {
+  return page.evaluate(() =>
+    (
+      Reflect.get(window, "__fakeAi") as {
+        cancelled: () => { command: string; by: string }[];
+      }
+    ).cancelled(),
+  );
+}
+
+/** The next call of `command` is refused with `code`, as the native side
+ * refuses (an aiDamaged refusal also turns the status to damaged). */
+export async function refuseAi(
+  page: Page,
+  command: AiCommand,
+  code: FakeAiRefusal,
+) {
+  await page.evaluate(
+    ({ command, code }) =>
+      (
+        Reflect.get(window, "__fakeAi") as {
+          refuse: (command: string, code: string) => void;
+        }
+      ).refuse(command, code),
+    { command, code },
+  );
+}

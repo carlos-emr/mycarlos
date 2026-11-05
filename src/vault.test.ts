@@ -114,6 +114,38 @@ describe("native idle deadline bridge", () => {
     ]);
   });
 
+  it("sends the model's work as the native side registers it: one request each, and a bare cancel", async () => {
+    const bridge = createVaultBridge();
+    const pages = [
+      { index: 0, text: "FAKE page one." },
+      { index: 2, text: "FAKE page three." },
+    ];
+    invoke.mockResolvedValue({
+      sentences: [],
+      model: { name: "FAKE", sha256: "test-only" },
+      lastPage: 2,
+      lastPageCut: false,
+    });
+    await bridge.aiSummarize(pages, "fr");
+    invoke.mockResolvedValue({
+      text: "FAKE",
+      model: { name: "FAKE", sha256: "test-only" },
+    });
+    await bridge.aiExplain("potassium", "Potassium 5.4.", "pl");
+    invoke.mockResolvedValue(null);
+    await bridge.aiCancel();
+    expect(invoke.mock.calls).toEqual([
+      ["ai_summarize", { request: { pages, lang: "fr" } }],
+      [
+        "ai_explain",
+        {
+          request: { term: "potassium", context: "Potassium 5.4.", lang: "pl" },
+        },
+      ],
+      ["ai_cancel"],
+    ]);
+  });
+
   it("sends the shared-file commands the native side registers", async () => {
     const bridge = createVaultBridge();
     invoke.mockResolvedValue(undefined);
