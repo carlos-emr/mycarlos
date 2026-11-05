@@ -6,9 +6,23 @@ use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod document_collection;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod document_collection_pickup;
 mod document_identity;
+pub mod document_notification_runtime;
+#[cfg(windows)]
+mod document_notification_windows;
+pub mod document_notifications;
 mod history;
 mod idle;
+mod local_model;
+#[allow(dead_code)]
+// Only the lock hook is used here. Wiring the reader's AI actions and
+// ai_model_status to local_runner::Runner is a follow-up once the model is
+// chosen; until then ai_model_status answers "not installed" (local_model).
+mod local_runner;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -17,11 +31,14 @@ mod portal_client;
 mod portal_delivery;
 mod portal_link;
 mod portal_pickup;
+mod reading_aid;
 mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
 mod signed_pdf_helper;
+mod text_recheck;
 mod throttle;
+mod unicode_cleaning_table;
 mod vault;
 #[cfg(windows)]
 mod windows_navigation;
@@ -253,7 +270,6 @@ impl From<VaultError> for PublicText {
                 code: "invalid",
                 message_key: "language.error.formatting",
             },
-            #[cfg(feature = "portal-linking")]
             VaultError::ApprovalTerminal(state, reason) => match state {
                 portal_approval::ApprovalState::Expired => Self {
                     code: "approval_expired",
@@ -272,17 +288,14 @@ impl From<VaultError> for PublicText {
                     message_key: "portal.approvalRefused",
                 },
             },
-            #[cfg(feature = "portal-linking")]
             VaultError::ApprovalRequestMissing => Self {
                 code: "approval_missing",
                 message_key: "portal.approvalMissing",
             },
-            #[cfg(feature = "portal-linking")]
             VaultError::ApprovalNeedsClinic => Self {
                 code: "approval_contact_clinic",
                 message_key: "portal.approvalContact",
             },
-            #[cfg(feature = "portal-linking")]
             VaultError::PickupRefused => Self {
                 code: "pickup_refused",
                 message_key: "portal.errorRefused",
@@ -290,10 +303,6 @@ impl From<VaultError> for PublicText {
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
                 match reason {
-                    LinkError::Disabled => Self {
-                        code: "portal_link_disabled",
-                        message_key: "portal.errorDisabled",
-                    },
                     LinkError::Unavailable => Self {
                         code: "portal_link_unavailable",
                         message_key: "portal.errorUnavailable",
@@ -436,6 +445,10 @@ impl From<VaultError> for PublicText {
             VaultError::Storage => Self {
                 code: "storage",
                 message_key: "native.error.35",
+            },
+            VaultError::DocumentCheckBusy => Self {
+                code: "document_check_busy",
+                message_key: "notifications.checkBusy",
             },
             VaultError::Cancelled => Self {
                 code: "cancelled",
@@ -1165,7 +1178,25 @@ struct PendingPicks {
     exports: PickTable<(Uuid, tauri_plugin_fs::FilePath)>,
     backups: PickTable<tauri_plugin_fs::FilePath>,
     restores: PickTable<tauri_plugin_fs::FilePath>,
+    /// The AI helper's preview tickets (#72, AI-02): one per text read, bound
+    /// to the record and the session; gone at lock, when the document is
+    /// hidden, when a profile changes, and after one save.
+    texts: PickTable<TextTicket>,
+    /// Destinations chosen for an anonymized text, apart from the document
+    /// copies' so that one is never written where the other was meant.
+    text_exports: PickTable<(Uuid, tauri_plugin_fs::FilePath)>,
 }
+
+/// What a preview ticket remembers about its text read.
+#[derive(Clone)]
+struct TextTicket {
+    record_id: Uuid,
+    /// The last page (from 1) the text holds, when pages were left out.
+    cut_after_page: Option<u32>,
+}
+
+// A preview is read at the patient's pace; the automatic lock bounds it too.
+const TEXT_TICKET_TTL: Duration = Duration::from_secs(60 * 60);
 
 // Long enough to cover the renderer's round trip after the picker closes, and
 // short enough that a stale choice cannot be used much later.
@@ -1175,7 +1206,7 @@ const PICK_TTL: Duration = Duration::from_secs(120);
 const RESTORE_PICK_TTL: Duration = Duration::from_secs(15 * 60);
 // What storing a pick prunes by: the longest any kind of pick may live. Each
 // kind's own limit is applied when the pick is used.
-const LONGEST_PICK_TTL: Duration = RESTORE_PICK_TTL;
+const LONGEST_PICK_TTL: Duration = TEXT_TICKET_TTL;
 
 /// One kind of pending pick, keyed by the id handed to the renderer.
 struct PickTable<T>(Mutex<HashMap<Uuid, PickEntry<T>>>);
@@ -1228,9 +1259,81 @@ impl<T> PickTable<T> {
     fn clear(&self) {
         self.entries().clear();
     }
+
+    fn retain(&self, keep: impl FnMut(&T) -> bool) {
+        let mut keep = keep;
+        self.entries().retain(|_, (_, _, value)| keep(value));
+    }
 }
 
 impl PendingPicks {
+    /// Issues a preview ticket for a text read; any earlier ticket for the
+    /// same record ends.
+    fn store_text(&self, session: u64, ticket: TextTicket) -> Uuid {
+        let record_id = ticket.record_id;
+        self.texts.retain(|held| held.record_id != record_id);
+        self.texts.store(session, ticket)
+    }
+
+    /// The ticket, left in place: valid for this session and record.
+    fn peek_text(&self, ticket: Uuid, record_id: Uuid) -> Result<TextTicket, VaultError> {
+        let held = self
+            .texts
+            .peek_within(ticket, self.session(), TEXT_TICKET_TTL)
+            .ok_or(VaultError::NotFound)?;
+        if held.record_id != record_id {
+            return Err(VaultError::Invalid);
+        }
+        Ok(held)
+    }
+
+    /// Ends the ticket: one save, or a preview closed.
+    fn take_text(&self, ticket: Uuid, record_id: Uuid) -> Result<TextTicket, VaultError> {
+        let held = self
+            .texts
+            .take_within(ticket, self.session(), TEXT_TICKET_TTL)
+            .ok_or(VaultError::NotFound)?;
+        if held.record_id != record_id {
+            return Err(VaultError::Invalid);
+        }
+        Ok(held)
+    }
+
+    /// The document was hidden: its tickets end.
+    fn forget_texts_for(&self, record_id: Uuid) {
+        self.texts.retain(|held| held.record_id != record_id);
+    }
+
+    /// A profile's name or details changed: every ticket ends, since the
+    /// re-check's identifiers changed.
+    fn clear_texts(&self) {
+        self.texts.clear();
+    }
+
+    fn store_text_export(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        destination: tauri_plugin_fs::FilePath,
+    ) -> Uuid {
+        self.text_exports.store(session, (record_id, destination))
+    }
+
+    fn take_text_export(
+        &self,
+        pick_id: Uuid,
+        record_id: Uuid,
+    ) -> Result<tauri_plugin_fs::FilePath, VaultError> {
+        let (picked_for, destination) = self
+            .text_exports
+            .take(pick_id, self.session())
+            .ok_or(VaultError::NotFound)?;
+        if picked_for != record_id {
+            return Err(VaultError::Invalid);
+        }
+        Ok(destination)
+    }
+
     /// The current unlocked session. Read it before opening a picker.
     fn session(&self) -> u64 {
         self.session.load(Ordering::SeqCst)
@@ -1294,6 +1397,8 @@ impl PendingPicks {
         self.exports.clear();
         self.backups.clear();
         self.restores.clear();
+        self.texts.clear();
+        self.text_exports.clear();
     }
 }
 
@@ -1365,6 +1470,13 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
 #[tauri::command]
 fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
+}
+
+/// Whether the AI helper (#72) has a model on this computer. None can be
+/// installed yet: getting one comes in a later version.
+#[tauri::command]
+fn ai_model_status() -> local_model::ModelStatus {
+    local_model::status()
 }
 
 #[derive(Serialize)]
@@ -1564,12 +1676,17 @@ async fn vault_lock(
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
     picks.clear();
-    // A page still being drawn stops with the lock.
+    // A page still being drawn, a text being read, and the AI model with
+    // its answer, stop with the lock.
     pdf_view::cancel_views();
+    pdf_view::cancel_text_reads();
+    local_runner::on_lock();
     run_blocking(store.inner(), |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
         pdf_view::cancel_views();
+        pdf_view::cancel_text_reads();
+        local_runner::on_lock();
         Ok(())
     })
     .await
@@ -1592,6 +1709,8 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
     let locked = store.lock_if_idle(now);
     if locked {
         pdf_view::cancel_views();
+        pdf_view::cancel_text_reads();
+        local_runner::on_lock();
         picks.clear();
     }
     locked
@@ -1720,9 +1839,6 @@ async fn vault_portal_link(
     store: State<'_, Arc<VaultStore>>,
     request: PortalLinkRequest,
 ) -> CommandResult<portal_link::LinkSummary> {
-    if !portal_link::enabled() {
-        return Err(VaultError::Portal(portal_link::LinkError::Disabled).into());
-    }
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
@@ -1752,20 +1868,12 @@ async fn vault_request_device_approval(
     store: State<'_, Arc<VaultStore>>,
     link_id: Uuid,
 ) -> CommandResult<()> {
-    #[cfg(not(feature = "portal-linking"))]
-    {
-        let _ = (store, link_id);
-        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
-    }
-    #[cfg(feature = "portal-linking")]
-    {
-        let session = store.portal_link_ticket();
-        let store = Arc::clone(store.inner());
-        tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
-            .await
-            .map_err(|_| PublicError::from(VaultError::Storage))?
-            .map_err(Into::into)
-    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -1773,40 +1881,59 @@ async fn vault_restart_device_approval(
     store: State<'_, Arc<VaultStore>>,
     link_id: Uuid,
 ) -> CommandResult<()> {
-    #[cfg(not(feature = "portal-linking"))]
-    {
-        let _ = (store, link_id);
-        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
-    }
-    #[cfg(feature = "portal-linking")]
-    {
-        let session = store.portal_link_ticket();
-        let store = Arc::clone(store.inner());
-        tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
-            .await
-            .map_err(|_| PublicError::from(VaultError::Storage))?
-            .map_err(Into::into)
-    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
 }
 
 #[tauri::command]
 async fn vault_check_documents(
     store: State<'_, Arc<VaultStore>>,
 ) -> CommandResult<portal_pickup::CheckResult> {
-    #[cfg(not(feature = "portal-linking"))]
-    {
-        let _ = store;
-        Err(VaultError::Portal(portal_link::LinkError::Disabled).into())
-    }
-    #[cfg(feature = "portal-linking")]
-    {
-        let session = store.portal_link_ticket();
-        let store = Arc::clone(store.inner());
-        tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
-            .await
-            .map_err(|_| PublicError::from(VaultError::Storage))?
-            .map_err(Into::into)
-    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_notification_status(
+    store: State<'_, Arc<VaultStore>>,
+    locale: Option<UiLocale>,
+) -> CommandResult<document_notification_runtime::Status> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.notification_status(locale))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))
+}
+
+#[tauri::command]
+async fn vault_set_notifications(
+    store: State<'_, Arc<VaultStore>>,
+    enabled: bool,
+) -> CommandResult<document_notification_runtime::Status> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.set_notifications(enabled))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_set_automatic_document_checks(
+    enabled: bool,
+    store: tauri::State<'_, Arc<VaultStore>>,
+) -> CommandResult<document_notification_runtime::Status> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.set_automatic_checks(enabled))
+        .await
+        .map_err(|_| VaultError::Storage)?
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -2532,8 +2659,11 @@ async fn vault_create_profile(
 #[tauri::command]
 async fn vault_update_profile_details(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: ProfileDetailsRequest,
 ) -> CommandResult<()> {
+    // The AI helper's re-check reads these details: an open preview ends.
+    picks.clear_texts();
     run_blocking(store.inner(), move |store| {
         store.update_profile_details(
             request.profile_id,
@@ -2548,8 +2678,10 @@ async fn vault_update_profile_details(
 #[tauri::command]
 async fn vault_rename_profile(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: RenameProfileRequest,
 ) -> CommandResult<()> {
+    picks.clear_texts();
     run_blocking(store.inner(), move |store| {
         store.rename_profile(request.profile_id, &request.display_name, now_ms())
     })
@@ -3035,6 +3167,356 @@ fn vault_view_cancel() {
     pdf_view::cancel_views();
 }
 
+/// A document's whole text for the AI helper (#72 part B, AI-10).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentTextRequest {
+    record_id: Uuid,
+    /// The document's own password, when it is locked with one. Not the vault passphrase.
+    password: Option<String>,
+}
+
+impl Drop for DocumentTextRequest {
+    fn drop(&mut self) {
+        if let Some(password) = self.password.as_mut() {
+            password.zeroize();
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentPageText {
+    index: u32,
+    text: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentText {
+    page_count: u32,
+    pages: Vec<DocumentPageText>,
+    joined: String,
+    /// In UTF-16 units, which page code counts in.
+    page_starts: Vec<u32>,
+    empty_pages: Vec<u32>,
+    cut_pages: Vec<u32>,
+    failed_pages: Vec<u32>,
+    truncated: bool,
+    /// The preview ticket that lets this text be saved once (AI-02).
+    ticket: Uuid,
+}
+
+/// The most pages, and the most text joined, a text read returns.
+const MAX_TEXT_PAGES: u32 = 50;
+const MAX_TEXT_BYTES: usize = 1024 * 1024;
+/// The width the pages are drawn at: tiny, and never 0 pixels high.
+const TEXT_READ_WIDTH: u32 = 64;
+/// The whole read, all pages, is bounded in time.
+const TEXT_READ_TIME_LIMIT: Duration = Duration::from_secs(180);
+/// A page this close to the helper's page limit was cut by it, silently.
+const PAGE_CUT_MARGIN: usize = 3;
+
+/// Reads the whole text of a stored PDF for the AI helper's preview (#72
+/// part B, AI-10): decrypts it once into memory and asks the sandboxed PDF
+/// helper for each page's readable text, at a tiny width, discarding the
+/// pictures. Computers only. Capped at 50 pages and 1 MiB, whole pages;
+/// pages cut, failed or empty are listed, never dropped silently. Issues
+/// the preview ticket the save needs.
+#[tauri::command]
+async fn vault_document_text(
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    mut request: DocumentTextRequest,
+) -> CommandResult<DocumentText> {
+    use pdf_unlock::Refusal;
+    if !cfg!(desktop) {
+        return Err(VaultError::PdfViewUnavailable.into());
+    }
+    if request
+        .password
+        .as_ref()
+        .is_some_and(|password| password.len() > pdf_unlock::MAX_PASSWORD_BYTES)
+    {
+        return Err(VaultError::Invalid.into());
+    }
+    let record_id = request.record_id;
+    let given = request.password.is_some();
+    let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
+    drop(request);
+    let ticket = pdf_view::ViewTicket::text();
+    let session = picks.session();
+    let result = run_blocking(store.inner(), move |store| {
+        let snapshot = store.snapshot()?;
+        let record = snapshot
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?;
+        // Refused before anything is decrypted.
+        if !record.available || record.hidden.is_some() {
+            return Err(VaultError::NotFound);
+        }
+        if !(record.media_type == "application/pdf"
+            || record.display_name.to_ascii_lowercase().ends_with(".pdf"))
+        {
+            return Err(VaultError::NotPdf);
+        }
+        if record.plaintext_size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
+            return Err(VaultError::PdfTooLarge);
+        }
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        let started = Instant::now();
+        let mut document =
+            zeroize::Zeroizing::new(Vec::with_capacity(record.plaintext_size as usize));
+        store.read_for_view(record_id, &mut *document)?;
+        let mut text = DocumentText {
+            page_count: 0,
+            pages: Vec::new(),
+            joined: String::new(),
+            page_starts: Vec::new(),
+            empty_pages: Vec::new(),
+            cut_pages: Vec::new(),
+            failed_pages: Vec::new(),
+            truncated: false,
+            ticket: Uuid::nil(),
+        };
+        let mut joined_units = 0u32;
+        let mut index = 0u32;
+        loop {
+            if !ticket.is_current() {
+                return Err(VaultError::Cancelled);
+            }
+            if started.elapsed() > TEXT_READ_TIME_LIMIT {
+                text.truncated = true;
+                break;
+            }
+            let outcome =
+                pdf_view::view_in_helper(&document, &password, index, TEXT_READ_WIDTH, &ticket);
+            let page = match outcome {
+                pdf_view::Outcome::Shown(page) => page,
+                pdf_view::Outcome::Cancelled => return Err(VaultError::Cancelled),
+                pdf_view::Outcome::Refused(Refusal::WrongPassword) if index == 0 && given => {
+                    return Err(VaultError::PdfWrongPassword)
+                }
+                pdf_view::Outcome::Refused(Refusal::WrongPassword) if index == 0 => {
+                    return Err(VaultError::PdfLocked)
+                }
+                pdf_view::Outcome::Refused(Refusal::TooLarge) => {
+                    return Err(VaultError::PdfTooLarge)
+                }
+                pdf_view::Outcome::Unavailable => return Err(VaultError::PdfViewUnavailable),
+                pdf_view::Outcome::NoSandbox => return Err(VaultError::PdfViewNoSandbox),
+                _ if index == 0 => return Err(VaultError::PdfViewFailed),
+                _ => {
+                    // One page the helper refused: named, and the rest read.
+                    text.failed_pages.push(index);
+                    index += 1;
+                    if index >= text.page_count || index >= MAX_TEXT_PAGES {
+                        break;
+                    }
+                    continue;
+                }
+            };
+            if index == 0 {
+                text.page_count = page.page_count;
+                if page.page_count > MAX_TEXT_PAGES {
+                    text.truncated = true;
+                }
+            }
+            let page_text = page.readable_text;
+            // Whole pages only: a page past the cap is left out, and said so.
+            let separator = if text.pages.is_empty() { 0 } else { 2 };
+            if text.joined.len() + separator + page_text.len() > MAX_TEXT_BYTES {
+                text.truncated = true;
+                break;
+            }
+            if page_text.len() + PAGE_CUT_MARGIN >= pdf_view::MAX_PAGE_TEXT_BYTES {
+                text.cut_pages.push(index);
+            }
+            if page_text.trim().is_empty() {
+                text.empty_pages.push(index);
+            }
+            if separator > 0 {
+                text.joined.push_str("\n\n");
+                joined_units += 2;
+            }
+            text.page_starts.push(joined_units);
+            joined_units += page_text.encode_utf16().count() as u32;
+            text.joined.push_str(&page_text);
+            text.pages.push(DocumentPageText {
+                index,
+                text: page_text,
+            });
+            index += 1;
+            if index >= text.page_count || index >= MAX_TEXT_PAGES {
+                break;
+            }
+        }
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        Ok(text)
+    })
+    .await;
+    // A lock can also happen after the blocking task finishes, before this command resumes.
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    let mut text = result?;
+    let cut_after_page = text
+        .truncated
+        .then(|| text.pages.last().map(|page| page.index + 1))
+        .flatten();
+    text.ticket = picks.store_text(
+        session,
+        TextTicket {
+            record_id,
+            cut_after_page,
+        },
+    );
+    Ok(text)
+}
+
+/// Stops a text still being read: the preview closed. The reader's pages
+/// are not touched.
+#[tauri::command]
+fn vault_document_text_cancel() {
+    pdf_view::cancel_text_reads();
+}
+
+/// What the vault knows about a document's patient, for the remover in page
+/// code (#72 part B): names and birth dates from the profiles, and the
+/// patient, provider and clinic from the document's delivery manifest.
+#[tauri::command]
+async fn vault_record_known_details(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<vault::KnownIdentifiers> {
+    run_blocking(store.inner(), move |store| {
+        store.known_identifiers(request.record_id)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TextExportPickRequest {
+    record_id: Uuid,
+    ticket: Uuid,
+}
+
+/// Opens the save picker for an anonymized text (#72 part B, AI-02), with a
+/// generic name in the app's language, never the document's title. Needs
+/// a valid preview ticket. Returns the pick id, or `None` when cancelled.
+#[tauri::command]
+async fn vault_export_text_pick(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: TextExportPickRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<Option<Uuid>> {
+    let record_id = request.record_id;
+    picks.peek_text(request.ticket, record_id)?;
+    let session = picks.session();
+    let suggested_name = locale
+        .unwrap_or_default()
+        .text(MessageId::AiHelperExportFileName)?;
+    let _open = ActivityHold::new(store.idle());
+    let destination = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_file_name(suggested_name)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    Ok(destination.map(|destination| picks.store_text_export(session, record_id, destination)))
+}
+
+/// The most text a save takes, in UTF-8 bytes.
+const MAX_EXPORT_TEXT_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TextExportPickedRequest {
+    pick_id: Uuid,
+    record_id: Uuid,
+    ticket: Uuid,
+    text: String,
+}
+
+/// How a text save ended: written, or refused with the ranges that still
+/// hold a vault identifier or a code point the cleaning drops, for the
+/// preview to mark. Nothing is written when refused.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextSaveOutcome {
+    saved: bool,
+    hits: Vec<text_recheck::Hit>,
+}
+
+/// Writes an anonymized text where the picker chose (#72 part B, AI-02):
+/// after the native re-check, with the fixed first line (and the cut line)
+/// from the app's language written here, never by page code. One save ends
+/// the ticket.
+#[tauri::command]
+async fn vault_export_text_picked(
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: TextExportPickedRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<TextSaveOutcome> {
+    // Refused before anything else looks at the text.
+    if request.text.len() > MAX_EXPORT_TEXT_BYTES {
+        return Err(VaultError::Invalid.into());
+    }
+    let record_id = request.record_id;
+    let ticket = picks.peek_text(request.ticket, record_id)?;
+    let hits = text_recheck::forbidden_ranges(&request.text);
+    if !hits.is_empty() {
+        return Ok(TextSaveOutcome { saved: false, hits });
+    }
+    let known = run_blocking(store.inner(), move |store| {
+        store.known_identifiers(record_id)
+    })
+    .await?;
+    let hits = text_recheck::identifier_hits(&request.text, &known.names, &known.birth_dates);
+    if !hits.is_empty() {
+        return Ok(TextSaveOutcome { saved: false, hits });
+    }
+    let locale = locale.unwrap_or_default();
+    let mut content = locale.text(MessageId::AiHelperExportHeader)?;
+    content.push_str("\n\n");
+    content.push_str(&request.text);
+    if let Some(page) = ticket.cut_after_page {
+        content.push_str("\n\n");
+        content.push_str(
+            &locale.render(MessageId::AiHelperExportCut, &[("page", &page.to_string())])?,
+        );
+    }
+    content.push('\n');
+    let destination = picks.take_text_export(request.pick_id, record_id)?;
+    let Ok(destination_path) = destination.into_path() else {
+        // Only computers read a document's text, and they pick paths.
+        return Err(VaultError::Invalid.into());
+    };
+    run_blocking(store.inner(), move |store| {
+        store.export_text_atomic(record_id, &destination_path, content.as_bytes())
+    })
+    .await?;
+    // One save per ticket: it ends with the write, so a failed write (disk
+    // full, say) leaves the preview able to try another place.
+    picks.take_text(request.ticket, record_id)?;
+    Ok(TextSaveOutcome {
+        saved: true,
+        hits: Vec::new(),
+    })
+}
+
 /// Moves files to another person, into the folders chosen. A file the
 /// person already has stays where it is and is named in the outcome.
 #[tauri::command]
@@ -3242,8 +3724,11 @@ async fn vault_unlock_pdf(
 #[tauri::command]
 async fn vault_hide_record(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: RecordIdRequest,
 ) -> CommandResult<()> {
+    // A hidden document's text can no longer be saved (#72, AI-02).
+    picks.forget_texts_for(request.record_id);
     run_blocking(store.inner(), move |store| {
         store.hide_record(request.record_id, now_ms())
     })
@@ -3492,12 +3977,22 @@ pub fn run() {
             // would lock its own copy of the lock file. Earlier evaluation builds
             // kept the vault at `<data>/vault-v1`; that is left untouched and
             // never read.
-            app.manage(Arc::new(VaultStore::new(
+            let store = Arc::new(VaultStore::new(
                 app.path()
                     .app_local_data_dir()?
                     .join("vault-home")
                     .join("vault-v1"),
-            )));
+            ));
+            store.configure_notifications(
+                app.path()
+                    .app_local_data_dir()?
+                    .join("vault-home")
+                    .join("document-notifications-v1.json"),
+                app.config().identifier.clone(),
+            );
+            #[cfg(windows)]
+            store.start_document_collection()?;
+            app.manage(store);
             // Wrong tries at a secret, counted beside the vault in
             // `attempts.json`, and read only when needed, not here.
             app.manage(Arc::new(AttemptThrottle::new(Some(
@@ -3527,6 +4022,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            ai_model_status,
             kdf_benchmark,
             vault_status,
             vault_passphrase_rules,
@@ -3539,6 +4035,9 @@ pub fn run() {
             vault_history,
             vault_portal_link,
             vault_check_documents,
+            vault_notification_status,
+            vault_set_notifications,
+            vault_set_automatic_document_checks,
             vault_request_device_approval,
             vault_restart_device_approval,
             vault_change_passphrase,
@@ -3569,6 +4068,11 @@ pub fn run() {
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
+            vault_document_text,
+            vault_document_text_cancel,
+            vault_record_known_details,
+            vault_export_text_pick,
+            vault_export_text_picked,
             vault_export_pick,
             vault_export_picked,
             vault_save_photo,
@@ -3584,6 +4088,12 @@ pub fn run() {
         .build(production_context())
         .expect("error while building myCarlos")
         .run(|_app, _event| {
+            if matches!(
+                _event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                _app.state::<Arc<VaultStore>>().stop_document_collection();
+            }
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = _event {
                 receive_opened(_app, &urls);
@@ -4164,11 +4674,12 @@ mod tests {
         // file by file. `app_local_data_dir` never roams, and on every other
         // platform it is the same directory.
         let library = include_str!("lib.rs");
-        let setup = library
-            .split("app.manage(Arc::new(VaultStore::new(")
-            .nth(1)
-            .unwrap();
-        let root = &setup[..setup.find(")))").unwrap()];
+        let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        let setup = startup
+            .split_once("let store = Arc::new(VaultStore::new(")
+            .unwrap()
+            .1;
+        let root = setup.split_once("));").unwrap().0;
         assert!(root.contains("app_local_data_dir()"), "{root}");
         assert!(!root.contains("app_data_dir()"), "{root}");
         // Earlier evaluation builds kept the vault itself at `<data>/vault-v1`,
@@ -4178,6 +4689,7 @@ mod tests {
         let home = root.split(".join(\"").nth(1).unwrap();
         let home = &home[..home.find('"').unwrap()];
         assert_ne!(home, "vault-v1");
+        assert_eq!(home, "vault-home");
     }
 
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
@@ -4298,6 +4810,28 @@ mod tests {
         assert!(warning.contains("Backups saved before now still open"));
         assert!(warning.contains("myCarlos says what to do about them"));
         assert!(!warning.contains("delete"));
+    }
+
+    #[test]
+    fn snapshot_capture_confirmation_follows_reads_during_native_question() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, groups) = key_being_set_up(&temp.path().join("vault"), true);
+        let during = std::cell::Cell::new(None);
+        let stored = confirm_recovery_key_asking(
+            &store,
+            &typed_back(&groups),
+            || 6,
+            || {
+                during.set(Some(store.snapshot().unwrap().capture));
+                true
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let earlier = during.get().unwrap();
+        assert_eq!(earlier.epoch, stored.capture.epoch);
+        assert!(earlier.sequence < stored.capture.sequence);
+        assert_eq!(stored.recovery_key_set_at_ms, Some(6));
     }
 
     #[test]
@@ -5911,7 +6445,6 @@ mod native_localization_tests {
         for error in [
             VaultError::NewerFormat,
             VaultError::BackupNewerFormat,
-            VaultError::Portal(LinkError::Disabled),
             VaultError::Portal(LinkError::Unavailable),
             VaultError::Portal(LinkError::InvalidPortal),
             VaultError::Portal(LinkError::InvalidCode),
@@ -5926,7 +6459,6 @@ mod native_localization_tests {
             let text = PublicText::from(error);
             assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
         }
-        #[cfg(feature = "portal-linking")]
         {
             use crate::portal_approval::{ApprovalReason, ApprovalState};
             for error in [

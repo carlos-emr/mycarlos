@@ -11,10 +11,9 @@ name = "mycarlos_tauri_poc_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
+# Portal linking, document pickup, arrival notices and automatic checks are always
+# built. Notices and automatic checks stay off until the patient turns them on.
 default = []
-# Evaluation only. The native link command refuses before any write or request
-# unless this build feature is explicitly selected; renderer state cannot enable it.
-portal-linking = ["dep:reqwest", "dep:rustls", "dep:rustls-platform-verifier", "dep:tokio", "dep:hpke"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -36,7 +35,7 @@ hkdf = "0.12"
 fluent-bundle = "=0.16.0"
 # Only the frozen X25519 suite. Disable default P256 KEM to keep the current
 # independent P256 verifier stack and avoid old EC dependencies.
-hpke = { version = "=0.13.0", default-features = false, features = ["std", "x25519"], optional = true }
+hpke = { version = "=0.13.0", default-features = false, features = ["std", "x25519"] }
 hmac = "0.12"
 libc = "0.2"
 # Opens a password-protected PDF, only ever in the separate helper process (src/pdf_unlock.rs).
@@ -52,16 +51,18 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 p256 = { version = "=0.14.0", features = ["ecdsa", "pkcs8"] }
 percent-encoding = "2"
 rand = "0.8"
-reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider"], optional = true }
-rustls = { version = "=0.23.46", default-features = false, features = ["std", "ring", "tls12"], optional = true }
-rustls-platform-verifier = { version = "=0.7.1", optional = true }
+# The portal client (src/portal_client.rs). Android does not use it yet: the platform
+# verifier there needs its Kotlin component, so linking fails closed on Android.
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["std", "ring", "tls12"] }
+rustls-platform-verifier = "=0.7.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
-tokio = { version = "1", features = ["time", "macros"], optional = true }
+tokio = { version = "1", features = ["time", "macros"] }
 unicode-normalization = "0.1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -78,16 +79,20 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }
 landlock = "=0.4.7"
 seccompiler = "=0.5.0"
 
-# Match the WebView2 bindings already used by the pinned Tauri/Wry runtime.
+# Match the WebView2 bindings already used by the pinned Tauri/Wry runtime. Data_Xml_Dom,
+# UI_Notifications and Win32_System_WinRT show document arrival notices.
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.38.2"
 windows = { version = "=0.61.3", features = [
+    "Data_Xml_Dom",
+    "UI_Notifications",
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Isolation",
     "Win32_System_Com",
     "Win32_System_JobObjects",
     "Win32_System_Threading",
+    "Win32_System_WinRT",
 ] }
 
 # Exact existing locked runtime packages; narrow AppKit features give native
