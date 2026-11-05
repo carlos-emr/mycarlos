@@ -16,6 +16,7 @@ export {
   resolveLocale,
   setLocaleOverride,
   t,
+  tPlain,
   translate,
 } from "./core";
 export type { Params } from "./core";

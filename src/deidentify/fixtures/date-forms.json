@@ -1,0 +1,309 @@
+{
+  "note": "Cases the page code (deidentify.ts) and the native re-check (text_recheck.rs) must agree on: a date the remover reads is replaced by a placeholder and refused if it is still there. Synthetic text only.",
+  "cases": [
+    {
+      "text": "Seen 2026-10-08.",
+      "date": true
+    },
+    {
+      "text": "Seen 2026/10/08.",
+      "date": true
+    },
+    {
+      "text": "Seen 2026/1/8.",
+      "date": true
+    },
+    {
+      "text": "Seen 2026-Oct-08.",
+      "date": true
+    },
+    {
+      "text": "Seen 8 October 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 17-Apr-1961.",
+      "date": true
+    },
+    {
+      "text": "Vu le 2 mars 1958.",
+      "date": true
+    },
+    {
+      "text": "Vu le 1er mars 1958.",
+      "date": true
+    },
+    {
+      "text": "Vu le 17 août 2026.",
+      "date": true
+    },
+    {
+      "text": "Vu le 17 déc. 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen October 8, 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen Oct. 8 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 08/10/2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 10.08.2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 03/04/2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 25/12/2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 12/25/2026.",
+      "date": true
+    },
+    {
+      "text": "Date: 17/10/26",
+      "date": true
+    },
+    {
+      "text": "Visit date: 17/10/26",
+      "date": true
+    },
+    {
+      "text": "Letter dated 17/10/26.",
+      "date": true
+    },
+    {
+      "text": "Thursday, 2026-01-15",
+      "date": true
+    },
+    {
+      "text": "Seen Sat Oct 17 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 29 February 2024.",
+      "date": true
+    },
+    {
+      "text": "Started in March 2024.",
+      "date": true
+    },
+    {
+      "text": "Débuté en octobre 2026.",
+      "date": true
+    },
+    {
+      "text": "Since 2019 she walks.",
+      "date": true
+    },
+    {
+      "text": "depuis 2019",
+      "date": true
+    },
+    {
+      "text": "Seen on 2026-10-08 at 07:40.",
+      "date": true
+    },
+    {
+      "text": "Seen 29 February 2023.",
+      "date": false
+    },
+    {
+      "text": "Seen 2026-13-01.",
+      "date": false
+    },
+    {
+      "text": "Seen 31/31/2026.",
+      "date": false
+    },
+    {
+      "text": "Seen 17/10/26.",
+      "date": false
+    },
+    {
+      "text": "Ratio 1/2/24 today.",
+      "date": false
+    },
+    {
+      "text": "Titrate 5/10/20 mg.",
+      "date": false
+    },
+    {
+      "text": "Lot 2019, 2019 tablets",
+      "date": false
+    },
+    {
+      "text": "At 07:40 and 15:12.",
+      "date": false
+    },
+    {
+      "text": "[DATE 2, 14 days after DATE 1] and [DATE 3]",
+      "date": false
+    },
+    {
+      "text": "Seen [DATE 2, 1 day after DATE 1] at 07:40.",
+      "date": false
+    },
+    {
+      "text": "[AGE 1, 90+] and [NAME 1]",
+      "date": false
+    },
+    {
+      "text": "Dose 5-10 mg; ref range 3.5-5.0, 12.5-15.0.",
+      "date": false
+    },
+    {
+      "text": "Platelets 250 x10^9/L, INR 1.1.",
+      "date": false
+    },
+    {
+      "text": "Seen 2026-10-08T07:40.",
+      "date": true
+    },
+    {
+      "text": "Seen 2026-10-08T07:40:15Z.",
+      "date": true
+    },
+    {
+      "text": "Seen October 8th, 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen Oct 1st 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 22nd Oct. 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 8th October 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 8th of October 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 08-10-2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 8-10-2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 25-12-2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 20261008.",
+      "date": true
+    },
+    {
+      "text": "Lab 20261008074500 done.",
+      "date": true
+    },
+    {
+      "text": "Seen 2026.10.08.",
+      "date": true
+    },
+    {
+      "text": "Seen Oct 8.",
+      "date": true
+    },
+    {
+      "text": "Seen 8 October.",
+      "date": true
+    },
+    {
+      "text": "Seen 8th Oct.",
+      "date": true
+    },
+    {
+      "text": "Seen Oct 8th.",
+      "date": true
+    },
+    {
+      "text": "Vu le 8 octobre.",
+      "date": true
+    },
+    {
+      "text": "Vu le 1er mars.",
+      "date": true
+    },
+    {
+      "text": "Seen 2026‐10‐08.",
+      "date": true
+    },
+    {
+      "text": "Seen 2026‑10‐08.",
+      "date": true
+    },
+    {
+      "text": "Seen 2026–10‐08.",
+      "date": true
+    },
+    {
+      "text": "Seen 08–10‑2026.",
+      "date": true
+    },
+    {
+      "text": "Seen from 8 to 12 October 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 8–12 Oct 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen Oct 8-12, 2026.",
+      "date": true
+    },
+    {
+      "text": "Vu du 8 au 12 octobre 2026.",
+      "date": true
+    },
+    {
+      "text": "Seen 8th-12th October 2026.",
+      "date": true
+    },
+    {
+      "text": "Take may 5 mg daily.",
+      "date": false
+    },
+    {
+      "text": "Order 12345678 shipped.",
+      "date": false
+    },
+    {
+      "text": "Dose 10-12 mg for 5-7 days.",
+      "date": false
+    },
+    {
+      "text": "Platelets 250-450.",
+      "date": false
+    },
+    {
+      "text": "Ref 1-2-3 and 12-34.",
+      "date": false
+    },
+    {
+      "text": "Weight 20260 g.",
+      "date": false
+    },
+    {
+      "text": "Seen 8 Octo.",
+      "date": false
+    }
+  ]
+}

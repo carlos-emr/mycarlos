@@ -1,6 +1,7 @@
 import {
   useI18n,
   t as translateNow,
+  tPlain,
   useTextState,
   deferredText,
   type MessageKey,
@@ -26,9 +27,12 @@ import type { DocumentText } from "../documentText";
 import {
   deidentify,
   removeMore,
+  restoreChecked,
   type Deidentified,
   type PlaceholderLabels,
+  type PlaceholderNotes,
   type RemovedKind,
+  type RestoredPart,
 } from "../deidentify/deidentify";
 
 /** The kinds a removal can have, for the labels. */
@@ -65,6 +69,20 @@ function placeholderLabels(): PlaceholderLabels {
         `interface.AnonymizePreview.placeholder.${kind}` as MessageKey,
       );
   return labels;
+}
+
+/** The notes after a placeholder's number, in the app's language. They are
+ * stored and sent as data, so they are formatted with no bidi isolation. */
+function placeholderNotes(): PlaceholderNotes {
+  return {
+    daysAfter: (days, label, number) =>
+      tPlain("interface.AnonymizePreview.note.daysAfter", {
+        days,
+        label,
+        number,
+      }),
+    ageOver90: tPlain("interface.AnonymizePreview.note.ageOver90"),
+  };
 }
 
 const pageList = (pages: number[]) =>
@@ -125,6 +143,15 @@ export function AnonymizePreview({
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ticket, setTicket] = useState<string | null>(null);
+  // After a save: the AI's answer pasted back, and what it came to. The list
+  // of what was replaced is `current`, in memory only; it goes with this
+  // window, and so with the unlocked session.
+  const [saved, setSaved] = useState(false);
+  const [pasted, setPasted] = useState("");
+  const [putBack, setPutBack] = useState<{
+    parts: RestoredPart[];
+    flagged: number;
+  } | null>(null);
   const close = useCallback(() => {
     cancelRead();
     onClose();
@@ -158,6 +185,7 @@ export function AnonymizePreview({
           knownClinics: [...clinicNames, ...known.clinicNames],
           knownDoctors: known.doctorNames,
           labels: placeholderLabels(),
+          notes: placeholderNotes(),
         });
         setText(read);
         setTicket(read.ticket);
@@ -311,6 +339,12 @@ export function AnonymizePreview({
     setNotice("");
   };
 
+  const putDetailsBack = () => {
+    if (!current) return;
+    const result = restoreChecked(pasted, current);
+    setPutBack({ parts: result.parts, flagged: result.flagged.length });
+  };
+
   const save = async () => {
     setConfirming(false);
     if (!current || !ticket) return;
@@ -329,6 +363,7 @@ export function AnonymizePreview({
       const outcome = await saveText(pickId, ticket, current.toSend);
       if (outcome.saved) {
         setTicket(null);
+        setSaved(true);
         setNotice(
           deferredText(() => translateNow("interface.AnonymizePreview.saved")),
         );
@@ -510,9 +545,6 @@ export function AnonymizePreview({
                     key={run.start}
                     data-start={run.start}
                     data-kind={run.kind}
-                    className={
-                      run.kind === "date" ? "native-anonymize-moved" : undefined
-                    }
                   >
                     {run.text}
                     <span className="sr-only">
@@ -620,6 +652,85 @@ export function AnonymizePreview({
                 {translateNow("interface.AnonymizePreview.save")}
               </button>
             </footer>
+            {saved && (
+              <section
+                className="native-anonymize-paste"
+                aria-labelledby="anonymize-paste-title"
+              >
+                <h3 id="anonymize-paste-title">
+                  {translateNow("interface.AnonymizePreview.pasteTitle")}
+                </h3>
+                <p id="anonymize-paste-help">
+                  {translateNow("interface.AnonymizePreview.pasteHelp")}
+                </p>
+                <label htmlFor="anonymize-paste">
+                  {translateNow("interface.AnonymizePreview.pasteLabel")}
+                </label>
+                <textarea
+                  id="anonymize-paste"
+                  rows={6}
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-describedby="anonymize-paste-help"
+                  value={pasted}
+                  onChange={(event) => {
+                    setPasted(event.target.value);
+                    setPutBack(null);
+                  }}
+                />
+                <div>
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={!pasted.trim()}
+                    onClick={putDetailsBack}
+                  >
+                    {translateNow("interface.AnonymizePreview.pasteButton")}
+                  </button>
+                </div>
+                {putBack && (
+                  <>
+                    <p role="status">
+                      {putBack.flagged > 0
+                        ? translateNow(
+                            "interface.AnonymizePreview.pasteFlagged",
+                            { count: putBack.flagged },
+                          )
+                        : translateNow(
+                            "interface.AnonymizePreview.pasteAllMatched",
+                          )}
+                    </p>
+                    <div
+                      className="native-anonymize-text"
+                      role="region"
+                      aria-label={translateNow(
+                        "interface.AnonymizePreview.pasteResult",
+                      )}
+                    >
+                      {putBack.parts.map((part, index) =>
+                        part.kind === "flagged" ? (
+                          <mark
+                            key={index}
+                            className="native-anonymize-flagged"
+                            data-kind="flagged"
+                          >
+                            {part.text}
+                            <span className="sr-only">
+                              {" "}
+                              {translateNow(
+                                "interface.AnonymizePreview.pasteFlaggedSr",
+                              )}
+                            </span>
+                          </mark>
+                        ) : (
+                          <span key={index}>{part.text}</span>
+                        ),
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
           </>
         )}
       </section>
