@@ -506,10 +506,16 @@ export interface VaultBridge {
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
    * with one; it is not kept. The result carries the ticket one save
-   * needs. */
-  documentText(recordId: string, password?: string): Promise<DocumentText>;
-  /** Stops a text still being read: the preview closed. */
-  cancelDocumentText(): Promise<void>;
+   * needs. `readId` names the screen that asks (a random id of its own), so
+   * that its cancel ends only its own read. */
+  documentText(
+    recordId: string,
+    readId: string,
+    password?: string,
+  ): Promise<DocumentText>;
+  /** Stops the text the screen `readId` is still reading: it closed.
+   * Another screen's read goes on. */
+  cancelDocumentText(readId: string): Promise<void>;
   /** What the vault knows about a document's patient, for the remover:
    * names, birth dates, the provider and the clinic of its delivery. */
   recordKnownDetails(recordId: string): Promise<KnownIdentifiers>;
@@ -954,11 +960,12 @@ export function createVaultBridge(): VaultBridge {
         request: { term, context, lang },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
-    documentText: (recordId, password) =>
+    documentText: (recordId, readId, password) =>
       invoke<DocumentText>("vault_document_text", {
-        request: { recordId, password: password ?? null },
+        request: { recordId, readId, password: password ?? null },
       }),
-    cancelDocumentText: () => invoke<void>("vault_document_text_cancel"),
+    cancelDocumentText: (readId) =>
+      invoke<void>("vault_document_text_cancel", { request: { readId } }),
     recordKnownDetails: (recordId) =>
       invoke<KnownIdentifiers>("vault_record_known_details", {
         request: { recordId },
