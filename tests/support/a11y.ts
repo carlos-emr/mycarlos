@@ -119,6 +119,8 @@ export async function fakeVault(
             // Preferences on a computer asks whether an AI model is installed (#72).
             case "ai_model_status":
               return { state: "notInstalled" };
+            case "ai_model_catalog":
+              return [];
             case "vault_status":
               return status;
             case "vault_notification_status":

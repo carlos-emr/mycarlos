@@ -856,6 +856,32 @@ export const MESSAGE_KEYS = [
   "notifications.autoPaused",
   "notifications.checkBusy",
   "native.notice.arrival",
+  "ai.model.add",
+  "ai.model.accepted",
+  "ai.model.where",
+  "ai.model.copy",
+  "ai.model.copied",
+  "ai.model.checking",
+  "ai.model.added",
+  "ai.model.installed",
+  "ai.model.remove",
+  "ai.model.removeConfirm",
+  "ai.model.damaged",
+  "ai.model.unsupportedRam",
+  "ai.model.unsupportedCpu",
+  "ai.model.unsupportedPlatform",
+  "ai.model.refusedList",
+  "ai.model.refusedHash",
+  "ai.model.refusedIncomplete",
+  "ai.model.refusedDisk",
+  "ai.model.refusedStorage",
+  "ai.model.refusedBusy",
+  "ai.model.download",
+  "ai.model.downloadNote",
+  "ai.model.downloading",
+  "ai.model.refusedNetwork",
+  "ai.model.refusedUnavailable",
+  "native.filter.models",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1887,6 +1913,32 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.autoPaused": "notifications-autoPaused",
   "notifications.checkBusy": "notifications-checkBusy",
   "native.notice.arrival": "native-notice-arrival",
+  "ai.model.add": "ai-model-add",
+  "ai.model.accepted": "ai-model-accepted",
+  "ai.model.where": "ai-model-where",
+  "ai.model.copy": "ai-model-copy",
+  "ai.model.copied": "ai-model-copied",
+  "ai.model.checking": "ai-model-checking",
+  "ai.model.added": "ai-model-added",
+  "ai.model.installed": "ai-model-installed",
+  "ai.model.remove": "ai-model-remove",
+  "ai.model.removeConfirm": "ai-model-removeConfirm",
+  "ai.model.damaged": "ai-model-damaged",
+  "ai.model.unsupportedRam": "ai-model-unsupportedRam",
+  "ai.model.unsupportedCpu": "ai-model-unsupportedCpu",
+  "ai.model.unsupportedPlatform": "ai-model-unsupportedPlatform",
+  "ai.model.refusedList": "ai-model-refusedList",
+  "ai.model.refusedHash": "ai-model-refusedHash",
+  "ai.model.refusedIncomplete": "ai-model-refusedIncomplete",
+  "ai.model.refusedDisk": "ai-model-refusedDisk",
+  "ai.model.refusedStorage": "ai-model-refusedStorage",
+  "ai.model.refusedBusy": "ai-model-refusedBusy",
+  "ai.model.download": "ai-model-download",
+  "ai.model.downloadNote": "ai-model-downloadNote",
+  "ai.model.downloading": "ai-model-downloading",
+  "ai.model.refusedNetwork": "ai-model-refusedNetwork",
+  "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
+  "native.filter.models": "native-filter-models",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2834,6 +2886,36 @@ export interface MessageArgsByKey {
   "notifications.autoPaused": undefined;
   "notifications.checkBusy": undefined;
   "native.notice.arrival": undefined;
+  "ai.model.add": undefined;
+  "ai.model.accepted": {
+    licence: FluentArgument;
+    name: FluentArgument;
+    size: FluentArgument;
+  };
+  "ai.model.where": undefined;
+  "ai.model.copy": undefined;
+  "ai.model.copied": undefined;
+  "ai.model.checking": { done: FluentArgument; total: FluentArgument };
+  "ai.model.added": undefined;
+  "ai.model.installed": { name: FluentArgument };
+  "ai.model.remove": undefined;
+  "ai.model.removeConfirm": undefined;
+  "ai.model.damaged": undefined;
+  "ai.model.unsupportedRam": undefined;
+  "ai.model.unsupportedCpu": undefined;
+  "ai.model.unsupportedPlatform": undefined;
+  "ai.model.refusedList": undefined;
+  "ai.model.refusedHash": undefined;
+  "ai.model.refusedIncomplete": undefined;
+  "ai.model.refusedDisk": undefined;
+  "ai.model.refusedStorage": undefined;
+  "ai.model.refusedBusy": undefined;
+  "ai.model.download": undefined;
+  "ai.model.downloadNote": { host: FluentArgument; size: FluentArgument };
+  "ai.model.downloading": { done: FluentArgument; total: FluentArgument };
+  "ai.model.refusedNetwork": undefined;
+  "ai.model.refusedUnavailable": undefined;
+  "native.filter.models": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

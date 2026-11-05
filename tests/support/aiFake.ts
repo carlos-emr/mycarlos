@@ -30,6 +30,7 @@ export const AI_COMMANDS = {
   // Adding and removing the model (root-4a's side of the agreement).
   catalog: "ai_model_catalog",
   addPicked: "ai_model_add_picked",
+  download: "ai_model_download",
   addCancel: "ai_model_add_cancel",
   remove: "ai_model_remove",
   documentText: "vault_document_text",
@@ -52,6 +53,9 @@ export type FakeModelStatus =
 
 /** The refusals the model's commands make (PublicError codes). */
 export type FakeAiRefusal =
+  /** ai_model_remove's own refusals. */
+  | "busy"
+  | "storage"
   | "aiNotInstalled"
   | "aiDamaged"
   | "aiMemory"
@@ -91,7 +95,8 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
         command: string;
         /** A text read's screen (request.readId): its cancel ends only it. */
         readId?: unknown;
-        resolve: () => void;
+        /** Ends the wait: with `answer`, that is the call's answer. */
+        resolve: (ended?: { answer: unknown }) => void;
         reject: (reason: unknown) => void;
       };
       const internals = Reflect.get(window, "__TAURI_INTERNALS__") as {
@@ -128,6 +133,61 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           entry.reject(reason);
         }
       };
+      // An add or a download stopped with ai_model_add_cancel answers, as
+      // the native side does: { outcome: "cancelled" }, not an error.
+      const endHeld = (
+        which: (command: string) => boolean,
+        by: string,
+        answer: unknown,
+      ) => {
+        const stopped = held.filter((entry) => which(entry.command));
+        held = held.filter((entry) => !which(entry.command));
+        for (const entry of stopped) {
+          cancelled.push({ command: entry.command, by });
+          entry.resolve({ answer: structuredClone(answer) });
+        }
+      };
+      // Tauri's events (@tauri-apps/api/event): a listener is a callback
+      // the page hands over, and the native side calls it with each event.
+      const callbacks = new Map<number, (event: unknown) => void>();
+      let nextCallback = 1;
+      Reflect.set(
+        internals,
+        "transformCallback",
+        (callback: (event: unknown) => void) => {
+          const id = nextCallback++;
+          callbacks.set(id, callback);
+          return id;
+        },
+      );
+      let listeners: { event: string; eventId: number; handler: number }[] = [];
+      let nextEventId = 1;
+      const unlisten = (event: unknown, eventId: unknown) => {
+        listeners = listeners.filter(
+          (each) => !(each.event === event && each.eventId === eventId),
+        );
+      };
+      Reflect.set(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
+        unregisterListener: unlisten,
+      });
+      const emit = (event: string, payload: unknown) => {
+        for (const each of listeners)
+          if (each.event === event)
+            callbacks.get(each.handler)?.({
+              event,
+              id: each.eventId,
+              payload: structuredClone(payload),
+            });
+      };
+      const answers: Record<string, unknown[]> = {};
+      const installed = () =>
+        (model = {
+          state: "installed",
+          model: {
+            name: setup.catalogEntry.name,
+            sha256: setup.catalogEntry.sha256,
+          },
+        });
       const nameOf = (recordId: unknown) =>
         vault.snapshot().records.find((record) => record.id === recordId)
           ?.displayName ?? "";
@@ -169,14 +229,8 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           case c.catalog:
             return [structuredClone(setup.catalogEntry)];
           case c.addPicked:
-            model = {
-              state: "installed",
-              model: {
-                name: setup.catalogEntry.name,
-                sha256: setup.catalogEntry.sha256,
-              },
-            };
-            return { outcome: "added", status: structuredClone(model) };
+          case c.download:
+            return { outcome: "added", status: structuredClone(installed()) };
           case c.addCancel:
             return null;
           case c.remove:
@@ -238,6 +292,10 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
         hold: (command: string) => holds.add(command),
         refuse: (command: string, code: string) =>
           (refusals[command] ??= []).push(code),
+        answer: (command: string, value: unknown) =>
+          (answers[command] ??= []).push(value),
+        listening: (event: string) =>
+          listeners.filter((each) => each.event === event).length,
         release: (command: string) => {
           const entry = held.find((each) => each.command === command);
           if (!entry) throw new Error(`Nothing held for ${command}`);
@@ -261,9 +319,38 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             command,
             refusal("aiCancelled", "ai.failed"),
           );
+        if (command === "plugin:event|listen") {
+          const { event, handler } = (rest[0] ?? {}) as {
+            event: string;
+            handler: number;
+          };
+          listeners.push({ event, eventId: nextEventId, handler });
+          return nextEventId++;
+        }
+        if (command === "plugin:event|unlisten") {
+          const { event, eventId } = (rest[0] ?? {}) as Record<string, unknown>;
+          unlisten(event, eventId);
+          return null;
+        }
         if (!ours.has(command)) return inner(command, ...rest);
         const args = ((rest[0] as Args | undefined) ?? {}) as Args;
         calls.push({ command, args: structuredClone(args) });
+        if (command === c.addCancel) {
+          endHeld(
+            (held) => held === c.addPicked || held === c.download,
+            command,
+            { outcome: "cancelled" },
+          );
+          return null;
+        }
+        // The file is checked (added) or fetched (downloaded) in steps: the
+        // start and half way, then, once the call is let go, the end.
+        const copying = command === c.addPicked || command === c.download;
+        const total = setup.catalogEntry.sizeBytes;
+        if (copying) {
+          emit(setup.progressEvent, { done: 0, total });
+          emit(setup.progressEvent, { done: Math.floor(total / 2), total });
+        }
         if (command === c.cancelText) {
           // The screen's own read only, as the native side does.
           const readId = args.request?.readId;
@@ -286,15 +373,21 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           );
           return null;
         }
-        if (holds.delete(command))
-          await new Promise<void>((resolve, reject) =>
-            held.push({
-              command,
-              readId: args.request?.readId,
-              resolve,
-              reject,
-            }),
+        if (holds.delete(command)) {
+          const ended = await new Promise<{ answer: unknown } | undefined>(
+            (resolve, reject) =>
+              held.push({
+                command,
+                readId: args.request?.readId,
+                resolve,
+                reject,
+              }),
           );
+          if (ended) return ended.answer;
+        }
+        const scripted = answers[command]?.shift();
+        if (scripted !== undefined) return scripted;
+        if (copying) emit(setup.progressEvent, { done: total, total });
         const refused = refusals[command]?.shift();
         if (refused) {
           // A failed check at load: the status says so from then on.
@@ -316,11 +409,13 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       knownDetails: setup.knownDetails ?? {},
       explanation: setup.explanation ?? null,
       pickId: fakeUuid(1100),
+      progressEvent: "ai-model-add-progress",
       // As ai_model_catalog lists the one accepted model. FAKE: no file.
       catalogEntry: {
         name: FAKE_MODEL.name,
         fileName: "FAKE-test-model.gguf",
-        sizeBytes: 4096,
+        // About the size of the accepted model; no file is ever read.
+        sizeBytes: 2_500_000_000,
         sha256: FAKE_MODEL.sha256,
         licence: "FAKE licence",
         notices: [],
@@ -409,5 +504,32 @@ export async function refuseAi(
         }
       ).refuse(command, code),
     { command, code },
+  );
+}
+
+/** The next call of `command` answers `value` (an add or a download that
+ * ends in a refusal, such as { outcome: "network" }). */
+export async function answerAi(page: Page, command: AiCommand, value: unknown) {
+  await page.evaluate(
+    ({ command, value }) =>
+      (
+        Reflect.get(window, "__fakeAi") as {
+          answer: (command: string, value: unknown) => void;
+        }
+      ).answer(command, value),
+    { command, value },
+  );
+}
+
+/** How many listeners the page has for a Tauri event. */
+export async function aiListeners(page: Page, event: string): Promise<number> {
+  return page.evaluate(
+    (event) =>
+      (
+        Reflect.get(window, "__fakeAi") as {
+          listening: (event: string) => number;
+        }
+      ).listening(event),
+    event,
   );
 }

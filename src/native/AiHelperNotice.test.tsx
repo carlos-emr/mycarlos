@@ -15,7 +15,8 @@ describe("the AI helper notice", () => {
       name: humanText("About the AI helper"),
     });
     for (const part of [
-      "sends nothing over the internet",
+      "never sends your documents, or anything about you, over the internet",
+      "The only thing it fetches is its model file",
       "synthetic (made-up) files only",
       "Saving text for another AI service",
       "moves the other dates back",
