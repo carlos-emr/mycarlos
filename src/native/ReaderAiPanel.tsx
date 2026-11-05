@@ -218,13 +218,15 @@ export function ReaderAiPanel({
           </button>
         </form>
       )}
-      {/* Read out as it changes: the work, then that the answer came. */}
+      {/* Read out as it changes: the work, then that the answer came. A run
+          that failed says so in its alert, never "ready" for an earlier
+          answer. */}
       <p className={working ? "native-dialog-status" : "sr-only"} role="status">
         {working
           ? t("ai.working")
-          : tool === "summary" && summary
+          : !failed && tool === "summary" && summary
             ? t("ai.summary.ready")
-            : tool === "explain" && explained
+            : !failed && tool === "explain" && explained
               ? t("ai.explain.ready")
               : ""}
       </p>
