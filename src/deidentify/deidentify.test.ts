@@ -295,7 +295,7 @@ describe("the name remover (#72)", () => {
     );
   });
 
-  it("takes out the details root-c2's probe found missed (#72 review)", () => {
+  it("takes out the details a review probe found missed (#72 review)", () => {
     const out = (text: string, names: string[] = []) =>
       deidentify(text, { knownNames: names }).toSend;
     // Accented names, and surnames after a particle.
