@@ -535,8 +535,9 @@ can be made again; an answer is hidden with its document, the document itself is
   neither read a document's text nor run a local model. Neither the text export nor the AI on this
   device works on a phone until a phone design is reviewed.
 - **Macs:** the AI on this device is not offered on a Mac yet (#211); the text export works there.
-- **Speed:** a summary may take a few minutes on an ordinary computer; on a 4-core test computer
-  shared with other work, one page took about 3 minutes, and loading the model about 25 seconds.
+- **Speed:** a summary may take a few minutes on an ordinary computer. On a 4-core test computer,
+  a one- or two-page letter took 2 to 3 minutes (119 to 169 seconds, Qwen3.5 4B), and loading the
+  model about 25 seconds more.
 
 **What the patient is told.** The notice in `AI_HELPER_NOTICE.md`, in all seven languages, before
 the first use and at any time from Security.
