@@ -561,8 +561,9 @@ export interface VaultBridge {
     ticket: string,
     text: string,
   ): Promise<TextSaveOutcome>;
-  /** Keeps an AI answer with its document, encrypted; a new answer to the
-   * same question (tool, language, term) replaces the old one. */
+  /** Keeps an AI answer with its document, encrypted. A new answer to the
+   * same question (tool, language, term) is the one shown; the old one stays
+   * in the vault, hidden, never deleted (D3). */
   saveAiResult(
     recordId: string,
     result: AiResultInput,

@@ -7542,9 +7542,6 @@ enum Removable {
     RestoreStage,
     /// What the atomic replacement primitive left behind.
     AtomicWriteLeftover,
-    /// An AI answer the committed manifest no longer names: replaced by a
-    /// newer answer to the same question (#72). Never a document's object.
-    SupersededAiResult,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.

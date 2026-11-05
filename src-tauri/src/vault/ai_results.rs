@@ -6,15 +6,18 @@
 //! else. Manifest format 10 names them; an older build refuses the vault
 //! rather than drop them as orphans.
 //!
-//! The vault keeps one answer per tool, language and term: a new summary in
-//! the same language replaces the old one, whose object is removed once the
-//! manifest commit names only the new one. Nothing about the document's
+//! Nothing is deleted (#71, Ben's D3 on 5 Nov): the vault shows one answer
+//! per tool, language and term, the one kept last, and a newer answer to the
+//! same question hides the older one, which stays in the vault with its
+//! document, encrypted, in every backup, for as long as the document does
+//! (documents are never deleted either). Nothing about the document's
 //! contents is written to the history: the entry names the document and the
 //! tool only.
 
 use super::*;
 
-/// The most answers a document keeps, counting every tool and language.
+/// The most answers a document keeps, counting every tool and language and
+/// the hidden ones: past it a new answer is refused, never an old one dropped.
 pub(super) const MAX_AI_RESULTS_PER_RECORD: usize = 32;
 /// The most an answer's bytes may be: a few sentences and their quotes.
 pub(super) const MAX_AI_RESULT_BYTES: u64 = 64 * 1024;
@@ -56,6 +59,10 @@ pub(super) struct StoredAiResult {
     pub(super) object_name: String,
     pub(super) plaintext_size: u64,
     pub(super) wrapped_object_key: WrappedSecret,
+    /// Hidden by a newer answer to the same question: kept, never listed or
+    /// read again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(super) superseded: bool,
 }
 
 impl StoredAiResult {
@@ -314,9 +321,11 @@ pub(super) fn validate<'a>(
                 &result.model_name,
                 &result.model_sha256,
             )
-            || record.ai_results[..position]
-                .iter()
-                .any(|earlier| earlier.same_question(result))
+            // One shown answer per question; the hidden ones may share it.
+            || (!result.superseded
+                && record.ai_results[..position]
+                    .iter()
+                    .any(|earlier| !earlier.superseded && earlier.same_question(result)))
         {
             return Err(VaultError::Corrupt);
         }
@@ -325,9 +334,9 @@ pub(super) fn validate<'a>(
 }
 
 impl VaultStore {
-    /// Keeps an answer with its document, replacing the one for the same
-    /// question. The bytes are written and published before the manifest
-    /// names them; the replaced answer's object goes once the commit holds.
+    /// Keeps an answer with its document. The one it answers the same
+    /// question as is hidden, never removed (D3). The bytes are written and
+    /// published before the manifest names them.
     pub fn save_ai_result(
         &self,
         record_id: Uuid,
@@ -404,27 +413,26 @@ impl VaultStore {
             object_name: object_name.clone(),
             plaintext_size: encrypted.plaintext_size,
             wrapped_object_key: wrap_secret(&keys.object_wrap, &object_key, id.as_bytes())?,
+            superseded: false,
         };
         let info = AiResultInfo::from(&stored);
 
         let mut entry = record_entry(HistoryEvent::AiResultSaved, now_ms, record);
         entry.how = Some(stored.tool.history_how().to_owned());
         let mut next = unlocked.manifest.clone();
-        let mut superseded = Vec::new();
         for next_record in &mut next.records {
             if next_record.id != record_id {
                 continue;
             }
-            next_record.ai_results.retain(|earlier| {
-                let same = earlier.same_question(&stored);
-                if same {
-                    superseded.push(earlier.object_name.clone());
-                }
-                !same
-            });
+            // Full, counting the hidden ones: refused, nothing dropped.
             if next_record.ai_results.len() >= MAX_AI_RESULTS_PER_RECORD {
                 remove_objects(&self.root, &[object_name], Removable::UncommittedObject);
                 return Err(VaultError::Invalid);
+            }
+            for earlier in &mut next_record.ai_results {
+                if earlier.same_question(&stored) {
+                    earlier.superseded = true;
+                }
             }
             next_record.ai_results.push(stored.clone());
         }
@@ -442,12 +450,11 @@ impl VaultStore {
                 return Err(error);
             }
         };
-        remove_objects(&self.root, &superseded, Removable::SupersededAiResult);
         unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
         Ok(info)
     }
 
-    /// The answers kept with a document, newest first.
+    /// The answers a document shows, newest first: not the hidden ones.
     pub fn ai_results(&self, record_id: Uuid) -> Result<Vec<AiResultInfo>, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -457,13 +464,18 @@ impl VaultStore {
             .iter()
             .find(|record| record.id == record_id)
             .ok_or(VaultError::NotFound)?;
-        let mut results: Vec<AiResultInfo> =
-            record.ai_results.iter().map(AiResultInfo::from).collect();
+        let mut results: Vec<AiResultInfo> = record
+            .ai_results
+            .iter()
+            .filter(|result| !result.superseded)
+            .map(AiResultInfo::from)
+            .collect();
         results.sort_by_key(|result| std::cmp::Reverse(result.created_at_ms));
         Ok(results)
     }
 
-    /// One answer's bytes, checked as they are read.
+    /// One shown answer's bytes, checked as they are read. A hidden one is
+    /// not found: it stays in the vault but is not shown again.
     pub fn read_ai_result(&self, record_id: Uuid, result_id: Uuid) -> Result<Vec<u8>, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -476,7 +488,7 @@ impl VaultStore {
         let stored = record
             .ai_results
             .iter()
-            .find(|result| result.id == result_id)
+            .find(|result| result.id == result_id && !result.superseded)
             .ok_or(VaultError::NotFound)?;
         let keys = derive_keys(unlocked.manifest.vault_id, &unlocked.master_key)?;
         let mut content = Vec::with_capacity(stored.plaintext_size as usize);
@@ -719,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_answer_to_the_same_question_replaces_the_old_one_and_its_object() {
+    fn a_new_answer_to_the_same_question_hides_the_old_one_which_stays_in_the_vault() {
         let (_temp, store, id) = fixture();
         let first = store
             .save_ai_result(id, summary("fr"), b"{\"v\":1}", 10)
@@ -738,17 +750,67 @@ mod tests {
         assert_eq!(
             kept.iter().map(|r| r.id).collect::<Vec<_>>(),
             vec![term.id, other_lang.id, second.id],
-            "newest first, the replaced one gone"
+            "newest first, the hidden one not shown"
         );
         assert!(matches!(
             store.read_ai_result(id, first.id),
             Err(VaultError::NotFound)
         ));
+        // Nothing is deleted (D3): the hidden answer stays, encrypted.
         assert!(
-            !store.root.join("objects").join(&old_name).exists(),
-            "the replaced answer's object is removed"
+            store.root.join("objects").join(&old_name).is_file(),
+            "the hidden answer's object is kept"
         );
+        assert_eq!(object_names(&store, id).len(), 4);
+        {
+            let guard = store.session();
+            let record = &guard.as_ref().unwrap().manifest.records[0];
+            let hidden: Vec<Uuid> = record
+                .ai_results
+                .iter()
+                .filter(|result| result.superseded)
+                .map(|result| result.id)
+                .collect();
+            assert_eq!(hidden, vec![first.id]);
+        }
         assert_eq!(store.read_ai_result(id, second.id).unwrap(), b"{\"v\":2}");
+        // It survives a lock and an unlock as it is: hidden, kept.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.ai_results(id).unwrap().len(), 3);
+        assert!(store.root.join("objects").join(&old_name).is_file());
+    }
+
+    #[test]
+    fn a_full_document_refuses_a_new_answer_and_drops_none_counting_the_hidden_ones() {
+        let (_temp, store, id) = fixture();
+        for at in 0..MAX_AI_RESULTS_PER_RECORD as u64 {
+            store
+                .save_ai_result(id, summary("fr"), b"{\"v\":1}", 10 + at)
+                .unwrap();
+        }
+        let names = object_names(&store, id);
+        assert_eq!(names.len(), MAX_AI_RESULTS_PER_RECORD);
+        assert_eq!(
+            store.ai_results(id).unwrap().len(),
+            1,
+            "only the newest shown"
+        );
+        let files = || fs::read_dir(store.root.join("objects")).unwrap().count();
+        let before = files();
+        refused(
+            store.save_ai_result(id, summary("en"), b"{\"v\":2}", 99),
+            "Invalid",
+        );
+        assert_eq!(object_names(&store, id), names, "nothing dropped");
+        for name in &names {
+            assert!(store.root.join("objects").join(name).is_file());
+        }
+        assert_eq!(
+            files(),
+            before,
+            "the refused answer's object is not left behind"
+        );
     }
 
     #[test]
@@ -796,10 +858,16 @@ mod tests {
     #[test]
     fn answers_survive_hide_unlock_backup_and_restore() {
         let (temp, store, id) = fixture();
+        // An older answer, hidden by the newer one: both go everywhere.
+        store
+            .save_ai_result(id, explain("TSH"), b"{\"t\":0}", 9)
+            .unwrap();
         let info = store
             .save_ai_result(id, explain("TSH"), b"{\"t\":1}", 10)
             .unwrap();
-        let name = object_names(&store, id)[0].clone();
+        let names = object_names(&store, id);
+        assert_eq!(names.len(), 2);
+        let name = names[1].clone();
         store.hide_record(id, 11).unwrap();
         store.lock();
         store.unlock(PASSWORD).unwrap();
@@ -821,10 +889,18 @@ mod tests {
         restored.unlock(PASSWORD).unwrap();
         assert_eq!(restored.ai_results(id).unwrap(), vec![info.clone()]);
         assert_eq!(restored.read_ai_result(id, info.id).unwrap(), b"{\"t\":1}");
+        assert_eq!(
+            object_names(&restored, id),
+            names,
+            "the hidden one came too"
+        );
+        for name in &names {
+            assert!(restored.root.join("objects").join(name).is_file());
+        }
     }
 
     #[test]
-    fn a_manifest_below_format_9_with_answers_or_a_repeated_question_is_corrupt() {
+    fn a_manifest_below_format_10_with_answers_or_two_shown_answers_to_one_question_is_corrupt() {
         let (_temp, store, id) = fixture();
         store.save_ai_result(id, summary("fr"), b"{}", 10).unwrap();
         let guard = store.session();
@@ -848,6 +924,10 @@ mod tests {
             validate_manifest_structure(&repeated, vault_id),
             Err(VaultError::Corrupt)
         ));
+        // The same question twice is fine once one of them is hidden.
+        let mut hidden = repeated.clone();
+        hidden.records[0].ai_results[0].superseded = true;
+        assert!(validate_manifest_structure(&hidden, vault_id).is_ok());
         let mut shared_object = manifest.clone();
         shared_object.records[0].ai_results[0].id = id;
         assert!(matches!(

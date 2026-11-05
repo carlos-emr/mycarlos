@@ -1076,15 +1076,19 @@ was written, and its object's name, size and wrapped key. The bytes are the
 renderer's own JSON (sentences with their quotes, or an explanation), at most
 64 KiB; the vault stores and returns them as they are and never logs them.
 
-One answer is kept per question (tool, language, term): a new summary in the
-same language replaces the old one, whose object is removed once the commit
-names only the new answer, and a record keeps at most 32. An answer cannot be
+Nothing is deleted (#71; Ben's D3, 5 Nov). One answer is shown per question
+(tool, language, term), the one kept last. A new summary in the same language
+hides the older one: the older answer gets `superseded: true` and stays in the
+vault with its object, in every backup, for as long as the document does. A
+hidden answer is never listed or read again, and nothing removes it. A record
+keeps at most 32 answers, hidden ones included; past that, a new answer is
+refused and none is dropped. An answer cannot be
 saved for a hidden document or in recovery mode. Each save is recorded in the
 history as `aiResultSaved` with the document's name and the tool as `how`,
 never the text. A manifest below format 10 that holds answers is corrupt, as is
 an answer with a nil or repeated id, an object name another object has, a
 malformed key, language, term, model name or hash, a size of zero or over
-64 KiB, or two answers to one question.
+64 KiB, or two shown answers to one question (hidden ones may share it).
 
 A format 1–9 vault opens with no answers and is upgraded to format 10 at its
 next writable unlock, in a commit of its own, as for every earlier format. An
