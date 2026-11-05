@@ -1744,6 +1744,10 @@ ai-working = Asystent AI pracuje…
 
 ai-failed = Asystent AI nie zdołał dokończyć. Można spróbować ponownie.
 
+ai-error-memory = Brakuje teraz wolnej pamięci dla asystenta AI. Można zamknąć inne programy i spróbować ponownie.
+
+ai-error-busy = Model asystenta AI jest właśnie dodawany lub usuwany. Można spróbować ponownie, gdy to się skończy.
+
 ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stron, więc w tym podsumowaniu może czegoś brakować.
 
 ai-summary-noSource = Nie znaleziono źródła

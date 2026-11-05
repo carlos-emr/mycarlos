@@ -762,6 +762,8 @@
   "ai.preferences.notInstalled",
   "ai.working",
   "ai.failed",
+  "ai.error.memory",
+  "ai.error.busy",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
   "aiHelper.notice.title",

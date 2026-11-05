@@ -91,6 +91,9 @@ fn main() {
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
             "runtime_info",
             "ai_model_status",
+            "ai_summarize",
+            "ai_explain",
+            "ai_cancel",
             "kdf_benchmark",
             "vault_status",
             "vault_passphrase_rules",

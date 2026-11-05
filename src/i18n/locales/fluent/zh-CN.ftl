@@ -1540,6 +1540,10 @@ ai-working = AI 助手正在处理…
 
 ai-failed = AI 助手未能完成。请重试。
 
+ai-error-memory = 目前可用内存不足，AI 助手无法运行。请关闭其他程序后重试。
+
+ai-error-busy = 正在添加或移除 AI 助手的模型。请在完成后重试。
+
 ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能遗漏部分内容。
 
 ai-summary-noSource = 未找到来源
