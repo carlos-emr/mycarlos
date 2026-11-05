@@ -639,7 +639,7 @@ impl Runner {
             .into_iter()
             .take(request.max_sentences)
             .map(|mut sentence| {
-                if !quote_in(&text, &sentence.quote) {
+                if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
                     unlocated_quotes.push(std::mem::take(&mut sentence.quote));
                 }
                 sentence
@@ -1057,14 +1057,42 @@ const QUOTE_ENDS: &[char] = &[
 /// (": Admitted: 2026-10-01"). The renderer places it exactly; here a quote
 /// that is not there at all is enough to empty it.
 fn quote_in(text: &str, quote: &str) -> bool {
-    let fold = |s: &str| {
-        s.split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .to_lowercase()
-    };
-    let quote = fold(quote.trim_matches(|c: char| c.is_whitespace() || QUOTE_ENDS.contains(&c)));
+    let quote = folded(quote);
     !quote.is_empty() && fold(text).contains(&quote)
+}
+
+/// At most this many words make a heading (see [`quote_is_heading`]).
+const HEADING_WORDS: usize = 4;
+
+/// Whether the quote is a heading of the pages rather than something they say: a whole line
+/// on its own, of at most [`HEADING_WORDS`] words, with no digit and not ending as a sentence
+/// does ("Medications at discharge", "Follow-up:"). A quote must support its sentence, and a
+/// heading only names a part of the document; the reader would link the sentence to it. A line
+/// with a value in it ("Admitted: 2026-10-01") or a short sentence ("Hypertension is
+/// treated.") is not one.
+fn quote_is_heading(text: &str, quote: &str) -> bool {
+    let quote = folded(quote);
+    !quote.is_empty()
+        && quote.split(' ').count() <= HEADING_WORDS
+        && !quote.chars().any(char::is_numeric)
+        && text.lines().any(|line| {
+            // A sentence on a line of its own says something.
+            !line.trim_end().ends_with(['.', '!', '?']) && folded(line) == quote
+        })
+}
+
+/// Whitespace runs as one space, in lower case.
+fn fold(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// A quote, or a line, as quotes are compared: folded, without [`QUOTE_ENDS`] or spaces at
+/// either end.
+fn folded(text: &str) -> String {
+    fold(text.trim_matches(|c: char| c.is_whitespace() || QUOTE_ENDS.contains(&c)))
 }
 
 #[cfg(test)]
@@ -1161,6 +1189,32 @@ mod tests {
         assert!(!quote_in(letter, " :.;'\" "));
         // Inside the quote, the words still have to be there as written.
         assert!(!quote_in(letter, "lasts 3 to 6 minutes"));
+    }
+
+    #[test]
+    fn a_quote_that_is_only_a_heading_is_one_and_a_line_with_a_value_is_not() {
+        let summary = "Medications at discharge\n\n  Ticagrelor  90 mg twice daily  NEW\n\
+                       Follow-up:\n- Blood tests in 1 week.\nAdmitted: 2026-10-01\n\
+                       Instructions to the patient\nHypertension is treated.";
+        for heading in [
+            "Medications at discharge",
+            "medications at discharge:",
+            "Follow-up",
+            "\u{201C}Instructions to the patient\u{201D}",
+        ] {
+            assert!(quote_is_heading(summary, heading), "{heading}");
+        }
+        for content in [
+            // A value, words of a longer line, or a line of more than four words.
+            ": Admitted: 2026-10-01",
+            "Ticagrelor 90 mg twice daily",
+            "Medications",
+            "Hypertension is treated.",
+            "Blood tests in 1 week.",
+            "",
+        ] {
+            assert!(!quote_is_heading(summary, content), "{content}");
+        }
     }
 
     fn idle_config() -> RunnerConfig {
