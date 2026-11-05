@@ -3,8 +3,9 @@
  * placeholders can use that language's words. Plain text in, a locale out:
  * no network, no i18n, nothing remembered. It guesses from common words and
  * from letters only one language uses, and says when it is not confident;
- * then the app's own language is used, and the preview lets the patient
- * choose.
+ * then the app's own language is used. (A way for the patient to choose
+ * another language in the preview is a question for Ben in #229; until then
+ * `confident` is not read.)
  */
 
 export type DocumentLocale =
