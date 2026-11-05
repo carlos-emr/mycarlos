@@ -872,7 +872,63 @@ const CLINIC_WORDS = anyCase([
   "Imaging",
   "Diagnostics",
   "Pharmacy",
+  "Public School",
+  "Elementary School",
+  "Secondary School",
+  "High School",
+  "Middle School",
+  "School",
+  "Academy",
+  "Daycare",
 ]);
+// Words that name a clinic or an agency with no clinic word, after "at", "to", "from", "with"
+// or "by": "Silver Acorn Neurology", "Blue Compass Health", "Harbourview Family Services".
+const ORG_WORDS = `(?:${[
+  "Health",
+  "Wellness",
+  "Neurology",
+  "Cardiology",
+  "Dermatology",
+  "Radiology",
+  "Physiotherapy",
+  "Physio",
+  "Rehabilitation",
+  "Rehab",
+  "Pediatrics",
+  "Paediatrics",
+  "Orthopaedics",
+  "Orthopedics",
+  "Ophthalmology",
+  "Optometry",
+  "Eye Care",
+  "Dentistry",
+  "Dental",
+  "Audiology",
+  "Counselling",
+  "Counseling",
+  "Psychology",
+  "Psychiatry",
+  "Oncology",
+  "Endocrinology",
+  "Gastroenterology",
+  "Urology",
+  "Nephrology",
+  "Respirology",
+  "Rheumatology",
+  "Fertility",
+  "Midwifery",
+  "Chiropractic",
+  "Podiatry",
+  "Home Care",
+  "Care",
+  "Services",
+  "Society",
+  "Association",
+  "Agency",
+  "Outreach",
+  "Associates",
+  "Partners",
+].join("|")})(?:[ \\t]+(?:Centre|Center|Clinic|Group|Services|Associates))?`;
 // Words that, alone before a clinic word, make a heading, not a name.
 const GENERIC_BEFORE_CLINIC = new Set([
   "diagnostic",
@@ -894,6 +950,67 @@ const GENERIC_BEFORE_CLINIC = new Set([
   "breast",
   "cardiac",
   "vascular",
+  "health",
+  "public",
+  "mental",
+  "primary",
+  "home",
+  "oral",
+  "occupational",
+  "pediatric",
+  "paediatric",
+  "adult",
+  "geriatric",
+  "senior",
+  "seniors",
+  "youth",
+  "child",
+  "children's",
+  "women's",
+  "sports",
+  "social",
+  "support",
+  "care",
+  "services",
+  "wellness",
+  "dental",
+  "eye",
+  "sleep",
+  "pain",
+  "memory",
+  "cancer",
+  "diabetes",
+  "heart",
+  "stroke",
+  "emergency",
+  "outpatient",
+  "inpatient",
+  "addiction",
+  "addictions",
+  "palliative",
+  "neurology",
+  "cardiology",
+  "dermatology",
+  "radiology",
+  "imaging",
+  "physiotherapy",
+  "physio",
+  "rehabilitation",
+  "rehab",
+  "oncology",
+  "psychiatry",
+  "psychology",
+  "pediatrics",
+  "paediatrics",
+  "counselling",
+  "counseling",
+  "high",
+  "elementary",
+  "secondary",
+  "middle",
+  "nursing",
+  "sunday",
+  "summer",
 ]);
 // Profile-name words that are also ordinary words: removed only as part of
 // the whole name.
@@ -1359,7 +1476,7 @@ const RULES: Rule[] = [
     // Clinique médicale Saint-Laurent; Centre hospitalier de Fictiveville
     kind: "clinic",
     pattern: new RegExp(
-      `(?<![\\p{L}])${anyCase(["Hôpital", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire"])}(?:[ \\t]+(?:de|du|des|la|le|l['’]|d['’]|médicale|universitaire|régionale?|générale?|familiale|${NAME_WORD})){1,6}`,
+      `(?<![\\p{L}])${anyCase(["Hôpital", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire"])}(?:(?:[ \\t]+|(?<=[ldLD]['’]))(?:de|du|des|la|le|les|l['’]|d['’]|médicale|universitaire|régionale?|générale?|familiale|${NAME_WORD})){1,8}`,
       "gu",
     ),
   },
@@ -1367,7 +1484,33 @@ const RULES: Rule[] = [
     // Clínica San Rafael; Centro de Saúde Vila Exemplo; Szpital Wojewódzki w Testowie; GMF du Parc
     kind: "clinic",
     pattern: new RegExp(
-      `(?<![\\p{L}])${anyCase(["Clínica", "Centro de Salud", "Centro de Saúde", "Unidade Básica de Saúde", "Posto de Saúde", "Hospital", "UBS", "Przychodnia", "Szpital", "Ośrodek Zdrowia", "GMF", "CISSS", "CIUSSS", "Centre médical", "Centre de réadaptation"])}(?:[ \\t]+(?:(?:de|del|da|do|dos|das|du|des|la|le|w|we)[ \\t]+)?${NAME_WORD}){1,4}`,
+      `(?<![\\p{L}])${anyCase(["Clínica", "Centro de Salud", "Centro de Saúde", "Unidade Básica de Saúde", "Posto de Saúde", "Hospital", "UBS", "Przychodnia", "Szpital", "Ośrodek Zdrowia", "GMF", "CISSS", "CIUSSS", "Centre médical", "Centre de réadaptation", "école primaire", "École primaire", "école secondaire", "École secondaire", "école", "Ecole", "collège", "Cégep", "cégep", "polyvalente", "CPE", "Centre de la petite enfance", "garderie", "escuela", "colegio", "escola", "Szkoła Podstawowa", "szkoła", "przedszkole"])}(?:[ \\t]+(?:(?:de|del|da|do|dos|das|du|des|la|le|les|w|we|nr)[ \\t]+)?(?:[lLdD]['’])?${NAME_WORD}){1,4}`,
+      "gu",
+    ),
+  },
+  {
+    // A clinic or an agency named with no clinic word, after "at", "to", "from", "with" or "by":
+    // "seen at Silver Acorn Neurology", "a referral from Harbourview Family Services".
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])(?:at|to|from|with|by|At|To|From|With|By)[ \\t]+(?:the[ \\t]+)?)(?:${NAME_WORD}[ \\t]+){1,4}${ORG_WORDS}(?![\\p{L}])`,
+      "gu",
+    ),
+  },
+  {
+    // Imagerie du Quartz; Neurologie du Gland-Argenté; Santé de la Boussole-Bleue
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Imagerie|Neurologie|Cardiologie|Santé|Physiothérapie|Physio|Radiologie|Dermatologie|Pédiatrie|Ophtalmologie|Optométrie|Dentisterie|Ergothérapie|Réadaptation|Psychologie|Orthopédie|Soins|Polyclinique)[ \\t]+(?:du|des|de la|de l['’]|d['’]|de)[ \\t]*${NAME_WORD}(?:[ \\t]+${NAME_WORD}){0,3}`,
+      "gu",
+    ),
+  },
+  {
+    // Centre de jour Saint-Michel; Centre jeunesse de Laval; Centre Les Érables;
+    // CENTRE DE PÉDIATRIE LES PETITS PAS (a header line in capitals)
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Centre|CENTRE)(?:[ \\t]+(?:(?:de|d['’]|du|des)[ \\t]*)?(?:la[ \\t]+|l['’])?\\p{Ll}[\\p{Ll}-]*(?:[ \\t]+\\p{Ll}[\\p{Ll}-]*)?)?(?:(?:[ \\t]+|(?<=[ldLD]['’]))(?:(?:de|du|des|la|le|les)[ \\t]+|[ldLD]['’])*${NAME_WORD}){1,6}`,
       "gu",
     ),
   },
@@ -1848,6 +1991,12 @@ const followsTitle = (text: string, at: number) =>
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
   found.push(...ruleFindings(text, options));
+  // A town inside a clinic's name ("CLSC de Saint-Michel-des-Saints") is part of that name.
+  const clinics = found.filter((finding) => finding.kind === "clinic");
+  const inClinic = (span: { start: number; end: number }) =>
+    clinics.some(
+      (clinic) => clinic.start <= span.start && span.end <= clinic.end,
+    );
   // Names of Canadian health facilities and of municipalities of two or more words.
   for (const [kind, spans] of [
     ["clinic", facilitySpans(text)],
@@ -1856,7 +2005,10 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
     for (const span of spans)
       if (
         !isMedicalTerm(text, span.start, span.end) &&
-        !(kind === "address" && followsTitle(text, span.start))
+        !(
+          kind === "address" &&
+          (followsTitle(text, span.start) || inClinic(span))
+        )
       )
         found.push({ kind, start: span.start, end: span.end });
   // A town alone in brackets ("(Rouyn-Noranda)").

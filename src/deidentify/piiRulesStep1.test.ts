@@ -85,3 +85,44 @@ describe("the facility and municipality gazetteers (public StatCan lists)", () =
     expect(send(text)).toBe(text);
   });
 });
+
+describe("clinics, agencies and schools named without a clinic word", () => {
+  it.each([
+    ["Letter from Bram Tevel to Silver Acorn Neurology.", "Silver Acorn"],
+    ["She was booked with May Rose at Blue Compass Health.", "Blue Compass"],
+    ["A referral came from Harbourview Family Services.", "Harbourview"],
+    ["Envoyé par Basile Trévan à Neurologie du Gland-Argenté.", "Gland"],
+    ["Examen par Amélie Solmer à Imagerie du Quartz.", "Quartz"],
+    ["Rendez-vous avec Rose Mai à Santé de la Boussole-Bleue.", "Boussole"],
+    ["Elle est enseignante à l'École primaire des Pins-Verts.", "Pins"],
+    ["Travailleuse sociale à l'école Saint-Exemple.", "Saint-Exemple"],
+    [
+      "Centre de pédiatrie sociale Les Petits Explorateurs\nRapport",
+      "Explorateurs",
+    ],
+    ["CENTRE DE JOUR LES ÉRABLES\nRapport", "ÉRABLES"],
+    ["Suivi au CLSC d'Ahuntsic.", "Ahuntsic"],
+    ["Suivi au CLSC de Saint-Michel-des-Saints.", "CLSC de"],
+    ["Her son attends Westvale Public School.", "Westvale"],
+    ["Visto en la Escuela San Ejemplo.", "Ejemplo"],
+  ])("%s", (text, part) => {
+    const out = send(text);
+    expect(out).toMatch(/\[CLINIC 1\]/);
+    expect(out).not.toContain(part);
+  });
+
+  it.each([
+    "Referred to Pediatric Neurology for review.",
+    "Transferred to Cardiology Services.",
+    "Discussed with Mental Health Services.",
+    "Seen at Public Health for vaccines.",
+    "Centre of the lesion is pale.",
+    "Au centre de la plaie, une croûte.",
+    "La Santé publique a appelé.",
+    "Spoke to Jordan about the plan.",
+    "She is followed in Neurology.",
+    "Home Care visits twice weekly.",
+  ])("leaves a heading or an ordinary phrase: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
