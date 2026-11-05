@@ -185,6 +185,86 @@ describe("a camera photo's weight", () => {
     expect(after.every((value, index) => value === before[index])).toBe(true);
   }, 60_000);
 
+  it("keeps a detailed photo usable under the byte cap and releases every resized copy", async () => {
+    const canvas = canvasOf(4096, 3072, true);
+    // Broad coloured regions give the noisy fixture recognizable content
+    // that should survive reduction; noise alone averages towards grey.
+    const source = canvas.getContext("2d")!;
+    source.fillStyle = "rgba(220,30,30,0.6)";
+    source.fillRect(0, 0, canvas.width / 2, canvas.height);
+    source.fillStyle = "rgba(30,60,220,0.6)";
+    source.fillRect(canvas.width / 2, 0, canvas.width / 2, canvas.height);
+    const original = pixelsOf(canvas).slice();
+    // A normal-quality JPEG at the minimum saved long side sets a demanding
+    // budget for this 4k capture, without relying on an exact lowest-quality
+    // byte boundary. The result may use any resize count or final size.
+    const reference = scaled(canvas, 1024, 768);
+    const limit = (await jpeg(reference, PHOTO_QUALITY)).size;
+    reference.width = 0;
+    reference.height = 0;
+    const copies: HTMLCanvasElement[] = [];
+    const create = document.createElement.bind(document);
+    const allocation = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tag, options) => {
+        const element = create(tag, options);
+        if (element instanceof HTMLCanvasElement) copies.push(element);
+        return element;
+      });
+    let photo: Blob | null;
+    try {
+      photo = await encodePhoto(canvas, limit);
+    } finally {
+      allocation.mockRestore();
+    }
+    expect(photo).not.toBeNull();
+    expect(photo!.size).toBeLessThanOrEqual(limit);
+    expect(copies.length).toBeGreaterThan(0);
+    // Temporary stores carry the same private photo as the original and
+    // must all release their pixels, including copies superseded en route.
+    for (const copy of copies)
+      expect([copy.width, copy.height]).toEqual([0, 0]);
+    expect([canvas.width, canvas.height]).toEqual([4096, 3072]);
+    const retained = pixelsOf(canvas);
+    expect(retained.length).toBe(original.length);
+    expect(retained.every((value, index) => value === original[index])).toBe(
+      true,
+    );
+
+    const bitmap = await createImageBitmap(photo!);
+    try {
+      expect(bitmap.width).toBeGreaterThanOrEqual(1024);
+      expect(bitmap.width).toBeLessThan(canvas.width);
+      expect(bitmap.width / bitmap.height).toBeCloseTo(4 / 3, 2);
+      // Real decoded pixels preserve the two coloured regions and opacity,
+      // rather than a blank canvas that could trivially fit the cap.
+      const decoded = document.createElement("canvas");
+      decoded.width = bitmap.width;
+      decoded.height = bitmap.height;
+      const context = decoded.getContext("2d")!;
+      context.drawImage(bitmap, 0, 0);
+      const left = context.getImageData(
+        Math.floor(bitmap.width / 4),
+        Math.floor(bitmap.height / 2),
+        1,
+        1,
+      ).data;
+      const right = context.getImageData(
+        Math.floor((bitmap.width * 3) / 4),
+        Math.floor(bitmap.height / 2),
+        1,
+        1,
+      ).data;
+      expect(left[0] - left[2]).toBeGreaterThan(50);
+      expect(right[2] - right[0]).toBeGreaterThan(50);
+      expect([left[3], right[3]]).toEqual([255, 255]);
+      decoded.width = 0;
+      decoded.height = 0;
+    } finally {
+      bitmap.close();
+    }
+  }, 60_000);
+
   it("prepares nothing rather than a blank photo when a smaller copy cannot be drawn", async () => {
     const canvas = canvasOf(2048, 1536, true);
     const draw = HTMLCanvasElement.prototype.getContext;
