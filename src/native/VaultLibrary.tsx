@@ -42,7 +42,7 @@ import { PortalDocuments } from "./PortalDocuments";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
-import { nativeLocalModel } from "../ai/localModel";
+import { modelRunsHere, nativeLocalModel } from "../ai/localModel";
 import type { ModelStatus } from "../ai/types";
 import { AnonymizePreview } from "./AnonymizePreview";
 import { AiHelperNotice } from "./AiHelperNotice";
@@ -228,10 +228,7 @@ export function VaultLibrary({
   // Whether the reader opens on the clinic's reading aid (under its notice) rather than the original.
   const [readerShowsAid, setReaderShowsAid] = useState(false);
   // The AI helper (#72): on a computer only, as the reader's text is.
-  const localModel = useMemo(
-    () => nativeLocalModel(() => bridge.aiModelStatus()),
-    [bridge],
-  );
+  const localModel = useMemo(() => nativeLocalModel(bridge), [bridge]);
   const [aiStatus, setAiStatus] = useState<ModelStatus | null>(null);
   useEffect(() => {
     if (section !== "preferences" || !computer) return;
@@ -249,11 +246,46 @@ export function VaultLibrary({
     null,
   );
   // The notice about the AI helper: before the first export of this
-  // unlocked session (then the preview opens for `before`), or from Security.
-  const [aiNotice, setAiNotice] = useState<{ before: string | null } | null>(
+  // unlocked session (then the preview opens for `before`), before the first
+  // Summary or Explain with a model (then `then` opens it), or from Security.
+  // `onThisDevice`: the model can run here, so the notice says what it does.
+  const [aiNotice, setAiNotice] = useState<{
+    before: string | null;
+    then?: () => void;
+    onThisDevice: boolean;
+  } | null>(null);
+  // Which notice was seen this session: "device" when it said what the AI
+  // on this computer does, "share" when it gave only the export's text.
+  const [aiNoticeSeen, setAiNoticeSeen] = useState<"share" | "device" | null>(
     null,
   );
-  const [aiNoticeSeen, setAiNoticeSeen] = useState(false);
+  const openAiNotice = (next: { before: string | null; then?: () => void }) =>
+    void localModel.status().then(
+      (status) =>
+        mountedRef.current &&
+        setAiNotice({ ...next, onThisDevice: modelRunsHere(status) }),
+      () => mountedRef.current && setAiNotice({ ...next, onThisDevice: false }),
+    );
+  // Before the reader's Summary or Explain: the notice comes first, once a
+  // session, when there is a model to use. With none, nothing can reach one:
+  // the panel says so at once.
+  const beforeFirstAiUse = (open: () => void) => {
+    // The export's text alone (a status that could not be read then) does
+    // not count: the device's text still comes first.
+    if (aiNoticeSeen === "device") {
+      open();
+      return;
+    }
+    void localModel.status().then(
+      (status) => {
+        if (!mountedRef.current) return;
+        if (status.state === "installed")
+          setAiNotice({ before: null, then: open, onThisDevice: true });
+        else open();
+      },
+      () => mountedRef.current && open(),
+    );
+  };
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
@@ -2230,7 +2262,7 @@ export function VaultLibrary({
                   setSection("history");
                 }}
                 onOpenAiHelperNotice={
-                  computer ? () => setAiNotice({ before: null }) : undefined
+                  computer ? () => openAiNotice({ before: null }) : undefined
                 }
                 people={people}
                 onUpdateProfileDetails={
@@ -2459,23 +2491,13 @@ export function VaultLibrary({
                   namedAsPdf(activeRecord.displayName) && computer
                     ? () => {
                         if (aiNoticeSeen) setAnonymizeRecordId(activeRecord.id);
-                        else setAiNotice({ before: activeRecord.id });
+                        else openAiNotice({ before: activeRecord.id });
                         setActiveRecordId(null);
                       }
                     : undefined
                 }
               />
             )}
-          {aiNotice && (
-            <AiHelperNotice
-              action={aiNotice.before ? "continue" : "close"}
-              onClose={() => {
-                setAiNoticeSeen(true);
-                if (aiNotice.before) setAnonymizeRecordId(aiNotice.before);
-                setAiNotice(null);
-              }}
-            />
-          )}
           {anonymizeRecord && !aiNotice && (
             <AnonymizePreview
               record={anonymizeRecord}
@@ -2540,9 +2562,27 @@ export function VaultLibrary({
                         setReaderRecordId(null);
                         setSection("preferences");
                       },
+                      beforeFirstUse: beforeFirstAiUse,
                     }
                   : undefined
               }
+            />
+          )}
+          {/* After the reader, so that it opens over it. */}
+          {aiNotice && (
+            <AiHelperNotice
+              action={aiNotice.before || aiNotice.then ? "continue" : "close"}
+              onThisDevice={aiNotice.onThisDevice}
+              // Answers are not kept in the vault yet (#212).
+              answersKept={false}
+              onClose={() => {
+                setAiNoticeSeen((seen) =>
+                  aiNotice.onThisDevice ? "device" : (seen ?? "share"),
+                );
+                if (aiNotice.before) setAnonymizeRecordId(aiNotice.before);
+                aiNotice.then?.();
+                setAiNotice(null);
+              }}
             />
           )}
           {confirmHideDamaged && (

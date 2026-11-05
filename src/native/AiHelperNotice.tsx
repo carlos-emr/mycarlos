@@ -3,16 +3,24 @@ import { useRef } from "react";
 import { useModalFocus } from "../useModalFocus";
 
 /** The notice about the AI helper (#72, AI_HELPER_NOTICE.md): shown before
- * the first export in a session, and from Security at any time. Its text is
- * part A's, word for word, in the app's language. Remembering that it was
- * read, per vault, is a later format step; for now it is shown once per
- * unlocked session. */
+ * the first export and before the first Summary or Explain with a model in a
+ * session, and from Security at any time. Its text is part A's, word for
+ * word, in the app's language. Remembering that it was read, per vault, is a
+ * later format step; for now it is shown once per unlocked session. */
 export function AiHelperNotice({
   action,
+  onThisDevice = false,
+  answersKept = false,
   onClose,
 }: {
-  /** "continue" before an export; "close" from Security. */
+  /** "continue" before a first use; "close" from Security. */
   action: "continue" | "close";
+  /** The model can run on this computer: the notice says what the AI here
+   * does (part D) as well as how text is saved for another service. */
+  onThisDevice?: boolean;
+  /** Answers are kept in the vault with the document. Until they are, the
+   * notice does not promise it. */
+  answersKept?: boolean;
   onClose: () => void;
 }) {
   useI18n();
@@ -36,10 +44,25 @@ export function AiHelperNotice({
           </div>
         </header>
         <div className="native-ai-notice-body">
-          <p>{translateNow("aiHelper.notice.introShare")}</p>
+          <p>
+            {translateNow(
+              onThisDevice
+                ? "aiHelper.notice.intro"
+                : "aiHelper.notice.introShare",
+            )}
+          </p>
           <p>
             <strong>{translateNow("aiHelper.notice.testBuild")}</strong>
           </p>
+          {onThisDevice && (
+            <>
+              <h3>{translateNow("aiHelper.notice.modelHeading")}</h3>
+              <p>{translateNow("aiHelper.notice.modelBody")}</p>
+              {answersKept && (
+                <p>{translateNow("aiHelper.notice.resultsBody")}</p>
+              )}
+            </>
+          )}
           <h3>{translateNow("aiHelper.notice.shareHeading")}</h3>
           <p>{translateNow("aiHelper.notice.shareBody")}</p>
           <p>{translateNow("aiHelper.notice.previewBody")}</p>
