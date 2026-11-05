@@ -174,10 +174,11 @@ jobs:
       # image, Rust toolchain and dependency set (main saves it; pull requests only read it).
       # Cargo still runs llama-cpp-sys-2's build script; CMake finds its configured tree with
       # every object current and builds nothing. .cargo/config.toml is in the key because an
-      # existing CMake tree is not configured again.
+      # existing CMake tree is not configured again. Raise "v1" for a change the key cannot see,
+      # such as compiler flags or CMake settings set in this workflow.
       - name: Key for the llama.cpp build cache
         id: llama-key
-        run: echo "key=llama-build-${{ runner.os }}-${ImageOS}-${ImageVersion}-$(rustc -V | tr -c 'A-Za-z0-9.\n' '-')-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml', 'src-tauri/.cargo/config.toml') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=llama-build-v1-${{ runner.os }}-${ImageOS}-${ImageVersion}-$(rustc -V | tr -c 'A-Za-z0-9.\n' '-')-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml', 'src-tauri/.cargo/config.toml') }}" >> "$GITHUB_OUTPUT"
       - name: Restore the llama.cpp build
         id: llama-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -248,7 +249,7 @@ jobs:
         shell: pwsh
         run: |
           $rustc = (rustc -V) -replace '[^A-Za-z0-9.]', '-'
-          "key=llama-build-${{ runner.os }}-$env:ImageOS-$env:ImageVersion-$rustc-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml', 'src-tauri/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
+          "key=llama-build-v1-${{ runner.os }}-$env:ImageOS-$env:ImageVersion-$rustc-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml', 'src-tauri/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
       - name: Restore the llama.cpp build
         id: llama-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
