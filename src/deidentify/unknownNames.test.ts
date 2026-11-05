@@ -93,6 +93,12 @@ describe("a drug name that is also a first name", () => {
       "Allegra",
     ],
     ["Meds: reviewed with daughter Ella.", "Ella"],
+    // An ordinary word after the name is not a frequency or a form.
+    ["Her daughter Ella once worked as a nurse.", "Ella"],
+    ["Her sister Diane drops by every Sunday.", "Diane"],
+    ["Nurse Yasmin bid farewell to the family.", "Yasmin"],
+    ["Córka Ella po operacji odwiedza matkę.", "Ella"],
+    ["Her daughter Ella daily checks her sugars.", "Ella"],
   ])("is a name after a person word: %s", (text, name) => {
     expect(send(text)).not.toMatch(word(name));
   });
@@ -117,10 +123,10 @@ describe("a drug name that is also a first name", () => {
       "Medications: Allegra 120 mg daily, Ella 1.5 mg once.",
     );
     const nurse = send(
-      "Nurse Yasmin reviewed the list. Allergic to Yasmin (rash). Stopped Yasmin in May.",
+      "Nurse Yasmin reviewed the list. Allergic to Yasmin (rash). Discontinued Yasmin in May.",
     );
     expect(nurse).toBe(
-      "Nurse [NAME 1] reviewed the list. Allergic to Yasmin (rash). Stopped Yasmin in May.",
+      "Nurse [NAME 1] reviewed the list. Allergic to Yasmin (rash). Discontinued Yasmin in May.",
     );
     expect(send("Sister Diane Sampleton attends. Diane-35 was stopped.")).toBe(
       "Sister [NAME 1] attends. Diane-35 was stopped.",
@@ -209,5 +215,34 @@ describe("relatives as a label, friends, and relatives named together", () => {
     "Friend of the family.",
   ])("leaves a family-history line or an ordinary phrase: %s", (text) => {
     expect(send(text)).toBe(text);
+  });
+});
+
+describe("look-alikes found in the #228 review", () => {
+  it("removes a doctor whose name is a bare eponym, and keeps the eponym", () => {
+    expect(send("Referred by: Dr. Holter. Holter monitor booked.")).toBe(
+      "Referred by: Dr. [DOCTOR 1]. Holter monitor booked.",
+    );
+  });
+
+  it.each([
+    "Sodium 139 mmol/L. Reference: 135-145 mmol/L.",
+    "Reference: 135-145.",
+    "Started with a therapist Cognitive Behavioural Therapy weekly.",
+    "Nombre : Deux comprimés par jour.",
+    "Claim 1250.00 submitted.",
+    "Flew Pan Am in 1979 and Pan American later.",
+  ])("leaves %s", (text) => {
+    expect(send(text).replace(/\[DATE \d+\]/gu, "1979")).toBe(text);
+  });
+
+  it("still removes a record number after Reference and Claim", () => {
+    const out = send("Reference AB12345. Claim 2026-778812.");
+    expect(out).not.toContain("AB12345");
+    expect(out).not.toContain("778812");
+  });
+
+  it("still removes a name after Nombre and Pan", () => {
+    gone("Nombre: María López. Pan Tomasz Nowakowski.", "López", "Nowakowski");
   });
 });

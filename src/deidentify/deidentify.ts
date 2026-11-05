@@ -924,6 +924,40 @@ const ORDINARY_WORDS = new Set(
 );
 // Words that follow a label or a family word but start no name: "Re:
 // Follow-up visit", "Patient: Seen today", "Contact: Mother …".
+// Words of a treatment, a service or a program: never part of a person's name.
+const NOT_NAME_WORDS = new Set([
+  "therapy",
+  "therapies",
+  "thérapie",
+  "terapia",
+  "terapii",
+  "clinic",
+  "clinique",
+  "clínica",
+  "service",
+  "services",
+  "program",
+  "programme",
+  "programa",
+  "treatment",
+  "traitement",
+  "tratamiento",
+  "tratamento",
+  "session",
+  "sessions",
+  "group",
+  "groupe",
+  "grupo",
+  "assessment",
+  "évaluation",
+  "unit",
+  "unité",
+  "team",
+  "équipe",
+  "centre",
+  "center",
+  "centro",
+]);
 const NOT_NAMES = new Set(
   foldAll([
     "follow-up",
@@ -1440,7 +1474,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:(?:Mr|Mrs|Ms|Miss|Mx|Prof|Pr|Mme|Mlle|Sra|Srta|Sr|Don|Doña|Doña|Pani|Pan)\\.?|M\\.)[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:(?:Mr|Mrs|Ms|Miss|Mx|Prof|Pr|Mme|Mlle|Sra|Srta|Sr|Don|Doña|Doña|Pani|Pan(?![ \\t]+Am(?:erican)?(?![\\p{L}])))\\.?|M\\.)[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -1881,6 +1915,17 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         })()
       )
         continue;
+      // A value cut inside a longer token ("135-14" of "135-145 mmol/L"), an amount
+      // ("Claim 1250.00") or a lab reference range ("Reference: 135-145") is not a
+      // record number (#228 review).
+      if (
+        rule.kind === "recordNumber" &&
+        (/[\p{L}\p{N}]/u.test(text.charAt(start + detail.length)) ||
+          /^\d{1,7}[.,]\d{2}$/u.test(trimmed) ||
+          (/^\d{1,4}(?:[.,]\d+)?[-–]\d{1,4}(?:[.,]\d+)?$/u.test(trimmed) &&
+            /^R[ée]f/iu.test(match[0].slice(0, offset).trim())))
+      )
+        continue;
       if (rule.kind === "clinic") {
         trimmed = trimmed.replace(
           /(?:[ \t]+(?:de|du|des|la|le|l['’]|d['’]|of))+$/u,
@@ -1901,6 +1946,25 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       if (
         (rule.kind === "name" || rule.kind === "doctor") &&
         NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
+      )
+        continue;
+      // A treatment or a service after a role word is not a name: "a therapist
+      // Cognitive Behavioural Therapy" (#228 review).
+      if (
+        (rule.kind === "name" || rule.kind === "doctor") &&
+        trimmed
+          .split(/[\s,]+/)
+          .some((word) => NOT_NAME_WORDS.has(word.toLowerCase()))
+      )
+        continue;
+      // A bare "Nombre:" or "Nome:" is also French and Portuguese for "number":
+      // only a first and a last name after it ("Nombre : Deux comprimés").
+      if (
+        rule.kind === "name" &&
+        /^(?:Nombre|Nome|NOMBRE|NOME)[ \t]*[:\-–—][ \t]*$/u.test(
+          match[0].slice(0, offset),
+        ) &&
+        trimmed.split(/[ \t]+/).length < 2
       )
         continue;
       if (
@@ -2096,9 +2160,6 @@ const wordPattern = (word: string) =>
     ? new RegExp(escapeRegExp(word), "gu")
     : new RegExp(`(?<![\\p{L}])${escapeRegExp(word)}(?![\\p{L}])`, "giu");
 
-/** A clinical role belongs to this occurrence, never to a surname globally.
- * Matching-copy accents have already been folded. Direct identity findings
- * still win; this prevents their alias sweep from consuming an eponym. */
 /**
  * Public medical terms a name rule must never remove (the allow-list): an eponym's name word
  * in one of its clinical phrases ("Guyon's canal", "Romberg test", "Bell's palsy", "maladie
@@ -2140,12 +2201,30 @@ const GUARD_REACH = 60;
 // brand number ("Diane-35"), a drug verb right before it, or a place in a medication or allergy
 // list. A role, a relation or a title before it ("daughter Ella", "Nurse Yasmin") is not enough,
 // and neither is the same person named elsewhere in the text.
-const DRUG_AFTER =
-  /^(?:-[ \t]?\d|[ \t]*\(?[ \t]*\d+(?:[.,]\d+)?[ \t]*(?:mg|mcg|µg|ug|g|ml|units?|iu|ui|%)(?![\p{L}])|[ \t]*,?[ \t]+(?:(?:\d+|one|two|half|un|une|deux|uno|una|um|uma|jedn[aą])[ \t]+)?(?:tablets?|tabs?|capsules?|caps?|pills?|puffs?|sprays?|patch(?:es)?|drops?|injections?|comprim[ée]s?|g[ée]lules?|c[áa]psulas?|comprimidos?|tabletk[aęi]|kapsułk[aęi])(?![\p{L}])|[ \t]+(?:once|twice|daily|nightly|bid|tid|qid|qhs|prn|po|die|par jour|al d[íi]a|ao dia|dziennie)(?![\p{L}]))/iu;
+// After the word: a strength, a brand number, a form, or a frequency written as one. A
+// frequency or a form word that is also an ordinary word ("once", "daily", "drops", "po",
+// "bid") counts only after a number or as a whole phrase (#228 review).
+const COUNT =
+  "(?:\\d+|one|two|three|half|un|une|deux|trois|uno|una|dos|tres|um|uma|duas|três|jedn[aą]|dwie)";
+const DRUG_AFTER = new RegExp(
+  `^(?:${[
+    "-[ \\t]?\\d",
+    "[ \\t]*\\(?[ \\t]*\\d+(?:[.,]\\d+)?[ \\t]*(?:mg|mcg|µg|ug|g|ml|units?|iu|ui|%)(?![\\p{L}])",
+    `[ \\t]*,?[ \\t]+(?:${COUNT}[ \\t]+)?(?:tablets?|capsules?|pills?|comprim[ée]s?|g[ée]lules?|c[áa]psulas?|comprimidos?|tabletk[aęi]|kapsułk[aęi])(?![\\p{L}])`,
+    `[ \\t]*,?[ \\t]+${COUNT}[ \\t]+(?:drops?|puffs?|sprays?|patch(?:es)?|tabs?|caps?|injections?|gouttes?|gotas?|krople?|kropli)(?![\\p{L}])`,
+    "[ \\t]*,?[ \\t]+(?:once|twice|three times)[ \\t]+(?:daily|a day|per day|weekly|a week|nightly|at night|at bedtime)(?![\\p{L}])",
+    "[ \\t]*,?[ \\t]+(?:une|deux|trois)[ \\t]+fois[ \\t]+par[ \\t]+(?:jour|semaine)",
+    "[ \\t]*,?[ \\t]+(?:una|dos|tres|uma|duas|três)[ \\t]+vez(?:es)?[ \\t]+(?:al|por|ao)[ \\t]+d[íi]a",
+  ].join("|")})`,
+  "iu",
+);
+// Prescription abbreviations, in capitals only: "Yasmin PO", "Allegra PRN".
+const DRUG_ABBREVIATION_AFTER =
+  /^[ \t]*,?[ \t]+(?:BID|TID|QID|QHS|QAM|QPM|PRN|PO|OD|q\d+h)(?![\p{L}])/u;
 const DRUG_LIST_LABEL =
   /(?<![\p{L}])(?:medications?|meds|current medications|rx|allerg(?:y|ies)|m[ée]dicaments?|medicamentos?|medicaci[óo]n|leki|alergi(?:e|a|as))[ \t]*:/giu;
 const DRUG_BEFORE =
-  /(?:\b(?:started|restarted|stopped|discontinued|switched (?:from|to)|changed (?:from|to)|allergic to|allergy to|intolerant (?:of|to)|reaction to|dose of|trial of|refill of|commenc[ée](?: le| la)?|cess[ée](?: le| la)?|arr[êe]t[ée](?: le| la)?|allergique (?:au|à la|à)|inici[óo]u?(?: o| a| el| la)?|suspend(?:i[óo]|eu)(?: o| a| el| la)?))[ \t]*$/iu;
+  /(?:\b(?:discontinued|switched (?:from|to)|changed (?:from|to)|allergic to|allergy to|intolerant (?:of|to)|reaction to|dose of|trial of|refill of|allergique (?:au|à la|à)|alérgic[oa] a|alergia a|dose (?:de|du))|\bm(?:g|cg) of)[ \t]*$/iu;
 const LIST_SEPARATOR = /[,;/+]|\b(?:and|or|et|ou|y|e|i)\b/iu;
 function startsWithDrug(chunk: string): boolean {
   const words = guardKey(chunk)
@@ -2166,7 +2245,12 @@ function readsAsDrug(text: string, start: number, end: number): boolean {
     end,
     Math.min(lineEnd < 0 ? text.length : lineEnd, end + 40),
   );
-  if (DRUG_AFTER.test(after) || DRUG_BEFORE.test(before)) return true;
+  if (
+    DRUG_AFTER.test(after) ||
+    DRUG_ABBREVIATION_AFTER.test(after) ||
+    DRUG_BEFORE.test(before)
+  )
+    return true;
   // "Medications: Allegra, Yasmin, Ella": every item between the label and
   // the word starts with a drug name.
   let listStart = -1;
@@ -2180,8 +2264,15 @@ function readsAsDrug(text: string, start: number, end: number): boolean {
     .filter(Boolean)
     .every(startsWithDrug);
 }
+// A title right before a word: "Dr. Holter" is a person even though "Holter" alone is on
+// the allow-list (#228 review).
+const TITLE_RIGHT_BEFORE =
+  /(?:(?<![\p{L}])(?:Dr|Dre|Mr|Mrs|Ms|Mx|Miss|Mme|Mlle|Prof|Pr|Sr|Sra|Srta|Nurse|Pani|Pan)\.?|(?<![\p{L}])M\.)[ \t]+$/u;
 function isMedicalTerm(text: string, start: number, end: number): boolean {
   const span = guardKey(text.slice(start, end));
+  const titled = TITLE_RIGHT_BEFORE.test(
+    text.slice(Math.max(0, start - 14), start),
+  );
   if (DRUG_NAMES.has(span) && readsAsDrug(text, start, end)) return true;
   const from = Math.max(0, start - GUARD_REACH);
   const window = guardKey(text.slice(from, end + GUARD_REACH));
@@ -2198,6 +2289,7 @@ function isMedicalTerm(text: string, start: number, end: number): boolean {
     const forms = EPONYM_FORMS.get(word);
     if (!forms) continue;
     for (const form of forms) {
+      if (titled && form === span) continue;
       for (
         let at = window.indexOf(form);
         at >= 0;
@@ -2209,6 +2301,9 @@ function isMedicalTerm(text: string, start: number, end: number): boolean {
   return false;
 }
 
+/** A clinical role belongs to this occurrence, never to a surname globally.
+ * Matching-copy accents have already been folded. Direct identity findings
+ * still win; this prevents their alias sweep from consuming an eponym. */
 function clinicalNameOccurrence(
   text: string,
   start: number,
