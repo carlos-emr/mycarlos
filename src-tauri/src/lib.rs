@@ -1220,6 +1220,10 @@ struct PendingPicks {
     /// Destinations chosen for an anonymized text, apart from the document
     /// copies' so that one is never written where the other was meant.
     text_exports: PickTable<(Uuid, tauri_plugin_fs::FilePath)>,
+    /// The AI helper's answers as the runtime gave them (#212), for the
+    /// document's save to take: gone once saved, at lock, and when the
+    /// document is hidden.
+    ai_answers: KeptAnswers,
 }
 
 /// What a preview ticket remembers about its text read.
@@ -1228,6 +1232,122 @@ struct TextTicket {
     record_id: Uuid,
     /// The last page (from 1) the text holds, when pages were left out.
     cut_after_page: Option<u32>,
+    /// Pages past the text's caps were left out.
+    truncated: bool,
+    /// Some page had no text, or was cut or refused.
+    pages_missing: bool,
+    /// The index (from 0) of the last page the text holds.
+    last_index: Option<u32>,
+    /// What the pages said (`pages_digest`): a summary kept for this document must be of them.
+    pages_digest: [u8; 32],
+}
+
+/// A digest of pages (index and text, in order), to tell that a summary request carries the
+/// pages a text read gave, unchanged.
+fn pages_digest<'a>(pages: impl IntoIterator<Item = (u32, &'a str)>) -> [u8; 32] {
+    use sha2::Digest;
+    let mut digest = sha2::Sha256::new();
+    for (index, text) in pages {
+        digest.update(index.to_le_bytes());
+        digest.update((text.len() as u64).to_le_bytes());
+        digest.update(text.as_bytes());
+    }
+    digest.finalize().into()
+}
+
+impl TextTicket {
+    /// Whether a summary written from this text, having read up to `last_page` (cut there or
+    /// not), covers only part of the document.
+    fn partial(&self, last_page: u32, last_page_cut: bool) -> bool {
+        self.truncated || last_page_cut || self.last_index.is_some_and(|last| last_page < last)
+    }
+}
+
+/// The AI helper's answers kept for the document's save (see `PendingPicks::ai_answers`), by
+/// the id handed to the reader with each: every answer its own, so asking again never loses
+/// an earlier one (Ben, D3: older answers stay in the vault, hidden). Each is bound to its
+/// document and to the session it was given in, for the text ticket's time.
+#[derive(Default)]
+struct KeptAnswers(Mutex<KeptAnswerTable>);
+
+#[derive(Default)]
+struct KeptAnswerTable {
+    entries: HashMap<Uuid, KeptAnswerEntry>,
+    /// Counts answers kept, so the oldest is known even when two share an instant.
+    kept: u64,
+}
+
+struct KeptAnswerEntry {
+    kept_at: Instant,
+    order: u64,
+    session: u64,
+    record_id: Uuid,
+    answer: model_runtime::KeptAnswer,
+}
+
+/// At most this many answers wait for their save; past it the oldest goes.
+const MAX_KEPT_ANSWERS: usize = 64;
+
+impl KeptAnswers {
+    fn table(&self) -> std::sync::MutexGuard<'_, KeptAnswerTable> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Keeps `answer` for `record_id`'s save, and gives the id to name it by.
+    fn keep(&self, session: u64, record_id: Uuid, answer: model_runtime::KeptAnswer) -> Uuid {
+        let mut table = self.table();
+        table
+            .entries
+            .retain(|_, entry| entry.kept_at.elapsed() < TEXT_TICKET_TTL);
+        while table.entries.len() >= MAX_KEPT_ANSWERS {
+            let Some(oldest) = table
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.order)
+                .map(|(id, _)| *id)
+            else {
+                break;
+            };
+            table.entries.remove(&oldest);
+        }
+        table.kept += 1;
+        let id = Uuid::new_v4();
+        let entry = KeptAnswerEntry {
+            kept_at: Instant::now(),
+            order: table.kept,
+            session,
+            record_id,
+            answer,
+        };
+        table.entries.insert(id, entry);
+        id
+    }
+
+    /// The answer kept under `id` for `record_id`, while it is usable in `session`.
+    fn get(&self, id: Uuid, record_id: Uuid, session: u64) -> Option<model_runtime::KeptAnswer> {
+        let table = self.table();
+        let entry = table.entries.get(&id)?;
+        (entry.kept_at.elapsed() < TEXT_TICKET_TTL
+            && entry.session == session
+            && entry.record_id == record_id)
+            .then(|| entry.answer.clone())
+    }
+
+    fn forget(&self, id: Uuid) {
+        self.table().entries.remove(&id);
+    }
+
+    fn clear(&self) {
+        self.table().entries.clear();
+    }
+
+    fn forget_record(&self, record_id: Uuid) {
+        self.table()
+            .entries
+            .retain(|_, entry| entry.record_id != record_id);
+    }
 }
 
 // A preview is read at the patient's pace; the automatic lock bounds it too.
@@ -1334,8 +1454,31 @@ impl PendingPicks {
         Ok(held)
     }
 
-    /// The document was hidden: its tickets end.
+    /// Keeps an AI answer for its document's save (#212), from a request that started in
+    /// `session` (one started before a lock is never usable), and gives its id.
+    fn keep_ai_answer(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        answer: model_runtime::KeptAnswer,
+    ) -> Uuid {
+        self.ai_answers.keep(session, record_id, answer)
+    }
+
+    /// The AI answer kept under `kept_id` for this document, if it is still usable: given in
+    /// this session, within the text ticket's time, and not yet in the vault.
+    fn kept_ai_answer(&self, kept_id: Uuid, record_id: Uuid) -> Option<model_runtime::KeptAnswer> {
+        self.ai_answers.get(kept_id, record_id, self.session())
+    }
+
+    /// The answer is in the vault now.
+    fn forget_ai_answer(&self, kept_id: Uuid) {
+        self.ai_answers.forget(kept_id);
+    }
+
+    /// The document was hidden: its tickets end, and its kept answers.
     fn forget_texts_for(&self, record_id: Uuid) {
+        self.ai_answers.forget_record(record_id);
         self.texts.retain(|held| held.record_id != record_id);
     }
 
@@ -1434,6 +1577,7 @@ impl PendingPicks {
         self.restores.clear();
         self.texts.clear();
         self.text_exports.clear();
+        self.ai_answers.clear();
     }
 }
 
@@ -1443,14 +1587,27 @@ struct RecordIdRequest {
     record_id: Uuid,
 }
 
-/// An AI answer to keep with a document (#72): what it is, and its bytes,
-/// the renderer's own JSON, as text.
+/// An AI answer to keep with a document (#72): its document and the id `ai_summarize` /
+/// `ai_explain` kept it under, and for a summary the reader's place for each sentence. The
+/// words, the model, the tool, the language and the flags are never page code's.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SaveAiResultRequest {
     record_id: Uuid,
-    result: vault::AiResultInput,
-    content: String,
+    kept_id: Uuid,
+    #[serde(default)]
+    sources: Option<Vec<Option<model_runtime::SourceSpan>>>,
+}
+
+/// An AI answer as the reader gets it, with the id it was kept under for its document's save
+/// when the request named the document.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiAnswer<T> {
+    #[serde(flatten)]
+    answer: T,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kept_id: Option<Uuid>,
 }
 
 #[derive(Deserialize)]
@@ -1731,21 +1888,120 @@ async fn ai_model_remove(
 /// A summary of a document's pages in plain words, from the model on this computer (#72): its
 /// helper starts on first use and stays while the vault is unlocked. A newer request, a
 /// cancel or a lock ends this one. Computers only.
+///
+/// With the document and its text ticket (`vault_document_text`), the answer is also kept
+/// natively for that document's save (#212): the ticket must be current, for that document,
+/// and the pages must be the ones that text read gave, unchanged.
 #[tauri::command]
 async fn ai_summarize(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: model_runtime::SummarizeRequest,
-) -> CommandResult<model_runtime::SummaryResult> {
-    run_ai(store.inner(), move |runtime| runtime.summarize(request)).await
+) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
+    let kept_for = match (request.record_id, request.ticket) {
+        (Some(record_id), Some(ticket)) => {
+            let text = picks.peek_text(ticket, record_id)?;
+            // Kept for the document only as a summary of what its text read gave.
+            let sent = pages_digest(
+                request
+                    .pages
+                    .iter()
+                    .map(|page| (page.index, page.text.as_str())),
+            );
+            if sent != text.pages_digest {
+                return Err(ai_error(model_runtime::AiError::Failed));
+            }
+            Some((record_id, text))
+        }
+        (None, None) => None,
+        _ => return Err(ai_error(model_runtime::AiError::Failed)),
+    };
+    let session = picks.session();
+    let lang = request.lang.clone();
+    let result = run_ai(store.inner(), move |runtime| runtime.summarize(request)).await?;
+    let kept_id = kept_for.map(|(record_id, text)| {
+        picks.keep_ai_answer(
+            session,
+            record_id,
+            model_runtime::KeptAnswer::Summary {
+                sentences: result.sentences.clone(),
+                // As the reader says it: by its number from 1, 0 when no page was read.
+                last_page: if text.last_index.is_some() {
+                    result.last_page + 1
+                } else {
+                    0
+                },
+                last_index: result.last_page,
+                partial: text.partial(result.last_page, result.last_page_cut),
+                pages_missing: text.pages_missing,
+                model: result.model.clone(),
+                lang,
+                created_at: now_ms(),
+            },
+        )
+    });
+    Ok(AiAnswer {
+        answer: result,
+        kept_id,
+    })
 }
 
-/// What a term means in its sentence, from the model on this computer (#72).
+/// What a term means in its sentence, from the model on this computer (#72). With the
+/// document, which must be a readable PDF, the answer is also kept for that document's save.
 #[tauri::command]
 async fn ai_explain(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: model_runtime::ExplainRequest,
-) -> CommandResult<model_runtime::ExplainResult> {
-    run_ai(store.inner(), move |runtime| runtime.explain(request)).await
+) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
+    let kept_for = request.record_id;
+    if let Some(record_id) = kept_for {
+        run_blocking(store.inner(), move |store| readable_pdf(store, record_id)).await?;
+    }
+    let session = picks.session();
+    let (term, context, lang) = (
+        request.term.trim().to_owned(),
+        request.context.clone(),
+        request.lang.clone(),
+    );
+    let result = run_ai(store.inner(), move |runtime| runtime.explain(request)).await?;
+    let kept_id = kept_for.map(|record_id| {
+        picks.keep_ai_answer(
+            session,
+            record_id,
+            model_runtime::KeptAnswer::Explain {
+                term,
+                context,
+                text: result.text.clone(),
+                model: result.model.clone(),
+                lang,
+                created_at: now_ms(),
+            },
+        )
+    });
+    Ok(AiAnswer {
+        answer: result,
+        kept_id,
+    })
+}
+
+/// The record is there, shown, available, and a PDF: one the reader can open.
+fn readable_pdf(store: &VaultStore, record_id: Uuid) -> Result<(), VaultError> {
+    let snapshot = store.snapshot()?;
+    let record = snapshot
+        .records
+        .iter()
+        .find(|record| record.id == record_id)
+        .ok_or(VaultError::NotFound)?;
+    if !record.available || record.hidden.is_some() {
+        return Err(VaultError::NotFound);
+    }
+    if !(record.media_type == "application/pdf"
+        || record.display_name.to_ascii_lowercase().ends_with(".pdf"))
+    {
+        return Err(VaultError::NotPdf);
+    }
+    Ok(())
 }
 
 /// Ends the AI run in flight, if any: the reader or its panel closed. Its helper stops; the
@@ -3708,6 +3964,16 @@ async fn vault_document_text(
         TextTicket {
             record_id,
             cut_after_page,
+            truncated: text.truncated,
+            pages_missing: !(text.empty_pages.is_empty()
+                && text.cut_pages.is_empty()
+                && text.failed_pages.is_empty()),
+            last_index: text.pages.last().map(|page| page.index),
+            pages_digest: pages_digest(
+                text.pages
+                    .iter()
+                    .map(|page| (page.index, page.text.as_str())),
+            ),
         },
     );
     Ok(text)
@@ -4086,27 +4352,34 @@ async fn vault_hide_record(
 #[tauri::command]
 async fn vault_ai_result_save(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: SaveAiResultRequest,
 ) -> CommandResult<vault::AiResultInfo> {
-    // Page code chose these bytes: kept only if they are an answer as the
-    // reader writes them, from the model that last answered here (#212).
+    // The answer is the runtime's own, kept when it was given (#212): page code
+    // only names it and adds a summary's source places.
+    let answer = picks
+        .kept_ai_answer(request.kept_id, request.record_id)
+        .ok_or(vault::VaultError::Invalid)?;
+    let (input, content) = answer
+        .content(request.sources.as_deref())
+        .ok_or(vault::VaultError::Invalid)?;
+    // Still checked as the reader's answers are: the caps, and the model that
+    // last answered here.
     let answered = model_runtime::app().answered_model();
     vault::check_ai_answer(
-        &request.result,
-        request.content.as_bytes(),
+        &input,
+        content.as_bytes(),
         answered
             .as_ref()
             .map(|model| (model.name.as_str(), model.sha256.as_str())),
     )?;
-    run_blocking(store.inner(), move |store| {
-        store.save_ai_result(
-            request.record_id,
-            request.result,
-            request.content.as_bytes(),
-            now_ms(),
-        )
+    let record_id = request.record_id;
+    let saved = run_blocking(store.inner(), move |store| {
+        store.save_ai_result(record_id, input, content.as_bytes(), now_ms())
     })
-    .await
+    .await?;
+    picks.forget_ai_answer(request.kept_id);
+    Ok(saved)
 }
 
 /// The AI helper's answers kept with a document, newest first (#72).
@@ -5010,6 +5283,174 @@ mod tests {
         assert_eq!(partial.code, "partial_export");
         assert!(public_error_text(&partial).contains("partial readable copy"));
         assert!(public_error_text(&partial).contains("Delete"));
+    }
+
+    fn kept_explanation(text: &str) -> model_runtime::KeptAnswer {
+        model_runtime::KeptAnswer::Explain {
+            term: "HbA1c".to_owned(),
+            context: "FAKE context".to_owned(),
+            text: text.to_owned(),
+            model: local_runner::ModelInfo {
+                name: "FAKE model".to_owned(),
+                sha256: "ab".repeat(32),
+            },
+            lang: "en".to_owned(),
+            created_at: 1,
+        }
+    }
+
+    #[test]
+    fn every_kept_ai_answer_is_its_own_for_its_document_and_session_until_the_vault_keeps_it() {
+        let picks = PendingPicks::default();
+        let record = Uuid::new_v4();
+        let first = picks.keep_ai_answer(picks.session(), record, kept_explanation("first"));
+        // Asking again keeps the earlier answer too (D3): each is saved on its own.
+        let again = picks.keep_ai_answer(picks.session(), record, kept_explanation("again"));
+        assert_ne!(first, again);
+        assert_eq!(
+            picks.kept_ai_answer(first, record),
+            Some(kept_explanation("first"))
+        );
+        assert_eq!(
+            picks.kept_ai_answer(again, record),
+            Some(kept_explanation("again"))
+        );
+        // Only for its own document, and only under an id it was given.
+        assert_eq!(picks.kept_ai_answer(first, Uuid::new_v4()), None);
+        assert_eq!(picks.kept_ai_answer(Uuid::new_v4(), record), None);
+        // It stays until the vault has kept it (a failed save can be tried again).
+        assert!(picks.kept_ai_answer(first, record).is_some());
+        picks.forget_ai_answer(first);
+        assert_eq!(picks.kept_ai_answer(first, record), None);
+        assert!(picks.kept_ai_answer(again, record).is_some());
+        // A lock ends them, and an answer from a request that began before the lock.
+        let before = picks.session();
+        picks.clear();
+        assert_eq!(picks.kept_ai_answer(again, record), None);
+        let late = picks.keep_ai_answer(before, record, kept_explanation("late"));
+        assert_eq!(picks.kept_ai_answer(late, record), None);
+        // Hiding the document ends its answers, and only its own.
+        let hidden = picks.keep_ai_answer(picks.session(), record, kept_explanation("hidden"));
+        let other_record = Uuid::new_v4();
+        let other = picks.keep_ai_answer(picks.session(), other_record, kept_explanation("other"));
+        picks.forget_texts_for(record);
+        assert_eq!(picks.kept_ai_answer(hidden, record), None);
+        assert!(picks.kept_ai_answer(other, other_record).is_some());
+    }
+
+    #[test]
+    fn at_most_a_bounded_number_of_answers_wait_for_their_save_the_oldest_going_first() {
+        let picks = PendingPicks::default();
+        let record = Uuid::new_v4();
+        let oldest = picks.keep_ai_answer(picks.session(), record, kept_explanation("0"));
+        let ids: Vec<Uuid> = (1..MAX_KEPT_ANSWERS)
+            .map(|n| {
+                picks.keep_ai_answer(picks.session(), record, kept_explanation(&n.to_string()))
+            })
+            .collect();
+        assert!(picks.kept_ai_answer(oldest, record).is_some());
+        let newest = picks.keep_ai_answer(picks.session(), record, kept_explanation("last"));
+        assert_eq!(picks.kept_ai_answer(oldest, record), None);
+        assert!(picks.kept_ai_answer(newest, record).is_some());
+        assert!(ids
+            .iter()
+            .all(|id| picks.kept_ai_answer(*id, record).is_some()));
+    }
+
+    #[test]
+    fn the_save_names_its_answer_by_id_and_never_carries_its_words() {
+        let nil = Uuid::nil().to_string();
+        let summary: SaveAiResultRequest = serde_json::from_value(serde_json::json!({
+            "recordId": nil, "keptId": nil,
+            "sources": [{"page": 0, "start": 1, "end": 2}, null]
+        }))
+        .unwrap();
+        assert_eq!(
+            (summary.record_id, summary.kept_id),
+            (Uuid::nil(), Uuid::nil())
+        );
+        assert_eq!(
+            summary.sources,
+            Some(vec![
+                Some(model_runtime::SourceSpan {
+                    page: 0,
+                    start: 1,
+                    end: 2
+                }),
+                None
+            ])
+        );
+        // The answer's bytes, its tool or language, or anything else, are refused.
+        for extra in [
+            serde_json::json!({"content": "{}"}),
+            serde_json::json!({"result": {}}),
+            serde_json::json!({"tool": "summary"}),
+            serde_json::json!({"lang": "fr"}),
+            serde_json::json!({"modelName": "FAKE"}),
+        ] {
+            let mut request = serde_json::json!({"recordId": nil, "keptId": nil});
+            request
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            assert!(serde_json::from_value::<SaveAiResultRequest>(request).is_err());
+        }
+    }
+
+    #[test]
+    fn an_answer_reaches_the_reader_with_its_kept_id_only_when_it_was_kept() {
+        let explained = |kept_id| {
+            serde_json::to_value(AiAnswer {
+                answer: model_runtime::ExplainResult {
+                    text: "FAKE text".to_owned(),
+                    model: local_runner::ModelInfo {
+                        name: "FAKE model".to_owned(),
+                        sha256: "ab".repeat(32),
+                    },
+                },
+                kept_id,
+            })
+            .unwrap()
+        };
+        assert_eq!(explained(None).get("keptId"), None);
+        assert_eq!(explained(None)["text"], "FAKE text");
+        assert_eq!(
+            explained(Some(Uuid::nil()))["keptId"],
+            Uuid::nil().to_string()
+        );
+    }
+
+    #[test]
+    fn the_pages_digest_tells_any_change_to_the_pages() {
+        let digest = |pages: &[(u32, &str)]| pages_digest(pages.iter().copied());
+        let read = [(0, "FAKE page one"), (2, "FAKE page three")];
+        assert_eq!(digest(&read), digest(&read));
+        for changed in [
+            &[(0, "FAKE page one"), (1, "FAKE page three")][..],
+            &[(0, "FAKE page one"), (2, "FAKE page three ")][..],
+            &[(0, "FAKE page one")][..],
+            &[(0, "FAKE page oneFAKE page three")][..],
+            &[(2, "FAKE page three"), (0, "FAKE page one")][..],
+        ] {
+            assert_ne!(digest(&read), digest(changed));
+        }
+    }
+
+    #[test]
+    fn a_summary_is_partial_when_pages_were_left_out_cut_or_not_all_read() {
+        let ticket = |truncated: bool, last_index: Option<u32>| TextTicket {
+            record_id: Uuid::nil(),
+            cut_after_page: None,
+            truncated,
+            pages_missing: false,
+            last_index,
+            pages_digest: [0; 32],
+        };
+        assert!(!ticket(false, Some(3)).partial(3, false));
+        assert!(ticket(false, Some(3)).partial(2, false));
+        assert!(ticket(false, Some(3)).partial(3, true));
+        assert!(ticket(true, Some(3)).partial(3, false));
+        assert!(!ticket(false, None).partial(0, false));
     }
 
     #[test]
