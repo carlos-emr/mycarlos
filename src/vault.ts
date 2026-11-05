@@ -1,6 +1,6 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
-import type { ModelInfo, ModelStatus, ModelSummary } from "./ai/types";
+import type { AiTool, ModelInfo, ModelStatus, ModelSummary } from "./ai/types";
 import type { DocumentPageText, DocumentText } from "./documentText";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
@@ -313,7 +313,8 @@ export interface AuditHistoryEntry {
     | "deviceApprovalRequestRestarted"
     | "deliveryFiled"
     | "deliveryReceiptSettled"
-    | "readingAidFiled";
+    | "readingAidFiled"
+    | "aiResultSaved";
   name: string | null;
   oldName: string | null;
   from: string[] | null;
@@ -323,6 +324,28 @@ export interface AuditHistoryEntry {
   how: string | null;
   place: string | null;
   previousSession: string | null;
+}
+
+/** What the AI helper asks the vault to keep with a document (#72). */
+export interface AiResultInput {
+  tool: AiTool;
+  lang: string;
+  /** The term explained; none for a summary. */
+  term?: string;
+  modelName: string;
+  modelSha256: string;
+}
+
+/** An AI answer as the vault lists it: everything but its text. */
+export interface AiResultInfo {
+  id: string;
+  tool: AiTool;
+  lang: string;
+  term?: string;
+  modelName: string;
+  modelSha256: string;
+  createdAtMs: number;
+  size: number;
 }
 
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
@@ -515,10 +538,16 @@ export interface VaultBridge {
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
    * with one; it is not kept. The result carries the ticket one save
-   * needs. */
-  documentText(recordId: string, password?: string): Promise<DocumentText>;
-  /** Stops a text still being read: the preview closed. */
-  cancelDocumentText(): Promise<void>;
+   * needs. `readId` names the screen that asks (a random id of its own), so
+   * that its cancel ends only its own read. */
+  documentText(
+    recordId: string,
+    readId: string,
+    password?: string,
+  ): Promise<DocumentText>;
+  /** Stops the text the screen `readId` is still reading: it closed.
+   * Another screen's read goes on. */
+  cancelDocumentText(readId: string): Promise<void>;
   /** What the vault knows about a document's patient, for the remover:
    * names, birth dates, the provider and the clinic of its delivery. */
   recordKnownDetails(recordId: string): Promise<KnownIdentifiers>;
@@ -538,6 +567,18 @@ export interface VaultBridge {
     ticket: string,
     text: string,
   ): Promise<TextSaveOutcome>;
+  /** Keeps an AI answer with its document, encrypted. A new answer to the
+   * same question (tool, language, term) is the one shown; the old one stays
+   * in the vault, hidden, never deleted (D3). */
+  saveAiResult(
+    recordId: string,
+    result: AiResultInput,
+    content: string,
+  ): Promise<AiResultInfo>;
+  /** The AI answers kept with a document, newest first. */
+  aiResults(recordId: string): Promise<AiResultInfo[]>;
+  /** One kept answer's text. */
+  readAiResult(recordId: string, resultId: string): Promise<string>;
   reset(confirmation: string): Promise<boolean>;
 }
 
@@ -963,11 +1004,12 @@ export function createVaultBridge(): VaultBridge {
         request: { term, context, lang },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
-    documentText: (recordId, password) =>
+    documentText: (recordId, readId, password) =>
       invoke<DocumentText>("vault_document_text", {
-        request: { recordId, password: password ?? null },
+        request: { recordId, readId, password: password ?? null },
       }),
-    cancelDocumentText: () => invoke<void>("vault_document_text_cancel"),
+    cancelDocumentText: (readId) =>
+      invoke<void>("vault_document_text_cancel", { request: { readId } }),
     recordKnownDetails: (recordId) =>
       invoke<KnownIdentifiers>("vault_record_known_details", {
         request: { recordId },
@@ -981,6 +1023,16 @@ export function createVaultBridge(): VaultBridge {
       invoke<TextSaveOutcome>("vault_export_text_picked", {
         request: { pickId, recordId, ticket, text },
         locale: getLocale(),
+      }),
+    saveAiResult: (recordId, result, content) =>
+      invoke<AiResultInfo>("vault_ai_result_save", {
+        request: { recordId, result, content },
+      }),
+    aiResults: (recordId) =>
+      invoke<AiResultInfo[]>("vault_ai_results", { request: { recordId } }),
+    readAiResult: (recordId, resultId) =>
+      invoke<string>("vault_ai_result_read", {
+        request: { recordId, resultId },
       }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),

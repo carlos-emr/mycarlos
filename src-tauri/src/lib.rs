@@ -412,6 +412,11 @@ impl From<VaultError> for PublicText {
                 code: "invalid",
                 message_key: "native.error.19",
             },
+            // The reader says it on this code: the answer is shown, not kept.
+            VaultError::AiResultsFull => Self {
+                code: "ai_results_full",
+                message_key: "ai.keepFull",
+            },
             VaultError::WeakPassphrase => Self {
                 code: "weak_passphrase",
                 message_key: "native.error.20",
@@ -1437,6 +1442,23 @@ impl PendingPicks {
 #[serde(rename_all = "camelCase")]
 struct RecordIdRequest {
     record_id: Uuid,
+}
+
+/// An AI answer to keep with a document (#72): what it is, and its bytes,
+/// the renderer's own JSON, as text.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveAiResultRequest {
+    record_id: Uuid,
+    result: vault::AiResultInput,
+    content: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiResultRequest {
+    record_id: Uuid,
+    result_id: Uuid,
 }
 
 #[derive(Deserialize)]
@@ -3577,6 +3599,8 @@ fn vault_view_cancel() {
 #[serde(rename_all = "camelCase")]
 struct DocumentTextRequest {
     record_id: Uuid,
+    /// Who asks: the screen's own id, so that its cancel ends only this read.
+    read_id: Uuid,
     /// The document's own password, when it is locked with one. Not the vault passphrase.
     password: Option<String>,
 }
@@ -3646,10 +3670,11 @@ async fn vault_document_text(
         return Err(VaultError::Invalid.into());
     }
     let record_id = request.record_id;
+    let read_id = request.read_id;
     let given = request.password.is_some();
     let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
     drop(request);
-    let ticket = pdf_view::ViewTicket::text();
+    let ticket = pdf_view::ViewTicket::text_for(read_id);
     let session = picks.session();
     let result = run_blocking(store.inner(), move |store| {
         let snapshot = store.snapshot()?;
@@ -3785,11 +3810,19 @@ async fn vault_document_text(
     Ok(text)
 }
 
-/// Stops a text still being read: the preview closed. The reader's pages
-/// are not touched.
+/// Which text read to stop: the id the screen gave when it asked.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TextReadCancelRequest {
+    read_id: Uuid,
+}
+
+/// Stops a text still being read when the screen that asked for it closes:
+/// the preview, or the reader's Summary. Another screen's read goes on, and
+/// the reader's pages are not touched.
 #[tauri::command]
-fn vault_document_text_cancel() {
-    pdf_view::cancel_text_reads();
+fn vault_document_text_cancel(request: TextReadCancelRequest) {
+    pdf_view::cancel_text_read(request.read_id);
 }
 
 /// What the vault knows about a document's patient, for the remover in page
@@ -3890,6 +3923,12 @@ async fn vault_export_text_picked(
     })
     .await?;
     let hits = text_recheck::identifier_hits(&request.text, &known.names, &known.birth_dates);
+    if !hits.is_empty() {
+        return Ok(TextSaveOutcome { saved: false, hits });
+    }
+    // The remover sends no date: each is a placeholder. One still standing
+    // means page code skipped it (AI-01, AI-02).
+    let hits = text_recheck::date_hits(&request.text);
     if !hits.is_empty() {
         return Ok(TextSaveOutcome { saved: false, hits });
     }
@@ -4136,6 +4175,58 @@ async fn vault_hide_record(
     picks.forget_texts_for(request.record_id);
     run_blocking(store.inner(), move |store| {
         store.hide_record(request.record_id, now_ms())
+    })
+    .await
+}
+
+/// Keeps the AI helper's answer with its document, encrypted (#72 part D).
+#[tauri::command]
+async fn vault_ai_result_save(
+    store: State<'_, Arc<VaultStore>>,
+    request: SaveAiResultRequest,
+) -> CommandResult<vault::AiResultInfo> {
+    // Page code chose these bytes: kept only if they are an answer as the
+    // reader writes them, from the model that last answered here (#212).
+    let answered = model_runtime::app().answered_model();
+    vault::check_ai_answer(
+        &request.result,
+        request.content.as_bytes(),
+        answered
+            .as_ref()
+            .map(|model| (model.name.as_str(), model.sha256.as_str())),
+    )?;
+    run_blocking(store.inner(), move |store| {
+        store.save_ai_result(
+            request.record_id,
+            request.result,
+            request.content.as_bytes(),
+            now_ms(),
+        )
+    })
+    .await
+}
+
+/// The AI helper's answers kept with a document, newest first (#72).
+#[tauri::command]
+async fn vault_ai_results(
+    store: State<'_, Arc<VaultStore>>,
+    request: RecordIdRequest,
+) -> CommandResult<Vec<vault::AiResultInfo>> {
+    run_blocking(store.inner(), move |store| {
+        store.ai_results(request.record_id)
+    })
+    .await
+}
+
+/// One kept answer's text (#72).
+#[tauri::command]
+async fn vault_ai_result_read(
+    store: State<'_, Arc<VaultStore>>,
+    request: AiResultRequest,
+) -> CommandResult<String> {
+    run_blocking(store.inner(), move |store| {
+        let bytes = store.read_ai_result(request.record_id, request.result_id)?;
+        String::from_utf8(bytes).map_err(|_| vault::VaultError::Corrupt)
     })
     .await
 }
@@ -4539,6 +4630,9 @@ pub fn run() {
             vault_unlock_pdf,
             vault_hide_record,
             vault_unhide_record,
+            vault_ai_result_save,
+            vault_ai_results,
+            vault_ai_result_read,
             vault_hide_unavailable_records,
             vault_reset
         ])
@@ -6888,6 +6982,7 @@ mod native_localization_tests {
             VaultError::Corrupt,
             VaultError::NotFound,
             VaultError::Invalid,
+            VaultError::AiResultsFull,
             VaultError::WeakPassphrase,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,

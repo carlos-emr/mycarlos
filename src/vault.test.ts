@@ -62,6 +62,89 @@ describe("native idle deadline bridge", () => {
     expect(invoke.mock.calls).toEqual([["ai_model_status"]]);
   });
 
+  it("keeps, lists and reads AI answers through the native vault (#72)", async () => {
+    const bridge = createVaultBridge();
+    const info = {
+      id: "r1",
+      tool: "summary",
+      lang: "fr",
+      modelName: "FAKE model",
+      modelSha256: "a".repeat(64),
+      createdAtMs: 1,
+      size: 2,
+    };
+    invoke.mockResolvedValueOnce(info);
+    await expect(
+      bridge.saveAiResult(
+        "rec",
+        {
+          tool: "summary",
+          lang: "fr",
+          modelName: "FAKE model",
+          modelSha256: "a".repeat(64),
+        },
+        "{}",
+      ),
+    ).resolves.toEqual(info);
+    invoke.mockResolvedValueOnce([info]);
+    await expect(bridge.aiResults("rec")).resolves.toEqual([info]);
+    invoke.mockResolvedValueOnce("{}");
+    await expect(bridge.readAiResult("rec", "r1")).resolves.toBe("{}");
+    expect(invoke.mock.calls).toEqual([
+      [
+        "vault_ai_result_save",
+        {
+          request: {
+            recordId: "rec",
+            result: {
+              tool: "summary",
+              lang: "fr",
+              modelName: "FAKE model",
+              modelSha256: "a".repeat(64),
+            },
+            content: "{}",
+          },
+        },
+      ],
+      ["vault_ai_results", { request: { recordId: "rec" } }],
+      [
+        "vault_ai_result_read",
+        { request: { recordId: "rec", resultId: "r1" } },
+      ],
+    ]);
+  });
+
+  it("names each text read by the screen that asks, and cancels that read only", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue(undefined);
+    await bridge.documentText("FAKE-record", "FAKE-reader-id");
+    await bridge.documentText("FAKE-record", "FAKE-preview-id", "FAKE pass");
+    await bridge.cancelDocumentText("FAKE-reader-id");
+    expect(invoke.mock.calls).toEqual([
+      [
+        "vault_document_text",
+        {
+          request: {
+            recordId: "FAKE-record",
+            readId: "FAKE-reader-id",
+            password: null,
+          },
+        },
+      ],
+      [
+        "vault_document_text",
+        {
+          request: {
+            recordId: "FAKE-record",
+            readId: "FAKE-preview-id",
+            password: "FAKE pass",
+          },
+        },
+      ],
+      ["vault_document_text_cancel", { request: { readId: "FAKE-reader-id" } }],
+    ]);
+  });
+
   it("sends the model's work as the native side registers it: one request each, and a bare cancel", async () => {
     const bridge = createVaultBridge();
     const pages = [

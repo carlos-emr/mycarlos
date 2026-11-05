@@ -60,6 +60,9 @@ describe("summarizeDocument", () => {
       lang: "fr",
       createdAt: 1234,
       partial: true,
+      // Three pages read (the empty one counts), the last being page 3.
+      lastPage: 3,
+      pagesMissing: true,
     });
     expect(result.sentences.map((s) => s.source)).toEqual([
       { page: 0, start: 41, end: 68 },
