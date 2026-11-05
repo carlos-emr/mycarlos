@@ -97,6 +97,8 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       >;
       type Held = {
         command: string;
+        /** A text read's screen (request.readId): its cancel ends only it. */
+        readId?: unknown;
         /** Ends the wait: with `answer`, that is the call's answer. */
         resolve: (ended?: { answer: unknown }) => void;
         reject: (reason: unknown) => void;
@@ -403,11 +405,17 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           emit(setup.progressEvent, { done: Math.floor(total / 2), total });
         }
         if (command === c.cancelText) {
-          settleHeld(
-            (held) => held === c.documentText,
-            command,
-            refusal("cancelled", "native.error.36"),
+          // The screen's own read only, as the native side does.
+          const readId = args.request?.readId;
+          const mine = held.filter(
+            (entry) =>
+              entry.command === c.documentText && entry.readId === readId,
           );
+          held = held.filter((entry) => !mine.includes(entry));
+          for (const entry of mine) {
+            cancelled.push({ command: entry.command, by: command });
+            entry.reject(refusal("cancelled", "native.error.36"));
+          }
           return null;
         }
         if (command === c.cancel) {
@@ -420,7 +428,13 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
         }
         if (holds.delete(command)) {
           const ended = await new Promise<{ answer: unknown } | undefined>(
-            (resolve, reject) => held.push({ command, resolve, reject }),
+            (resolve, reject) =>
+              held.push({
+                command,
+                readId: args.request?.readId,
+                resolve,
+                reject,
+              }),
           );
           if (ended) return ended.answer;
         }

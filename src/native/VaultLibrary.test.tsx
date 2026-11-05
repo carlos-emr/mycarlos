@@ -1391,6 +1391,63 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     expect(native.aiSummarize).not.toHaveBeenCalled();
   });
 
+  it("reads the reader's text and the preview's under ids of their own, and each closing cancels only its own", async () => {
+    const { native, reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    const reading = () => new Promise<never>(() => undefined);
+    native.documentText.mockImplementation(reading);
+    Object.assign(native, {
+      recordKnownDetails: vi.fn().mockResolvedValue({
+        names: [],
+        birthDates: [],
+        doctorNames: [],
+        clinicNames: [],
+      }),
+    });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Summary") }),
+    );
+    const shown = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    fireEvent.click(
+      within(shown).getByRole("button", { name: humanText("Continue") }),
+    );
+    await waitFor(() => expect(native.documentText).toHaveBeenCalledTimes(1));
+    const readerRead = native.documentText.mock.calls[0][1] as string;
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Close") }),
+    );
+    expect(native.cancelDocumentText).toHaveBeenCalledTimes(1);
+    expect(native.cancelDocumentText).toHaveBeenLastCalledWith(readerRead);
+
+    // The preview: a read of its own, and its own cancel.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Letter.pdf"),
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: humanText("FAKE Letter.pdf") }),
+      ).getByRole("button", { name: humanText("Prepare text for an AI…") }),
+    );
+    const preview = await screen.findByRole("dialog", {
+      name: humanText("Text with identifying details removed"),
+    });
+    await waitFor(() => expect(native.documentText).toHaveBeenCalledTimes(2));
+    const previewRead = native.documentText.mock.calls[1][1] as string;
+    expect(previewRead).toMatch(/^[0-9a-f-]{36}$/);
+    expect(previewRead).not.toBe(readerRead);
+    fireEvent.click(
+      within(preview).getByRole("button", { name: humanText("Close") }),
+    );
+    expect(native.cancelDocumentText).toHaveBeenCalledTimes(2);
+    expect(native.cancelDocumentText).toHaveBeenLastCalledWith(previewRead);
+  });
+
   it("is not shown with no model: the panel says so, and nothing is read", async () => {
     const { native, reader } = await openReader({ state: "notInstalled" });
     fireEvent.click(

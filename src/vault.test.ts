@@ -114,6 +114,37 @@ describe("native idle deadline bridge", () => {
     ]);
   });
 
+  it("names each text read by the screen that asks, and cancels that read only", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue(undefined);
+    await bridge.documentText("FAKE-record", "FAKE-reader-id");
+    await bridge.documentText("FAKE-record", "FAKE-preview-id", "FAKE pass");
+    await bridge.cancelDocumentText("FAKE-reader-id");
+    expect(invoke.mock.calls).toEqual([
+      [
+        "vault_document_text",
+        {
+          request: {
+            recordId: "FAKE-record",
+            readId: "FAKE-reader-id",
+            password: null,
+          },
+        },
+      ],
+      [
+        "vault_document_text",
+        {
+          request: {
+            recordId: "FAKE-record",
+            readId: "FAKE-preview-id",
+            password: "FAKE pass",
+          },
+        },
+      ],
+      ["vault_document_text_cancel", { request: { readId: "FAKE-reader-id" } }],
+    ]);
+  });
+
   it("sends the model's work as the native side registers it: one request each, and a bare cancel", async () => {
     const bridge = createVaultBridge();
     const pages = [
