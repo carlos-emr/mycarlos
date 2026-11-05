@@ -44,7 +44,7 @@ impl ApprovalExchange for NoApprovalRequests {
     }
 }
 
-fn accepted_links() -> [StoredLink; 2] {
+pub(super) fn accepted_links() -> [StoredLink; 2] {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use p256::ecdsa::{signature::Signer, Signature, SigningKey};
 
