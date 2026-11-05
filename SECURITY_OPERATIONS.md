@@ -155,7 +155,7 @@ was not active in the key list it pinned at linking (it does not yet learn of a 
 
 ## AI helper (#72): nothing about the patient leaves the device
 
-The anonymized text export (part B) is built on main (#171, computers only), and so are the reader's Summary and Explain behind the notice (#217); the model runtime (#218), the model download (#219) and kept answers (#212) are in review ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
+The anonymized text export (part B) is built on main (#171, computers only), and so are the reader's Summary and Explain behind the notice (#217) and the model runtime (#218); the model download (#219) and kept answers (#212) are in review ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
 on 29 October 2026 that the helper uses no cloud provider, so:
 
 - **What may leave the device: nothing about the patient.** The model runs in a sandboxed helper

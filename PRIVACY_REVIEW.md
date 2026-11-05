@@ -408,9 +408,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     wrong", stay outside the rules for software as a medical device (#25)?
 16. **Other people's documents:** the helper can be used on documents in a child's or another
     adult's profile. Is more guidance needed before their text is exported (see also question 4)?
-17. **Keeping AI answers:** answers are kept with their document, encrypted, and are only hidden
-    with it, never deleted (#71). Is that acceptable, or should the patient be able to remove an
-    answer they do not want?
+17. **Keeping AI answers:** once #212 lands, one answer is kept per document, tool and language
+    (and term, for Explain), encrypted with the document. A newer answer replaces the older one,
+    because answers are derived and can be made again, while the documents themselves are never
+    deleted (#71). This is the default decision, which Ben may change. Is replacing acceptable, and
+    should the patient also be able to remove an answer they do not want?
 18. **Dates replaced by marks:** no real date is sent. Each date is a numbered mark with its gap in
     days from the earliest date, so the time between dates stays clear. A reader who knows one real
     date (a birth, or an event named in the text) can still work out all the others from the
@@ -435,7 +437,7 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 ## 11. The AI helper (#72)
 
 The text export (part B) is built on main (#171) and works on computers only; it is hidden on
-phones. The reader's Summary and Explain are on main (#217); the model runtime (#218), the model
+phones. The reader's Summary and Explain (#217) and the model runtime (#218) are on main; the model
 download (#219) and kept answers (#212) are in review. This section describes all of it, so that the assessment
 can cover them. It is for synthetic data only until this assessment approves real information (#25). The security side
 is in `THREAT_MODEL.md` (AI-01 to AI-10) and `SECURITY_OPERATIONS.md`, and the notice the patient
@@ -511,9 +513,10 @@ on made-up documents.
 
 **The answers.** Each is marked "Written by AI and may be wrong. Check with your doctor." In this
 build an answer is shown only while the reader is open and is not kept. Once #212 lands, answers are
-saved in the vault, encrypted, with the document, the tool, the model and the date; an answer is
-then hidden with its document and never deleted (#71), and it is in backups like the rest of the
-vault. The notice promises this only once it is true.
+saved in the vault, encrypted, with the document, the tool, the model and the date. A newer
+answer for the same document, tool and language (and term) replaces the older one, since answers
+can be made again; an answer is hidden with its document, the document itself is never deleted
+(#71), and answers are in backups like the rest of the vault (question 17). The notice promises this only once it is true.
 
 **Limits.**
 
