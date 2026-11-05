@@ -58,6 +58,11 @@ pub(crate) const STUB_NAME: &str = "FAKE stub";
 /// The descriptor the model arrives on (unix).
 pub(crate) const MODEL_FD: i32 = 3;
 
+/// The helper's AppContainer on Windows (`pdf_unlock::confine`): the model folder must be
+/// readable by its SID (`local_model` grants it), and the uninstaller removes its profile.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const APP_CONTAINER: &str = "mycarlos.modelhelper";
+
 /// The context the model runs with, in tokens: about 25,000 characters of English.
 pub(crate) const CONTEXT_TOKENS: u32 = 8_192;
 /// Tokens read per step.
@@ -497,13 +502,15 @@ pub fn helper_main() -> i32 {
     }
 }
 
-/// Whether this processor has what ggml was built for (`.cargo/config.toml`).
+/// Whether this processor has what ggml was built for (`.cargo/config.toml`: AVX2, FMA, F16C
+/// and BMI2; AVX and SSE4.2 come with them). `local_model`'s hardware check asks the same.
 pub(crate) fn processor_supported() -> bool {
     #[cfg(target_arch = "x86_64")]
     {
         std::arch::is_x86_feature_detected!("avx2")
             && std::arch::is_x86_feature_detected!("fma")
             && std::arch::is_x86_feature_detected!("f16c")
+            && std::arch::is_x86_feature_detected!("bmi2")
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
@@ -631,6 +638,17 @@ mod stub {
                         std::thread::sleep(std::time::Duration::from_secs(60));
                     },
                     "crash" => std::process::abort(),
+                    // More memory than its limit allows: the allocation fails and Rust aborts.
+                    "oom" => {
+                        let held = vec![1u8; 2usize << 30];
+                        std::hint::black_box(&held);
+                        std::process::abort()
+                    }
+                    // SAFETY: none: a deliberate fault, for the crash-report tests.
+                    "fault" => unsafe {
+                        std::ptr::null_mut::<u8>().write_volatile(1);
+                        std::process::abort()
+                    },
                     other => serde_json::to_string(&TextAnswer {
                         id,
                         text: confine::probe(other).to_owned(),

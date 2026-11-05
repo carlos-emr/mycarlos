@@ -1704,7 +1704,7 @@ ai-working = El asistente de IA está trabajando…
 
 ai-failed = El asistente de IA no pudo terminar. Intente de nuevo.
 
-ai-error-memory = Ahora no hay suficiente memoria libre para el asistente de IA. Cierre otros programas e intente de nuevo.
+ai-error-memory = Ahora mismo no hay suficiente memoria libre para el asistente de IA. Cierre otros programas e intente de nuevo.
 
 ai-error-busy = Se está agregando o quitando el modelo del asistente de IA. Intente de nuevo cuando termine.
 

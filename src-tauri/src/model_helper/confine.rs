@@ -216,6 +216,9 @@ pub(super) fn before_load(_model: &ModelFile) -> io::Result<()> {
     crate::pdf_unlock::check_confined()
 }
 
+/// Nothing to narrow on Windows: the AppContainer and job hold from the start. The helper keeps
+/// its handle on the model file (llama.cpp maps it), which is harmless: myCarlos holds the file
+/// with writers denied until the helper ends.
 #[cfg(windows)]
 pub(super) fn after_load(_model: &ModelFile) -> io::Result<()> {
     Ok(())
@@ -255,7 +258,9 @@ fn no_crash_reports() {
 
 /// What the sandbox lets the helper do, for the stub's tests: "allowed" or "denied".
 /// `read:<path>`, `write:<path>`, `connect:<port>` (loopback), `exec` (start a program),
-/// `thread` (start a thread, which the model needs), `model` (read descriptor 3).
+/// `thread` (start a thread, which the model needs), `model` (read descriptor 3). The stub also
+/// takes `crash` (a Rust abort), `oom` (an allocation over its memory limit), `fault` (a memory
+/// fault), and `hang`.
 #[cfg(feature = "ai-helper-stub")]
 pub(super) fn probe(what: &str) -> &'static str {
     let allowed = if let Some(path) = what.strip_prefix("read:") {

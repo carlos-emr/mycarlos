@@ -147,11 +147,19 @@ pub(crate) fn threads() -> u32 {
     cores.saturating_sub(1).clamp(1, 4) as u32
 }
 
-/// The free memory a start needs for a model of `size` bytes. On Linux the sealed copy and the
-/// weights read from it are both in memory until the helper has loaded and closed it.
+/// The free memory a start needs for a model of `size` bytes, checked before the model is
+/// verified. On Linux the sealed copy and the weights read from it are both in memory until the
+/// helper has loaded and closed it.
 pub(crate) fn needed_bytes(size: u64) -> u64 {
     let copies = if cfg!(target_os = "linux") { 2 } else { 1 };
     size.saturating_mul(copies).saturating_add(WORKING_BYTES)
+}
+
+/// The free memory still needed once the model is verified, checked again just before the
+/// helper starts: on Linux the sealed copy then exists and already takes its share, so only the
+/// loaded weights and the working memory are left to find.
+pub(crate) fn needed_after_verifying(size: u64) -> u64 {
+    size.saturating_add(WORKING_BYTES)
 }
 
 /// Checks a summary request: 1 to [`MAX_PAGES`] pages, indexes strictly increasing and below
@@ -360,7 +368,7 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
     Ok(RunnerConfig {
         command: executable,
         args,
-        needed_bytes: needed_bytes(verified.size_bytes),
+        needed_bytes: needed_after_verifying(verified.size_bytes),
         start_timeout: START_TIMEOUT,
         answer_timeout: ANSWER_TIMEOUT,
         memory_limit_bytes: Some(verified.size_bytes.saturating_add(LIMIT_BYTES)),
@@ -551,10 +559,13 @@ mod tests {
     }
 
     #[test]
-    fn the_memory_needed_counts_the_sealed_copy_on_linux_only() {
+    fn the_memory_needed_counts_the_sealed_copy_on_linux_only_and_only_once() {
         let size = 2_000_000_000;
         let copies = if cfg!(target_os = "linux") { 2 } else { 1 };
         assert_eq!(needed_bytes(size), size * copies + WORKING_BYTES);
+        // Checked again once the copy exists: it is not counted a second time.
+        assert_eq!(needed_after_verifying(size), size + WORKING_BYTES);
+        assert!(needed_after_verifying(size) <= needed_bytes(size));
     }
 
     struct Fixed(Option<u64>);

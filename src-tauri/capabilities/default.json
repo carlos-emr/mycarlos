@@ -6,6 +6,9 @@
   "permissions": [
     "allow-runtime-info",
     "allow-ai-model-status",
+    "allow-ai-summarize",
+    "allow-ai-explain",
+    "allow-ai-cancel",
     "allow-kdf-benchmark",
     "allow-vault-status",
     "allow-vault-passphrase-rules",

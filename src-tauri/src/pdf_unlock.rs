@@ -1039,7 +1039,8 @@ mod confine {
                 w!("myCarlos PDF helper"),
                 w!("Opens PDF documents for myCarlos, with no access to files or the network."),
             ),
-            // Its own, so that the model file's read access names it alone.
+            // Its own, so that the model file's read access names it alone (the same name as
+            // model_helper::APP_CONTAINER; w! takes only a literal).
             super::HelperProfile::Model { .. } => (
                 w!("mycarlos.modelhelper"),
                 w!("myCarlos AI helper"),
@@ -1397,6 +1398,11 @@ mod confine {
     /// Closed when dropped, which ends the helper if it is still running.
     #[cfg(windows)]
     struct Job(windows::Win32::Foundation::HANDLE);
+
+    // SAFETY: a job object handle may be used and closed from any thread; `Job` owns it alone,
+    // so the model helper's runner may hold it behind its mutex.
+    #[cfg(windows)]
+    unsafe impl Send for Job {}
 
     #[cfg(windows)]
     impl Drop for Job {

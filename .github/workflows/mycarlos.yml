@@ -225,6 +225,10 @@ jobs:
       - name: Test Windows vault
         shell: pwsh
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub -- --test-threads=1
+      - name: Test that a crashing model helper leaves no crash dump (LocalDumps on)
+        # Sets, then removes, a machine-wide Windows Error Reporting entry for the test binary (#72).
+        shell: pwsh
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub --test model_helper -- --ignored --test-threads=1 crash_dump
       - name: Build Windows evaluation installer
         # Invoke the pinned CLI directly: npm/PowerShell can consume the build flags.
         shell: pwsh

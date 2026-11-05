@@ -145,3 +145,111 @@ fn a_helper_that_crashes_ends_without_an_answer_and_without_a_core_file() {
     );
     assert!(!runner.is_running());
 }
+
+/// Windows, CI only: with Windows Error Reporting's LocalDumps turned on for this executable (a
+/// machine-wide setting, so only CI sets it, and removes it again), a helper that ends by a Rust
+/// abort (`__fastfail`), by an allocation over its job's memory cap, or by a memory fault leaves
+/// no crash dump and no report in WER's queue or archive: either could hold document text
+/// (AI-06).
+#[cfg(windows)]
+#[test]
+#[ignore = "sets a machine-wide LocalDumps entry; the Windows CI job runs it with --ignored"]
+fn a_crashing_helper_leaves_no_crash_dump_even_with_local_dumps_on() {
+    let dumps = tempfile::tempdir().unwrap();
+    let key = format!(
+        r"HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\{}",
+        executable().file_name().unwrap().to_string_lossy()
+    );
+    let reg = |args: &[&str]| {
+        let status = std::process::Command::new("reg")
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "reg {args:?}");
+    };
+    // WER's report folders, the machine's and the user's: names of reports about this program.
+    let reports = || {
+        let mut found = Vec::new();
+        for root in [std::env::var("ProgramData"), std::env::var("LOCALAPPDATA")]
+            .into_iter()
+            .flatten()
+        {
+            for kind in ["ReportQueue", "ReportArchive"] {
+                let folder = std::path::Path::new(&root)
+                    .join("Microsoft")
+                    .join("Windows")
+                    .join("WER")
+                    .join(kind);
+                for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+                    let name = entry.file_name().to_string_lossy().to_lowercase();
+                    if name.contains("mycarlos") {
+                        found.push(name);
+                    }
+                }
+            }
+        }
+        found.sort();
+        found
+    };
+    let reports_before = reports();
+    let folder = dumps.path().to_string_lossy().into_owned();
+    reg(&[
+        "add",
+        &key,
+        "/v",
+        "DumpFolder",
+        "/t",
+        "REG_EXPAND_SZ",
+        "/d",
+        &folder,
+        "/f",
+    ]);
+    reg(&[
+        "add",
+        &key,
+        "/v",
+        "DumpType",
+        "/t",
+        "REG_DWORD",
+        "/d",
+        "2",
+        "/f",
+    ]);
+    let mut outcomes = Vec::new();
+    for crash in ["crash", "oom", "fault"] {
+        let runner = stub(0);
+        runner.start().unwrap();
+        outcomes.push((crash, runner.probe(crash)));
+        assert!(!runner.is_running());
+    }
+    // Windows Error Reporting writes a dump after the process has gone: give it time.
+    std::thread::sleep(Duration::from_secs(10));
+    reg(&["delete", &key, "/f"]);
+    let written: Vec<_> = std::fs::read_dir(dumps.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert!(
+        written.is_empty(),
+        "dumps written: {written:?} ({outcomes:?})"
+    );
+    assert_eq!(reports(), reports_before, "WER reports ({outcomes:?})");
+    for (crash, outcome) in outcomes {
+        assert!(outcome.is_err(), "{crash}: {outcome:?}");
+    }
+}
+
+#[test]
+fn a_helper_over_its_memory_limit_or_faulting_ends_without_an_answer() {
+    for crash in ["oom", "fault"] {
+        let runner = stub(0);
+        runner.start().unwrap();
+        let outcome = runner.probe(crash);
+        assert!(
+            matches!(outcome.as_deref(), Err(error) if error.contains("ended without answering")),
+            "{crash}: {outcome:?}"
+        );
+        assert!(!runner.is_running());
+    }
+}

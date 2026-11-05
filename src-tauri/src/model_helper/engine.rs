@@ -14,6 +14,8 @@ use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{LlamaChatMessage, LlamaChatTemplate, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
+use llama_cpp_2::token::data::LlamaTokenData;
+use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 use llama_cpp_2::token::LlamaToken;
 use std::num::NonZeroU32;
 
@@ -145,13 +147,12 @@ impl Engine {
             return Err(failed("too long"));
         }
         self.context.clear_kv_cache();
-        let mut sampler = match grammar {
-            Some(grammar) => LlamaSampler::chain_simple([
+        let mut grammar = match grammar {
+            Some(grammar) => Some(
                 LlamaSampler::grammar(self.model, grammar, "root")
                     .map_err(|_| failed("grammar"))?,
-                LlamaSampler::greedy(),
-            ]),
-            None => LlamaSampler::greedy(),
+            ),
+            None => None,
         };
         let batch_size = BATCH_TOKENS as usize;
         let mut batch = LlamaBatch::new(batch_size, 1);
@@ -171,9 +172,12 @@ impl Engine {
         let vocab = self.model.vocab();
         let mut written = Vec::new();
         for position in (tokens.len()..).take(max) {
-            let token = sampler.sample(&self.context, batch.n_tokens() - 1);
+            let token = self.pick(batch.n_tokens() - 1, grammar.as_mut());
             if vocab.is_eog(token) {
                 return Ok((String::from_utf8_lossy(&written).into_owned(), false));
+            }
+            if let Some(grammar) = grammar.as_mut() {
+                grammar.accept(token);
             }
             vocab.token_to_piece_into(token, &mut written, false, None);
             batch.clear();
@@ -185,6 +189,45 @@ impl Engine {
                 .map_err(|_| failed("decode"))?;
         }
         Ok((String::from_utf8_lossy(&written).into_owned(), true))
+    }
+
+    /// The next token, greedily: the model's own first choice when the grammar, if any, allows
+    /// it, which inside a string it nearly always does; otherwise the best the grammar allows.
+    /// Checking one token first spares the grammar the whole vocabulary at most steps, as
+    /// llama.cpp's own server does. Ties go to the lower token id, as llama.cpp's greedy
+    /// sampler gives them.
+    fn pick(&self, index: i32, grammar: Option<&mut LlamaSampler>) -> LlamaToken {
+        let logits = self.context.get_logits_ith(index);
+        let Some((best, score)) = first_best(
+            logits
+                .iter()
+                .enumerate()
+                .map(|(id, score)| (LlamaToken::new(id as i32), *score)),
+        ) else {
+            return self.model.vocab().eos();
+        };
+        let Some(grammar) = grammar else {
+            return best;
+        };
+        let mut alone =
+            LlamaTokenDataArray::new(vec![LlamaTokenData::new(best, score, 0.0)], false);
+        alone.apply_sampler(grammar);
+        if alone
+            .data
+            .first()
+            .is_some_and(|data| data.logit().is_finite())
+        {
+            return best;
+        }
+        let mut all = self.context.token_data_array_ith(index);
+        all.apply_sampler(grammar);
+        first_best(
+            all.data
+                .iter()
+                .filter(|data| data.logit().is_finite())
+                .map(|data| (data.id(), data.logit())),
+        )
+        .map_or_else(|| self.model.vocab().eos(), |(token, _)| token)
     }
 
     /// A summary of the pages that fit, in `lang`, with the fit it read.
@@ -234,4 +277,15 @@ impl Engine {
         let (written, capped) = self.generate(&tokens, EXPLAIN_TOKENS, None)?;
         read_explanation(&written, capped).ok_or_else(|| failed("empty"))
     }
+}
+
+/// The first token with the highest score.
+fn first_best(scores: impl Iterator<Item = (LlamaToken, f32)>) -> Option<(LlamaToken, f32)> {
+    let mut best: Option<(LlamaToken, f32)> = None;
+    for (token, score) in scores {
+        if best.is_none_or(|(_, top)| score > top) {
+            best = Some((token, score));
+        }
+    }
+    best
 }

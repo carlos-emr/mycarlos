@@ -133,6 +133,7 @@ impl MemoryProbe for ProcMemInfo {
 }
 
 /// `MemAvailable:   12345 kB` → bytes.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn parse_mem_available(meminfo: &str) -> Option<u64> {
     let line = meminfo
         .lines()
@@ -274,7 +275,8 @@ pub(crate) fn install(runner: Arc<Runner>) {
 }
 
 /// Forgets the installed runner, without stopping it.
-#[cfg_attr(not(any(test, feature = "ai-helper-stub")), allow(dead_code))]
+// Used by the tests and the stub's tests only.
+#[allow(dead_code)]
 pub(crate) fn uninstall() {
     *INSTALLED.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
@@ -357,6 +359,8 @@ impl Drop for Sidecar {
 
 /// The runner: at most one model process, asked one thing at a time.
 pub(crate) struct Runner {
+    /// The config `start` uses (tests); the app starts with `start_with`.
+    #[allow(dead_code)]
     config: RunnerConfig,
     sidecar: Mutex<Option<Sidecar>>,
     status: Mutex<RunnerStatus>,
@@ -435,6 +439,7 @@ impl Runner {
     }
 
     /// Starts the model process if it is not running, with the config it was made with.
+    #[allow(dead_code)] // The tests' way in; the app uses `start_with`.
     pub(crate) fn start(&self, probe: &dyn MemoryProbe) -> Result<ModelInfo, RunnerError> {
         self.start_with(probe, || Ok(self.config.clone()))
     }
@@ -564,7 +569,8 @@ impl Runner {
     }
 
     /// Whether a model process is running now.
-    #[cfg_attr(not(any(test, feature = "ai-helper-stub")), allow(dead_code))]
+    // Used by the tests and the stub's tests only.
+    #[allow(dead_code)]
     pub(crate) fn is_running(&self) -> bool {
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
         match slot.as_mut() {
@@ -658,7 +664,7 @@ impl Runner {
     }
 
     /// Test builds only: asks the stub helper what its sandbox allows (`model_helper`).
-    #[cfg(feature = "ai-helper-stub")]
+    #[cfg(all(feature = "ai-helper-stub", any(target_os = "linux", windows)))]
     pub(crate) fn probe(&self, ticket: Ticket, what: &str) -> Result<String, RunnerError> {
         let (answer, _model) = self.ask(ticket, "probe", serde_json::json!({ "what": what }))?;
         answer
