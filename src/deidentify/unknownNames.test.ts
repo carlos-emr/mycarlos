@@ -174,3 +174,40 @@ describe("a date after a record label stays a date; look-alikes stay", () => {
     expect(send(text)).toBe(text);
   });
 });
+
+describe("relatives as a label, friends, and relatives named together", () => {
+  it.each([
+    [
+      "Mother: Rosalind Sampleton. Rosalind works nights.",
+      ["Rosalind", "Sampleton"],
+    ],
+    ["Father: Corwin Ashdale (613-555-0142)", ["Corwin", "Ashdale"]],
+    ["Friend Corwin brought her.", ["Corwin"]],
+    ["Her friend, Maribel Ashdale, drove her.", ["Maribel", "Ashdale"]],
+    ["Son amie Odette l'accompagne.", ["Odette"]],
+    ["Her daughters Maribel and Odette visited.", ["Maribel", "Odette"]],
+    [
+      "His sons Corwin, Tobiah and Ewan Ashdale help at home.",
+      ["Corwin", "Tobiah", "Ewan"],
+    ],
+    ["Ses filles Maribel et Odette l'aident.", ["Maribel", "Odette"]],
+    ["Sus hijos Corwin y Tobiah viven cerca.", ["Corwin", "Tobiah"]],
+  ])("%s", (text, names) => {
+    gone(text, ...names);
+  });
+
+  it.each([
+    "Mother: Breast cancer at 52.",
+    "Father: Coronary Artery Disease, died at 60.",
+    "Mother: Alive and well.",
+    "Sister: Type 2 diabetes.",
+    "Brother: Healthy.",
+    "Father: MI at 58.",
+    "Mère : Diabète de type 2.",
+    "Her children are well.",
+    "Children: two, both healthy.",
+    "Friend of the family.",
+  ])("leaves a family-history line or an ordinary phrase: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
