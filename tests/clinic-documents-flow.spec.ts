@@ -28,6 +28,15 @@ const en = (
   params?: Parameters<typeof translate>[2],
 ) => translate("en", key, params);
 
+/** A request awaiting the clinic: "saved" at first, and "the clinic has it"
+ * once the clinic view's automatic check (#137) has confirmed it. */
+const awaiting = (page: Page) =>
+  page.getByText(
+    new RegExp(
+      `^(${escapeRegExp(en("portal.awaiting"))}|${escapeRegExp(en("portal.awaitingClinic"))})$`,
+    ),
+  );
+
 test.beforeEach(({}, testInfo) => {
   test.skip(
     testInfo.project.name === "phone",
@@ -106,9 +115,7 @@ test("links this device to a clinic and asks for approval in one action: a refus
   await expect(
     page.getByText(en("portal.errorCodeRejected"), { exact: true }),
   ).toHaveCount(0);
-  await expect(
-    page.getByText(en("portal.awaiting"), { exact: true }),
-  ).toBeVisible();
+  await expect(awaiting(page)).toBeVisible();
   await expect(
     page.getByText(en("portal.notRequested"), { exact: true }),
   ).toHaveCount(0);
