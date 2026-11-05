@@ -304,6 +304,62 @@
     {
       "text": "Seen 8 Octo.",
       "date": false
+    },
+    {
+      "text": "Visto el 14 de mayo de 2026.",
+      "date": true
+    },
+    {
+      "text": "Visto em 14 de maio de 2026.",
+      "date": true
+    },
+    {
+      "text": "Visto el 1º de junio de 2026.",
+      "date": true
+    },
+    {
+      "text": "Visto em 1º de junho de 2026.",
+      "date": true
+    },
+    {
+      "text": "Visto em 1° de junho de 2026.",
+      "date": true
+    },
+    {
+      "text": "Visto el 1.º de junio de 2026.",
+      "date": true
+    },
+    {
+      "text": "Wizyta 14 maja 2026 r.",
+      "date": true
+    },
+    {
+      "text": "Wizyta 25 lutego 2026 r.",
+      "date": true
+    },
+    {
+      "text": "Wizyta w maj 2026.",
+      "date": true
+    },
+    {
+      "text": "Visto em junho de 2026.",
+      "date": true
+    },
+    {
+      "text": "Visto el 2 de marzo.",
+      "date": true
+    },
+    {
+      "text": "就诊日期 2026年5月14日。",
+      "date": true
+    },
+    {
+      "text": "就诊日期 2026年5月。",
+      "date": true
+    },
+    {
+      "text": "就诊日期 5月14日。",
+      "date": true
     }
   ]
 }

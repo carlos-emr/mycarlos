@@ -111,3 +111,37 @@ describe("a relative who shares the patient's surname is not the patient", () =>
     );
   });
 });
+
+describe("a page read as one very long line", () => {
+  const unit =
+    "Seen by Dr. Hollis Example on 2026-03-14; phone 613-555-0142; MRN A0049921. ";
+  const fifty = unit.repeat(Math.ceil(50_000 / unit.length)).slice(0, 50_000);
+
+  it("is handled in under a second and removes what the same text with line breaks has removed", () => {
+    const started = performance.now();
+    const one = deidentify(fifty, { knownNames: ["Tamsin Example"] });
+    expect(performance.now() - started).toBeLessThan(1000);
+    const broken = deidentify(fifty.replace(/(\d)\. /g, "$1.\n"), {
+      knownNames: ["Tamsin Example"],
+    });
+    const key = (d: ReturnType<typeof deidentify>) =>
+      d.onDevice.removed.map((r) => `${r.kind}|${r.original}|${r.replacement}`);
+    expect(key(one)).toEqual(key(broken));
+    expect(one.toSend.replace(/\s+/g, " ")).toBe(
+      broken.toSend.replace(/\s+/g, " "),
+    );
+  });
+});
+
+describe("ordinal first days in Spanish and Portuguese", () => {
+  it.each([
+    "Visto el 1º de junio de 2026.",
+    "Visto em 1° de junho de 2026.",
+    "Visto el 1.º de junio de 2026.",
+    "Visto el 1ª de junio de 2026.",
+  ])("%s", (text) => {
+    const out = deidentify(text, { knownNames: [] }).toSend;
+    expect(out).toMatch(/\[DATE 1\]/);
+    expect(out).not.toMatch(/\b1[º°ªo.]|2026/);
+  });
+});

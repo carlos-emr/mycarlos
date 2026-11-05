@@ -406,7 +406,7 @@ const DATE_FORMS: DateForm[] = [
     // 8 October 2026, 17-Apr-1961, 2 mars 1958, 1er mars 1958, 8th October
     // 2026, 8th of October 2026
     id: "dmy",
-    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th)?(?:[ ]+(?:of|de|do))?([ -])(${MONTH})(?:[ ,-]+del?[ ]+|[ ,-]*)(\\d{4})\\b`,
+    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th|\\.o|o|a|°)?(?:[ ]+(?:of|de|do))?([ -])(${MONTH})(?:[ ,-]+del?[ ]+|[ ,-]*)(\\d{4})\\b`,
     read: (m) => ({ year: +m[4], month: monthOf(m[3]), day: +m[1] }),
   },
   {
@@ -471,7 +471,7 @@ const DATE_FORMS: DateForm[] = [
   {
     // 8 October, 8th October, le 8 octobre: no year, so a plain mark.
     id: "dayMonth",
-    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th)?(?:[ ]+(?:of|de|do))?[ ]+(${MONTH})(?![\\p{L}\\d])`,
+    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th|\\.o|o|a|°)?(?:[ ]+(?:of|de|do))?[ ]+(${MONTH})(?![\\p{L}\\d])`,
     partial: "monthDay",
     read: (m) => ({ year: 2000, month: monthOf(m[2]), day: +m[1] }),
   },
@@ -1605,8 +1605,8 @@ function findRanges(text: string): Finding[] {
   return found;
 }
 
-function find(text: string, options: DeidentifyOptions): Finding[] {
-  const found: Finding[] = findRanges(text);
+function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
+  const found: Finding[] = [];
   for (const rule of RULES) {
     for (const match of text.matchAll(rule.pattern)) {
       const detail = rule.group ? match[rule.group] : match[0];
@@ -1687,6 +1687,12 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
       }
     }
   }
+  return found;
+}
+
+function find(text: string, options: DeidentifyOptions): Finding[] {
+  const found: Finding[] = findRanges(text);
+  found.push(...ruleFindings(text, options));
   // Each known name: whole wherever it stands (even across a line break),
   // in either order and surname first ("EXAMPLE, Avery"), and each of its
   // words, in any case, unless it is also an ordinary word.
@@ -1839,9 +1845,16 @@ function clinicalNameOccurrence(
   start: number,
   end: number,
 ): boolean {
-  const before = text.slice(text.lastIndexOf("\n", start - 1) + 1, start);
+  // Only the words next to the name matter, so only a short stretch on each
+  // side is read: on a page read as one very long line the whole line would
+  // be copied and scanned for every place a name stands.
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  const before = text.slice(Math.max(lineStart, start - 120), start);
   const lineEnd = text.indexOf("\n", end);
-  const after = text.slice(end, lineEnd < 0 ? undefined : lineEnd);
+  const after = text.slice(
+    end,
+    Math.min(lineEnd < 0 ? text.length : lineEnd, end + 80),
+  );
   const clinicalBefore = [
     ...before.matchAll(
       /\b(?:syndrome|disease|maladie|paralysis|paralysie|tenosynovitis|tenosynovite)[ \t]+(?:of|de|d['’])[ \t]*/giu,
@@ -1888,8 +1901,17 @@ function otherPlaces(
   const groups: { words: Set<string>; key: string }[] = [];
   const claimed = new Map<string, string>();
   const places: Finding[] = [];
+  // The same name found again and again (a signature on every line) is swept
+  // once: its other places do not depend on which finding they came from.
+  const swept = new Map<string, string>();
   for (const finding of named) {
     const whole = text.slice(finding.start, finding.end);
+    const sweptKey = `${finding.kind}:${finding.kin ? "kin:" : ""}${whole.toLowerCase()}`;
+    const earlier = swept.get(sweptKey);
+    if (earlier !== undefined) {
+      finding.group = earlier;
+      continue;
+    }
     const words = nameWords(whole);
     const lower = words.map((word) => word.toLowerCase());
     let group: string;
@@ -1911,6 +1933,7 @@ function otherPlaces(
       groups.push({ words: new Set(lower), key: group });
     }
     finding.group = group;
+    swept.set(sweptKey, group);
     const place = (match: RegExpExecArray | RegExpMatchArray, as: string) => {
       const start = match.index ?? 0;
       const end = start + match[0].length;
