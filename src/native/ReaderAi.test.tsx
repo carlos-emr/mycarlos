@@ -54,17 +54,22 @@ function renderReader(
   const loadText = vi.fn(
     options.loadText ?? (async () => fakeDocumentText(pageTexts)),
   );
+  const cancelText = vi.fn();
   const reader = (
     <DocumentReader
       record={options.record ?? record}
       startWithAid={options.startWithAid}
       viewPage={vi.fn(async (index: number) => page(index))}
       onClose={vi.fn()}
-      ai={model ? { model, loadText, onOpenPreferences } : undefined}
+      ai={
+        model ? { model, loadText, cancelText, onOpenPreferences } : undefined
+      }
     />
   );
-  render(options.strict ? <StrictMode>{reader}</StrictMode> : reader);
-  return { onOpenPreferences, loadText };
+  const { unmount } = render(
+    options.strict ? <StrictMode>{reader}</StrictMode> : reader,
+  );
+  return { onOpenPreferences, loadText, cancelText, unmount };
 }
 
 const firstPage = () =>
@@ -267,6 +272,77 @@ describe("the reader's AI helper", () => {
       "Written by AI and may be wrong. Check with your doctor.",
     );
     expect(model.calls).toHaveLength(1);
+  });
+
+  it.each([
+    ["the panel is closed", "close"],
+    ["the panel switches to Explain", "explain"],
+    ["the reader closes", "reader"],
+  ] as const)(
+    "stops the document's text read when %s before it ends, and asks no model",
+    async (_case, how) => {
+      const model = fakeLocalModel();
+      let finish: (text: ReturnType<typeof fakeDocumentText>) => void = () =>
+        undefined;
+      const { loadText, cancelText, unmount } = renderReader(model, {
+        loadText: () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      });
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      await waitFor(() => expect(loadText).toHaveBeenCalledTimes(1));
+      expect(cancelText).not.toHaveBeenCalled();
+      if (how === "close")
+        await user.click(screen.getByRole("button", { name: "Summary" }));
+      else if (how === "explain")
+        await user.click(
+          screen.getByRole("button", { name: "Explain a term" }),
+        );
+      else unmount();
+      expect(cancelText).toHaveBeenCalledTimes(1);
+      // A text that still arrives is dropped: no model is asked for it.
+      finish(fakeDocumentText(pageTexts));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(model.calls).toEqual([]);
+      expect(
+        screen.queryByText(
+          "Written by AI and may be wrong. Check with your doctor.",
+        ),
+      ).toBeNull();
+    },
+  );
+
+  it.each([false, true])(
+    "stops nothing once the text is read (StrictMode %s)",
+    async (strict) => {
+      const { cancelText, unmount } = renderReader(fakeLocalModel(), {
+        strict,
+      });
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      await screen.findByText(
+        "Written by AI and may be wrong. Check with your doctor.",
+      );
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      unmount();
+      expect(cancelText).not.toHaveBeenCalled();
+    },
+  );
+
+  it("stops no text read for a model that isn't installed", async () => {
+    const { loadText, cancelText, unmount } = renderReader(notInstalledModel);
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText("The AI helper isn't on this computer yet");
+    unmount();
+    expect(loadText).not.toHaveBeenCalled();
+    expect(cancelText).not.toHaveBeenCalled();
   });
 
   it("numbers the last page read by its page, not by the count, when a page failed", async () => {
