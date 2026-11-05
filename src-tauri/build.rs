@@ -90,6 +90,10 @@ fn main() {
     tauri_build::try_build(
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
             "runtime_info",
+            "background_status",
+            "background_set_keep_running",
+            "background_set_start_at_login",
+            "background_report_locale",
             "ai_model_catalog",
             "ai_model_status",
             "ai_model_add_picked",

@@ -914,5 +914,16 @@
   "interface.history.how.explain",
   "ai.summary.again",
   "ai.keepFailed",
-  "ai.keepFull"
+  "ai.keepFull",
+  "background.title",
+  "background.keepRunning",
+  "background.keepRunningHelp",
+  "background.startAtLogin",
+  "background.startAtLoginHelp",
+  "background.paused",
+  "background.unavailable",
+  "background.error",
+  "native.tray.open",
+  "native.tray.quit",
+  "native.tray.tooltip"
 ]
