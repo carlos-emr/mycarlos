@@ -58,3 +58,30 @@ describe("record numbers never take a dose or a lab value", () => {
     expect(out).toContain("mg");
   });
 });
+
+describe("the facility and municipality gazetteers (public StatCan lists)", () => {
+  it("removes a facility name and a multi-word town, in any case", () => {
+    const out = send(
+      "Referred to Sunnybrook Health Sciences Centre and to the hospital for sick children. He grew up in port hope and in Spirit River.",
+    );
+    expect(out).not.toMatch(/Sunnybrook|sick children|port hope|Spirit River/i);
+    expect(out).toMatch(/\[CLINIC 1\]/);
+    expect(out).toMatch(/\[ADDRESS 1\]/);
+  });
+
+  it("removes a French facility name with its accents and elisions", () => {
+    expect(
+      send("Vu au Centre hospitalier de l'Université de Montréal."),
+    ).not.toMatch(/Université/);
+  });
+
+  it("never takes a clinical eponym that is also a town for a place", () => {
+    const text = "Austin Flint murmur; pouch of Douglas; Osler nodes.";
+    expect(send(text)).toBe(text);
+  });
+
+  it("leaves a one-word town that is an ordinary word alone", () => {
+    const text = "The patient is Tiny for her age; terrace and hope remain.";
+    expect(send(text)).toBe(text);
+  });
+});

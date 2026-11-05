@@ -30,6 +30,7 @@
 
 import { cleanText, matchingCopy, toSourceRange } from "./textCleaning";
 import allowList from "./eponymAllowList.json";
+import { facilitySpans, municipalitySpans } from "./gazetteer";
 
 /** A word or a pattern as it stands in the matching copy: accents and
  * look-alike letters folded, as `matchingCopy` folds the text. Regular
@@ -1818,6 +1819,14 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
   found.push(...ruleFindings(text, options));
+  // Names of Canadian health facilities and of municipalities of two or more words.
+  for (const [kind, spans] of [
+    ["clinic", facilitySpans(text)],
+    ["address", municipalitySpans(text)],
+  ] as const)
+    for (const span of spans)
+      if (!isMedicalTerm(text, span.start, span.end))
+        found.push({ kind, start: span.start, end: span.end });
   // Each known name: whole wherever it stands (even across a line break),
   // in either order and surname first ("EXAMPLE, Avery"), and each of its
   // words, in any case, unless it is also an ordinary word.

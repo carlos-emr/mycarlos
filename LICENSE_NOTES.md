@@ -75,3 +75,7 @@ same review.
   declaration, is gone.
 
 This file records what the project declares. It is not legal advice.
+
+## Anonymizer gazetteers (src/deidentify/gazetteers)
+
+Contains information licensed under the Open Government Licence – Canada (https://open.canada.ca/en/open-government-licence-canada): Statistics Canada, Open Database of Healthcare Facilities, version 1.1; and Statistics Canada, Standard Geographical Classification (SGC) 2021. The names were tidied and filtered for use as an on-device list; Statistics Canada does not endorse this product.

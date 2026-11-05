@@ -618,7 +618,7 @@ describe("the name remover (#72)", () => {
       // medical terms (a JSON file), next to this file.
       for (const line of file.match(/^import .*$/gm) ?? [])
         expect(line).toMatch(
-          /from "\.\/(textCleaning|unicodeCleaningTable|eponymAllowList\.json)";$/,
+          /from "\.\/(textCleaning|unicodeCleaningTable|eponymAllowList\.json|gazetteer)";$/,
         );
     }
   });
