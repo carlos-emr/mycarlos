@@ -112,11 +112,12 @@ objc2-foundation = { version = "=0.3.2", default-features = false, features = ["
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSEvent", "NSResponder", "NSView", "NSWindow"] }
 
 # The AI helper's model runtime (#72): llama.cpp, built from the source these crates vendor and
-# run only in the model helper process (src/model_helper.rs). Computers only: no helper runs on
-# phones. Pinned, both: llama.cpp parses the model file, so an update is a reviewed change. No
-# default features: ggml's own threads instead of OpenMP. On x86_64, .cargo/config.toml builds
-# ggml for AVX2, FMA and F16C; the helper checks the processor has them before it loads anything.
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# run only in the model helper process (src/model_helper.rs). Windows and Linux only: no helper
+# runs on phones, and macOS waits for #211 (llama.cpp needs macOS 10.15; the app supports 10.13).
+# Pinned, both: llama.cpp parses the model file, so an update is a reviewed change. No default
+# features: ggml's own threads instead of OpenMP. On x86_64, .cargo/config.toml builds ggml for
+# AVX2, FMA, F16C and BMI2; the helper checks the processor has them before it loads anything.
+[target.'cfg(any(target_os = "linux", windows))'.dependencies]
 llama-cpp-2 = { version = "=0.1.160", default-features = false }
 llama-cpp-sys-2 = "=0.1.160"
 

@@ -56,6 +56,10 @@ pub(crate) enum Unavailable {
     Unsupported,
     /// Being added or removed.
     Busy,
+    /// Not enough free memory to verify it now (Linux: the sealed copy needs room too).
+    Memory,
+    /// Its folder could not be read or prepared.
+    Storage,
 }
 
 /// Where the verified model comes from: `local_model` in the app, a fake in tests.
@@ -243,8 +247,9 @@ impl ModelRuntime {
                 unavailable = Some(match reason {
                     Unavailable::NotInstalled => AiError::NotInstalled,
                     Unavailable::Damaged => AiError::Damaged,
-                    Unavailable::Unsupported => AiError::Failed,
+                    Unavailable::Unsupported | Unavailable::Storage => AiError::Failed,
                     Unavailable::Busy => AiError::Busy,
+                    Unavailable::Memory => AiError::Memory,
                 });
                 RunnerError::NotRunning
             })?;
@@ -388,18 +393,35 @@ pub(crate) fn sealed(file: &std::fs::File) -> bool {
     seals >= 0 && seals & all == all
 }
 
-/// The app's model runtime, made on first use and installed for the lock.
-pub(crate) fn app() -> &'static ModelRuntime {
-    static APP: OnceLock<ModelRuntime> = OnceLock::new();
+static APP: OnceLock<ModelRuntime> = OnceLock::new();
+
+/// Sets where the app's model comes from and how free memory is read, once, at setup (the
+/// install step: its store and its memory probe). `false` when the runtime was already made.
+#[allow(dead_code)] // Called by the install step's setup (local_model), which lands separately.
+pub(crate) fn init(source: Box<dyn ModelSource>, probe: Box<dyn MemoryProbe>) -> bool {
+    let mut made = false;
     APP.get_or_init(|| {
-        let runtime = ModelRuntime::new(
+        made = true;
+        installed(ModelRuntime::new(source, probe, helper_launch))
+    });
+    made
+}
+
+/// The app's model runtime, installed for the lock. Until `init` names a source, there is no
+/// model, as `ai_model_status` says.
+pub(crate) fn app() -> &'static ModelRuntime {
+    APP.get_or_init(|| {
+        installed(ModelRuntime::new(
             Box::new(NoModel),
             Box::new(local_runner::ProcMemInfo),
             helper_launch,
-        );
-        local_runner::install(runtime.runner());
-        runtime
+        ))
     })
+}
+
+fn installed(runtime: ModelRuntime) -> ModelRuntime {
+    local_runner::install(runtime.runner());
+    runtime
 }
 
 /// Stops the app's model helper, if it runs: for `local_model` before it adds or removes the
@@ -650,6 +672,9 @@ mod tests {
             (Unavailable::Damaged, AiError::Damaged),
             (Unavailable::Busy, AiError::Busy),
             (Unavailable::NotInstalled, AiError::NotInstalled),
+            (Unavailable::Memory, AiError::Memory),
+            (Unavailable::Storage, AiError::Failed),
+            (Unavailable::Unsupported, AiError::Failed),
         ] {
             let (bad, asked) = fake(Some(GIB), Err(reason));
             assert_eq!(

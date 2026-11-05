@@ -394,8 +394,7 @@ jobs:
   macos:
     name: macOS native build
     runs-on: macos-15
-    # llama.cpp is built here too (#72), though the model helper waits for #211 on macOS.
-    timeout-minutes: 55
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

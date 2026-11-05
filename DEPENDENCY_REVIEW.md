@@ -207,8 +207,9 @@ compatible with AGPL-3.0-or-later.
 
 The AI helper's model runs in llama.cpp, built from source and linked into myCarlos. It runs
 only in the model helper, a sandboxed mode of the same executable (`src-tauri/src/model_helper.rs`,
-started by `local_runner` and `model_runtime`). Computers only: the dependency is limited to
-non-phone targets, so the Android and iOS builds are unchanged.
+started by `local_runner` and `model_runtime`). Windows and Linux only: the dependency is limited
+to those targets, so the Android, iOS and macOS builds are unchanged. macOS waits for #211:
+llama.cpp needs macOS 10.15, and the app still supports 10.13.
 
 - **`llama-cpp-2` 0.1.160 and `llama-cpp-sys-2` 0.1.160** (MIT OR Apache-2.0), pinned exactly,
   both, because llama.cpp parses the model file: each update is a reviewed change. From the
@@ -217,10 +218,11 @@ non-phone targets, so the Android and iOS builds are unchanged.
     (MIT, ggml-org/llama.cpp) in its package. It builds it with CMake and a C++ compiler, and
     generates the C bindings with `bindgen`, which needs libclang at build time (CI installs
     `libclang-dev` on Linux; the Windows and macOS runners have it).
-  - Default features are off: no OpenMP (ggml's own threads), and the CPU backend only. On
-    Apple-silicon Macs the crate always adds Metal.
-  - On x86_64, `src-tauri/.cargo/config.toml` builds ggml's C/C++ for AVX2, FMA and F16C
-    through `GGML_*` CMake variables. The Rust code keeps the baseline. The helper checks the
+  - Default features are off: no OpenMP (ggml's own threads), and the CPU backend only.
+  - On x86_64, `src-tauri/.cargo/config.toml` builds ggml's C/C++ for AVX2, FMA, F16C and BMI2
+    through `GGML_*` CMake variables. In debug builds (the evaluation installers) the profile
+    gives `llama-cpp-sys-2` opt-level 3 and no debug info, so llama.cpp is a CMake Release
+    build there too. The Rust code keeps the baseline. The helper checks the
     processor before any ggml code runs, and CI runs the binary under qemu as a Nehalem.
   - RustSec does not cover C code: ggml and llama.cpp advisories are watched by hand (GitHub
     security advisories of ggml-org/llama.cpp) at each update.

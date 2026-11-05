@@ -41,9 +41,9 @@ libraries, nor tools used only to build (such as `target-lexicon`, under Apache-
 exception), and it has to be checked again when dependencies change. The licences stay recorded in
 the packages and in the generated SBOMs; see [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md).
 
-The desktop builds also contain llama.cpp and ggml (MIT, "The ggml authors"), built from source by
-`llama-cpp-sys-2` for the AI helper's model helper (#72). Their MIT notice must go with each
-desktop build, as the other MIT libraries' do. The AI model a patient adds is not part of myCarlos;
+The Windows and Linux builds also contain llama.cpp and ggml (MIT, "The ggml authors"), built from
+source by `llama-cpp-sys-2` for the AI helper's model helper (#72). Their MIT notice must go with
+those builds, as the other MIT libraries' do. The AI model a patient adds is not part of myCarlos;
 its own licence and any notice it requires are shown with the accepted-model list (the install
 step, D201).
 
