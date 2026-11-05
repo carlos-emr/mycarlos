@@ -2586,6 +2586,13 @@ export function VaultLibrary({
                         void bridge
                           .cancelDocumentText(readerReadId)
                           .catch(() => undefined),
+                      kept: {
+                        list: () => bridge.aiResults(readerRecord.id),
+                        read: (resultId) =>
+                          bridge.readAiResult(readerRecord.id, resultId),
+                        save: (input, content) =>
+                          bridge.saveAiResult(readerRecord.id, input, content),
+                      },
                       // The model is added on the AI helper's own page.
                       onOpenPreferences: () => {
                         setReaderRecordId(null);
@@ -2602,8 +2609,8 @@ export function VaultLibrary({
             <AiHelperNotice
               action={aiNotice.before || aiNotice.then ? "continue" : "close"}
               onThisDevice={aiNotice.onThisDevice}
-              // Answers are not kept in the vault yet (#212).
-              answersKept={false}
+              // Answers are kept with the document, in the vault (#212).
+              answersKept
               onClose={() => {
                 setAiNoticeSeen((seen) =>
                   aiNotice.onThisDevice ? "device" : (seen ?? "share"),

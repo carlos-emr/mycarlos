@@ -111,6 +111,13 @@ export async function summarizeDocument(
       written.lastPage < (document.pages.at(-1)?.index ?? 0) ||
       written.lastPageCut,
     lastPage: document.pages.length ? written.lastPage + 1 : 0,
+    // Pages with no text, cut short or not read at all, for the kept
+    // summary's notice.
+    pagesMissing:
+      document.emptyPages.length +
+        document.cutPages.length +
+        document.failedPages.length >
+      0,
   };
 }
 

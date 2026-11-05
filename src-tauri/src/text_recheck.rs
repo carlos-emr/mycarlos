@@ -450,7 +450,76 @@ fn find_all(folded: &Folded, needle: &[char], hits: &mut Vec<Hit>) {
 // `deidentify.ts`; `fixtures/date-forms.json` holds cases both sides must
 // agree on, and a test on each side runs them.
 
+// Spanish, Portuguese and Polish months, folded (no accents). Polish is in the genitive, as a date
+// writes it ("14 maja 2026"), and the nominative.
+const MONTHS_OTHER: [[&str; 12]; 5] = [
+    [
+        "enero",
+        "febrero",
+        "marzo",
+        "abril",
+        "mayo",
+        "junio",
+        "julio",
+        "agosto",
+        "septiembre",
+        "octubre",
+        "noviembre",
+        "diciembre",
+    ],
+    [
+        "janeiro",
+        "fevereiro",
+        "marco",
+        "abril",
+        "maio",
+        "junho",
+        "julho",
+        "agosto",
+        "setembro",
+        "outubro",
+        "novembro",
+        "dezembro",
+    ],
+    [
+        "stycznia",
+        "lutego",
+        "marca",
+        "kwietnia",
+        "maja",
+        "czerwca",
+        "lipca",
+        "sierpnia",
+        "wrzesnia",
+        "pazdziernika",
+        "listopada",
+        "grudnia",
+    ],
+    [
+        "styczen",
+        "luty",
+        "marzec",
+        "kwiecien",
+        "maj",
+        "czerwiec",
+        "lipiec",
+        "sierpien",
+        "wrzesien",
+        "pazdziernik",
+        "listopad",
+        "grudzien",
+    ],
+    ["", "", "", "", "", "", "", "", "setiembre", "", "", ""],
+];
+
 fn month_number(word: &str) -> Option<u32> {
+    for months in MONTHS_OTHER.iter() {
+        for (index, other) in months.iter().enumerate() {
+            if !other.is_empty() && word == *other {
+                return Some(index as u32 + 1);
+            }
+        }
+    }
     // English in full and by its first three letters ("may" is whole), "sept",
     // and French in full and by the short forms, all folded (no accents).
     for (index, english) in MONTHS_EN.iter().enumerate() {
@@ -628,6 +697,13 @@ fn ordinal(text: &[char], at: usize) -> usize {
             return at + 2;
         }
     }
+    // 1º, 1.º and 1ª fold to 1o, 1.o and 1a; the degree sign 1° stays.
+    for suffix in [".o", "o", "a", "°"] {
+        let suffix: Vec<char> = suffix.chars().collect();
+        if text[at..].starts_with(&suffix) {
+            return at + suffix.len();
+        }
+    }
     at
 }
 
@@ -648,10 +724,46 @@ fn iso_end_ok(text: &[char], at: usize) -> bool {
         || (text[at] == 't' && at + 1 < text.len() && text[at + 1].is_ascii_digit())
 }
 
+/// A Chinese date: 2026年5月14日, 2026年5月 (a month and year) or 5月14日 (no year).
+fn zh_date_at(text: &[char], at: usize) -> Option<usize> {
+    let (first, i) = digits(text, at, 1, 4)?;
+    let after_space = |from: usize| {
+        if text.get(from) == Some(&' ') {
+            from + 1
+        } else {
+            from
+        }
+    };
+    if i - at == 4 && text.get(i) == Some(&'年') {
+        let (month, k) = digits(text, after_space(i + 1), 1, 2)?;
+        if text.get(k) != Some(&'月') || !(1..=12).contains(&month) {
+            return None;
+        }
+        if let Some((day, e)) = digits(text, after_space(k + 1), 1, 2) {
+            if text.get(e) == Some(&'日') {
+                return calendar_day(first, month, day).then_some(e + 1);
+            }
+        }
+        return Some(k + 1);
+    }
+    if i - at <= 2 && text.get(i) == Some(&'月') {
+        let (day, e) = digits(text, after_space(i + 1), 1, 2)?;
+        if text.get(e) == Some(&'日') {
+            return calendar_day(2000, first, day).then_some(e + 1);
+        }
+    }
+    None
+}
+
 /// The end of a date that starts at `at`, if one does.
 fn date_at(text: &[char], at: usize) -> Option<usize> {
     let first = text[at];
     let before = if at == 0 { None } else { Some(text[at - 1]) };
+    if first.is_ascii_digit() && before.is_none_or(|c| !c.is_ascii_digit() && c != '年') {
+        if let Some(end) = zh_date_at(text, at) {
+            return Some(end);
+        }
+    }
     if first.is_ascii_digit() && before.is_none_or(|c| !is_word(c)) {
         if let Some((a, i)) = digits(text, at, 1, 4) {
             if i - at == 4 {
@@ -712,12 +824,25 @@ fn date_at(text: &[char], at: usize) -> Option<usize> {
         if let Some((day, i)) = day_at(text, at) {
             // 8 October 2026, 17-Apr-1961, 1er mars 1958, 8th of October 2026
             let mut j = i;
-            if text[j..].starts_with(&[' ', 'o', 'f']) {
+            // " of ", " de " and " do " (a joiner is a whole word: " déc." is a month)
+            if text[j..].starts_with(&[' ', 'o', 'f', ' '])
+                || text[j..].starts_with(&[' ', 'd', 'e', ' '])
+                || text[j..].starts_with(&[' ', 'd', 'o', ' '])
+            {
                 j += 3;
             }
             if j < text.len() && (text[j] == ' ' || text[j] == '-') {
                 if let Some((month, k)) = month_at(text, j + 1) {
-                    let after = skip(text, k, &[' ', ',', '-']);
+                    let mut after = skip(text, k, &[' ', ',', '-']);
+                    // 14 de mayo de 2026, 14 de maio de 2026: "de" or "del" before the year
+                    if after > k {
+                        for joiner in [&['d', 'e', 'l', ' '][..], &['d', 'e', ' '][..]] {
+                            if text[after..].starts_with(joiner) {
+                                after += joiner.len();
+                                break;
+                            }
+                        }
+                    }
                     if let Some((year, end)) = year_at(text, after) {
                         if calendar_day(year, month, day) {
                             return Some(end);
@@ -809,6 +934,15 @@ fn date_at(text: &[char], at: usize) -> Option<usize> {
                 let mut k = i;
                 while k < text.len() && (text[k] == ' ' || text[k] == ',') {
                     k += 1;
+                }
+                // mayo de 2026
+                if k > i {
+                    for joiner in [&['d', 'e', 'l', ' '][..], &['d', 'e', ' '][..]] {
+                        if text[k..].starts_with(joiner) {
+                            k += joiner.len();
+                            break;
+                        }
+                    }
                 }
                 if k > i {
                     if let Some((_, end)) = year_at(text, k) {

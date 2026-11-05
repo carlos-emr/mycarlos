@@ -14,7 +14,7 @@ use crate::local_runner::{
 use crate::model_helper;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 /// At most this many pages, each at most this many bytes, all at most this many: the reader's
@@ -202,6 +202,9 @@ pub(crate) struct ModelRuntime {
     probe: Box<dyn MemoryProbe>,
     /// Builds the helper's start from the verified model.
     launch: fn(&Verified) -> Result<RunnerConfig, AiError>,
+    /// The model the last answer here came from: the vault keeps an answer
+    /// only under the model that gave one (#212).
+    answered: Mutex<Option<ModelInfo>>,
 }
 
 impl ModelRuntime {
@@ -215,7 +218,21 @@ impl ModelRuntime {
             source,
             probe,
             launch,
+            answered: Mutex::new(None),
         }
+    }
+
+    /// The model the last answer here came from, if one has: what an answer
+    /// the vault is asked to keep must name.
+    pub(crate) fn answered_model(&self) -> Option<ModelInfo> {
+        self.answered
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn answered_by(&self, model: &ModelInfo) {
+        *self.answered.lock().unwrap_or_else(PoisonError::into_inner) = Some(model.clone());
     }
 
     /// The runner, for the lock to stop (`local_runner::install`).
@@ -283,6 +300,7 @@ impl ModelRuntime {
                 },
             )
             .map_err(|error| from_runner(&error))?;
+        self.answered_by(&summary.model);
         Ok(SummaryResult {
             sentences: summary.sentences,
             model: summary.model,
@@ -300,6 +318,7 @@ impl ModelRuntime {
             .runner
             .explain(ticket, request.term.trim(), &request.context, &request.lang)
             .map_err(|error| from_runner(&error))?;
+        self.answered_by(&model);
         Ok(ExplainResult { text, model })
     }
 
@@ -692,6 +711,17 @@ mod tests {
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
+    #[test]
+    fn a_refused_run_names_no_model_for_the_vault_to_keep_an_answer_under() {
+        let (bad, _) = fake(Some(GIB), Err(Unavailable::Damaged));
+        let runtime = runtime(bad, Some(64 * GIB));
+        assert_eq!(runtime.answered_model(), None);
+        assert!(runtime
+            .summarize(summary(vec![page(0, "FAKE text")], "en"))
+            .is_err());
+        assert_eq!(runtime.answered_model(), None);
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn only_a_fully_sealed_memfd_is_handed_to_the_helper() {
@@ -859,6 +889,8 @@ pub mod engine_testing {
 
     pub struct ModelRunner {
         runner: Arc<Runner>,
+        /// The quotes the last summary had that were not in the pages read.
+        unlocated: std::sync::Mutex<Vec<String>>,
     }
 
     impl ModelRunner {
@@ -882,7 +914,10 @@ pub mod engine_testing {
             runner
                 .start(&Plenty)
                 .map_err(|error| format!("{error:?}"))?;
-            Ok(Self { runner })
+            Ok(Self {
+                runner,
+                unlocated: std::sync::Mutex::default(),
+            })
         }
 
         /// A summary of `pages` (index, text) in `lang`: sentences (text, quote), last page.
@@ -905,6 +940,7 @@ pub mod engine_testing {
             self.runner
                 .summarize(self.runner.ticket(), &request)
                 .map(|summary| {
+                    *self.unlocated.lock().unwrap() = summary.unlocated_quotes;
                     (
                         summary
                             .sentences
@@ -915,6 +951,29 @@ pub mod engine_testing {
                     )
                 })
                 .map_err(|error| format!("{error:?}"))
+        }
+
+        /// What the last summary's quotes said where they were not in the pages read.
+        pub fn last_unlocated(&self) -> Vec<String> {
+            self.unlocated.lock().unwrap().clone()
+        }
+
+        /// How the last answer was made: prompt and answer tokens, and their times.
+        pub fn last_stats(&self) -> String {
+            self.runner.last_stats().map_or_else(
+                || "no stats".to_owned(),
+                |s| {
+                    format!(
+                        "prompt {} tokens {:.1} s, answer {} tokens {:.1} s{}, {} grammar scans",
+                        s.prompt_tokens,
+                        s.prompt_ms as f64 / 1000.0,
+                        s.answer_tokens,
+                        s.answer_ms as f64 / 1000.0,
+                        if s.capped { " (capped)" } else { "" },
+                        s.grammar_scans
+                    )
+                },
+            )
         }
 
         /// What `term` means in `context`, in `lang`.

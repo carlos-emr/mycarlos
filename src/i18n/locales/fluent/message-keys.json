@@ -909,5 +909,11 @@
   "ai.model.refusedNetwork",
   "ai.model.refusedUnavailable",
   "native.filter.models",
+  "interface.history.event.aiResultSaved",
+  "interface.history.how.summary",
+  "interface.history.how.explain",
+  "ai.summary.again",
+  "ai.keepFailed",
+  "ai.keepFull",
   "ai.settings.subtitle"
 ]

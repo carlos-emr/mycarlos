@@ -910,6 +910,12 @@ export const MESSAGE_KEYS = [
   "ai.model.refusedNetwork",
   "ai.model.refusedUnavailable",
   "native.filter.models",
+  "interface.history.event.aiResultSaved",
+  "interface.history.how.summary",
+  "interface.history.how.explain",
+  "ai.summary.again",
+  "ai.keepFailed",
+  "ai.keepFull",
   "ai.settings.subtitle",
 ] as const;
 
@@ -2017,6 +2023,13 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.refusedNetwork": "ai-model-refusedNetwork",
   "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
   "native.filter.models": "native-filter-models",
+  "interface.history.event.aiResultSaved":
+    "interface-history-event-aiResultSaved",
+  "interface.history.how.summary": "interface-history-how-summary",
+  "interface.history.how.explain": "interface-history-how-explain",
+  "ai.summary.again": "ai-summary-again",
+  "ai.keepFailed": "ai-keepFailed",
+  "ai.keepFull": "ai-keepFull",
   "ai.settings.subtitle": "ai-settings-subtitle",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
@@ -3027,6 +3040,12 @@ export interface MessageArgsByKey {
   "ai.model.refusedNetwork": undefined;
   "ai.model.refusedUnavailable": undefined;
   "native.filter.models": undefined;
+  "interface.history.event.aiResultSaved": undefined;
+  "interface.history.how.summary": undefined;
+  "interface.history.how.explain": undefined;
+  "ai.summary.again": undefined;
+  "ai.keepFailed": undefined;
+  "ai.keepFull": undefined;
   "ai.settings.subtitle": undefined;
 }
 

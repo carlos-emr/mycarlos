@@ -330,8 +330,8 @@ test.describe("with a model on this computer", () => {
     // Where the model runs, the notice says what it does here.
     await expect(notice).toContainText(en("aiHelper.notice.intro"));
     await expect(notice).toContainText(en("aiHelper.notice.modelBody"));
-    // Answers are not kept in the vault yet (#212): no promise that they are.
-    await expect(notice).not.toContainText(en("aiHelper.notice.resultsBody"));
+    // Answers are kept with the document in the vault (#212), as it says.
+    await expect(notice).toContainText(en("aiHelper.notice.resultsBody"));
     await expect(
       notice.getByRole("button", {
         name: en("interface.AiHelperNotice.continue"),

@@ -1566,6 +1566,8 @@ interface-history-empty = Aucun événement dans l’historique.
 
 interface-history-error-unverified = L’historique n’a pas pu être lu et vérifié. Aucun événement ne s’affiche.
 
+interface-history-event-aiResultSaved = Réponse de l’IA conservée
+
 interface-history-event-backupRestored = Sauvegarde restaurée
 
 interface-history-event-backupSaved = Sauvegarde chiffrée enregistrée
@@ -1638,6 +1640,10 @@ interface-history-how = Méthode
 interface-history-how-aidReplaced = A remplacé une aide à la lecture précédente
 
 interface-history-how-camera = Ajouté avec l’appareil photo
+
+interface-history-how-summary = Résumé en mots simples
+
+interface-history-how-explain = Un terme expliqué
 
 interface-history-how-damaged = Masqué car le fichier était absent
 
@@ -1995,3 +2001,9 @@ notifications-autoAllow = Vérifier automatiquement les documents des cliniques 
 notifications-autoHelp = Avec votre accord, myCarlos vérifie les liens enregistrés et approuvés des cliniques lorsque cette application est ouverte et le coffre déverrouillé, avec au moins deux minutes entre les tentatives. Les vérifications peuvent continuer si Windows bloque les avis. Verrouiller le coffre ou fermer l’application arrête les vérifications suivantes.
 notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Documents de la clinique et choisissez Rechercher de nouveaux documents.
 notifications-checkBusy = Une vérification de documents est en cours d’arrêt. Choisissez à nouveau Rechercher de nouveaux documents dans un instant.
+
+ai-summary-again = Résumer à nouveau
+
+ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.
+
+ai-keepFull = Ce document conserve déjà le nombre maximal de réponses de l’IA. Les nouvelles réponses s’affichent, mais ne sont pas conservées.
