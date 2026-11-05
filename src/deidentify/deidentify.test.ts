@@ -295,7 +295,7 @@ describe("the name remover (#72)", () => {
     );
   });
 
-  it("takes out the details root-c2's probe found missed (#72 review)", () => {
+  it("takes out the details a review probe found missed (#72 review)", () => {
     const out = (text: string, names: string[] = []) =>
       deidentify(text, { knownNames: names }).toSend;
     // Accented names, and surnames after a particle.
@@ -614,10 +614,11 @@ describe("the name remover (#72)", () => {
       expect(file).not.toMatch(
         /\bfetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon|@tauri-apps|invoke\(|https?:\/\//,
       );
-      // Only the text cleaning and its generated table, next to this file.
+      // Only the text cleaning, its generated table and the static allow-list of
+      // medical terms (a JSON file), next to this file.
       for (const line of file.match(/^import .*$/gm) ?? [])
         expect(line).toMatch(
-          /from "\.\/(textCleaning|unicodeCleaningTable)";$/,
+          /from "\.\/(textCleaning|unicodeCleaningTable|eponymAllowList\.json)";$/,
         );
     }
   });
