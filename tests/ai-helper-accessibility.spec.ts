@@ -368,7 +368,10 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
       },
     ]);
     const row = await openPreferences(second);
-    await expect(row.getByText(/huggingface\.co/)).toBeVisible();
+    // The address itself (the download note names its host too).
+    await expect(
+      row.locator("code", { hasText: "huggingface.co" }),
+    ).toBeVisible();
     await answerAi(second, AI_COMMANDS.download, { outcome: "unavailable" });
     await button(row, en("ai.model.download")).click();
     await expect(row.getByRole("alert")).toBeVisible();
