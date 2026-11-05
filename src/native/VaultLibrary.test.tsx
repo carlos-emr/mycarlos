@@ -5,12 +5,15 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { page } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import type { VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
+import type { ModelStatus } from "../ai/types";
+import { FAKE_MODEL, fakeDocumentText } from "../test/fakeLocalModel";
 
 // One fake native runtime: stamp and clone when data is captured, before delivery.
 let snapshotSequence = 1;
@@ -71,6 +74,13 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
     isLockedPdf: vi.fn().mockResolvedValue(false),
     isPhoto: vi.fn().mockResolvedValue(false),
     aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
+    aiSummarize: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiExplain: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiCancel: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   render(
@@ -1155,5 +1165,178 @@ describe("reading aid button in document details", () => {
         name: humanText("Read the reading aid"),
       }),
     ).toBeNull();
+  });
+});
+
+describe("the AI helper's notice before the reader's first Summary", () => {
+  // A real 1 x 1 PNG, drawn here, so the reader's page loads. FAKE text.
+  const png = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    return canvas.toDataURL("image/png");
+  };
+  const pageText = "FAKE letter. Potassium 5.4 mmol/L, a little high.";
+
+  async function openReader(status: ModelStatus) {
+    const { bridge } = renderLibrary({
+      ...snapshot,
+      records: [record("letter", "FAKE Letter.pdf", [])],
+    });
+    const native = bridge as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    native.aiModelStatus.mockResolvedValue(status);
+    Object.assign(native, {
+      viewPage: vi.fn(async () => ({
+        pageCount: 1,
+        width: 800,
+        height: 1035,
+        image: png(),
+        text: pageText,
+      })),
+      cancelView: vi.fn().mockResolvedValue(undefined),
+      documentText: vi.fn(async () => fakeDocumentText([pageText])),
+      cancelDocumentText: vi.fn().mockResolvedValue(undefined),
+      aiSummarize: vi.fn(async () => ({
+        sentences: [
+          {
+            text: "FAKE: the potassium is a little high.",
+            quote: "Potassium 5.4 mmol/L",
+          },
+        ],
+        model: FAKE_MODEL,
+        lastPage: 0,
+        lastPageCut: false,
+      })),
+      aiExplain: vi.fn(async () => ({
+        text: "FAKE explanation.",
+        model: FAKE_MODEL,
+      })),
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Letter.pdf"),
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: humanText("FAKE Letter.pdf") }),
+      ).getByRole("button", { name: humanText("Read") }),
+    );
+    const picture = await screen.findByRole("img", {
+      name: humanText(/Page 1 of 1/),
+    });
+    const reader = picture.closest<HTMLElement>('[role="dialog"]');
+    if (!reader) throw new Error("the reader is a dialog");
+    return { native, reader };
+  }
+  const notice = () =>
+    screen.queryByRole("dialog", { name: humanText("About the AI helper") });
+
+  it("comes first when a model is there, and nothing reaches the model before it closes", async () => {
+    const { native, reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Summary") }),
+    );
+    const shown = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    // The model runs on this computer: the notice says what it does here,
+    // and promises no kept answers (#212).
+    expect(shown).toHaveTextContent("here on this device");
+    expect(shown).toHaveTextContent("The AI on this device");
+    expect(shown).not.toHaveTextContent("saved in the vault, encrypted");
+    // Its effects run after the status answer: wait for the focus to move.
+    await waitFor(() =>
+      expect(
+        within(shown).getByRole("button", { name: humanText("Continue") }),
+      ).toHaveFocus(),
+    );
+    // Nothing is read, and nothing reaches the model, while it is open.
+    expect(native.documentText).not.toHaveBeenCalled();
+    expect(native.aiSummarize).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("region", {
+        name: humanText("Summary in plain words"),
+      }),
+    ).toBeNull();
+
+    fireEvent.click(
+      within(shown).getByRole("button", { name: humanText("Continue") }),
+    );
+    expect(notice()).toBeNull();
+    expect(
+      await screen.findByText(
+        humanText("FAKE: the potassium is a little high."),
+      ),
+    ).toBeVisible();
+    expect(native.aiSummarize).toHaveBeenCalledTimes(1);
+    expect(native.aiSummarize).toHaveBeenCalledWith(
+      [{ index: 0, text: pageText }],
+      "en",
+    );
+
+    // Once a session: Explain opens at once.
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Explain a term") }),
+    );
+    expect(
+      await screen.findByRole("region", { name: humanText("Explain a term") }),
+    ).toBeVisible();
+    expect(notice()).toBeNull();
+  });
+
+  it("comes first for Explain too, before any term is sent", async () => {
+    const { native, reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Explain a term") }),
+    );
+    const shown = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    expect(
+      screen.queryByRole("region", { name: humanText("Explain a term") }),
+    ).toBeNull();
+    fireEvent.click(
+      within(shown).getByRole("button", { name: humanText("Continue") }),
+    );
+    const panel = await screen.findByRole("region", {
+      name: humanText("Explain a term"),
+    });
+    fireEvent.change(within(panel).getByRole("textbox"), {
+      target: { value: "potassium" },
+    });
+    fireEvent.click(
+      within(panel).getByRole("button", { name: humanText("Explain") }),
+    );
+    expect(
+      await within(panel).findByText(humanText("FAKE explanation.")),
+    ).toBeVisible();
+    expect(native.aiExplain).toHaveBeenCalledTimes(1);
+  });
+
+  it("is not shown with no model: the panel says so, and nothing is read", async () => {
+    const { native, reader } = await openReader({ state: "notInstalled" });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Summary") }),
+    );
+    const panel = await screen.findByRole("region", {
+      name: humanText("Summary in plain words"),
+    });
+    expect(
+      await within(panel).findByText(
+        humanText("The AI helper isn't on this computer yet"),
+      ),
+    ).toBeVisible();
+    expect(notice()).toBeNull();
+    expect(native.documentText).not.toHaveBeenCalled();
+    expect(native.aiSummarize).not.toHaveBeenCalled();
   });
 });

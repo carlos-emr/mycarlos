@@ -364,8 +364,12 @@ function ReadingDocument({
     setTextOpen(true);
     setPage(span.page);
   };
-  const toggleAi = (tool: AiTool) =>
-    setAiTool((open) => (open === tool ? null : tool));
+  // Opening a tool may wait for the AI helper's notice; closing never does.
+  const toggleAi = (tool: AiTool) => {
+    if (aiTool === tool) setAiTool(null);
+    else if (ai?.beforeFirstUse) ai.beforeFirstUse(() => setAiTool(tool));
+    else setAiTool(tool);
+  };
   return (
     <div className="dialog-backdrop" role="presentation">
       <section

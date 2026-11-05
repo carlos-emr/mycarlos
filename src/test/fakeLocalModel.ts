@@ -10,6 +10,8 @@ import type {
  * AI helper's screens can be tested before a real model can be installed. */
 export interface FakeLocalModel extends LocalModel {
   calls: { tool: "summary" | "explain"; lang: string; input: string }[];
+  /** How many times `cancel` was called. */
+  cancels: number;
 }
 
 export const FAKE_MODEL: ModelInfo = {
@@ -24,20 +26,32 @@ export function fakeLocalModel(
      * quoting that page's first line. */
     sentences?: (document: DocumentText) => ModelSentence[];
     explanation?: string;
+    /** The last page read, by its index; by default every page was. */
+    lastPage?: (document: DocumentText) => number;
+    /** The first page alone was too long, and only its start was read. */
+    lastPageCut?: boolean;
   } = {},
 ): FakeLocalModel {
   const calls: FakeLocalModel["calls"] = [];
   const status = options.status ?? { state: "installed", model: FAKE_MODEL };
   const model = status.state === "installed" ? status.model : FAKE_MODEL;
-  return {
+  const fake: FakeLocalModel = {
     calls,
+    cancels: 0,
     status: async () => status,
     summarize: async (document, lang) => {
       calls.push({ tool: "summary", lang, input: document.joined });
       const sentences = options.sentences
         ? options.sentences(document)
         : firstLines(document);
-      return { sentences, model };
+      return {
+        sentences,
+        model,
+        lastPage: options.lastPage
+          ? options.lastPage(document)
+          : (document.pages.at(-1)?.index ?? 0),
+        lastPageCut: options.lastPageCut ?? false,
+      };
     },
     explain: async (term, context, lang) => {
       calls.push({ tool: "explain", lang, input: `${term}\n${context}` });
@@ -46,7 +60,11 @@ export function fakeLocalModel(
         model,
       };
     },
+    cancel: () => {
+      fake.cancels += 1;
+    },
   };
+  return fake;
 }
 
 function firstLines(document: DocumentText): ModelSentence[] {
