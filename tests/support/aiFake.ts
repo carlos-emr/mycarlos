@@ -77,6 +77,20 @@ export interface FakeAiSetup {
   };
   /** What the model says it explains a term as. */
   explanation?: string;
+  /** The one accepted model, as ai_model_catalog lists it: by default a
+   * FAKE entry; a spec can give the real model's name, size and licence. */
+  catalog?: Partial<FakeCatalogEntry>;
+}
+
+/** One accepted model, as ai_model_catalog lists it. */
+export interface FakeCatalogEntry {
+  name: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  licence: string;
+  notices: string[];
+  sourceUrl: string;
 }
 
 /** Installs the fake over the vault fake already on `page`. */
@@ -420,7 +434,8 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
         licence: "FAKE licence",
         notices: [],
         sourceUrl: "https://example.invalid/FAKE-test-model.gguf",
-      },
+        ...setup.catalog,
+      } satisfies FakeCatalogEntry,
       // The refusals the fake makes, in English as the native side sends them.
       messages: {
         "native.error.36": translate("en", "native.error.36"),
