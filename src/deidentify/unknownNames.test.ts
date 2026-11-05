@@ -72,6 +72,68 @@ describe("eponyms and drug names are never taken for names", () => {
   });
 });
 
+describe("a drug name that is also a first name", () => {
+  // Ella, Yasmin, Diane and Allegra are on the drug allow-list.
+  const word = (name: string) =>
+    new RegExp(`(?<![\\p{L}])${name}(?![\\p{L}])`, "u");
+
+  it.each([
+    [
+      "Her daughter Ella Sampleton drove her in today. Ella says she is eating well.",
+      "Ella",
+    ],
+    ["Her daughter Ella drove her in today.", "Ella"],
+    ["Nurse Yasmin called the pharmacy. Yasmin will call back.", "Yasmin"],
+    [
+      "Accompanied by her sister, Diane Sampleton. Diane manages the pill box.",
+      "Diane",
+    ],
+    [
+      "Spoke with Mrs. Allegra Sampleton on the phone. Allegra agrees.",
+      "Allegra",
+    ],
+    ["Meds: reviewed with daughter Ella.", "Ella"],
+    // An ordinary word after the name is not a frequency or a form.
+    ["Her daughter Ella once worked as a nurse.", "Ella"],
+    ["Her sister Diane drops by every Sunday.", "Diane"],
+    ["Nurse Yasmin bid farewell to the family.", "Yasmin"],
+    ["Córka Ella po operacji odwiedza matkę.", "Ella"],
+    ["Her daughter Ella daily checks her sugars.", "Ella"],
+  ])("is a name after a person word: %s", (text, name) => {
+    expect(send(text)).not.toMatch(word(name));
+  });
+
+  it.each([
+    "Started Yasmin, one tablet daily.",
+    "Allegra 120 mg once daily for hay fever.",
+    "Medications: Allegra, Yasmin, Ella.",
+    "Diane-35 one tablet daily for acne.",
+    "She took Ella within 72 hours.",
+    "Switched from Yasmin to Alesse.",
+  ])("stays a drug where it reads as one: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it("is a person and a drug in the same text, each where it stands", () => {
+    const out = send(
+      "Her daughter Ella Sampleton came with her. Medications: Allegra 120 mg daily, Ella 1.5 mg once.",
+    );
+    expect(out).toMatch(/^Her daughter \[NAME 1\] came/);
+    expect(out).toContain(
+      "Medications: Allegra 120 mg daily, Ella 1.5 mg once.",
+    );
+    const nurse = send(
+      "Nurse Yasmin reviewed the list. Allergic to Yasmin (rash). Discontinued Yasmin in May.",
+    );
+    expect(nurse).toBe(
+      "Nurse [NAME 1] reviewed the list. Allergic to Yasmin (rash). Discontinued Yasmin in May.",
+    );
+    expect(send("Sister Diane Sampleton attends. Diane-35 was stopped.")).toBe(
+      "Sister [NAME 1] attends. Diane-35 was stopped.",
+    );
+  });
+});
+
 describe("record-number shapes and spaced social insurance numbers", () => {
   it.each([
     ["Policy no. GRP-00731-554/02 on file.", "GRP-00731"],
@@ -116,5 +178,71 @@ describe("a date after a record label stays a date; look-alikes stay", () => {
     "Plan B was discussed.",
   ])("%s", (text) => {
     expect(send(text)).toBe(text);
+  });
+});
+
+describe("relatives as a label, friends, and relatives named together", () => {
+  it.each([
+    [
+      "Mother: Rosalind Sampleton. Rosalind works nights.",
+      ["Rosalind", "Sampleton"],
+    ],
+    ["Father: Corwin Ashdale (613-555-0142)", ["Corwin", "Ashdale"]],
+    ["Friend Corwin brought her.", ["Corwin"]],
+    ["Her friend, Maribel Ashdale, drove her.", ["Maribel", "Ashdale"]],
+    ["Son amie Odette l'accompagne.", ["Odette"]],
+    ["Her daughters Maribel and Odette visited.", ["Maribel", "Odette"]],
+    [
+      "His sons Corwin, Tobiah and Ewan Ashdale help at home.",
+      ["Corwin", "Tobiah", "Ewan"],
+    ],
+    ["Ses filles Maribel et Odette l'aident.", ["Maribel", "Odette"]],
+    ["Sus hijos Corwin y Tobiah viven cerca.", ["Corwin", "Tobiah"]],
+  ])("%s", (text, names) => {
+    gone(text, ...names);
+  });
+
+  it.each([
+    "Mother: Breast cancer at 52.",
+    "Father: Coronary Artery Disease, died at 60.",
+    "Mother: Alive and well.",
+    "Sister: Type 2 diabetes.",
+    "Brother: Healthy.",
+    "Father: MI at 58.",
+    "Mère : Diabète de type 2.",
+    "Her children are well.",
+    "Children: two, both healthy.",
+    "Friend of the family.",
+  ])("leaves a family-history line or an ordinary phrase: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
+
+describe("look-alikes found in the #228 review", () => {
+  it("removes a doctor whose name is a bare eponym, and keeps the eponym", () => {
+    expect(send("Referred by: Dr. Holter. Holter monitor booked.")).toBe(
+      "Referred by: Dr. [DOCTOR 1]. Holter monitor booked.",
+    );
+  });
+
+  it.each([
+    "Sodium 139 mmol/L. Reference: 135-145 mmol/L.",
+    "Reference: 135-145.",
+    "Started with a therapist Cognitive Behavioural Therapy weekly.",
+    "Nombre : Deux comprimés par jour.",
+    "Claim 1250.00 submitted.",
+    "Flew Pan Am in 1979 and Pan American later.",
+  ])("leaves %s", (text) => {
+    expect(send(text).replace(/\[DATE \d+\]/gu, "1979")).toBe(text);
+  });
+
+  it("still removes a record number after Reference and Claim", () => {
+    const out = send("Reference AB12345. Claim 2026-778812.");
+    expect(out).not.toContain("AB12345");
+    expect(out).not.toContain("778812");
+  });
+
+  it("still removes a name after Nombre and Pan", () => {
+    gone("Nombre: María López. Pan Tomasz Nowakowski.", "López", "Nowakowski");
   });
 });
