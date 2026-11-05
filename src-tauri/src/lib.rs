@@ -16,14 +16,22 @@ pub mod document_notification_runtime;
 #[cfg(windows)]
 mod document_notification_windows;
 pub mod document_notifications;
+// The platform push hooks (one per platform, each with its own device test) and the Preferences
+// choice will call this; until then only the reconcile after opening the vault uses it.
+#[cfg_attr(not(test), allow(dead_code))]
+mod document_push;
 mod history;
 mod idle;
-mod local_model;
+// Some items (the catalog accessor, the Windows-only folder helper) are used only on
+// some platforms.
 #[allow(dead_code)]
-// Only the lock hook is used here. Wiring the reader's AI actions and
-// ai_model_status to local_runner::Runner is a follow-up once the model is
-// chosen; until then ai_model_status answers "not installed" (local_model).
+mod local_model;
 mod local_runner;
+#[cfg(windows)]
+mod model_acl;
+mod model_download;
+mod model_helper;
+mod model_runtime;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -43,6 +51,28 @@ mod unicode_cleaning_table;
 mod vault;
 #[cfg(windows)]
 mod windows_navigation;
+
+/// For `main`: the first argument that starts this executable as the AI helper's model
+/// process, and that process itself (see `model_helper`).
+pub use model_helper::{helper_main as model_helper_main, HELPER_ARG as MODEL_HELPER_ARG};
+
+/// For tests/model_helper.rs only (see `model_runtime::testing`).
+#[doc(hidden)]
+#[cfg(all(feature = "ai-helper-stub", any(target_os = "linux", windows)))]
+pub use model_runtime::testing as model_helper_testing;
+
+/// For tests/model_engine.rs only: makes a model folder as the install step does (Windows: the
+/// model helper's AppContainer may read it and what is put in it).
+#[doc(hidden)]
+#[cfg(windows)]
+pub fn model_folder_for_tests(dir: &std::path::Path) -> bool {
+    model_acl::grant_read(dir, model_acl::APP_CONTAINER)
+}
+
+/// For tests/model_engine.rs only (see `model_runtime::engine_testing`).
+#[doc(hidden)]
+#[cfg(any(target_os = "linux", windows))]
+pub use model_runtime::engine_testing as model_engine_testing;
 
 /// For `main`: the first argument that starts this executable as the PDF unlock helper, and
 /// the helper itself (see `pdf_unlock`).
@@ -1473,11 +1503,280 @@ fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
 }
 
-/// Whether the AI helper (#72) has a model on this computer. None can be
-/// installed yet: getting one comes in a later version.
+/// The models the app accepts, for the row to show: name, size, licence,
+/// notices, and where to get the file (text only; nothing is opened).
 #[tauri::command]
-fn ai_model_status() -> local_model::ModelStatus {
-    local_model::status()
+fn ai_model_catalog() -> &'static [local_model::Accepted] {
+    local_model::CATALOG
+}
+
+/// Whether the AI helper (#72) has a model on this computer, and if not,
+/// why: not installed, this computer cannot run it, or the file is damaged.
+#[tauri::command]
+fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::ModelStatus {
+    models.status(&local_model::Here)
+}
+
+/// Why adding or removing a model was refused, as a word for the renderer.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelFailure {
+    code: &'static str,
+    /// For `unsupported`: ram, cpu or platform.
+    reason: Option<local_model::Unsupported>,
+}
+
+impl From<local_model::ModelError> for ModelFailure {
+    fn from(error: local_model::ModelError) -> Self {
+        Self {
+            code: error.code(),
+            reason: match error {
+                local_model::ModelError::Unsupported(reason) => Some(reason),
+                _ => None,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Serialize)]
+struct ModelAddProgress {
+    done: u64,
+    total: u64,
+}
+
+/// How an add ended, always as a value: `outcome` is `added` (with the new
+/// `status`), `cancelled`, or the refusal's code (`notListed`, `tooBig`,
+/// `incomplete`, `wrongHash`, `noDisk`, `unreadable`, `storage`,
+/// `unsupported` with `reason`, `busy`).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelAddOutcome {
+    outcome: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<local_model::ModelStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<local_model::Unsupported>,
+}
+
+impl ModelAddOutcome {
+    fn of(error: local_model::ModelError) -> Self {
+        let failure = ModelFailure::from(error);
+        Self {
+            outcome: failure.code,
+            status: None,
+            reason: failure.reason,
+        }
+    }
+}
+
+/// Opens the system file picker for a model file (GGUF) and adds what is
+/// picked: size checked first, then streamed through SHA-256 into the models
+/// folder and kept only when the hash matches. The page never sees a path.
+/// `None` when the patient cancelled the picker. Emits
+/// `ai-model-add-progress` as it goes; `ai_model_add_cancel` stops it.
+#[tauri::command]
+async fn ai_model_add_picked(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+    locale: Option<UiLocale>,
+) -> CommandResult<ModelAddOutcome> {
+    use tauri::Emitter;
+    let filter = locale
+        .unwrap_or_default()
+        .text(MessageId::NativeFilterModels)?;
+    let _open = ActivityHold::new(store.idle());
+    let picker = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let dialog = picker.dialog().file();
+        #[cfg(desktop)]
+        let dialog = dialog.add_filter(&filter, &["gguf"]);
+        #[cfg(not(desktop))]
+        let _ = &filter;
+        dialog.blocking_pick_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let outcome = |outcome| ModelAddOutcome {
+        outcome,
+        status: None,
+        reason: None,
+    };
+    let Some(picked) = picked else {
+        return Ok(outcome("cancelled"));
+    };
+    let Ok(source) = picked.into_path() else {
+        return Ok(ModelAddOutcome::of(local_model::ModelError::Unreadable));
+    };
+    let models = Arc::clone(models.inner());
+    let worker = Arc::clone(&models);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        // About every 8 MiB, and at the start and the end.
+        // The helper holds the model: it stops before the file is replaced.
+        model_runtime::stop();
+        let mut shown = u64::MAX;
+        worker.add(&source, &local_model::Here, |done, total| {
+            let step = done / (8 * 1024 * 1024);
+            if done == 0 || done == total || step != shown {
+                shown = step;
+                let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+            }
+        })
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    Ok(match result {
+        Ok(_) => ModelAddOutcome {
+            outcome: "added",
+            status: Some(models.status(&local_model::Here)),
+            reason: None,
+        },
+        Err(local_model::ModelError::Cancelled) => outcome("cancelled"),
+        Err(error) => ModelAddOutcome::of(error),
+    })
+}
+
+/// Downloads the default model (the catalog's first entry) from its pinned
+/// address, only because the patient clicked. Native code makes the request
+/// and nothing about the patient or a document is sent. The same checks as
+/// a picked file; the same progress event and `ai_model_add_cancel`. Returns
+/// the same outcomes, plus `network` and `unavailable`.
+#[tauri::command]
+async fn ai_model_download(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+) -> CommandResult<ModelAddOutcome> {
+    use tauri::Emitter;
+    let _open = ActivityHold::new(store.idle());
+    let models = Arc::clone(models.inner());
+    let worker = Arc::clone(&models);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        model_runtime::stop();
+        let mut shown = u64::MAX;
+        worker.download(
+            0,
+            &model_download::Https,
+            &local_model::Here,
+            |done, total| {
+                let step = done / (8 * 1024 * 1024);
+                if done == 0 || done == total || step != shown {
+                    shown = step;
+                    let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                }
+            },
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    Ok(match result {
+        Ok(_) => ModelAddOutcome {
+            outcome: "added",
+            status: Some(models.status(&local_model::Here)),
+            reason: None,
+        },
+        Err(local_model::ModelError::Cancelled) => ModelAddOutcome {
+            outcome: "cancelled",
+            status: None,
+            reason: None,
+        },
+        Err(error) => ModelAddOutcome::of(error),
+    })
+}
+
+/// Stops the add in progress; it ends with the failure `cancelled` and
+/// leaves nothing in the models folder.
+#[tauri::command]
+fn ai_model_add_cancel(models: State<'_, Arc<local_model::Store>>) {
+    models.cancel_add();
+}
+
+/// Deletes the model (and any half-copied file). The folder holds nothing of
+/// the patient's, so nothing else is kept.
+#[tauri::command]
+async fn ai_model_remove(
+    models: State<'_, Arc<local_model::Store>>,
+) -> Result<local_model::ModelStatus, ModelFailure> {
+    let models = Arc::clone(models.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        model_runtime::stop();
+        models.remove()?;
+        Ok(models.status(&local_model::Here))
+    })
+    .await
+    .map_err(|_| local_model::ModelError::Storage)?
+}
+
+/// A summary of a document's pages in plain words, from the model on this computer (#72): its
+/// helper starts on first use and stays while the vault is unlocked. A newer request, a
+/// cancel or a lock ends this one. Computers only.
+#[tauri::command]
+async fn ai_summarize(
+    store: State<'_, Arc<VaultStore>>,
+    request: model_runtime::SummarizeRequest,
+) -> CommandResult<model_runtime::SummaryResult> {
+    run_ai(store.inner(), move |runtime| runtime.summarize(request)).await
+}
+
+/// What a term means in its sentence, from the model on this computer (#72).
+#[tauri::command]
+async fn ai_explain(
+    store: State<'_, Arc<VaultStore>>,
+    request: model_runtime::ExplainRequest,
+) -> CommandResult<model_runtime::ExplainResult> {
+    run_ai(store.inner(), move |runtime| runtime.explain(request)).await
+}
+
+/// Ends the AI run in flight, if any: the reader or its panel closed. Its helper stops; the
+/// next run starts it again.
+#[tauri::command]
+fn ai_cancel() {
+    model_runtime::app().cancel();
+}
+
+/// Runs `work` on the app's model runtime away from the IPC thread, only while the vault is
+/// unlocked, as activity for the idle lock when it starts and ends.
+async fn run_ai<T, F>(store: &Arc<VaultStore>, work: F) -> CommandResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&'static model_runtime::ModelRuntime) -> Result<T, model_runtime::AiError>
+        + Send
+        + 'static,
+{
+    use model_runtime::AiError;
+    if !cfg!(desktop) {
+        return Err(ai_error(AiError::NotInstalled));
+    }
+    if !matches!(store.status(), Ok(VaultStatus::Unlocked)) {
+        return Err(ai_error(AiError::Cancelled));
+    }
+    let idle = Arc::clone(store.idle());
+    idle.touch(Instant::now());
+    let result = tauri::async_runtime::spawn_blocking(move || work(model_runtime::app()))
+        .await
+        .map_err(|_| ai_error(AiError::Failed))?;
+    if !matches!(result, Err(AiError::Cancelled)) {
+        idle.touch(Instant::now());
+    }
+    result.map_err(ai_error)
+}
+
+/// An AI run's failure for the renderer: its code says which; the words are the panel's.
+fn ai_error(error: model_runtime::AiError) -> PublicError {
+    use model_runtime::AiError;
+    let message_key = match error {
+        AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
+        AiError::Memory => "ai.error.memory",
+        AiError::Busy => "ai.error.busy",
+        AiError::Cancelled | AiError::Failed => "ai.failed",
+    };
+    PublicError {
+        code: error.code(),
+        message_key,
+        record_id: None,
+        note_key: None,
+        retry_after_ms: None,
+    }
 }
 
 #[derive(Serialize)]
@@ -1668,6 +1967,7 @@ async fn vault_unlock(
         }),
     )
     .await?;
+    after_open(store.inner());
     run_blocking(store.inner(), VaultStore::snapshot).await
 }
 
@@ -1765,6 +2065,13 @@ async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> Co
     #[cfg(not(desktop))]
     let _ = (app, locale);
     Ok(())
+}
+
+/// After the vault opens: remote-notice work owed from before (a revocation, a check a push
+/// asked for) runs in the background, so opening never waits on the network.
+fn after_open(store: &Arc<VaultStore>) {
+    let store = Arc::clone(store);
+    tauri::async_runtime::spawn_blocking(move || store.after_open());
 }
 
 #[tauri::command]
@@ -2335,6 +2642,7 @@ async fn vault_recover(
         }),
     )
     .await?;
+    after_open(store.inner());
     Ok(RecoverResponse {
         passphrase_replaced,
         snapshot: run_blocking(store.inner(), VaultStore::snapshot).await?,
@@ -4098,6 +4406,26 @@ pub fn run() {
                     .join("vault-home")
                     .join("attempts.json"),
             ))));
+            // Models live in `models/` beside `vault-home`, never inside it,
+            // so a backup of the vault folder never holds one. A half-copied
+            // file from an earlier run is removed now.
+            let models = Arc::new(local_model::Store::new(
+                app.path().app_local_data_dir()?.join("models"),
+                local_model::CATALOG,
+            ));
+            models.clean_leftovers();
+            // Windows: an existing folder gets the helper's read access too.
+            #[cfg(windows)]
+            if models.dir().exists() {
+                let _ = models.prepare_dir();
+            }
+            // The AI runtime takes its model from this store, and reads free
+            // memory the way this computer allows.
+            model_runtime::init(
+                Box::new(local_model::RuntimeSource(Arc::clone(&models))),
+                Box::new(local_model::SystemMemory),
+            );
+            app.manage(models);
             app.manage(Arc::new(PendingPicks::default()));
             app.manage(Arc::new(ReceivedFiles::default()));
             // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
@@ -4143,7 +4471,15 @@ pub fn run() {
             background_set_keep_running,
             background_set_start_at_login,
             background_report_locale,
+            ai_model_catalog,
             ai_model_status,
+            ai_model_add_picked,
+            ai_model_add_cancel,
+            ai_model_download,
+            ai_model_remove,
+            ai_summarize,
+            ai_explain,
+            ai_cancel,
             kdf_benchmark,
             vault_status,
             vault_passphrase_rules,
@@ -4701,6 +5037,30 @@ mod tests {
         assert_eq!(partial.code, "partial_export");
         assert!(public_error_text(&partial).contains("partial readable copy"));
         assert!(public_error_text(&partial).contains("Delete"));
+    }
+
+    #[test]
+    fn ai_errors_carry_their_code_and_words_the_catalogue_has() {
+        use model_runtime::AiError;
+        for (error, code, words) in [
+            (
+                AiError::NotInstalled,
+                "aiNotInstalled",
+                "isn't on this computer",
+            ),
+            (AiError::Damaged, "aiDamaged", "isn't on this computer"),
+            (AiError::Memory, "aiMemory", "enough free memory"),
+            (AiError::Busy, "aiBusy", "being added or removed"),
+            (AiError::Cancelled, "aiCancelled", "could not finish"),
+            (AiError::Failed, "aiFailed", "could not finish"),
+        ] {
+            let value = serde_json::to_value(ai_error(error)).unwrap();
+            assert_eq!(value["code"], code);
+            assert!(
+                value["message"].as_str().unwrap().contains(words),
+                "{value}"
+            );
+        }
     }
 
     #[test]

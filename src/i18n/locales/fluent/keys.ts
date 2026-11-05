@@ -685,6 +685,12 @@ export const MESSAGE_KEYS = [
   "rename.title.profile",
   "hidden.backToSecurity",
   "interface.history.appVersion",
+  "interface.history.approval.accepted",
+  "interface.history.approval.cancelled",
+  "interface.history.approval.challengeReady",
+  "interface.history.approval.expired",
+  "interface.history.approval.pending",
+  "interface.history.approval.refused",
   "interface.history.damaged",
   "interface.history.damagedAll",
   "interface.history.damagedBefore",
@@ -695,6 +701,12 @@ export const MESSAGE_KEYS = [
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
   "interface.history.event.created",
+  "interface.history.event.deliveryFiled",
+  "interface.history.event.deliveryReceiptSettled",
+  "interface.history.event.deviceApprovalRequestRestarted",
+  "interface.history.event.deviceApprovalRequested",
+  "interface.history.event.deviceApprovalStatusChanged",
+  "interface.history.event.deviceApprovalVerified",
   "interface.history.event.folderCreated",
   "interface.history.event.folderMoved",
   "interface.history.event.folderRenamed",
@@ -703,7 +715,11 @@ export const MESSAGE_KEYS = [
   "interface.history.event.imported",
   "interface.history.event.moved",
   "interface.history.event.passphraseChanged",
+  "interface.history.event.portalLinkStarted",
+  "interface.history.event.portalLinked",
   "interface.history.event.profileCreated",
+  "interface.history.event.profileDetailsChanged",
+  "interface.history.event.readingAidFiled",
   "interface.history.event.recoveryKeySet",
   "interface.history.event.renamed",
   "interface.history.event.restored",
@@ -713,6 +729,7 @@ export const MESSAGE_KEYS = [
   "interface.history.from",
   "interface.history.gap",
   "interface.history.how",
+  "interface.history.how.aidReplaced",
   "interface.history.how.camera",
   "interface.history.how.damaged",
   "interface.history.how.importedShared",
@@ -731,12 +748,15 @@ export const MESSAGE_KEYS = [
   "interface.history.place",
   "interface.history.previousName",
   "interface.history.previousSession",
+  "interface.history.receipt.notFound",
+  "interface.history.receipt.pickedUp",
   "interface.history.rootFolder",
   "interface.history.scopeNote",
   "interface.history.sessionLockedAutomatically",
   "interface.history.sessionLockedByApp",
   "interface.history.sessionLockedByPerson",
   "interface.history.sessionNotRecorded",
+  "interface.history.status",
   "interface.history.title",
   "interface.history.to",
   "ai.summary.button",
@@ -758,6 +778,8 @@ export const MESSAGE_KEYS = [
   "ai.preferences.notInstalled",
   "ai.working",
   "ai.failed",
+  "ai.error.memory",
+  "ai.error.busy",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
   "aiHelper.notice.title",
@@ -852,6 +874,32 @@ export const MESSAGE_KEYS = [
   "notifications.autoPaused",
   "notifications.checkBusy",
   "native.notice.arrival",
+  "ai.model.add",
+  "ai.model.accepted",
+  "ai.model.where",
+  "ai.model.copy",
+  "ai.model.copied",
+  "ai.model.checking",
+  "ai.model.added",
+  "ai.model.installed",
+  "ai.model.remove",
+  "ai.model.removeConfirm",
+  "ai.model.damaged",
+  "ai.model.unsupportedRam",
+  "ai.model.unsupportedCpu",
+  "ai.model.unsupportedPlatform",
+  "ai.model.refusedList",
+  "ai.model.refusedHash",
+  "ai.model.refusedIncomplete",
+  "ai.model.refusedDisk",
+  "ai.model.refusedStorage",
+  "ai.model.refusedBusy",
+  "ai.model.download",
+  "ai.model.downloadNote",
+  "ai.model.downloading",
+  "ai.model.refusedNetwork",
+  "ai.model.refusedUnavailable",
+  "native.filter.models",
   "background.title",
   "background.keepRunning",
   "background.keepRunningHelp",
@@ -1660,6 +1708,14 @@ const FLUENT_IDS_BY_KEY = {
   "rename.title.profile": "rename-title-profile",
   "hidden.backToSecurity": "hidden-backToSecurity",
   "interface.history.appVersion": "interface-history-appVersion",
+  "interface.history.approval.accepted": "interface-history-approval-accepted",
+  "interface.history.approval.cancelled":
+    "interface-history-approval-cancelled",
+  "interface.history.approval.challengeReady":
+    "interface-history-approval-challengeReady",
+  "interface.history.approval.expired": "interface-history-approval-expired",
+  "interface.history.approval.pending": "interface-history-approval-pending",
+  "interface.history.approval.refused": "interface-history-approval-refused",
   "interface.history.damaged": "interface-history-damaged",
   "interface.history.damagedAll": "interface-history-damagedAll",
   "interface.history.damagedBefore": "interface-history-damagedBefore",
@@ -1671,6 +1727,18 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
   "interface.history.event.copySaved": "interface-history-event-copySaved",
   "interface.history.event.created": "interface-history-event-created",
+  "interface.history.event.deliveryFiled":
+    "interface-history-event-deliveryFiled",
+  "interface.history.event.deliveryReceiptSettled":
+    "interface-history-event-deliveryReceiptSettled",
+  "interface.history.event.deviceApprovalRequestRestarted":
+    "interface-history-event-deviceApprovalRequestRestarted",
+  "interface.history.event.deviceApprovalRequested":
+    "interface-history-event-deviceApprovalRequested",
+  "interface.history.event.deviceApprovalStatusChanged":
+    "interface-history-event-deviceApprovalStatusChanged",
+  "interface.history.event.deviceApprovalVerified":
+    "interface-history-event-deviceApprovalVerified",
   "interface.history.event.folderCreated":
     "interface-history-event-folderCreated",
   "interface.history.event.folderMoved": "interface-history-event-folderMoved",
@@ -1683,8 +1751,16 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.event.moved": "interface-history-event-moved",
   "interface.history.event.passphraseChanged":
     "interface-history-event-passphraseChanged",
+  "interface.history.event.portalLinkStarted":
+    "interface-history-event-portalLinkStarted",
+  "interface.history.event.portalLinked":
+    "interface-history-event-portalLinked",
   "interface.history.event.profileCreated":
     "interface-history-event-profileCreated",
+  "interface.history.event.profileDetailsChanged":
+    "interface-history-event-profileDetailsChanged",
+  "interface.history.event.readingAidFiled":
+    "interface-history-event-readingAidFiled",
   "interface.history.event.recoveryKeySet":
     "interface-history-event-recoveryKeySet",
   "interface.history.event.renamed": "interface-history-event-renamed",
@@ -1695,6 +1771,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.from": "interface-history-from",
   "interface.history.gap": "interface-history-gap",
   "interface.history.how": "interface-history-how",
+  "interface.history.how.aidReplaced": "interface-history-how-aidReplaced",
   "interface.history.how.camera": "interface-history-how-camera",
   "interface.history.how.damaged": "interface-history-how-damaged",
   "interface.history.how.importedShared":
@@ -1716,6 +1793,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.place": "interface-history-place",
   "interface.history.previousName": "interface-history-previousName",
   "interface.history.previousSession": "interface-history-previousSession",
+  "interface.history.receipt.notFound": "interface-history-receipt-notFound",
+  "interface.history.receipt.pickedUp": "interface-history-receipt-pickedUp",
   "interface.history.rootFolder": "interface-history-rootFolder",
   "interface.history.scopeNote": "interface-history-scopeNote",
   "interface.history.sessionLockedAutomatically":
@@ -1726,6 +1805,7 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-sessionLockedByPerson",
   "interface.history.sessionNotRecorded":
     "interface-history-sessionNotRecorded",
+  "interface.history.status": "interface-history-status",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
   "ai.summary.button": "ai-summary-button",
@@ -1747,6 +1827,8 @@ const FLUENT_IDS_BY_KEY = {
   "ai.preferences.notInstalled": "ai-preferences-notInstalled",
   "ai.working": "ai-working",
   "ai.failed": "ai-failed",
+  "ai.error.memory": "ai-error-memory",
+  "ai.error.busy": "ai-error-busy",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
   "aiHelper.notice.title": "aiHelper-notice-title",
@@ -1889,6 +1971,32 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.autoPaused": "notifications-autoPaused",
   "notifications.checkBusy": "notifications-checkBusy",
   "native.notice.arrival": "native-notice-arrival",
+  "ai.model.add": "ai-model-add",
+  "ai.model.accepted": "ai-model-accepted",
+  "ai.model.where": "ai-model-where",
+  "ai.model.copy": "ai-model-copy",
+  "ai.model.copied": "ai-model-copied",
+  "ai.model.checking": "ai-model-checking",
+  "ai.model.added": "ai-model-added",
+  "ai.model.installed": "ai-model-installed",
+  "ai.model.remove": "ai-model-remove",
+  "ai.model.removeConfirm": "ai-model-removeConfirm",
+  "ai.model.damaged": "ai-model-damaged",
+  "ai.model.unsupportedRam": "ai-model-unsupportedRam",
+  "ai.model.unsupportedCpu": "ai-model-unsupportedCpu",
+  "ai.model.unsupportedPlatform": "ai-model-unsupportedPlatform",
+  "ai.model.refusedList": "ai-model-refusedList",
+  "ai.model.refusedHash": "ai-model-refusedHash",
+  "ai.model.refusedIncomplete": "ai-model-refusedIncomplete",
+  "ai.model.refusedDisk": "ai-model-refusedDisk",
+  "ai.model.refusedStorage": "ai-model-refusedStorage",
+  "ai.model.refusedBusy": "ai-model-refusedBusy",
+  "ai.model.download": "ai-model-download",
+  "ai.model.downloadNote": "ai-model-downloadNote",
+  "ai.model.downloading": "ai-model-downloading",
+  "ai.model.refusedNetwork": "ai-model-refusedNetwork",
+  "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
+  "native.filter.models": "native-filter-models",
   "background.title": "background-title",
   "background.keepRunning": "background-keepRunning",
   "background.keepRunningHelp": "background-keepRunningHelp",
@@ -2669,6 +2777,12 @@ export interface MessageArgsByKey {
   "rename.title.profile": undefined;
   "hidden.backToSecurity": undefined;
   "interface.history.appVersion": undefined;
+  "interface.history.approval.accepted": undefined;
+  "interface.history.approval.cancelled": undefined;
+  "interface.history.approval.challengeReady": undefined;
+  "interface.history.approval.expired": undefined;
+  "interface.history.approval.pending": undefined;
+  "interface.history.approval.refused": undefined;
   "interface.history.damaged": { date: FluentArgument };
   "interface.history.damagedAll": undefined;
   "interface.history.damagedBefore": { date: FluentArgument };
@@ -2682,6 +2796,12 @@ export interface MessageArgsByKey {
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
   "interface.history.event.created": undefined;
+  "interface.history.event.deliveryFiled": undefined;
+  "interface.history.event.deliveryReceiptSettled": undefined;
+  "interface.history.event.deviceApprovalRequestRestarted": undefined;
+  "interface.history.event.deviceApprovalRequested": undefined;
+  "interface.history.event.deviceApprovalStatusChanged": undefined;
+  "interface.history.event.deviceApprovalVerified": undefined;
   "interface.history.event.folderCreated": undefined;
   "interface.history.event.folderMoved": undefined;
   "interface.history.event.folderRenamed": undefined;
@@ -2690,7 +2810,11 @@ export interface MessageArgsByKey {
   "interface.history.event.imported": undefined;
   "interface.history.event.moved": undefined;
   "interface.history.event.passphraseChanged": undefined;
+  "interface.history.event.portalLinkStarted": undefined;
+  "interface.history.event.portalLinked": undefined;
   "interface.history.event.profileCreated": undefined;
+  "interface.history.event.profileDetailsChanged": undefined;
+  "interface.history.event.readingAidFiled": undefined;
   "interface.history.event.recoveryKeySet": undefined;
   "interface.history.event.renamed": undefined;
   "interface.history.event.restored": undefined;
@@ -2700,6 +2824,7 @@ export interface MessageArgsByKey {
   "interface.history.from": undefined;
   "interface.history.gap": undefined;
   "interface.history.how": undefined;
+  "interface.history.how.aidReplaced": undefined;
   "interface.history.how.camera": undefined;
   "interface.history.how.damaged": undefined;
   "interface.history.how.importedShared": undefined;
@@ -2718,12 +2843,15 @@ export interface MessageArgsByKey {
   "interface.history.place": undefined;
   "interface.history.previousName": undefined;
   "interface.history.previousSession": undefined;
+  "interface.history.receipt.notFound": undefined;
+  "interface.history.receipt.pickedUp": undefined;
   "interface.history.rootFolder": undefined;
   "interface.history.scopeNote": undefined;
   "interface.history.sessionLockedAutomatically": { date: FluentArgument };
   "interface.history.sessionLockedByApp": { date: FluentArgument };
   "interface.history.sessionLockedByPerson": { date: FluentArgument };
   "interface.history.sessionNotRecorded": undefined;
+  "interface.history.status": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
   "ai.summary.button": undefined;
@@ -2749,6 +2877,8 @@ export interface MessageArgsByKey {
   "ai.preferences.notInstalled": undefined;
   "ai.working": undefined;
   "ai.failed": undefined;
+  "ai.error.memory": undefined;
+  "ai.error.busy": undefined;
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
   "aiHelper.notice.title": undefined;
@@ -2843,6 +2973,36 @@ export interface MessageArgsByKey {
   "notifications.autoPaused": undefined;
   "notifications.checkBusy": undefined;
   "native.notice.arrival": undefined;
+  "ai.model.add": undefined;
+  "ai.model.accepted": {
+    licence: FluentArgument;
+    name: FluentArgument;
+    size: FluentArgument;
+  };
+  "ai.model.where": undefined;
+  "ai.model.copy": undefined;
+  "ai.model.copied": undefined;
+  "ai.model.checking": { done: FluentArgument; total: FluentArgument };
+  "ai.model.added": undefined;
+  "ai.model.installed": { name: FluentArgument };
+  "ai.model.remove": undefined;
+  "ai.model.removeConfirm": undefined;
+  "ai.model.damaged": undefined;
+  "ai.model.unsupportedRam": undefined;
+  "ai.model.unsupportedCpu": undefined;
+  "ai.model.unsupportedPlatform": undefined;
+  "ai.model.refusedList": undefined;
+  "ai.model.refusedHash": undefined;
+  "ai.model.refusedIncomplete": undefined;
+  "ai.model.refusedDisk": undefined;
+  "ai.model.refusedStorage": undefined;
+  "ai.model.refusedBusy": undefined;
+  "ai.model.download": undefined;
+  "ai.model.downloadNote": { host: FluentArgument; size: FluentArgument };
+  "ai.model.downloading": { done: FluentArgument; total: FluentArgument };
+  "ai.model.refusedNetwork": undefined;
+  "ai.model.refusedUnavailable": undefined;
+  "native.filter.models": undefined;
   "background.title": undefined;
   "background.keepRunning": undefined;
   "background.keepRunningHelp": undefined;

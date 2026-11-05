@@ -5,14 +5,18 @@ import { useI18n } from "../i18n";
 import type { ModelStatus } from "../ai/types";
 import { NotificationSetting } from "./NotificationSetting";
 import { BackgroundSetting } from "./BackgroundSetting";
+import { AiModelSetting } from "./AiModelSetting";
 
 /** Settings > Preferences: how myCarlos looks on this computer. Nothing here
  * is kept in the vault. `aiStatus` is given on a computer, where the AI
  * helper (#72) can run: null until the native side has answered. */
 export function PreferencesSettings({
   aiStatus,
+  onAiStatus,
 }: {
   aiStatus?: ModelStatus | null;
+  /** The status after the model was added or removed here. */
+  onAiStatus?: (status: ModelStatus) => void;
 }) {
   const native = useNativeZoom();
   const { t } = useI18n();
@@ -54,6 +58,9 @@ export function PreferencesSettings({
                 )}
               </h2>
               <p>{t("ai.preferences.body")}</p>
+              {aiStatus && onAiStatus && (
+                <AiModelSetting status={aiStatus} onStatus={onAiStatus} />
+              )}
             </div>
           </section>
         )}

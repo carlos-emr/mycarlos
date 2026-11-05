@@ -44,7 +44,7 @@ impl ApprovalExchange for NoApprovalRequests {
     }
 }
 
-fn accepted_links() -> [StoredLink; 2] {
+pub(super) fn accepted_links() -> [StoredLink; 2] {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use p256::ecdsa::{signature::Signer, Signature, SigningKey};
 
@@ -547,8 +547,14 @@ fn replace_primary_with_physical_fixture(store: &VaultStore, id: Uuid, bytes: u6
         .sum()
 }
 
-/// These fixtures test the byte budget, not the clock. A debug build reading tens of MiB of
-/// them on a busy machine can outlast the 30-second cycle, which then stops on Deadline first.
+/// The physical-read budget these fixtures are sized against: production's 40 MiB at a tenth,
+/// with the same proportions (two 3/5 records overflow it, one 41/40 record never fits).
+const TEST_PHYSICAL_CAP: usize = 4 * 1024 * 1024;
+const FITTING_FIXTURE: u64 = (TEST_PHYSICAL_CAP * 3 / 5) as u64;
+const OVERSIZED_FIXTURE: u64 = (TEST_PHYSICAL_CAP + TEST_PHYSICAL_CAP / 40) as u64;
+
+/// These fixtures test the byte budget, not the clock. On a busy machine a debug build can
+/// still outlast the 30-second cycle, which would then stop on Deadline first.
 fn physical_fixture_deadline() -> Instant {
     Instant::now() + std::time::Duration::from_secs(15 * 60)
 }
@@ -559,6 +565,7 @@ fn physical_fixture_control(store: &VaultStore) -> crate::document_collection::C
         std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )
     .with_test_deadline(physical_fixture_deadline())
+    .with_test_physical_cap(TEST_PHYSICAL_CAP)
     .with_session(store.portal_session.clone(), store.portal_link_ticket())
 }
 
@@ -591,16 +598,16 @@ fn assert_physical_fixture_unsettled(store: &VaultStore, count: usize) {
 
 #[test]
 fn actual_pending_physical_budget_retains_second_record_for_fresh_cycle() {
-    use crate::document_collection::{ScanCursor, StopReason, MAX_PHYSICAL_READ};
+    use crate::document_collection::{ScanCursor, StopReason};
     let links = accepted_links();
     let (_temp, store, _) = store_with(&links[..1]);
     let link = &links[0];
     let a = super::delivery::automatic_pending_fixture_for_test(&store, link);
     let b = super::delivery::automatic_pending_fixture_for_test(&store, link);
-    let a_bytes = replace_primary_with_physical_fixture(&store, a, 24 * 1024 * 1024);
-    let b_bytes = replace_primary_with_physical_fixture(&store, b, 24 * 1024 * 1024);
-    assert!(a_bytes < MAX_PHYSICAL_READ && b_bytes < MAX_PHYSICAL_READ);
-    assert!(a_bytes + b_bytes > MAX_PHYSICAL_READ);
+    let a_bytes = replace_primary_with_physical_fixture(&store, a, FITTING_FIXTURE);
+    let b_bytes = replace_primary_with_physical_fixture(&store, b, FITTING_FIXTURE);
+    assert!(a_bytes < TEST_PHYSICAL_CAP && b_bytes < TEST_PHYSICAL_CAP);
+    assert!(a_bytes + b_bytes > TEST_PHYSICAL_CAP);
     let expected_b = physical_fixture_delivery_id(&store, b);
     let mut cursor = ScanCursor::default();
     let cycle = physical_fixture_control(&store);
@@ -622,7 +629,7 @@ fn actual_pending_physical_budget_retains_second_record_for_fresh_cycle() {
     assert!(deferred.ready.is_empty() && deferred.budget_deferred && !deferred.manual_required);
     assert_eq!(deferred.damaged, 0);
     assert_eq!(cycle.reason(), Some(StopReason::Budget));
-    assert!(cycle.test_counts().2 <= MAX_PHYSICAL_READ);
+    assert!(cycle.test_counts().2 <= TEST_PHYSICAL_CAP);
     let next = physical_fixture_control(&store);
     let resumed = store
         .pending_receipts_controlled(link, store.portal_link_ticket(), &next, &mut cursor)
@@ -638,16 +645,16 @@ fn actual_pending_physical_budget_retains_second_record_for_fresh_cycle() {
 
 #[test]
 fn actual_pending_other_link_residual_budget_defers_without_damage_or_manual_pause() {
-    use crate::document_collection::{ScanCursor, StopReason, MAX_PHYSICAL_READ};
+    use crate::document_collection::{ScanCursor, StopReason};
     let links = accepted_links();
     let (_temp, store, _) = store_with(&links);
     let a_link = &links[0];
     let b_link = &links[1];
     let a = super::delivery::automatic_pending_fixture_for_test(&store, a_link);
     let b = super::delivery::automatic_pending_fixture_for_test(&store, b_link);
-    let a_bytes = replace_primary_with_physical_fixture(&store, a, 24 * 1024 * 1024);
-    let b_bytes = replace_primary_with_physical_fixture(&store, b, 24 * 1024 * 1024);
-    assert!(a_bytes < MAX_PHYSICAL_READ && b_bytes < MAX_PHYSICAL_READ);
+    let a_bytes = replace_primary_with_physical_fixture(&store, a, FITTING_FIXTURE);
+    let b_bytes = replace_primary_with_physical_fixture(&store, b, FITTING_FIXTURE);
+    assert!(a_bytes < TEST_PHYSICAL_CAP && b_bytes < TEST_PHYSICAL_CAP);
     let expected_b = physical_fixture_delivery_id(&store, b);
     let mut a_cursor = ScanCursor::default();
     let mut b_cursor = ScanCursor::default();
@@ -662,7 +669,7 @@ fn actual_pending_other_link_residual_budget_defers_without_damage_or_manual_pau
     assert!(deferred.ready.is_empty() && deferred.budget_deferred && !deferred.manual_required);
     assert_eq!(deferred.damaged, 0);
     assert_eq!(shared.reason(), Some(StopReason::Budget));
-    assert!(shared.test_counts().2 <= MAX_PHYSICAL_READ);
+    assert!(shared.test_counts().2 <= TEST_PHYSICAL_CAP);
     let fresh = physical_fixture_control(&store);
     let resumed = store
         .pending_receipts_controlled(b_link, store.portal_link_ticket(), &fresh, &mut b_cursor)
@@ -677,7 +684,7 @@ fn actual_pending_other_link_residual_budget_defers_without_damage_or_manual_pau
 
 #[test]
 fn actual_pending_single_record_over_full_budget_requires_manual_only_for_that_link() {
-    use crate::document_collection::{ScanCursor, StopReason, MAX_PHYSICAL_READ};
+    use crate::document_collection::{ScanCursor, StopReason};
     let links = accepted_links();
     let (_temp, store, _) = store_with(&links);
     let a_link = &links[0];
@@ -686,8 +693,8 @@ fn actual_pending_single_record_over_full_budget_requires_manual_only_for_that_l
     let _later_same_link = super::delivery::automatic_pending_fixture_for_test(&store, a_link);
     let other = super::delivery::automatic_pending_fixture_for_test(&store, b_link);
     assert!(
-        replace_primary_with_physical_fixture(&store, oversized, 41 * 1024 * 1024)
-            > MAX_PHYSICAL_READ
+        replace_primary_with_physical_fixture(&store, oversized, OVERSIZED_FIXTURE)
+            > TEST_PHYSICAL_CAP
     );
     let mut a_cursor = ScanCursor::default();
     let cycle = physical_fixture_control(&store);
@@ -700,7 +707,7 @@ fn actual_pending_single_record_over_full_budget_requires_manual_only_for_that_l
         "a valid oversized ciphertext is not damage"
     );
     assert_eq!(cycle.reason(), Some(StopReason::Budget));
-    assert!(cycle.test_counts().2 <= MAX_PHYSICAL_READ);
+    assert!(cycle.test_counts().2 <= TEST_PHYSICAL_CAP);
     let mut b_cursor = ScanCursor::default();
     let fresh = physical_fixture_control(&store);
     let other_pending = store
@@ -719,18 +726,19 @@ fn actual_pending_single_record_over_full_budget_requires_manual_only_for_that_l
 
 #[test]
 fn actual_picker_physical_deferral_prioritizes_other_link_before_repeated_failed_receipt() {
-    use crate::document_collection::{StopReason, MAX_PHYSICAL_READ};
+    use crate::document_collection::StopReason;
     let links = accepted_links();
     let (_temp, store, mut cache) = store_with(&links);
     let a = super::delivery::automatic_pending_fixture_for_test(&store, &links[0]);
     let b = super::delivery::automatic_pending_fixture_for_test(&store, &links[1]);
-    assert!(replace_primary_with_physical_fixture(&store, a, 24 * 1024 * 1024) < MAX_PHYSICAL_READ);
-    assert!(replace_primary_with_physical_fixture(&store, b, 24 * 1024 * 1024) < MAX_PHYSICAL_READ);
+    assert!(replace_primary_with_physical_fixture(&store, a, FITTING_FIXTURE) < TEST_PHYSICAL_CAP);
+    assert!(replace_primary_with_physical_fixture(&store, b, FITTING_FIXTURE) < TEST_PHYSICAL_CAP);
     let attempts = RefCell::new(Vec::new());
     for round in 0..2 {
         let token = Arc::new(AtomicBool::new(false));
         let control = CycleControl::new(Instant::now(), token.clone())
             .with_test_deadline(physical_fixture_deadline())
+            .with_test_physical_cap(TEST_PHYSICAL_CAP)
             .with_session(store.portal_session.clone(), store.portal_link_ticket());
         let result = check_cycle(
             &store,
@@ -760,7 +768,7 @@ fn actual_picker_physical_deferral_prioritizes_other_link_before_repeated_failed
         )
         .unwrap();
         assert_eq!((result.added, result.refused), (0, 0));
-        assert!(control.test_counts().2 <= MAX_PHYSICAL_READ);
+        assert!(control.test_counts().2 <= TEST_PHYSICAL_CAP);
         assert!(
             !cache.needs_manual(),
             "a record fitting fresh allowance is retryable"
@@ -779,15 +787,15 @@ fn actual_picker_physical_deferral_prioritizes_other_link_before_repeated_failed
 
 #[test]
 fn actual_picker_oversized_pending_record_pauses_only_its_link() {
-    use crate::document_collection::{StopReason, MAX_PHYSICAL_READ};
+    use crate::document_collection::StopReason;
     let links = accepted_links();
     let (_temp, store, mut cache) = store_with(&links);
     let oversized = super::delivery::automatic_pending_fixture_for_test(&store, &links[0]);
     let _later_same_link = super::delivery::automatic_pending_fixture_for_test(&store, &links[0]);
     let _other = super::delivery::automatic_pending_fixture_for_test(&store, &links[1]);
     assert!(
-        replace_primary_with_physical_fixture(&store, oversized, 41 * 1024 * 1024)
-            > MAX_PHYSICAL_READ
+        replace_primary_with_physical_fixture(&store, oversized, OVERSIZED_FIXTURE)
+            > TEST_PHYSICAL_CAP
     );
     let first = physical_fixture_control(&store);
     check_cycle(
@@ -800,7 +808,7 @@ fn actual_picker_oversized_pending_record_pauses_only_its_link() {
     )
     .unwrap();
     assert_eq!(first.reason(), Some(StopReason::Budget));
-    assert!(first.test_counts().2 <= MAX_PHYSICAL_READ);
+    assert!(first.test_counts().2 <= TEST_PHYSICAL_CAP);
     assert!(cache.needs_manual());
     let fresh = physical_fixture_control(&store);
     let attempts = RefCell::new(Vec::new());
@@ -822,6 +830,6 @@ fn actual_picker_oversized_pending_record_pauses_only_its_link() {
     assert_eq!(*attempts.borrow(), vec![links[1].id]);
     assert!(cache.needs_manual());
     assert_eq!(fresh.reason(), None);
-    assert!(fresh.test_counts().2 <= MAX_PHYSICAL_READ);
+    assert!(fresh.test_counts().2 <= TEST_PHYSICAL_CAP);
     assert_physical_fixture_unsettled(&store, 3);
 }

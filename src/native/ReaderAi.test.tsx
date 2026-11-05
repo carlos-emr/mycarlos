@@ -1,5 +1,5 @@
 import { humanText } from "../test/humanText";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
@@ -8,7 +8,7 @@ import { PreferencesSettings } from "./PreferencesSettings";
 import type { ReaderAi } from "./ReaderAiPanel";
 import { notInstalledModel } from "../ai/localModel";
 import { LOCALES, translate } from "../i18n";
-import type { LocalModel } from "../ai/types";
+import { ModelCancelled, type LocalModel } from "../ai/types";
 import { fakeDocumentText, fakeLocalModel } from "../test/fakeLocalModel";
 import type { VaultRecord, ViewedPage } from "../vault";
 
@@ -48,23 +48,37 @@ function renderReader(
     strict?: boolean;
     record?: VaultRecord;
     startWithAid?: boolean;
+    beforeFirstUse?: ReaderAi["beforeFirstUse"];
   } = {},
 ) {
   const onOpenPreferences = vi.fn();
   const loadText = vi.fn(
     options.loadText ?? (async () => fakeDocumentText(pageTexts)),
   );
+  const cancelText = vi.fn();
   const reader = (
     <DocumentReader
       record={options.record ?? record}
       startWithAid={options.startWithAid}
       viewPage={vi.fn(async (index: number) => page(index))}
       onClose={vi.fn()}
-      ai={model ? { model, loadText, onOpenPreferences } : undefined}
+      ai={
+        model
+          ? {
+              model,
+              loadText,
+              cancelText,
+              onOpenPreferences,
+              beforeFirstUse: options.beforeFirstUse,
+            }
+          : undefined
+      }
     />
   );
-  render(options.strict ? <StrictMode>{reader}</StrictMode> : reader);
-  return { onOpenPreferences, loadText };
+  const { unmount } = render(
+    options.strict ? <StrictMode>{reader}</StrictMode> : reader,
+  );
+  return { onOpenPreferences, loadText, cancelText, unmount };
 }
 
 const firstPage = () =>
@@ -269,6 +283,218 @@ describe("the reader's AI helper", () => {
     expect(model.calls).toHaveLength(1);
   });
 
+  it.each([
+    ["the panel is closed", "close"],
+    ["the panel switches to Explain", "explain"],
+    ["the reader closes", "reader"],
+  ] as const)(
+    "stops the document's text read when %s before it ends, and asks no model",
+    async (_case, how) => {
+      const model = fakeLocalModel();
+      let finish: (text: ReturnType<typeof fakeDocumentText>) => void = () =>
+        undefined;
+      const { loadText, cancelText, unmount } = renderReader(model, {
+        loadText: () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      });
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      await waitFor(() => expect(loadText).toHaveBeenCalledTimes(1));
+      expect(cancelText).not.toHaveBeenCalled();
+      if (how === "close")
+        await user.click(screen.getByRole("button", { name: "Summary" }));
+      else if (how === "explain")
+        await user.click(
+          screen.getByRole("button", { name: "Explain a term" }),
+        );
+      else unmount();
+      expect(cancelText).toHaveBeenCalledTimes(1);
+      // A text that still arrives is dropped: no model is asked for it.
+      finish(fakeDocumentText(pageTexts));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(model.calls).toEqual([]);
+      expect(
+        screen.queryByText(
+          "Written by AI and may be wrong. Check with your doctor.",
+        ),
+      ).toBeNull();
+    },
+  );
+
+  it.each([false, true])(
+    "stops nothing once the text is read (StrictMode %s)",
+    async (strict) => {
+      const { cancelText, unmount } = renderReader(fakeLocalModel(), {
+        strict,
+      });
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      await screen.findByText(
+        "Written by AI and may be wrong. Check with your doctor.",
+      );
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      unmount();
+      expect(cancelText).not.toHaveBeenCalled();
+    },
+  );
+
+  it("stops no text read for a model that isn't installed", async () => {
+    const { loadText, cancelText, unmount } = renderReader(notInstalledModel);
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText("The AI helper isn't on this computer yet");
+    unmount();
+    expect(loadText).not.toHaveBeenCalled();
+    expect(cancelText).not.toHaveBeenCalled();
+  });
+
+  it("stops the model's answer when the panel closes while it writes, and says nothing", async () => {
+    const model = fakeLocalModel();
+    let asked = false;
+    model.summarize = () => {
+      asked = true;
+      return new Promise(() => undefined);
+    };
+    const { cancelText } = renderReader(model);
+    await firstPage();
+    const user = userEvent.setup();
+    const summary = screen.getByRole("button", { name: "Summary" });
+    await user.click(summary);
+    await waitFor(() => expect(asked).toBe(true));
+    expect(model.cancels).toBe(0);
+    await user.click(summary);
+    expect(model.cancels).toBe(1);
+    // The text was read by then: only the model is stopped.
+    expect(cancelText).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("stops nothing once the answer is written", async () => {
+    const model = fakeLocalModel();
+    const { unmount } = renderReader(model);
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText(
+      "Written by AI and may be wrong. Check with your doctor.",
+    );
+    unmount();
+    expect(model.cancels).toBe(0);
+  });
+
+  it("says nothing when the answer was stopped elsewhere, as by the lock", async () => {
+    const model = fakeLocalModel();
+    model.summarize = async () => {
+      throw new ModelCancelled();
+    };
+    renderReader(model);
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    const panel = screen.getByRole("region", {
+      name: "Summary in plain words",
+    });
+    await waitFor(() => expect(panel).toHaveAttribute("aria-busy", "false"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.queryByText(
+        "Written by AI and may be wrong. Check with your doctor.",
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
+    [{ state: "damaged" } as const],
+    [{ state: "unsupported", reason: "platform" } as const],
+  ])("leads to Preferences when the model is %j", async (status) => {
+    const model = fakeLocalModel({ status });
+    const { onOpenPreferences, loadText } = renderReader(model);
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    const panel = screen.getByRole("region", {
+      name: "Summary in plain words",
+    });
+    expect(
+      await within(panel).findByText(
+        "The AI helper isn't on this computer yet",
+      ),
+    ).toBeVisible();
+    await user.click(
+      within(panel).getByRole("button", { name: "Open Preferences" }),
+    );
+    expect(onOpenPreferences).toHaveBeenCalledTimes(1);
+    expect(loadText).not.toHaveBeenCalled();
+    expect(model.calls).toEqual([]);
+  });
+
+  it("says how far the model read when it had no room for every page", async () => {
+    renderReader(fakeLocalModel({ lastPage: () => 0 }));
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(
+      await screen.findByText(
+        humanText(
+          "This summary covers only the start of the document: pages 1 to 1.",
+        ),
+      ),
+    ).toBeVisible();
+  });
+
+  it("takes no longer term than the native side accepts, typed or pasted", async () => {
+    renderReader(fakeLocalModel());
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    const box = screen.getByRole("textbox", { name: "Word or phrase" });
+    expect(box).toHaveAttribute("maxLength", "200");
+    await user.click(box);
+    await user.paste("x".repeat(250));
+    expect((box as HTMLInputElement).value).toHaveLength(200);
+  });
+
+  it("opens a tool only once the app lets it, and closing never waits", async () => {
+    const model = fakeLocalModel();
+    const opens: (() => void)[] = [];
+    const beforeFirstUse = vi.fn((open: () => void) => {
+      opens.push(open);
+    });
+    const { loadText } = renderReader(model, { beforeFirstUse });
+    await firstPage();
+    const user = userEvent.setup();
+    const summary = screen.getByRole("button", { name: "Summary" });
+    await user.click(summary);
+    expect(beforeFirstUse).toHaveBeenCalledTimes(1);
+    expect(summary).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("region", { name: "Summary in plain words" }),
+    ).toBeNull();
+    expect(loadText).not.toHaveBeenCalled();
+    expect(model.calls).toEqual([]);
+
+    act(() => opens[0]());
+    await screen.findByText(
+      "Written by AI and may be wrong. Check with your doctor.",
+    );
+    expect(model.calls).toHaveLength(1);
+    // Closing the open tool does not ask.
+    await user.click(summary);
+    expect(beforeFirstUse).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("region", { name: "Summary in plain words" }),
+    ).toBeNull();
+  });
+
   it("numbers the last page read by its page, not by the count, when a page failed", async () => {
     // Pages 1, 2 and 4 read, page 3 refused, the rest left out: "pages 1 to 4".
     renderReader(fakeLocalModel(), {
@@ -445,7 +671,7 @@ describe("Preferences", () => {
     expect(within(row).getByText("Not installed")).toBeVisible();
     expect(
       within(row).getByText(
-        "Explains your documents in plain words with an AI model that runs on this computer. Getting the model comes in a later version of myCarlos.",
+        "Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.",
       ),
     ).toBeVisible();
     rerender(<PreferencesSettings />);

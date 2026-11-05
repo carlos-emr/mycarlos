@@ -907,6 +907,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // Preferences on a computer asks whether an AI model is installed (#72).
           case "ai_model_status":
             return { state: "notInstalled" };
+          case "ai_model_catalog":
+            return [];
           case "vault_status":
             return state.status;
           // The background mode (tray icon, start at login): the native side is faked, so what is

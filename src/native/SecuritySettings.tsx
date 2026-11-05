@@ -305,7 +305,10 @@ export function SecuritySettings({
           </div>
         </section>
         {/* #71: the privacy notice says what is kept. */}
-        <section className="setting-row" aria-labelledby="what-is-kept">
+        <section
+          className="setting-row kept-setting"
+          aria-labelledby="what-is-kept"
+        >
           <div>
             <h2 id="what-is-kept">
               {translateNow("interface.SecuritySettings.whatMyCarlosKeeps")}
@@ -315,6 +318,19 @@ export function SecuritySettings({
                 "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne",
               )}
             </p>
+            <p>
+              {translateNow(
+                "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
+              )}
+            </p>
+            <p>
+              {translateNow(
+                "interface.SecuritySettings.startingAgainOrRestoringABackupOver",
+              )}
+            </p>
+          </div>
+          {/* Its controls on the right, as in the other rows. */}
+          <div className="kept-entries">
             <button
               ref={hiddenEntryRef}
               className="button hidden-settings-entry"
@@ -328,11 +344,6 @@ export function SecuritySettings({
                 <span className="hidden-entry-scope">{hiddenScopeName}</span>
               </span>
             </button>
-            <p>
-              {translateNow(
-                "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
-              )}
-            </p>
             <button
               ref={auditEntryRef}
               className="button hidden-settings-entry"
@@ -344,11 +355,6 @@ export function SecuritySettings({
                 {translateNow("interface.history.title")}
               </span>
             </button>
-            <p>
-              {translateNow(
-                "interface.SecuritySettings.startingAgainOrRestoringABackupOver",
-              )}
-            </p>
           </div>
         </section>
         {onOpenAiHelperNotice && (

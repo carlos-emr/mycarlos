@@ -79,7 +79,10 @@ audit deliberately retains upstream package identities, so the original warning 
 advisories remain visible. Linux remains an unsupported compatibility monitor pending security,
 device, and release review. See [the patch record](src-tauri/vendor/README.md).
 GitHub Actions are commit pinned and checkout does not persist credentials. These are inventory
-and pull-request controls, not release provenance.
+and pull-request controls, not release provenance. The Windows and Linux evaluation builds link
+llama.cpp objects restored from a cache that only runs on `main` write (pull requests only read
+it), keyed on the runner image, the Rust toolchain and the dependency files; a supported release
+must build them afresh.
 
 Before a supported release, this repository must protect its release pipeline and bind each
 signed platform artifact to its source revision, lockfiles, SBOM, build identity and provenance
