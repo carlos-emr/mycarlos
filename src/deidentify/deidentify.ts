@@ -29,6 +29,7 @@
  */
 
 import { cleanText, matchingCopy, toSourceRange } from "./textCleaning";
+import allowList from "./eponymAllowList.json";
 
 /** A word or a pattern as it stands in the matching copy: accents and
  * look-alike letters folded, as `matchingCopy` folds the text. Regular
@@ -666,7 +667,11 @@ const CREDENTIAL =
   "(?:MD|M\\.D\\.|NP|RN|RPN|FRCPC|FRCSC|CCFP|PhD|Ph\\.D\\.|PharmD|RPh|MSW|RSW)";
 // Who wrote, signed or sent a document.
 const BY =
-  "(?:(?:[Rr]eferred|[Ss]igned|[Rr]eported|[Dd]ictated|[Tt]ranscribed) by|(?:[Rr]éféré|[Ss]igné|[Dd]icté)e? par)";
+  "(?:(?:[Rr]eferred|[Ss]igned|[Cc]o-signed|[Ee]lectronically signed|[Rr]eported|[Dd]ictated|[Tt]ranscribed|[Rr]ecorded|[Dd]ocumented|[Pp]repared|[Cc]hecked|[Aa]rranged|[Ss]upplied|[Rr]eviewed|[Ee]ntered|[Cc]ompleted|[Vv]erified|[Aa]uthored|[Ww]ritten|[Ss]een|[Ee]xamined) by" +
+  "|(?:[Rr]éféré|[Ss]igné|[Dd]icté|[Nn]oté|[Oo]rganisé|[Vv]érifié|[Pp]réparé|[Rr]édigé|[Pp]araphé|[Ss]aisi|[Rr]evu|[Cc]omplété|[Tt]ransmis|[Ff]ourni|[Vv]u)e? par" +
+  "|(?:[Ff]irmad|[Dd]ictad|[Rr]edactad|[Rr]egistrad|[Pp]reparad|[Rr]evisad|[Ee]laborad)[oa] por" +
+  "|(?:[Aa]ssinad|[Dd]itad|[Rr]edigid|[Rr]egistrad|[Pp]reparad|[Rr]evisad)[oa] por" +
+  "|(?:[Pp]odpisan[oy]|[Ss]porządzon[oy]|[Pp]rzygotowan[oy]|[Zz]atwierdzon[oy]) przez)";
 /** Labels as written, With Capitals and IN CAPITALS, longest first. */
 const anyCase = (labels: string[]) =>
   `(?:${[
@@ -703,11 +708,76 @@ const NAME_LABEL = `${anyCase([
   "Conjoint",
   "Conjointe",
   "Personne à contacter",
+  "Claimant",
+  "Client",
+  "Usager",
+  "Usagère",
+  "Paciente",
+  "Pacjent",
+  "Pacjentka",
+  "Nombre del paciente",
+  "Nome do paciente",
+  "Nombre",
+  "Nome",
+  "Imię i nazwisko",
 ])}(?:[ \\t]*:|[ \\t]+[-–—])`;
 // Other clinicians' titles, in any case and longest first, so "Nurse
 // Practitioner:" is one title, not "Nurse" before a name (#80 review).
 const CLINICIAN_TITLE = anyCase([
+  "Charge nurse",
+  "Triage nurse",
+  "Night nurse",
+  "Staff nurse",
   "Nurse practitioner",
+  "Pharmacy technician",
+  "Technologist",
+  "Technician",
+  "Sonographer",
+  "Radiologist",
+  "Surgeon",
+  "Anesthesiologist",
+  "Paramedic",
+  "Respiratory therapist",
+  "Therapist",
+  "Care coordinator",
+  "Case manager",
+  "Support worker",
+  "Resident",
+  "Physio",
+  "Infirmière clinicienne",
+  "Infirmière auxiliaire",
+  "Radiologiste",
+  "Chirurgien",
+  "Chirurgienne",
+  "Technologue",
+  "Technicien",
+  "Technicienne",
+  "Manipulatrice",
+  "Manipulateur",
+  "Préposée",
+  "Préposé",
+  "Paramédic",
+  "Résident",
+  "Résidente",
+  "Enfermera",
+  "Enfermero",
+  "Enfermera de enlace",
+  "Farmacéutica",
+  "Farmacéutico",
+  "Fisioterapeuta",
+  "Trabajadora social",
+  "Trabajador social",
+  "Enfermeira",
+  "Enfermeiro",
+  "Farmacêutica",
+  "Farmacêutico",
+  "Assistente social",
+  "Pielęgniarka",
+  "Pielęgniarz",
+  "Farmaceuta",
+  "Fizjoterapeuta",
+  "Pracownik socjalny",
+  "Pracowniczka socjalna",
   "Registered nurse",
   "Nurse",
   "Dietitian",
@@ -1255,7 +1325,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:(?:Mr|Mrs|Ms|Miss|Mx|Prof|Mme|Mlle)\\.?|M\\.)[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:(?:Mr|Mrs|Ms|Miss|Mx|Prof|Pr|Mme|Mlle|Sra|Srta|Sr|Don|Doña|Doña|Pani|Pan)\\.?|M\\.)[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -1271,7 +1341,7 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:[Rr]eferring physician|[Pp]hysician|[Pp]rovider|[Oo]rdering provider|[Aa]ttending|[Ss]igned|[Ff]amily doctor|cc|CC|[Cc]opy to|[Mm]édecin traitant|${BY})[ \\t]*:[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CLINICIAN_NAME})`,
+      `(?<![\\p{L}])(?:[Rr]eferring physician|[Pp]hysician|[Pp]rovider|[Oo]rdering provider|[Aa]ttending|[Ss]igned|[Ff]amily doctor|cc|CC|c\\.c\\.|C\\.C\\.|[Cc]opie conforme|[Cc]opy to|[Mm]édecin traitant|${BY})[ \\t]*:[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CLINICIAN_NAME})`,
       "gu",
     ),
     group: 1,
@@ -1322,7 +1392,18 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:(?:${CLINICIAN_TITLE}|NP|RN|RPN|RM|IPS)[ \\t]*:|${CLINICIAN_TITLE}[ \\t]+)[ \\t]*(${CLINICIAN_NAME})`,
+      `(?<![\\p{L}])(?:(?:${CLINICIAN_TITLE}|NP|RN|RPN|RM|IPS)[ \\t]*:|${CLINICIAN_TITLE}[ \\t]*,?[ \\t]+)[ \\t]*(${CLINICIAN_NAME})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // A clinician named in passing by role, in lower case, with a full name: "her
+  // pharmacist, Jordan Example", "la pharmacienne Hélène Example". A single
+  // capitalized word after a lower-case role is too often a place or a service.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:nurse|pharmacist|physiotherapist|physio|social worker|technologist|technician|sonographer|radiologist|surgeon|paramedic|therapist|midwife|dietitian|resident|infirmière|infirmier|pharmacienne|pharmacien|physiothérapeute|radiologue|chirurgienne|chirurgien|technologue|technicienne|technicien|enfermera|enfermero|farmacéutica|farmacéutico|fisioterapeuta|enfermeira|enfermeiro|farmacêutica|farmacêutico|fisioterapeuta|pielęgniarka|pielęgniarz|farmaceuta|fizjoterapeuta)[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -1655,6 +1736,11 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
       )
         continue;
+      if (
+        (rule.kind === "name" || rule.kind === "doctor") &&
+        isMedicalTerm(text, start, start + trimmed.length)
+      )
+        continue;
       const end = start + trimmed.length;
       found.push({
         kind:
@@ -1840,11 +1926,53 @@ const wordPattern = (word: string) =>
 /** A clinical role belongs to this occurrence, never to a surname globally.
  * Matching-copy accents have already been folded. Direct identity findings
  * still win; this prevents their alias sweep from consuming an eponym. */
+/**
+ * Public medical terms a name rule must never remove (the allow-list): an eponym's name word
+ * in one of its clinical phrases ("Guyon's canal", "Romberg test", "Bell's palsy", "maladie
+ * d'Addison"), and a drug name. Without it a word that looks like a name inside such a phrase
+ * would be taken out, and a later "Dr. Guyon" would take every "Guyon" with it.
+ */
+const GUARD_APOSTROPHE = /[’‘`´]/gu;
+const guardKey = (value: string) =>
+  fold(value).toLowerCase().replace(GUARD_APOSTROPHE, "'");
+const EPONYM_FORMS = new Map<string, string[]>();
+for (const entry of allowList.eponyms)
+  for (const token of entry.tokens) {
+    const key = guardKey(token);
+    const forms = EPONYM_FORMS.get(key) ?? [];
+    for (const form of entry.forms) forms.push(guardKey(form));
+    EPONYM_FORMS.set(key, forms);
+  }
+const DRUG_NAMES = new Set(allowList.drugs.map(guardKey));
+const GUARD_REACH = 60;
+function isMedicalTerm(text: string, start: number, end: number): boolean {
+  const span = guardKey(text.slice(start, end));
+  if (DRUG_NAMES.has(span)) return true;
+  const from = Math.max(0, start - GUARD_REACH);
+  const window = guardKey(text.slice(from, end + GUARD_REACH));
+  const spanStart = start - from;
+  const spanEnd = end - from;
+  for (const word of span.split(/[^\p{L}'-]+/u)) {
+    const forms = EPONYM_FORMS.get(word);
+    if (!forms) continue;
+    for (const form of forms) {
+      for (
+        let at = window.indexOf(form);
+        at >= 0;
+        at = window.indexOf(form, at + 1)
+      )
+        if (at < spanEnd && spanStart < at + form.length) return true;
+    }
+  }
+  return false;
+}
+
 function clinicalNameOccurrence(
   text: string,
   start: number,
   end: number,
 ): boolean {
+  if (isMedicalTerm(text, start, end)) return true;
   // Only the words next to the name matter, so only a short stretch on each
   // side is read: on a page read as one very long line the whole line would
   // be copied and scanned for every place a name stands.
