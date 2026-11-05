@@ -1936,13 +1936,28 @@ const GUARD_APOSTROPHE = /[’‘`´]/gu;
 const guardKey = (value: string) =>
   fold(value).toLowerCase().replace(GUARD_APOSTROPHE, "'");
 const EPONYM_FORMS = new Map<string, string[]>();
-for (const entry of allowList.eponyms)
+for (const entry of allowList.eponyms) {
+  // An eponym named for several people stands alone too: "Wolff-Parkinson-White".
+  const together =
+    entry.tokens.length > 1
+      ? [guardKey(entry.tokens.join("-")), guardKey(entry.tokens.join(" "))]
+      : [];
   for (const token of entry.tokens) {
-    const key = guardKey(token);
-    const forms = EPONYM_FORMS.get(key) ?? [];
-    for (const form of entry.forms) forms.push(guardKey(form));
-    EPONYM_FORMS.set(key, forms);
+    // The whole token ("De Quervain") and each of its words ("Wolff" of
+    // "Wolff-Parkinson-White") lead to the phrases it stands in.
+    const whole = guardKey(token);
+    for (const key of new Set([whole, ...whole.split(/[\s-]+/u)])) {
+      if (key.length < 3) continue;
+      const forms = EPONYM_FORMS.get(key) ?? [];
+      // A name of several words is also guarded as it stands alone
+      // ("Wolff-Parkinson-White", "De Quervain"), not only inside a phrase.
+      if (/[\s-]/u.test(whole)) forms.push(whole);
+      forms.push(...together);
+      for (const form of entry.forms) forms.push(guardKey(form));
+      EPONYM_FORMS.set(key, forms);
+    }
   }
+}
 const DRUG_NAMES = new Set(allowList.drugs.map(guardKey));
 const GUARD_REACH = 60;
 function isMedicalTerm(text: string, start: number, end: number): boolean {
@@ -1952,7 +1967,7 @@ function isMedicalTerm(text: string, start: number, end: number): boolean {
   const window = guardKey(text.slice(from, end + GUARD_REACH));
   const spanStart = start - from;
   const spanEnd = end - from;
-  for (const word of span.split(/[^\p{L}'-]+/u)) {
+  for (const word of new Set([span, ...span.split(/[^\p{L}'-]+/u)])) {
     const forms = EPONYM_FORMS.get(word);
     if (!forms) continue;
     for (const form of forms) {

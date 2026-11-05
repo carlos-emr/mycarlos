@@ -44,30 +44,30 @@ describe("names the app was not told, found by what stands around them", () => {
 });
 
 describe("eponyms and drug names are never taken for names", () => {
-  const terms = [
-    "Guillain-Barré syndrome",
-    "Behçet disease",
-    "Horner syndrome",
-    "De Quervain tenosynovitis",
-    "Bell's palsy",
-    "Wolff-Parkinson-White",
-    "Guyon's canal",
-    "Romberg test",
-    "Lasix 40 mg",
+  // [clinical phrase, a doctor with the eponym's name]
+  const pairs = [
+    ["Guillain-Barré syndrome", "Guillain"],
+    ["Horner syndrome", "Horner"],
+    ["De Quervain tenosynovitis", "Quervain"],
+    ["Bell's palsy", "Bell"],
+    ["Wolff-Parkinson-White", "Wolff"],
+    ["Guyon's canal", "Guyon"],
+    ["Romberg test", "Romberg"],
   ];
+  const alone = ["Behçet disease", "Lasix 40 mg"];
 
-  it.each(terms)("%s stays, with a doctor of the same name removed", (term) => {
-    const word = term.split(/[ '’-]/)[0];
-    const out = send(`${term} was noted. Seen by Dr. ${word} today.`);
+  it.each(pairs)("%s stays, with a Dr. %s removed", (term, doctor) => {
+    const out = send(`${term} was noted. Seen by Dr. ${doctor} today.`);
     expect(out).toContain(term);
-    expect(out).not.toContain(`Dr. ${word}`);
+    expect(out).not.toContain(`Dr. ${doctor}`);
   });
 
   it("keeps every term when all stand in one document with their doctors", () => {
     const out = send(
-      `${terms.join(". ")}. Seen by Dr. Guyon and Dr. Romberg and Dr. Bell.`,
+      `${[...pairs.map(([term]) => term), ...alone].join(". ")}. Seen by Dr. Guyon and Dr. Romberg and Dr. Bell.`,
     );
-    for (const term of terms) expect(out).toContain(term);
+    for (const term of [...pairs.map(([t]) => t), ...alone])
+      expect(out).toContain(term);
     expect(out).toMatch(/Dr\. \[DOCTOR \d\] and Dr\. \[DOCTOR \d\]/);
   });
 });
