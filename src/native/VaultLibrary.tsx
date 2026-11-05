@@ -2580,11 +2580,12 @@ export function VaultLibrary({
                           .cancelDocumentText(readerReadId)
                           .catch(() => undefined),
                       kept: {
+                        recordId: readerRecord.id,
                         list: () => bridge.aiResults(readerRecord.id),
                         read: (resultId) =>
                           bridge.readAiResult(readerRecord.id, resultId),
-                        save: (input, content) =>
-                          bridge.saveAiResult(readerRecord.id, input, content),
+                        save: (keptId, sources) =>
+                          bridge.saveAiResult(readerRecord.id, keptId, sources),
                       },
                       onOpenPreferences: () => {
                         setReaderRecordId(null);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { formatDate, getLocale, t as translateNow, useI18n } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
-import { keptInput, keptSummary, type KeptAnswers } from "../ai/kept";
+import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
 import {
   ModelCancelled,
   ModelNotInstalled,
@@ -129,13 +129,15 @@ export function ReaderAiPanel({
     else setFailed(true);
   };
 
-  // Keeps an answer with the document; a failure is said, not hidden, and
-  // the answer stays on screen.
+  // Keeps an answer with the document: the one the native side kept for it
+  // (`keptId`), with a summary's source places. A failure is said, not
+  // hidden, and the answer stays on screen.
   const keep = async (result: SummaryResult | ExplainResult) => {
     const kept = aiRef.current.kept;
     if (!kept) return;
     try {
-      await kept.save(keptInput(result), JSON.stringify(result));
+      if (!result.keptId) throw new Error("not kept natively");
+      await kept.save(result.keptId, keptSources(result));
     } catch (failure) {
       // A document full of kept answers (32, hidden ones included: nothing
       // is deleted, D3) says so; any other failure is the general one.
@@ -189,7 +191,13 @@ export function ReaderAiPanel({
           return;
         }
         const result = await asModel(() =>
-          summarizeDocument(aiRef.current.model, document, lang),
+          summarizeDocument(
+            aiRef.current.model,
+            document,
+            lang,
+            Date.now,
+            aiRef.current.kept?.recordId,
+          ),
         );
         if (!live.current) return;
         setFromKept(false);
@@ -209,7 +217,14 @@ export function ReaderAiPanel({
     setFailed(false);
     setKeepFailed(null);
     asModel(() =>
-      explainTerm(aiRef.current.model, asked, contextFor(asked), lang),
+      explainTerm(
+        aiRef.current.model,
+        asked,
+        contextFor(asked),
+        lang,
+        Date.now,
+        aiRef.current.kept?.recordId,
+      ),
     )
       .then(async (result) => {
         if (!live.current) return;

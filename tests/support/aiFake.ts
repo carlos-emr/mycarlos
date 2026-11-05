@@ -231,6 +231,35 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           ticket: `FAKE-ticket-${tickets}`,
         };
       };
+      // As the native side does (#212): an answer asked for a document (a
+      // summary with its text read's ticket, an explanation with the record)
+      // waits under a keptId until a save names it.
+      const waiting: {
+        keptId: string;
+        recordId: unknown;
+        request: Record<string, unknown>;
+        tool: "summary" | "explain";
+        answer: Record<string, unknown>;
+      }[] = [];
+      let keptIds = 0;
+      const keptFor = (command: string, args: Args, result: unknown) => {
+        const request = args.request ?? {};
+        const c = setup.commands;
+        const summary =
+          command === c.summarize && request.recordId && request.ticket;
+        const explain = command === c.explain && request.recordId;
+        if (!summary && !explain) return result;
+        keptIds += 1;
+        const keptId = `FAKE-native-kept-${keptIds}`;
+        waiting.push({
+          keptId,
+          recordId: request.recordId,
+          request: structuredClone(request),
+          tool: summary ? "summary" : "explain",
+          answer: structuredClone(result) as Record<string, unknown>,
+        });
+        return { ...(result as object), keptId };
+      };
       const answer = (command: string, args: Args): unknown => {
         const request = args.request ?? {};
         const c = setup.commands;
@@ -265,14 +294,72 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           // per question (tool, language, term), the newest; the older ones
           // hidden, never deleted (D3).
           case c.keptSave: {
-            const input = (request.result ?? {}) as Record<string, unknown>;
+            const found = waiting.find(
+              (entry) =>
+                entry.keptId === request.keptId &&
+                entry.recordId === request.recordId,
+            );
+            if (!found) throw refusal("invalid", "native.error.19");
+            waiting.splice(waiting.indexOf(found), 1);
+            const model = found.answer.model as {
+              name: string;
+              sha256: string;
+            };
+            const lang = String(found.request.lang);
+            const term =
+              found.tool === "explain"
+                ? String(found.request.term).trim()
+                : undefined;
+            const input: Record<string, unknown> = {
+              tool: found.tool,
+              lang,
+              ...(term ? { term } : {}),
+              modelName: model.name,
+              modelSha256: model.sha256,
+            };
+            // The content in the reader's own shape, built from the kept
+            // answer; page code gave only the source places.
+            const sources = (request.sources ?? []) as unknown[];
+            const pages = (found.request.pages ?? []) as {
+              index: number;
+              text: string;
+            }[];
+            const lastPage = Number(found.answer.lastPage ?? 0);
+            const stored =
+              found.tool === "summary"
+                ? {
+                    tool: "summary",
+                    sentences: (
+                      found.answer.sentences as Record<string, unknown>[]
+                    ).map((sentence, index) => ({
+                      ...sentence,
+                      source: sources[index] ?? null,
+                    })),
+                    model,
+                    lang,
+                    createdAt: Date.now(),
+                    partial:
+                      lastPage < (pages.at(-1)?.index ?? 0) ||
+                      found.answer.lastPageCut === true,
+                    lastPage: pages.length ? lastPage + 1 : 0,
+                    pagesMissing: pages.some((page) => !page.text.trim()),
+                  }
+                : {
+                    tool: "explain",
+                    term,
+                    context: String(found.request.context ?? ""),
+                    text: String(found.answer.text),
+                    model,
+                    lang,
+                    createdAt: Date.now(),
+                  };
             const same = (entry: (typeof kept)[number]) =>
               entry.recordId === request.recordId &&
               entry.info.tool === input.tool &&
               entry.info.lang === input.lang &&
               entry.info.term === input.term;
             for (const entry of kept) if (same(entry)) entry.hidden = true;
-            const content = String(request.content ?? "");
+            const content = JSON.stringify(stored);
             const info = {
               ...structuredClone(input),
               id: `FAKE-kept-${kept.length + 1}`,
@@ -436,10 +523,10 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
                 reject,
               }),
           );
-          if (ended) return ended.answer;
+          if (ended) return keptFor(command, args, ended.answer);
         }
         const scripted = answers[command]?.shift();
-        if (scripted !== undefined) return scripted;
+        if (scripted !== undefined) return keptFor(command, args, scripted);
         if (copying) emit(setup.progressEvent, { done: total, total });
         const refused = refusals[command]?.shift();
         if (refused) {
@@ -447,7 +534,7 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           if (refused === "aiDamaged") model = { state: "damaged" };
           throw refusal(refused, "ai.failed");
         }
-        return answer(command, args);
+        return keptFor(command, args, answer(command, args));
       };
     },
     {

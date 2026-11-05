@@ -1,5 +1,5 @@
-import type { AiResultInfo, AiResultInput } from "../vault";
-import type { ExplainResult, SummaryResult } from "./types";
+import type { AiResultInfo } from "../vault";
+import type { ExplainResult, SourceSpan, SummaryResult } from "./types";
 
 /**
  * Answers kept with the document (#72 part D step 2): how the reader reads
@@ -8,9 +8,14 @@ import type { ExplainResult, SummaryResult } from "./types";
  * shown: a damaged or foreign one is treated as absent, never guessed at.
  */
 export interface KeptAnswers {
+  /** The document they are kept with: the model is asked to keep each
+   * answer for it natively, for `save`. */
+  recordId: string;
   list(): Promise<AiResultInfo[]>;
   read(resultId: string): Promise<string>;
-  save(input: AiResultInput, content: string): Promise<AiResultInfo>;
+  /** Keeps the answer the native side kept under `keptId` (#212). A
+   * summary gives each sentence's source place, as the reader found it. */
+  save(keptId: string, sources?: (SourceSpan | null)[]): Promise<AiResultInfo>;
 }
 
 const isNumber = (value: unknown): value is number =>
@@ -81,17 +86,15 @@ export function parseKeptSummary(text: string): SummaryResult | null {
   };
 }
 
-/** What the vault is told about an answer it keeps. */
-export function keptInput(
+/** What page code adds to an answer it asks the vault to keep: a summary's
+ * source places, one per sentence. The words, model, language and flags
+ * are the native side's own (#212). */
+export function keptSources(
   result: SummaryResult | ExplainResult,
-): AiResultInput {
-  return {
-    tool: result.tool,
-    lang: result.lang,
-    ...(result.tool === "explain" ? { term: result.term } : {}),
-    modelName: result.model.name,
-    modelSha256: result.model.sha256,
-  };
+): (SourceSpan | null)[] | undefined {
+  return result.tool === "summary"
+    ? result.sentences.map((sentence) => sentence.source)
+    : undefined;
 }
 
 /** The kept answer for a summary in `lang`, if the vault has one. */

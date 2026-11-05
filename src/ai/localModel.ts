@@ -7,7 +7,7 @@ import {
   type DocumentText,
   type ExplainResult,
   type LocalModel,
-  type ModelInfo,
+  type ModelExplanation,
   type ModelSentence,
   type ModelStatus,
   type ModelSummary,
@@ -43,12 +43,17 @@ export function modelRunsHere(status: ModelStatus | null | undefined): boolean {
 /** The native commands the model runs through (#72, the model runtime). */
 export interface ModelBridge {
   aiModelStatus(): Promise<ModelStatus>;
-  aiSummarize(pages: DocumentPageText[], lang: string): Promise<ModelSummary>;
+  aiSummarize(
+    pages: DocumentPageText[],
+    lang: string,
+    keep?: { recordId: string; ticket: string },
+  ): Promise<ModelSummary>;
   aiExplain(
     term: string,
     context: string,
     lang: string,
-  ): Promise<{ text: string; model: ModelInfo }>;
+    recordId?: string,
+  ): Promise<ModelExplanation>;
   aiCancel(): Promise<void>;
 }
 
@@ -69,12 +74,20 @@ export function nativeLocalModel(bridge: ModelBridge): LocalModel {
   };
   return {
     status: () => bridge.aiModelStatus(),
-    // The pages as read: the model takes whole pages, in order, while they
-    // fit, and says which was the last.
-    summarize: (document, lang) =>
-      bridge.aiSummarize(document.pages, lang).catch(refused),
-    explain: (term, context, lang) =>
-      bridge.aiExplain(term, context, lang).catch(refused),
+    // The pages as read, unchanged: the model takes whole pages, in order,
+    // while they fit, and says which was the last. Kept for a document's
+    // save (#212), the native side checks they are the pages that the text
+    // read with this ticket gave.
+    summarize: (document, lang, keepFor) =>
+      bridge
+        .aiSummarize(
+          document.pages,
+          lang,
+          keepFor ? { recordId: keepFor, ticket: document.ticket } : undefined,
+        )
+        .catch(refused),
+    explain: (term, context, lang, keepFor) =>
+      bridge.aiExplain(term, context, lang, keepFor).catch(refused),
     cancel: () => void bridge.aiCancel().catch(() => undefined),
   };
 }
@@ -96,10 +109,12 @@ export async function summarizeDocument(
   document: DocumentText,
   lang: string,
   now: () => number = Date.now,
+  keepFor?: string,
 ): Promise<SummaryResult> {
-  const written = await model.summarize(document, lang);
+  const written = await model.summarize(document, lang, keepFor);
   return {
     tool: "summary",
+    ...(written.keptId ? { keptId: written.keptId } : {}),
     sentences: withSources(document, written.sentences),
     model: written.model,
     lang,
@@ -127,10 +142,12 @@ export async function explainTerm(
   context: string,
   lang: string,
   now: () => number = Date.now,
+  keepFor?: string,
 ): Promise<ExplainResult> {
-  const written = await model.explain(term, context, lang);
+  const written = await model.explain(term, context, lang, keepFor);
   return {
     tool: "explain",
+    ...(written.keptId ? { keptId: written.keptId } : {}),
     term,
     context,
     text: written.text,
