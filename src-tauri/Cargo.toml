@@ -144,6 +144,12 @@ opt-level = 3
 [profile.dev.package.zxcvbn]
 opt-level = 3
 
+# The AI model's file (2-4 GB) is hashed again before every start of its helper (#72): unoptimized,
+# SHA-256 runs at about 17 MB/s here (146 s for a 2.5 GB model), optimized at about 600 MB/s (4 s).
+# The evaluation installers are debug builds.
+[profile.dev.package.sha2]
+opt-level = 3
+
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
