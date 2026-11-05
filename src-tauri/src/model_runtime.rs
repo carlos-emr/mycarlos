@@ -8,8 +8,8 @@
 //! their sizes, the term and its sentence, and the language.
 
 use crate::local_runner::{
-    self, check_budget, Budget, MemoryProbe, ModelInfo, Page, Runner, RunnerConfig, RunnerError,
-    Sentence, SummaryRequest,
+    self, check_budget, AnswerLimit, Budget, MemoryProbe, ModelInfo, Page, Runner, RunnerConfig,
+    RunnerError, Sentence, SummaryRequest,
 };
 use crate::model_helper;
 use serde::{Deserialize, Serialize};
@@ -27,8 +27,19 @@ pub(crate) const MAX_TERM_CHARS: usize = 200;
 pub(crate) const MAX_CONTEXT_CHARS: usize = 2_000;
 /// The longest wait for the helper's hello once started: loading 2 to 4 GB.
 pub(crate) const START_TIMEOUT: Duration = Duration::from_secs(120);
-/// The longest wait for one answer.
-pub(crate) const ANSWER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// How long one answer may take (#72), scaled to its prompt: the prompt read at about 6.7
+/// tokens a second and an answer of up to 400 tokens for a summary (an explanation's 220-token
+/// cap) at about 1.7 a second, after 30 s. Never under 5 minutes, never over 20. Measured on a
+/// 4-core test computer with other builds running (5 Nov 2026), Qwen3.5 4B read 8.5 to 12
+/// prompt tokens a second and wrote 2.1 to 3.0; the prompt estimate also runs long, so the
+/// limit was about twice the time taken.
+pub(crate) const ANSWER_LIMIT: AnswerLimit = AnswerLimit {
+    fixed: Duration::from_secs(30),
+    per_prompt_token: Duration::from_millis(150),
+    per_answer_token: Duration::from_millis(600),
+    floor: Duration::from_secs(5 * 60),
+    ceiling: Duration::from_secs(20 * 60),
+};
 /// Above the model's own size: its cache at the context used, and the runtime's memory.
 const WORKING_BYTES: u64 = 3 * 512 * 1024 * 1024;
 /// The helper's memory limit above the model's size.
@@ -353,7 +364,7 @@ fn idle_config() -> RunnerConfig {
         args: Vec::new(),
         needed_bytes: u64::MAX,
         start_timeout: START_TIMEOUT,
-        answer_timeout: ANSWER_TIMEOUT,
+        answer_limit: ANSWER_LIMIT,
         memory_limit_bytes: None,
         expected_model: None,
         model_file: None,
@@ -394,7 +405,7 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
         args,
         needed_bytes: needed_after_verifying(verified.size_bytes),
         start_timeout: START_TIMEOUT,
-        answer_timeout: ANSWER_TIMEOUT,
+        answer_limit: ANSWER_LIMIT,
         memory_limit_bytes: Some(verified.size_bytes.saturating_add(LIMIT_BYTES)),
         expected_model: Some(verified.info.clone()),
         model_file: Some(Arc::new(file)),
@@ -519,6 +530,20 @@ mod tests {
         ] {
             assert_eq!(check_explain(&request), Err(AiError::Failed));
         }
+    }
+
+    #[test]
+    fn an_answer_may_take_five_minutes_at_least_twenty_at_most_and_longer_for_a_longer_prompt() {
+        assert_eq!(ANSWER_LIMIT.for_request(0, 0), Duration::from_secs(5 * 60));
+        // The FAKE discharge summary (3,563 bytes): about 1,938 prompt tokens, estimated long.
+        assert_eq!(
+            ANSWER_LIMIT.for_request(1_938, 400),
+            Duration::from_millis(30_000 + 1_938 * 150 + 400 * 600)
+        );
+        assert_eq!(
+            ANSWER_LIMIT.for_request(model_helper::CONTEXT_TOKENS, 400),
+            Duration::from_secs(20 * 60)
+        );
     }
 
     #[test]
@@ -780,7 +805,7 @@ pub mod testing {
                 ],
                 needed_bytes: 0,
                 start_timeout: Duration::from_secs(30),
-                answer_timeout,
+                answer_limit: crate::local_runner::AnswerLimit::fixed(answer_timeout),
                 memory_limit_bytes: Some(1024 * 1024 * 1024),
                 expected_model: Some(ModelInfo {
                     name: model_helper::STUB_NAME.to_owned(),
