@@ -1406,6 +1406,8 @@ interface-history-empty = 没有任何记录事件。
 
 interface-history-error-unverified = 无法读取并验证记录，因此不显示任何事件。
 
+interface-history-event-aiResultSaved = AI 回答已保存
+
 interface-history-event-backupRestored = 备份已还原
 
 interface-history-event-backupSaved = 加密备份已保存
@@ -1473,6 +1475,10 @@ interface-history-how = 方式
 interface-history-how-aidReplaced = 替换了之前的阅读辅助
 
 interface-history-how-camera = 使用相机添加
+
+interface-history-how-summary = 通俗易懂的摘要
+
+interface-history-how-explain = 已解释术语
 
 interface-history-how-damaged = 因文件遗失而隐藏
 
@@ -1820,3 +1826,9 @@ notifications-autoAllow = 保险库解锁时自动检查诊所文档
 notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
 notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
 notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。
+
+ai-summary-again = 重新生成摘要
+
+ai-keepFailed = myCarlos 无法将此回答与文档一起保存。此处仍会显示该回答。
+
+ai-keepFull = 此文档保存的 AI 回答已达上限。新的回答会显示，但不会保存。

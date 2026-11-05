@@ -14,7 +14,7 @@ use crate::local_runner::{
 use crate::model_helper;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 /// At most this many pages, each at most this many bytes, all at most this many: the reader's
@@ -202,6 +202,9 @@ pub(crate) struct ModelRuntime {
     probe: Box<dyn MemoryProbe>,
     /// Builds the helper's start from the verified model.
     launch: fn(&Verified) -> Result<RunnerConfig, AiError>,
+    /// The model the last answer here came from: the vault keeps an answer
+    /// only under the model that gave one (#212).
+    answered: Mutex<Option<ModelInfo>>,
 }
 
 impl ModelRuntime {
@@ -215,7 +218,21 @@ impl ModelRuntime {
             source,
             probe,
             launch,
+            answered: Mutex::new(None),
         }
+    }
+
+    /// The model the last answer here came from, if one has: what an answer
+    /// the vault is asked to keep must name.
+    pub(crate) fn answered_model(&self) -> Option<ModelInfo> {
+        self.answered
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn answered_by(&self, model: &ModelInfo) {
+        *self.answered.lock().unwrap_or_else(PoisonError::into_inner) = Some(model.clone());
     }
 
     /// The runner, for the lock to stop (`local_runner::install`).
@@ -283,6 +300,7 @@ impl ModelRuntime {
                 },
             )
             .map_err(|error| from_runner(&error))?;
+        self.answered_by(&summary.model);
         Ok(SummaryResult {
             sentences: summary.sentences,
             model: summary.model,
@@ -300,6 +318,7 @@ impl ModelRuntime {
             .runner
             .explain(ticket, request.term.trim(), &request.context, &request.lang)
             .map_err(|error| from_runner(&error))?;
+        self.answered_by(&model);
         Ok(ExplainResult { text, model })
     }
 
@@ -690,6 +709,17 @@ mod tests {
             Err(AiError::Failed)
         );
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_refused_run_names_no_model_for_the_vault_to_keep_an_answer_under() {
+        let (bad, _) = fake(Some(GIB), Err(Unavailable::Damaged));
+        let runtime = runtime(bad, Some(64 * GIB));
+        assert_eq!(runtime.answered_model(), None);
+        assert!(runtime
+            .summarize(summary(vec![page(0, "FAKE text")], "en"))
+            .is_err());
+        assert_eq!(runtime.answered_model(), None);
     }
 
     #[cfg(target_os = "linux")]

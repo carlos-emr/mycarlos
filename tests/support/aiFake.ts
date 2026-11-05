@@ -38,6 +38,10 @@ export const AI_COMMANDS = {
   knownDetails: "vault_record_known_details",
   exportPick: "vault_export_text_pick",
   exportPicked: "vault_export_text_picked",
+  // The answers kept with a document, in the vault (#212).
+  keptList: "vault_ai_results",
+  keptSave: "vault_ai_result_save",
+  keptRead: "vault_ai_result_read",
 } as const;
 
 type AiCommand = (typeof AI_COMMANDS)[keyof typeof AI_COMMANDS];
@@ -111,6 +115,13 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       // What the model is now: adding or removing it changes it.
       let model = structuredClone(setup.model);
       const refusals: Record<string, string[]> = {};
+      let kept: {
+        recordId: unknown;
+        info: Record<string, unknown>;
+        content: string;
+        /** Hidden by a newer answer to the same question: kept, not shown. */
+        hidden: boolean;
+      }[] = [];
       const calls: { command: string; args: Args }[] = [];
       const cancelled: { command: string; by: string }[] = [];
       const holds = new Set<string>();
@@ -250,6 +261,48 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             return setup.pickId;
           case c.exportPicked:
             return { saved: true, hits: [] };
+          // Kept in memory, as the vault keeps them per document: one shown
+          // per question (tool, language, term), the newest; the older ones
+          // hidden, never deleted (D3).
+          case c.keptSave: {
+            const input = (request.result ?? {}) as Record<string, unknown>;
+            const same = (entry: (typeof kept)[number]) =>
+              entry.recordId === request.recordId &&
+              entry.info.tool === input.tool &&
+              entry.info.lang === input.lang &&
+              entry.info.term === input.term;
+            for (const entry of kept) if (same(entry)) entry.hidden = true;
+            const content = String(request.content ?? "");
+            const info = {
+              ...structuredClone(input),
+              id: `FAKE-kept-${kept.length + 1}`,
+              createdAtMs: Date.now(),
+              size: content.length,
+            };
+            kept.unshift({
+              recordId: request.recordId,
+              info,
+              content,
+              hidden: false,
+            });
+            return structuredClone(info);
+          }
+          case c.keptList:
+            return kept
+              .filter(
+                (entry) => entry.recordId === request.recordId && !entry.hidden,
+              )
+              .map((entry) => structuredClone(entry.info));
+          case c.keptRead: {
+            const found = kept.find(
+              (entry) =>
+                entry.recordId === request.recordId &&
+                entry.info.id === request.resultId &&
+                !entry.hidden,
+            );
+            if (!found) throw refusal("not_found", "ai.failed");
+            return found.content;
+          }
           case c.summarize: {
             if (model.state !== "installed")
               throw refusal("aiNotInstalled", "ai.failed");

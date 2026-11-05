@@ -908,5 +908,11 @@
   "ai.model.downloading",
   "ai.model.refusedNetwork",
   "ai.model.refusedUnavailable",
-  "native.filter.models"
+  "native.filter.models",
+  "interface.history.event.aiResultSaved",
+  "interface.history.how.summary",
+  "interface.history.how.explain",
+  "ai.summary.again",
+  "ai.keepFailed",
+  "ai.keepFull"
 ]

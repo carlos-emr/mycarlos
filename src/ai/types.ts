@@ -104,6 +104,8 @@ export interface SummaryResult {
   partial: boolean;
   /** The last page read, by its number from 1 (0 when none was). */
   lastPage: number;
+  /** True when a page had no text, was cut short or could not be read. */
+  pagesMissing: boolean;
 }
 
 export interface ExplainResult {
