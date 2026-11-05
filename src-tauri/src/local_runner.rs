@@ -253,6 +253,9 @@ pub(crate) struct Summary {
     pub(crate) last_page_cut: bool,
     /// How many quotes were not in the pages read, and were emptied.
     pub(crate) unlocated: usize,
+    /// What those quotes said, for measuring a model's quoting (tests print them); never shown.
+    #[allow(dead_code)]
+    pub(crate) unlocated_quotes: Vec<String>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -366,6 +369,8 @@ pub(crate) struct Runner {
     status: Mutex<RunnerStatus>,
     /// The generation of requests still wanted from this runner.
     generation: AtomicU64,
+    /// How the last answer was made, when the model said.
+    last_stats: Mutex<Option<crate::model_helper::Stats>>,
 }
 
 #[derive(Deserialize)]
@@ -388,6 +393,9 @@ struct Answer {
     text: Option<String>,
     #[serde(default)]
     error: Option<String>,
+    /// How the helper made it (counts and times), for measuring.
+    #[serde(default)]
+    stats: Option<crate::model_helper::Stats>,
 }
 
 const HELLO: &str = crate::model_helper::CONTRACT;
@@ -403,6 +411,7 @@ impl Runner {
             sidecar: Mutex::new(None),
             status: Mutex::new(RunnerStatus::NotInstalled),
             generation: AtomicU64::new(0),
+            last_stats: Mutex::new(None),
         }
     }
 
@@ -551,6 +560,12 @@ impl Runner {
         });
     }
 
+    /// How the last answer was made, when the model said (counts and times only).
+    #[allow(dead_code)] // For measuring: the real-model test prints it.
+    pub(crate) fn last_stats(&self) -> Option<crate::model_helper::Stats> {
+        *self.last_stats.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Stops the model process now if nothing holds it; otherwise as soon as its
     /// holder lets go (a start or a request, which a cancel has ended by then), on
     /// a thread of its own. A lock calls this, and must never wait for a model.
@@ -619,14 +634,13 @@ impl Runner {
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
-        let mut unlocated = 0;
+        let mut unlocated_quotes = Vec::new();
         let sentences = sentences
             .into_iter()
             .take(request.max_sentences)
             .map(|mut sentence| {
                 if !quote_in(&text, &sentence.quote) {
-                    sentence.quote = String::new();
-                    unlocated += 1;
+                    unlocated_quotes.push(std::mem::take(&mut sentence.quote));
                 }
                 sentence
             })
@@ -636,7 +650,8 @@ impl Runner {
             model,
             last_page,
             last_page_cut: answer.last_page_cut,
-            unlocated,
+            unlocated: unlocated_quotes.len(),
+            unlocated_quotes,
         })
     }
 
@@ -710,6 +725,9 @@ impl Runner {
         // and the answer belongs to nobody.
         if outcome.is_ok() && !self.is_current(ticket) {
             outcome = Err(RunnerError::Cancelled);
+        }
+        if let Ok(answer) = &outcome {
+            *self.last_stats.lock().unwrap_or_else(|e| e.into_inner()) = answer.stats;
         }
         match &outcome {
             Ok(_) => self.set_status(RunnerStatus::Ready {
