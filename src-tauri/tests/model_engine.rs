@@ -292,6 +292,10 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
                 for (text, quote) in sentences {
                     println!("- {text}\n    [{quote}]");
                 }
+                println!("  stats: {}", runner.last_stats());
+                for quote in runner.last_unlocated() {
+                    println!("  quote not in the text: [{quote}]");
+                }
             }
             Err(error) => println!("  failed: {error}"),
         }
@@ -306,5 +310,6 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
         "\n== explain ({:.1} s): {explained:?}",
         asked.elapsed().as_secs_f64()
     );
+    println!("  stats: {}", runner.last_stats());
     runner.stop();
 }

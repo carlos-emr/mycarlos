@@ -4,7 +4,7 @@
 use super::{
     document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
     read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, BATCH_TOKENS, CONTEXT_TOKENS,
+    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, BATCH_TOKENS, CONTEXT_TOKENS,
     EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
@@ -32,6 +32,8 @@ pub(super) struct Engine {
     /// The model's own template, for [`ChatFormat::Builtin`] only.
     template: Option<LlamaChatTemplate>,
     chat_format: ChatFormat,
+    /// How the last answer was made.
+    stats: Stats,
 }
 
 /// Why a request got no answer, as the helper's error line says it: short, fixed words.
@@ -82,7 +84,13 @@ impl Engine {
             context,
             template,
             chat_format: settings.chat_format,
+            stats: Stats::default(),
         })
+    }
+
+    /// How the last answer was made (counts and times only).
+    pub(super) fn stats(&self) -> Stats {
+        self.stats
     }
 
     /// The prompt's tokens: the chat template around `user`, with each [`SLOT`] in it replaced
@@ -165,6 +173,11 @@ impl Engine {
             return Err(failed("too long"));
         }
         self.context.clear_kv_cache();
+        let started = std::time::Instant::now();
+        self.stats = Stats {
+            prompt_tokens: tokens.len() as u32,
+            ..Stats::default()
+        };
         let mut grammar = match grammar {
             Some(grammar) => Some(
                 LlamaSampler::grammar(self.model, grammar, "root")
@@ -187,13 +200,18 @@ impl Engine {
                 .decode(&mut batch)
                 .map_err(|_| failed("decode"))?;
         }
+        let read = std::time::Instant::now();
+        self.stats.prompt_ms = (read - started).as_millis() as u64;
         let vocab = self.model.vocab();
         let mut written = Vec::new();
         for position in (tokens.len()..).take(max) {
-            let token = self.pick(batch.n_tokens() - 1, grammar.as_mut());
+            let (token, scanned) = self.pick(batch.n_tokens() - 1, grammar.as_mut());
+            self.stats.grammar_scans += u32::from(scanned);
             if vocab.is_eog(token) {
+                self.stats.answer_ms = read.elapsed().as_millis() as u64;
                 return Ok((String::from_utf8_lossy(&written).into_owned(), false));
             }
+            self.stats.answer_tokens += 1;
             if let Some(grammar) = grammar.as_mut() {
                 grammar.accept(token);
             }
@@ -206,6 +224,8 @@ impl Engine {
                 .decode(&mut batch)
                 .map_err(|_| failed("decode"))?;
         }
+        self.stats.answer_ms = read.elapsed().as_millis() as u64;
+        self.stats.capped = true;
         Ok((String::from_utf8_lossy(&written).into_owned(), true))
     }
 
@@ -214,7 +234,8 @@ impl Engine {
     /// Checking one token first spares the grammar the whole vocabulary at most steps, as
     /// llama.cpp's own server does. Ties go to the lower token id, as llama.cpp's greedy
     /// sampler gives them.
-    fn pick(&self, index: i32, grammar: Option<&mut LlamaSampler>) -> LlamaToken {
+    /// Also says whether the whole vocabulary had to be looked at.
+    fn pick(&self, index: i32, grammar: Option<&mut LlamaSampler>) -> (LlamaToken, bool) {
         let logits = self.context.get_logits_ith(index);
         let Some((best, score)) = first_best(
             logits
@@ -222,10 +243,10 @@ impl Engine {
                 .enumerate()
                 .map(|(id, score)| (LlamaToken::new(id as i32), *score)),
         ) else {
-            return self.model.vocab().eos();
+            return (self.model.vocab().eos(), false);
         };
         let Some(grammar) = grammar else {
-            return best;
+            return (best, false);
         };
         let mut alone =
             LlamaTokenDataArray::new(vec![LlamaTokenData::new(best, score, 0.0)], false);
@@ -235,7 +256,7 @@ impl Engine {
             .first()
             .is_some_and(|data| data.logit().is_finite())
         {
-            return best;
+            return (best, false);
         }
         let mut all = self.context.token_data_array_ith(index);
         all.apply_sampler(grammar);
@@ -245,7 +266,10 @@ impl Engine {
                 .filter(|data| data.logit().is_finite())
                 .map(|data| (data.id(), data.logit())),
         )
-        .map_or_else(|| self.model.vocab().eos(), |(token, _)| token)
+        .map_or_else(
+            || (self.model.vocab().eos(), true),
+            |(token, _)| (token, true),
+        )
     }
 
     /// A summary of the pages that fit, in `lang`, with the fit it read.

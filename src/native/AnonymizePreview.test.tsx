@@ -119,7 +119,7 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(region).toHaveTextContent("Patient: [NAME 1]");
     expect(region).not.toHaveTextContent("Avery");
     expect(region).not.toHaveTextContent("1961");
-    // Each mark says what it is, for screen readers; a moved date too.
+    // Each mark says what it is, for screen readers; a replaced date too.
     const marks = within(region).getAllByText(/\(.*\)/, {
       selector: "mark span",
     });
@@ -127,7 +127,7 @@ describe("the anonymize preview (#72 part B)", () => {
       expect.arrayContaining([
         " (removed: name)",
         " (removed: date of birth)",
-        " (date moved)",
+        " (date replaced)",
         " (removed: doctor)",
       ]),
     );
@@ -237,12 +237,13 @@ describe("the anonymize preview (#72 part B)", () => {
 
   it("takes out what native code refused, whole, and asks to save again", async () => {
     const user = userEvent.setup();
-    // The preview draws its own shift: the moved date is read from the text.
+    // Native code finds something inside a date placeholder: the whole
+    // placeholder goes.
     const saveText = vi.fn(
       async (_pickId: string, _ticket: string, text: string) => {
-        const at = text.search(/\d{4}-\d{2}-\d{2}/);
+        const at = text.indexOf("[DATE 1]");
         return at >= 0
-          ? { saved: false, hits: [{ start: at + 2, end: at + 4 }] }
+          ? { saved: false, hits: [{ start: at + 1, end: at + 3 }] }
           : { saved: true, hits: [] };
       },
     );
@@ -250,9 +251,7 @@ describe("the anonymize preview (#72 part B)", () => {
     await screen.findByRole("region", {
       name: humanText("The text that will be saved"),
     });
-    const moved = /Seen (\d{4}-\d{2}-\d{2})/.exec(shownString())?.[1];
-    expect(moved).toBeDefined();
-    expect(moved).not.toBe("2026-10-08");
+    expect(shownString()).toContain("Seen [DATE 1] by");
     await user.click(
       screen.getByRole("button", { name: humanText("Save the text…") }),
     );
@@ -269,8 +268,130 @@ describe("the anonymize preview (#72 part B)", () => {
       ),
     ).toBeInTheDocument();
     expect(shownString()).toContain("Seen [REMOVED 1] by");
-    expect(shownString()).not.toContain(moved!);
+    expect(shownString()).not.toContain("[DATE 1]");
     expect(saveText).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends no real date, and puts the details back into the AI's answer after the save, flagging what it cannot match", async () => {
+    const user = userEvent.setup();
+    const twoDates = [
+      {
+        index: 0,
+        text: "Patient: Avery Example\nDOB: 1961-04-17\nSeen 2026-10-08 by Dr. Ward. Pain since 2026-09-24. Review 03/04/2026. A 92-year-old woman.",
+      },
+    ];
+    const { saveText } = renderPreview({
+      text: documentText({ pages: twoDates, ...joinPages(twoDates) }),
+    });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    // Nothing to paste into before the save.
+    expect(screen.queryByLabelText(humanText("The AI's answer"))).toBeNull();
+    const sent = shownString();
+    expect(sent).toContain("Pain since [DATE 1]");
+    expect(sent).toContain("Seen [DATE 2, 14 days after DATE 1]");
+    expect(sent).toContain("Review [DATE 3]");
+    expect(sent).toContain("[AGE 1, 90+]");
+    expect(sent).not.toMatch(/\b20\d\d\b|1961|Avery/);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save the text…") }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: humanText("Save the text…"),
+      }),
+    );
+    await screen.findByText(humanText("The text was saved."));
+    expect(saveText.mock.calls[0][2]).toBe(sent);
+
+    const box = screen.getByLabelText(humanText("The AI's answer"));
+    const putBack = screen.getByRole("button", {
+      name: humanText("Put details back"),
+    });
+    expect(putBack).toBeDisabled();
+    await user.click(box);
+    await user.paste(
+      "[NAME 1] was seen on [DATE 2, 14 days after DATE 1] (pain since [DATE 1]) " +
+        "by [DOCTOR 1]; review [DATE 3]; [AGE 1, 90+]. " +
+        "Also [DATE 2, 15 days after DATE 1] and [DATE 9] and [AGE 1, 89+].",
+    );
+    await user.click(putBack);
+    const result = await screen.findByRole("region", {
+      name: humanText("The answer with the details put back"),
+    });
+    expect(result).toHaveTextContent(
+      "Avery Example was seen on 2026-10-08 (pain since 2026-09-24) by Ward; review 03/04/2026; 92-year-old.",
+    );
+    // What it could not match is left as written and highlighted, never guessed.
+    const flagged = Array.from(result.querySelectorAll("mark")).map((mark) =>
+      plain(mark.firstChild?.textContent ?? ""),
+    );
+    expect(flagged).toEqual([
+      "[DATE 2, 15 days after DATE 1]",
+      "[DATE 9]",
+      "[AGE 1, 89+]",
+    ]);
+    expect(
+      screen.getByText(
+        humanText(
+          "Marks that could not be matched to this text, or that were changed, are highlighted (3). Check them against the original.",
+        ),
+      ),
+    ).toBeInTheDocument();
+    expect(result).not.toHaveTextContent("1961");
+  });
+
+  it("writes the placeholders in the document's language, and puts back marks written in another (#215)", async () => {
+    const user = userEvent.setup();
+    const letter = [
+      {
+        index: 0,
+        text:
+          "Madame, nous avons vu Avery Example le 2026-10-08 à la clinique pour une douleur dans la poitrine. " +
+          "Elle est suivie depuis le 2026-09-24 et elle prend du ramipril 5 mg. Nous la reverrons dans un mois " +
+          "avec les résultats de ses analyses. Le traitement est bien toléré et la patiente ne signale pas " +
+          "d'effet secondaire. Elle doit revenir avant la fin du mois si les douleurs reviennent.",
+      },
+    ];
+    const { saveText } = renderPreview({
+      text: documentText({ pages: letter, ...joinPages(letter) }),
+    });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    // The app is in English; the letter is French.
+    const sent = shownString();
+    expect(sent).toContain(
+      "nous avons vu [NOM 1] le [DATE 2, 14 jours après DATE 1]",
+    );
+    expect(sent).toContain("suivie depuis le [DATE 1]");
+    expect(sent).not.toMatch(/\[NAME|days after|Avery|2026/);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save the text…") }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: humanText("Save the text…"),
+      }),
+    );
+    await screen.findByText(humanText("The text was saved."));
+    expect(saveText.mock.calls[0][2]).toBe(sent);
+    await user.click(screen.getByLabelText(humanText("The AI's answer")));
+    // The AI answered in English and translated the marks.
+    await user.paste(
+      "[NAME 1] was seen on [DATE 2, 14 days after DATE 1]; [NOM 1] since [DATE 1].",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Put details back") }),
+    );
+    const result = await screen.findByRole("region", {
+      name: humanText("The answer with the details put back"),
+    });
+    expect(result).toHaveTextContent(
+      "Avery Example was seen on 2026-10-08; Avery Example since 2026-09-24.",
+    );
+    expect(result.querySelectorAll("mark")).toHaveLength(0);
   });
 
   it("asks for the document's own password, and stops the read when closed", async () => {
