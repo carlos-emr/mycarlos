@@ -501,7 +501,7 @@ rules apply, and if the patient is signed in to it, it knows who they are, whate
 A document can also carry instructions meant for an AI, so the notice suggests an AI that cannot
 act for the patient.
 
-**The model.** A file of a few gigabytes (2.5 GB for the current entry) that holds no patient
+**The model.** A file of a few gigabytes (3.0 GB for the demo default, Qwen3.5 4B) that holds no patient
 information. The patient chooses how it arrives (#219): **Download the default model** fetches one
 public file at a fixed version, or **Add a model file…** takes a copy the patient already has
 (question 19). It is kept outside the vault, so it is not in myCarlos's backups (it is not yet left
