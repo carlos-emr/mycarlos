@@ -203,8 +203,8 @@ saved (for example some network folders), on the systems where it can tell.
   (for example, by malware that records the screen or the keyboard).
 - **No record of use.** The app keeps no record of who opened the vault or what they looked at.
   Apart from the traces listed in section 2 (and, once the change under review lands, the count of
-  wrong tries), it records nothing about use. The planned AI helper adds its text exports and saved
-  answers to those traces (section 11).
+  wrong tries), it records nothing about use. The AI helper adds its text exports to those traces (#171),
+  and its answers once they are kept (#212; section 11).
 
 ## 5. Backups
 
@@ -263,7 +263,8 @@ leaves depends on the system:
 **The app itself sends nothing.** It:
 
 - makes no network connections: its own code makes none, and its security settings let its
-  screens talk only to the app itself;
+  screens talk only to the app itself (the AI helper's model download, #219, is
+  the exception: one public file, only when the patient clicks it; see below);
 - has no analytics, telemetry or crash reporting;
 - has no automatic updates yet (updates are planned through app stores and a signed desktop
   updater);
@@ -289,8 +290,10 @@ a developer works on the phone versions; an installed app loads its screens from
 What the patient saves themselves (backups, recovery kits, readable copies) leaves the vault only
 where the patient puts it.
 
-**The planned AI helper (#72, section 11) does not change this.** It sends nothing. Its text export
-is a file the patient saves, like a readable copy.
+**The AI helper (#72, section 11) sends nothing about the patient.** Its one connection is the
+model download (#219), only when the patient clicks it: the download site sees the
+computer's IP address, the time and which public file was fetched, and nothing else is sent
+(`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
 
 ## 8. How it is protected
 
@@ -405,9 +408,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     wrong", stay outside the rules for software as a medical device (#25)?
 16. **Other people's documents:** the helper can be used on documents in a child's or another
     adult's profile. Is more guidance needed before their text is exported (see also question 4)?
-17. **Keeping AI answers:** answers are kept with their document, encrypted, and are only hidden
-    with it, never deleted (#71). Is that acceptable, or should the patient be able to remove an
-    answer they do not want?
+17. **Keeping AI answers:** once #212 lands, answers are kept with their document, encrypted. A
+    newer answer for the same document, tool and language (and term, for Explain) is shown in place
+    of the older one, and the older one is kept hidden, never deleted, like the documents (#71;
+    decided 5 November 2026). Should the patient be able to remove an answer they do
+    not want?
 18. **Dates replaced by marks:** no real date is sent. Each date is a numbered mark with its gap in
     days from the earliest date, so the time between dates stays clear. A reader who knows one real
     date (a birth, or an event named in the text) can still work out all the others from the
@@ -418,11 +423,13 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     every 19xx or 20xx as a date would also hit "2019 tablets": together with the gaps, one dated
     event a reader knows can anchor every mark. Should a bare year be treated as a date, accepting
     that cost, or left as it is and named in the notice, as now?
-19. **How the model reaches the device:** #72 has the patient download the model. To keep
-    myCarlos from making any network connection, the design proposes that the patient adds the
-    file instead (`THREAT_MODEL.md` D-10). Either way the download site sees the device's address
-    and when; if myCarlos downloads it, myCarlos also connects to a second host, and the site learns
-    that the device runs myCarlos. Which should it be?
+19. **How the model reaches the device:** both ways, in #219 (on main; `THREAT_MODEL.md` D-10,
+    AI-08). **Download the default model** fetches one public file, at a fixed version, from
+    huggingface.co and its CDN, only on a click; nothing about the patient is sent, and the notice
+    and Preferences say so. The site sees the computer's IP address, the time and which file, which
+    suggests that the computer runs myCarlos. **Add a model file…** keeps a way with no connection.
+    Open for the assessment: is that disclosure to the download site acceptable, or should the
+    project host the file itself?
 20. **Turning the export on:** #72 asked for a Settings switch that turns the cloud way on. The
     design has none: each export is chosen for one document, after a preview and a save dialog.
     Is that enough, or should it also be switched on first?
@@ -430,7 +437,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 ## 11. The AI helper (#72)
 
 The text export (part B) is built on main (#171) and works on computers only; it is hidden on
-phones. The model and its tools are planned. This section describes both, so that the assessment
+phones. The reader's Summary and Explain (#217), the model runtime (#218) and the model
+download (#219) are on main; kept answers (#212) are in review. This section describes all of it, so that the assessment
 can cover them. It is for synthetic data only until this assessment approves real information (#25). The security side
 is in `THREAT_MODEL.md` (AI-01 to AI-10) and `SECURITY_OPERATIONS.md`, and the notice the patient
 sees is in `AI_HELPER_NOTICE.md`.
@@ -440,7 +448,7 @@ helper is meant to explain one document in plain words. It can be used in two wa
 
 - **On this device:** a small AI model runs in a separate helper inside myCarlos and writes a
   plain-words summary of one document, or explains a word or phrase the patient selects. Nothing
-  leaves the device.
+  about the patient leaves the device.
 - **With another AI service, by the patient:** myCarlos removes identifying details from a
   document's text and shows the result. The patient then saves it as a text file and gives it to
   whichever AI service they choose. myCarlos itself sends none of it anywhere. Ben chose this on
@@ -493,16 +501,22 @@ rules apply, and if the patient is signed in to it, it knows who they are, whate
 A document can also carry instructions meant for an AI, so the notice suggests an AI that cannot
 act for the patient.
 
-**The model.** A file of a few gigabytes that holds no patient information. It is added only if the
-patient chooses, kept outside the vault, not in myCarlos's backups (and left out of device backups
-where the system allows), and checked before every use against a list built into the app. It runs
-without access to the network or to the patient's other files. How the file reaches the device is
-open (question 19). Which model is used will be decided after a comparison of small open models on
-made-up documents.
+**The model.** A file of a few gigabytes (3.0 GB for the default, Qwen3.5 4B) that holds no patient
+information. The patient chooses how it arrives (#219): **Download the default model** fetches one
+public file at a fixed version, or **Add a model file…** takes a copy the patient already has
+(question 19). It is kept outside the vault, so it is not in myCarlos's backups (it is not yet left
+out of system backups), and it is checked against a list built into the app when it is added and
+before every use; a changed file is not used. It runs in a sandboxed helper without access to the
+network or to the patient's other files (#218), on Windows and Linux computers with enough memory;
+Macs come later (#211). The default model is Qwen3.5 4B (Q4_K_M), chosen on 5 November 2026 after the comparison of small
+open models on made-up documents.
 
-**The answers.** Saved in the vault, encrypted, with the document, the tool, the model and the date.
-Each is marked "Written by AI and may be wrong. Check with your doctor." An answer is hidden with
-its document and never deleted (#71), and it is in backups like the rest of the vault.
+**The answers.** Each is marked "Written by AI and may be wrong. Check with your doctor." In this
+build an answer is shown only while the reader is open and is not kept. Once #212 lands, answers are
+saved in the vault, encrypted, with the document, the tool, the model and the date. A newer
+answer for the same document, tool and language (and term) is shown in place of the older one,
+which is kept hidden, never deleted (#71; decided 5 November 2026); an answer is hidden with its
+document, and answers are in backups like the rest of the vault (question 17). The notice promises this only once it is true.
 
 **Limits.**
 
@@ -520,7 +534,10 @@ its document and never deleted (#71), and it is in backups like the rest of the 
 - **Phones:** the PDF helper does not run on phones (`THREAT_MODEL.md` IMP-02), so a phone can
   neither read a document's text nor run a local model. Neither the text export nor the AI on this
   device works on a phone until a phone design is reviewed.
-- **Speed:** on an ordinary computer, a long document may take a minute or more.
+- **Macs:** the AI on this device is not offered on a Mac yet (#211); the text export works there.
+- **Speed:** a summary may take a few minutes on an ordinary computer. On a 4-core test computer,
+  a one- or two-page letter took 2 to 3 minutes (119 to 169 seconds, Qwen3.5 4B), and loading the
+  model about 25 seconds more.
 
 **What the patient is told.** The notice in `AI_HELPER_NOTICE.md`, in all seven languages, before
 the first use and at any time from Security.

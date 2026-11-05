@@ -14,12 +14,12 @@ production end-of-support schedule remain an owner decision and release gate.
 
 - Analytics, crash upload, remote logging and telemetry are disabled; their allow-list of fields
   permitted to leave the device is the empty set.
-- The only planned network use is pickup from the portal the patient links (carlos-portal #41).
-  The fields it may send are listed under [Portal pickup](#portal-pickup-what-may-leave-the-device);
-  nothing else may leave the device.
-- The planned AI helper (#72) adds nothing to this list: its "cloud" way is a text file the
-  patient saves, and its model helper has no network
-  ([AI helper](#ai-helper-72-nothing-leaves-the-device)).
+- The planned network uses are pickup from the portal the patient links (carlos-portal #41) and
+  the AI helper's model download (#72, #219, on main). The fields pickup may send are listed
+  under [Portal pickup](#portal-pickup-what-may-leave-the-device); the download sends none
+  ([AI helper](#ai-helper-72-nothing-about-the-patient-leaves-the-device)); nothing else may leave the device.
+- The AI helper (#72) adds one host to the allow-list, for the model file only: its "cloud" way is
+  a text file the patient saves, and its model helper has no network.
 - There is no automatic support bundle. A future bundle must be generated locally, display every
   field to the patient before export, contain no document/profile/file name/path, key material,
   passphrase-derived value, vault/object ID or free-form log, and require an explicit save action.
@@ -156,13 +156,14 @@ If a portal or a clinic key may be compromised, follow the incident steps above.
 revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a key that
 was not active in the key list it pinned at linking (it does not yet learn of a later revocation), and patients can remove a device under Account → Linked devices in the portal.
 
-## AI helper (#72): nothing leaves the device
+## AI helper (#72): nothing about the patient leaves the device
 
-The anonymized text export (part B) is built on main (#171, computers only); the model and its tools (part D) are planned ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
+The anonymized text export (part B) is built on main (#171, computers only), and so are the reader's Summary and Explain behind the notice (#217), the model runtime (#218) and the model download (#219); kept answers (#212) are in review ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
 on 29 October 2026 that the helper uses no cloud provider, so:
 
-- **What may leave the device: nothing.** The AI helper makes no network connection, its model runs
-  in a helper process with no network, and the webview's content policy is unchanged.
+- **What may leave the device: nothing about the patient.** The model runs in a sandboxed helper
+  mode with no network (AI-07), and the webview's content policy is unchanged. The AI helper's one
+  connection is the model download below, which sends no document, field or identifier.
 - **The text source** is one read-only command, `vault_document_text` (AI-10). It works on
   computers only, reuses the sandboxed PDF helper with no new helper message, caps the text at
   50 pages and 1 MiB, lists the pages the helper refuses instead of dropping them, and adds no
@@ -177,25 +178,37 @@ on 29 October 2026 that the helper uses no cloud provider, so:
   `how: "anonymizedText"`: the document, where the file was saved (cut to 256 characters, and then
   with a SHA-256 of the whole) and when; never the text or the removed details.
   Security shows it with a label of its own; an older build shows "Readable copy saved".
-- **The model file** holds no patient data. It is kept in a model folder beside, not inside, the
-  vault folder, not in myCarlos's encrypted backups, and marked to be left out of device backups
-  where the system allows. That folder is a removal kind of its own (no patient data, so #71's
-  rule that nothing is deleted does not apply): a partial copy is removed at the next start, a
-  refused file is offered for removal, and the patient can remove a model. It is checked against
-  a list built into the app (SHA-256 and size; part of the signed app once releases are signed)
-  when it is added and at each load (AI-04).
-- **How the model reaches the device is for Ben to choose** (THREAT_MODEL D-10). Proposed here: the
-  patient gets the file from a place the project names with the model choice, and adds it, so
-  myCarlos fetches nothing; that place sees the patient's IP address, as for any download. An
-  in-app download would add a host to this document's allow-list, and needs its own threat-model
-  row first (AI-08, NET-01).
+- **The model file** holds no patient data. It is kept in a `models` folder beside, not inside, the
+  vault folder, so it is not in myCarlos's encrypted backups (it is not yet marked to be left out of
+  system backups). That folder is a removal kind of its own (no patient data, so #71's rule that
+  nothing is deleted does not apply): a partial `.part` copy is removed at the next start, a file
+  that fails its check is marked damaged and offered for removal, and the patient can remove the
+  model. It is checked against a list built into the app (SHA-256 and size; part of the signed app
+  once releases are signed) when it is added and at every helper start (AI-04).
+- **How the model reaches the device (#219, on main):** **Download the default model**, or **Add
+  a model file…** for a file the patient already has (THREAT_MODEL D-10, AI-08). The download's
+  allow-list entry:
+
+  | Host | Why | What is sent | What the host learns |
+  | --- | --- | --- | --- |
+  | `huggingface.co`, at the catalogue entry's pinned address (`/<repo>/resolve/<commit>/<file>`) | The model file | An HTTPS GET with no cookies, credentials, referrer or identifier | The computer's IP address, the time, and which public file |
+  | Its CDN: `cdn-lfs.huggingface.co`, `cdn-lfs.hf.co`, `*.cdn.hf.co` (today one 302 to `us.aws.cdn.hf.co`) | Where the pinned address redirects | The same | The same |
+
+  Only on a click, after the disk and machine checks; native code only; HTTPS on 443 with TLS 1.2
+  or later and the platform's certificate verifier; no automatic redirects (each one is parsed and
+  checked against this list, and any other host ends the download); no proxy. The bytes are hashed
+  as they arrive and kept only if the size and SHA-256 match the catalogue entry. A change to the
+  host, the pinned commit or the CDN list is a change to this table and to AI-08, reviewed before
+  it ships.
 - **The model list is release material.** It changes only in a release, through the release supply
   chain above. A model or runtime found unsafe is handled as a vulnerability (see
   [Vulnerability intake and response](#vulnerability-intake-and-response)): a release removes its
   entry, and the app then refuses that file. With no updater yet (MASVS CODE-2), that reaches only
   patients who update.
-- **Advisories:** RustSec does not cover the model runtime (C/C++, such as llama.cpp). Its own
-  project's security advisories are watched, and its source revision is recorded in the SBOM.
+- **Advisories:** the runtime is llama.cpp through `llama-cpp-2` and `llama-cpp-sys-2`, pinned
+  =0.1.160 (#218). RustSec does not cover its C/C++ code, so ggml and llama.cpp advisories are
+  watched by hand; the vendored revision is recorded in DEPENDENCY_REVIEW.md, and the crates in the
+  SBOM.
 - **Licences:** each listed model's licence must allow the project to offer it to patients and
   allow this use. It is recorded in `LICENSE_NOTES.md` when the model is picked.
 - **Canary drill:** the [synthetic canary drill](#synthetic-canary-drill) also covers the helper.
