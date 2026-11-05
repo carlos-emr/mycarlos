@@ -303,7 +303,8 @@ export interface AuditHistoryEntry {
     | "folderCreated"
     | "folderRenamed"
     | "folderMoved"
-    | "setAside";
+    | "setAside"
+    | "readingAidFiled";
   name: string | null;
   oldName: string | null;
   from: string[] | null;

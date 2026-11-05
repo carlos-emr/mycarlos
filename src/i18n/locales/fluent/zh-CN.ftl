@@ -1420,6 +1420,8 @@ interface-history-event-passphraseChanged = 密码短语已变更
 
 interface-history-event-profileCreated = 患者档案已添加
 
+interface-history-event-readingAidFiled = 已保存阅读辅助
+
 interface-history-event-recoveryKeySet = 恢复密钥已设置
 
 interface-history-event-renamed = 文档已重命名
@@ -1437,6 +1439,8 @@ interface-history-from = 来源
 interface-history-gap = 此处的事件无法检查，因此不显示。
 
 interface-history-how = 方式
+
+interface-history-how-aidReplaced = 替换了之前的阅读辅助
 
 interface-history-how-camera = 使用相机添加
 

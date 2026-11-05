@@ -1580,6 +1580,8 @@ interface-history-event-passphraseChanged = Frase-senha alterada
 
 interface-history-event-profileCreated = Perfil de paciente adicionado
 
+interface-history-event-readingAidFiled = Auxílio de leitura salvo
+
 interface-history-event-recoveryKeySet = Chave de recuperação configurada
 
 interface-history-event-renamed = Documento renomeado
@@ -1602,6 +1604,8 @@ interface-history-from = De
 interface-history-gap = Os eventos neste ponto não podem ser verificados e não são exibidos.
 
 interface-history-how = Como
+
+interface-history-how-aidReplaced = Substituiu um auxílio de leitura anterior
 
 interface-history-how-camera = Adicionado com a câmera
 

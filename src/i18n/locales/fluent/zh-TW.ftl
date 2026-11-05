@@ -1420,6 +1420,8 @@ interface-history-event-passphraseChanged = 密語已變更
 
 interface-history-event-profileCreated = 病患檔案已新增
 
+interface-history-event-readingAidFiled = 已儲存閱讀輔助
+
 interface-history-event-recoveryKeySet = 復原金鑰已設定
 
 interface-history-event-renamed = 文件已重新命名
@@ -1437,6 +1439,8 @@ interface-history-from = 來源
 interface-history-gap = 此處的事件無法檢查，因此不顯示。
 
 interface-history-how = 方式
+
+interface-history-how-aidReplaced = 取代了先前的閱讀輔助
 
 interface-history-how-camera = 使用相機新增
 

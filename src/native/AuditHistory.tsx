@@ -34,6 +34,7 @@ const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   folderRenamed: "interface.history.event.folderRenamed",
   folderMoved: "interface.history.event.folderMoved",
   setAside: "interface.history.event.setAside",
+  readingAidFiled: "interface.history.event.readingAidFiled",
 };
 
 const howLabels: Record<string, MessageKey> = {
@@ -115,9 +116,11 @@ function details(entry: AuditHistoryEntry): [MessageKey, string][] {
         ? movedFromShared
           ? "interface.history.how.movedFromShared"
           : "interface.history.how.importedShared"
-        : Object.hasOwn(howLabels, entry.how)
-          ? howLabels[entry.how]
-          : undefined;
+        : entry.event === "readingAidFiled" && entry.how === "replaced"
+          ? "interface.history.how.aidReplaced"
+          : Object.hasOwn(howLabels, entry.how)
+            ? howLabels[entry.how]
+            : undefined;
     rows.push(["interface.history.how", key ? translateNow(key) : entry.how]);
   }
   if (entry.place) rows.push(["interface.history.place", entry.place]);

@@ -1548,6 +1548,8 @@ interface-history-event-passphraseChanged = Passphrase changed
 
 interface-history-event-profileCreated = Patient profile added
 
+interface-history-event-readingAidFiled = Reading aid saved
+
 interface-history-event-recoveryKeySet = Recovery key set up
 
 interface-history-event-renamed = Document renamed
@@ -1569,6 +1571,8 @@ interface-history-from = From
 interface-history-gap = Events here can't be checked and aren't shown.
 
 interface-history-how = How
+
+interface-history-how-aidReplaced = Replaced an earlier reading aid
 
 interface-history-how-camera = Added with the camera
 

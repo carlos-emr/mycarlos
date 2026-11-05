@@ -595,3 +595,43 @@ describe("AuditHistory recorded semantics", () => {
     },
   );
 });
+
+describe("AuditHistory reading aid events", () => {
+  it.each(["en", "fr", "es", "pl", "pt-BR", "zh-CN", "zh-TW"] as const)(
+    "labels a filed and a replaced reading aid in %s",
+    async (locale) => {
+      const shown = props(
+        bridge(
+          vi.fn().mockResolvedValue(
+            complete([
+              entry({ event: "readingAidFiled", name: "FAKE Result.pdf" }),
+              entry({
+                event: "readingAidFiled",
+                name: "FAKE Result.pdf",
+                how: "replaced",
+                atMs: 2,
+              }),
+            ]),
+          ),
+        ),
+      );
+      render(<AuditHistory {...shown} />);
+      await screen.findAllByText("FAKE Result.pdf");
+      await act(async () => setLocaleOverride(locale));
+      const headings = screen.getAllByRole("heading", { level: 2 });
+      expect(headings).toHaveLength(2);
+      for (const heading of headings)
+        expect(heading).toHaveHumanTextContent(
+          translate(locale, "interface.history.event.readingAidFiled"),
+        );
+      const replaced = translate(locale, "interface.history.how.aidReplaced");
+      expect(screen.getAllByText(humanText(replaced))).toHaveLength(1);
+      // The vault-restore wording must never describe an aid.
+      expect(
+        screen.queryByText(
+          humanText(translate(locale, "interface.history.how.replaced")),
+        ),
+      ).toBeNull();
+    },
+  );
+});

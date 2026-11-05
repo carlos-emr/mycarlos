@@ -329,6 +329,7 @@ pub enum MessageId {
     InterfaceHistoryEventMoved,
     InterfaceHistoryEventPassphraseChanged,
     InterfaceHistoryEventProfileCreated,
+    InterfaceHistoryEventReadingAidFiled,
     InterfaceHistoryEventRecoveryKeySet,
     InterfaceHistoryEventRenamed,
     InterfaceHistoryEventRestored,
@@ -338,6 +339,7 @@ pub enum MessageId {
     InterfaceHistoryFrom,
     InterfaceHistoryGap,
     InterfaceHistoryHow,
+    InterfaceHistoryHowAidReplaced,
     InterfaceHistoryHowAnonymizedText,
     InterfaceHistoryHowCamera,
     InterfaceHistoryHowDamaged,
@@ -1185,6 +1187,7 @@ impl MessageId {
         Self::InterfaceHistoryEventMoved,
         Self::InterfaceHistoryEventPassphraseChanged,
         Self::InterfaceHistoryEventProfileCreated,
+        Self::InterfaceHistoryEventReadingAidFiled,
         Self::InterfaceHistoryEventRecoveryKeySet,
         Self::InterfaceHistoryEventRenamed,
         Self::InterfaceHistoryEventRestored,
@@ -1194,6 +1197,7 @@ impl MessageId {
         Self::InterfaceHistoryFrom,
         Self::InterfaceHistoryGap,
         Self::InterfaceHistoryHow,
+        Self::InterfaceHistoryHowAidReplaced,
         Self::InterfaceHistoryHowAnonymizedText,
         Self::InterfaceHistoryHowCamera,
         Self::InterfaceHistoryHowDamaged,
@@ -2249,6 +2253,7 @@ impl MessageId {
                 "interface-history-event-passphraseChanged"
             }
             Self::InterfaceHistoryEventProfileCreated => "interface-history-event-profileCreated",
+            Self::InterfaceHistoryEventReadingAidFiled => "interface-history-event-readingAidFiled",
             Self::InterfaceHistoryEventRecoveryKeySet => "interface-history-event-recoveryKeySet",
             Self::InterfaceHistoryEventRenamed => "interface-history-event-renamed",
             Self::InterfaceHistoryEventRestored => "interface-history-event-restored",
@@ -2258,6 +2263,7 @@ impl MessageId {
             Self::InterfaceHistoryFrom => "interface-history-from",
             Self::InterfaceHistoryGap => "interface-history-gap",
             Self::InterfaceHistoryHow => "interface-history-how",
+            Self::InterfaceHistoryHowAidReplaced => "interface-history-how-aidReplaced",
             Self::InterfaceHistoryHowAnonymizedText => "interface-history-how-anonymizedText",
             Self::InterfaceHistoryHowCamera => "interface-history-how-camera",
             Self::InterfaceHistoryHowDamaged => "interface-history-how-damaged",
@@ -3752,6 +3758,9 @@ impl MessageId {
             "interface.history.event.profileCreated" => {
                 Some(Self::InterfaceHistoryEventProfileCreated)
             }
+            "interface.history.event.readingAidFiled" => {
+                Some(Self::InterfaceHistoryEventReadingAidFiled)
+            }
             "interface.history.event.recoveryKeySet" => {
                 Some(Self::InterfaceHistoryEventRecoveryKeySet)
             }
@@ -3763,6 +3772,7 @@ impl MessageId {
             "interface.history.from" => Some(Self::InterfaceHistoryFrom),
             "interface.history.gap" => Some(Self::InterfaceHistoryGap),
             "interface.history.how" => Some(Self::InterfaceHistoryHow),
+            "interface.history.how.aidReplaced" => Some(Self::InterfaceHistoryHowAidReplaced),
             "interface.history.how.camera" => Some(Self::InterfaceHistoryHowCamera),
             "interface.history.how.damaged" => Some(Self::InterfaceHistoryHowDamaged),
             "interface.history.how.importedShared" => Some(Self::InterfaceHistoryHowImportedShared),
