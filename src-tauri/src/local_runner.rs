@@ -769,6 +769,8 @@ impl Runner {
             return Err(RunnerError::Cancelled);
         }
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
+        // A failed answer leaves none: never the stats of the one before.
+        *self.last_stats.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let Some(running) = slot.as_mut() else {
             return Err(RunnerError::NotRunning);
         };
@@ -1240,6 +1242,18 @@ mod tests {
             prompt_tokens(750, usize::MAX),
             crate::model_helper::CONTEXT_TOKENS
         );
+    }
+
+    #[test]
+    fn a_new_request_forgets_the_last_answers_stats() {
+        let runner = Runner::new(idle_config());
+        *runner.last_stats.lock().unwrap() = Some(crate::model_helper::Stats::default());
+        // Not running: the request fails, and leaves no stats from the one before.
+        assert!(matches!(
+            runner.explain(runner.ticket(), "FAKE", "FAKE context", "en"),
+            Err(RunnerError::NotRunning)
+        ));
+        assert_eq!(runner.last_stats(), None);
     }
 
     fn idle_config() -> RunnerConfig {
