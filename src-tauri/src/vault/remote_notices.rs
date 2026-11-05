@@ -429,9 +429,23 @@ mod tests {
             .clone()
     }
 
+    /// Every file's bytes under `root`, but the open store's lock file: it is empty, and on
+    /// Windows its byte-range lock refuses a read while the store is open (OS error 33).
     fn files_under(root: &Path) -> Vec<Vec<u8>> {
         let mut found = Vec::new();
         for entry in walk(root) {
+            if entry
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with(".lock"))
+            {
+                assert_eq!(
+                    fs::metadata(&entry).unwrap().len(),
+                    0,
+                    "{}",
+                    entry.display()
+                );
+                continue;
+            }
             found.push(fs::read(entry).unwrap());
         }
         found
