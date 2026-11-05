@@ -245,6 +245,19 @@ export function VaultLibrary({
   const [anonymizeRecordId, setAnonymizeRecordId] = useState<string | null>(
     null,
   );
+  // Each screen that reads a document's whole text names its reads, so that
+  // closing one (the reader's Summary) never stops the other's (the
+  // preview's): a new id each time the preview or the reader opens. While
+  // neither is open the id is "", and nothing reads or cancels with it: both
+  // uses below are inside the open preview or reader.
+  const previewReadId = useMemo(
+    () => (anonymizeRecordId ? crypto.randomUUID() : ""),
+    [anonymizeRecordId],
+  );
+  const readerReadId = useMemo(
+    () => (readerRecordId ? crypto.randomUUID() : ""),
+    [readerRecordId],
+  );
   // The notice about the AI helper: before the first export of this
   // unlocked session (then the preview opens for `before`), before the first
   // Summary or Explain with a model (then `then` opens it), or from Security.
@@ -2514,10 +2527,12 @@ export function VaultLibrary({
                 ),
               ]}
               readText={(password) =>
-                bridge.documentText(anonymizeRecord.id, password)
+                bridge.documentText(anonymizeRecord.id, previewReadId, password)
               }
               cancelRead={() =>
-                void bridge.cancelDocumentText().catch(() => undefined)
+                void bridge
+                  .cancelDocumentText(previewReadId)
+                  .catch(() => undefined)
               }
               knownDetails={() => bridge.recordKnownDetails(anonymizeRecord.id)}
               pickDestination={(ticket) =>
@@ -2558,9 +2573,12 @@ export function VaultLibrary({
                       // is refused there, which the panel says as a failure;
                       // passing the reader's document password is the model
                       // step's work.
-                      loadText: () => bridge.documentText(readerRecord.id),
+                      loadText: () =>
+                        bridge.documentText(readerRecord.id, readerReadId),
                       cancelText: () =>
-                        void bridge.cancelDocumentText().catch(() => undefined),
+                        void bridge
+                          .cancelDocumentText(readerReadId)
+                          .catch(() => undefined),
                       onOpenPreferences: () => {
                         setReaderRecordId(null);
                         setSection("preferences");

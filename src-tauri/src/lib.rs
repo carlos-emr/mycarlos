@@ -15,6 +15,10 @@ pub mod document_notification_runtime;
 #[cfg(windows)]
 mod document_notification_windows;
 pub mod document_notifications;
+// The platform push hooks (one per platform, each with its own device test) and the Preferences
+// choice will call this; until then only the reconcile after opening the vault uses it.
+#[cfg_attr(not(test), allow(dead_code))]
+mod document_push;
 mod history;
 mod idle;
 // Some items (the catalog accessor, the Windows-only folder helper) are used only on
@@ -1962,7 +1966,15 @@ async fn vault_unlock(
         }),
     )
     .await?;
+    after_open(store.inner());
     run_blocking(store.inner(), VaultStore::snapshot).await
+}
+
+/// After the vault opens: remote-notice work owed from before (a revocation, a check a push
+/// asked for) runs in the background, so opening never waits on the network.
+fn after_open(store: &Arc<VaultStore>) {
+    let store = Arc::clone(store);
+    tauri::async_runtime::spawn_blocking(move || store.after_open());
 }
 
 #[tauri::command]
@@ -2533,6 +2545,7 @@ async fn vault_recover(
         }),
     )
     .await?;
+    after_open(store.inner());
     Ok(RecoverResponse {
         passphrase_replaced,
         snapshot: run_blocking(store.inner(), VaultStore::snapshot).await?,
@@ -3467,6 +3480,8 @@ fn vault_view_cancel() {
 #[serde(rename_all = "camelCase")]
 struct DocumentTextRequest {
     record_id: Uuid,
+    /// Who asks: the screen's own id, so that its cancel ends only this read.
+    read_id: Uuid,
     /// The document's own password, when it is locked with one. Not the vault passphrase.
     password: Option<String>,
 }
@@ -3536,10 +3551,11 @@ async fn vault_document_text(
         return Err(VaultError::Invalid.into());
     }
     let record_id = request.record_id;
+    let read_id = request.read_id;
     let given = request.password.is_some();
     let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
     drop(request);
-    let ticket = pdf_view::ViewTicket::text();
+    let ticket = pdf_view::ViewTicket::text_for(read_id);
     let session = picks.session();
     let result = run_blocking(store.inner(), move |store| {
         let snapshot = store.snapshot()?;
@@ -3675,11 +3691,19 @@ async fn vault_document_text(
     Ok(text)
 }
 
-/// Stops a text still being read: the preview closed. The reader's pages
-/// are not touched.
+/// Which text read to stop: the id the screen gave when it asked.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TextReadCancelRequest {
+    read_id: Uuid,
+}
+
+/// Stops a text still being read when the screen that asked for it closes:
+/// the preview, or the reader's Summary. Another screen's read goes on, and
+/// the reader's pages are not touched.
 #[tauri::command]
-fn vault_document_text_cancel() {
-    pdf_view::cancel_text_reads();
+fn vault_document_text_cancel(request: TextReadCancelRequest) {
+    pdf_view::cancel_text_read(request.read_id);
 }
 
 /// What the vault knows about a document's patient, for the remover in page

@@ -1574,6 +1574,18 @@ hidden-backToSecurity = Powrót do zabezpieczeń
 
 interface-history-appVersion = Wersja myCarlos
 
+interface-history-approval-accepted = Zatwierdzona
+
+interface-history-approval-cancelled = Anulowana
+
+interface-history-approval-challengeReady = Oczekuje na kod z e-maila od przychodni
+
+interface-history-approval-expired = Wygasła
+
+interface-history-approval-pending = Oczekuje na przychodnię
+
+interface-history-approval-refused = Odrzucona przez przychodnię
+
 interface-history-damaged = Część tej historii jest uszkodzona. Zdarzenia po { $date } nie mogą zostać zweryfikowane i nie są wyświetlane.
 
 interface-history-damagedAll = Część tej historii jest uszkodzona. Jej zdarzeń nie można zweryfikować, więc nie wyświetlono żadnego z nich.
@@ -1594,6 +1606,18 @@ interface-history-event-copySaved = Zapisano czytelną kopię
 
 interface-history-event-created = Utworzono sejf
 
+interface-history-event-deliveryFiled = Zapisano dokument z przychodni
+
+interface-history-event-deliveryReceiptSettled = Zamknięto potwierdzenie odbioru
+
+interface-history-event-deviceApprovalRequestRestarted = Rozpoczęto nową prośbę o zatwierdzenie
+
+interface-history-event-deviceApprovalRequested = Poproszono przychodnię o zatwierdzenie
+
+interface-history-event-deviceApprovalStatusChanged = Zmieniono stan prośby o zatwierdzenie
+
+interface-history-event-deviceApprovalVerified = Przychodnia zatwierdziła urządzenie
+
 interface-history-event-folderCreated = Utworzono folder
 
 interface-history-event-folderMoved = Przeniesiono folder
@@ -1610,7 +1634,13 @@ interface-history-event-moved = Przeniesiono dokument
 
 interface-history-event-passphraseChanged = Zmieniono hasło
 
+interface-history-event-portalLinkStarted = Rozpoczęto łączenie z przychodnią
+
+interface-history-event-portalLinked = Połączono z przychodnią
+
 interface-history-event-profileCreated = Dodano profil pacjenta
+
+interface-history-event-profileDetailsChanged = Zmieniono dane osobowe
 
 interface-history-event-readingAidFiled = Zapisano pomoc w czytaniu
 
@@ -1836,6 +1866,12 @@ aiHelper-exportCut = [Tekst ucięty po stronie { $page }]
 aiHelper-exportFileName = Tekst zanonimizowany.txt
 
 interface-history-how-anonymizedText = Zapisano zanonimizowany tekst
+
+interface-history-receipt-notFound = Dokumentu nie było już w portalu
+
+interface-history-receipt-pickedUp = Przychodnia odnotowała odbiór
+
+interface-history-status = Stan
 
 interface-RecordDetails-anonymizeText = Przygotuj tekst dla AI…
 

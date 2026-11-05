@@ -339,6 +339,12 @@ pub enum MessageId {
     InterfaceHiddenRestore,
     InterfaceHideDamagedTitle,
     InterfaceHistoryAppVersion,
+    InterfaceHistoryApprovalAccepted,
+    InterfaceHistoryApprovalCancelled,
+    InterfaceHistoryApprovalChallengeReady,
+    InterfaceHistoryApprovalExpired,
+    InterfaceHistoryApprovalPending,
+    InterfaceHistoryApprovalRefused,
     InterfaceHistoryDamaged,
     InterfaceHistoryDamagedAll,
     InterfaceHistoryDamagedBefore,
@@ -349,6 +355,12 @@ pub enum MessageId {
     InterfaceHistoryEventBackupSaved,
     InterfaceHistoryEventCopySaved,
     InterfaceHistoryEventCreated,
+    InterfaceHistoryEventDeliveryFiled,
+    InterfaceHistoryEventDeliveryReceiptSettled,
+    InterfaceHistoryEventDeviceApprovalRequestRestarted,
+    InterfaceHistoryEventDeviceApprovalRequested,
+    InterfaceHistoryEventDeviceApprovalStatusChanged,
+    InterfaceHistoryEventDeviceApprovalVerified,
     InterfaceHistoryEventFolderCreated,
     InterfaceHistoryEventFolderMoved,
     InterfaceHistoryEventFolderRenamed,
@@ -357,7 +369,10 @@ pub enum MessageId {
     InterfaceHistoryEventImported,
     InterfaceHistoryEventMoved,
     InterfaceHistoryEventPassphraseChanged,
+    InterfaceHistoryEventPortalLinkStarted,
+    InterfaceHistoryEventPortalLinked,
     InterfaceHistoryEventProfileCreated,
+    InterfaceHistoryEventProfileDetailsChanged,
     InterfaceHistoryEventReadingAidFiled,
     InterfaceHistoryEventRecoveryKeySet,
     InterfaceHistoryEventRenamed,
@@ -388,12 +403,15 @@ pub enum MessageId {
     InterfaceHistoryPlace,
     InterfaceHistoryPreviousName,
     InterfaceHistoryPreviousSession,
+    InterfaceHistoryReceiptNotFound,
+    InterfaceHistoryReceiptPickedUp,
     InterfaceHistoryRootFolder,
     InterfaceHistoryScopeNote,
     InterfaceHistorySessionLockedAutomatically,
     InterfaceHistorySessionLockedByApp,
     InterfaceHistorySessionLockedByPerson,
     InterfaceHistorySessionNotRecorded,
+    InterfaceHistoryStatus,
     InterfaceHistoryTitle,
     InterfaceHistoryTo,
     InterfaceInLocation,
@@ -1227,6 +1245,12 @@ impl MessageId {
         Self::InterfaceHiddenRestore,
         Self::InterfaceHideDamagedTitle,
         Self::InterfaceHistoryAppVersion,
+        Self::InterfaceHistoryApprovalAccepted,
+        Self::InterfaceHistoryApprovalCancelled,
+        Self::InterfaceHistoryApprovalChallengeReady,
+        Self::InterfaceHistoryApprovalExpired,
+        Self::InterfaceHistoryApprovalPending,
+        Self::InterfaceHistoryApprovalRefused,
         Self::InterfaceHistoryDamaged,
         Self::InterfaceHistoryDamagedAll,
         Self::InterfaceHistoryDamagedBefore,
@@ -1237,6 +1261,12 @@ impl MessageId {
         Self::InterfaceHistoryEventBackupSaved,
         Self::InterfaceHistoryEventCopySaved,
         Self::InterfaceHistoryEventCreated,
+        Self::InterfaceHistoryEventDeliveryFiled,
+        Self::InterfaceHistoryEventDeliveryReceiptSettled,
+        Self::InterfaceHistoryEventDeviceApprovalRequestRestarted,
+        Self::InterfaceHistoryEventDeviceApprovalRequested,
+        Self::InterfaceHistoryEventDeviceApprovalStatusChanged,
+        Self::InterfaceHistoryEventDeviceApprovalVerified,
         Self::InterfaceHistoryEventFolderCreated,
         Self::InterfaceHistoryEventFolderMoved,
         Self::InterfaceHistoryEventFolderRenamed,
@@ -1245,7 +1275,10 @@ impl MessageId {
         Self::InterfaceHistoryEventImported,
         Self::InterfaceHistoryEventMoved,
         Self::InterfaceHistoryEventPassphraseChanged,
+        Self::InterfaceHistoryEventPortalLinkStarted,
+        Self::InterfaceHistoryEventPortalLinked,
         Self::InterfaceHistoryEventProfileCreated,
+        Self::InterfaceHistoryEventProfileDetailsChanged,
         Self::InterfaceHistoryEventReadingAidFiled,
         Self::InterfaceHistoryEventRecoveryKeySet,
         Self::InterfaceHistoryEventRenamed,
@@ -1276,12 +1309,15 @@ impl MessageId {
         Self::InterfaceHistoryPlace,
         Self::InterfaceHistoryPreviousName,
         Self::InterfaceHistoryPreviousSession,
+        Self::InterfaceHistoryReceiptNotFound,
+        Self::InterfaceHistoryReceiptPickedUp,
         Self::InterfaceHistoryRootFolder,
         Self::InterfaceHistoryScopeNote,
         Self::InterfaceHistorySessionLockedAutomatically,
         Self::InterfaceHistorySessionLockedByApp,
         Self::InterfaceHistorySessionLockedByPerson,
         Self::InterfaceHistorySessionNotRecorded,
+        Self::InterfaceHistoryStatus,
         Self::InterfaceHistoryTitle,
         Self::InterfaceHistoryTo,
         Self::InterfaceInLocation,
@@ -2321,6 +2357,14 @@ impl MessageId {
             Self::InterfaceHiddenRestore => "interface-hidden-restore",
             Self::InterfaceHideDamagedTitle => "interface-hideDamaged-title",
             Self::InterfaceHistoryAppVersion => "interface-history-appVersion",
+            Self::InterfaceHistoryApprovalAccepted => "interface-history-approval-accepted",
+            Self::InterfaceHistoryApprovalCancelled => "interface-history-approval-cancelled",
+            Self::InterfaceHistoryApprovalChallengeReady => {
+                "interface-history-approval-challengeReady"
+            }
+            Self::InterfaceHistoryApprovalExpired => "interface-history-approval-expired",
+            Self::InterfaceHistoryApprovalPending => "interface-history-approval-pending",
+            Self::InterfaceHistoryApprovalRefused => "interface-history-approval-refused",
             Self::InterfaceHistoryDamaged => "interface-history-damaged",
             Self::InterfaceHistoryDamagedAll => "interface-history-damagedAll",
             Self::InterfaceHistoryDamagedBefore => "interface-history-damagedBefore",
@@ -2331,6 +2375,22 @@ impl MessageId {
             Self::InterfaceHistoryEventBackupSaved => "interface-history-event-backupSaved",
             Self::InterfaceHistoryEventCopySaved => "interface-history-event-copySaved",
             Self::InterfaceHistoryEventCreated => "interface-history-event-created",
+            Self::InterfaceHistoryEventDeliveryFiled => "interface-history-event-deliveryFiled",
+            Self::InterfaceHistoryEventDeliveryReceiptSettled => {
+                "interface-history-event-deliveryReceiptSettled"
+            }
+            Self::InterfaceHistoryEventDeviceApprovalRequestRestarted => {
+                "interface-history-event-deviceApprovalRequestRestarted"
+            }
+            Self::InterfaceHistoryEventDeviceApprovalRequested => {
+                "interface-history-event-deviceApprovalRequested"
+            }
+            Self::InterfaceHistoryEventDeviceApprovalStatusChanged => {
+                "interface-history-event-deviceApprovalStatusChanged"
+            }
+            Self::InterfaceHistoryEventDeviceApprovalVerified => {
+                "interface-history-event-deviceApprovalVerified"
+            }
             Self::InterfaceHistoryEventFolderCreated => "interface-history-event-folderCreated",
             Self::InterfaceHistoryEventFolderMoved => "interface-history-event-folderMoved",
             Self::InterfaceHistoryEventFolderRenamed => "interface-history-event-folderRenamed",
@@ -2341,7 +2401,14 @@ impl MessageId {
             Self::InterfaceHistoryEventPassphraseChanged => {
                 "interface-history-event-passphraseChanged"
             }
+            Self::InterfaceHistoryEventPortalLinkStarted => {
+                "interface-history-event-portalLinkStarted"
+            }
+            Self::InterfaceHistoryEventPortalLinked => "interface-history-event-portalLinked",
             Self::InterfaceHistoryEventProfileCreated => "interface-history-event-profileCreated",
+            Self::InterfaceHistoryEventProfileDetailsChanged => {
+                "interface-history-event-profileDetailsChanged"
+            }
             Self::InterfaceHistoryEventReadingAidFiled => "interface-history-event-readingAidFiled",
             Self::InterfaceHistoryEventRecoveryKeySet => "interface-history-event-recoveryKeySet",
             Self::InterfaceHistoryEventRenamed => "interface-history-event-renamed",
@@ -2374,6 +2441,8 @@ impl MessageId {
             Self::InterfaceHistoryPlace => "interface-history-place",
             Self::InterfaceHistoryPreviousName => "interface-history-previousName",
             Self::InterfaceHistoryPreviousSession => "interface-history-previousSession",
+            Self::InterfaceHistoryReceiptNotFound => "interface-history-receipt-notFound",
+            Self::InterfaceHistoryReceiptPickedUp => "interface-history-receipt-pickedUp",
             Self::InterfaceHistoryRootFolder => "interface-history-rootFolder",
             Self::InterfaceHistoryScopeNote => "interface-history-scopeNote",
             Self::InterfaceHistorySessionLockedAutomatically => {
@@ -2384,6 +2453,7 @@ impl MessageId {
                 "interface-history-sessionLockedByPerson"
             }
             Self::InterfaceHistorySessionNotRecorded => "interface-history-sessionNotRecorded",
+            Self::InterfaceHistoryStatus => "interface-history-status",
             Self::InterfaceHistoryTitle => "interface-history-title",
             Self::InterfaceHistoryTo => "interface-history-to",
             Self::InterfaceInLocation => "interface-inLocation",
@@ -3817,6 +3887,14 @@ impl MessageId {
             "rename.title.profile" => Some(Self::RenameTitleProfile),
             "hidden.backToSecurity" => Some(Self::HiddenBackToSecurity),
             "interface.history.appVersion" => Some(Self::InterfaceHistoryAppVersion),
+            "interface.history.approval.accepted" => Some(Self::InterfaceHistoryApprovalAccepted),
+            "interface.history.approval.cancelled" => Some(Self::InterfaceHistoryApprovalCancelled),
+            "interface.history.approval.challengeReady" => {
+                Some(Self::InterfaceHistoryApprovalChallengeReady)
+            }
+            "interface.history.approval.expired" => Some(Self::InterfaceHistoryApprovalExpired),
+            "interface.history.approval.pending" => Some(Self::InterfaceHistoryApprovalPending),
+            "interface.history.approval.refused" => Some(Self::InterfaceHistoryApprovalRefused),
             "interface.history.damaged" => Some(Self::InterfaceHistoryDamaged),
             "interface.history.damagedAll" => Some(Self::InterfaceHistoryDamagedAll),
             "interface.history.damagedBefore" => Some(Self::InterfaceHistoryDamagedBefore),
@@ -3829,6 +3907,24 @@ impl MessageId {
             "interface.history.event.backupSaved" => Some(Self::InterfaceHistoryEventBackupSaved),
             "interface.history.event.copySaved" => Some(Self::InterfaceHistoryEventCopySaved),
             "interface.history.event.created" => Some(Self::InterfaceHistoryEventCreated),
+            "interface.history.event.deliveryFiled" => {
+                Some(Self::InterfaceHistoryEventDeliveryFiled)
+            }
+            "interface.history.event.deliveryReceiptSettled" => {
+                Some(Self::InterfaceHistoryEventDeliveryReceiptSettled)
+            }
+            "interface.history.event.deviceApprovalRequestRestarted" => {
+                Some(Self::InterfaceHistoryEventDeviceApprovalRequestRestarted)
+            }
+            "interface.history.event.deviceApprovalRequested" => {
+                Some(Self::InterfaceHistoryEventDeviceApprovalRequested)
+            }
+            "interface.history.event.deviceApprovalStatusChanged" => {
+                Some(Self::InterfaceHistoryEventDeviceApprovalStatusChanged)
+            }
+            "interface.history.event.deviceApprovalVerified" => {
+                Some(Self::InterfaceHistoryEventDeviceApprovalVerified)
+            }
             "interface.history.event.folderCreated" => {
                 Some(Self::InterfaceHistoryEventFolderCreated)
             }
@@ -3845,8 +3941,15 @@ impl MessageId {
             "interface.history.event.passphraseChanged" => {
                 Some(Self::InterfaceHistoryEventPassphraseChanged)
             }
+            "interface.history.event.portalLinkStarted" => {
+                Some(Self::InterfaceHistoryEventPortalLinkStarted)
+            }
+            "interface.history.event.portalLinked" => Some(Self::InterfaceHistoryEventPortalLinked),
             "interface.history.event.profileCreated" => {
                 Some(Self::InterfaceHistoryEventProfileCreated)
+            }
+            "interface.history.event.profileDetailsChanged" => {
+                Some(Self::InterfaceHistoryEventProfileDetailsChanged)
             }
             "interface.history.event.readingAidFiled" => {
                 Some(Self::InterfaceHistoryEventReadingAidFiled)
@@ -3885,6 +3988,8 @@ impl MessageId {
             "interface.history.place" => Some(Self::InterfaceHistoryPlace),
             "interface.history.previousName" => Some(Self::InterfaceHistoryPreviousName),
             "interface.history.previousSession" => Some(Self::InterfaceHistoryPreviousSession),
+            "interface.history.receipt.notFound" => Some(Self::InterfaceHistoryReceiptNotFound),
+            "interface.history.receipt.pickedUp" => Some(Self::InterfaceHistoryReceiptPickedUp),
             "interface.history.rootFolder" => Some(Self::InterfaceHistoryRootFolder),
             "interface.history.scopeNote" => Some(Self::InterfaceHistoryScopeNote),
             "interface.history.sessionLockedAutomatically" => {
@@ -3899,6 +4004,7 @@ impl MessageId {
             "interface.history.sessionNotRecorded" => {
                 Some(Self::InterfaceHistorySessionNotRecorded)
             }
+            "interface.history.status" => Some(Self::InterfaceHistoryStatus),
             "interface.history.title" => Some(Self::InterfaceHistoryTitle),
             "interface.history.to" => Some(Self::InterfaceHistoryTo),
             "ai.summary.button" => Some(Self::AiSummaryButton),
