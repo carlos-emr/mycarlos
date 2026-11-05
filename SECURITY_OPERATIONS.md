@@ -15,7 +15,7 @@ production end-of-support schedule remain an owner decision and release gate.
 - Analytics, crash upload, remote logging and telemetry are disabled; their allow-list of fields
   permitted to leave the device is the empty set.
 - The planned network uses are pickup from the portal the patient links (carlos-portal #41) and
-  the AI helper's model download (#72, #219, in review). The fields pickup may send are listed
+  the AI helper's model download (#72, #219, on main). The fields pickup may send are listed
   under [Portal pickup](#portal-pickup-what-may-leave-the-device); the download sends none
   ([AI helper](#ai-helper-72-nothing-about-the-patient-leaves-the-device)); nothing else may leave the device.
 - The AI helper (#72) adds one host to the allow-list, for the model file only: its "cloud" way is
@@ -155,7 +155,7 @@ was not active in the key list it pinned at linking (it does not yet learn of a 
 
 ## AI helper (#72): nothing about the patient leaves the device
 
-The anonymized text export (part B) is built on main (#171, computers only), and so are the reader's Summary and Explain behind the notice (#217) and the model runtime (#218); the model download (#219) and kept answers (#212) are in review ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
+The anonymized text export (part B) is built on main (#171, computers only), and so are the reader's Summary and Explain behind the notice (#217), the model runtime (#218) and the model download (#219); kept answers (#212) are in review ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
 on 29 October 2026 that the helper uses no cloud provider, so:
 
 - **What may leave the device: nothing about the patient.** The model runs in a sandboxed helper
@@ -182,7 +182,7 @@ on 29 October 2026 that the helper uses no cloud provider, so:
   that fails its check is marked damaged and offered for removal, and the patient can remove the
   model. It is checked against a list built into the app (SHA-256 and size; part of the signed app
   once releases are signed) when it is added and at every helper start (AI-04).
-- **How the model reaches the device (#219, in review):** **Download the default model**, or **Add
+- **How the model reaches the device (#219, on main):** **Download the default model**, or **Add
   a model file…** for a file the patient already has (THREAT_MODEL D-10, AI-08). The download's
   allow-list entry:
 

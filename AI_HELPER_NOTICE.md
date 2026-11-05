@@ -1,12 +1,12 @@
 # AI helper: the in-app privacy notice (#72)
 
 - **Status:** the export messages (part B) are in the app on main (#171, desktop only), in the
-  seven `.ftl` files and `src/i18n/locales/fluent/message-keys.json`, still for review by Ben and by
-  a native speaker of each language. The messages below are those texts. The part D messages
+  seven `.ftl` files and `src/i18n/locales/fluent/message-keys.json`, approved as written by Ben on
+  5 November 2026 (D4); a native speaker of each language still checks its translation. The messages below are those texts. The part D messages
   (`intro`, `modelHeading`, `modelBody`, `resultsBody`) are in the seven catalogues on main, and
   the notice shows them before Summary and Explain since #217. `resultsBody` stays hidden until
   answers are kept in the vault (#212). `intro`, `introShare` and `modelBody` are given here as the
-  model download (#219) changes them: the AI helper fetches its model file once, when the patient
+  model download (#219, on main) changed them: the AI helper fetches its model file once, when the patient
   chooses to, and the download site sees the computer's internet address. The date wording
   follows the date placeholders (#201). See "What the notice does not say in detail" at the end.
 - **Date:** 2026-11-05 (first 2026-10-29)

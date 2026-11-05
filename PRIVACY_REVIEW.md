@@ -263,7 +263,7 @@ leaves depends on the system:
 **The app itself sends nothing.** It:
 
 - makes no network connections: its own code makes none, and its security settings let its
-  screens talk only to the app itself (the AI helper's model download, in review in #219, will be
+  screens talk only to the app itself (the AI helper's model download, #219, is
   the exception: one public file, only when the patient clicks it; see below);
 - has no analytics, telemetry or crash reporting;
 - has no automatic updates yet (updates are planned through app stores and a signed desktop
@@ -291,7 +291,7 @@ What the patient saves themselves (backups, recovery kits, readable copies) leav
 where the patient puts it.
 
 **The AI helper (#72, section 11) sends nothing about the patient.** Its one connection is the
-model download (#219, in review), only when the patient clicks it: the download site sees the
+model download (#219), only when the patient clicks it: the download site sees the
 computer's IP address, the time and which public file was fetched, and nothing else is sent
 (`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
 
@@ -408,11 +408,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     wrong", stay outside the rules for software as a medical device (#25)?
 16. **Other people's documents:** the helper can be used on documents in a child's or another
     adult's profile. Is more guidance needed before their text is exported (see also question 4)?
-17. **Keeping AI answers:** once #212 lands, one answer is kept per document, tool and language
-    (and term, for Explain), encrypted with the document. A newer answer replaces the older one,
-    because answers are derived and can be made again, while the documents themselves are never
-    deleted (#71). This is the default decision, which Ben may change. Is replacing acceptable, and
-    should the patient also be able to remove an answer they do not want?
+17. **Keeping AI answers:** once #212 lands, answers are kept with their document, encrypted. A
+    newer answer for the same document, tool and language (and term, for Explain) is shown in place
+    of the older one, and the older one is kept hidden, never deleted, like the documents (#71;
+    Ben's decision D3, 5 November 2026). Should the patient be able to remove an answer they do
+    not want?
 18. **Dates replaced by marks:** no real date is sent. Each date is a numbered mark with its gap in
     days from the earliest date, so the time between dates stays clear. A reader who knows one real
     date (a birth, or an event named in the text) can still work out all the others from the
@@ -423,7 +423,7 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     every 19xx or 20xx as a date would also hit "2019 tablets": together with the gaps, one dated
     event a reader knows can anchor every mark. Should a bare year be treated as a date, accepting
     that cost, or left as it is and named in the notice, as now?
-19. **How the model reaches the device:** both ways, in #219 (in review; `THREAT_MODEL.md` D-10,
+19. **How the model reaches the device:** both ways, in #219 (on main; `THREAT_MODEL.md` D-10,
     AI-08). **Download the default model** fetches one public file, at a fixed version, from
     huggingface.co and its CDN, only on a click; nothing about the patient is sent, and the notice
     and Preferences say so. The site sees the computer's IP address, the time and which file, which
@@ -437,8 +437,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 ## 11. The AI helper (#72)
 
 The text export (part B) is built on main (#171) and works on computers only; it is hidden on
-phones. The reader's Summary and Explain (#217) and the model runtime (#218) are on main; the model
-download (#219) and kept answers (#212) are in review. This section describes all of it, so that the assessment
+phones. The reader's Summary and Explain (#217), the model runtime (#218) and the model
+download (#219) are on main; kept answers (#212) are in review. This section describes all of it, so that the assessment
 can cover them. It is for synthetic data only until this assessment approves real information (#25). The security side
 is in `THREAT_MODEL.md` (AI-01 to AI-10) and `SECURITY_OPERATIONS.md`, and the notice the patient
 sees is in `AI_HELPER_NOTICE.md`.
@@ -508,15 +508,15 @@ public file at a fixed version, or **Add a model file…** takes a copy the pati
 out of system backups), and it is checked against a list built into the app when it is added and
 before every use; a changed file is not used. It runs in a sandboxed helper without access to the
 network or to the patient's other files (#218), on Windows and Linux computers with enough memory;
-Macs come later (#211). Which model is used will be decided after a comparison of small open models
-on made-up documents.
+Macs come later (#211). The default model is Qwen3.5 4B (Q4_K_M), which Ben chose on 5 November (D2) after a comparison
+of small open models on made-up documents.
 
 **The answers.** Each is marked "Written by AI and may be wrong. Check with your doctor." In this
 build an answer is shown only while the reader is open and is not kept. Once #212 lands, answers are
 saved in the vault, encrypted, with the document, the tool, the model and the date. A newer
-answer for the same document, tool and language (and term) replaces the older one, since answers
-can be made again; an answer is hidden with its document, the document itself is never deleted
-(#71), and answers are in backups like the rest of the vault (question 17). The notice promises this only once it is true.
+answer for the same document, tool and language (and term) is shown in place of the older one,
+which is kept hidden, never deleted (#71; Ben's decision D3); an answer is hidden with its
+document, and answers are in backups like the rest of the vault (question 17). The notice promises this only once it is true.
 
 **Limits.**
 
