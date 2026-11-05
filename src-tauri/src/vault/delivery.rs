@@ -2418,6 +2418,42 @@ mod approval_recovery_tests {
         let kept = stored_aid(&store, record_id).unwrap();
         assert_eq!(kept.outer.delivery_id, outer.delivery_id);
     }
+    #[test]
+    fn a_filed_aid_reaches_the_snapshot_with_its_notice_and_review_time_and_a_plain_record_does_not(
+    ) {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let before = store.snapshot().unwrap();
+        assert!(before.records.iter().all(|r| r.reading_aid.is_none()));
+        let json = serde_json::to_value(&before.records[0]).unwrap();
+        assert!(json.get("readingAid").is_none());
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        store
+            .receive_aid_at(&outer, &sealed, &link, store.portal_link_ticket(), NOW_MS)
+            .unwrap();
+        let held = stored_aid(&store, record_id).unwrap();
+        let reviewed = crate::reading_aid::kept_manifest(&held.manifest_compact)
+            .unwrap()
+            .approval
+            .reviewed_at;
+        let snapshot = store.snapshot().unwrap();
+        let record = snapshot.records.iter().find(|r| r.id == record_id).unwrap();
+        let aid = record
+            .reading_aid
+            .as_ref()
+            .expect("the filed aid is on its record");
+        assert_eq!(aid.delivery_id, outer.delivery_id);
+        assert_eq!(aid.reviewed_at_ms, reviewed * 1000);
+        assert_eq!(aid.language, "en");
+        assert!(aid.notice.heading.starts_with("AI-generated reading aid"));
+        assert!(aid.notice.body.starts_with("FAKE notice body"));
+        assert_eq!(aid.points.len(), 2);
+        assert_eq!(aid.points[0].evidence.len(), 1);
+        // The reader receives it under camelCase names, and it is not a document of its own.
+        let json = serde_json::to_value(record).unwrap();
+        assert_eq!(json["readingAid"]["reviewedAtMs"], reviewed * 1000);
+        assert_eq!(json["readingAid"]["notice"]["heading"], aid.notice.heading);
+        assert_eq!(snapshot.records.len(), before.records.len());
+    }
     fn waiting_aids(store: &VaultStore) -> Vec<wire::WaitingAid> {
         store
             .session()

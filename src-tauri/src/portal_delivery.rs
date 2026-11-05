@@ -759,6 +759,73 @@ pub struct WaitingAid {
     pub kept_at_ms: u64,
 }
 pub const MAX_WAITING_AIDS: usize = 32;
+
+/// A filed reading aid as the reader shows it: the checked JSON's notice, overview and points,
+/// the clinician's review time from the signed manifest, and the aid's delivery ID. Plain text
+/// only: the reader never renders any of it as markup.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadingAidView {
+    pub delivery_id: String,
+    pub language: String,
+    pub reviewed_at_ms: u64,
+    pub notice: ReadingAidNotice,
+    pub overview: String,
+    pub points: Vec<ReadingAidPoint>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ReadingAidNotice {
+    pub version: String,
+    pub heading: String,
+    pub body: String,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ReadingAidPoint {
+    pub text: String,
+    pub evidence: Vec<String>,
+}
+impl AidCustody {
+    /// The reader's view of this aid, or None when the kept JSON or manifest cannot be read as
+    /// one (it was checked when it arrived and on every manifest read, so this is a safety net).
+    pub fn view(&self) -> Option<ReadingAidView> {
+        let json: serde_json::Value = serde_json::from_str(&self.json).ok()?;
+        let (payload, _) = split_compact(&self.manifest_compact, 16 * 1024).ok()?;
+        let claims: serde_json::Value = serde_json::from_slice(&payload).ok()?;
+        let text = |v: &serde_json::Value, key: &str| v.get(key)?.as_str().map(str::to_owned);
+        let points = json
+            .get("points")?
+            .as_array()?
+            .iter()
+            .map(|point| {
+                Some(ReadingAidPoint {
+                    text: text(point, "text")?,
+                    evidence: point
+                        .get("evidence")?
+                        .as_array()?
+                        .iter()
+                        .map(|e| e.as_str().map(str::to_owned))
+                        .collect::<Option<Vec<_>>>()?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let notice = json.get("notice")?;
+        Some(ReadingAidView {
+            delivery_id: self.outer.delivery_id.clone(),
+            language: text(&json, "language")?,
+            reviewed_at_ms: claims
+                .pointer("/approval/reviewed_at")?
+                .as_u64()?
+                .checked_mul(1000)?,
+            notice: ReadingAidNotice {
+                version: text(notice, "version")?,
+                heading: text(notice, "heading")?,
+                body: text(notice, "body")?,
+            },
+            overview: text(&json, "overview")?,
+            points,
+        })
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReceiptOutcome {

@@ -43,7 +43,9 @@ export function ReadingAidView({
   if (!noticeShown) {
     return (
       <section aria-labelledby="reading-aid-title" className="reading-aid">
-        <h2 id="reading-aid-title">{t("readingAid.title")}</h2>
+        <h2 id="reading-aid-title" tabIndex={-1}>
+          {t("readingAid.title")}
+        </h2>
         <p role="alert">{t("readingAid.unavailable")}</p>
         <button type="button" className="button" onClick={onOpenOriginal}>
           {t("readingAid.openOriginal")}
@@ -57,7 +59,9 @@ export function ReadingAidView({
       className="reading-aid"
       lang={aid.language}
     >
-      <h2 id="reading-aid-title">{t("readingAid.title")}</h2>
+      <h2 id="reading-aid-title" tabIndex={-1}>
+        {t("readingAid.title")}
+      </h2>
       <div className="reading-aid-notice" role="note">
         <h3>{aid.notice.heading}</h3>
         {paragraphs(aid.notice.body).map((paragraph, index) => (

@@ -50,6 +50,20 @@ export interface VaultRecord {
   verifiedClinicName?: string;
   /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
   clinicServiceDate?: string;
+  /** The clinician-approved reading aid filed with this delivery (vault format 10). Reached from
+   * this document only; never a document of its own. */
+  readingAid?: ReadingAidRecord;
+}
+
+/** A filed reading aid as the reader shows it (the native receiver verified it). */
+export interface ReadingAidRecord {
+  deliveryId: string;
+  language: string;
+  /** When the clinician's review was recorded: the signed approval's time. */
+  reviewedAtMs: number;
+  notice: { version: string; heading: string; body: string };
+  overview: string;
+  points: { text: string; evidence: string[] }[];
 }
 
 /** When, and why, a document was hidden (#71). */
