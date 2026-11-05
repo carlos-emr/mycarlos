@@ -3,8 +3,8 @@
 
 use super::{
     document_budget, explain_prompt, fit_pages, language_name, read_explanation, read_summary,
-    summary_grammar, summary_prompt, without_slot, Fit, ModelFile, Page, Sentence, Settings,
-    BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
+    summary_grammar, summary_prompt, thinking_off, without_slot, Fit, ModelFile, Page, Sentence,
+    Settings, BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
     SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
@@ -89,6 +89,8 @@ impl Engine {
             .model
             .apply_chat_template(&self.template, &messages, true)
             .map_err(|_| failed("prompt"))?;
+        // A thinking model answers at once, as its template has it with thinking off.
+        let templated = thinking_off(self.template.to_str().unwrap_or_default(), templated);
         let pieces: Vec<&str> = templated.split(SLOT).collect();
         if pieces.len() != parts.len() + 1 {
             return Err(failed("prompt"));
