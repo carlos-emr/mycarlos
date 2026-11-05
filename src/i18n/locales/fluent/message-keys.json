@@ -758,6 +758,8 @@
   "ai.preferences.body",
   "ai.preferences.notInstalled",
   "ai.working",
+  "ai.summary.ready",
+  "ai.explain.ready",
   "ai.failed",
   "ai.error.memory",
   "ai.error.busy",

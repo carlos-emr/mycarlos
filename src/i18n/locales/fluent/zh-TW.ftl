@@ -1584,6 +1584,10 @@ native-filter-models = 模型檔案
 
 ai-working = AI 助理正在處理…
 
+ai-summary-ready = 摘要已產生。
+
+ai-explain-ready = 解釋已產生。
+
 ai-failed = AI 助理未能完成。請重試。
 
 ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關閉其他程式後重試。

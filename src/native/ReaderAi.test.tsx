@@ -495,6 +495,36 @@ describe("the reader's AI helper", () => {
     ).toBeNull();
   });
 
+  it("says in its status that the summary, and then the explanation, is ready", async () => {
+    renderReader(fakeLocalModel());
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    const summaryPanel = screen.getByRole("region", {
+      name: "Summary in plain words",
+    });
+    await waitFor(() =>
+      expect(within(summaryPanel).getByRole("status")).toHaveTextContent(
+        "The summary is ready.",
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    const explainPanel = screen.getByRole("region", { name: "Explain a term" });
+    expect(within(explainPanel).getByRole("status")).toHaveTextContent("");
+    await user.type(
+      within(explainPanel).getByRole("textbox", { name: "Word or phrase" }),
+      "potassium",
+    );
+    await user.click(
+      within(explainPanel).getByRole("button", { name: "Explain" }),
+    );
+    await waitFor(() =>
+      expect(within(explainPanel).getByRole("status")).toHaveTextContent(
+        "The explanation is ready.",
+      ),
+    );
+  });
+
   it("numbers the last page read by its page, not by the count, when a page failed", async () => {
     // Pages 1, 2 and 4 read, page 3 refused, the rest left out: "pages 1 to 4".
     renderReader(fakeLocalModel(), {

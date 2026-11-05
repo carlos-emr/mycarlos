@@ -218,8 +218,15 @@ export function ReaderAiPanel({
           </button>
         </form>
       )}
+      {/* Read out as it changes: the work, then that the answer came. */}
       <p className={working ? "native-dialog-status" : "sr-only"} role="status">
-        {working ? t("ai.working") : ""}
+        {working
+          ? t("ai.working")
+          : tool === "summary" && summary
+            ? t("ai.summary.ready")
+            : tool === "explain" && explained
+              ? t("ai.explain.ready")
+              : ""}
       </p>
       {failed && <p role="alert">{t("ai.failed")}</p>}
       {noText && <p>{t("ai.summary.noText")}</p>}

@@ -1788,6 +1788,10 @@ native-filter-models = Pliki modeli
 
 ai-working = Asystent AI pracuje…
 
+ai-summary-ready = Podsumowanie jest gotowe.
+
+ai-explain-ready = Wyjaśnienie jest gotowe.
+
 ai-failed = Asystent AI nie zdołał dokończyć. Można spróbować ponownie.
 
 ai-error-memory = Brakuje teraz wolnej pamięci dla asystenta AI. Można zamknąć inne programy i spróbować ponownie.

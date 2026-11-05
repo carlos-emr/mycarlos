@@ -1754,6 +1754,10 @@ native-filter-models = Arquivos de modelo
 
 ai-working = O assistente de IA está trabalhando…
 
+ai-summary-ready = O resumo está pronto.
+
+ai-explain-ready = A explicação está pronta.
+
 ai-failed = O assistente de IA não conseguiu terminar. Tente de novo.
 
 ai-error-memory = Não há memória livre suficiente para o assistente de IA agora. Feche outros programas e tente de novo.
