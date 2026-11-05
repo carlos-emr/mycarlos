@@ -3,7 +3,7 @@
 //! is an encrypted object of its own beside the document's, under a random
 //! key wrapped with the vault's object-wrap key, so it is backed up,
 //! restored, hidden and kept with the document and never written anywhere
-//! else. Manifest format 9 names them; an older build refuses the vault
+//! else. Manifest format 10 names them; an older build refuses the vault
 //! rather than drop them as orphans.
 //!
 //! The vault keeps one answer per tool, language and term: a new summary in

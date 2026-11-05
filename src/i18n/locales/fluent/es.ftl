@@ -1542,6 +1542,18 @@ hidden-backToSecurity = Volver a Seguridad
 
 interface-history-appVersion = Versión de myCarlos
 
+interface-history-approval-accepted = Aprobada
+
+interface-history-approval-cancelled = Cancelada
+
+interface-history-approval-challengeReady = Esperando el código del correo de la clínica
+
+interface-history-approval-expired = Caducada
+
+interface-history-approval-pending = Esperando a la clínica
+
+interface-history-approval-refused = Rechazada por la clínica
+
 interface-history-damaged = Parte de este historial está dañada. Los eventos posteriores al { $date } no se pueden verificar y no se muestran.
 
 interface-history-damagedAll = Parte de este historial está dañada. Sus eventos no se pueden verificar, así que no se muestra ninguno.
@@ -1564,6 +1576,18 @@ interface-history-event-copySaved = Copia legible guardada
 
 interface-history-event-created = Bóveda creada
 
+interface-history-event-deliveryFiled = Documento de la clínica guardado
+
+interface-history-event-deliveryReceiptSettled = Acuse de recibo cerrado
+
+interface-history-event-deviceApprovalRequestRestarted = Otra solicitud de aprobación iniciada
+
+interface-history-event-deviceApprovalRequested = Aprobación de la clínica solicitada
+
+interface-history-event-deviceApprovalStatusChanged = Aprobación de la clínica actualizada
+
+interface-history-event-deviceApprovalVerified = Dispositivo aprobado por la clínica
+
 interface-history-event-folderCreated = Carpeta creada
 
 interface-history-event-folderMoved = Carpeta movida
@@ -1580,7 +1604,13 @@ interface-history-event-moved = Documento movido
 
 interface-history-event-passphraseChanged = Frase de contraseña cambiada
 
+interface-history-event-portalLinkStarted = Vinculación con la clínica iniciada
+
+interface-history-event-portalLinked = Clínica vinculada
+
 interface-history-event-profileCreated = Perfil de paciente añadido
+
+interface-history-event-profileDetailsChanged = Datos personales cambiados
 
 interface-history-event-readingAidFiled = Ayuda de lectura guardada
 
@@ -1804,6 +1834,12 @@ aiHelper-exportCut = [Texto cortado después de la página { $page }]
 aiHelper-exportFileName = Texto anonimizado.txt
 
 interface-history-how-anonymizedText = Texto anonimizado guardado
+
+interface-history-receipt-notFound = El documento ya no estaba en el portal
+
+interface-history-receipt-pickedUp = La clínica registró la recogida
+
+interface-history-status = Estado
 
 interface-RecordDetails-anonymizeText = Preparar el texto para una IA…
 

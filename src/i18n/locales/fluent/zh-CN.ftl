@@ -1382,6 +1382,18 @@ hidden-backToSecurity = 返回「安全」
 
 interface-history-appVersion = myCarlos 版本
 
+interface-history-approval-accepted = 已批准
+
+interface-history-approval-cancelled = 已取消
+
+interface-history-approval-challengeReady = 等待诊所电子邮件中的验证码
+
+interface-history-approval-expired = 已过期
+
+interface-history-approval-pending = 等待诊所处理
+
+interface-history-approval-refused = 诊所已拒绝
+
 interface-history-damaged = 此记录有部分已损毁。{ $date } 之后的事件无法检查，因此不显示。
 
 interface-history-damagedAll = 此记录有部分已损毁。其中的事件无法检查，因此全部不显示。
@@ -1404,6 +1416,18 @@ interface-history-event-copySaved = 可读副本已保存
 
 interface-history-event-created = 保险库已创建
 
+interface-history-event-deliveryFiled = 已保存诊所文档
+
+interface-history-event-deliveryReceiptSettled = 领取回执已结束
+
+interface-history-event-deviceApprovalRequestRestarted = 已发起新的批准请求
+
+interface-history-event-deviceApprovalRequested = 已申请诊所批准
+
+interface-history-event-deviceApprovalStatusChanged = 诊所批准状态已更新
+
+interface-history-event-deviceApprovalVerified = 诊所已批准此设备
+
 interface-history-event-folderCreated = 文件夹已创建
 
 interface-history-event-folderMoved = 文件夹已移动
@@ -1420,7 +1444,13 @@ interface-history-event-moved = 文档已移动
 
 interface-history-event-passphraseChanged = 密码短语已变更
 
+interface-history-event-portalLinkStarted = 已开始关联诊所
+
+interface-history-event-portalLinked = 已关联诊所
+
 interface-history-event-profileCreated = 患者档案已添加
+
+interface-history-event-profileDetailsChanged = 个人资料已更改
 
 interface-history-event-readingAidFiled = 已保存阅读辅助
 
@@ -1634,6 +1664,12 @@ aiHelper-exportCut = [文本在第 { $page } 页之后被截断]
 aiHelper-exportFileName = 匿名化文本.txt
 
 interface-history-how-anonymizedText = 已保存匿名化文本
+
+interface-history-receipt-notFound = 门户网站上已没有该文档
+
+interface-history-receipt-pickedUp = 诊所已记录领取
+
+interface-history-status = 状态
 
 interface-RecordDetails-anonymizeText = 为 AI 准备文本…
 

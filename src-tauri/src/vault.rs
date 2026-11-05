@@ -37,6 +37,9 @@ use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
 mod delivery;
+// The push hooks and the Preferences choice will call most of this (document_push.rs).
+#[cfg_attr(not(test), allow(dead_code))]
+mod remote_notices;
 pub(crate) use delivery::AidFiling;
 #[cfg(test)]
 mod native_portal_flow;
@@ -48,8 +51,9 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
 /// size class; format 3 adds the history; format 4 adds profile identity details;
 /// formats 5–7 add portal links and delivery and approval evidence; format 8
-/// keeps reading aids with their original; format 9 adds the AI helper's
-/// answers (#72), objects of their own.
+/// keeps reading aids with their original; format 9 adds remote notice consent
+/// and push destinations (#192); format 10 adds the AI helper's answers (#72),
+/// objects of their own.
 /// Formats 1–3 are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
@@ -64,7 +68,7 @@ const MANIFEST_FORMAT_HISTORY: u32 = 3;
 /// the newest, so `VAULT_FORMAT` is this one. Its number is taken at merge
 /// (VAULT_FORMAT.md, "Format numbers are taken at merge"): a renumber changes
 /// this line and the format's heading in VAULT_FORMAT.md, nothing else here.
-const MANIFEST_FORMAT_AI_RESULTS: u32 = 9;
+const MANIFEST_FORMAT_AI_RESULTS: u32 = 10;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
@@ -493,7 +497,7 @@ struct StoredRecord {
     /// The clinician-approved reading aid paired with this delivery (format 8).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reading_aid: Option<crate::portal_delivery::AidCustody>,
-    /// What the AI helper wrote about this document (#72). Format 9 only.
+    /// What the AI helper wrote about this document (#72). Format 10 only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     ai_results: Vec<StoredAiResult>,
 }
@@ -587,6 +591,14 @@ struct Manifest {
     /// Format 8. Reading aids verified and kept until their original is filed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     waiting_aids: Vec<crate::portal_delivery::WaitingAid>,
+    /// Format 9. Remote "documents ready" notices: the patient's consent, this vault's push
+    /// destinations and the revocations still to send (#192). Kept here, encrypted, so nothing
+    /// outside the vault says which clinics, or how many, the vault is linked to.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::document_notifications::RemoteNotices::is_empty"
+    )]
+    remote_notices: crate::document_notifications::RemoteNotices,
 }
 
 /// Where the history's entries are, and what pins its chain: how many there
@@ -900,6 +912,9 @@ pub struct VaultStore {
     /// The folder this run of the app last set a vault aside in, for the
     /// next vault created (#71's third part). In memory only.
     last_set_aside: Mutex<Option<String>>,
+    /// Push notice tokens this run has handled, and whether one still waits for a check
+    /// (remote_notices.rs). In memory only, and holds no link or clinic.
+    push_inbox: Mutex<crate::document_push::PushInbox>,
 }
 
 impl VaultStore {
@@ -919,6 +934,7 @@ impl VaultStore {
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
+            push_inbox: Mutex::new(Default::default()),
         }
     }
 
@@ -1304,6 +1320,7 @@ impl VaultStore {
                 history: HistoryState::default(),
                 portal_links: Vec::new(),
                 waiting_aids: Vec::new(),
+                remote_notices: Default::default(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -4695,6 +4712,21 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         {
             return Err(VaultError::Corrupt);
         }
+    }
+    // Remote notices (format 9): a consistent state whose active destinations each name a
+    // completed link of this vault by its current device key.
+    let remote = &manifest.remote_notices;
+    if (manifest.format_version < 9 && !remote.is_empty())
+        || !remote.valid()
+        || !remote.active().iter().all(|d| {
+            manifest.portal_links.iter().any(|l| {
+                l.id == d.owner().link_id()
+                    && l.clinic.is_some()
+                    && l.keys.device_key_id() == d.owner().device_key_id()
+            })
+        })
+    {
+        return Err(VaultError::Corrupt);
     }
     // A waiting reading aid (format 8) shares the one delivery-ID space with filed deliveries.
     if (manifest.format_version < 8 && !manifest.waiting_aids.is_empty())
@@ -9160,6 +9192,7 @@ mod tests {
             history: HistoryState::default(),
             portal_links: Vec::new(),
             waiting_aids: Vec::new(),
+            remote_notices: Default::default(),
         };
         (vault_id, manifest)
     }
@@ -14879,6 +14912,7 @@ mod tests {
             history: HistoryState::default(),
             portal_links: Vec::new(),
             waiting_aids: Vec::new(),
+            remote_notices: Default::default(),
         }
     }
 
@@ -16709,8 +16743,9 @@ mod tests {
             MANIFEST_FORMAT_V1,
             MANIFEST_FORMAT_HIDDEN,
             MANIFEST_FORMAT_HISTORY,
-            // The last format before the AI helper's answers (#72): reading
-            // aids, format 8.
+            // Reading aids, format 8, and the last format before the AI
+            // helper's answers (#72): remote notices, format 9.
+            MANIFEST_FORMAT_AI_RESULTS - 2,
             MANIFEST_FORMAT_AI_RESULTS - 1,
         ] {
             let root = temp.path().join(format!("format-{from}"));
@@ -19508,7 +19543,7 @@ mod tests {
     #[test]
     fn identity_survives_migration_of_all_older_formats_without_record_loss() {
         let temp = tempfile::tempdir().unwrap();
-        for version in [1, 2, 3, 4, 5, 6] {
+        for version in [1, 2, 3, 4, 5, 6, 7, 8] {
             let root = temp.path().join(format!("v{version}"));
             let (store, ids, key, vault_id) =
                 old_format_vault(&root, &["FAKE a.pdf", "FAKE b.pdf"], version);
