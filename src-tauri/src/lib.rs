@@ -3842,6 +3842,16 @@ async fn vault_ai_result_save(
     store: State<'_, Arc<VaultStore>>,
     request: SaveAiResultRequest,
 ) -> CommandResult<vault::AiResultInfo> {
+    // Page code chose these bytes: kept only if they are an answer as the
+    // reader writes them, from the model that last answered here (#212).
+    let answered = model_runtime::app().answered_model();
+    vault::check_ai_answer(
+        &request.result,
+        request.content.as_bytes(),
+        answered
+            .as_ref()
+            .map(|model| (model.name.as_str(), model.sha256.as_str())),
+    )?;
     run_blocking(store.inner(), move |store| {
         store.save_ai_result(
             request.record_id,

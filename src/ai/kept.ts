@@ -59,7 +59,15 @@ export function parseKeptSummary(text: string): SummaryResult | null {
     if (typeof source !== "object") return null;
     const { page, start, end } = source as Record<string, unknown>;
     if (!isNumber(page) || !isNumber(start) || !isNumber(end)) return null;
-    sentences.push({ text, quote, source: { page, start, end } });
+    // A place that cannot be one (not whole, before the start, or backwards)
+    // is no place: the sentence says no source was found, never a guess.
+    const place = (value: number) => Number.isInteger(value) && value >= 0;
+    const sound = place(page) && place(start) && place(end) && start <= end;
+    sentences.push({
+      text,
+      quote,
+      source: sound ? { page, start, end } : null,
+    });
   }
   return {
     tool: "summary",

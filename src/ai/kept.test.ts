@@ -54,6 +54,42 @@ describe("answers kept with the document", () => {
     expect(parseKeptSummary(JSON.stringify(withoutPages))).toBeNull();
   });
 
+  it("keeps a sentence of a kept summary but drops a place that cannot be one", () => {
+    const kept = (source: unknown) =>
+      JSON.stringify({
+        tool: "summary",
+        sentences: [{ text: "FAKE sentence.", quote: "FAKE", source }],
+        model: { name: "FAKE model", sha256: "ab".repeat(32) },
+        lang: "en",
+        createdAt: 1,
+        partial: false,
+        lastPage: 1,
+        pagesMissing: false,
+      });
+    for (const source of [
+      { page: -1, start: 0, end: 4 },
+      { page: 0.5, start: 0, end: 4 },
+      { page: 0, start: 5, end: 4 },
+      { page: 0, start: -2, end: 4 },
+    ])
+      expect(
+        parseKeptSummary(kept(source))?.sentences[0],
+        JSON.stringify(source),
+      ).toEqual({
+        text: "FAKE sentence.",
+        quote: "FAKE",
+        source: null,
+      });
+    expect(
+      parseKeptSummary(kept({ page: 0, start: 0, end: 4 }))?.sentences[0]
+        .source,
+    ).toEqual({
+      page: 0,
+      start: 0,
+      end: 4,
+    });
+  });
+
   it("tells the vault the tool, language, term and model of an answer", () => {
     expect(keptInput(summary)).toEqual({
       tool: "summary",

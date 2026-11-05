@@ -157,6 +157,133 @@ fn valid_fields(
         }
 }
 
+// What page code asks the vault to keep is checked natively before it is
+// kept (#212, Agent 6's S1): it must have the shape of the reader's answers,
+// within the model helper's own caps, and name the model that answered here.
+// Until the runtime keeps its own last answer for the vault (a follow-up),
+// this is the most native code can tell.
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeptModel {
+    name: String,
+    sha256: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeptSpan {
+    page: u32,
+    start: u32,
+    end: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeptSentence {
+    text: String,
+    quote: String,
+    source: Option<KeptSpan>,
+}
+
+/// A summary as the reader keeps it (`SummaryResult` in src/ai/types.ts).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct KeptSummary {
+    tool: AiTool,
+    sentences: Vec<KeptSentence>,
+    model: KeptModel,
+    lang: String,
+    #[allow(dead_code)]
+    created_at: u64,
+    #[allow(dead_code)]
+    partial: bool,
+    last_page: u32,
+    #[allow(dead_code)]
+    pages_missing: bool,
+}
+
+/// An explanation as the reader keeps it (`ExplainResult`).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct KeptExplanation {
+    tool: AiTool,
+    term: String,
+    context: String,
+    text: String,
+    model: KeptModel,
+    lang: String,
+    #[allow(dead_code)]
+    created_at: u64,
+}
+
+fn within(text: &str, max_chars: usize) -> bool {
+    text.chars().count() <= max_chars
+}
+
+/// Refuses an answer to keep unless its bytes are a summary or an
+/// explanation as the reader writes them, within the helper's caps (six
+/// sentences, 300 characters of text and 240 of quote each; an explanation of
+/// at most 2,000 characters), for the same tool, language and term as `input`,
+/// and from the model that last answered on this computer (`answered`: its
+/// name and hash). Page code chooses the bytes, so none of this is trusted.
+pub fn check_answer(
+    input: &AiResultInput,
+    content: &[u8],
+    answered: Option<(&str, &str)>,
+) -> Result<(), VaultError> {
+    use crate::local_runner::MAX_SENTENCE_CHARS;
+    use crate::model_helper::{MAX_QUOTE_CHARS, MAX_SENTENCES, MAX_TEXT_CHARS};
+    use crate::model_runtime::{MAX_CONTEXT_CHARS, MAX_PAGES, MAX_PAGE_BYTES};
+    let Some((name, sha256)) = answered else {
+        return Err(VaultError::Invalid);
+    };
+    if input.model_name != name || input.model_sha256 != sha256 {
+        return Err(VaultError::Invalid);
+    }
+    let same_model = |model: &KeptModel| model.name == name && model.sha256 == sha256;
+    let ok = match input.tool {
+        AiTool::Summary => {
+            let Ok(summary) = serde_json::from_slice::<KeptSummary>(content) else {
+                return Err(VaultError::Invalid);
+            };
+            input.term.is_none()
+                && summary.tool == AiTool::Summary
+                && summary.lang == input.lang
+                && same_model(&summary.model)
+                && (1..=MAX_SENTENCES).contains(&summary.sentences.len())
+                && summary.last_page as usize <= MAX_PAGES
+                && summary.sentences.iter().all(|sentence| {
+                    !sentence.text.trim().is_empty()
+                        && within(&sentence.text, MAX_TEXT_CHARS)
+                        && within(&sentence.quote, MAX_QUOTE_CHARS)
+                        && sentence.source.as_ref().is_none_or(|span| {
+                            (span.page as usize) < MAX_PAGES
+                                && span.start <= span.end
+                                && span.end as usize <= MAX_PAGE_BYTES
+                        })
+                })
+        }
+        AiTool::Explain => {
+            let Ok(explained) = serde_json::from_slice::<KeptExplanation>(content) else {
+                return Err(VaultError::Invalid);
+            };
+            explained.tool == AiTool::Explain
+                && input.term.as_deref() == Some(explained.term.as_str())
+                && explained.lang == input.lang
+                && same_model(&explained.model)
+                && !explained.text.trim().is_empty()
+                && within(&explained.text, MAX_SENTENCE_CHARS)
+                && within(&explained.context, MAX_CONTEXT_CHARS)
+        }
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(VaultError::Invalid)
+    }
+}
+
 /// The manifest's rules for one record's answers (`validate_manifest_structure`).
 pub(super) fn validate<'a>(
     record: &'a StoredRecord,
@@ -410,6 +537,139 @@ mod tests {
             model_name: "FAKE model".to_owned(),
             model_sha256: "ab".repeat(32),
         }
+    }
+
+    // The model that answered, as the runtime names it, and an answer of
+    // each kind as the reader writes them (FAKE).
+    const ANSWERED: (&str, &str) = (
+        "FAKE model",
+        "abababababababababababababababababababababababababababababababab",
+    );
+
+    fn kept_summary() -> serde_json::Value {
+        serde_json::json!({
+            "tool": "summary",
+            "sentences": [
+                {"text": "FAKE: the potassium is a little high.", "quote": "Potassium 5.4", "source": {"page": 0, "start": 10, "end": 23}},
+                {"text": "FAKE: a sentence with no source.", "quote": "", "source": null}
+            ],
+            "model": {"name": "FAKE model", "sha256": "ab".repeat(32)},
+            "lang": "en",
+            "createdAt": 1_760_000_000_000_u64,
+            "partial": false,
+            "lastPage": 2,
+            "pagesMissing": false
+        })
+    }
+
+    fn kept_explanation() -> serde_json::Value {
+        serde_json::json!({
+            "tool": "explain",
+            "term": "potassium",
+            "context": "Potassium 5.4 mmol/L.",
+            "text": "FAKE: a salt in the blood.",
+            "model": {"name": "FAKE model", "sha256": "ab".repeat(32)},
+            "lang": "en",
+            "createdAt": 1_760_000_000_000_u64
+        })
+    }
+
+    fn checked(input: &AiResultInput, content: &serde_json::Value) -> Result<(), VaultError> {
+        check_answer(input, content.to_string().as_bytes(), Some(ANSWERED))
+    }
+
+    #[test]
+    fn an_answer_as_the_reader_writes_it_from_the_model_that_answered_is_kept() {
+        assert!(checked(&summary("en"), &kept_summary()).is_ok());
+        assert!(checked(&explain("potassium"), &kept_explanation()).is_ok());
+    }
+
+    #[test]
+    fn an_answer_no_model_gave_here_or_another_model_gave_is_refused() {
+        let content = kept_summary().to_string();
+        // No model has answered on this computer.
+        assert!(matches!(
+            check_answer(&summary("en"), content.as_bytes(), None),
+            Err(VaultError::Invalid)
+        ));
+        // Another model than the one that answered, by name or by hash.
+        let other_hash = "cd".repeat(32);
+        for answered in [
+            ("FAKE other model", ANSWERED.1),
+            (ANSWERED.0, other_hash.as_str()),
+        ] {
+            assert!(matches!(
+                check_answer(&summary("en"), content.as_bytes(), Some(answered)),
+                Err(VaultError::Invalid)
+            ));
+        }
+        // The bytes name another model than the request.
+        let mut forged = kept_summary();
+        forged["model"]["name"] = "FAKE other model".into();
+        assert!(matches!(
+            checked(&summary("en"), &forged),
+            Err(VaultError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn an_answer_outside_the_helpers_shape_or_caps_is_refused() {
+        let mut cases: Vec<(AiResultInput, serde_json::Value)> = Vec::new();
+        let summary_with = |edit: &dyn Fn(&mut serde_json::Value)| {
+            let mut value = kept_summary();
+            edit(&mut value);
+            (summary("en"), value)
+        };
+        let seven = serde_json::Value::Array(
+            (0..7)
+                .map(|_| serde_json::json!({"text": "FAKE.", "quote": "", "source": null}))
+                .collect(),
+        );
+        cases.push(summary_with(&|v| v["sentences"] = seven.clone()));
+        cases.push(summary_with(&|v| v["sentences"] = serde_json::json!([])));
+        cases.push(summary_with(&|v| {
+            v["sentences"][0]["text"] = "x".repeat(301).into()
+        }));
+        cases.push(summary_with(&|v| {
+            v["sentences"][0]["quote"] = "x".repeat(241).into()
+        }));
+        cases.push(summary_with(&|v| v["sentences"][0]["text"] = " ".into()));
+        cases.push(summary_with(&|v| {
+            v["sentences"][0]["source"]["page"] = 50.into()
+        }));
+        cases.push(summary_with(&|v| {
+            v["sentences"][0]["source"]["start"] = 30.into()
+        }));
+        cases.push(summary_with(&|v| v["lastPage"] = 51.into()));
+        cases.push(summary_with(&|v| v["lang"] = "fr".into()));
+        cases.push(summary_with(&|v| v["tool"] = "explain".into()));
+        // Anything more than the reader writes.
+        cases.push(summary_with(&|v| v["extra"] = "FAKE".into()));
+        cases.push(summary_with(&|v| v["sentences"][0]["extra"] = 1.into()));
+        let explain_with = |edit: &dyn Fn(&mut serde_json::Value)| {
+            let mut value = kept_explanation();
+            edit(&mut value);
+            (explain("potassium"), value)
+        };
+        cases.push(explain_with(&|v| v["term"] = "sodium".into()));
+        cases.push(explain_with(&|v| v["text"] = "x".repeat(2_001).into()));
+        cases.push(explain_with(&|v| v["text"] = "".into()));
+        cases.push(explain_with(&|v| v["context"] = "x".repeat(2_001).into()));
+        for (input, content) in cases {
+            assert!(
+                matches!(checked(&input, &content), Err(VaultError::Invalid)),
+                "kept: {content}"
+            );
+        }
+        // Not JSON at all, or an answer of the other tool.
+        assert!(matches!(
+            check_answer(&summary("en"), b"FAKE: not JSON", Some(ANSWERED)),
+            Err(VaultError::Invalid)
+        ));
+        assert!(matches!(
+            checked(&summary("en"), &kept_explanation()),
+            Err(VaultError::Invalid)
+        ));
     }
 
     fn object_names(store: &VaultStore, record_id: Uuid) -> Vec<String> {

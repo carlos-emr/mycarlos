@@ -43,7 +43,7 @@ mod native_portal_flow;
 mod original_pdf;
 
 use ai_results::StoredAiResult;
-pub use ai_results::{AiResultInfo, AiResultInput};
+pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput};
 
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
 /// size class; format 3 adds the history; format 4 adds profile identity details;
