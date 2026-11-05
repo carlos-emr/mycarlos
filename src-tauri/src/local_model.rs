@@ -1635,7 +1635,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cancelled_download_leaves_nothing() {
+    fn a_cancelled_download_installs_nothing_and_keeps_its_part_to_resume() {
         let (_temp, bytes, store) = setup(3 << 20);
         let net = Fake::serving(&bytes);
         let store = Arc::new(store);
