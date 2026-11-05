@@ -68,6 +68,10 @@ export interface FakeAiSetup {
   model?: FakeModelStatus;
   /** A document's pages, by its name. Others read as vaultFake's page text. */
   documents?: Record<string, string[]>;
+  /** How the PDF helper read a document, by its name: pages it cut at its
+   * limit, pages it could not read (left out of `pages`), and a text cut by
+   * the reader's caps. Default: every page read in full. */
+  readAs?: Record<string, FakeTextRead>;
   /** What vault_record_known_details says about every document's patient. */
   knownDetails?: {
     names?: string[];
@@ -77,6 +81,13 @@ export interface FakeAiSetup {
   };
   /** What the model says it explains a term as. */
   explanation?: string;
+}
+
+/** How the PDF helper read a document's text (see `FakeAiSetup.readAs`). */
+export interface FakeTextRead {
+  cutPages?: number[];
+  failedPages?: number[];
+  truncated?: boolean;
 }
 
 /** Installs the fake over the vault fake already on `page`. */
@@ -197,7 +208,11 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       };
       const documentText = (recordId: unknown) => {
         const texts = pagesOf(recordId);
-        const pages = texts.map((text, index) => ({ index, text }));
+        const read: FakeTextRead = setup.readAs[nameOf(recordId)] ?? {};
+        const failed = read.failedPages ?? [];
+        const pages = texts
+          .map((text, index) => ({ index, text }))
+          .filter((page) => !failed.includes(page.index));
         const pageStarts: number[] = [];
         let joined = "";
         pages.forEach((page, position) => {
@@ -214,9 +229,9 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           emptyPages: pages.flatMap((page) =>
             page.text.trim() ? [] : [page.index],
           ),
-          cutPages: [],
-          failedPages: [],
-          truncated: false,
+          cutPages: read.cutPages ?? [],
+          failedPages: failed,
+          truncated: read.truncated ?? false,
           ticket: `FAKE-ticket-${tickets}`,
         };
       };
@@ -401,6 +416,7 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       commands: AI_COMMANDS,
       model: setup.model ?? { state: "notInstalled" },
       documents: setup.documents ?? {},
+      readAs: setup.readAs ?? {},
       defaultPages: Object.fromEntries(
         ["FAKE Bloodwork.pdf", "FAKE Letter.pdf", "FAKE Clinic letter.pdf"].map(
           (name) => [name, defaultPages(name)],
