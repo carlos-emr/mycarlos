@@ -167,10 +167,10 @@ impl Read for Body<'_> {
                 if (self.cancelled)() {
                     return Err(Error::new(ErrorKind::Interrupted, "cancelled"));
                 }
-                match handle.block_on(tokio::time::timeout(
-                    Duration::from_millis(500),
-                    self.response.chunk(),
-                )) {
+                // The timer is made inside the runtime, not before it is entered.
+                match handle.block_on(async {
+                    tokio::time::timeout(Duration::from_millis(500), self.response.chunk()).await
+                }) {
                     Ok(Ok(Some(bytes))) => {
                         self.chunk = bytes.to_vec();
                         self.taken = 0;
