@@ -835,11 +835,23 @@ const FRENCH_STREET_TYPE = `(?:${[
 ]
   .map(either)
   .join("|")})`;
+// The town after a street address's comma: "77 Placeholder Crescent, Sampletown". Not a title or a
+// unit word.
+const TOWN_AFTER = `(?:,[ \\t]*(?!(?:Dr|Dre|Mr|Mrs|Ms|Mme|Mlle|Suite|Unit|Apt|App|Bureau|Local)\\b)${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}(?:,?[ \\t]+${PROVINCES}\\b)?)?`;
 const UNIT = `(?:,?[ \\t]*(?:Unit|Apt\\.?|Apartment|Suite|app\\.?|apt\\.?|appartement|bureau|unité|local|#)[ \\t]*[\\w-]+)?`;
 // In any case: a hospital's header is often in capitals (#80 review).
 const CLINIC_WORDS = anyCase([
+  "Community Health Centre",
+  "Community Health Center",
   "Family Health Team",
+  "Health Team",
   "Family Practice",
+  "Walk-in Clinic",
+  "Urgent Care Centre",
+  "Urgent Care",
+  "FHT",
+  "Institute",
+  "Foundation",
   "Medical Clinic",
   "Medical Centre",
   "Medical Center",
@@ -1193,7 +1205,7 @@ const RULES: Rule[] = [
   {
     kind: "recordNumber",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice)(?:[ \\t]+(?:number|no\\.?|n°|nº|#|numéro|número))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,5})?)`,
+      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice)(?:[ \\t]+(?:number|no\\.?|n°|nº|#|numéro|número))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,5})?)(?![ \\t]*(?:mg|mcg|µg|ug|g|kg|ml|l|dl|mmol|umol|µmol|meq|iu|u|%|mm|cm|m|bpm|mmhg|ng|pg|fl|\\/))`,
       "giu",
     ),
     group: 1,
@@ -1282,13 +1294,13 @@ const RULES: Rule[] = [
   {
     kind: "address",
     pattern:
-      /\b(?:Address|Mailing address|Home address|Adresse)[ \t]*:[ \t]*([^\n]+)/giu,
+      /(?<![\p{L}])(?:Address|Mailing address|Home address|Home|Adresse|Domicile|Direcci[oó]n|Domicilio|Endere[cç]o|Adres)[ \t]*(?:[:：]|[ \t][–—-])[ \t]*([^\n]+)/giu,
     group: 1,
   },
   {
     kind: "address",
     pattern: new RegExp(
-      `\\b\\d{1,6}(?:-\\d{1,6})?[ \\t]+(?:${NAME_WORD}\\.?[ \\t]+){1,4}${STREET_TYPE}\\b\\.?(?:[ \\t]+(?:East|West|North|South|E|W|N|S)\\b)?${UNIT}`,
+      `\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?[ \\t]+(?:${NAME_WORD}\\.?[ \\t]+){1,4}${STREET_TYPE}\\b\\.?(?:[ \\t]+(?:East|West|North|South|E|W|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
       "gu",
     ),
   },
@@ -1296,9 +1308,16 @@ const RULES: Rule[] = [
     // 1234, rue Sherbrooke Est; 88, boul. René-Lévesque Ouest, app. 5
     kind: "address",
     pattern: new RegExp(
-      `\\b\\d{1,6}(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}`,
+      `\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
       "gu",
     ),
+  },
+  // "home address 99 Fable Quay, Town": a number and a street without a label's colon.
+  {
+    kind: "address",
+    pattern:
+      /(?<![\p{L}])(?:home|mailing|current|residential) address[ \t]+(\d[^\n.;]{4,80})/giu,
+    group: 1,
   },
   {
     kind: "address",
@@ -1323,6 +1342,14 @@ const RULES: Rule[] = [
     kind: "clinic",
     pattern: new RegExp(
       `(?<![\\p{L}])${anyCase(["Hôpital", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire"])}(?:[ \\t]+(?:de|du|des|la|le|l['’]|d['’]|médicale|universitaire|régionale?|générale?|familiale|${NAME_WORD})){1,6}`,
+      "gu",
+    ),
+  },
+  {
+    // Clínica San Rafael; Centro de Saúde Vila Exemplo; Szpital Wojewódzki w Testowie; GMF du Parc
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase(["Clínica", "Centro de Salud", "Centro de Saúde", "Unidade Básica de Saúde", "Posto de Saúde", "Hospital", "UBS", "Przychodnia", "Szpital", "Ośrodek Zdrowia", "GMF", "CISSS", "CIUSSS", "Centre médical", "Centre de réadaptation"])}(?:[ \\t]+(?:(?:de|del|da|do|dos|das|du|des|la|le|w|we)[ \\t]+)?${NAME_WORD}){1,4}`,
       "gu",
     ),
   },
