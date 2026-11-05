@@ -149,3 +149,27 @@ describe("a town alone in brackets after a specialty", () => {
     expect(send(text)).toBe(text);
   });
 });
+
+describe("town and facility names from the lists (#239 review)", () => {
+  it.each([
+    "Lives in the west end with her son.",
+    "She walks along the north shore daily.",
+  ])("leaves an everyday phrase in lower case: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it.each([
+    ["She moved to White Rock last year.", "White Rock", "ADDRESS"],
+    ["Born in Saint-Jean-sur-Richelieu.", "Richelieu", "ADDRESS"],
+    ["Referred to Aberdeen Health & Community Services.", "Aberdeen", "CLINIC"],
+    [
+      "Followed at the Alzheimer Society of Cornwall & District.",
+      "Cornwall",
+      "CLINIC",
+    ],
+  ])("removes %s", (text, part, kind) => {
+    const out = send(text);
+    expect(out).toContain(`[${kind} 1]`);
+    expect(out).not.toContain(part);
+  });
+});

@@ -38,7 +38,29 @@ export interface Span {
  * the words separated by no more than a space or a bit of punctuation on one line. The longest
  * name at a place wins.
  */
-function spansOf(text: string, index: Index): Span[] {
+// Small words that stay in lower case inside a place's name: "Saint-Jean-sur-Richelieu".
+const LINKING_WORDS = new Set([
+  "de",
+  "du",
+  "des",
+  "la",
+  "le",
+  "les",
+  "sur",
+  "en",
+  "aux",
+  "au",
+  "a",
+  "d",
+  "l",
+  "of",
+  "the",
+  "and",
+  "et",
+]);
+/** `asWritten`: each word of the name, but a linking word, starts with a capital in the text,
+ * so "the west end" is not the town of West End (#239 review). */
+function spansOf(text: string, index: Index, asWritten = false): Span[] {
   const tokens = [...text.matchAll(WORD)].map((match) => ({
     word: match[0].toLowerCase().replace(/’/gu, "'"),
     start: match.index,
@@ -54,8 +76,15 @@ function spansOf(text: string, index: Index): Span[] {
       for (let k = 0; k < words.length && all; k++) {
         if (tokens[at + k].word !== words[k]) all = false;
         else if (
+          asWritten &&
+          !LINKING_WORDS.has(words[k]) &&
+          !/^\p{Lu}/u.test(text.slice(tokens[at + k].start, tokens[at + k].end))
+        )
+          all = false;
+        else if (
           k > 0 &&
-          !/^[ \t.,'’-]{1,3}$/u.test(
+          // "Mental Health & Addiction Services" (#239 review).
+          !/^[ \t.,'’&-]{1,3}$/u.test(
             text.slice(tokens[at + k - 1].end, tokens[at + k].start),
           )
         )
@@ -77,7 +106,7 @@ function spansOf(text: string, index: Index): Span[] {
 export const facilitySpans = (text: string) => spansOf(text, FACILITIES);
 /** Municipality names of two or more words standing in `text`. */
 export const municipalitySpans = (text: string) =>
-  spansOf(text, MUNICIPALITIES);
+  spansOf(text, MUNICIPALITIES, true);
 
 const ALL_MUNICIPALITIES = new Set(
   municipalities.names.map((name) => wordsOf(name).join(" ")),
