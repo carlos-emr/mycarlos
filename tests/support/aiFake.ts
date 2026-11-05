@@ -20,14 +20,14 @@ import { FAKE_PAGE_COUNT, fakePageText, fakeUuid } from "./vaultFake";
 // FAKE data only.
 
 /** The AI helper's native commands, in one place. The model's work commands
- * are the names agreed for the runtime (root-aa, 5 Nov 2026); the wiring
- * step switches the app to them. */
+ * are the runtime's agreed names (5 Nov 2026); the wiring step switches the
+ * app to them. */
 export const AI_COMMANDS = {
   modelStatus: "ai_model_status",
   summarize: "ai_summarize",
   explain: "ai_explain",
   cancel: "ai_cancel",
-  // Adding and removing the model (root-4a's side of the agreement).
+  // Adding and removing the model (the install side of the agreement).
   catalog: "ai_model_catalog",
   addPicked: "ai_model_add_picked",
   download: "ai_model_download",

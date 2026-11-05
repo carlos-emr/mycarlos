@@ -25,7 +25,7 @@ import {
 // computer, and with a FAKE one; the text read and the model run stopping
 // when the patient leaves the reader or the vault locks. The native side is
 // faked (support/vaultFake.ts + support/aiFake.ts): the model's answers come
-// from ai_summarize and ai_explain, as root-aa's runtime gives them. With a
+// from ai_summarize and ai_explain, as the runtime gives them. With a
 // model, the first Summary or Explain of a session comes after the AI
 // helper's notice. FAKE data only.
 

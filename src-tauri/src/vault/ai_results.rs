@@ -165,7 +165,7 @@ fn valid_fields(
 }
 
 // What page code asks the vault to keep is checked natively before it is
-// kept (#212, Agent 6's S1): it must have the shape of the reader's answers,
+// kept (#212, the review's S1): it must have the shape of the reader's answers,
 // within the model helper's own caps, and name the model that answered here.
 // Until the runtime keeps its own last answer for the vault (a follow-up),
 // this is the most native code can tell.
