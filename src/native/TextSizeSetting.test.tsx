@@ -420,6 +420,39 @@ describe("TextSizeSetting", () => {
       ).toHaveFocus();
     });
 
+    it.each([
+      ["composition", { isComposing: true }],
+      ["composition compatibility", { keyCode: 229 }],
+      ["ordinary", {}],
+    ] as const)(
+      "handles text-size draft Escape during %s input",
+      async (kind, flags) => {
+        const user = userEvent.setup();
+        const { setZoom } = show();
+        await user.clear(box());
+        await user.type(box(), "175");
+        const escape = new KeyboardEvent("keydown", {
+          key: "Escape",
+          code: "Escape",
+          bubbles: true,
+          cancelable: true,
+          ...flags,
+        });
+        if (kind === "composition") expect(escape.isComposing).toBe(true);
+        if (kind === "composition compatibility")
+          expect(escape.keyCode).toBe(229);
+        fireEvent(box(), escape);
+        if (kind !== "ordinary") {
+          expect(box()).toHaveValue("175");
+          expect(escape.defaultPrevented).toBe(false);
+          await user.keyboard("{Escape}");
+        } else expect(escape.defaultPrevented).toBe(true);
+        expect(box()).toHaveValue("100");
+        await user.tab();
+        expect(setZoom).not.toHaveBeenCalled();
+      },
+    );
+
     it("waits for a word being composed before Enter applies", async () => {
       const user = userEvent.setup();
       const { setZoom } = show();
