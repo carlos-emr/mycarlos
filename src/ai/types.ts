@@ -24,7 +24,45 @@ export interface ModelInfo {
 
 export type ModelStatus =
   | { state: "notInstalled" }
-  | { state: "installed"; model: ModelInfo };
+  | { state: "installed"; model: ModelInfo }
+  /** This computer cannot run the helper: the row says why, with no Add. */
+  | { state: "unsupported"; reason: "ram" | "cpu" | "platform" }
+  /** The file is there but its size or hash is wrong: the row offers Remove. */
+  | { state: "damaged" };
+
+/** One model the app accepts (`ai_model_catalog`). `sourceUrl` is shown as
+ * text with a Copy button; the app opens nothing. */
+export interface AcceptedModel {
+  name: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  licence: string;
+  notices: string[];
+  sourceUrl: string;
+}
+
+/** How `ai_model_add_picked` ended. `added` carries the new status; the
+ * others are refusals, except `cancelled`, which is silent. */
+export type ModelAddOutcome =
+  | { outcome: "added"; status: ModelStatus }
+  | { outcome: "cancelled" }
+  | {
+      outcome:
+        | "notListed"
+        | "tooBig"
+        | "incomplete"
+        | "wrongHash"
+        | "noDisk"
+        | "unreadable"
+        | "storage"
+        | "busy"
+        /** Download only: no connection, or it was lost. */
+        | "network"
+        /** Download only: the address refused (401/403/404/410). */
+        | "unavailable";
+    }
+  | { outcome: "unsupported"; reason: "ram" | "cpu" | "platform" };
 
 /** One summary sentence as the model writes it: the words, and the words of
  * the document it rests on, copied as they are. */

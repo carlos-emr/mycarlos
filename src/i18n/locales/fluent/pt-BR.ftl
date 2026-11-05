@@ -1674,7 +1674,7 @@ ai-explain-title = Explicar um termo
 
 ai-notInstalled-title = O assistente de IA ainda não está neste computador
 
-ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. A obtenção do modelo virá em uma versão futura do myCarlos.
+ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. Em Preferências, você pode baixar o modelo ou adicionar um arquivo de modelo que já tenha.
 
 ai-notInstalled-openPreferences = Abrir Preferências
 
@@ -1696,9 +1696,61 @@ ai-explain-submit = Explicar
 
 ai-preferences-title = Assistente de IA
 
-ai-preferences-body = Explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. A obtenção do modelo virá em uma versão futura do myCarlos.
+ai-preferences-body = Explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. Você pode baixar o modelo ou adicionar um arquivo de modelo que já tenha; ele fica neste computador.
 
 ai-preferences-notInstalled = Não instalado
+
+ai-model-add = Adicionar um arquivo de modelo…
+
+ai-model-accepted = { $name }, { $size } MB. Licença: { $licence }.
+
+ai-model-where = Onde obter o arquivo
+
+ai-model-copy = Copiar endereço
+
+ai-model-copied = Endereço copiado
+
+ai-model-checking = Verificando o arquivo… { $done } de { $total } MB
+
+ai-model-added = Modelo adicionado
+
+ai-model-installed = Instalado: { $name }
+
+ai-model-remove = Remover o modelo
+
+ai-model-removeConfirm = Remover o modelo deste computador? Você poderá adicioná-lo novamente depois.
+
+ai-model-damaged = O arquivo do modelo está danificado ou foi alterado. Remova-o e adicione-o novamente.
+
+ai-model-unsupportedRam = Este computador não tem memória suficiente para o assistente de IA (são necessários 8 GB).
+
+ai-model-unsupportedCpu = O processador deste computador não é compatível com o assistente de IA.
+
+ai-model-unsupportedPlatform = O assistente de IA ainda não está disponível neste tipo de computador.
+
+ai-model-refusedList = Este não é um arquivo que o myCarlos aceita. Escolha o arquivo de modelo indicado acima.
+
+ai-model-refusedHash = Este não é o arquivo esperado. Baixe-o novamente e adicione a cópia nova.
+
+ai-model-refusedIncomplete = Não foi possível ler o arquivo por completo. Verifique se o download terminou e tente novamente.
+
+ai-model-refusedDisk = Não há espaço livre suficiente neste computador. O modelo precisa de cerca de 3 GB.
+
+ai-model-refusedStorage = Não foi possível salvar o modelo neste computador.
+
+ai-model-refusedBusy = O assistente de IA está trabalhando. Tente novamente quando ele terminar.
+
+ai-model-download = Baixar o modelo padrão
+
+ai-model-downloadNote = Baixa um arquivo ({ $size } MB) de { $host }. Nada sobre você ou seus documentos é enviado.
+
+ai-model-downloading = Baixando e verificando… { $done } de { $total } MB
+
+ai-model-refusedNetwork = O download não foi concluído. Verifique sua conexão com a internet e tente novamente.
+
+ai-model-refusedUnavailable = O modelo não está disponível no endereço agora. Tente novamente mais tarde ou adicione um arquivo que já tenha.
+
+native-filter-models = Arquivos de modelo
 
 ai-working = O assistente de IA está trabalhando…
 
@@ -1709,9 +1761,9 @@ ai-summary-pagesMissing = Algumas páginas não puderam ser lidas por completo, 
 ai-summary-noSource = Fonte não encontrada
 aiHelper-notice-title = Sobre o assistente de IA
 
-aiHelper-notice-introShare = O myCarlos pode preparar o texto de um documento para o serviço de IA que você escolher. O assistente de IA não envia nada pela internet.
+aiHelper-notice-introShare = O myCarlos pode preparar o texto de um documento para o serviço de IA que você escolher. O assistente de IA nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo.
 
-aiHelper-notice-intro = O assistente de IA explica um documento em palavras simples, aqui neste dispositivo, e pode preparar o texto de um documento para o serviço de IA que você escolher. Ele não envia nada pela internet.
+aiHelper-notice-intro = O assistente de IA explica um documento em palavras simples, aqui neste dispositivo, e pode preparar o texto de um documento para o serviço de IA que você escolher. Ele nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo.
 
 aiHelper-notice-testBuild = Esta versão de desenvolvimento é só para arquivos fictícios. Não a use com informações de saúde reais.
 
@@ -1731,7 +1783,7 @@ aiHelper-notice-adviceBody = Respostas escritas por uma IA podem estar erradas. 
 
 aiHelper-notice-modelHeading = A IA neste dispositivo
 
-aiHelper-notice-modelBody = A IA usa um arquivo de modelo que só é adicionado se você escolher adicioná-lo. O arquivo fica fora do cofre, porque não contém nada sobre você. O myCarlos o verifica antes de cada uso e não usa um arquivo que tenha sido alterado. A IA não pode usar a internet nem abrir seus outros arquivos.
+aiHelper-notice-modelBody = A IA usa um arquivo de modelo. Você escolhe como obtê-lo: o myCarlos pode baixar esse único arquivo do endereço mostrado em Preferências (nada sobre você ou seus documentos é enviado), ou você pode adicionar um arquivo que já tenha. O arquivo fica fora do cofre, porque não contém nada sobre você. O myCarlos o verifica antes de cada uso e não usa um arquivo que tenha sido alterado. A própria IA não pode usar a internet nem abrir seus outros arquivos.
 
 aiHelper-notice-resultsBody = As respostas da IA são salvas no cofre, criptografadas, com o documento, a ferramenta, o modelo e a data. Cada resposta traz o aviso “Escrito por IA e pode estar errado. Confira com seu médico.”
 

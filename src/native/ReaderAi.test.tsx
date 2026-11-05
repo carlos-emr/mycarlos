@@ -445,7 +445,7 @@ describe("Preferences", () => {
     expect(within(row).getByText("Not installed")).toBeVisible();
     expect(
       within(row).getByText(
-        "Explains your documents in plain words with an AI model that runs on this computer. Getting the model comes in a later version of myCarlos.",
+        "Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.",
       ),
     ).toBeVisible();
     rerender(<PreferencesSettings />);
