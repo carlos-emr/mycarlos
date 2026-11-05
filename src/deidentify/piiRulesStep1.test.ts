@@ -186,3 +186,46 @@ describe("town and facility names from the lists (#239 review)", () => {
     expect(out).not.toContain(part);
   });
 });
+
+describe("French clinic names, compound places and letterheads (FAKE shapes)", () => {
+  it.each([
+    "Suivi au CLSC des Trois-Exemples.",
+    "Suivi au CLSC les Exemples-Nord.",
+    "Suivi au CLSC des Trois-Exemples / Cap-de-la-Testbourg.",
+    "Suivi au CLSC Saint-Exemple (Sud-Ouest).",
+    "Suivi au CLSC de la Vallée-de-la-Exemple.",
+    "Suivi au CLSC Exempleville–Testbourg.",
+  ])("removes the CLSC whole: %s", (text) => {
+    expect(send(text)).toBe("Suivi au [CLINIC 1].");
+  });
+
+  it.each([
+    ["Polyclinique Saint-Exemple\nRapport de consultation", "Saint-Exemple"],
+    ["Groupe de médecine de famille Les Cèdres-Exemples\nNote", "Cèdres"],
+    ["GMF-U Saint-Exemple\nNote de visite", "Saint-Exemple"],
+    ["Médi-Clinique Exemple\nNote de visite", "Médi"],
+    ["Les Cliniques Médicales Exemple inc.\nNote", "Exemple"],
+    ["Cabinet médical Exemple & Associés\nNote", "Associés"],
+    ["Exemple Santé — Clinique de physiothérapie\nÉvaluation", "Exemple"],
+  ])("removes a letterhead's clinic: %j", (text, part) => {
+    const out = send(text);
+    expect(out).toMatch(/\[CLINIC 1\]/);
+    expect(out).not.toContain(part);
+  });
+});
+
+describe("Polish dates written with r. (roku)", () => {
+  it.each([
+    ["Wizyta 5 marca 2026 r.", "Wizyta [DATE 1]"],
+    [
+      "Badanie z dnia 1 czerwca 2026 r. wykazało poprawę.",
+      "Badanie z dnia [DATE 1] wykazało poprawę.",
+    ],
+    [
+      "Data wizyty: 14 lutego 2026 r. Kontrola 3 kwietnia 2026 r.",
+      "Data wizyty: [DATE 1] Kontrola [DATE 2, 48 days after DATE 1]",
+    ],
+  ])("%s", (text, expected) => {
+    expect(send(text)).toBe(expected);
+  });
+});

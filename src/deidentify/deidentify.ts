@@ -562,6 +562,10 @@ const WEEKDAY_BEFORE = `(?:(?<![\\p{L}])${WEEKDAY}\\.?,?[ \\t]+)?`;
 const WEEKDAY_PREFIX = new RegExp(`^(${WEEKDAY})(\\.?,?[ \\t]+)`, "iu");
 /** A weekday after a date, plain or in brackets: "2026-10-08 (Thursday)". */
 const WEEKDAY_AFTER = `(?:[ \\t]*[(,]?[ \\t]*(?<![\\p{L}])${WEEKDAY}(?![\\p{L}])\\.?\\)?)?`;
+/** Polish "r." (roku, "of the year") after a date's year: "5 marca 2026 r." is one date. */
+const POLISH_YEAR_AFTER = "(?:[ \\t]?r\\.(?![\\p{L}]))?";
+// The rules trim a trailing full stop before reading the date ("2026 r").
+const POLISH_YEAR_SUFFIX = /(?<=\d)[ \t]?r\.?$/u;
 const WEEKDAY_SUFFIX = new RegExp(
   `[ \\t]*[(,]?[ \\t]*(?<![\\p{L}])${WEEKDAY}(?![\\p{L}])\\.?\\)?$`,
   "iu",
@@ -578,7 +582,10 @@ type DateReading =
   | { kind: "unclear"; key: string };
 
 function readDateText(text: string, dayFirst: boolean): DateReading | null {
-  const dateText = text.replace(WEEKDAY_PREFIX, "").replace(WEEKDAY_SUFFIX, "");
+  const dateText = text
+    .replace(WEEKDAY_PREFIX, "")
+    .replace(WEEKDAY_SUFFIX, "")
+    .replace(POLISH_YEAR_SUFFIX, "");
   for (const form of DATE_FORMS) {
     const match = new RegExp(`^${form.pattern}$`, "iu").exec(dateText);
     if (!match) continue;
@@ -617,7 +624,9 @@ function readDateText(text: string, dayFirst: boolean): DateReading | null {
 /** The date read from `text`, as "1961-04-17", or null; an unclear date
  * gives both readings. */
 function readDate(text: string, dayFirst: boolean): string[] {
-  const dateText = text.replace(WEEKDAY_PREFIX, "");
+  const dateText = text
+    .replace(WEEKDAY_PREFIX, "")
+    .replace(POLISH_YEAR_SUFFIX, "");
   for (const form of DATE_FORMS) {
     if (form.partial) continue;
     const match = new RegExp(`^${form.pattern}$`, "iu").exec(dateText);
@@ -1011,6 +1020,28 @@ const GENERIC_BEFORE_CLINIC = new Set([
   "nursing",
   "sunday",
   "summer",
+  // Articles and French clinic words, as the folded text has them: "La Santé
+  // publique" is not a clinic called "La".
+  "la",
+  "le",
+  "les",
+  "l'",
+  "un",
+  "une",
+  "des",
+  "du",
+  "de",
+  "a",
+  "an",
+  "sante",
+  "medical",
+  "medicale",
+  "imagerie",
+  "radiologie",
+  "dentaire",
+  "readaptation",
+  "physiotherapie",
+  "optometrie",
 ]);
 // Profile-name words that are also ordinary words: removed only as part of
 // the whole name.
@@ -1904,7 +1935,7 @@ const RULES: Rule[] = [
     // Clinique médicale Saint-Laurent; Centre hospitalier de Fictiveville
     kind: "clinic",
     pattern: new RegExp(
-      `(?<![\\p{L}])${anyCase(["Hôpital", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire"])}(?:(?:[ \\t]+|(?<=[ldLD]['’]))(?:de|du|des|la|le|les|l['’]|d['’]|médicale|universitaire|régionale?|générale?|familiale|${NAME_WORD})){1,8}`,
+      `(?<![\\p{L}])(?:\\p{Lu}\\p{L}*-)?${anyCase(["Hôpital", "Polyclinique", "Cliniques", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire", "Cabinet médical"])}(?:(?:[ \\t]+|(?<=[ldLD]['’])|[ \\t]*[/&–][ \\t]*)(?:(?:de|du|des|la|le|les|médicales?|universitaire|régionale?|générale?|familiale)(?![\\p{L}])|l['’]|d['’]|${NAME_WORD})){1,8}(?:[ \\t]*\\(${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}\\))?`,
       "gu",
     ),
   },
@@ -1912,7 +1943,7 @@ const RULES: Rule[] = [
     // Clínica San Rafael; Centro de Saúde Vila Exemplo; Szpital Wojewódzki w Testowie; GMF du Parc
     kind: "clinic",
     pattern: new RegExp(
-      `(?<![\\p{L}])${anyCase(["Clínica", "Centro de Salud", "Centro de Saúde", "Unidade Básica de Saúde", "Posto de Saúde", "Hospital", "UBS", "Przychodnia", "Szpital", "Ośrodek Zdrowia", "GMF", "CISSS", "CIUSSS", "Centre médical", "Centre de réadaptation", "école primaire", "École primaire", "école secondaire", "École secondaire", "école", "Ecole", "collège", "Cégep", "cégep", "polyvalente", "CPE", "Centre de la petite enfance", "garderie", "escuela", "colegio", "escola", "Szkoła Podstawowa", "szkoła", "przedszkole"])}(?:[ \\t]+(?:(?:de|del|da|do|dos|das|du|des|la|le|les|w|we|nr)[ \\t]+)?(?:[lLdD]['’])?${NAME_WORD}){1,4}`,
+      `(?<![\\p{L}])${anyCase(["Clínica", "Centro de Salud", "Centro de Saúde", "Unidade Básica de Saúde", "Posto de Saúde", "Hospital", "UBS", "Przychodnia", "Szpital", "Ośrodek Zdrowia", "GMF", "CISSS", "CIUSSS", "Centre médical", "Centre de réadaptation", "Groupe de médecine de famille", "Groupe de médecine familiale", "GMF-U", "GMF-R", "Super-clinique", "école primaire", "École primaire", "école secondaire", "École secondaire", "école", "Ecole", "collège", "Cégep", "cégep", "polyvalente", "CPE", "Centre de la petite enfance", "garderie", "escuela", "colegio", "escola", "Szkoła Podstawowa", "szkoła", "przedszkole"])}(?:[ \\t]+(?:(?:de|del|da|do|dos|das|du|des|la|le|les|w|we|nr)[ \\t]+)?(?:[lLdD]['’])?${NAME_WORD}){1,4}`,
       "gu",
     ),
   },
@@ -1922,6 +1953,14 @@ const RULES: Rule[] = [
     kind: "clinic",
     pattern: new RegExp(
       `(?<=(?<![\\p{L}])(?:at|to|from|with|by|At|To|From|With|By)[ \\t]+(?:the[ \\t]+)?)(?:${NAME_WORD}[ \\t]+){1,4}${ORG_WORDS}(?![\\p{L}])`,
+      "gu",
+    ),
+  },
+  {
+    // A letterhead's first words: "Exemple Santé", "Testbourg Physio Plus", "Boréal Imagerie".
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<=(?:^|\\n)[ \\t]*)(?:${NAME_WORD}[ \\t]+){1,3}(?:Santé|Médical|Médicale|Physio|Physiothérapie|Réadaptation|Imagerie|Radiologie|Dentaire|Optométrie)(?:[ \\t]+Plus)?(?![\\p{L}])`,
       "gu",
     ),
   },
@@ -2250,7 +2289,7 @@ const RULES: Rule[] = [
     (form) => ({
       kind: "date" as const,
       pattern: new RegExp(
-        `${WEEKDAY_BEFORE}${form.pattern}${WEEKDAY_AFTER}`,
+        `${WEEKDAY_BEFORE}${form.pattern}${POLISH_YEAR_AFTER}${WEEKDAY_AFTER}`,
         "giu",
       ),
     }),
@@ -2383,6 +2422,13 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       // A label's value may run past the detail into trailing punctuation,
       // and a French clinic's name into connecting words.
       let trimmed = detail.replace(/[\s,;.]+$/u, "");
+      // Polish "2026 r.": the full stop belongs to the abbreviation.
+      if (
+        rule.kind === "date" &&
+        /\d[ \t]?r$/u.test(trimmed) &&
+        text.charAt(start + trimmed.length) === "."
+      )
+        trimmed += ".";
       // An unqualified Encounter followed by a valid whole date is a date
       // field. Explicit record labels and invalid date-shaped IDs retain
       // record-number protection.
