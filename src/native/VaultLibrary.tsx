@@ -2228,7 +2228,10 @@ export function VaultLibrary({
             )}
 
             {section === "preferences" && (
-              <PreferencesSettings aiStatus={computer ? aiStatus : undefined} />
+              <PreferencesSettings
+                aiStatus={computer ? aiStatus : undefined}
+                onAiStatus={setAiStatus}
+              />
             )}
 
             {section === "security" && (
