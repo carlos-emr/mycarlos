@@ -509,6 +509,11 @@ right after that unlock's entry, in the same commit). No passphrase or key is ev
 `toTotal`; a place longer than 256 characters is cut there and `placeSha256` holds the SHA-256 of
 the whole, so that no entry can outgrow a segment.
 
+The AI helper's text export (#72 part B) is `copySaved` with `how: "anonymizedText"`, the
+document's `recordId` and `name`, and the `place` the text file was saved, cut and hashed
+as for any copy. Never the text, the details removed or the number of days the dates
+were moved. Older readers show it as a copy saved, with its method as written.
+
 - `hash(entry) = SHA-256("mycarlos/history/v1" ‖ 0x00 ‖ canonical JSON)`, in lower-case hex.
 - `prev` is the previous entry's hash. The first entry's is the genesis value,
   `SHA-256("mycarlos/history/genesis/v1" ‖ the vault id's 16 bytes)`.
@@ -962,23 +967,22 @@ recovery or storage failures still stop the operation. Saved documents with an
 unconfirmed receipt remain pending and preserve the exact compact bytes for the
 next check; pending count and clinic guidance are shown together with progress.
 
-#### Format 10: reading aids kept with their original
+#### Format 8: reading aids kept with their original
 
-Formats 8 and 9 are taken by other branches (8: remembered refused deliveries,
-#161; 9: the AI summary branches). Format 10 adds one optional field to a
+Format 8 adds one optional field to a
 record, `readingAid`: the clinician-approved reading aid paired with that
 record's clinic delivery (carlos-portal delivery contract, "Reading aids"). It
 holds the aid's outer record (`kind` "reading-aid/1"), the signed compact
 manifest, the aid's JSON exactly as hashed, when it was checked, the anchored
 history head, the receipt signed at filing and the receipt outcome once the
-portal answers. An older build refuses a format 10 vault, so none can drop the
+portal answers. An older build refuses a format 8 vault, so none can drop the
 field and with it an unsent receipt. A record can hold a reading aid only in
-format 10 or later, only with a clinic delivery, and only when the aid's pair
+format 8 or later, only with a clinic delivery, and only when the aid's pair
 claims name that delivery and the PDF hash of its original.
 
 A reading aid is filed only while its original is filed, in one commit with a
 `readingAidFiled` history event. An aid whose original is not filed yet is kept
-in the manifest's `waitingAids` list (format 10, at most 32) by its delivery ID
+in the manifest's `waitingAids` list (format 8, at most 32) by its delivery ID
 and ciphertext hash, with no receipt: the same copy is never downloaded again, a
 different copy under that ID is replayed, and the kept copy is checked again
 after each original is filed. It holds the verified manifest and JSON, not the
@@ -999,21 +1003,22 @@ reads back. The check names `accept=reading-aid/1` in every listing, and files
 aids after the originals of the same check. Header, object and original-PDF
 formats are unchanged, and the aid adds no object file.
 
-##### Renumbering formats 8, 9 and 10 at merge
+##### Format numbers are taken at merge
 
-Format numbers are assigned at merge, not when a branch is written. Three open
-branches each need one: 8 is remembered refused deliveries (#161), 9 is the AI
-summary branches and 10 is reading aids (#200). Whichever merges second or
-third takes the next free number and must, in the same change:
+Format numbers are assigned when a branch merges, not when it is written. Each
+branch takes main's next number when it merges, with no gap, and renumbers in
+the same change:
 
-1. set `VAULT_FORMAT` and this heading to its new number;
-2. move every gate it wrote for its own field (`format_version < 10` for
-   `readingAid` and `waitingAids`) to its new number, and check each against what
-   the formats on main actually introduced, because an older build that accepts
-   a newer number must never be able to drop a field it does not know;
-3. update the format test matrices' "from" lists and the upgrade checks, which
-   iterate `VAULT_FORMAT` symbolically, so only hand-written lists change;
+1. set `VAULT_FORMAT` and its section heading to the new number;
+2. set each gate it wrote for its own field to that number (`format_version < 8`
+   for `readingAid` and `waitingAids`), so a field's gate always equals the
+   format that introduced it and an older build that accepts a newer number can
+   never drop a field it does not know;
+3. update any hand-written format lists in the test matrices; the upgrade
+   checks iterate `VAULT_FORMAT` symbolically, so nothing else changes;
 4. keep the unsupported-newer check (`VAULT_FORMAT + 1` is refused) passing.
 
-Do not leave a gap by merging a branch under a number its predecessors have not
-reached: a vault written at 10 is refused by an older build, which is intended.
+Other open branches that also need a format (remembered refused deliveries,
+#161, and the AI summary branches) take the numbers after this one, in the order
+they merge. A vault written at the new number is refused by an older build,
+which is intended.

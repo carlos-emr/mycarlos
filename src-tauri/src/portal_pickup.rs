@@ -320,8 +320,14 @@ where
                         continue;
                     }
                     match store.receive_delivery(&outer, &response.body, &link, session) {
-                        Ok((_, added)) => {
+                        Ok((record_id, added)) => {
                             result.added += usize::from(added);
+                            #[cfg(all(windows, feature = "document-notifications"))]
+                            if added {
+                                store.notify_local_arrival(record_id, &link, session);
+                            }
+                            #[cfg(not(all(windows, feature = "document-notifications")))]
+                            let _ = record_id;
                             send_pending(&link)?;
                         }
                         Err(VaultError::PickupRefused) => result.refused += 1,

@@ -37,6 +37,9 @@ interface RecordDetailsProps {
   /** Opens the clinic's reading aid for this document, under its notice, before the original
    * if the patient likes; given only when the delivery holds one. */
   onReadAid?: () => void;
+  /** Opens the AI helper's preview: the text with identifying details
+   * removed, to save for an AI service (#72). Computers only, PDFs only. */
+  onAnonymize?: () => void;
   /** Shows the document as a photo; given only when its file is one. */
   onViewPhoto?: () => void;
   /** The document is a PDF that may be locked with a password (#54). */
@@ -61,6 +64,7 @@ export function RecordDetails({
   onExport,
   onRead,
   onReadAid,
+  onAnonymize,
   onViewPhoto,
   locked = false,
   onUnlock,
@@ -353,6 +357,16 @@ export function RecordDetails({
               onClick={onRead}
             >
               {translateNow("interface.RecordDetails.read")}
+            </button>
+          )}
+          {onAnonymize && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy || !record.available}
+              onClick={onAnonymize}
+            >
+              {translateNow("interface.RecordDetails.anonymizeText")}
             </button>
           )}
           <button

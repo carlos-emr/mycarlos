@@ -42,6 +42,10 @@ import { PortalDocuments } from "./PortalDocuments";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
+import { nativeLocalModel } from "../ai/localModel";
+import type { ModelStatus } from "../ai/types";
+import { AnonymizePreview } from "./AnonymizePreview";
+import { AiHelperNotice } from "./AiHelperNotice";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
@@ -118,6 +122,7 @@ export function VaultLibrary({
   cameraAsking,
   sharedNew = 0,
   onSharedSeen,
+  onSecurityEntry,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -166,12 +171,17 @@ export function VaultLibrary({
   sharedNew?: number;
   /** The patient opened Shared with me: its new files have been seen. */
   onSharedSeen?: () => void;
+  /** Security opened (Clinic documents lives there): a chance to show arrivals. */
+  onSecurityEntry?: () => Promise<void>;
 }) {
   const { t } = useI18n();
   const [profileId, setProfileId] = useState(
     () => peopleOf(snapshot)[0]?.id ?? "",
   );
   const [section, setSection] = useState<NativeSection>("records");
+  useEffect(() => {
+    if (section === "security") void onSecurityEntry?.();
+  }, [section, onSecurityEntry]);
   // Keep Security’s Hidden entry scoped to the location it was opened from,
   // including Shared; returning from Hidden must retain that location.
   const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
@@ -217,6 +227,33 @@ export function VaultLibrary({
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
   // Whether the reader opens on the clinic's reading aid (under its notice) rather than the original.
   const [readerShowsAid, setReaderShowsAid] = useState(false);
+  // The AI helper (#72): on a computer only, as the reader's text is.
+  const localModel = useMemo(
+    () => nativeLocalModel(() => bridge.aiModelStatus()),
+    [bridge],
+  );
+  const [aiStatus, setAiStatus] = useState<ModelStatus | null>(null);
+  useEffect(() => {
+    if (section !== "preferences" || !computer) return;
+    let current = true;
+    localModel.status().then(
+      (found) => current && setAiStatus(found),
+      () => current && setAiStatus({ state: "notInstalled" }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [computer, localModel, section]);
+  // The AI helper's preview (#72): open for one document at a time.
+  const [anonymizeRecordId, setAnonymizeRecordId] = useState<string | null>(
+    null,
+  );
+  // The notice about the AI helper: before the first export of this
+  // unlocked session (then the preview opens for `before`), or from Security.
+  const [aiNotice, setAiNotice] = useState<{ before: string | null } | null>(
+    null,
+  );
+  const [aiNoticeSeen, setAiNoticeSeen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
@@ -433,6 +470,8 @@ export function VaultLibrary({
     records.find((record) => record.id === activeRecordId) ?? null;
   const readerRecord =
     records.find((record) => record.id === readerRecordId) ?? null;
+  const anonymizeRecord =
+    records.find((record) => record.id === anonymizeRecordId) ?? null;
   const pendingAction =
     activeRecord && confirmation?.recordId === activeRecord.id
       ? confirmation.action
@@ -2156,7 +2195,9 @@ export function VaultLibrary({
               />
             )}
 
-            {section === "preferences" && <PreferencesSettings />}
+            {section === "preferences" && (
+              <PreferencesSettings aiStatus={computer ? aiStatus : undefined} />
+            )}
 
             {section === "security" && (
               <SecuritySettings
@@ -2188,6 +2229,9 @@ export function VaultLibrary({
                   setReturnFocusToHistory(false);
                   setSection("history");
                 }}
+                onOpenAiHelperNotice={
+                  computer ? () => setAiNotice({ before: null }) : undefined
+                }
                 people={people}
                 onUpdateProfileDetails={
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
@@ -2401,7 +2445,8 @@ export function VaultLibrary({
                     : undefined
                 }
                 onReadAid={
-                  activeRecord.readingAid
+                  activeRecord.readingAid &&
+                  namedAsPdf(activeRecord.displayName)
                     ? () => {
                         setReaderShowsAid(true);
                         setReaderRecordId(activeRecord.id);
@@ -2409,8 +2454,62 @@ export function VaultLibrary({
                       }
                     : undefined
                 }
+                // Computers only: the text comes from the PDF helper.
+                onAnonymize={
+                  namedAsPdf(activeRecord.displayName) && computer
+                    ? () => {
+                        if (aiNoticeSeen) setAnonymizeRecordId(activeRecord.id);
+                        else setAiNotice({ before: activeRecord.id });
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
               />
             )}
+          {aiNotice && (
+            <AiHelperNotice
+              action={aiNotice.before ? "continue" : "close"}
+              onClose={() => {
+                setAiNoticeSeen(true);
+                if (aiNotice.before) setAnonymizeRecordId(aiNotice.before);
+                setAiNotice(null);
+              }}
+            />
+          )}
+          {anonymizeRecord && !aiNotice && (
+            <AnonymizePreview
+              record={anonymizeRecord}
+              people={people}
+              clinicNames={[
+                ...(anonymizeRecord.verifiedClinicName
+                  ? [anonymizeRecord.verifiedClinicName]
+                  : []),
+                ...(snapshot.portalLinks ?? []).flatMap((link) =>
+                  link.clinicName ? [link.clinicName] : [],
+                ),
+              ]}
+              readText={(password) =>
+                bridge.documentText(anonymizeRecord.id, password)
+              }
+              cancelRead={() =>
+                void bridge.cancelDocumentText().catch(() => undefined)
+              }
+              knownDetails={() => bridge.recordKnownDetails(anonymizeRecord.id)}
+              pickDestination={(ticket) =>
+                bridge.pickTextExportDestination(anonymizeRecord.id, ticket)
+              }
+              saveText={(pickId, ticket, text) =>
+                bridge.exportTextToPicked(
+                  pickId,
+                  anonymizeRecord.id,
+                  ticket,
+                  text,
+                )
+              }
+              exportHeader={translateNow("aiHelper.exportHeader")}
+              onClose={() => setAnonymizeRecordId(null)}
+            />
+          )}
           {readerRecord && (
             <DocumentReader
               record={readerRecord}
@@ -2426,6 +2525,22 @@ export function VaultLibrary({
               }
               cancelView={() => void bridge.cancelView().catch(() => undefined)}
               onClose={() => setReaderRecordId(null)}
+              ai={
+                computer
+                  ? {
+                      model: localModel,
+                      // Part B's whole-document text (#171). A locked PDF
+                      // is refused there, which the panel says as a failure;
+                      // passing the reader's document password is the model
+                      // step's work.
+                      loadText: () => bridge.documentText(readerRecord.id),
+                      onOpenPreferences: () => {
+                        setReaderRecordId(null);
+                        setSection("preferences");
+                      },
+                    }
+                  : undefined
+              }
             />
           )}
           {confirmHideDamaged && (

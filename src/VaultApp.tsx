@@ -455,6 +455,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // page under it, as under a picker.
   const pickersOpenRef = useRef(0);
   const pickerOpenedAtRef = useRef(0);
+  // True only while the settled picker re-dispatches visibilitychange below.
+  const pickerSettlingRef = useRef(false);
   const track = useCallback(async <T,>(picker: Promise<T>): Promise<T> => {
     if (pickersOpenRef.current === 0) pickerOpenedAtRef.current = Date.now();
     pickersOpenRef.current += 1;
@@ -467,7 +469,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // under Android's picker activity.
       document.dispatchEvent(new Event(PICKER_SETTLED_EVENT));
       // Let the visibility handler decide again now that the picker is gone.
-      document.dispatchEvent(new Event("visibilitychange"));
+      // The automatic arrival check ignores this app-made event: the import
+      // that follows, or the real focus/visibility event, asks native itself.
+      pickerSettlingRef.current = true;
+      try {
+        document.dispatchEvent(new Event("visibilitychange"));
+      } finally {
+        pickerSettlingRef.current = false;
+      }
     }
   }, []);
   const trackedBridge = useMemo<VaultBridge>(() => {
@@ -784,6 +793,65 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     // A stale snapshot can still acknowledge a successful native key write.
     return next;
   };
+  const refreshMounted = useRef(false);
+  const refreshOwner = useRef({ status, snapshot });
+  refreshOwner.current = { status, snapshot };
+  const refreshAutomaticArrivals = useCallback(async () => {
+    const before = refreshOwner.current;
+    const owner = before.snapshot?.sharedProfileId;
+    if (
+      !refreshMounted.current ||
+      before.status !== "unlocked" ||
+      !owner ||
+      !before.snapshot?.automaticDocumentChecksSupported ||
+      before.snapshot.recovery ||
+      lockingRef.current
+    )
+      return;
+    const startedIn = sessionRef.current;
+    try {
+      const next = await bridge.snapshot();
+      const current = refreshOwner.current;
+      const applied = appliedCaptureRef.current;
+      if (
+        refreshMounted.current &&
+        !lockingRef.current &&
+        sessionRef.current === startedIn &&
+        current.status === "unlocked" &&
+        !current.snapshot?.recovery &&
+        current.snapshot?.sharedProfileId === owner &&
+        next.sharedProfileId === owner &&
+        next.recovery === null &&
+        applied?.owner === startedIn &&
+        next.capture.epoch === applied.epoch &&
+        next.capture.sequence > applied.sequence
+      ) {
+        appliedCaptureRef.current = { ...next.capture, owner: startedIn };
+        setSnapshot((previous) =>
+          previous?.sharedProfileId === owner ? next : previous,
+        );
+      }
+    } catch {
+      /* Keep current edits/state; a later explicit open/focus retries. */
+    }
+  }, [bridge]);
+  useEffect(() => {
+    refreshMounted.current = true;
+    const onFocus = () => {
+      void refreshAutomaticArrivals();
+    };
+    const onVisible = () => {
+      if (!pickerSettlingRef.current && document.visibilityState === "visible")
+        onFocus();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      refreshMounted.current = false;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refreshAutomaticArrivals]);
   const setSessionNotice = (message: UiText) => {
     // Clearing the line is not a result: it must not replace a transfer's
     // outcome, shown or held.
@@ -1090,6 +1158,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         covered={lockWarning !== null}
         sharedNew={sharedNew}
         onSharedSeen={clearSharedNew}
+        onSecurityEntry={refreshAutomaticArrivals}
       />
       {lockWarning !== null && (
         <LockWarning

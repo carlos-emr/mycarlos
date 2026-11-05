@@ -749,7 +749,7 @@ pub struct Custody {
     pub receipt: String,
     pub receipt_outcome: Option<ReceiptOutcome>,
 }
-/// A reading aid the vault holds (format 10), kept on the record of the original it reads:
+/// A reading aid the vault holds (format 8), kept on the record of the original it reads:
 /// the signed manifest, the checked JSON and the receipt signed at filing. Like `Custody`
 /// it lives inside the encrypted manifest. The manifest is kept as its signed compact form
 /// and parsed where its claims are needed, so this type exists in every build.
@@ -769,7 +769,7 @@ pub struct AidCustody {
 /// A verified reading aid kept while its original is not filed (contract, step 12): by its
 /// delivery ID and ciphertext hash, so the same copy is never downloaded again and a different
 /// copy under that ID is replayed. It holds the checked manifest and JSON, not the sealed copy,
-/// and is deleted silently at expiry. Format 10; at most `MAX_WAITING_AIDS` in a vault.
+/// and is deleted silently at expiry. Format 8; at most `MAX_WAITING_AIDS` in a vault.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WaitingAid {
