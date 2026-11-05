@@ -13,6 +13,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 pub const MAX_LINKS: usize = 16;
 pub const MAX_PORTAL_UTF8_BYTES: usize = 1024;
+// Android fails closed before any link request (portal_client), so it never reads a reply.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub const MAX_RESPONSE_BYTES: usize = 32 * 1024;
 const CODE_ALPHABET: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
@@ -25,8 +27,12 @@ pub enum LinkError {
     InvalidDeviceName,
     InvalidResponse,
     Network,
+    // Portal replies to a link request, which Android never sends.
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     CodeRejected,
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     ClinicKeysMissing,
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     DeviceExists,
     Cancelled,
 }
@@ -409,6 +415,8 @@ impl StoredLink {
 }
 
 /// Not serializable or Debug: a one-use code must never enter IPC output or logs.
+/// Its fields are read only by the transport, which Android does not have yet.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub struct LinkRequest {
     pub endpoint: Url,
     pub body: Zeroizing<Vec<u8>>,
@@ -487,6 +495,7 @@ fn hex(bytes: &[u8]) -> String {
 
 /// Typed structs reject repeated recognized members and unknown fields, including
 /// key entries. No untyped JSON value can silently discard duplicate members.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub fn parse_response(bytes: &[u8], expected_device: &str) -> Result<LinkedClinic, LinkError> {
     if bytes.len() > MAX_RESPONSE_BYTES {
         return Err(LinkError::InvalidResponse);
