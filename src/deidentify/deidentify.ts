@@ -1983,9 +1983,54 @@ const DRUG_NAMES = new Set(allowList.drugs.map(guardKey));
 // Phrases that look like a name or an address ("Dr. Reddy's", "St. John's wort") but are not.
 const LOOKALIKES = allowList.lookalikes.map(guardKey);
 const GUARD_REACH = 60;
+// A drug name that is also a first name ("Ella", "Yasmin", "Diane", "Allegra") is spared only
+// where the words beside it read as a drug: a strength, a form or a frequency right after it, a
+// brand number ("Diane-35"), a drug verb right before it, or a place in a medication or allergy
+// list. A role, a relation or a title before it ("daughter Ella", "Nurse Yasmin") is not enough,
+// and neither is the same person named elsewhere in the text.
+const DRUG_AFTER =
+  /^(?:-[ \t]?\d|[ \t]*\(?[ \t]*\d+(?:[.,]\d+)?[ \t]*(?:mg|mcg|µg|ug|g|ml|units?|iu|ui|%)(?![\p{L}])|[ \t]*,?[ \t]+(?:(?:\d+|one|two|half|un|une|deux|uno|una|um|uma|jedn[aą])[ \t]+)?(?:tablets?|tabs?|capsules?|caps?|pills?|puffs?|sprays?|patch(?:es)?|drops?|injections?|comprim[ée]s?|g[ée]lules?|c[áa]psulas?|comprimidos?|tabletk[aęi]|kapsułk[aęi])(?![\p{L}])|[ \t]+(?:once|twice|daily|nightly|bid|tid|qid|qhs|prn|po|die|par jour|al d[íi]a|ao dia|dziennie)(?![\p{L}]))/iu;
+const DRUG_LIST_LABEL =
+  /(?<![\p{L}])(?:medications?|meds|current medications|rx|allerg(?:y|ies)|m[ée]dicaments?|medicamentos?|medicaci[óo]n|leki|alergi(?:e|a|as))[ \t]*:/giu;
+const DRUG_BEFORE =
+  /(?:\b(?:started|restarted|stopped|discontinued|switched (?:from|to)|changed (?:from|to)|allergic to|allergy to|intolerant (?:of|to)|reaction to|dose of|trial of|refill of|commenc[ée](?: le| la)?|cess[ée](?: le| la)?|arr[êe]t[ée](?: le| la)?|allergique (?:au|à la|à)|inici[óo]u?(?: o| a| el| la)?|suspend(?:i[óo]|eu)(?: o| a| el| la)?))[ \t]*$/iu;
+const LIST_SEPARATOR = /[,;/+]|\b(?:and|or|et|ou|y|e|i)\b/iu;
+function startsWithDrug(chunk: string): boolean {
+  const words = guardKey(chunk)
+    .split(/[ \t]+/u)
+    .filter(Boolean);
+  return (
+    DRUG_NAMES.has(words[0] ?? "") ||
+    DRUG_NAMES.has(words.slice(0, 2).join(" "))
+  );
+}
+function readsAsDrug(text: string, start: number, end: number): boolean {
+  // Only a short stretch on each side, on the same line: a page read as one
+  // very long line must not be copied for every place a name stands.
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  const before = text.slice(Math.max(lineStart, start - 160), start);
+  const lineEnd = text.indexOf("\n", end);
+  const after = text.slice(
+    end,
+    Math.min(lineEnd < 0 ? text.length : lineEnd, end + 40),
+  );
+  if (DRUG_AFTER.test(after) || DRUG_BEFORE.test(before)) return true;
+  // "Medications: Allegra, Yasmin, Ella": every item between the label and
+  // the word starts with a drug name.
+  let listStart = -1;
+  for (const label of before.matchAll(DRUG_LIST_LABEL))
+    listStart = label.index + label[0].length;
+  if (listStart < 0) return false;
+  return before
+    .slice(listStart)
+    .split(LIST_SEPARATOR)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .every(startsWithDrug);
+}
 function isMedicalTerm(text: string, start: number, end: number): boolean {
   const span = guardKey(text.slice(start, end));
-  if (DRUG_NAMES.has(span)) return true;
+  if (DRUG_NAMES.has(span) && readsAsDrug(text, start, end)) return true;
   const from = Math.max(0, start - GUARD_REACH);
   const window = guardKey(text.slice(from, end + GUARD_REACH));
   const spanStart = start - from;

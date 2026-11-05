@@ -72,6 +72,62 @@ describe("eponyms and drug names are never taken for names", () => {
   });
 });
 
+describe("a drug name that is also a first name", () => {
+  // Ella, Yasmin, Diane and Allegra are on the drug allow-list.
+  const word = (name: string) =>
+    new RegExp(`(?<![\\p{L}])${name}(?![\\p{L}])`, "u");
+
+  it.each([
+    [
+      "Her daughter Ella Sampleton drove her in today. Ella says she is eating well.",
+      "Ella",
+    ],
+    ["Her daughter Ella drove her in today.", "Ella"],
+    ["Nurse Yasmin called the pharmacy. Yasmin will call back.", "Yasmin"],
+    [
+      "Accompanied by her sister, Diane Sampleton. Diane manages the pill box.",
+      "Diane",
+    ],
+    [
+      "Spoke with Mrs. Allegra Sampleton on the phone. Allegra agrees.",
+      "Allegra",
+    ],
+    ["Meds: reviewed with daughter Ella.", "Ella"],
+  ])("is a name after a person word: %s", (text, name) => {
+    expect(send(text)).not.toMatch(word(name));
+  });
+
+  it.each([
+    "Started Yasmin, one tablet daily.",
+    "Allegra 120 mg once daily for hay fever.",
+    "Medications: Allegra, Yasmin, Ella.",
+    "Diane-35 one tablet daily for acne.",
+    "She took Ella within 72 hours.",
+    "Switched from Yasmin to Alesse.",
+  ])("stays a drug where it reads as one: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it("is a person and a drug in the same text, each where it stands", () => {
+    const out = send(
+      "Her daughter Ella Sampleton came with her. Medications: Allegra 120 mg daily, Ella 1.5 mg once.",
+    );
+    expect(out).toMatch(/^Her daughter \[NAME 1\] came/);
+    expect(out).toContain(
+      "Medications: Allegra 120 mg daily, Ella 1.5 mg once.",
+    );
+    const nurse = send(
+      "Nurse Yasmin reviewed the list. Allergic to Yasmin (rash). Stopped Yasmin in May.",
+    );
+    expect(nurse).toBe(
+      "Nurse [NAME 1] reviewed the list. Allergic to Yasmin (rash). Stopped Yasmin in May.",
+    );
+    expect(send("Sister Diane Sampleton attends. Diane-35 was stopped.")).toBe(
+      "Sister [NAME 1] attends. Diane-35 was stopped.",
+    );
+  });
+});
+
 describe("record-number shapes and spaced social insurance numbers", () => {
   it.each([
     ["Policy no. GRP-00731-554/02 on file.", "GRP-00731"],
