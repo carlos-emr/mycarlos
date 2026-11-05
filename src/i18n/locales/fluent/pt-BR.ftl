@@ -1734,7 +1734,7 @@ ai-model-refusedHash = Este não é o arquivo esperado. Baixe-o novamente e adic
 
 ai-model-refusedIncomplete = Não foi possível ler o arquivo por completo. Verifique se o download terminou e tente novamente.
 
-ai-model-refusedDisk = Não há espaço livre suficiente neste computador. O modelo precisa de cerca de 3 GB.
+ai-model-refusedDisk = Não há espaço livre suficiente neste computador. O modelo precisa de cerca de 4 GB.
 
 ai-model-refusedStorage = Não foi possível salvar o modelo neste computador.
 

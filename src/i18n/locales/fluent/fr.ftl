@@ -1734,7 +1734,7 @@ ai-model-refusedHash = Ce n’est pas le fichier attendu. Téléchargez-le de no
 
 ai-model-refusedIncomplete = Le fichier n’a pas pu être lu en entier. Vérifiez que le téléchargement est terminé, puis réessayez.
 
-ai-model-refusedDisk = Il n’y a pas assez d’espace libre sur cet ordinateur. Le modèle en demande environ 3 Go.
+ai-model-refusedDisk = Il n’y a pas assez d’espace libre sur cet ordinateur. Le modèle en demande environ 4 Go.
 
 ai-model-refusedStorage = Le modèle n’a pas pu être enregistré sur cet ordinateur.
 

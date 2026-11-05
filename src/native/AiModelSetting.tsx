@@ -89,16 +89,64 @@ export function AiModelSetting({
 
   const adding = progress !== null;
   const [downloading, setDownloading] = useState(false);
+  // Keyboard focus stays in the row: the button that started a copy is not
+  // disabled (so it never drops the focus); Cancel takes it when it appears;
+  // when the copy or a removal ends, focus goes to the control that follows.
+  const downloadRef = useRef<HTMLButtonElement | null>(null);
+  const addRef = useRef<HTMLButtonElement | null>(null);
+  const removeRef = useRef<HTMLButtonElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const starter = useRef<"download" | "add">("add");
+  const after = useRef<null | "installed" | "restart" | "removed">(null);
+  const cancelFocused = useRef(false);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  /** Focus is free to move only when it is on nothing, or inside this row. */
+  const focusIsFree = () => {
+    const active = document.activeElement;
+    return (
+      active === null ||
+      active === document.body ||
+      !!rowRef.current?.contains(active)
+    );
+  };
+  useEffect(() => {
+    if (!progress || progress.total === 0 || cancelFocused.current) return;
+    if (focusIsFree()) {
+      cancelFocused.current = true;
+      cancelRef.current?.focus();
+    }
+  }, [progress]);
+  useEffect(() => {
+    const what = after.current;
+    if (!what || adding) return;
+    let target: HTMLButtonElement | null = null;
+    if (what === "installed" && status.state === "installed")
+      target = removeRef.current;
+    else if (what === "restart" && status.state === "notInstalled")
+      target =
+        (starter.current === "download" ? downloadRef : addRef).current ??
+        downloadRef.current ??
+        addRef.current;
+    else if (what === "removed" && status.state === "notInstalled")
+      target = downloadRef.current ?? addRef.current;
+    if (!target) return;
+    after.current = null;
+    if (focusIsFree()) target.focus();
+  }, [status.state, adding, refusal, catalog]);
   const run = (command: "ai_model_add_picked" | "ai_model_download") => {
     setRefusal(null);
     setMessage(null);
     setDownloading(command === "ai_model_download");
+    starter.current = command === "ai_model_download" ? "download" : "add";
+    cancelFocused.current = false;
+    after.current = "restart";
     // Busy from the click: the picker is open, and a second click is refused.
     setProgress({ done: 0, total: 0 });
     void invoke<ModelAddOutcome>(command)
       .then((result) => {
         if (!mounted.current) return;
         if (result.outcome === "added") {
+          after.current = "installed";
           onStatus(result.status);
           setMessage("ai.model.added");
         } else if (result.outcome !== "cancelled") {
@@ -114,6 +162,7 @@ export function AiModelSetting({
     setConfirming(false);
     setRefusal(null);
     setMessage(null);
+    after.current = "removed";
     void invoke<ModelStatus>("ai_model_remove").then(
       (next) => mounted.current && onStatus(next),
       (failure: { code?: string }) =>
@@ -127,7 +176,7 @@ export function AiModelSetting({
   };
 
   return (
-    <div className="native-ai-model">
+    <div className="native-ai-model" ref={rowRef}>
       {status.state === "unsupported" && (
         <p>{t(unsupportedKey(status.reason))}</p>
       )}
@@ -177,26 +226,29 @@ export function AiModelSetting({
       <div className="native-ai-model-actions">
         {status.state === "notInstalled" && catalog.length > 0 && (
           <button
+            ref={downloadRef}
             className="button primary"
             type="button"
-            disabled={adding}
-            onClick={download}
+            aria-disabled={adding}
+            onClick={() => !adding && download()}
           >
             {t("ai.model.download")}
           </button>
         )}
         {status.state === "notInstalled" && (
           <button
+            ref={addRef}
             className="button"
             type="button"
-            disabled={adding}
-            onClick={add}
+            aria-disabled={adding}
+            onClick={() => !adding && add()}
           >
             {t("ai.model.add")}
           </button>
         )}
         {(status.state === "installed" || status.state === "damaged") && (
           <button
+            ref={removeRef}
             className="button"
             type="button"
             onClick={() => setConfirming(true)}
@@ -206,6 +258,7 @@ export function AiModelSetting({
         )}
         {adding && progress.total > 0 && (
           <button
+            ref={cancelRef}
             className="button"
             type="button"
             onClick={() => void invoke("ai_model_add_cancel")}

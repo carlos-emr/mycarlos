@@ -1564,7 +1564,7 @@ ai-model-refusedHash = 這不是預期的檔案。請重新下載，然後新增
 
 ai-model-refusedIncomplete = 無法完整讀取該檔案。請確認下載已完成，然後再試一次。
 
-ai-model-refusedDisk = 此電腦的可用空間不足。模型大約需要 3 GB。
+ai-model-refusedDisk = 此電腦的可用空間不足。模型大約需要 4 GB。
 
 ai-model-refusedStorage = 無法將模型儲存到此電腦。
 

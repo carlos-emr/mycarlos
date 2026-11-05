@@ -1708,7 +1708,7 @@ ai-explain-title = Wyjaśnij termin
 
 ai-notInstalled-title = Asystenta AI nie ma jeszcze na tym komputerze
 
-ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. W Preferencjach możesz pobrać model albo dodać plik modelu, który już masz.
+ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. W Preferencjach można pobrać model albo dodać posiadany plik modelu.
 
 ai-notInstalled-openPreferences = Otwórz Preferencje
 
@@ -1730,7 +1730,7 @@ ai-explain-submit = Wyjaśnij
 
 ai-preferences-title = Asystent AI
 
-ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Możesz pobrać model albo dodać plik modelu, który już masz; pozostaje on na tym komputerze.
+ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Można pobrać model albo dodać posiadany plik modelu; pozostaje on na tym komputerze.
 
 ai-preferences-notInstalled = Nie zainstalowano
 
@@ -1754,7 +1754,7 @@ ai-model-remove = Usuń model
 
 ai-model-removeConfirm = Usunąć model z tego komputera? Można go później dodać ponownie.
 
-ai-model-damaged = Plik modelu jest uszkodzony lub został zmieniony. Usuń go i dodaj ponownie.
+ai-model-damaged = Plik modelu jest uszkodzony lub został zmieniony. Proszę go usunąć i dodać ponownie.
 
 ai-model-unsupportedRam = Ten komputer nie ma wystarczająco dużo pamięci dla asystenta AI (potrzeba około 8 GB).
 
@@ -1762,27 +1762,27 @@ ai-model-unsupportedCpu = Procesor tego komputera nie jest obsługiwany przez as
 
 ai-model-unsupportedPlatform = Asystent AI nie jest jeszcze dostępny na tym rodzaju komputera.
 
-ai-model-refusedList = myCarlos nie akceptuje tego pliku. Wybierz plik modelu podany powyżej.
+ai-model-refusedList = myCarlos nie akceptuje tego pliku. Proszę wybrać plik modelu podany powyżej.
 
-ai-model-refusedHash = To nie jest oczekiwany plik. Pobierz go ponownie i dodaj nową kopię.
+ai-model-refusedHash = To nie jest oczekiwany plik. Proszę pobrać go ponownie i dodać nową kopię.
 
-ai-model-refusedIncomplete = Nie udało się wczytać całego pliku. Sprawdź, czy pobieranie się zakończyło, i spróbuj ponownie.
+ai-model-refusedIncomplete = Nie udało się wczytać całego pliku. Proszę sprawdzić, czy pobieranie się zakończyło, i spróbować ponownie.
 
-ai-model-refusedDisk = Na tym komputerze brakuje wolnego miejsca. Model potrzebuje około 3 GB.
+ai-model-refusedDisk = Na tym komputerze brakuje wolnego miejsca. Model potrzebuje około 4 GB.
 
 ai-model-refusedStorage = Nie udało się zapisać modelu na tym komputerze.
 
-ai-model-refusedBusy = Asystent AI pracuje. Spróbuj ponownie, gdy skończy.
+ai-model-refusedBusy = Asystent AI pracuje. Proszę spróbować ponownie, gdy skończy.
 
 ai-model-download = Pobierz model domyślny
 
-ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $host }, tylko po kliknięciu. Nic o Tobie ani o Twoich dokumentach nie jest wysyłane. Strona, z której pobierasz, widzi Twój adres internetowy, jak przy każdym pobieraniu.
+ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $host }, tylko po kliknięciu. Nic o użytkowniku ani o jego dokumentach nie jest wysyłane. Strona, z której następuje pobieranie, widzi adres internetowy tego komputera, jak przy każdym pobieraniu.
 
 ai-model-downloading = Pobieranie i sprawdzanie… { $done } z { $total } MB
 
-ai-model-refusedNetwork = Pobieranie nie zostało ukończone. Sprawdź połączenie z internetem i spróbuj ponownie.
+ai-model-refusedNetwork = Pobieranie nie zostało ukończone. Proszę sprawdzić połączenie z internetem i spróbować ponownie.
 
-ai-model-refusedUnavailable = Model jest teraz niedostępny pod swoim adresem. Spróbuj później albo dodaj plik, który już masz.
+ai-model-refusedUnavailable = Model jest teraz niedostępny pod swoim adresem. Proszę spróbować później albo dodać posiadany plik.
 
 native-filter-models = Pliki modeli
 
@@ -1799,9 +1799,9 @@ ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stro
 ai-summary-noSource = Nie znaleziono źródła
 aiHelper-notice-title = O asystencie AI
 
-aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet Twoich dokumentów ani niczego o Tobie. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy zdecydujesz się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której pobierasz.
+aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której następuje pobieranie.
 
-aiHelper-notice-intro = Asystent AI wyjaśnia dokument prostymi słowami, tutaj, na tym urządzeniu, i może przygotować tekst dokumentu dla wybranej usługi AI. Nigdy nie wysyła przez internet Twoich dokumentów ani niczego o Tobie. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy zdecydujesz się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której pobierasz.
+aiHelper-notice-intro = Asystent AI wyjaśnia dokument prostymi słowami, tutaj, na tym urządzeniu, i może przygotować tekst dokumentu dla wybranej usługi AI. Nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której następuje pobieranie.
 
 aiHelper-notice-testBuild = Ta wersja rozwojowa jest przeznaczona do użytku wyłącznie z fikcyjnymi plikami. Nie używaj jej z prawdziwymi informacjami o zdrowiu.
 
@@ -1821,7 +1821,7 @@ aiHelper-notice-adviceBody = Odpowiedzi napisane przez AI mogą być błędne. P
 
 aiHelper-notice-modelHeading = AI na tym urządzeniu
 
-aiHelper-notice-modelBody = AI korzysta z pliku modelu. To Ty wybierasz, jak go zdobyć: myCarlos może pobrać ten jeden plik, jednorazowo i gdy tak zdecydujesz, z adresu podanego w Preferencjach (nic o Tobie ani o Twoich dokumentach nie jest wysyłane) albo możesz dodać plik, który już masz. Plik jest przechowywany poza sejfem, ponieważ nie zawiera niczego o Tobie. myCarlos sprawdza go przed każdym użyciem i nie użyje pliku, który został zmieniony. Sama AI nie może korzystać z internetu ani otwierać innych plików.
+aiHelper-notice-modelBody = AI korzysta z pliku modelu. Sposób jego zdobycia wybiera użytkownik: myCarlos może pobrać ten jeden plik, jednorazowo i gdy użytkownik tak zdecyduje, z adresu podanego w Preferencjach (nic o użytkowniku ani o jego dokumentach nie jest wysyłane) albo można dodać posiadany plik. Plik jest przechowywany poza sejfem, ponieważ nie zawiera niczego o użytkowniku. myCarlos sprawdza go przed każdym użyciem i nie użyje pliku, który został zmieniony. Sama AI nie może korzystać z internetu ani otwierać innych plików.
 
 aiHelper-notice-resultsBody = Odpowiedzi AI są zapisywane w sejfie, zaszyfrowane, razem z dokumentem, narzędziem, modelem i datą. Każda odpowiedź ma oznaczenie „Napisane przez AI, może zawierać błędy. Proszę skonsultować się z lekarzem.”
 

@@ -1700,7 +1700,7 @@ ai-model-refusedHash = This is not the file we expect. Download it again and add
 
 ai-model-refusedIncomplete = The file could not be read completely. Check that it finished downloading, then try again.
 
-ai-model-refusedDisk = There is not enough free space on this computer. The model needs about 3 GB.
+ai-model-refusedDisk = There is not enough free space on this computer. The model needs about 4 GB.
 
 ai-model-refusedStorage = The model could not be saved on this computer.
 

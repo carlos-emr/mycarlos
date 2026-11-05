@@ -17,8 +17,8 @@ mod document_notification_windows;
 pub mod document_notifications;
 mod history;
 mod idle;
-// `verified_model`, `VerifiedModel` and the memory probe are the model
-// helper launcher's entry points (the runner PR); nothing here calls them yet.
+// Some items (the catalog accessor, the Windows-only folder helper) are used only on
+// some platforms.
 #[allow(dead_code)]
 mod local_model;
 mod local_runner;
