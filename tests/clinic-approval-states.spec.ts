@@ -9,6 +9,7 @@ import {
   refusal,
   scriptFake,
   sidebar,
+  escapeRegExp,
 } from "./support/vaultFake";
 
 // A clinic link whose approval request did not end in approval: what
@@ -22,6 +23,15 @@ const en = (
   key: Parameters<typeof translate>[1],
   params?: Parameters<typeof translate>[2],
 ) => translate("en", key, params);
+
+/** A request awaiting the clinic: "saved" at first, and "the clinic has it"
+ * once the clinic view's automatic check (#137) has confirmed it. */
+const awaiting = (page: Page) =>
+  page.getByText(
+    new RegExp(
+      `^(${escapeRegExp(en("portal.awaiting"))}|${escapeRegExp(en("portal.awaitingClinic"))})$`,
+    ),
+  );
 
 test.beforeEach(({}, testInfo) => {
   test.skip(
@@ -53,8 +63,10 @@ async function openClinicDocuments(page: Page) {
   };
 }
 
+// #137's card words: an expired request names the button that starts a
+// new one.
 for (const [status, said] of [
-  ["expired", "portal.approvalExpired"],
+  ["expired", "portal.approvalExpiredCard"],
   ["cancelled", "portal.approvalCancelled"],
 ] as const) {
   test(`${status === "expired" ? "an expired" : "a cancelled"} approval request is said, cannot be sent again, and a new one can be started, which is then awaiting the clinic`, async ({
@@ -71,9 +83,7 @@ for (const [status, said] of [
     await expect(restart).toBeEnabled();
 
     await restart.click();
-    await expect(
-      page.getByText(en("portal.awaiting"), { exact: true }),
-    ).toBeVisible();
+    await expect(awaiting(page)).toBeVisible();
     await expect(page.getByText(en(said), { exact: true })).toHaveCount(0);
     expect(await fakeCalls(page, "vault_restart_device_approval")).toEqual([
       { linkId: FAKE_IDS.link },
@@ -121,7 +131,7 @@ test("a restart the native side refuses leaves the expired request as it was", a
     page.getByText(en("native.error.19"), { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText(en("portal.approvalExpired"), { exact: true }),
+    page.getByText(en("portal.approvalExpiredCard"), { exact: true }),
   ).toBeVisible();
   await expect(restart).toBeEnabled();
   await expect(request).toBeDisabled();
