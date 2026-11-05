@@ -19,6 +19,8 @@ export interface ReaderAi {
   model: LocalModel;
   /** The whole document's text, page by page. */
   loadText: () => Promise<DocumentText>;
+  /** Stops a text read still going: the panel closed before it ended. */
+  cancelText: () => void;
   onOpenPreferences: () => void;
 }
 
@@ -65,6 +67,18 @@ export function ReaderAiPanel({
   // The latest model and text loader; a new object alone starts nothing.
   const aiRef = useRef(ai);
   aiRef.current = ai;
+  // A text read still going when the panel closes (the reader closed, or the
+  // panel was closed or switched) stops with it: the PDF helper would read
+  // for nobody. Stopping a model run is the model's own work.
+  const reading = useRef<symbol | null>(null);
+  useEffect(
+    () => () => {
+      if (reading.current === null) return;
+      reading.current = null;
+      aiRef.current.cancelText();
+    },
+    [],
+  );
   useEffect(() => {
     let current = true;
     aiRef.current.model.status().then(
@@ -92,11 +106,18 @@ export function ReaderAiPanel({
     startedFor.current = lang;
     setWorking(true);
     setFailed(false);
+    const read = Symbol("text read");
+    reading.current = read;
     aiRef.current
       .loadText()
+      .finally(() => {
+        if (reading.current === read) reading.current = null;
+      })
       .then(async (document) => {
+        // Closed while the text was read: no model is asked for it.
+        if (!live.current) return;
         if (document.pages.every((page) => !page.text.trim())) {
-          if (live.current) setNoText(true);
+          setNoText(true);
           return;
         }
         const result = await summarizeDocument(
