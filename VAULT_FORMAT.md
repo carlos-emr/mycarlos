@@ -1019,6 +1019,45 @@ the same change:
 4. keep the unsupported-newer check (`VAULT_FORMAT + 1` is refused) passing.
 
 Other open branches that also need a format (remembered refused deliveries,
-#161, and the AI summary branches) take the numbers after this one, in the order
-they merge. A vault written at the new number is refused by an older build,
+#161, the AI summary branches, and remote notices below) take the numbers after
+this one, in the order they merge. A vault written at the new number is refused by an older build,
 which is intended.
+
+#### Format 9: remote notice consent and push destinations
+
+Format 9 adds one optional manifest field, `remoteNotices` (#192): whether the
+patient turned on notices while myCarlos is closed, the push destinations this
+vault holds, and the revocations still to send. It is kept in the manifest, so it
+is encrypted like everything else there. Nothing outside the vault, including the
+plain notice file beside the settings, says which clinics a vault is linked to,
+or how many.
+
+- `optedIn`: the patient's own choice. It is set only by that choice, never at
+  startup or by a timer. The OS notification permission is observed in each run
+  and never saved, so a saved observation cannot grant permission after a
+  restart.
+- `active`: at most one destination per completed link (16 in all). Each holds
+  the link's id and its current device key id (`owner`), a destination id the
+  device made itself, the push service (`android_fcm`, `ios_apns`, `macos_apns`
+  or `windows_wns`) and, once the portal has enrolled it, the portal's
+  `subscriptionId`. A destination is saved before the portal is asked to enrol
+  it, and an active destination must name a completed link of this vault by its
+  current device key.
+- `revocations`: destinations that were active when the patient turned the
+  notices off or the OS permission was denied. Each is sent to the portal
+  (`POST /api/mycarlos/availability/revocations`) until the portal gives a final
+  answer, after each opening of the vault as well. Active destinations and
+  revocations share 64 places, so turning the notices off never needs more
+  room.
+
+No provider token, notice token, subscription epoch or sequence is kept: a push
+carries only an opaque token, which myCarlos never decodes. A push received while
+the vault is open runs the normal document check; one received while it is locked
+leaves a single check owed, in memory only, for the next opening.
+
+An older build refuses a format 9 vault, so none can drop the field and with it
+an unsent revocation. A manifest below format 9 with this field is refused. An
+absent field reads as nothing saved, which is how every vault starts. Erasing or
+resetting the vault removes the field with it: its destinations stay enrolled at
+the portal until the device is removed there (the device keys that would sign a
+revocation are gone too).
