@@ -41,15 +41,16 @@ pub(crate) struct Accepted {
     pub(crate) source_url: &'static str,
 }
 
-/// The models the app accepts. Ben has not picked; Qwen3 stands in.
+/// The models the app accepts. The demo build's pick (the bake-off's best on
+/// both blind graders, and the one that works through the engine): Qwen3.5 4B.
 pub(crate) const CATALOG: &[Accepted] = &[Accepted {
-    name: "Qwen3 4B Instruct 2507 (Q4_K_M)",
-    file_name: "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-    size_bytes: 2_497_280_736,
-    sha256: "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e",
+    name: "Qwen3.5 4B (Q4_K_M)",
+    file_name: "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+    size_bytes: 3_013_027_808,
+    sha256: "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
     licence: "Apache-2.0",
     notices: &[],
-    source_url: "https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/ae44f08e1392f39c0e474af10c3ff8355c8b6688/Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    source_url: "https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
 }];
 
 /// What the renderer is told about the model on this computer.
@@ -184,7 +185,7 @@ pub(crate) struct Machine {
 pub(crate) const MIN_RAM_BYTES: u64 = 7 * 1024 * 1024 * 1024;
 /// Free disk needed before an add or download starts (at least; the file's
 /// own size plus a margin when that is more).
-pub(crate) const MIN_FREE_DISK_BYTES: u64 = 3 * 1024 * 1024 * 1024;
+pub(crate) const MIN_FREE_DISK_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 /// Room kept beyond the file itself while copying.
 const DISK_MARGIN_BYTES: u64 = 256 * 1024 * 1024;
 

@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
 import { humanText, visibleText } from "../test/humanText";
@@ -102,7 +103,9 @@ describe("Add a model file", () => {
       name: humanText("Add a model file…"),
     });
     await userEvent.click(add);
-    expect((add as HTMLButtonElement).disabled).toBe(true);
+    // Still focusable (aria-disabled), so the keyboard focus is not lost.
+    expect(add.getAttribute("aria-disabled")).toBe("true");
+    expect(add).toHaveFocus();
     await waitFor(() => expect(native.listener).not.toBeNull());
     act(() =>
       native.listener?.({
@@ -134,7 +137,7 @@ describe("Add a model file", () => {
     ],
     [
       "noDisk",
-      "There is not enough free space on this computer. The model needs about 3 GB.",
+      "There is not enough free space on this computer. The model needs about 4 GB.",
     ],
     [
       "incomplete",
@@ -240,6 +243,33 @@ describe("Add a model file", () => {
     ).toBe(text);
   });
 
+  it("keeps the keyboard focus in the row: Cancel while copying, the button again after a refusal", async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_download: () => new Promise((resolve) => (finish = resolve)),
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    const download = await screen.findByRole("button", {
+      name: humanText("Download the default model"),
+    });
+    download.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(download).toHaveFocus();
+    await waitFor(() => expect(native.listener).not.toBeNull());
+    act(() =>
+      native.listener?.({ payload: { done: 1_000_000, total: 2_500_000_000 } }),
+    );
+    expect(
+      await screen.findByRole("button", { name: humanText("Cancel") }),
+    ).toHaveFocus();
+    await act(async () => finish({ outcome: "network" }));
+    await screen.findByRole("alert");
+    expect(download).toHaveFocus();
+  });
+
   it("a closed picker says nothing", async () => {
     answer({
       ai_model_catalog: [fake],
@@ -282,6 +312,32 @@ describe("Remove the model", () => {
     await waitFor(() =>
       expect(onStatus).toHaveBeenCalledWith({ state: "notInstalled" }),
     );
+  });
+
+  it("puts the focus on Download after Remove", async () => {
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_remove: { state: "notInstalled" },
+    });
+    function Host() {
+      const [status, setStatus] = useState<ModelStatus>(installed);
+      return <AiModelSetting status={status} onStatus={setStatus} />;
+    }
+    render(<Host />);
+    await userEvent.click(
+      screen.getByRole("button", { name: humanText("Remove the model") }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Remove the model"),
+      }),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: humanText("Download the default model"),
+      }),
+    ).toHaveFocus();
   });
 
   it("says so when a run holds the model", async () => {

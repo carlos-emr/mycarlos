@@ -1542,6 +1542,18 @@ hidden-backToSecurity = Retour à la sécurité
 
 interface-history-appVersion = Version de myCarlos
 
+interface-history-approval-accepted = Approuvée
+
+interface-history-approval-cancelled = Annulée
+
+interface-history-approval-challengeReady = En attente du code reçu par courriel de la clinique
+
+interface-history-approval-expired = Expirée
+
+interface-history-approval-pending = En attente de la clinique
+
+interface-history-approval-refused = Refusée par la clinique
+
 interface-history-damaged = Une partie de cet historique est endommagée. Les événements après le { $date } ne peuvent pas être vérifiés et ne s’affichent pas.
 
 interface-history-damagedAll = Une partie de cet historique est endommagée. Ses événements ne peuvent pas être vérifiés, donc aucun ne s’affiche.
@@ -1562,6 +1574,18 @@ interface-history-event-copySaved = Copie lisible enregistrée
 
 interface-history-event-created = Coffre créé
 
+interface-history-event-deliveryFiled = Document de la clinique enregistré
+
+interface-history-event-deliveryReceiptSettled = Accusé de réception finalisé
+
+interface-history-event-deviceApprovalRequestRestarted = Nouvelle demande d’approbation créée
+
+interface-history-event-deviceApprovalRequested = Approbation de la clinique demandée
+
+interface-history-event-deviceApprovalStatusChanged = Approbation de la clinique mise à jour
+
+interface-history-event-deviceApprovalVerified = Appareil approuvé par la clinique
+
 interface-history-event-folderCreated = Dossier créé
 
 interface-history-event-folderMoved = Dossier déplacé
@@ -1578,7 +1602,13 @@ interface-history-event-moved = Document déplacé
 
 interface-history-event-passphraseChanged = Phrase secrète modifiée
 
+interface-history-event-portalLinkStarted = Liaison avec la clinique commencée
+
+interface-history-event-portalLinked = Clinique liée
+
 interface-history-event-profileCreated = Profil patient ajouté
+
+interface-history-event-profileDetailsChanged = Renseignements personnels modifiés
 
 interface-history-event-readingAidFiled = Aide à la lecture enregistrée
 
@@ -1734,7 +1764,7 @@ ai-model-refusedHash = Ce n’est pas le fichier attendu. Téléchargez-le de no
 
 ai-model-refusedIncomplete = Le fichier n’a pas pu être lu en entier. Vérifiez que le téléchargement est terminé, puis réessayez.
 
-ai-model-refusedDisk = Il n’y a pas assez d’espace libre sur cet ordinateur. Le modèle en demande environ 3 Go.
+ai-model-refusedDisk = Il n’y a pas assez d’espace libre sur cet ordinateur. Le modèle en demande environ 4 Go.
 
 ai-model-refusedStorage = Le modèle n’a pas pu être enregistré sur cet ordinateur.
 
@@ -1798,6 +1828,12 @@ aiHelper-exportCut = [Texte coupé après la page { $page }]
 aiHelper-exportFileName = Texte anonymisé.txt
 
 interface-history-how-anonymizedText = Texte anonymisé enregistré
+
+interface-history-receipt-notFound = Le document n’était plus sur le portail
+
+interface-history-receipt-pickedUp = La clinique a enregistré la réception du document
+
+interface-history-status = État
 
 interface-RecordDetails-anonymizeText = Préparer le texte pour une IA…
 

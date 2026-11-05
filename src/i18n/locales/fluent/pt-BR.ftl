@@ -1542,6 +1542,18 @@ hidden-backToSecurity = Voltar para Segurança
 
 interface-history-appVersion = Versão do myCarlos
 
+interface-history-approval-accepted = Aprovada
+
+interface-history-approval-cancelled = Cancelada
+
+interface-history-approval-challengeReady = Aguardando o código do e-mail da clínica
+
+interface-history-approval-expired = Expirada
+
+interface-history-approval-pending = Aguardando a clínica
+
+interface-history-approval-refused = Recusada pela clínica
+
 interface-history-damaged = Parte deste histórico está danificada. Os eventos após { $date } não podem ser verificados e não são exibidos.
 
 interface-history-damagedAll = Parte deste histórico está danificada. Os eventos dele não podem ser verificados, por isso nenhum é exibido.
@@ -1562,6 +1574,18 @@ interface-history-event-copySaved = Cópia legível salva
 
 interface-history-event-created = Cofre criado
 
+interface-history-event-deliveryFiled = Documento da clínica salvo
+
+interface-history-event-deliveryReceiptSettled = Recibo de retirada encerrado
+
+interface-history-event-deviceApprovalRequestRestarted = Outra solicitação de aprovação iniciada
+
+interface-history-event-deviceApprovalRequested = Aprovação da clínica solicitada
+
+interface-history-event-deviceApprovalStatusChanged = Aprovação da clínica atualizada
+
+interface-history-event-deviceApprovalVerified = Dispositivo aprovado pela clínica
+
 interface-history-event-folderCreated = Pasta criada
 
 interface-history-event-folderMoved = Pasta movida
@@ -1578,7 +1602,13 @@ interface-history-event-moved = Documento movido
 
 interface-history-event-passphraseChanged = Frase-senha alterada
 
+interface-history-event-portalLinkStarted = Vinculação com a clínica iniciada
+
+interface-history-event-portalLinked = Clínica vinculada
+
 interface-history-event-profileCreated = Perfil de paciente adicionado
+
+interface-history-event-profileDetailsChanged = Dados pessoais alterados
 
 interface-history-event-readingAidFiled = Auxílio de leitura salvo
 
@@ -1734,7 +1764,7 @@ ai-model-refusedHash = Este não é o arquivo esperado. Baixe-o novamente e adic
 
 ai-model-refusedIncomplete = Não foi possível ler o arquivo por completo. Verifique se o download terminou e tente novamente.
 
-ai-model-refusedDisk = Não há espaço livre suficiente neste computador. O modelo precisa de cerca de 3 GB.
+ai-model-refusedDisk = Não há espaço livre suficiente neste computador. O modelo precisa de cerca de 4 GB.
 
 ai-model-refusedStorage = Não foi possível salvar o modelo neste computador.
 
@@ -1798,6 +1828,12 @@ aiHelper-exportCut = [Texto cortado depois da página { $page }]
 aiHelper-exportFileName = Texto anonimizado.txt
 
 interface-history-how-anonymizedText = Texto anonimizado salvo
+
+interface-history-receipt-notFound = O documento não estava mais no portal
+
+interface-history-receipt-pickedUp = A clínica registrou a retirada
+
+interface-history-status = Status
 
 interface-RecordDetails-anonymizeText = Preparar o texto para uma IA…
 

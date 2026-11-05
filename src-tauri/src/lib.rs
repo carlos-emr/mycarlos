@@ -15,10 +15,14 @@ pub mod document_notification_runtime;
 #[cfg(windows)]
 mod document_notification_windows;
 pub mod document_notifications;
+// The platform push hooks (one per platform, each with its own device test) and the Preferences
+// choice will call this; until then only the reconcile after opening the vault uses it.
+#[cfg_attr(not(test), allow(dead_code))]
+mod document_push;
 mod history;
 mod idle;
-// `verified_model`, `VerifiedModel` and the memory probe are the model
-// helper launcher's entry points (the runner PR); nothing here calls them yet.
+// Some items (the catalog accessor, the Windows-only folder helper) are used only on
+// some platforms.
 #[allow(dead_code)]
 mod local_model;
 mod local_runner;
@@ -1962,7 +1966,15 @@ async fn vault_unlock(
         }),
     )
     .await?;
+    after_open(store.inner());
     run_blocking(store.inner(), VaultStore::snapshot).await
+}
+
+/// After the vault opens: remote-notice work owed from before (a revocation, a check a push
+/// asked for) runs in the background, so opening never waits on the network.
+fn after_open(store: &Arc<VaultStore>) {
+    let store = Arc::clone(store);
+    tauri::async_runtime::spawn_blocking(move || store.after_open());
 }
 
 #[tauri::command]
@@ -2533,6 +2545,7 @@ async fn vault_recover(
         }),
     )
     .await?;
+    after_open(store.inner());
     Ok(RecoverResponse {
         passphrase_replaced,
         snapshot: run_blocking(store.inner(), VaultStore::snapshot).await?,
