@@ -53,22 +53,27 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// formats 5–7 add portal links and delivery and approval evidence; format 8
 /// keeps reading aids with their original; format 9 adds remote notice consent
 /// and push destinations (#192); format 10 adds the AI helper's answers (#72),
-/// objects of their own.
+/// objects of their own; format 11 caps the hidden answers apart from the
+/// shown ones (D13).
 /// Formats 1–3 are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_AI_RESULTS;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_AI_HIDDEN_CAP;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
 /// The first format that can hold a history.
 const MANIFEST_FORMAT_HISTORY: u32 = 3;
-/// The first format that can hold the AI helper's answers (#72 part D), and
-/// the newest, so `VAULT_FORMAT` is this one. Its number is taken at merge
-/// (VAULT_FORMAT.md, "Format numbers are taken at merge"): a renumber changes
-/// this line and the format's heading in VAULT_FORMAT.md, nothing else here.
+/// The first format that can hold the AI helper's answers (#72 part D): at
+/// most 32 per document, hidden ones included.
 const MANIFEST_FORMAT_AI_RESULTS: u32 = 10;
+/// The first format whose hidden AI answers have a cap of their own (D13):
+/// 32 shown and 96 hidden per document. The newest, so `VAULT_FORMAT` is this
+/// one. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
+/// taken at merge"): a renumber changes this line and the format's heading in
+/// VAULT_FORMAT.md, nothing else here.
+const MANIFEST_FORMAT_AI_HIDDEN_CAP: u32 = 11;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
@@ -16748,6 +16753,8 @@ mod tests {
             // helper's answers (#72): remote notices, format 9.
             MANIFEST_FORMAT_AI_RESULTS - 2,
             MANIFEST_FORMAT_AI_RESULTS - 1,
+            // The AI helper's answers under one cap, format 10.
+            MANIFEST_FORMAT_AI_RESULTS,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =
