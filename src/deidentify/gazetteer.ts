@@ -78,3 +78,18 @@ export const facilitySpans = (text: string) => spansOf(text, FACILITIES);
 /** Municipality names of two or more words standing in `text`. */
 export const municipalitySpans = (text: string) =>
   spansOf(text, MUNICIPALITIES);
+
+const ALL_MUNICIPALITIES = new Set(
+  municipalities.names.map((name) => wordsOf(name).join(" ")),
+);
+/** A municipality alone between brackets: "(Rouyn-Noranda)". The span is the name, not the brackets. */
+export function bracketedMunicipalities(text: string): Span[] {
+  const spans: Span[] = [];
+  for (const match of text.matchAll(/\(([^()\n]{2,40})\)/gu)) {
+    const inner = match[1].trim();
+    if (!ALL_MUNICIPALITIES.has(wordsOf(inner).join(" "))) continue;
+    const start = match.index + 1 + match[1].indexOf(inner);
+    spans.push({ start, end: start + inner.length });
+  }
+  return spans;
+}

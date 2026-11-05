@@ -30,7 +30,11 @@
 
 import { cleanText, matchingCopy, toSourceRange } from "./textCleaning";
 import allowList from "./eponymAllowList.json";
-import { facilitySpans, municipalitySpans } from "./gazetteer";
+import {
+  bracketedMunicipalities,
+  facilitySpans,
+  municipalitySpans,
+} from "./gazetteer";
 
 /** A word or a pattern as it stands in the matching copy: accents and
  * look-alike letters folded, as `matchingCopy` folds the text. Regular
@@ -839,6 +843,8 @@ const FRENCH_STREET_TYPE = `(?:${[
 // The town after a street address's comma: "77 Placeholder Crescent, Sampletown". Not a title or a
 // unit word.
 const TOWN_AFTER = `(?:,[ \\t]*(?!(?:Dr|Dre|Mr|Mrs|Ms|Mme|Mlle|Suite|Unit|Apt|App|Bureau|Local)\\b)${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}(?:,?[ \\t]+${PROVINCES}\\b)?)?`;
+// A unit written before the street: "Unit 6B, 217 Street Crescent", "Appartement 6B, 217 rue …".
+const UNIT_FIRST = `(?:(?:Unit|Apt\\.?|Apartment|Suite|Ste\\.?|Appartement|App\\.?|Bureau|Local|Unidad|Apto\\.?|Sala|#)[ \\t]*[\\w-]+,[ \\t]*)?`;
 const UNIT = `(?:,?[ \\t]*(?:Unit|Apt\\.?|Apartment|Suite|app\\.?|apt\\.?|appartement|bureau|unité|local|#)[ \\t]*[\\w-]+)?`;
 // In any case: a hospital's header is often in capitals (#80 review).
 const CLINIC_WORDS = anyCase([
@@ -1208,7 +1214,7 @@ const RULES: Rule[] = [
   {
     kind: "recordNumber",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice)(?:[ \\t]+(?:number|no\\.?|n°|nº|#|numéro|número))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,5})?)(?![ \\t]*(?:mg|mcg|µg|ug|g|kg|ml|l|dl|mmol|umol|µmol|meq|iu|u|%|mm|cm|m|bpm|mmhg|ng|pg|fl|\\/))`,
+      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice|Licencia|Licença|Licenca|CNH|CRM|COREN|CRO|CREFITO|Colegiado|Col\\.|Registro profissional)(?:-[A-Z]{2})?(?:[ \\t]+(?:number|no\\.?|n°|nº|n\\.º|#|numéro|número|de licencia|de licença))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,5})?)(?![ \\t]*(?:mg|mcg|µg|ug|g|kg|ml|l|dl|mmol|umol|µmol|meq|iu|u|%|mm|cm|m|bpm|mmhg|ng|pg|fl|\\/))`,
       "giu",
     ),
     group: 1,
@@ -1304,7 +1310,7 @@ const RULES: Rule[] = [
   {
     kind: "address",
     pattern: new RegExp(
-      `\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?[ \\t]+(?:${NAME_WORD}\\.?[ \\t]+){1,4}${STREET_TYPE}\\b\\.?(?:[ \\t]+(?:East|West|North|South|E|W|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
+      `${UNIT_FIRST}\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?[ \\t]+(?:${NAME_WORD}\\.?[ \\t]+){1,4}${STREET_TYPE}\\b\\.?(?:[ \\t]+(?:East|West|North|South|E|W|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
       "gu",
     ),
   },
@@ -1312,7 +1318,15 @@ const RULES: Rule[] = [
     // 1234, rue Sherbrooke Est; 88, boul. René-Lévesque Ouest, app. 5
     kind: "address",
     pattern: new RegExp(
-      `\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
+      `${UNIT_FIRST}\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
+      "gu",
+    ),
+  },
+  // A named residence: "Résidence Les Jardins du Parc", "Foyer Saint-Joseph", "Manoir des Pins".
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Résidence|Residence|Foyer|Manoir|Maison de retraite|Residencia|Residência)[ \\t]+(?:(?:de|du|des|la|le|les|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+(?:(?:de|du|des|la|le|les)[ \\t]+)?${NAME_WORD}){0,4}`,
       "gu",
     ),
   },
@@ -1825,6 +1839,12 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
   return found;
 }
 
+/** A title or a role word right before `at`: the name rules decide what follows, not a town list. */
+const TITLE_BEFORE =
+  /(?:\b(?:Dr|Dre|Mr|Mrs|Ms|Miss|Mme|Mlle|M|Pr|Prof|Sr|Sra|Srta|Pan|Pani)\.?|\b(?:nurse|pharmacist|physiotherapist|technologist|sonographer|radiologist|surgeon|infirmière|infirmier|pharmacienne|pharmacien|technologue|radiologue|chirurgien|chirurgienne|enfermera|enfermero|farmacéutico|farmacéutica|enfermeiro|enfermeira|farmacêutico|farmacêutica))[ \t]+$/iu;
+const followsTitle = (text: string, at: number) =>
+  TITLE_BEFORE.test(text.slice(Math.max(0, at - 30), at));
+
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
   found.push(...ruleFindings(text, options));
@@ -1834,8 +1854,15 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
     ["address", municipalitySpans(text)],
   ] as const)
     for (const span of spans)
-      if (!isMedicalTerm(text, span.start, span.end))
+      if (
+        !isMedicalTerm(text, span.start, span.end) &&
+        !(kind === "address" && followsTitle(text, span.start))
+      )
         found.push({ kind, start: span.start, end: span.end });
+  // A town alone in brackets ("(Rouyn-Noranda)").
+  for (const span of bracketedMunicipalities(text))
+    if (!isMedicalTerm(text, span.start, span.end))
+      found.push({ kind: "address", start: span.start, end: span.end });
   // Each known name: whole wherever it stands (even across a line break),
   // in either order and surname first ("EXAMPLE, Avery"), and each of its
   // words, in any case, unless it is also an ordinary word.
