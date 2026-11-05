@@ -150,6 +150,16 @@ opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
 
+# The model runtime (#72) optimized in debug builds too. llama-cpp-sys-2 builds llama.cpp as CMake
+# "Release" when its build script runs without debug info, and as "RelWithDebInfo" otherwise
+# (-O2 -g; on MSVC /O2 /Ob1, which inlines less).
+[profile.dev.package.llama-cpp-sys-2]
+opt-level = 3
+debug = false
+
+[profile.dev.package.llama-cpp-2]
+opt-level = 3
+
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
