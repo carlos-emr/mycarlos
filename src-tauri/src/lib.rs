@@ -21,14 +21,12 @@ mod idle;
 // helper launcher's entry points (the runner PR); nothing here calls them yet.
 #[allow(dead_code)]
 mod local_model;
-#[allow(dead_code)]
-// Only the lock hook is used here. Wiring the reader's AI actions and
-// ai_model_status to local_runner::Runner is a follow-up once the model is
-// chosen; until then ai_model_status answers "not installed" (local_model).
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;
 mod model_download;
+mod model_helper;
+mod model_runtime;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -48,6 +46,28 @@ mod unicode_cleaning_table;
 mod vault;
 #[cfg(windows)]
 mod windows_navigation;
+
+/// For `main`: the first argument that starts this executable as the AI helper's model
+/// process, and that process itself (see `model_helper`).
+pub use model_helper::{helper_main as model_helper_main, HELPER_ARG as MODEL_HELPER_ARG};
+
+/// For tests/model_helper.rs only (see `model_runtime::testing`).
+#[doc(hidden)]
+#[cfg(all(feature = "ai-helper-stub", any(target_os = "linux", windows)))]
+pub use model_runtime::testing as model_helper_testing;
+
+/// For tests/model_engine.rs only: makes a model folder as the install step does (Windows: the
+/// model helper's AppContainer may read it and what is put in it).
+#[doc(hidden)]
+#[cfg(windows)]
+pub fn model_folder_for_tests(dir: &std::path::Path) -> bool {
+    model_acl::grant_read(dir, model_acl::APP_CONTAINER)
+}
+
+/// For tests/model_engine.rs only (see `model_runtime::engine_testing`).
+#[doc(hidden)]
+#[cfg(any(target_os = "linux", windows))]
+pub use model_runtime::engine_testing as model_engine_testing;
 
 /// For `main`: the first argument that starts this executable as the PDF unlock helper, and
 /// the helper itself (see `pdf_unlock`).
@@ -1587,6 +1607,8 @@ async fn ai_model_add_picked(
     let worker = Arc::clone(&models);
     let result = tauri::async_runtime::spawn_blocking(move || {
         // About every 8 MiB, and at the start and the end.
+        // The helper holds the model: it stops before the file is replaced.
+        model_runtime::stop();
         let mut shown = u64::MAX;
         worker.add(&source, &local_model::Here, |done, total| {
             let step = done / (8 * 1024 * 1024);
@@ -1625,6 +1647,7 @@ async fn ai_model_download(
     let models = Arc::clone(models.inner());
     let worker = Arc::clone(&models);
     let result = tauri::async_runtime::spawn_blocking(move || {
+        model_runtime::stop();
         let mut shown = u64::MAX;
         worker.download(
             0,
@@ -1671,11 +1694,84 @@ async fn ai_model_remove(
 ) -> Result<local_model::ModelStatus, ModelFailure> {
     let models = Arc::clone(models.inner());
     tauri::async_runtime::spawn_blocking(move || {
+        model_runtime::stop();
         models.remove()?;
         Ok(models.status(&local_model::Here))
     })
     .await
     .map_err(|_| local_model::ModelError::Storage)?
+}
+
+/// A summary of a document's pages in plain words, from the model on this computer (#72): its
+/// helper starts on first use and stays while the vault is unlocked. A newer request, a
+/// cancel or a lock ends this one. Computers only.
+#[tauri::command]
+async fn ai_summarize(
+    store: State<'_, Arc<VaultStore>>,
+    request: model_runtime::SummarizeRequest,
+) -> CommandResult<model_runtime::SummaryResult> {
+    run_ai(store.inner(), move |runtime| runtime.summarize(request)).await
+}
+
+/// What a term means in its sentence, from the model on this computer (#72).
+#[tauri::command]
+async fn ai_explain(
+    store: State<'_, Arc<VaultStore>>,
+    request: model_runtime::ExplainRequest,
+) -> CommandResult<model_runtime::ExplainResult> {
+    run_ai(store.inner(), move |runtime| runtime.explain(request)).await
+}
+
+/// Ends the AI run in flight, if any: the reader or its panel closed. Its helper stops; the
+/// next run starts it again.
+#[tauri::command]
+fn ai_cancel() {
+    model_runtime::app().cancel();
+}
+
+/// Runs `work` on the app's model runtime away from the IPC thread, only while the vault is
+/// unlocked, as activity for the idle lock when it starts and ends.
+async fn run_ai<T, F>(store: &Arc<VaultStore>, work: F) -> CommandResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&'static model_runtime::ModelRuntime) -> Result<T, model_runtime::AiError>
+        + Send
+        + 'static,
+{
+    use model_runtime::AiError;
+    if !cfg!(desktop) {
+        return Err(ai_error(AiError::NotInstalled));
+    }
+    if !matches!(store.status(), Ok(VaultStatus::Unlocked)) {
+        return Err(ai_error(AiError::Cancelled));
+    }
+    let idle = Arc::clone(store.idle());
+    idle.touch(Instant::now());
+    let result = tauri::async_runtime::spawn_blocking(move || work(model_runtime::app()))
+        .await
+        .map_err(|_| ai_error(AiError::Failed))?;
+    if !matches!(result, Err(AiError::Cancelled)) {
+        idle.touch(Instant::now());
+    }
+    result.map_err(ai_error)
+}
+
+/// An AI run's failure for the renderer: its code says which; the words are the panel's.
+fn ai_error(error: model_runtime::AiError) -> PublicError {
+    use model_runtime::AiError;
+    let message_key = match error {
+        AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
+        AiError::Memory => "ai.error.memory",
+        AiError::Busy => "ai.error.busy",
+        AiError::Cancelled | AiError::Failed => "ai.failed",
+    };
+    PublicError {
+        code: error.code(),
+        message_key,
+        record_id: None,
+        note_key: None,
+        retry_after_ms: None,
+    }
 }
 
 #[derive(Serialize)]
@@ -4213,6 +4309,12 @@ pub fn run() {
             if models.dir().exists() {
                 let _ = models.prepare_dir();
             }
+            // The AI runtime takes its model from this store, and reads free
+            // memory the way this computer allows.
+            model_runtime::init(
+                Box::new(local_model::RuntimeSource(Arc::clone(&models))),
+                Box::new(local_model::SystemMemory),
+            );
             app.manage(models);
             app.manage(Arc::new(PendingPicks::default()));
             app.manage(Arc::new(ReceivedFiles::default()));
@@ -4241,6 +4343,9 @@ pub fn run() {
             ai_model_add_cancel,
             ai_model_download,
             ai_model_remove,
+            ai_summarize,
+            ai_explain,
+            ai_cancel,
             kdf_benchmark,
             vault_status,
             vault_passphrase_rules,
@@ -4798,6 +4903,30 @@ mod tests {
         assert_eq!(partial.code, "partial_export");
         assert!(public_error_text(&partial).contains("partial readable copy"));
         assert!(public_error_text(&partial).contains("Delete"));
+    }
+
+    #[test]
+    fn ai_errors_carry_their_code_and_words_the_catalogue_has() {
+        use model_runtime::AiError;
+        for (error, code, words) in [
+            (
+                AiError::NotInstalled,
+                "aiNotInstalled",
+                "isn't on this computer",
+            ),
+            (AiError::Damaged, "aiDamaged", "isn't on this computer"),
+            (AiError::Memory, "aiMemory", "enough free memory"),
+            (AiError::Busy, "aiBusy", "being added or removed"),
+            (AiError::Cancelled, "aiCancelled", "could not finish"),
+            (AiError::Failed, "aiFailed", "could not finish"),
+        ] {
+            let value = serde_json::to_value(ai_error(error)).unwrap();
+            assert_eq!(value["code"], code);
+            assert!(
+                value["message"].as_str().unwrap().contains(words),
+                "{value}"
+            );
+        }
     }
 
     #[test]

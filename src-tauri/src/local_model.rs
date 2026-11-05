@@ -293,6 +293,50 @@ pub(crate) struct VerifiedModel {
     pub(crate) size_bytes: u64,
 }
 
+impl Store {
+    /// The listed size of the model that is installed (by size on disk), for
+    /// the runtime's memory check before anything is read.
+    pub(crate) fn installed_size(&self) -> Option<u64> {
+        self.catalog.iter().find_map(|model| {
+            let meta = fs::symlink_metadata(self.dir.join(model.file_name)).ok()?;
+            (meta.is_file() && meta.len() == model.size_bytes).then_some(model.size_bytes)
+        })
+    }
+}
+
+/// Where the AI runtime gets its model: this store, checked again at each
+/// helper start.
+pub(crate) struct RuntimeSource(pub(crate) Arc<Store>);
+
+impl crate::model_runtime::ModelSource for RuntimeSource {
+    fn installed_size(&self) -> Option<u64> {
+        self.0.installed_size()
+    }
+
+    fn verified(
+        &self,
+    ) -> Result<crate::model_runtime::Verified, crate::model_runtime::Unavailable> {
+        use crate::model_runtime::Unavailable;
+        if unsupported(&Here.machine()).is_some() {
+            return Err(Unavailable::Unsupported);
+        }
+        let model = self.0.verified_model().map_err(|error| match error {
+            ModelError::NotInstalled => Unavailable::NotInstalled,
+            ModelError::Damaged => Unavailable::Damaged,
+            ModelError::Memory => Unavailable::Memory,
+            ModelError::Busy => Unavailable::Busy,
+            ModelError::Unsupported(_) => Unavailable::Unsupported,
+            _ => Unavailable::Storage,
+        })?;
+        Ok(crate::model_runtime::Verified {
+            file: model.file,
+            path: model.path,
+            info: model.info,
+            size_bytes: model.size_bytes,
+        })
+    }
+}
+
 /// Counts a use of the model while it lives.
 struct UseGuard(Arc<AtomicUsize>);
 

@@ -68,11 +68,9 @@ async function openPreferences(page: Page, setup: FakeAiSetup = {}) {
 
 /** The AI helper's row in Preferences. */
 const aiRow = (page: Page) =>
-  page
-    .locator("section.setting-row")
-    .filter({
-      has: page.getByRole("heading", { name: en("ai.preferences.title") }),
-    });
+  page.locator("section.setting-row").filter({
+    has: page.getByRole("heading", { name: en("ai.preferences.title") }),
+  });
 const rowButton = (row: Locator, key: Parameters<typeof translate>[1]) =>
   row.getByRole("button", { name: en(key), exact: true });
 

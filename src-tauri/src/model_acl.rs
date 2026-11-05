@@ -26,7 +26,7 @@ use windows::Win32::Security::{
 use windows::Win32::Storage::FileSystem::{FILE_GENERIC_EXECUTE, FILE_GENERIC_READ};
 
 /// The model helper's AppContainer name (`pdf_unlock`'s model profile).
-pub(crate) const APP_CONTAINER: &str = "mycarlos.modelhelper";
+pub(crate) use crate::model_helper::APP_CONTAINER;
 
 /// Frees the SID when dropped.
 struct Sid(PSID);

@@ -139,7 +139,8 @@ jobs:
     # Verify the glib backport under optimization before testing the full app.
     name: Linux compatibility monitor (unsupported)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # The model helper's llama.cpp is a C++ build of several minutes (#72).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -147,8 +148,10 @@ jobs:
       - name: Install Linux webview dependencies
         run: |
           for attempt in 1 2 3; do
+            # libclang: llama.cpp's bindings (#72); qemu-user: the processor check below.
             if sudo apt-get update && sudo apt-get install -y \
-              libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf; then
+              libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
+              libclang-dev qemu-user; then
               exit 0
             fi
             if [ "$attempt" -eq 3 ]; then
@@ -169,13 +172,29 @@ jobs:
       - run: npm ci
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+      # The test-only stub of the model helper (#72), with its tests.
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked --features ai-helper-stub -- -D warnings
       - name: Exercise all affected glib iterator methods with optimization
         env:
           CARGO_BUILD_JOBS: "2"
         run: cargo test --manifest-path security-tests/glib-variant/Cargo.toml --release --locked
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub -- --test-threads=1
       - run: npm run tauri build -- --debug --bundles deb
       - run: git diff --exit-code -- src-tauri/Cargo.lock
+      - name: The app as bundled has no model helper stub, and starts on a processor without AVX
+        # The stub's argument is unknown outside test builds (exit 64). Under a Nehalem (no AVX)
+        # processor the app's start code must not fault, and the model helper must refuse with
+        # its unsupported-processor code (5) before any of llama.cpp runs.
+        run: |
+          app=src-tauri/target/debug/mycarlos-tauri-poc
+          set +e
+          "$app" --mycarlos-model-helper --stub 0 < /dev/null; stub=$?
+          qemu-x86_64 -cpu Nehalem "$app" --mycarlos-model-helper --threads 1 --name FAKE \
+            --sha256 "$(printf '0%.0s' $(seq 64))" --model-fd 3 < /dev/null; nehalem=$?
+          set -e
+          echo "stub argument: exit $stub; Nehalem: exit $nehalem"
+          test "$stub" -eq 64
+          test "$nehalem" -eq 5
       - name: Report desktop artifact sizes
         run: find src-tauri/target/debug/bundle -type f -printf '%p %k KB\n' | sort
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -189,7 +208,8 @@ jobs:
     # Publisher signing and patient-release approval remain separate gates.
     name: Windows native build
     runs-on: windows-2025
-    timeout-minutes: 35
+    # The model helper's llama.cpp is a C++ build of several minutes (#72).
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -204,7 +224,11 @@ jobs:
       - run: npm ci
       - name: Test Windows vault
         shell: pwsh
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub -- --test-threads=1
+      - name: Test that a crashing model helper leaves no crash dump (LocalDumps on)
+        # Sets, then removes, a machine-wide Windows Error Reporting entry for the test binary (#72).
+        shell: pwsh
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub --test model_helper -- --ignored --test-threads=1 crash_dump
       - name: Build Windows evaluation installer
         # Invoke the pinned CLI directly: npm/PowerShell can consume the build flags.
         shell: pwsh
@@ -219,6 +243,13 @@ jobs:
           $setup = Start-Process -FilePath $installers[0].FullName -ArgumentList '/S', "/D=$installPath" -Wait -PassThru
           if ($setup.ExitCode -ne 0) { throw "Installer exited with $($setup.ExitCode)" }
           if (!(Test-Path "$installPath/mycarlos-tauri-poc.exe")) { throw "Installed application is missing" }
+      - name: Verify the installed app has no model helper stub
+        # The stub's argument is unknown outside test builds (#72): exit 64.
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP 'mycarlos-install-smoke/mycarlos-tauri-poc.exe'
+          $run = Start-Process -FilePath $app -ArgumentList '--mycarlos-model-helper', '--stub', '0' -Wait -PassThru
+          if ($run.ExitCode -ne 64) { throw "The installed app accepted the stub argument (exit $($run.ExitCode))" }
       - name: Verify installed app is a GUI program (no console at launch)
         shell: python
         run: |
@@ -378,7 +409,7 @@ jobs:
       - run: npm ci
       # macOS is a supported target with its own filesystem and locking
       # behaviour, so the vault tests run here as they do on Windows.
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked -- --test-threads=1
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub -- --test-threads=1
       - name: Upload actual macOS confirmation event evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

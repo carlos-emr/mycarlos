@@ -28,6 +28,11 @@ const MAX_REDIRECTS: usize = 3;
 /// the same URL parser the HTTP client uses, then HTTPS on the default port,
 /// no credentials, and the pinned host or its CDN.
 pub(crate) fn redirect_allowed(pinned: &str, target: &str) -> bool {
+    // A real CDN address never has a backslash; the URL standard reads one as
+    // a path separator, which would hide what follows it. Refused before parsing.
+    if target.contains('\\') || target.to_ascii_lowercase().contains("%5c") {
+        return false;
+    }
     let (Ok(pinned), Ok(target)) = (reqwest::Url::parse(pinned), reqwest::Url::parse(target))
     else {
         return false;
