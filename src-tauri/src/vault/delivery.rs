@@ -133,12 +133,170 @@ pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool
         && receipt.picked_up_at == c.checked_at_ms / 1000
 }
 
+/// A kept reading aid is checked again every time the manifest is read: it belongs to a
+/// delivered original of the same clinic link, names that original and its PDF hash, and its
+/// signed manifest, JSON hash and kept receipt all agree.
+pub(super) fn valid_aid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool {
+    use serde_json::Value;
+    let Some(a) = &record.reading_aid else {
+        return true;
+    };
+    let (Some(c), Some(original)) = (&record.delivery, &record.original_pdf) else {
+        return false;
+    };
+    let Some(link) = links.iter().find(|l| l.id == a.link_id) else {
+        return false;
+    };
+    let Some(clinic) = &link.clinic else {
+        return false;
+    };
+    if a.link_id != c.link_id
+        || a.outer.validate().is_err()
+        || a.outer.kind.as_deref() != Some("reading-aid/1")
+        || a.outer.delivery_id == c.outer.delivery_id
+        || a.outer.recipient_id != clinic.recipient_id
+        || a.outer.device_key_id != link.keys.device_key_id()
+        || a.json.is_empty()
+        || a.json.len() > 64 * 1024
+    {
+        return false;
+    }
+    let Ok((payload, _)) = wire::split_compact(&a.manifest_compact, 16 * 1024) else {
+        return false;
+    };
+    let Ok(m) = serde_json::from_slice::<Value>(&payload) else {
+        return false;
+    };
+    let text = |path: &str| m.pointer(path).and_then(Value::as_str);
+    if text("/delivery_id") != Some(a.outer.delivery_id.as_str())
+        || text("/clinic_id") != Some(clinic.clinic_id.as_str())
+        || text("/recipient_id") != Some(a.outer.recipient_id.as_str())
+        || text("/device_key_id") != Some(a.outer.device_key_id.as_str())
+        || text("/pair/original_delivery_id") != Some(c.outer.delivery_id.as_str())
+        || text("/pair/original_document_sha256") != Some(original.sha256.as_str())
+        || text("/reading_aid/sha256") != Some(wire::sha256(a.json.as_bytes()).as_str())
+        || m.pointer("/reading_aid/size").and_then(Value::as_u64) != Some(a.json.len() as u64)
+        || m.pointer("/created_at").and_then(Value::as_u64) != Some(c.manifest.created_at)
+        || m.pointer("/expires_at").and_then(Value::as_u64) != Some(c.manifest.expires_at)
+    {
+        return false;
+    }
+    let Some(head) = wire::head_bytes(&a.anchor_head) else {
+        return false;
+    };
+    let Ok(anchor) = link.keys.anchor(&head) else {
+        return false;
+    };
+    let Ok((payload, signature)) = wire::split_compact(&a.receipt, 4096) else {
+        return false;
+    };
+    let Ok(receipt) = serde_json::from_slice::<Receipt>(&payload) else {
+        return false;
+    };
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    let (_, public) = link.keys.public();
+    let Ok(key) = VerifyingKey::from_bytes(&public) else {
+        return false;
+    };
+    let Ok(signature) = Signature::from_slice(&signature) else {
+        return false;
+    };
+    key.verify(&payload, &signature).is_ok()
+        && receipt.aud == "carlos-delivery-receipt"
+        && receipt.typ == "mycarlos-delivery-receipt"
+        && receipt.delivery_id == a.outer.delivery_id
+        && receipt.device_key_id == a.outer.device_key_id
+        && receipt.recipient_id == a.outer.recipient_id
+        && receipt.ciphertext_sha256 == a.outer.ciphertext_sha256
+        && receipt.document_sha256 == wire::sha256(a.json.as_bytes())
+        && receipt.vault_head_link == anchor
+        && receipt.jti.get_version_num() == 4
+        && receipt.picked_up_at == a.checked_at_ms / 1000
+}
+
+/// Kept waiting aids are checked again on every manifest read: a known clinic link, a reading-aid
+/// outer record, the contract's size limits, a manifest whose claims name this delivery and the
+/// JSON's hash, and an ID that no filed delivery or other kept aid uses.
+pub(super) fn valid_waiting_aids<'a>(
+    waiting: &'a [crate::portal_delivery::WaitingAid],
+    links: &[StoredLink],
+    ids: &mut HashSet<(Uuid, &'a str)>,
+) -> bool {
+    use serde_json::Value;
+    if waiting.len() > crate::portal_delivery::MAX_WAITING_AIDS {
+        return false;
+    }
+    for w in waiting {
+        let Some(link) = links.iter().find(|l| l.id == w.link_id) else {
+            return false;
+        };
+        let Some(clinic) = &link.clinic else {
+            return false;
+        };
+        if !ids.insert((w.link_id, w.outer.delivery_id.as_str()))
+            || w.outer.validate().is_err()
+            || w.outer.kind.as_deref() != Some("reading-aid/1")
+            || w.outer.size > 1024 * 1024
+            || w.outer.recipient_id != clinic.recipient_id
+            || w.outer.device_key_id != link.keys.device_key_id()
+            || w.json.is_empty()
+            || w.json.len() > 64 * 1024
+        {
+            return false;
+        }
+        let Ok((payload, _)) = wire::split_compact(&w.manifest_compact, 16 * 1024) else {
+            return false;
+        };
+        let Ok(m) = serde_json::from_slice::<Value>(&payload) else {
+            return false;
+        };
+        let text = |path: &str| m.pointer(path).and_then(Value::as_str);
+        if text("/delivery_id") != Some(w.outer.delivery_id.as_str())
+            || text("/clinic_id") != Some(clinic.clinic_id.as_str())
+            || text("/recipient_id") != Some(w.outer.recipient_id.as_str())
+            || text("/device_key_id") != Some(w.outer.device_key_id.as_str())
+            || text("/reading_aid/sha256") != Some(wire::sha256(w.json.as_bytes()).as_str())
+            || m.pointer("/reading_aid/size").and_then(Value::as_u64) != Some(w.json.len() as u64)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// What offering a downloaded aid copy to the vault did.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AidFiling {
+    /// Filed on its original, with a receipt waiting to be sent.
+    Filed,
+    /// Filed in place of an earlier-reviewed aid for the same original.
+    Replaced,
+    /// The same copy was filed before; its kept receipt is sent from the vault.
+    AlreadyFiled,
+    /// Verified and kept, with no receipt, until its original is filed.
+    Waiting,
+    /// Not filed: an earlier or equal review than the held aid. The signed receipt tells the
+    /// portal to stop offering it; it is sent once and not kept.
+    NotFiled(String),
+}
+
+/// The outcome of looking again at the aids kept waiting for one link.
+#[derive(Default)]
+pub(crate) struct WaitingRecheck {
+    pub filed: usize,
+    pub refused: usize,
+    /// (delivery ID, signed receipt) of aids not filed because the held aid is newer.
+    pub not_filed: Vec<(String, String)>,
+}
+
 /// One link's unsettled receipts: the ones whose documents still read back,
 /// and how many were skipped because a document the vault still shows is
 /// damaged.
 #[derive(Default)]
 pub(crate) struct PendingReceipts {
     pub ready: Vec<Custody>,
+    /// Receipts of filed reading aids; they wait on the same readable original.
+    pub ready_aids: Vec<crate::portal_delivery::AidCustody>,
     pub damaged: usize,
     pub budget_deferred: bool,
     pub manual_required: bool,
@@ -251,31 +409,46 @@ impl VaultStore {
         let keys = derive_keys(open.manifest.vault_id, &open.master_key)?;
         let mut pending = PendingReceipts::default();
         for record in &open.manifest.records {
-            if let Some(c) = &record.delivery {
-                if c.link_id == link.id && c.receipt_outcome.is_none() {
-                    // A restored/damaged object must never be acknowledged merely
-                    // because its metadata and old receipt are still readable.
-                    let readable = record.objects().try_for_each(|object| {
-                        read_object_ref(
-                            &self.root.join("objects").join(object.object_name),
-                            open.manifest.vault_id,
-                            &keys,
-                            object,
-                            io::sink(),
-                        )
-                    });
-                    match readable {
-                        Ok(()) => pending.ready.push(c.clone()),
-                        // Damage stays until the patient restores a good copy;
-                        // a failed read that a retry can get past still stops.
-                        Err(VaultError::Corrupt) => {
-                            if object_required(record) {
-                                pending.damaged += 1;
-                            }
-                        }
-                        Err(error) => return Err(error),
+            let owes_receipt = record
+                .delivery
+                .as_ref()
+                .is_some_and(|c| c.link_id == link.id && c.receipt_outcome.is_none());
+            let aid_owes_receipt = record
+                .reading_aid
+                .as_ref()
+                .is_some_and(|a| a.link_id == link.id && a.receipt_outcome.is_none());
+            if !owes_receipt && !aid_owes_receipt {
+                continue;
+            }
+            // A restored/damaged object must never be acknowledged merely
+            // because its metadata and old receipt are still readable. An aid is
+            // acknowledged only while its original reads back too.
+            let readable = record.objects().try_for_each(|object| {
+                read_object_ref(
+                    &self.root.join("objects").join(object.object_name),
+                    open.manifest.vault_id,
+                    &keys,
+                    object,
+                    io::sink(),
+                )
+            });
+            match readable {
+                Ok(()) => {
+                    if let Some(c) = record.delivery.as_ref().filter(|_| owes_receipt) {
+                        pending.ready.push(c.clone());
+                    }
+                    if let Some(a) = record.reading_aid.as_ref().filter(|_| aid_owes_receipt) {
+                        pending.ready_aids.push(a.clone());
                     }
                 }
+                // Damage stays until the patient restores a good copy;
+                // a failed read that a retry can get past still stops.
+                Err(VaultError::Corrupt) => {
+                    if object_required(record) {
+                        pending.damaged += usize::from(owes_receipt || aid_owes_receipt);
+                    }
+                }
+                Err(error) => return Err(error),
             }
         }
         Ok(pending)
@@ -423,6 +596,502 @@ impl VaultStore {
             }
             if stop() {
                 return Err(VaultError::Cancelled);
+            }
+            Ok(())
+        })
+    }
+    /// What the device holds for this link, by delivery ID, for the reading-aid checks.
+    fn aid_pair_state(manifest: &Manifest, link: &StoredLink) -> crate::reading_aid::PairState {
+        let mut state = crate::reading_aid::PairState::default();
+        for record in &manifest.records {
+            if let Some(c) = record.delivery.as_ref().filter(|c| c.link_id == link.id) {
+                state.filed_originals.insert(
+                    c.outer.delivery_id.clone(),
+                    crate::reading_aid::FiledOriginal {
+                        ciphertext_sha256: c.outer.ciphertext_sha256.clone(),
+                        document_sha256: c.manifest.document.sha256.clone(),
+                        created_at: c.manifest.created_at,
+                        expires_at: c.manifest.expires_at,
+                    },
+                );
+            }
+            if let Some(a) = record.reading_aid.as_ref().filter(|a| a.link_id == link.id) {
+                state.filed_aids.insert(
+                    a.outer.delivery_id.clone(),
+                    a.outer.ciphertext_sha256.clone(),
+                );
+            }
+        }
+        for w in manifest
+            .waiting_aids
+            .iter()
+            .filter(|w| w.link_id == link.id)
+        {
+            state.waiting_aids.insert(
+                w.outer.delivery_id.clone(),
+                w.outer.ciphertext_sha256.clone(),
+            );
+        }
+        state
+    }
+
+    /// What the listing alone says about an aid (contract, step 12): a copy already kept or filed
+    /// under its ID and hash is not downloaded again; a different hash under a known ID is replayed.
+    pub(crate) fn aid_listed(
+        &self,
+        outer: &wire::Outer,
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<crate::reading_aid::Listed, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        if !unlocked.manifest.portal_links.contains(link) {
+            return Err(VaultError::Invalid);
+        }
+        Ok(crate::reading_aid::listed(
+            outer,
+            &Self::aid_pair_state(&unlocked.manifest, link),
+        ))
+    }
+
+    /// Check a downloaded reading-aid copy. When its original is filed with the same PDF and
+    /// lifetime it is kept on that record with a signed receipt; when the original is not filed
+    /// yet it is kept waiting by its ID and hash, with no receipt, and checked again after each
+    /// original is filed. A second aid for an original that already holds one is judged by its
+    /// signed review time (see `file_or_refuse`).
+    pub(crate) fn receive_aid(
+        &self,
+        outer: &wire::Outer,
+        sealed: &[u8],
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<AidFiling, VaultError> {
+        self.receive_aid_at(outer, sealed, link, session, crate::now_ms())
+    }
+
+    fn receive_aid_at(
+        &self,
+        outer: &wire::Outer,
+        sealed: &[u8],
+        link: &StoredLink,
+        session: u64,
+        now: u64,
+    ) -> Result<AidFiling, VaultError> {
+        use crate::reading_aid::{self as aid, Outcome};
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        if !unlocked.manifest.portal_links.contains(link) {
+            return Err(VaultError::Invalid);
+        }
+        let others = unlocked
+            .manifest
+            .portal_links
+            .iter()
+            .filter(|l| l.id != link.id)
+            .filter_map(|l| l.clinic.as_ref())
+            .flat_map(|c| c.clinic_keys.iter().map(|k| k.kid.clone()))
+            .collect::<Vec<_>>();
+        let state = Self::aid_pair_state(&unlocked.manifest, link);
+        let opened = aid::open(outer, sealed, link, &others, &state, now / 1000)
+            .map_err(|_| VaultError::PickupRefused)?;
+        let json =
+            String::from_utf8(opened.json.to_vec()).map_err(|_| VaultError::PickupRefused)?;
+        match opened.outcome {
+            Outcome::AlreadyFiled => Ok(AidFiling::AlreadyFiled),
+            Outcome::WaitingForOriginal => {
+                self.keep_waiting(
+                    unlocked,
+                    link,
+                    outer,
+                    opened.manifest_compact,
+                    json,
+                    now,
+                    session,
+                )?;
+                Ok(AidFiling::Waiting)
+            }
+            Outcome::File => self.file_or_refuse(
+                unlocked,
+                link,
+                outer,
+                opened.manifest,
+                opened.manifest_compact,
+                json,
+                now,
+                session,
+            ),
+        }
+    }
+
+    /// Commits a manifest that changes no history (a kept waiting aid, or one forgotten).
+    fn commit_plain(
+        &self,
+        unlocked: &mut UnlockedVault,
+        next: Manifest,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        let redundant = commit_manifest_redundant(
+            &self.root,
+            &unlocked.master_key,
+            &mut unlocked.manifest,
+            next,
+            || Ok(()),
+        )?;
+        unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+        if redundant {
+            Ok(())
+        } else {
+            Err(VaultError::RecoveryMode)
+        }
+    }
+
+    /// Keeps a verified aid whose original is not filed (contract, step 12). A vault already
+    /// holding `MAX_WAITING_AIDS` keeps no more: the extra aid is simply downloaded again.
+    #[allow(clippy::too_many_arguments)]
+    fn keep_waiting(
+        &self,
+        unlocked: &mut UnlockedVault,
+        link: &StoredLink,
+        outer: &wire::Outer,
+        manifest_compact: String,
+        json: String,
+        now: u64,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        let kept = &unlocked.manifest.waiting_aids;
+        if kept.len() >= wire::MAX_WAITING_AIDS
+            || kept
+                .iter()
+                .any(|w| w.link_id == link.id && w.outer.delivery_id == outer.delivery_id)
+        {
+            return Ok(());
+        }
+        let mut next = unlocked.manifest.clone();
+        next.waiting_aids.push(wire::WaitingAid {
+            link_id: link.id,
+            outer: outer.clone(),
+            manifest_compact,
+            json,
+            kept_at_ms: now,
+        });
+        self.commit_plain(unlocked, next, session)
+    }
+
+    fn forget_waiting(
+        &self,
+        unlocked: &mut UnlockedVault,
+        link: &StoredLink,
+        delivery_id: &str,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        let mut next = unlocked.manifest.clone();
+        next.waiting_aids
+            .retain(|w| !(w.link_id == link.id && w.outer.delivery_id == delivery_id));
+        if next.waiting_aids.len() == unlocked.manifest.waiting_aids.len() {
+            return Ok(());
+        }
+        self.commit_plain(unlocked, next, session)
+    }
+
+    /// After the originals of a check are filed: look again at the aids kept waiting for this
+    /// link. One whose original is now filed is filed; one past its expiry (and the device's 24 h
+    /// skew) is deleted silently; one that no longer fits its original, or was replayed, is
+    /// dropped and counted as refused.
+    pub(crate) fn recheck_waiting_aids(
+        &self,
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<WaitingRecheck, VaultError> {
+        self.recheck_waiting_aids_at(link, session, crate::now_ms())
+    }
+
+    fn recheck_waiting_aids_at(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        now: u64,
+    ) -> Result<WaitingRecheck, VaultError> {
+        use crate::reading_aid::{self as aid, Outcome};
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        if !unlocked.manifest.portal_links.contains(link) {
+            return Err(VaultError::Invalid);
+        }
+        let mut out = WaitingRecheck::default();
+        let kept = unlocked
+            .manifest
+            .waiting_aids
+            .iter()
+            .filter(|w| w.link_id == link.id)
+            .cloned()
+            .collect::<Vec<_>>();
+        for w in kept {
+            let id = w.outer.delivery_id.clone();
+            let Ok(manifest) = aid::kept_manifest(&w.manifest_compact) else {
+                self.forget_waiting(unlocked, link, &id, session)?;
+                continue;
+            };
+            if now / 1000 > manifest.expires_at.saturating_add(aid::SKEW_SECONDS) {
+                self.forget_waiting(unlocked, link, &id, session)?;
+                continue;
+            }
+            let state = Self::aid_pair_state(&unlocked.manifest, link);
+            match aid::decide(&w.outer, &manifest, &state) {
+                Ok(Outcome::WaitingForOriginal) => {}
+                Ok(Outcome::File) => {
+                    match self.file_or_refuse(
+                        unlocked,
+                        link,
+                        &w.outer,
+                        manifest,
+                        w.manifest_compact.clone(),
+                        w.json.clone(),
+                        now,
+                        session,
+                    )? {
+                        AidFiling::NotFiled(receipt) => {
+                            out.not_filed.push((id.clone(), receipt));
+                            self.forget_waiting(unlocked, link, &id, session)?;
+                        }
+                        _ => out.filed += 1,
+                    }
+                }
+                Ok(Outcome::AlreadyFiled) => self.forget_waiting(unlocked, link, &id, session)?,
+                Err(_) => {
+                    out.refused += 1;
+                    self.forget_waiting(unlocked, link, &id, session)?;
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Files a verified aid whose original is filed, or refuses it. A record holds one aid. A
+    /// second aid for the same original (a new review) replaces the held one only when it is
+    /// greater by (`approval.reviewed_at`, `approval.id`): the later review, and within the same
+    /// second the larger approval ID. The summary version is an opaque hash and cannot be
+    /// ordered. A lesser or equal one is not filed and is answered with its own signed receipt,
+    /// so the portal stops offering it.
+    #[allow(clippy::too_many_arguments)]
+    fn file_or_refuse(
+        &self,
+        unlocked: &mut UnlockedVault,
+        link: &StoredLink,
+        outer: &wire::Outer,
+        manifest: crate::reading_aid::AidManifest,
+        manifest_compact: String,
+        json: String,
+        now: u64,
+        session: u64,
+    ) -> Result<AidFiling, VaultError> {
+        use crate::reading_aid as aid;
+        let index = unlocked
+            .manifest
+            .records
+            .iter()
+            .position(|r| {
+                r.delivery.as_ref().is_some_and(|c| {
+                    c.link_id == link.id
+                        && c.outer.delivery_id == manifest.pair.original_delivery_id
+                })
+            })
+            .ok_or(VaultError::Corrupt)?;
+        let replace = match &unlocked.manifest.records[index].reading_aid {
+            None => false,
+            Some(held) => {
+                let held_approval = aid::kept_manifest(&held.manifest_compact)
+                    .map_err(|_| VaultError::Corrupt)?
+                    .approval;
+                // Review time first; within the same second the larger approval ID, byte by byte,
+                // so that two devices always keep the same aid. The same approval under another
+                // delivery ID is not greater and is not filed.
+                if (
+                    manifest.approval.reviewed_at,
+                    manifest.approval.id.as_bytes(),
+                ) <= (held_approval.reviewed_at, held_approval.id.as_bytes())
+                {
+                    let head = wire::head_bytes(&unlocked.manifest.history.head)
+                        .ok_or(VaultError::Corrupt)?;
+                    let anchor = link.keys.anchor(&head).map_err(VaultError::Portal)?;
+                    let claims = aid::receipt(outer, &manifest, anchor, now / 1000);
+                    let receipt = link
+                        .keys
+                        .sign(&serde_json::to_vec(&claims).map_err(|_| VaultError::Storage)?);
+                    return Ok(AidFiling::NotFiled(receipt));
+                }
+                true
+            }
+        };
+        self.file_aid(
+            unlocked,
+            link,
+            outer,
+            &manifest,
+            manifest_compact,
+            json,
+            index,
+            replace,
+            now,
+            session,
+        )?;
+        Ok(if replace {
+            AidFiling::Replaced
+        } else {
+            AidFiling::Filed
+        })
+    }
+
+    /// One commit: the history entry, the aid on its record (replacing a held one), the aid no
+    /// longer waiting, and the signed receipt over the new head's anchor.
+    #[allow(clippy::too_many_arguments)]
+    fn file_aid(
+        &self,
+        unlocked: &mut UnlockedVault,
+        link: &StoredLink,
+        outer: &wire::Outer,
+        manifest: &crate::reading_aid::AidManifest,
+        manifest_compact: String,
+        json: String,
+        index: usize,
+        replace: bool,
+        now: u64,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        use crate::reading_aid as aid;
+        let mut entry = HistoryEntry::new(HistoryEvent::ReadingAidFiled, now);
+        entry.record_id = Some(unlocked.manifest.records[index].id);
+        entry.portal_link_id = Some(link.id);
+        entry.delivery_id = Some(outer.delivery_id.clone());
+        entry.ciphertext_sha256 = Some(outer.ciphertext_sha256.clone());
+        entry.profile_id = Some(unlocked.manifest.records[index].profile_id);
+        if replace {
+            entry.how = Some("replaced".into());
+        }
+        let prepared = prepare_history(
+            &self.root,
+            &unlocked.master_key,
+            &unlocked.manifest,
+            vec![entry],
+        )?;
+        let mut history_written = prepared.written;
+        let mut commit_attempted = false;
+        let result = (|| {
+            let head = wire::head_bytes(&prepared.state.head).ok_or(VaultError::Corrupt)?;
+            let anchor = link.keys.anchor(&head).map_err(VaultError::Portal)?;
+            let claims = aid::receipt(outer, manifest, anchor, now / 1000);
+            let receipt = link
+                .keys
+                .sign(&serde_json::to_vec(&claims).map_err(|_| VaultError::Storage)?);
+            let mut next = unlocked.manifest.clone();
+            next.history = prepared.state;
+            next.waiting_aids
+                .retain(|w| !(w.link_id == link.id && w.outer.delivery_id == outer.delivery_id));
+            next.records[index].reading_aid = Some(crate::portal_delivery::AidCustody {
+                link_id: link.id,
+                outer: outer.clone(),
+                manifest_compact,
+                json,
+                checked_at_ms: now,
+                anchor_head: next.history.head.clone(),
+                receipt,
+                receipt_outcome: None,
+            });
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            terminate_at_test_boundary("delivery.before-aid-commit");
+            fail_at_test_boundary("delivery.before-aid-commit")?;
+            commit_attempted = true;
+            let redundant = commit_manifest_redundant(
+                &self.root,
+                &unlocked.master_key,
+                &mut unlocked.manifest,
+                next,
+                || {
+                    remove_objects(
+                        &self.root,
+                        &prepared.superseded,
+                        Removable::SupersededSegment,
+                    );
+                    Ok(())
+                },
+            )?;
+            history_written.clear();
+            unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+            if !redundant {
+                return Err(VaultError::RecoveryMode);
+            }
+            Ok(())
+        })();
+        if result.is_err() && commit_attempted {
+            unlocked.recovery = Some(RecoveryReason::WriteFailed);
+        } else {
+            remove_objects(&self.root, &history_written, Removable::UncommittedObject);
+        }
+        result
+    }
+
+    pub(crate) fn settle_aid_receipt(
+        &self,
+        link: &StoredLink,
+        a: &crate::portal_delivery::AidCustody,
+        outcome: ReceiptOutcome,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        self.mutate_recorded(|manifest, entries| {
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if !manifest.portal_links.contains(link) {
+                return Err(VaultError::Invalid);
+            }
+            let record = manifest
+                .records
+                .iter_mut()
+                .find(|r| {
+                    r.reading_aid.as_ref().is_some_and(|d| {
+                        d.link_id == link.id && d.outer.delivery_id == a.outer.delivery_id
+                    })
+                })
+                .ok_or(VaultError::NotFound)?;
+            let saved = record.reading_aid.as_mut().ok_or(VaultError::Corrupt)?;
+            if saved.receipt != a.receipt {
+                return Err(VaultError::Corrupt);
+            }
+            if saved.receipt_outcome.is_none() {
+                saved.receipt_outcome = Some(outcome);
+                let mut entry =
+                    HistoryEntry::new(HistoryEvent::DeliveryReceiptSettled, crate::now_ms());
+                entry.record_id = Some(record.id);
+                entry.portal_link_id = Some(link.id);
+                entry.delivery_id = Some(a.outer.delivery_id.clone());
+                entry.ciphertext_sha256 = Some(a.outer.ciphertext_sha256.clone());
+                entry.how = Some(
+                    match outcome {
+                        ReceiptOutcome::PickedUp => "picked_up",
+                        ReceiptOutcome::Gone => "delivery_not_found",
+                    }
+                    .into(),
+                );
+                entries.push(entry);
             }
             Ok(())
         })
@@ -652,6 +1321,7 @@ impl VaultStore {
                 hidden: None,
                 original_pdf: None,
                 delivery: None,
+                reading_aid: None,
             };
             record.original_pdf = Some(self.stage_original_pdf(
                 unlocked.manifest.vault_id,
@@ -1632,6 +2302,430 @@ mod approval_recovery_tests {
             .unwrap()
             .remove(0)
     }
+    /// The contract's reference clock for the aid vectors.
+    const NOW_MS: u64 = 1_792_454_400_000;
+    fn pair_fixture() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/reading-aid-pair-contract.json"
+        ))
+        .unwrap()
+    }
+    /// A vault holding the contract's original (delivery 6f1c2a7e): a real committed record
+    /// (unit tests have no PDF helper for the contract's own document) whose custody is
+    /// rewritten to the contract's original, with its receipt signed again.
+    fn vault_with_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+        let pair = pair_fixture();
+        let pair_link = wire::tests::fixture_link(&pair);
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Aid Patient", 1).unwrap();
+        let (other, record_id, _) = add_signed_pending_delivery(&store);
+        let outer: wire::Outer =
+            serde_json::from_value(pair["original_package"]["outer"].clone()).unwrap();
+        let compact = pair["sender"]["original_manifest"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (payload, _) = wire::split_compact(&compact, 16 * 1024).unwrap();
+        let manifest: wire::Manifest = serde_json::from_slice(&payload).unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.retain(|l| l.id != other.id);
+                m.portal_links.push(pair_link.clone());
+                let head = m.history.head.clone();
+                let record = m.records.iter_mut().find(|r| r.id == record_id).unwrap();
+                let original = record.original_pdf.as_mut().unwrap();
+                original.sha256 = manifest.document.sha256.clone();
+                original.plaintext_size = manifest.document.size;
+                let c = record.delivery.as_mut().unwrap();
+                let anchor = pair_link
+                    .keys
+                    .anchor(&wire::head_bytes(&head).unwrap())
+                    .unwrap();
+                let claims = Receipt::new(&outer, &manifest, anchor, c.checked_at_ms / 1000);
+                c.receipt = pair_link.keys.sign(&serde_json::to_vec(&claims).unwrap());
+                c.link_id = pair_link.id;
+                c.outer = outer.clone();
+                c.manifest = manifest.clone();
+                c.manifest_compact = compact.clone();
+                c.anchor_head = head;
+                Ok(())
+            })
+            .unwrap();
+        (temp, store, pair_link, record_id)
+    }
+    fn aid_vector(name: &str) -> (wire::Outer, Vec<u8>) {
+        let pair = pair_fixture();
+        let v = pair["packages"]["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == name)
+            .unwrap()
+            .clone();
+        (
+            serde_json::from_value(v["outer"].clone()).unwrap(),
+            wire::decode(v["blob"].as_str().unwrap()).unwrap(),
+        )
+    }
+    fn stored_aid(store: &VaultStore, record_id: Uuid) -> Option<wire::AidCustody> {
+        store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .records
+            .iter()
+            .find(|r| r.id == record_id)
+            .unwrap()
+            .reading_aid
+            .clone()
+    }
+    #[test]
+    fn a_reading_aid_is_filed_on_its_original_once_with_a_receipt_that_settles() {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        let session = store.portal_link_ticket();
+        // The vector's clock is the contract's reference time; the receiver checks "now".
+        let filed = store.receive_aid_at(&outer, &sealed, &link, session, NOW_MS);
+        let filed = filed.unwrap_or_else(|e| panic!("{e:?}"));
+        assert_eq!(filed, AidFiling::Filed);
+        let kept = stored_aid(&store, record_id).unwrap();
+        assert_eq!(kept.outer.delivery_id, outer.delivery_id);
+        assert!(kept.receipt_outcome.is_none());
+        let again = store
+            .receive_aid_at(&outer, &sealed, &link, session, NOW_MS)
+            .unwrap();
+        assert_eq!(again, AidFiling::AlreadyFiled);
+        assert_eq!(stored_aid(&store, record_id).unwrap().receipt, kept.receipt);
+        let events = crate::vault::history_events_for_test(&store);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e.event == HistoryEvent::ReadingAidFiled)
+                .count(),
+            1
+        );
+        store
+            .settle_aid_receipt(&link, &kept, wire::ReceiptOutcome::PickedUp, session)
+            .unwrap();
+        assert!(stored_aid(&store, record_id)
+            .unwrap()
+            .receipt_outcome
+            .is_some());
+        // It survives a restart: the validation of format 8 accepts what was written.
+        let store = restart(store);
+        let kept = stored_aid(&store, record_id).unwrap();
+        assert_eq!(kept.outer.delivery_id, outer.delivery_id);
+    }
+    #[test]
+    fn a_filed_aid_reaches_the_snapshot_with_its_notice_and_review_time_and_a_plain_record_does_not(
+    ) {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let before = store.snapshot().unwrap();
+        assert!(before.records.iter().all(|r| r.reading_aid.is_none()));
+        let json = serde_json::to_value(&before.records[0]).unwrap();
+        assert!(json.get("readingAid").is_none());
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        store
+            .receive_aid_at(&outer, &sealed, &link, store.portal_link_ticket(), NOW_MS)
+            .unwrap();
+        let held = stored_aid(&store, record_id).unwrap();
+        let reviewed = crate::reading_aid::kept_manifest(&held.manifest_compact)
+            .unwrap()
+            .approval
+            .reviewed_at;
+        let snapshot = store.snapshot().unwrap();
+        let record = snapshot.records.iter().find(|r| r.id == record_id).unwrap();
+        let aid = record
+            .reading_aid
+            .as_ref()
+            .expect("the filed aid is on its record");
+        assert_eq!(aid.delivery_id, outer.delivery_id);
+        assert_eq!(aid.reviewed_at_ms, reviewed * 1000);
+        assert_eq!(aid.language, "en");
+        assert!(aid.notice.heading.starts_with("AI-generated reading aid"));
+        assert!(aid.notice.body.starts_with("FAKE notice body"));
+        assert_eq!(aid.points.len(), 2);
+        assert_eq!(aid.points[0].evidence.len(), 1);
+        // The reader receives it under camelCase names, and it is not a document of its own.
+        let json = serde_json::to_value(record).unwrap();
+        assert_eq!(json["readingAid"]["reviewedAtMs"], reviewed * 1000);
+        assert_eq!(json["readingAid"]["notice"]["heading"], aid.notice.heading);
+        assert_eq!(snapshot.records.len(), before.records.len());
+    }
+    fn waiting_aids(store: &VaultStore) -> Vec<wire::WaitingAid> {
+        store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .waiting_aids
+            .clone()
+    }
+    /// A vault with the pair link and no original, holding the contract's aid as a waiting aid.
+    fn vault_with_waiting_aid() -> (
+        tempfile::TempDir,
+        VaultStore,
+        StoredLink,
+        wire::Outer,
+        Vec<u8>,
+    ) {
+        let pair = pair_fixture();
+        let link = wire::tests::fixture_link(&pair);
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Aid Patient", 1).unwrap();
+        add_link(&store, &link);
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        let kept = store
+            .receive_aid_at(&outer, &sealed, &link, store.portal_link_ticket(), NOW_MS)
+            .unwrap();
+        assert_eq!(kept, AidFiling::Waiting);
+        (temp, store, link, outer, sealed)
+    }
+    #[test]
+    fn a_reading_aid_without_its_original_is_kept_waiting_by_id_and_hash_with_no_receipt() {
+        use crate::reading_aid::Listed;
+        let (_temp, store, link, outer, sealed) = vault_with_waiting_aid();
+        let session = store.portal_link_ticket();
+        let kept = waiting_aids(&store);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].outer.delivery_id, outer.delivery_id);
+        assert_eq!(kept[0].outer.ciphertext_sha256, outer.ciphertext_sha256);
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .all(|e| e.event != HistoryEvent::ReadingAidFiled));
+        // The same copy is never downloaded again; a different hash under that ID is replayed.
+        assert_eq!(
+            store.aid_listed(&outer, &link, session).unwrap(),
+            Listed::Kept
+        );
+        let mut other = outer.clone();
+        other.ciphertext_sha256 = wire::sha256(b"another copy");
+        assert_eq!(
+            store.aid_listed(&other, &link, session).unwrap(),
+            Listed::Replayed
+        );
+        // Seeing it again keeps one copy, and it survives a restart.
+        let again = store
+            .receive_aid_at(&outer, &sealed, &link, session, NOW_MS)
+            .unwrap();
+        assert_eq!(again, AidFiling::Waiting);
+        assert_eq!(waiting_aids(&restart(store)).len(), 1);
+    }
+    #[test]
+    fn a_waiting_aid_is_filed_once_its_original_is_filed_and_is_not_kept_after() {
+        let (_temp, kept_store, _link, _outer, _sealed) = vault_with_waiting_aid();
+        let waiting = waiting_aids(&kept_store).remove(0);
+        let (_temp2, store, link, record_id) = vault_with_pair_original();
+        let session = store.portal_link_ticket();
+        let mut moved = waiting.clone();
+        moved.link_id = link.id;
+        store
+            .mutate_recorded(|m, _| {
+                m.waiting_aids.push(moved.clone());
+                Ok(())
+            })
+            .unwrap();
+        let done = store
+            .recheck_waiting_aids_at(&link, session, NOW_MS)
+            .unwrap();
+        assert_eq!((done.filed, done.refused, done.not_filed.len()), (1, 0, 0));
+        assert!(waiting_aids(&store).is_empty());
+        let filed = stored_aid(&store, record_id).unwrap();
+        assert_eq!(filed.outer.delivery_id, waiting.outer.delivery_id);
+        assert!(filed.receipt_outcome.is_none());
+        assert_eq!(
+            crate::vault::history_events_for_test(&store)
+                .iter()
+                .filter(|e| e.event == HistoryEvent::ReadingAidFiled)
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn a_waiting_aid_past_its_expiry_and_skew_is_deleted_silently() {
+        let (_temp, store, link, _outer, _sealed) = vault_with_waiting_aid();
+        let session = store.portal_link_ticket();
+        // The aid expires at 1793055600; the device allows 24 hours more.
+        let inside = (1_793_055_600 + 86_400) * 1000;
+        let kept = store
+            .recheck_waiting_aids_at(&link, session, inside)
+            .unwrap();
+        assert_eq!((kept.filed, kept.refused), (0, 0));
+        assert_eq!(waiting_aids(&store).len(), 1);
+        let gone = store
+            .recheck_waiting_aids_at(&link, session, inside + 1000)
+            .unwrap();
+        assert_eq!((gone.filed, gone.refused, gone.not_filed.len()), (0, 0, 0));
+        assert!(waiting_aids(&store).is_empty());
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .all(|e| e.event != HistoryEvent::ReadingAidFiled));
+    }
+    #[test]
+    fn a_waiting_aid_whose_original_was_replaced_is_dropped_as_refused() {
+        let (_temp, kept_store, _link, _outer, _sealed) = vault_with_waiting_aid();
+        let waiting = waiting_aids(&kept_store).remove(0);
+        let (_temp2, store, link, record_id) = vault_with_pair_original();
+        let session = store.portal_link_ticket();
+        let mut moved = waiting;
+        moved.link_id = link.id;
+        // The aid was approved for another PDF than the one now filed: its pair claim names a
+        // different document hash.
+        {
+            use base64::Engine;
+            let (payload, signature) =
+                wire::split_compact(&moved.manifest_compact, 16 * 1024).unwrap();
+            let mut claims: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+            claims["pair"]["original_document_sha256"] = wire::sha256(b"another pdf").into();
+            moved.manifest_compact = format!(
+                "{}.{}",
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(serde_json::to_vec(&claims).unwrap()),
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature)
+            );
+        }
+        store
+            .mutate_recorded(|m, _| {
+                m.waiting_aids.push(moved.clone());
+                Ok(())
+            })
+            .unwrap_or_else(|e| panic!("{e:?}"));
+        let done = store
+            .recheck_waiting_aids_at(&link, session, NOW_MS)
+            .unwrap();
+        assert_eq!((done.filed, done.refused), (0, 1));
+        assert!(waiting_aids(&store).is_empty());
+        assert!(stored_aid(&store, record_id).is_none());
+    }
+    fn aid_approval_id(custody: &wire::AidCustody) -> String {
+        crate::reading_aid::kept_manifest(&custody.manifest_compact)
+            .unwrap()
+            .approval
+            .id
+    }
+    /// A second aid for the filed original: the contract's aid with another delivery ID and review
+    /// time, its signed manifest re-encoded (the vault checks signatures on arrival, not here).
+    fn second_aid(
+        first: &wire::AidCustody,
+        id: &str,
+        reviewed_at: u64,
+        approval_id: Option<String>,
+    ) -> (wire::Outer, crate::reading_aid::AidManifest, String) {
+        use base64::Engine;
+        let (payload, signature) = wire::split_compact(&first.manifest_compact, 16 * 1024).unwrap();
+        let mut claims: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        claims["delivery_id"] = id.into();
+        claims["approval"]["reviewed_at"] = reviewed_at.into();
+        if let Some(approval_id) = approval_id {
+            claims["approval"]["id"] = approval_id.into();
+        }
+        let compact = format!(
+            "{}.{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(serde_json::to_vec(&claims).unwrap()),
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature)
+        );
+        let mut outer = first.outer.clone();
+        outer.delivery_id = id.into();
+        outer.ciphertext_sha256 = wire::sha256(id.as_bytes());
+        (
+            outer,
+            crate::reading_aid::kept_manifest(&compact).unwrap(),
+            compact,
+        )
+    }
+    #[test]
+    fn a_later_reviewed_aid_replaces_the_held_one_and_an_earlier_or_equal_one_gets_only_a_receipt()
+    {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let session = store.portal_link_ticket();
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        store
+            .receive_aid_at(&outer, &sealed, &link, session, NOW_MS)
+            .unwrap();
+        let held = stored_aid(&store, record_id).unwrap();
+        let held_at = crate::reading_aid::kept_manifest(&held.manifest_compact)
+            .unwrap()
+            .approval
+            .reviewed_at;
+        let session_of = |s: &VaultStore| s.portal_link_ticket();
+        let attempt = |id: &str, at: u64, approval: Option<String>| {
+            let (o, m, c) = second_aid(&held, id, at, approval);
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            store.file_or_refuse(
+                unlocked,
+                &link,
+                &o,
+                m,
+                c,
+                held.json.clone(),
+                NOW_MS,
+                session_of(&store),
+            )
+        };
+        // Equal and earlier reviews: not filed, a signed receipt for the new aid only.
+        for at in [held_at, held_at - 10] {
+            let id = "11111111-1111-4111-8111-111111111111";
+            let AidFiling::NotFiled(receipt) = attempt(id, at, None).unwrap() else {
+                panic!("an equal or earlier review must not replace the held aid");
+            };
+            let (payload, _) = wire::split_compact(&receipt, 4096).unwrap();
+            let claims: wire::Receipt = serde_json::from_slice(&payload).unwrap();
+            assert_eq!(claims.delivery_id, id);
+            assert_eq!(
+                stored_aid(&store, record_id).unwrap().outer.delivery_id,
+                held.outer.delivery_id
+            );
+        }
+        // Within the same second the larger approval ID wins, byte by byte: a smaller one is not
+        // filed and a larger one replaces the held aid, so devices cannot disagree.
+        let held_id = aid_approval_id(&held);
+        let mut smaller = held_id.clone();
+        smaller.pop();
+        assert!(matches!(
+            attempt(
+                "44444444-4444-4444-8444-444444444444",
+                held_at,
+                Some(smaller)
+            )
+            .unwrap(),
+            AidFiling::NotFiled(_)
+        ));
+        let larger = format!("{held_id}z");
+        assert_eq!(
+            attempt(
+                "33333333-3333-4333-8333-333333333333",
+                held_at,
+                Some(larger)
+            )
+            .unwrap(),
+            AidFiling::Replaced
+        );
+        // A strictly later review replaces it, in a commit that says so, and keeps the validation happy.
+        let id = "22222222-2222-4222-8222-222222222222";
+        assert_eq!(
+            attempt(id, held_at + 10, None).unwrap(),
+            AidFiling::Replaced
+        );
+        let now_held = stored_aid(&store, record_id).unwrap();
+        assert_eq!(now_held.outer.delivery_id, id);
+        assert!(now_held.receipt_outcome.is_none());
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .any(|e| e.event == HistoryEvent::ReadingAidFiled
+                && e.how.as_deref() == Some("replaced")));
+        assert_eq!(
+            stored_aid(&restart(store), record_id)
+                .unwrap()
+                .outer
+                .delivery_id,
+            id
+        );
+    }
     #[test]
     fn should_recover_original_acceptance_after_expiry_and_restart_before_request_or_explicit_restart(
     ) {
@@ -2481,7 +3575,7 @@ mod approval_recovery_tests {
             assert_eq!(
                 fetched.into_inner().unwrap(),
                 vec![
-                    "/api/mycarlos/deliveries?limit=50".to_owned(),
+                    "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
                     format!("/api/mycarlos/deliveries/{}", first.delivery_id),
                     format!("/api/mycarlos/deliveries/{}", second.delivery_id),
                 ]
@@ -2494,6 +3588,49 @@ mod approval_recovery_tests {
             assert_eq!(result.issues[0].link_id, link.id);
             assert_eq!(result.issues[0].code, "portal_link_incomplete");
         }
+    }
+    #[test]
+    fn a_check_asks_for_reading_aids_and_downloads_them_after_the_originals() {
+        let (_temp, store, link, _) = vault_with_pair_original();
+        let (aid_outer, aid_sealed) = aid_vector("a reading aid for a filed original");
+        let pair = pair_fixture();
+        let mut other: wire::Outer =
+            serde_json::from_value(pair["original_package"]["outer"].clone()).unwrap();
+        other.delivery_id = Uuid::new_v4().to_string();
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                if method == "GET" {
+                    fetched.lock().unwrap().push(path.to_owned());
+                }
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    // The aid is listed first, the other delivery second.
+                    Ok(listing(&[aid_outer.clone(), other.clone()]))
+                } else if path.ends_with(&aid_outer.delivery_id) {
+                    Ok(reply(200, &aid_sealed))
+                } else {
+                    Ok(reply(200, b"not a delivery"))
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", other.delivery_id),
+                format!("/api/mycarlos/deliveries/{}", aid_outer.delivery_id),
+            ]
+        );
+        // The other delivery is not a delivery; the checked-in aid is past its lifetime at the
+        // real clock. Both are refused and neither stops the check.
+        assert_eq!(result.refused, 2);
     }
     #[test]
     fn should_stop_a_clinic_after_three_downloads_in_a_row_get_no_reply() {

@@ -223,6 +223,7 @@ fn outer(link: &StoredLink, index: usize) -> Outer {
         ciphertext_sha256: "a".repeat(64),
         created_at: now,
         expires_at: now + 600,
+        kind: None,
     };
     value.validate().unwrap();
     value

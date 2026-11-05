@@ -225,6 +225,8 @@ export function VaultLibrary({
   activeRecordIdRef.current = activeRecordId;
   // The document open in the reader, if any.
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
+  // Whether the reader opens on the clinic's reading aid (under its notice) rather than the original.
+  const [readerShowsAid, setReaderShowsAid] = useState(false);
   // The AI helper (#72): on a computer only, as the reader's text is.
   const localModel = useMemo(
     () => nativeLocalModel(() => bridge.aiModelStatus()),
@@ -2436,6 +2438,17 @@ export function VaultLibrary({
                 onRead={
                   namedAsPdf(activeRecord.displayName)
                     ? () => {
+                        setReaderShowsAid(false);
+                        setReaderRecordId(activeRecord.id);
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
+                onReadAid={
+                  activeRecord.readingAid &&
+                  namedAsPdf(activeRecord.displayName)
+                    ? () => {
+                        setReaderShowsAid(true);
                         setReaderRecordId(activeRecord.id);
                         setActiveRecordId(null);
                       }
@@ -2500,6 +2513,7 @@ export function VaultLibrary({
           {readerRecord && (
             <DocumentReader
               record={readerRecord}
+              startWithAid={readerShowsAid}
               viewPage={(page, width, password) =>
                 bridge
                   .viewPage(readerRecord.id, page, width, password)

@@ -974,6 +974,24 @@ photo-zoomOut = Pomniejsz
 
 preferences-subtitle = Wygląd myCarlos na tym komputerze
 
+readingAid-available = Twoja przychodnia wysłała też pomoc w czytaniu tego dokumentu.
+
+readingAid-checked = Sprawdzone przez klinicystę dnia { $date }.
+
+readingAid-evidence = Z dokumentu:
+
+readingAid-open = Przeczytaj pomoc w czytaniu
+
+readingAid-openOriginal = Otwórz oryginalny dokument
+
+readingAid-overview = Przegląd
+
+readingAid-points = Najważniejsze punkty
+
+readingAid-title = Pomoc w czytaniu od Twojej przychodni
+
+readingAid-unavailable = Tej pomocy w czytaniu nie można bezpiecznie wyświetlić. Otwórz zamiast tego oryginalny dokument.
+
 record-kind-document = Dokument
 
 record-source-manual = Import ręczny — niezweryfikowany

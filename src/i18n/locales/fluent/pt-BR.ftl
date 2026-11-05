@@ -951,6 +951,24 @@ photo-zoomOut = Diminuir zoom
 
 preferences-subtitle = Como o myCarlos aparece neste computador
 
+readingAid-available = Sua clínica também enviou um auxílio de leitura para este documento.
+
+readingAid-checked = Conferido por um clínico em { $date }.
+
+readingAid-evidence = Do documento:
+
+readingAid-open = Ler o auxílio de leitura
+
+readingAid-openOriginal = Abrir o documento original
+
+readingAid-overview = Visão geral
+
+readingAid-points = Pontos principais
+
+readingAid-title = Auxílio de leitura da sua clínica
+
+readingAid-unavailable = Este auxílio de leitura não pode ser exibido com segurança. Abra o documento original.
+
 record-kind-document = Documento
 
 record-source-manual = Importação manual — não verificada

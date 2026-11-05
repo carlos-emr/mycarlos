@@ -928,6 +928,24 @@ photo-zoomOut = Zoom out
 
 preferences-subtitle = How myCarlos looks on this computer
 
+readingAid-available = Your clinic also sent a reading aid for this document.
+
+readingAid-checked = Checked by a clinician on { $date }.
+
+readingAid-evidence = From the document:
+
+readingAid-open = Read the reading aid
+
+readingAid-openOriginal = Open the original document
+
+readingAid-overview = Overview
+
+readingAid-points = Main points
+
+readingAid-title = Reading aid from your clinic
+
+readingAid-unavailable = This reading aid cannot be shown safely. Open the original document instead.
+
 record-kind-document = Document
 
 record-source-manual = Manual import — unverified

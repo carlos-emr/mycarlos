@@ -43,7 +43,12 @@ const page = (index: number): ViewedPage => ({
 
 function renderReader(
   model: LocalModel | null,
-  options: { loadText?: ReaderAi["loadText"]; strict?: boolean } = {},
+  options: {
+    loadText?: ReaderAi["loadText"];
+    strict?: boolean;
+    record?: VaultRecord;
+    startWithAid?: boolean;
+  } = {},
 ) {
   const onOpenPreferences = vi.fn();
   const loadText = vi.fn(
@@ -51,7 +56,8 @@ function renderReader(
   );
   const reader = (
     <DocumentReader
-      record={record}
+      record={options.record ?? record}
+      startWithAid={options.startWithAid}
       viewPage={vi.fn(async (index: number) => page(index))}
       onClose={vi.fn()}
       ai={model ? { model, loadText, onOpenPreferences } : undefined}
@@ -445,4 +451,96 @@ describe("Preferences", () => {
     rerender(<PreferencesSettings />);
     expect(screen.queryByRole("heading", { name: /AI helper/ })).toBeNull();
   });
+});
+
+describe("the AI helper beside a clinic reading aid", () => {
+  const withAid: VaultRecord = {
+    ...record,
+    readingAid: {
+      deliveryId: "aid-1",
+      language: "en",
+      reviewedAtMs: 1_792_450_680_000,
+      notice: {
+        version: "carlos-5537-en-1",
+        heading: "FAKE notice heading",
+        body: "FAKE notice body.",
+      },
+      overview: "FAKE overview.",
+      points: [{ text: "FAKE point.", evidence: ["FAKE quote."] }],
+    },
+  };
+  const model = () =>
+    fakeLocalModel({
+      sentences: () => [
+        {
+          text: "FAKE: repeat the test in two weeks.",
+          quote: "Repeat in 2 weeks.",
+        },
+      ],
+    });
+
+  it("offers Summary and Explain only on the original, never over the clinician's aid", async () => {
+    renderReader(model(), { record: withAid, startWithAid: true });
+    expect(await screen.findByRole("note")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Summary" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Explain a term" })).toBeNull();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: "Open the original document" }),
+    );
+    await firstPage();
+    expect(screen.getByRole("button", { name: "Summary" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Explain a term" }),
+    ).toBeVisible();
+    // And not the other way: going back to the aid takes the helper away again.
+    await user.click(
+      screen.getByRole("button", { name: "Read the reading aid" }),
+    );
+    expect(screen.getByRole("note")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Summary" })).toBeNull();
+  });
+
+  it("closes an open AI panel and clears the page text and its marked words when the aid is opened", async () => {
+    renderReader(model(), { record: withAid });
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Show in document" }),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
+    await waitFor(() =>
+      expect(document.querySelector(".native-reader-text mark")).not.toBeNull(),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Read the reading aid" }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Summary in plain words" }),
+    ).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Open the original document" }),
+    );
+    // Back on the original: no panel, no marked words, and the page text is closed.
+    await screen.findByRole("img", { name: humanText(/^Page \d of 2/) });
+    expect(
+      screen.queryByRole("region", { name: "Summary in plain words" }),
+    ).toBeNull();
+    expect(document.querySelector(".native-reader-text mark")).toBeNull();
+    expect(
+      document.querySelector<HTMLDetailsElement>(".native-reader-text")?.open,
+    ).not.toBe(true);
+  });
+
+  it.each([false, true])(
+    "puts the focus on the aid's heading when the reader opens straight onto it (StrictMode %s)",
+    async (strict) => {
+      renderReader(model(), { record: withAid, startWithAid: true, strict });
+      const heading = await screen.findByRole("heading", {
+        name: "Reading aid from your clinic",
+      });
+      await waitFor(() => expect(heading).toHaveFocus());
+    },
+  );
 });
