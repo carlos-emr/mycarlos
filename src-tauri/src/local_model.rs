@@ -556,16 +556,14 @@ impl Store {
         let part = self.dir.join(&part_name);
         let result = copy_checked(input, &part, model, &self.cancel_add, have, progress);
         if let Err(error) = result {
-            // A download that ended early (cancelled, connection lost) keeps
-            // what it has, to resume: only when the source was a download
-            // (`have` is tracked by the caller) and the file is still short.
+            // A download cut short (the connection lost, a read that failed)
+            // keeps what it has, to resume: only when the source was a
+            // download and the file is still short. Cancel is the patient
+            // saying no: what arrived is removed (up to the model's size).
             let short = fs::metadata(&part).is_ok_and(|m| m.len() < size);
             let resumable = want.is_some()
                 && short
-                && matches!(
-                    error,
-                    ModelError::Cancelled | ModelError::Unreadable | ModelError::Truncated
-                );
+                && matches!(error, ModelError::Unreadable | ModelError::Truncated);
             if !resumable {
                 let _ = remove_model_file(&part);
             }
@@ -1495,6 +1493,8 @@ mod tests {
         ranges: bool,
         /// The offsets asked for, in order.
         asked: std::cell::RefCell<Vec<u64>>,
+        /// The next body ends after this many bytes, as a lost connection does.
+        cut_once: std::cell::Cell<Option<usize>>,
     }
     impl Fake {
         fn serving(bytes: &[u8]) -> Self {
@@ -1505,6 +1505,7 @@ mod tests {
                 opened: std::cell::Cell::new(0),
                 ranges: true,
                 asked: std::cell::RefCell::new(Vec::new()),
+                cut_once: std::cell::Cell::new(None),
             }
         }
     }
@@ -1521,10 +1522,14 @@ mod tests {
                 return Err(error);
             }
             let start = if self.ranges { from } else { 0 };
+            let mut body = self.bytes[start as usize..].to_vec();
+            if let Some(cut) = self.cut_once.take() {
+                body.truncate(cut);
+            }
             Ok(Opened {
                 size: self.announce,
                 start,
-                reader: Box::new(std::io::Cursor::new(self.bytes[start as usize..].to_vec())),
+                reader: Box::new(std::io::Cursor::new(body)),
             })
         }
     }
@@ -1635,42 +1640,43 @@ mod tests {
     }
 
     #[test]
-    fn a_cancelled_download_installs_nothing_and_keeps_its_part_to_resume() {
+    fn a_cancelled_download_leaves_nothing_even_when_it_was_resuming() {
         let (_temp, bytes, store) = setup(3 << 20);
         let net = Fake::serving(&bytes);
         let store = Arc::new(store);
-        let stopper = Arc::clone(&store);
-        let error = store
-            .download(0, &net, &good(), |done, _| {
-                if done > 0 {
-                    stopper.cancel_add();
-                }
-            })
-            .unwrap_err();
-        assert_eq!(error, ModelError::Cancelled);
-        // Nothing installed; what arrived waits to be resumed.
-        assert_eq!(folder_names(&store), ["fake.gguf.part"]);
+        let cancel_once_started = |store: &Arc<Store>| {
+            let stopper = Arc::clone(store);
+            store
+                .download(0, &net, &good(), |done, _| {
+                    if done > 0 {
+                        stopper.cancel_add();
+                    }
+                })
+                .unwrap_err()
+        };
+        assert_eq!(cancel_once_started(&store), ModelError::Cancelled);
+        assert!(folder_names(&store).is_empty());
         assert_eq!(store.status(&good()), ModelStatus::NotInstalled);
+        // Cut short first, so a part is kept; then Cancel during the resume
+        // removes it too.
+        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
+        assert_eq!(folder_names(&store), ["fake.gguf.part"]);
+        assert_eq!(cancel_once_started(&store), ModelError::Cancelled);
+        assert!(folder_names(&store).is_empty());
     }
 
-    /// Cuts a download short at the first progress report after `after` bytes.
-    fn cut_short(store: &Arc<Store>, net: &Fake, after: u64) -> ModelError {
-        let stopper = Arc::clone(store);
-        store
-            .download(0, net, &good(), |done, _| {
-                if done > after {
-                    stopper.cancel_add();
-                }
-            })
-            .unwrap_err()
+    /// The connection ends `after` bytes into the next download.
+    fn cut_short(store: &Store, net: &Fake, after: usize) -> ModelError {
+        net.cut_once.set(Some(after));
+        store.download(0, net, &good(), |_, _| {}).unwrap_err()
     }
 
     #[test]
-    fn a_cancelled_download_is_resumed_from_where_it_stopped_and_installs() {
+    fn a_cut_download_is_resumed_from_where_it_stopped_and_installs() {
         let (_temp, bytes, store) = setup(4 << 20);
         let store = Arc::new(store);
         let net = Fake::serving(&bytes);
-        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Cancelled);
+        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
         // What it had is kept, short of the whole.
         let kept = fs::metadata(store.dir.join("fake.gguf.part"))
             .unwrap()
@@ -1718,7 +1724,7 @@ mod tests {
         let store = Arc::new(store);
         let mut net = Fake::serving(&bytes);
         net.ranges = false;
-        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Cancelled);
+        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
         store.download(0, &net, &good(), |_, _| {}).unwrap();
         assert_eq!(folder_names(&store), ["fake.gguf"]);
         store.verified_model_with(&Free(Some(100 << 30))).unwrap();
@@ -1729,7 +1735,7 @@ mod tests {
         let (_temp, bytes, store) = setup(3 << 20);
         let store = Arc::new(store);
         let net = Fake::serving(&bytes);
-        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Cancelled);
+        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
         // Someone changed the kept bytes: the re-hash from the start finds it.
         let part = store.dir.join("fake.gguf.part");
         let mut kept = fs::read(&part).unwrap();
