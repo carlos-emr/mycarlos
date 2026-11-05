@@ -132,9 +132,14 @@ describe("a town alone in brackets after a specialty", () => {
     ["Référée en cardiologie (Ville-Exemple) pour suivi.", "Ville-Exemple"],
     ["Consultation : Neurologie (Saint-Exemple-sur-Mer)", "Saint-Exemple"],
     ["Seen in Pediatrics (Sampletown) last week.", "Sampletown"],
+    ["Dre Odile Ferrand, néphrologue (Ville-Exemple)", "Ville-Exemple"],
+    ["Vu par la pédiatre (L'Exempleville) hier.", "Exempleville"],
+    ["Interniste (Val-d'Exemple)", "Exemple"],
+    ["Cardiologue ( Sainte-Anne-des-Exemples )", "Exemples"],
+    ["Rapport de radiologie (Îles-de-la-Exemple)", "Exemple"],
   ])("%s", (text, town) => {
     const out = send(text);
-    expect(out).toMatch(/\(\[ADDRESS 1\]\)/);
+    expect(out).toMatch(/\([ \t]*\[ADDRESS 1\][ \t]*\)/);
     expect(out).not.toContain(town);
   });
 
@@ -145,6 +150,8 @@ describe("a town alone in brackets after a specialty", () => {
     "Radiologie (Consultation)",
     "Imagerie (Externe)",
     "Cardiology (Holter) booked.",
+    "Cardiologue (Urgent)",
+    "Pédiatre (Externe)",
   ])("leaves a note in brackets: %s", (text) => {
     expect(send(text)).toBe(text);
   });
@@ -155,6 +162,7 @@ describe("town and facility names from the lists (#239 review)", () => {
     "Lives in the west end with her son.",
     "She walks along the north shore daily.",
     "We met at the north shore beach.",
+    "She sat on the white rock by the lake.",
   ])("leaves an everyday phrase in lower case: %s", (text) => {
     expect(send(text)).toBe(text);
   });
@@ -162,6 +170,9 @@ describe("town and facility names from the lists (#239 review)", () => {
   it.each([
     ["She moved to White Rock last year.", "White Rock", "ADDRESS"],
     ["She moved to white rock last year.", "white rock", "ADDRESS"],
+    ["Her family is from port hope originally.", "port hope", "ADDRESS"],
+    ["Port hope is where she grew up.", "Port hope", "ADDRESS"],
+    ["spirit river farm", "spirit river", "ADDRESS"],
     ["Born in Saint-Jean-sur-Richelieu.", "Richelieu", "ADDRESS"],
     ["Referred to Aberdeen Health & Community Services.", "Aberdeen", "CLINIC"],
     [
