@@ -1065,20 +1065,50 @@ fn quote_in(text: &str, quote: &str) -> bool {
 const HEADING_WORDS: usize = 4;
 
 /// Whether the quote is a heading of the pages rather than something they say: a whole line
-/// on its own, of at most [`HEADING_WORDS`] words, with no digit and not ending as a sentence
-/// does ("Medications at discharge", "Follow-up:"). A quote must support its sentence, and a
-/// heading only names a part of the document; the reader would link the sentence to it. A line
-/// with a value in it ("Admitted: 2026-10-01") or a short sentence ("Hypertension is
-/// treated.") is not one.
+/// on its own, of at most [`HEADING_WORDS`] words and no digit, that reads as a heading. A
+/// line reads as one when it ends with a colon ("Follow-up:"), is in capitals ("DISCHARGE
+/// SUMMARY"), or has a list or table under it: its next line with words is indented, a bullet
+/// or numbered ("Medications at discharge" over the medicines). A quote must support its
+/// sentence, and a heading only names a part of the document; the reader would link the
+/// sentence to it. A short finding on a line of its own ("No known allergies", "Non-smoker",
+/// "Allergies: none") is no heading, nor is a line with a value in it ("Admitted:
+/// 2026-10-01") or a sentence ("Hypertension is treated.").
 fn quote_is_heading(text: &str, quote: &str) -> bool {
     let quote = folded(quote);
-    !quote.is_empty()
-        && quote.split(' ').count() <= HEADING_WORDS
-        && !quote.chars().any(char::is_numeric)
-        && text.lines().any(|line| {
-            // A sentence on a line of its own says something.
-            !line.trim_end().ends_with(['.', '!', '?']) && folded(line) == quote
-        })
+    if quote.is_empty()
+        || quote.split(' ').count() > HEADING_WORDS
+        || quote.chars().any(char::is_numeric)
+    {
+        return false;
+    }
+    let lines: Vec<&str> = text.lines().collect();
+    lines.iter().enumerate().any(|(at, line)| {
+        let next = lines[at + 1..].iter().find(|next| !next.trim().is_empty());
+        folded(line) == quote && reads_as_heading(line, next.copied())
+    })
+}
+
+/// Whether a short line reads as a heading, from its own shape and from the line with words
+/// after it (see [`quote_is_heading`]).
+fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
+    let line = line.trim();
+    if line.ends_with(['.', '!', '?']) {
+        // A sentence on a line of its own says something.
+        return false;
+    }
+    let in_capitals =
+        line.chars().any(char::is_alphabetic) && !line.chars().any(char::is_lowercase);
+    let over_a_list = next.is_some_and(|next| {
+        let item = next.trim_start();
+        let numbered = item
+            .trim_start_matches(|c: char| c.is_ascii_digit())
+            .starts_with(['.', ')'])
+            && item.starts_with(|c: char| c.is_ascii_digit());
+        next.starts_with(char::is_whitespace)
+            || item.starts_with(['-', '*', '\u{2022}', '\u{2013}'])
+            || numbered
+    });
+    line.ends_with(':') || in_capitals || over_a_list
 }
 
 /// Whitespace runs as one space, in lower case.
@@ -1193,19 +1223,22 @@ mod tests {
 
     #[test]
     fn a_quote_that_is_only_a_heading_is_one_and_a_line_with_a_value_is_not() {
-        let summary = "Medications at discharge\n\n  Ticagrelor  90 mg twice daily  NEW\n\
-                       Follow-up:\n- Blood tests in 1 week.\nAdmitted: 2026-10-01\n\
-                       Instructions to the patient\nHypertension is treated.";
+        let summary = "DISCHARGE SUMMARY\n\nMedications at discharge\n\n  Ticagrelor  90 mg twice daily  NEW\n\
+                       Follow-up:\nBlood tests in 1 week.\nAdmitted: 2026-10-01\n\
+                       Instructions to the patient\n- Weigh yourself every morning.\n\
+                       Diagnoses\n1. Heart attack\nHypertension is treated.";
         for heading in [
+            "Discharge summary",
             "Medications at discharge",
             "medications at discharge:",
             "Follow-up",
             "\u{201C}Instructions to the patient\u{201D}",
+            "Diagnoses",
         ] {
             assert!(quote_is_heading(summary, heading), "{heading}");
         }
         for content in [
-            // A value, words of a longer line, or a line of more than four words.
+            // A value, words of a longer line, or a sentence.
             ": Admitted: 2026-10-01",
             "Ticagrelor 90 mg twice daily",
             "Medications",
@@ -1214,6 +1247,30 @@ mod tests {
             "",
         ] {
             assert!(!quote_is_heading(summary, content), "{content}");
+        }
+    }
+
+    #[test]
+    fn a_short_finding_on_a_line_of_its_own_keeps_its_quote() {
+        // Each finding as its own line, then as its own paragraph, and over a sentence.
+        let findings = [
+            "No known allergies",
+            "Allergies: none",
+            "Lives alone",
+            "Non-smoker",
+            "Normal sinus rhythm",
+            "No acute distress",
+        ];
+        let lines = format!(
+            "Social history\n{}\nPlan as discussed.",
+            findings.join("\n")
+        );
+        let paragraphs = format!("{}\n\nPlan as discussed.", findings.join("\n\n"));
+        for text in [&lines, &paragraphs] {
+            for finding in findings {
+                assert!(quote_in(text, finding), "{finding}");
+                assert!(!quote_is_heading(text, finding), "{finding} in {text:?}");
+            }
         }
     }
 
