@@ -117,13 +117,27 @@ describe("a page read as one very long line", () => {
     "Seen by Dr. Hollis Example on 2026-03-14; phone 613-555-0142; MRN A0049921. ";
   const fifty = unit.repeat(Math.ceil(50_000 / unit.length)).slice(0, 50_000);
 
-  it("is handled in under a second and removes what the same text with line breaks has removed", () => {
-    const started = performance.now();
-    const one = deidentify(fifty, { knownNames: ["Tamsin Example"] });
-    expect(performance.now() - started).toBeLessThan(1000);
-    const broken = deidentify(fifty.replace(/(\d)\. /g, "$1.\n"), {
-      knownNames: ["Tamsin Example"],
-    });
+  it("takes about as long as the same text with line breaks, and removes the same", () => {
+    const options = { knownNames: ["Tamsin Example"] };
+    const withBreaks = fifty.replace(/(\d)\. /g, "$1.\n");
+    // A busy computer slows both texts alike, so they are compared with each
+    // other, not with a clock: a scan that grows with the line's length makes
+    // the one-line page many times slower than the same page with breaks.
+    // After a warm-up, the faster of two runs of each, taken in turn.
+    let one = deidentify(unit, options);
+    let oneLine = Infinity;
+    let lines = Infinity;
+    let broken = one;
+    for (let run = 0; run < 2; run++) {
+      let started = performance.now();
+      one = deidentify(fifty, options);
+      oneLine = Math.min(oneLine, performance.now() - started);
+      started = performance.now();
+      broken = deidentify(withBreaks, options);
+      lines = Math.min(lines, performance.now() - started);
+    }
+    expect(oneLine).toBeLessThan(3 * lines + 250);
+    expect(oneLine).toBeLessThan(10_000);
     const key = (d: ReturnType<typeof deidentify>) =>
       d.onDevice.removed.map((r) => `${r.kind}|${r.original}|${r.replacement}`);
     expect(key(one)).toEqual(key(broken));
