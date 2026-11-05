@@ -1510,6 +1510,18 @@ hidden-backToSecurity = Back to Security
 
 interface-history-appVersion = myCarlos version
 
+interface-history-approval-accepted = Approved
+
+interface-history-approval-cancelled = Cancelled
+
+interface-history-approval-challengeReady = Waiting for the code from the clinic's email
+
+interface-history-approval-expired = Expired
+
+interface-history-approval-pending = Waiting for the clinic
+
+interface-history-approval-refused = Refused by the clinic
+
 interface-history-damaged = Part of this history is damaged. Events after { $date } can't be checked and aren't shown.
 
 interface-history-damagedAll = Part of this history is damaged. Its events can't be checked, so none are shown.
@@ -1530,6 +1542,18 @@ interface-history-event-copySaved = Readable copy saved
 
 interface-history-event-created = Vault created
 
+interface-history-event-deliveryFiled = Clinic document saved
+
+interface-history-event-deliveryReceiptSettled = Pickup receipt closed
+
+interface-history-event-deviceApprovalRequestRestarted = New approval request started
+
+interface-history-event-deviceApprovalRequested = Clinic approval requested
+
+interface-history-event-deviceApprovalStatusChanged = Clinic approval updated
+
+interface-history-event-deviceApprovalVerified = Device approved by the clinic
+
 interface-history-event-folderCreated = Folder created
 
 interface-history-event-folderMoved = Folder moved
@@ -1546,7 +1570,13 @@ interface-history-event-moved = Document moved
 
 interface-history-event-passphraseChanged = Passphrase changed
 
+interface-history-event-portalLinkStarted = Clinic link started
+
+interface-history-event-portalLinked = Clinic linked
+
 interface-history-event-profileCreated = Patient profile added
+
+interface-history-event-profileDetailsChanged = Personal details changed
 
 interface-history-event-readingAidFiled = Reading aid saved
 
@@ -1712,6 +1742,12 @@ aiHelper-exportCut = [Text cut after page { $page }]
 aiHelper-exportFileName = Anonymized text.txt
 
 interface-history-how-anonymizedText = Anonymized text saved
+
+interface-history-receipt-notFound = The document was no longer on the portal
+
+interface-history-receipt-pickedUp = The clinic recorded the pickup
+
+interface-history-status = Status
 
 interface-RecordDetails-anonymizeText = Prepare text for an AI…
 

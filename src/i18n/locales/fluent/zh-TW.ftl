@@ -1382,6 +1382,18 @@ hidden-backToSecurity = 返回「安全性」
 
 interface-history-appVersion = myCarlos 版本
 
+interface-history-approval-accepted = 已核准
+
+interface-history-approval-cancelled = 已取消
+
+interface-history-approval-challengeReady = 等待診所電子郵件中的驗證碼
+
+interface-history-approval-expired = 已過期
+
+interface-history-approval-pending = 等待診所處理
+
+interface-history-approval-refused = 診所已拒絕
+
 interface-history-damaged = 此紀錄有部分已損毀。{ $date } 之後的事件無法檢查，因此不顯示。
 
 interface-history-damagedAll = 此紀錄有部分已損毀。其中的事件無法檢查，因此全部不顯示。
@@ -1402,6 +1414,18 @@ interface-history-event-copySaved = 可讀副本已儲存
 
 interface-history-event-created = 保險庫已建立
 
+interface-history-event-deliveryFiled = 已儲存診所文件
+
+interface-history-event-deliveryReceiptSettled = 領取回執已結束
+
+interface-history-event-deviceApprovalRequestRestarted = 已提出新的核准請求
+
+interface-history-event-deviceApprovalRequested = 已申請診所核准
+
+interface-history-event-deviceApprovalStatusChanged = 診所核准狀態已更新
+
+interface-history-event-deviceApprovalVerified = 診所已核准此裝置
+
 interface-history-event-folderCreated = 資料夾已建立
 
 interface-history-event-folderMoved = 資料夾已移動
@@ -1418,7 +1442,13 @@ interface-history-event-moved = 文件已移動
 
 interface-history-event-passphraseChanged = 密語已變更
 
+interface-history-event-portalLinkStarted = 已開始連結診所
+
+interface-history-event-portalLinked = 已連結診所
+
 interface-history-event-profileCreated = 病患檔案已新增
+
+interface-history-event-profileDetailsChanged = 個人資料已變更
 
 interface-history-event-readingAidFiled = 已儲存閱讀輔助
 
@@ -1576,6 +1606,12 @@ aiHelper-exportCut = [文字在第 { $page } 頁之後被截斷]
 aiHelper-exportFileName = 匿名化文字.txt
 
 interface-history-how-anonymizedText = 已儲存匿名化文字
+
+interface-history-receipt-notFound = 入口網站上已沒有該文件
+
+interface-history-receipt-pickedUp = 診所已記錄領取
+
+interface-history-status = 狀態
 
 interface-RecordDetails-anonymizeText = 為 AI 準備文字…
 
