@@ -411,7 +411,7 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 17. **Keeping AI answers:** once #212 lands, answers are kept with their document, encrypted. A
     newer answer for the same document, tool and language (and term, for Explain) is shown in place
     of the older one, and the older one is kept hidden, never deleted, like the documents (#71;
-    Ben's decision D3, 5 November 2026). Should the patient be able to remove an answer they do
+    decided 5 November 2026). Should the patient be able to remove an answer they do
     not want?
 18. **Dates replaced by marks:** no real date is sent. Each date is a numbered mark with its gap in
     days from the earliest date, so the time between dates stays clear. A reader who knows one real
@@ -501,21 +501,21 @@ rules apply, and if the patient is signed in to it, it knows who they are, whate
 A document can also carry instructions meant for an AI, so the notice suggests an AI that cannot
 act for the patient.
 
-**The model.** A file of a few gigabytes (3.0 GB for the demo default, Qwen3.5 4B) that holds no patient
+**The model.** A file of a few gigabytes (3.0 GB for the default, Qwen3.5 4B) that holds no patient
 information. The patient chooses how it arrives (#219): **Download the default model** fetches one
 public file at a fixed version, or **Add a model file…** takes a copy the patient already has
 (question 19). It is kept outside the vault, so it is not in myCarlos's backups (it is not yet left
 out of system backups), and it is checked against a list built into the app when it is added and
 before every use; a changed file is not used. It runs in a sandboxed helper without access to the
 network or to the patient's other files (#218), on Windows and Linux computers with enough memory;
-Macs come later (#211). The default model is Qwen3.5 4B (Q4_K_M), which Ben chose on 5 November (D2) after a comparison
-of small open models on made-up documents.
+Macs come later (#211). The default model is Qwen3.5 4B (Q4_K_M), chosen on 5 November 2026 after the comparison of small
+open models on made-up documents.
 
 **The answers.** Each is marked "Written by AI and may be wrong. Check with your doctor." In this
 build an answer is shown only while the reader is open and is not kept. Once #212 lands, answers are
 saved in the vault, encrypted, with the document, the tool, the model and the date. A newer
 answer for the same document, tool and language (and term) is shown in place of the older one,
-which is kept hidden, never deleted (#71; Ben's decision D3); an answer is hidden with its
+which is kept hidden, never deleted (#71; decided 5 November 2026); an answer is hidden with its
 document, and answers are in backups like the rest of the vault (question 17). The notice promises this only once it is true.
 
 **Limits.**

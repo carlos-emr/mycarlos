@@ -1,8 +1,8 @@
 # AI helper: the in-app privacy notice (#72)
 
 - **Status:** the export messages (part B) are in the app on main (#171, desktop only), in the
-  seven `.ftl` files and `src/i18n/locales/fluent/message-keys.json`, approved as written by Ben on
-  5 November 2026 (D4); a native speaker of each language still checks its translation. The messages below are those texts. The part D messages
+  seven `.ftl` files and `src/i18n/locales/fluent/message-keys.json`, approved as written on
+  5 November 2026; a native speaker of each language still checks its translation. The messages below are those texts. The part D messages
   (`intro`, `modelHeading`, `modelBody`, `resultsBody`) are in the seven catalogues on main, and
   the notice shows them before Summary and Explain since #217. `resultsBody` stays hidden until
   answers are kept in the vault (#212). `intro`, `introShare` and `modelBody` are given here as the
