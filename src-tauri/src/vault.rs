@@ -36,9 +36,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 mod delivery;
-#[cfg(feature = "portal-linking")]
 pub(crate) use delivery::AidFiling;
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
 
@@ -242,24 +241,19 @@ pub enum VaultError {
     Localization,
     #[error("the portal link could not be completed")]
     Portal(portal_link::LinkError),
-    #[cfg(feature = "portal-linking")]
     #[error("a document from the clinic could not be verified; no receipt was sent")]
     PickupRefused,
-    #[cfg(feature = "portal-linking")]
     #[error("the clinic approval request is no longer pending")]
     ApprovalTerminal(
         crate::portal_approval::ApprovalState,
         Option<crate::portal_approval::ApprovalReason>,
     ),
-    #[cfg(feature = "portal-linking")]
     #[error("the saved approval request was not found on the portal")]
     ApprovalRequestMissing,
-    #[cfg(feature = "portal-linking")]
     #[error("clinic approval needs review before another request")]
     ApprovalNeedsClinic,
     #[error("another passphrase operation or speed test is running")]
     Busy,
-    #[cfg(feature = "portal-linking")]
     #[error("a document check is stopping; please try again")]
     DocumentCheckBusy,
     #[error("the vault has already been created")]
@@ -870,7 +864,6 @@ impl Drop for KdfWork<'_> {
 pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
-    #[cfg(feature = "portal-linking")]
     collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
     notifications: std::sync::OnceLock<Arc<crate::document_notification_runtime::Runtime>>,
     unlocked: Mutex<Option<UnlockedVault>>,
@@ -880,7 +873,6 @@ pub struct VaultStore {
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
     portal_session: Arc<AtomicU64>,
-    #[cfg(feature = "portal-linking")]
     portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
@@ -899,7 +891,6 @@ impl VaultStore {
         Self {
             root,
             collection: crate::document_collection::Controller::new(Instant::now()),
-            #[cfg(feature = "portal-linking")]
             collection_resume: Mutex::new(None),
             notifications: std::sync::OnceLock::new(),
             unlocked: Mutex::new(None),
@@ -907,7 +898,6 @@ impl VaultStore {
             snapshot_sequence: AtomicU64::new(0),
             kdf_running: AtomicBool::new(false),
             portal_session: Arc::new(AtomicU64::new(0)),
-            #[cfg(feature = "portal-linking")]
             portal_check_running: AtomicBool::new(false),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
@@ -930,7 +920,6 @@ impl VaultStore {
     }
 
     fn drop_idle_collection_cache(&self) {
-        #[cfg(feature = "portal-linking")]
         {
             *self
                 .collection_resume
@@ -942,7 +931,6 @@ impl VaultStore {
         self.collection.invalidate_cache();
         self.drop_idle_collection_cache();
     }
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn automatic_collection_allowed(&self) -> bool {
         self.collection.allowed()
             && self
@@ -995,15 +983,7 @@ impl VaultStore {
         let stamp = self.collection.suspend();
         self.drop_idle_collection_cache();
         run_at_test_boundary("notifications.after-automatic-suspend");
-        if !cfg!(any(
-            test,
-            all(
-                windows,
-                feature = "document-notifications",
-                feature = "portal-linking",
-                feature = "document-automatic-checks"
-            )
-        )) {
+        if !cfg!(any(test, windows)) {
             return Err(VaultError::Invalid);
         }
         let status = self
@@ -1023,14 +1003,9 @@ impl VaultStore {
         self.drop_idle_collection_cache();
     }
 
-    /// Defined but launched only by the separate default-off build feature.
-    /// One weak app-owned worker; no strong vault reference while sleeping.
-    #[cfg(all(
-        windows,
-        feature = "document-notifications",
-        feature = "portal-linking",
-        feature = "document-automatic-checks"
-    ))]
+    /// Started at launch on Windows; it checks only while the patient has automatic
+    /// checks turned on. One weak app-owned worker; no strong vault reference while sleeping.
+    #[cfg(windows)]
     pub(crate) fn start_document_collection(self: &Arc<Self>) -> std::io::Result<()> {
         let weak = Arc::downgrade(self);
         std::thread::Builder::new()
@@ -1048,12 +1023,7 @@ impl VaultStore {
             .map(|_| ())
     }
 
-    #[cfg(all(
-        windows,
-        feature = "document-notifications",
-        feature = "portal-linking",
-        feature = "document-automatic-checks"
-    ))]
+    #[cfg(windows)]
     fn automatic_document_tick(&self) {
         if !self.automatic_collection_allowed() {
             return;
@@ -1751,12 +1721,7 @@ impl VaultStore {
         VaultSnapshot {
             capture,
             portal_linking_enabled: crate::portal_client::available(),
-            automatic_document_checks_supported: cfg!(all(
-                windows,
-                feature = "document-notifications",
-                feature = "portal-linking",
-                feature = "document-automatic-checks"
-            )),
+            automatic_document_checks_supported: cfg!(windows),
             portal_links: unlocked
                 .manifest
                 .portal_links
@@ -1821,7 +1786,7 @@ impl VaultStore {
         )
     }
 
-    /// The feature check precedes key generation, vault writes and HTTP. The
+    /// The availability check precedes key generation, vault writes and HTTP. The
     /// one-use code is transient: only the pending private seeds are persisted.
     pub fn portal_link_ticket(&self) -> u64 {
         self.portal_session.load(Ordering::Acquire)
@@ -1861,9 +1826,6 @@ impl VaultStore {
     ) -> Result<LinkSummary, VaultError> {
         use portal_link::LinkError;
         let (now_ms, session) = context;
-        if !portal_link::enabled() {
-            return Err(VaultError::Portal(LinkError::Disabled));
-        }
         if !crate::portal_client::available() {
             return Err(VaultError::Portal(LinkError::Unavailable));
         }
@@ -6898,7 +6860,6 @@ mod collection_object_tests {
     use super::*;
     use crate::document_collection::{CycleControl, StopReason};
 
-    #[cfg(feature = "portal-linking")]
     fn consent_store(path: &Path) -> Arc<VaultStore> {
         use crate::document_notification_runtime::{active::Backend, Error, Permission, Runtime};
         struct BackendMock;
@@ -6922,7 +6883,6 @@ mod collection_object_tests {
         store
     }
     #[test]
-    #[cfg(feature = "portal-linking")]
     fn native_opt_out_suspends_new_cycle_before_persistence_and_drops_idle_resume() {
         let temp = tempfile::tempdir().unwrap();
         let store = consent_store(temp.path());
@@ -6950,7 +6910,6 @@ mod collection_object_tests {
         assert!(!store.automatic_collection_allowed());
     }
     #[test]
-    #[cfg(feature = "portal-linking")]
     #[allow(clippy::disallowed_methods)] // Simulated storage failure, no patient vault.
     fn failed_native_automatic_opt_out_persistence_cannot_restore_eligibility() {
         let temp = tempfile::tempdir().unwrap();
@@ -8601,27 +8560,7 @@ mod tests {
         assert!(matches!(store.snapshot(), Err(VaultError::Storage)));
     }
 
-    #[cfg(not(feature = "portal-linking"))]
-    #[test]
-    fn portal_link_default_off_refuses_before_creating_files_or_keys() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("not-created");
-        let store = VaultStore::new(root.clone());
-        assert!(matches!(
-            store.link_portal(
-                "https://fake.example",
-                "FAKE0001-FAKE7-Q2M4K",
-                "myCarlos",
-                None,
-                1,
-                store.portal_link_ticket()
-            ),
-            Err(VaultError::Portal(portal_link::LinkError::Disabled))
-        ));
-        assert!(!root.exists());
-    }
-
-    #[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn portal_link_lock_started_during_pending_commit_never_sends_http() {
         let temp = tempfile::tempdir().unwrap();
@@ -8681,7 +8620,7 @@ mod tests {
         assert!(summary[0].incomplete);
     }
 
-    #[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn portal_link_queued_old_session_ticket_does_not_mutate_new_session() {
         let temp = tempfile::tempdir().unwrap();
@@ -19593,5 +19532,5 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 mod automatic_collection_tests;

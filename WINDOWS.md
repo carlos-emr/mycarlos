@@ -41,11 +41,11 @@ exports.
 
 ## Optional document arrival notices
 
-Document arrival notices are an optional Windows evaluation feature. Normal builds leave them disabled. The controls are available only in builds that explicitly enable the relevant evaluation features.
+Document arrival notices are optional and stay off until you turn them on. Every Windows build has the controls.
 
 In Settings > Preferences, turn on **Allow document arrival notices** to allow a generic Windows notice after a clinic document is verified and saved in your vault. Open myCarlos normally to read the document. The notice is one fixed sentence in the language myCarlos was last using when Preferences was open; it does not include patient, clinic, or document details, and a successful submission to Windows does not guarantee that you will see it.
 
-Automatic checks require a build with that additional feature enabled and a separate choice: **Check for clinic documents automatically while unlocked**. This allows checks of saved, approved clinic links while myCarlos is running and the vault is unlocked, with at least two minutes between attempts. Locking the vault or closing the app stops further checks. Turning off document arrival notices also turns off automatic checks. Windows blocking notices does not itself turn off automatic checks you have allowed.
+Automatic checks need a separate choice: **Check for clinic documents automatically while unlocked**. This allows checks of saved, approved clinic links while myCarlos is running and the vault is unlocked, with at least two minutes between attempts. Locking the vault or closing the app stops further checks. Turning off document arrival notices also turns off automatic checks. Windows blocking notices does not itself turn off automatic checks you have allowed.
 
 If automatic checks are paused, open Security > Clinic documents and choose **Check for new documents**. This feature does not deliver notices or fetch documents while the app is closed.
 

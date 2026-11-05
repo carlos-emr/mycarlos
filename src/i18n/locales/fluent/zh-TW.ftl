@@ -1324,8 +1324,6 @@ portal-errorDamaged = 此診所的一份已儲存文件已損毀或遺失，因�
 
 portal-errorDeviceName = 請選擇 1 到 64 個字元的裝置名稱，且不得包含控制字元。
 
-portal-errorDisabled = 此版本未啟用入口網站連結功能。
-
 portal-errorExists = 此裝置已註冊。請在病患入口網站查看「Linked devices」（已連結的裝置）頁面。
 
 portal-errorIncomplete = 無法完成入口網站請求。請檢查網路連線和裝置時鐘，然後重試。

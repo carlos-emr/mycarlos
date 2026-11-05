@@ -4,10 +4,9 @@
 use crate::portal_link::{LinkError, LinkRequest, LinkedClinic};
 
 pub const fn available() -> bool {
-    cfg!(all(feature = "portal-linking", not(target_os = "android")))
+    cfg!(not(target_os = "android"))
 }
 
-#[cfg(feature = "portal-linking")]
 pub fn link(
     request: LinkRequest,
     expected_device: &str,
@@ -90,23 +89,7 @@ pub fn link(
     }
 }
 
-#[cfg(not(feature = "portal-linking"))]
-pub fn link(
-    request: LinkRequest,
-    _: &str,
-    _: impl Fn() -> bool,
-) -> Result<LinkedClinic, LinkError> {
-    // Disabled builds discard prepared material locally; no transport exists.
-    let LinkRequest {
-        endpoint,
-        body,
-        assertion,
-    } = request;
-    drop((endpoint, body, assertion));
-    Err(LinkError::Disabled)
-}
-
-#[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+#[cfg(not(target_os = "android"))]
 fn client() -> Result<reqwest::Client, LinkError> {
     use std::{sync::Arc, time::Duration};
     let provider = Arc::new(rustls::crypto::ring::default_provider());
@@ -138,7 +121,7 @@ fn client() -> Result<reqwest::Client, LinkError> {
 /// bytes. Small replies keep 30 s. A package download also gets the time it
 /// takes at a slow but steady rate, so it isn't cut off just for being large,
 /// up to an overall cap. A stalled body still fails at the read timeout.
-#[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+#[cfg(not(target_os = "android"))]
 pub(crate) fn request_timeout(max: usize) -> std::time::Duration {
     use std::time::Duration;
     const BASE: Duration = Duration::from_secs(30);
@@ -149,13 +132,11 @@ pub(crate) fn request_timeout(max: usize) -> std::time::Duration {
     BASE.max(transfer).min(CAP)
 }
 
-#[cfg(feature = "portal-linking")]
 pub(crate) struct ApiResponse {
     pub status: u16,
     pub body: zeroize::Zeroizing<Vec<u8>>,
 }
 
-#[cfg(feature = "portal-linking")]
 pub(crate) fn api(
     link: &crate::portal_link::StoredLink,
     method: &str,
@@ -263,7 +244,7 @@ pub(crate) fn api(
     }
 }
 
-#[cfg(all(test, feature = "portal-linking", not(target_os = "android")))]
+#[cfg(all(test, not(target_os = "android")))]
 mod tests {
     use super::request_timeout;
     use std::time::Duration;
