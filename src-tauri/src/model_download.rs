@@ -77,11 +77,6 @@ impl Opener for Https {
                 .block_on(request.send())
                 .map_err(|_| OpenerError::Network)?;
             let status = response.status();
-            if status.as_u16() == 416 && from > 0 {
-                // The server will not resume there: ask for the whole file.
-                from = 0;
-                continue;
-            }
             if status.is_redirection() {
                 let next = response
                     .headers()
@@ -95,39 +90,70 @@ impl Opener for Https {
                 url = next;
                 continue;
             }
-            return match status.as_u16() {
-                200 => {
-                    let size = response.content_length();
-                    Ok(Opened {
+            let content_range = response
+                .headers()
+                .get(reqwest::header::CONTENT_RANGE)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
+            match answer(
+                status.as_u16(),
+                from,
+                response.content_length(),
+                content_range.as_deref(),
+            ) {
+                Answer::FromStart => {
+                    from = 0;
+                    continue;
+                }
+                Answer::Body { size, start } => {
+                    return Ok(Opened {
                         size,
-                        start: 0,
+                        start,
                         reader: Box::new(Body::new(response, cancelled)),
                     })
                 }
-                206 if from > 0 => {
-                    // `Content-Range: bytes <from>-<end>/<total>`: it must start
-                    // where asked, and the total is the whole file's size.
-                    let range = response
-                        .headers()
-                        .get(reqwest::header::CONTENT_RANGE)
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(parse_content_range)
-                        .ok_or(OpenerError::Network)?;
-                    if range.0 != from {
-                        return Err(OpenerError::Network);
-                    }
-                    Ok(Opened {
-                        size: Some(range.1),
-                        start: from,
-                        reader: Box::new(Body::new(response, cancelled)),
-                    })
-                }
-                401 | 403 => Err(OpenerError::Denied),
-                404 | 410 => Err(OpenerError::Gone),
-                _ => Err(OpenerError::Network),
-            };
+                Answer::Failed(error) => return Err(error),
+            }
         }
         Err(OpenerError::BadRedirect)
+    }
+}
+
+/// What a server's answer (not a redirect) to a request from byte `from` means.
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(target_os = "android", allow(dead_code))]
+enum Answer {
+    /// The file's bytes from `start`; `size` is the whole file's length, when said.
+    Body {
+        size: Option<u64>,
+        start: u64,
+    },
+    /// It will not resume there: ask again for the whole file.
+    FromStart,
+    Failed(OpenerError),
+}
+
+/// A 200 is the whole file, whatever was asked. A 206 is accepted only for a resume, and
+/// only when its `Content-Range` starts where asked and names the whole file's size. A 416
+/// to a resume means asking again for the whole file.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+fn answer(status: u16, from: u64, length: Option<u64>, content_range: Option<&str>) -> Answer {
+    match status {
+        200 => Answer::Body {
+            size: length,
+            start: 0,
+        },
+        206 if from > 0 => match content_range.and_then(parse_content_range) {
+            Some((start, total)) if start == from => Answer::Body {
+                size: Some(total),
+                start,
+            },
+            _ => Answer::Failed(OpenerError::Network),
+        },
+        416 if from > 0 => Answer::FromStart,
+        401 | 403 => Answer::Failed(OpenerError::Denied),
+        404 | 410 => Answer::Failed(OpenerError::Gone),
+        _ => Answer::Failed(OpenerError::Network),
     }
 }
 
@@ -332,6 +358,53 @@ mod tests {
         ] {
             assert_eq!(parse_content_range(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn a_resume_is_taken_only_from_where_it_was_asked_and_a_refused_one_starts_again() {
+        use Answer::{Body, Failed, FromStart};
+        // The whole file, asked from the start or not: from 0, with its announced length.
+        let whole = Body {
+            size: Some(10),
+            start: 0,
+        };
+        assert_eq!(answer(200, 0, Some(10), None), whole);
+        assert_eq!(answer(200, 4, Some(10), None), whole);
+        // The rest, from where it was asked: the whole file's size from Content-Range.
+        assert_eq!(
+            answer(206, 4, Some(6), Some("bytes 4-9/10")),
+            Body {
+                size: Some(10),
+                start: 4
+            }
+        );
+        // From elsewhere, with no range or an unknown total, or not asked for: refused.
+        for range in [
+            Some("bytes 5-9/10"),
+            Some("bytes 0-9/10"),
+            Some("bytes 4-9/*"),
+            None,
+        ] {
+            assert_eq!(
+                answer(206, 4, Some(6), range),
+                Failed(OpenerError::Network),
+                "{range:?}"
+            );
+        }
+        assert_eq!(
+            answer(206, 0, Some(10), Some("bytes 0-9/10")),
+            Failed(OpenerError::Network)
+        );
+        // 416: it will not resume there, so the whole file is asked for; to a whole-file
+        // request it is a failure.
+        assert_eq!(answer(416, 4, None, None), FromStart);
+        assert_eq!(answer(416, 0, None, None), Failed(OpenerError::Network));
+        // The refusals keep their meaning on a resume.
+        assert_eq!(answer(401, 4, None, None), Failed(OpenerError::Denied));
+        assert_eq!(answer(403, 0, None, None), Failed(OpenerError::Denied));
+        assert_eq!(answer(404, 4, None, None), Failed(OpenerError::Gone));
+        assert_eq!(answer(410, 0, None, None), Failed(OpenerError::Gone));
+        assert_eq!(answer(500, 4, None, None), Failed(OpenerError::Network));
     }
 
     #[test]
