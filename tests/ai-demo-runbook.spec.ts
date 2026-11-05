@@ -18,8 +18,8 @@ import {
   myRecords,
 } from "./support/vaultFake";
 
-// The demo runbook, step by step (/root/reports/rootc2-ai-summary-runbook-20261105.md,
-// root-c2): Preferences → AI helper → Download the default model → Installed →
+// The demo runbook (kept outside the repo), step by step: Preferences → AI
+// helper → Download the default model → Installed →
 // import the three FAKE PDFs → open each → Summary (notice → Continue) → the
 // answer → Show in document; then the runbook's "If it stalls" messages. Every
 // button and text the runbook names is written here as the runbook writes it,
