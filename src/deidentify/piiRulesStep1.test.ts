@@ -229,3 +229,20 @@ describe("Polish dates written with r. (roku)", () => {
     expect(send(text)).toBe(expected);
   });
 });
+
+describe("document headings on their own line are not clinics (#249 review)", () => {
+  it.each([
+    "Rapport Médical\nPatient vu ce jour.",
+    "Certificat Médical\nApte au travail.",
+    "Dossier Médical\nAntécédents : aucun.",
+    "Rapport Imagerie\nPoumons clairs.",
+    "Bilan Santé\nAucune anomalie.",
+  ])("%j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it("still removes a letterhead clinic", () => {
+    const out = send("Lavoie Santé\nRapport Médical");
+    expect(out).toBe("[CLINIC 1]\nRapport Médical");
+  });
+});
