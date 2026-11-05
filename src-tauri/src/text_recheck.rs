@@ -780,9 +780,10 @@ fn date_at(text: &[char], at: usize) -> Option<usize> {
         if let Some((day, i)) = day_at(text, at) {
             // 8 October 2026, 17-Apr-1961, 1er mars 1958, 8th of October 2026
             let mut j = i;
-            if text[j..].starts_with(&[' ', 'o', 'f'])
-                || text[j..].starts_with(&[' ', 'd', 'e'])
-                || text[j..].starts_with(&[' ', 'd', 'o'])
+            // " of ", " de " and " do " (a joiner is a whole word: " déc." is a month)
+            if text[j..].starts_with(&[' ', 'o', 'f', ' '])
+                || text[j..].starts_with(&[' ', 'd', 'e', ' '])
+                || text[j..].starts_with(&[' ', 'd', 'o', ' '])
             {
                 j += 3;
             }
