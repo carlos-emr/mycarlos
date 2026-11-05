@@ -924,40 +924,48 @@ const ORDINARY_WORDS = new Set(
 );
 // Words that follow a label or a family word but start no name: "Re:
 // Follow-up visit", "Patient: Seen today", "Contact: Mother …".
-// Words of a treatment, a service or a program: never part of a person's name.
-const NOT_NAME_WORDS = new Set([
-  "therapy",
-  "therapies",
-  "thérapie",
-  "terapia",
-  "terapii",
-  "clinic",
-  "clinique",
-  "clínica",
-  "service",
-  "services",
-  "program",
-  "programme",
-  "programa",
-  "treatment",
-  "traitement",
-  "tratamiento",
-  "tratamento",
-  "session",
-  "sessions",
-  "group",
-  "groupe",
-  "grupo",
-  "assessment",
-  "évaluation",
-  "unit",
-  "unité",
-  "team",
-  "équipe",
-  "centre",
-  "center",
-  "centro",
-]);
+// A treatment or a program ends a phrase that is not a person: "a therapist Cognitive
+// Behavioural Therapy". Folded, as the text the rules read is (#228 review).
+const TREATMENT_WORDS = new Set(
+  foldAll([
+    "therapy",
+    "therapies",
+    "thérapie",
+    "terapia",
+    "terapii",
+    "treatment",
+    "traitement",
+    "tratamiento",
+    "tratamento",
+    "session",
+    "sessions",
+    "assessment",
+    "évaluation",
+    "program",
+    "programme",
+    "programa",
+  ]),
+);
+// A place or a team after a person's name ends the name: "Maria Lopez Unit 4B".
+const PLACE_WORDS = new Set(
+  foldAll([
+    "clinic",
+    "clinique",
+    "clínica",
+    "service",
+    "services",
+    "unit",
+    "unité",
+    "team",
+    "équipe",
+    "group",
+    "groupe",
+    "grupo",
+    "centre",
+    "center",
+    "centro",
+  ]),
+);
 const NOT_NAMES = new Set(
   foldAll([
     "follow-up",
@@ -1174,6 +1182,8 @@ interface Rule {
   /** A day and a month: not when the month is the lower-case word "may"
    * ("may 5 mg"). */
   notLowerCaseMay?: true;
+  /** "Mother: First Last": refused in a family-history line or section. */
+  relationLabel?: true;
 }
 
 const HEALTH_CARD_LABEL =
@@ -1184,13 +1194,12 @@ const HEALTH_CARD_VALUE =
   "(?:[A-Z]{4}[ -]?\\d{4}[ -]?\\d{4}|(?:\\d{4,5}[ -]?\\d{3,4}[ -]?\\d{3,4}|\\d{8,12})(?:[ -]?[A-Z]{2}(?![\\p{L}]))?)";
 
 // Plural family words, for relatives named together.
-const KIN_PLURAL = anyCase([
+const KIN_PLURAL_WORDS = anyCase([
   "daughters",
   "sons",
   "sisters",
   "brothers",
   "children",
-  "kids",
   "parents",
   "grandchildren",
   "filles",
@@ -1210,79 +1219,169 @@ const KIN_PLURAL = anyCase([
   "synowie",
   "dzieci",
 ]);
+// "kids" in lower case only: "Kids Help Phone" is a service.
+const KIN_PLURAL = `(?:${KIN_PLURAL_WORDS}|kids)`;
 // Between names in a list: "Maribel and Odette", "Paul, Marc et Luc".
 const NAME_JOIN =
   "(?:[ \\t]*,[ \\t]*(?:(?:and|et|y|e|i)[ \\t]+)?|[ \\t]+(?:and|et|y|e|i)[ \\t]+)";
-// Words of a family-history line, never a relative's name after "Mother:".
-const FAMILY_HISTORY = anyCase([
-  "alive",
-  "deceased",
-  "unknown",
-  "healthy",
-  "well",
-  "none",
-  "adopted",
-  "living",
-  "died",
-  "passed",
-  "cancer",
-  "breast",
-  "colon",
-  "colorectal",
-  "prostate",
-  "ovarian",
-  "lung",
-  "skin",
-  "pancreatic",
-  "thyroid",
-  "heart",
-  "cardiac",
-  "coronary",
-  "artery",
-  "disease",
-  "diabetes",
-  "type",
-  "stroke",
-  "dementia",
-  "hypertension",
-  "high",
-  "kidney",
-  "renal",
-  "liver",
-  "asthma",
-  "arthritis",
-  "depression",
-  "anxiety",
-  "bipolar",
-  "epilepsy",
-  "glaucoma",
-  "osteoporosis",
-  "leukemia",
-  "lymphoma",
-  "melanoma",
-  "MI",
-  "CAD",
-  "CHF",
-  "COPD",
-  "HTN",
-  "DM",
-  "CKD",
-  "CVA",
-  "TIA",
-  "décédé",
-  "décédée",
-  "vivant",
-  "vivante",
-  "inconnu",
-  "cancer",
-  "diabète",
-  "fallecido",
-  "fallecida",
-  "falecido",
-  "falecida",
-  "zmarły",
-  "zmarła",
-]);
+// Words of a family-history line, never a relative's name after "Mother:": "Mother: Breast
+// cancer at 52", "Father: Atrial Fibrillation". A list cannot hold every disease, so a word
+// with a medical ending ("Sclerosis", "Fibrillation", "Carcinoma") counts too (#228 review).
+const FAMILY_HISTORY_WORDS = new Set(
+  foldAll([
+    "Mother:",
+    "alive",
+    "deceased",
+    "unknown",
+    "healthy",
+    "well",
+    "none",
+    "adopted",
+    "living",
+    "died",
+    "passed",
+    "cancer",
+    "breast",
+    "colon",
+    "colorectal",
+    "prostate",
+    "ovarian",
+    "lung",
+    "skin",
+    "pancreatic",
+    "thyroid",
+    "heart",
+    "cardiac",
+    "coronary",
+    "artery",
+    "disease",
+    "diabetes",
+    "type",
+    "stroke",
+    "dementia",
+    "hypertension",
+    "high",
+    "kidney",
+    "renal",
+    "liver",
+    "asthma",
+    "arthritis",
+    "depression",
+    "anxiety",
+    "bipolar",
+    "epilepsy",
+    "glaucoma",
+    "osteoporosis",
+    "leukemia",
+    "lymphoma",
+    "melanoma",
+    "MI",
+    "CAD",
+    "CHF",
+    "COPD",
+    "HTN",
+    "DM",
+    "CKD",
+    "CVA",
+    "TIA",
+    "décédé",
+    "décédée",
+    "vivant",
+    "vivante",
+    "inconnu",
+    "diabète",
+    "fallecido",
+    "fallecida",
+    "falecido",
+    "falecida",
+    "zmarły",
+    "zmarła",
+    "sudden",
+    "death",
+    "multiple",
+    "atrial",
+    "attack",
+    "arrest",
+    "disorder",
+    "syndrome",
+    "seizure",
+    "seizures",
+    "suicide",
+    "overdose",
+    "alcohol",
+    "addiction",
+    "blood",
+    "pressure",
+    "cholesterol",
+    "sugar",
+    "early",
+    "late",
+    "onset",
+    "natural",
+    "causes",
+    "old",
+    "age",
+    "accident",
+    "aneurysm",
+    "embolism",
+    "eczema",
+    "lupus",
+    "gout",
+    "migraine",
+    "migraines",
+    "pulmonary",
+    "hepatic",
+    "macular",
+    "sickle",
+    "cell",
+    "cystic",
+    "celiac",
+    "hearing",
+    "loss",
+    "vision",
+    "blind",
+    "deaf",
+    "mental",
+    "cerebral",
+    "palsy",
+    "cleft",
+    "schizophrenia",
+    "autism",
+    "adhd",
+    "ms",
+    "als",
+    "bph",
+    "gerd",
+    "ibs",
+    "ibd",
+    "nil",
+    "n/a",
+    "aortic",
+    "valve",
+    "bowel",
+    "brain",
+    "bone",
+    "clot",
+    "clots",
+    "failure",
+  ]).map((word) => word.toLowerCase()),
+);
+const MEDICAL_ENDING =
+  /(?:osis|itis|emia|aemia|noma|coma|rcoma|pathy|ectomy|plasia|algia|ation|ition|ciency|gnancy|ism|ity|ness|ment|logy|ure|ous|ics|philia|plegia|trophy)$/u;
+const FAMILY_HISTORY_HEADING =
+  /(?:family history|family hx|\bfhx\b|\bfh\b[ \t]*:|antecedents familiaux|histoire familiale|historia familiar|antecedentes familiares|historico familiar|wywiad rodzinny)/iu;
+function familyHistoryLabel(text: string, at: number, name: string): boolean {
+  if (FAMILY_HISTORY_HEADING.test(text.slice(Math.max(0, at - 400), at)))
+    return true;
+  return name.split(/[ \t]+/u).some((word) => {
+    const lower = word.toLowerCase().replace(/[.,;:]+$/u, "");
+    return (
+      FAMILY_HISTORY_WORDS.has(lower) ||
+      ORDINARY_WORDS.has(lower) ||
+      MEDICAL_ENDING.test(lower)
+    );
+  });
+}
 const RULES: Rule[] = [
   {
     kind: "email",
@@ -1329,7 +1428,7 @@ const RULES: Rule[] = [
   {
     kind: "recordNumber",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice)(?:[ \\t]+(?:number|no\\.?|n°|nº|#|numéro|número))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,5})?)`,
+      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice)(?:[ \\t]+(?:number|no\\.?|n°|nº|#|numéro|número))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,8})?)`,
       "giu",
     ),
     group: 1,
@@ -1751,11 +1850,12 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Mother|Father|Mom|Mum|Dad|Spouse|Husband|Wife|Partner|Son|Daughter|Brother|Sister|Mère|Père|Conjoint|Conjointe|Fils|Fille|Madre|Padre|Hijo|Hija|Mãe|Pai|Filho|Filha|Matka|Ojciec|Syn|Córka)[ \\t]*:[ \\t]*((?!${FAMILY_HISTORY}(?![\\p{L}]))${NAME_PART}[ \\t]+(?!${FAMILY_HISTORY}(?![\\p{L}]))${NAME_PART})(?=[ \\t]*(?:[.,;(]|\\n|$))`,
+      `(?<![\\p{L}])(?:Mother|Father|Mom|Mum|Dad|Spouse|Husband|Wife|Partner|Son|Daughter|Brother|Sister|Mère|Père|Conjoint|Conjointe|Fils|Fille|Madre|Padre|Hijo|Hija|Mãe|Pai|Filho|Filha|Matka|Ojciec|Syn|Córka)[ \\t]*:[ \\t]*(${NAME_PART}[ \\t]+${NAME_PART})(?=[ \\t]*(?:[.,;(]|\\n|$))`,
       "gu",
     ),
     group: 1,
     kin: true,
+    relationLabel: true,
   },
   // A closing, then the name on the next non-empty line.
   {
@@ -1948,14 +2048,28 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
       )
         continue;
-      // A treatment or a service after a role word is not a name: "a therapist
-      // Cognitive Behavioural Therapy" (#228 review).
-      if (
-        (rule.kind === "name" || rule.kind === "doctor") &&
-        trimmed
-          .split(/[\s,]+/)
-          .some((word) => NOT_NAME_WORDS.has(word.toLowerCase()))
-      )
+      // A treatment after a role word is not a name ("a therapist Cognitive
+      // Behavioural Therapy"); a place or a team ends the name before it
+      // ("Charge nurse Maria Lopez Unit 4B") (#228 review).
+      if (rule.kind === "name" || rule.kind === "doctor") {
+        const words = [...trimmed.matchAll(/[^\s,]+/gu)];
+        const at = words.findIndex((word) => {
+          const lower = word[0].toLowerCase();
+          return TREATMENT_WORDS.has(lower) || PLACE_WORDS.has(lower);
+        });
+        if (at >= 0) {
+          if (
+            at === 0 ||
+            TREATMENT_WORDS.has(words[at][0].toLowerCase()) ||
+            words
+              .slice(0, at)
+              .every((word) => GENERIC_BEFORE_CLINIC.has(word[0].toLowerCase()))
+          )
+            continue;
+          trimmed = trimmed.slice(0, words[at].index).replace(/[\s,]+$/u, "");
+        }
+      }
+      if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
         continue;
       // A bare "Nombre:" or "Nome:" is also French and Portuguese for "number":
       // only a first and a last name after it ("Nombre : Deux comprimés").
@@ -1971,7 +2085,12 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         (rule.kind === "name" ||
           rule.kind === "doctor" ||
           rule.kind === "address") &&
-        isMedicalTerm(text, start, start + trimmed.length)
+        isMedicalTerm(
+          text,
+          start,
+          start + trimmed.length,
+          rule.kind !== "address",
+        )
       )
         continue;
       if (rule.skipDates) {
@@ -2201,23 +2320,22 @@ const GUARD_REACH = 60;
 // brand number ("Diane-35"), a drug verb right before it, or a place in a medication or allergy
 // list. A role, a relation or a title before it ("daughter Ella", "Nurse Yasmin") is not enough,
 // and neither is the same person named elsewhere in the text.
-// After the word: a strength, a brand number, a form, or a frequency written as one. A
-// frequency or a form word that is also an ordinary word ("once", "daily", "drops", "po",
-// "bid") counts only after a number or as a whole phrase (#228 review).
+// After the word: a strength, a brand number ("Diane-35") or a counted form ("2 drops", "one
+// tablet"). A frequency alone ("once", "twice a week", "daily") never makes the word a drug:
+// "Her daughter Ella twice a week drives her" (#228 review).
 const COUNT =
   "(?:\\d+|one|two|three|half|un|une|deux|trois|uno|una|dos|tres|um|uma|duas|três|jedn[aą]|dwie)";
-const DRUG_AFTER = new RegExp(
+const DRUG_STRENGTH_AFTER = new RegExp(
   `^(?:${[
     "-[ \\t]?\\d",
     "[ \\t]*\\(?[ \\t]*\\d+(?:[.,]\\d+)?[ \\t]*(?:mg|mcg|µg|ug|g|ml|units?|iu|ui|%)(?![\\p{L}])",
-    `[ \\t]*,?[ \\t]+(?:${COUNT}[ \\t]+)?(?:tablets?|capsules?|pills?|comprim[ée]s?|g[ée]lules?|c[áa]psulas?|comprimidos?|tabletk[aęi]|kapsułk[aęi])(?![\\p{L}])`,
-    `[ \\t]*,?[ \\t]+${COUNT}[ \\t]+(?:drops?|puffs?|sprays?|patch(?:es)?|tabs?|caps?|injections?|gouttes?|gotas?|krople?|kropli)(?![\\p{L}])`,
-    "[ \\t]*,?[ \\t]+(?:once|twice|three times)[ \\t]+(?:daily|a day|per day|weekly|a week|nightly|at night|at bedtime)(?![\\p{L}])",
-    "[ \\t]*,?[ \\t]+(?:une|deux|trois)[ \\t]+fois[ \\t]+par[ \\t]+(?:jour|semaine)",
-    "[ \\t]*,?[ \\t]+(?:una|dos|tres|uma|duas|três)[ \\t]+vez(?:es)?[ \\t]+(?:al|por|ao)[ \\t]+d[íi]a",
+    `[ \\t]*,?[ \\t]+${COUNT}[ \\t]+(?:tablets?|capsules?|pills?|comprim[ée]s?|g[ée]lules?|c[áa]psulas?|comprimidos?|tabletk[aęi]|kapsułk[aęi]|drops?|puffs?|sprays?|patch(?:es)?|tabs?|caps?|injections?|gouttes?|gotas?|krople?|kropli)(?![\\p{L}])`,
   ].join("|")})`,
   "iu",
 );
+// A form word that is never an ordinary word, with no count: "Yasmin tablets".
+const DRUG_FORM_AFTER =
+  /^[ \t]*,?[ \t]+(?:tablets?|capsules?|pills?|comprim[ée]s?|g[ée]lules?|c[áa]psulas?|comprimidos?|tabletk[aęi]|kapsułk[aęi])(?![\p{L}])/iu;
 // Prescription abbreviations, in capitals only: "Yasmin PO", "Allegra PRN".
 const DRUG_ABBREVIATION_AFTER =
   /^[ \t]*,?[ \t]+(?:BID|TID|QID|QHS|QAM|QPM|PRN|PO|OD|q\d+h)(?![\p{L}])/u;
@@ -2235,7 +2353,12 @@ function startsWithDrug(chunk: string): boolean {
     DRUG_NAMES.has(words.slice(0, 2).join(" "))
   );
 }
-function readsAsDrug(text: string, start: number, end: number): boolean {
+function readsAsDrug(
+  text: string,
+  start: number,
+  end: number,
+  afterPerson: boolean,
+): boolean {
   // Only a short stretch on each side, on the same line: a page read as one
   // very long line must not be copied for every place a name stands.
   const lineStart = text.lastIndexOf("\n", start - 1) + 1;
@@ -2245,8 +2368,11 @@ function readsAsDrug(text: string, start: number, end: number): boolean {
     end,
     Math.min(lineEnd < 0 ? text.length : lineEnd, end + 40),
   );
+  if (DRUG_STRENGTH_AFTER.test(after)) return true;
+  // Right after a role, a relation or a title, nothing weaker spares it.
+  if (afterPerson) return false;
   if (
-    DRUG_AFTER.test(after) ||
+    DRUG_FORM_AFTER.test(after) ||
     DRUG_ABBREVIATION_AFTER.test(after) ||
     DRUG_BEFORE.test(before)
   )
@@ -2268,12 +2394,19 @@ function readsAsDrug(text: string, start: number, end: number): boolean {
 // the allow-list (#228 review).
 const TITLE_RIGHT_BEFORE =
   /(?:(?<![\p{L}])(?:Dr|Dre|Mr|Mrs|Ms|Mx|Miss|Mme|Mlle|Prof|Pr|Sr|Sra|Srta|Nurse|Pani|Pan)\.?|(?<![\p{L}])M\.)[ \t]+$/u;
-function isMedicalTerm(text: string, start: number, end: number): boolean {
+/** `afterPerson`: a name rule found the word right after a role, a relation or a title. */
+function isMedicalTerm(
+  text: string,
+  start: number,
+  end: number,
+  afterPerson = false,
+): boolean {
   const span = guardKey(text.slice(start, end));
   const titled = TITLE_RIGHT_BEFORE.test(
     text.slice(Math.max(0, start - 14), start),
   );
-  if (DRUG_NAMES.has(span) && readsAsDrug(text, start, end)) return true;
+  if (DRUG_NAMES.has(span) && readsAsDrug(text, start, end, afterPerson))
+    return true;
   const from = Math.max(0, start - GUARD_REACH);
   const window = guardKey(text.slice(from, end + GUARD_REACH));
   const spanStart = start - from;

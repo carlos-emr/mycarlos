@@ -246,3 +246,39 @@ describe("look-alikes found in the #228 review", () => {
     gone("Nombre: María López. Pan Tomasz Nowakowski.", "López", "Nowakowski");
   });
 });
+
+describe("the second #228 review", () => {
+  it("ends a clinician's name before a place or a team word", () => {
+    expect(send("Charge nurse Maria Lopez Unit 4B called.")).toBe(
+      "Charge nurse [NAME 1] Unit 4B called.",
+    );
+  });
+
+  it.each([
+    "Mother: Multiple Sclerosis.",
+    "Father: Atrial Fibrillation, age 70.",
+    "Father: Sudden Death.",
+    "Brother: Down Syndrome.",
+    "Sister: Colon Carcinoma.",
+    "Family history:\nMother: Breast Cancer.\nFather: Heart Attack.",
+    "Le physiothérapeute Équipe Mobile passe demain.",
+    "Call Kids Help Phone if needed.",
+  ])("leaves %j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it("removes a drug-name first name followed by a frequency", () => {
+    gone("Her daughter Ella twice a week drives her.", "Ella");
+  });
+
+  it("removes a relative named after a label and after lower-case kids", () => {
+    gone("Mère : Rosalind Sampleton.", "Rosalind", "Sampleton");
+    gone("Her kids Maribel and Odette visited.", "Maribel", "Odette");
+  });
+
+  it("removes a record number with a long second group whole", () => {
+    expect(send("Voir le dossier 1234 567890.")).toBe(
+      "Voir le dossier [RECORD NUMBER 1].",
+    );
+  });
+});
