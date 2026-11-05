@@ -2,10 +2,10 @@
 //! one thing at a time, each from a fresh cache. Only the helper process runs this.
 
 use super::{
-    document_budget, explain_prompt, fit_pages, language_name, read_explanation, read_summary,
-    summary_grammar, summary_prompt, without_slot, Fit, ModelFile, Page, Sentence, Settings,
-    BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
-    SYSTEM_PROMPT,
+    document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
+    read_explanation, read_summary, summary_grammar, summary_prompt, without_slot, ChatFormat, Fit,
+    ModelFile, Page, Sentence, Settings, BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS,
+    MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -29,7 +29,9 @@ const MAP_FILE: bool = cfg!(windows);
 pub(super) struct Engine {
     model: &'static LlamaModel,
     context: LlamaContext<'static>,
-    template: LlamaChatTemplate,
+    /// The model's own template, for [`ChatFormat::Builtin`] only.
+    template: Option<LlamaChatTemplate>,
+    chat_format: ChatFormat,
 }
 
 /// Why a request got no answer, as the helper's error line says it: short, fixed words.
@@ -59,7 +61,12 @@ impl Engine {
         let model =
             LlamaModel::load_from_file(backend, &path, &params).map_err(|_| failed("model"))?;
         let model: &'static LlamaModel = Box::leak(Box::new(model));
-        let template = model.chat_template(None).map_err(|_| failed("template"))?;
+        // Gemma 4's turns are written here; llama.cpp's built-in template code cannot apply its
+        // template. Every other model's own template is used.
+        let template = match settings.chat_format {
+            ChatFormat::Builtin => Some(model.chat_template(None).map_err(|_| failed("template"))?),
+            ChatFormat::Gemma4 => None,
+        };
         let threads = i32::try_from(settings.threads).map_err(|_| failed("threads"))?;
         let params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(CONTEXT_TOKENS))
@@ -74,6 +81,7 @@ impl Engine {
             model,
             context,
             template,
+            chat_format: settings.chat_format,
         })
     }
 
@@ -81,14 +89,20 @@ impl Engine {
     /// by the next of `parts`. The template's own words are read with their control tokens;
     /// the parts, the document's words, never are.
     fn prompt_tokens(&self, user: &str, parts: &[&str]) -> Result<Vec<LlamaToken>, Failure> {
-        let message = |role: &str, content: &str| {
-            LlamaChatMessage::new(role.to_owned(), content.to_owned()).map_err(|_| failed("prompt"))
+        let templated = match self.chat_format {
+            ChatFormat::Builtin => {
+                let message = |role: &str, content: &str| {
+                    LlamaChatMessage::new(role.to_owned(), content.to_owned())
+                        .map_err(|_| failed("prompt"))
+                };
+                let messages = [message("system", SYSTEM_PROMPT)?, message("user", user)?];
+                let template = self.template.as_ref().ok_or_else(|| failed("template"))?;
+                self.model
+                    .apply_chat_template(template, &messages, true)
+                    .map_err(|_| failed("prompt"))?
+            }
+            ChatFormat::Gemma4 => gemma4_conversation(SYSTEM_PROMPT, user),
         };
-        let messages = [message("system", SYSTEM_PROMPT)?, message("user", user)?];
-        let templated = self
-            .model
-            .apply_chat_template(&self.template, &messages, true)
-            .map_err(|_| failed("prompt"))?;
         let pieces: Vec<&str> = templated.split(SLOT).collect();
         if pieces.len() != parts.len() + 1 {
             return Err(failed("prompt"));

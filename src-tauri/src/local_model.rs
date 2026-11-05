@@ -39,11 +39,14 @@ pub(crate) struct Accepted {
     /// Where to get the file: shown as text with a Copy button. The app
     /// opens nothing.
     pub(crate) source_url: &'static str,
+    /// How the helper puts a conversation to this model.
+    pub(crate) chat_format: crate::model_helper::ChatFormat,
 }
 
 /// The models the app accepts. The demo build's pick (the bake-off's best on
 /// both blind graders, and the one that works through the engine): Qwen3.5 4B.
-pub(crate) const CATALOG: &[Accepted] = &[Accepted {
+pub(crate) const CATALOG: &[Accepted] = &[
+Accepted {
     name: "Qwen3.5 4B (Q4_K_M)",
     file_name: "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
     size_bytes: 3_013_027_808,
@@ -51,6 +54,19 @@ pub(crate) const CATALOG: &[Accepted] = &[Accepted {
     licence: "Apache-2.0",
     notices: &[],
     source_url: "https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+    chat_format: crate::model_helper::ChatFormat::Builtin,
+},
+// The backup: the default is the first entry. Gemma 4's chat template is not applied by
+// llama.cpp's built-in code, so its turns are written by the helper.
+Accepted {
+    name: "Gemma 4 E2B Instruct (Q4_0)",
+    file_name: "gemma-4-E2B-it-Q4_0.gguf",
+    size_bytes: 2_841_481_184,
+    sha256: "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52",
+    licence: "Apache-2.0",
+    notices: &[],
+    source_url: "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf",
+    chat_format: crate::model_helper::ChatFormat::Gemma4,
 }];
 
 /// What the renderer is told about the model on this computer.
@@ -292,6 +308,7 @@ pub(crate) struct VerifiedModel {
     pub(crate) path: PathBuf,
     pub(crate) info: ModelInfo,
     pub(crate) size_bytes: u64,
+    pub(crate) chat_format: crate::model_helper::ChatFormat,
 }
 
 impl Store {
@@ -334,6 +351,7 @@ impl crate::model_runtime::ModelSource for RuntimeSource {
             path: model.path,
             info: model.info,
             size_bytes: model.size_bytes,
+            chat_format: model.chat_format,
         })
     }
 }
@@ -363,6 +381,10 @@ pub(crate) struct Store {
     damaged: Mutex<bool>,
     /// One add, remove or use-check at a time.
     busy: Mutex<()>,
+    /// Run, with the lock held, before the model file is replaced or removed:
+    /// the app ends the helper that holds it. A new run cannot start meanwhile
+    /// (its use-check finds the lock taken and answers busy).
+    before_replace: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Runs holding the model now (see [`VerifiedModel`]).
     uses: Arc<AtomicUsize>,
     /// Asked to stop the add in progress.
@@ -388,6 +410,7 @@ impl Store {
             catalog,
             damaged: Mutex::new(false),
             busy: Mutex::new(()),
+            before_replace: Mutex::new(None),
             uses: Arc::new(AtomicUsize::new(0)),
             cancel_add: AtomicBool::new(false),
         }
@@ -404,6 +427,26 @@ impl Store {
 
     fn largest(&self) -> u64 {
         self.catalog.iter().map(|m| m.size_bytes).max().unwrap_or(0)
+    }
+
+    /// Names what runs, under the lock, before the model file is replaced or
+    /// removed (adds, downloads and removes).
+    pub(crate) fn set_before_replace(&self, hook: Box<dyn Fn() + Send + Sync>) {
+        *self
+            .before_replace
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(hook);
+    }
+
+    fn run_before_replace(&self) {
+        if let Some(hook) = self
+            .before_replace
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            hook();
+        }
     }
 
     /// The add/remove/use lock, or `Busy` when another holds it (an add or
@@ -497,6 +540,7 @@ impl Store {
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
+        self.run_before_replace();
         if let Some(reason) = unsupported(&hardware.machine()) {
             return Err(ModelError::Unsupported(reason));
         }
@@ -574,6 +618,7 @@ impl Store {
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
+        self.run_before_replace();
         if let Some(reason) = unsupported(&hardware.machine()) {
             return Err(ModelError::Unsupported(reason));
         }
@@ -623,6 +668,7 @@ impl Store {
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
+        self.run_before_replace();
         for model in self.catalog {
             match remove_model_file(self.dir.join(model.file_name)) {
                 Ok(()) => {}
@@ -704,6 +750,7 @@ impl Store {
                     sha256: model.sha256.to_owned(),
                 },
                 size_bytes: model.size_bytes,
+                chat_format: model.chat_format,
             });
         }
         Err(ModelError::NotInstalled)
@@ -1053,6 +1100,7 @@ mod tests {
             licence: "none",
             notices: &[],
             source_url: "https://example.invalid/fake",
+            chat_format: crate::model_helper::ChatFormat::Builtin,
         }];
         (bytes, Box::leak(list.into_boxed_slice()))
     }
@@ -1555,6 +1603,48 @@ mod tests {
             .unwrap_err();
         assert_eq!(error, ModelError::Cancelled);
         assert!(folder_names(&store).is_empty());
+    }
+
+    #[test]
+    fn the_before_replace_hook_runs_under_the_lock_so_no_run_can_start_meanwhile() {
+        let (temp, bytes, store) = setup(1 << 20);
+        let store = Arc::new(store);
+        store
+            .add(&source(&temp, &bytes), &good(), |_, _| {})
+            .unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (inner, record) = (Arc::clone(&store), Arc::clone(&seen));
+        store.set_before_replace(Box::new(move || {
+            // A run starting now finds the lock taken.
+            let started = inner.verified_model_with(&Free(Some(100 << 30))).err();
+            record.lock().unwrap().push(started);
+        }));
+        store.remove().unwrap();
+        assert_eq!(*seen.lock().unwrap(), [Some(ModelError::Busy)]);
+        // And once the add finishes (nothing installed): a download runs it too.
+        let net = Fake::serving(&bytes);
+        store.download(0, &net, &good(), |_, _| {}).unwrap();
+        assert_eq!(seen.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn the_catalog_has_the_default_first_and_gemma_4_as_the_backup_with_its_own_format() {
+        use crate::model_helper::ChatFormat;
+        assert_eq!(CATALOG[0].chat_format, ChatFormat::Builtin);
+        let gemma = CATALOG
+            .iter()
+            .find(|m| m.file_name.starts_with("gemma-4"))
+            .unwrap();
+        assert_eq!(gemma.chat_format, ChatFormat::Gemma4);
+        assert_eq!(gemma.size_bytes, 2_841_481_184);
+        let mut names: Vec<_> = CATALOG.iter().map(|m| m.file_name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), CATALOG.len());
+        let mut hashes: Vec<_> = CATALOG.iter().map(|m| m.sha256).collect();
+        hashes.sort_unstable();
+        hashes.dedup();
+        assert_eq!(hashes.len(), CATALOG.len());
     }
 
     #[test]

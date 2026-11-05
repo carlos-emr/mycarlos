@@ -1607,8 +1607,6 @@ async fn ai_model_add_picked(
     let worker = Arc::clone(&models);
     let result = tauri::async_runtime::spawn_blocking(move || {
         // About every 8 MiB, and at the start and the end.
-        // The helper holds the model: it stops before the file is replaced.
-        model_runtime::stop();
         let mut shown = u64::MAX;
         worker.add(&source, &local_model::Here, |done, total| {
             let step = done / (8 * 1024 * 1024);
@@ -1647,7 +1645,6 @@ async fn ai_model_download(
     let models = Arc::clone(models.inner());
     let worker = Arc::clone(&models);
     let result = tauri::async_runtime::spawn_blocking(move || {
-        model_runtime::stop();
         let mut shown = u64::MAX;
         worker.download(
             0,
@@ -1694,7 +1691,6 @@ async fn ai_model_remove(
 ) -> Result<local_model::ModelStatus, ModelFailure> {
     let models = Arc::clone(models.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        model_runtime::stop();
         models.remove()?;
         Ok(models.status(&local_model::Here))
     })
@@ -4304,6 +4300,9 @@ pub fn run() {
                 local_model::CATALOG,
             ));
             models.clean_leftovers();
+            // The helper holds the model file: it is ended, under the store's lock, before the
+            // file is replaced or removed (a new run is refused meanwhile).
+            models.set_before_replace(Box::new(model_runtime::stop));
             // Windows: an existing folder gets the helper's read access too.
             #[cfg(windows)]
             if models.dir().exists() {
