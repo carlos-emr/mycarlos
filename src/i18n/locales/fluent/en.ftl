@@ -1688,7 +1688,7 @@ ai-model-removeConfirm = Remove the model from this computer? You can add it aga
 
 ai-model-damaged = The model file is damaged or has changed. Remove it, then add it again.
 
-ai-model-unsupportedRam = This computer does not have enough memory for the AI helper (it needs 8 GB).
+ai-model-unsupportedRam = This computer does not have enough memory for the AI helper (it needs about 8 GB).
 
 ai-model-unsupportedCpu = This computer’s processor is not supported by the AI helper.
 
@@ -1708,7 +1708,7 @@ ai-model-refusedBusy = The AI helper is working. Try again when it has finished.
 
 ai-model-download = Download the default model
 
-ai-model-downloadNote = Downloads one file ({ $size } MB) from { $host }. Nothing about you or your documents is sent.
+ai-model-downloadNote = Downloads one file ({ $size } MB), once, from { $host }, only when you click. Nothing about you or your documents is sent. The download site sees your internet address, as for any download.
 
 ai-model-downloading = Downloading and checking… { $done } of { $total } MB
 
@@ -1727,9 +1727,9 @@ ai-summary-pagesMissing = Some pages could not be read in full, so this summary 
 ai-summary-noSource = No source found
 aiHelper-notice-title = About the AI helper
 
-aiHelper-notice-introShare = myCarlos can prepare a document's text for an AI service you choose. The AI helper never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it.
+aiHelper-notice-introShare = myCarlos can prepare a document's text for an AI service you choose. The AI helper never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this computer’s internet address to the download site.
 
-aiHelper-notice-intro = The AI helper explains a document in plain words, here on this device, and can prepare a document's text for an AI service you choose. It never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it.
+aiHelper-notice-intro = The AI helper explains a document in plain words, here on this device, and can prepare a document's text for an AI service you choose. It never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this computer’s internet address to the download site.
 
 aiHelper-notice-testBuild = This development build is for synthetic (made-up) files only. Do not use it with real health information.
 
@@ -1749,7 +1749,7 @@ aiHelper-notice-adviceBody = Answers written by an AI can be wrong. Do not take 
 
 aiHelper-notice-modelHeading = The AI on this device
 
-aiHelper-notice-modelBody = The AI uses a model file. You choose how to get it: myCarlos can download the one file from the address shown in Preferences (nothing about you or your documents is sent), or you can add a file you already have. The file is kept outside the vault, because it holds nothing about you. myCarlos checks it before every use and will not use a file that has been changed. The AI itself cannot use the internet or open your other files.
+aiHelper-notice-modelBody = The AI uses a model file. You choose how to get it: myCarlos can download the one file, once, when you choose to, from the address shown in Preferences (nothing about you or your documents is sent), or you can add a file you already have. The file is kept outside the vault, because it holds nothing about you. myCarlos checks it before every use and will not use a file that has been changed. The AI itself cannot use the internet or open your other files.
 
 aiHelper-notice-resultsBody = The AI's answers are saved in the vault, encrypted, with the document, the tool, the model and the date. Each answer is marked “Written by AI and may be wrong. Check with your doctor.”
 

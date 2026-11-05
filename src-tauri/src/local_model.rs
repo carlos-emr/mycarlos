@@ -1,8 +1,9 @@
 //! The AI helper's model on this computer (#72): a short list of accepted
 //! models shipped with the app, and the patient adding one of them as a file.
 //!
-//! Nothing here downloads or opens a connection. The patient gets the file
-//! (the list says where, as text), picks it, and the app checks its size
+//! The patient gets the file themselves (the list says where, as text) and
+//! picks it, or has the app download it from its pinned address
+//! ([`crate::model_download`], native code, on a click). Either way the app checks its size
 //! against the list before reading anything, streams it through SHA-256
 //! into `models/` beside the vault folder (never inside it, so never in a
 //! backup) as `<name>.part`, and renames it only when the hash matches. The
@@ -172,7 +173,10 @@ pub(crate) struct Machine {
     pub(crate) avx2: bool,
 }
 
-pub(crate) const MIN_RAM_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+/// An "8 GB" computer reports about 7.6-7.9 GiB (hardware-reserved memory
+/// is left out), so the floor is 7 GiB; the free-memory check at each run
+/// still protects a busy one.
+pub(crate) const MIN_RAM_BYTES: u64 = 7 * 1024 * 1024 * 1024;
 /// Free disk needed before an add or download starts (at least; the file's
 /// own size plus a margin when that is more).
 pub(crate) const MIN_FREE_DISK_BYTES: u64 = 3 * 1024 * 1024 * 1024;
@@ -211,10 +215,11 @@ impl Hardware for Here {
 fn has_avx2() -> bool {
     #[cfg(target_arch = "x86_64")]
     {
-        // The runtime is built with AVX2, FMA and F16C: all three are needed.
+        // The runtime is built with AVX2, FMA, F16C and BMI2: all four are needed.
         std::arch::is_x86_feature_detected!("avx2")
             && std::arch::is_x86_feature_detected!("fma")
             && std::arch::is_x86_feature_detected!("f16c")
+            && std::arch::is_x86_feature_detected!("bmi2")
     }
     // Apple silicon and other ARM64 desktops run the model with NEON.
     #[cfg(not(target_arch = "x86_64"))]
@@ -319,6 +324,15 @@ pub(crate) struct Store {
     cancel_add: AtomicBool,
 }
 
+/// The one place a file is removed here. The models folder holds a public
+/// model file and its half-copied `.part`, never anything of the patient's,
+/// so #71's "nothing of theirs is deleted" does not apply: Remove the model
+/// really deletes it.
+#[allow(clippy::disallowed_methods)]
+fn remove_model_file(path: impl AsRef<Path>) -> std::io::Result<()> {
+    fs::remove_file(path)
+}
+
 const BUFFER_BYTES: usize = 1024 * 1024;
 const PART_SUFFIX: &str = ".part";
 
@@ -334,6 +348,11 @@ impl Store {
         }
     }
 
+    #[cfg(windows)]
+    pub(crate) fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     pub(crate) fn catalog(&self) -> &'static [Accepted] {
         self.catalog
     }
@@ -342,12 +361,35 @@ impl Store {
         self.catalog.iter().map(|m| m.size_bytes).max().unwrap_or(0)
     }
 
+    /// The add/remove/use lock, or `Busy` when another holds it (an add or
+    /// download takes minutes: nothing waits behind it).
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, ModelError> {
+        match self.busy.try_lock() {
+            Ok(guard) => Ok(guard),
+            Err(std::sync::TryLockError::Poisoned(e)) => Ok(e.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) => Err(ModelError::Busy),
+        }
+    }
+
     fn damaged(&self) -> bool {
         *self.damaged.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn set_damaged(&self, value: bool) {
         *self.damaged.lock().unwrap_or_else(|e| e.into_inner()) = value;
+    }
+
+    /// Makes the models folder (private to the user; on Windows readable by
+    /// the model helper's AppContainer, which files in it inherit). Also run
+    /// at start for a folder that already exists.
+    pub(crate) fn prepare_dir(&self) -> Result<(), ModelError> {
+        fs::create_dir_all(&self.dir).map_err(|_| ModelError::Storage)?;
+        restrict_dir(&self.dir);
+        #[cfg(windows)]
+        if !crate::model_acl::grant_read(&self.dir, crate::model_acl::APP_CONTAINER) {
+            return Err(ModelError::Storage);
+        }
+        Ok(())
     }
 
     /// Stops the add in progress, if any: it ends with `Cancelled` and
@@ -363,7 +405,7 @@ impl Store {
         };
         for entry in entries.flatten() {
             if entry.file_name().to_string_lossy().ends_with(PART_SUFFIX) {
-                let _ = fs::remove_file(entry.path());
+                let _ = remove_model_file(entry.path());
             }
         }
     }
@@ -403,8 +445,10 @@ impl Store {
         hardware: &dyn Hardware,
         mut progress: impl FnMut(u64, u64),
     ) -> Result<ModelInfo, ModelError> {
+        let _one_at_a_time = self.lock()?;
+        // Reset inside the lock: only an add that is about to run is not cancelled.
         self.cancel_add.store(false, Ordering::SeqCst);
-        let _one_at_a_time = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
@@ -439,22 +483,25 @@ impl Store {
             .iter()
             .find(|m| m.size_bytes == size && want.is_none_or(|w| w.sha256 == m.sha256))
             .ok_or(ModelError::NotOnList)?;
-        fs::create_dir_all(&self.dir).map_err(|_| ModelError::Storage)?;
-        restrict_dir(&self.dir);
+        self.prepare_dir()?;
         self.clean_leftovers();
         let free = hardware.free_disk_bytes(&self.dir);
-        if free.is_none_or(|free| free < size.saturating_add(DISK_MARGIN_BYTES).max(MIN_FREE_DISK_BYTES)) {
+        if free.is_none_or(|free| {
+            free < size
+                .saturating_add(DISK_MARGIN_BYTES)
+                .max(MIN_FREE_DISK_BYTES)
+        }) {
             return Err(ModelError::NotEnoughDisk);
         }
         let part = self.dir.join(format!("{}{PART_SUFFIX}", model.file_name));
         let result = copy_checked(input, &part, model, &self.cancel_add, progress);
         if let Err(error) = result {
-            let _ = fs::remove_file(&part);
+            let _ = remove_model_file(&part);
             return Err(error);
         }
         let target = self.dir.join(model.file_name);
         if fs::rename(&part, &target).is_err() {
-            let _ = fs::remove_file(&part);
+            let _ = remove_model_file(&part);
             return Err(ModelError::Storage);
         }
         sync_dir(&self.dir);
@@ -475,8 +522,10 @@ impl Store {
         hardware: &dyn Hardware,
         mut progress: impl FnMut(u64, u64),
     ) -> Result<ModelInfo, ModelError> {
+        let _one_at_a_time = self.lock()?;
+        // Reset inside the lock: only an add that is about to run is not cancelled.
         self.cancel_add.store(false, Ordering::SeqCst);
-        let _one_at_a_time = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
@@ -484,11 +533,15 @@ impl Store {
             return Err(ModelError::Unsupported(reason));
         }
         let model = self.catalog.get(index).ok_or(ModelError::NotOnList)?;
-        fs::create_dir_all(&self.dir).map_err(|_| ModelError::Storage)?;
-        restrict_dir(&self.dir);
+        self.prepare_dir()?;
         self.clean_leftovers();
         let free = hardware.free_disk_bytes(&self.dir);
-        if free.is_none_or(|free| free < model.size_bytes.saturating_add(DISK_MARGIN_BYTES).max(MIN_FREE_DISK_BYTES)) {
+        if free.is_none_or(|free| {
+            free < model
+                .size_bytes
+                .saturating_add(DISK_MARGIN_BYTES)
+                .max(MIN_FREE_DISK_BYTES)
+        }) {
             return Err(ModelError::NotEnoughDisk);
         }
         let cancelled = || self.cancel_add.load(Ordering::SeqCst);
@@ -521,12 +574,12 @@ impl Store {
 
     /// Deletes the model and any `.part`. A missing file is not an error.
     pub(crate) fn remove(&self) -> Result<(), ModelError> {
-        let _one_at_a_time = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+        let _one_at_a_time = self.lock()?;
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
         for model in self.catalog {
-            match fs::remove_file(self.dir.join(model.file_name)) {
+            match remove_model_file(self.dir.join(model.file_name)) {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(_) => return Err(ModelError::Storage),
@@ -552,7 +605,14 @@ impl Store {
         &self,
         probe: &dyn MemoryProbe,
     ) -> Result<VerifiedModel, ModelError> {
-        let _one_at_a_time = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+        let _one_at_a_time = self.lock()?;
+        // Windows: the helper's read access to the folder is granted again
+        // before each use (cheap, idempotent), so a failure shows here, as
+        // "could not be saved", rather than as a silent failed run.
+        #[cfg(windows)]
+        if self.dir.exists() {
+            self.prepare_dir()?;
+        }
         for model in self.catalog {
             let path = self.dir.join(model.file_name);
             #[cfg(target_os = "linux")]
@@ -570,6 +630,11 @@ impl Store {
             let file = match open_for_use(&path) {
                 Ok(file) => file,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                // Windows: another program holds the file open for writing
+                // (ERROR_SHARING_VIOLATION): in use, not damaged.
+                Err(e) if cfg!(windows) && e.raw_os_error() == Some(32) => {
+                    return Err(ModelError::Busy);
+                }
                 Err(_) => {
                     self.set_damaged(true);
                     return Err(ModelError::Damaged);
@@ -1174,6 +1239,19 @@ mod tests {
                 ModelError::Unsupported(reason)
             );
         }
+    }
+
+    #[test]
+    fn an_eight_gb_computer_reporting_7_8_gib_is_supported() {
+        let (_temp, _bytes, store) = setup(1 << 20);
+        let hw = Fixed(
+            Machine {
+                ram_total_bytes: Some((7.8 * (1u64 << 30) as f64) as u64),
+                ..good().0
+            },
+            Some(100 << 30),
+        );
+        assert_eq!(store.status(&hw), ModelStatus::NotInstalled);
     }
 
     #[test]

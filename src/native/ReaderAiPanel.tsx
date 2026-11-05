@@ -165,7 +165,7 @@ export function ReaderAiPanel({
       aria-busy={status === null || working}
     >
       <h3 id="reader-ai-title">{title}</h3>
-      {status !== null && status.state !== "installed" && (
+      {status?.state === "notInstalled" && (
         <div className="native-reader-ai-missing">
           <p>
             <strong>{t("ai.notInstalled.title")}</strong>

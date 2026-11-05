@@ -1552,7 +1552,7 @@ ai-model-removeConfirm = 要从此电脑删除模型吗？以后可以重新添�
 
 ai-model-damaged = 模型文件已损坏或已被更改。请删除后重新添加。
 
-ai-model-unsupportedRam = 此电脑的内存不足以运行 AI 助手（需要 8 GB）。
+ai-model-unsupportedRam = 此电脑的内存不足以运行 AI 助手（需要约 8 GB）。
 
 ai-model-unsupportedCpu = 此电脑的处理器不支持 AI 助手。
 
@@ -1572,7 +1572,7 @@ ai-model-refusedBusy = AI 助手正在工作。请在它完成后重试。
 
 ai-model-download = 下载默认模型
 
-ai-model-downloadNote = 从 { $host } 下载一个文件（{ $size } MB）。不会发送任何关于您或您的文档的信息。
+ai-model-downloadNote = 仅一次，且仅在您点击时，从 { $host } 下载一个文件（{ $size } MB）。不会发送任何关于您或您的文档的信息。下载网站会看到您的互联网地址，就像任何下载一样。
 
 ai-model-downloading = 正在下载并检查… { $done } / { $total } MB
 
@@ -1591,9 +1591,9 @@ ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能
 ai-summary-noSource = 未找到来源
 aiHelper-notice-title = 关于 AI 助手
 
-aiHelper-notice-introShare = myCarlos 可以为您选择的 AI 服务准备文档的文本。AI 助手绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。
+aiHelper-notice-introShare = myCarlos 可以为您选择的 AI 服务准备文档的文本。AI 助手绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。下载时，下载网站会看到这台电脑的互联网地址。
 
-aiHelper-notice-intro = AI 助手会在这台设备上用浅显的语言解释文档，也可以为您选择的 AI 服务准备文档的文本。它绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。
+aiHelper-notice-intro = AI 助手会在这台设备上用通俗易懂的文字解释文档，也可以为您选择的 AI 服务准备文档的文本。它绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。下载时，下载网站会看到这台电脑的互联网地址。
 
 aiHelper-notice-testBuild = 此开发版本仅供合成（虚构）文件使用。请勿用于真实的健康信息。
 
@@ -1613,7 +1613,7 @@ aiHelper-notice-adviceBody = AI 撰写的回答可能有误。请勿将其视为
 
 aiHelper-notice-modelHeading = 这台设备上的 AI
 
-aiHelper-notice-modelBody = AI 使用一个模型文件。获取方式由您选择：myCarlos 可以从“偏好设置”中显示的地址下载这一个文件（不会发送任何关于您或您的文档的信息），您也可以添加已有的文件。该文件保存在保险库之外，因为其中不含任何关于您的信息。myCarlos 每次使用前都会检查它，不会使用被改动过的文件。AI 本身无法使用互联网，也无法打开您的其他文件。
+aiHelper-notice-modelBody = AI 使用一个模型文件。获取方式由您选择：myCarlos 可以在您选择时，从“偏好设置”中显示的地址一次性下载这一个文件（不会发送任何关于您或您的文档的信息），您也可以添加已有的文件。该文件保存在保险库之外，因为其中不含任何关于您的信息。myCarlos 每次使用前都会检查它，不会使用被改动过的文件。AI 本身无法使用互联网，也无法打开您的其他文件。
 
 aiHelper-notice-resultsBody = AI 的回答会加密保存在保险库中，并附有文档、工具、模型和日期。每条回答都标有「由 AI 撰写，可能有误。请向您的医生核实。」
 

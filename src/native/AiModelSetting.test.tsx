@@ -175,7 +175,7 @@ describe("Add a model file", () => {
     );
     await screen.findByText(
       humanText(
-        "Downloads one file (2,500 MB) from example.invalid. Nothing about you or your documents is sent.",
+        "Downloads one file (2,500 MB), once, from example.invalid, only when you click. Nothing about you or your documents is sent. The download site sees your internet address, as for any download.",
       ),
     );
     // Nothing is fetched until the click.
@@ -327,7 +327,7 @@ describe("A computer that cannot run the helper", () => {
   it.each([
     [
       "ram",
-      "This computer does not have enough memory for the AI helper (it needs 8 GB).",
+      "This computer does not have enough memory for the AI helper (it needs about 8 GB).",
     ],
     ["cpu", "This computer’s processor is not supported by the AI helper."],
     [

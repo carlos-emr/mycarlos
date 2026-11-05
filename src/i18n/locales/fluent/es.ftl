@@ -1722,7 +1722,7 @@ ai-model-removeConfirm = ¿Quitar el modelo de este equipo? Podrá agregarlo de 
 
 ai-model-damaged = El archivo del modelo está dañado o ha cambiado. Quítelo y vuelva a agregarlo.
 
-ai-model-unsupportedRam = Este equipo no tiene memoria suficiente para el asistente de IA (necesita 8 GB).
+ai-model-unsupportedRam = Este equipo no tiene memoria suficiente para el asistente de IA (necesita unos 8 GB).
 
 ai-model-unsupportedCpu = El procesador de este equipo no es compatible con el asistente de IA.
 
@@ -1742,7 +1742,7 @@ ai-model-refusedBusy = El asistente de IA está trabajando. Inténtelo de nuevo 
 
 ai-model-download = Descargar el modelo predeterminado
 
-ai-model-downloadNote = Descarga un archivo ({ $size } MB) desde { $host }. No se envía nada sobre usted ni sobre sus documentos.
+ai-model-downloadNote = Descarga un archivo ({ $size } MB), una sola vez, desde { $host }, solo cuando usted hace clic. No se envía nada sobre usted ni sobre sus documentos. El sitio de descarga ve su dirección de internet, como en cualquier descarga.
 
 ai-model-downloading = Descargando y comprobando… { $done } de { $total } MB
 
@@ -1761,9 +1761,9 @@ ai-summary-pagesMissing = Algunas páginas no se pudieron leer completas, así q
 ai-summary-noSource = No se encontró la fuente
 aiHelper-notice-title = Acerca del asistente de IA
 
-aiHelper-notice-introShare = myCarlos puede preparar el texto de un documento para el servicio de IA que usted elija. El asistente de IA nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo.
+aiHelper-notice-introShare = myCarlos puede preparar el texto de un documento para el servicio de IA que usted elija. El asistente de IA nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este equipo.
 
-aiHelper-notice-intro = El asistente de IA explica un documento con palabras sencillas, aquí en este dispositivo, y puede preparar el texto de un documento para el servicio de IA que usted elija. Nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo.
+aiHelper-notice-intro = El asistente de IA explica un documento con palabras sencillas, aquí en este dispositivo, y puede preparar el texto de un documento para el servicio de IA que usted elija. Nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este equipo.
 
 aiHelper-notice-testBuild = Esta versión de desarrollo es solo para archivos ficticios. No la use con información de salud real.
 
@@ -1783,7 +1783,7 @@ aiHelper-notice-adviceBody = Las respuestas escritas por una IA pueden estar equ
 
 aiHelper-notice-modelHeading = La IA en este dispositivo
 
-aiHelper-notice-modelBody = La IA usa un archivo de modelo. Usted decide cómo obtenerlo: myCarlos puede descargar ese único archivo desde la dirección que se muestra en Preferencias (no se envía nada sobre usted ni sobre sus documentos), o usted puede agregar un archivo que ya tenga. El archivo se guarda fuera de la bóveda, porque no contiene nada sobre usted. myCarlos lo comprueba antes de cada uso y no usará un archivo que haya sido modificado. La IA en sí no puede usar internet ni abrir sus otros archivos.
+aiHelper-notice-modelBody = La IA usa un archivo de modelo. Usted decide cómo obtenerlo: myCarlos puede descargar ese único archivo, una sola vez y cuando usted lo decida, desde la dirección que se muestra en Preferencias (no se envía nada sobre usted ni sobre sus documentos), o usted puede agregar un archivo que ya tenga. El archivo se guarda fuera de la bóveda, porque no contiene nada sobre usted. myCarlos lo comprueba antes de cada uso y no usará un archivo que haya sido modificado. La IA en sí no puede usar internet ni abrir sus otros archivos.
 
 aiHelper-notice-resultsBody = Las respuestas de la IA se guardan en la bóveda, cifradas, con el documento, la herramienta, el modelo y la fecha. Cada respuesta lleva la nota «Escrito por IA; puede contener errores. Consulte con su médico.»
 

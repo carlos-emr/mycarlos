@@ -24,36 +24,27 @@ const REDIRECT_HOST_SUFFIXES: &[&str] = &[".cdn.hf.co"];
 const REDIRECT_HOSTS: &[&str] = &["cdn-lfs.huggingface.co", "cdn-lfs.hf.co"];
 const MAX_REDIRECTS: usize = 3;
 
-/// Whether a redirect from the pinned address may go to `target`.
+/// Whether a redirect from the pinned address may go to `target`: parsed by
+/// the same URL parser the HTTP client uses, then HTTPS on the default port,
+/// no credentials, and the pinned host or its CDN.
 pub(crate) fn redirect_allowed(pinned: &str, target: &str) -> bool {
-    let (Some((p_scheme, p_host)), Some((t_scheme, t_host))) = (split(pinned), split(target))
+    let (Ok(pinned), Ok(target)) = (reqwest::Url::parse(pinned), reqwest::Url::parse(target))
     else {
         return false;
     };
-    if p_scheme != "https" || t_scheme != "https" {
+    let (Some(pinned_host), Some(host)) = (pinned.host_str(), target.host_str()) else {
         return false;
-    }
-    t_host == p_host
-        || REDIRECT_HOSTS.contains(&t_host.as_str())
-        || REDIRECT_HOST_SUFFIXES
-            .iter()
-            .any(|suffix| t_host.ends_with(suffix) && t_host.len() > suffix.len())
-}
-
-/// `(scheme, host)` of an absolute URL, host lower-cased, without port or
-/// credentials; `None` when it has userinfo or a port other than 443.
-fn split(url: &str) -> Option<(String, String)> {
-    let (scheme, rest) = url.split_once("://")?;
-    let authority = rest.split(['/', '?', '#']).next()?;
-    if authority.is_empty() || authority.contains('@') {
-        return None;
-    }
-    let host = match authority.rsplit_once(':') {
-        Some((host, "443")) => host,
-        Some(_) => return None,
-        None => authority,
     };
-    Some((scheme.to_ascii_lowercase(), host.to_ascii_lowercase()))
+    pinned.scheme() == "https"
+        && target.scheme() == "https"
+        && target.port_or_known_default() == Some(443)
+        && target.username().is_empty()
+        && target.password().is_none()
+        && (host == pinned_host
+            || REDIRECT_HOSTS.contains(&host)
+            || REDIRECT_HOST_SUFFIXES
+                .iter()
+                .any(|suffix| host.ends_with(suffix) && host.len() > suffix.len()))
 }
 
 /// The real network opener.
@@ -214,6 +205,7 @@ mod tests {
             "https://us.aws.cdn.hf.co/xet-bridge-us/abc?x=1",
             "https://cdn-lfs.huggingface.co/repos/ab/cd/file",
             "https://huggingface.co/other/path",
+            "https://US.AWS.CDN.HF.CO:443/xet?a=b",
         ];
         for target in ok {
             assert!(redirect_allowed(PINNED, target), "{target}");
@@ -228,6 +220,10 @@ mod tests {
             "https://us.aws.cdn.hf.co:8443/x",
             "https://huggingface.co.evil.example/x",
             "ftp://us.aws.cdn.hf.co/x",
+            "https://us.aws.cdn.hf.co\\@evil.example/x",
+            "https://evil.example\\@us.aws.cdn.hf.co/x",
+            "https://us.aws.cdn.hf.co:444/x",
+            "https://US.AWS.CDN.HF.CO.evil.example/x",
             "/relative/path",
             "",
         ];

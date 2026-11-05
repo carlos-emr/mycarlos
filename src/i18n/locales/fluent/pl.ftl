@@ -1756,7 +1756,7 @@ ai-model-removeConfirm = Usunąć model z tego komputera? Można go później do
 
 ai-model-damaged = Plik modelu jest uszkodzony lub został zmieniony. Usuń go i dodaj ponownie.
 
-ai-model-unsupportedRam = Ten komputer nie ma wystarczająco dużo pamięci dla asystenta AI (potrzeba 8 GB).
+ai-model-unsupportedRam = Ten komputer nie ma wystarczająco dużo pamięci dla asystenta AI (potrzeba około 8 GB).
 
 ai-model-unsupportedCpu = Procesor tego komputera nie jest obsługiwany przez asystenta AI.
 
@@ -1776,7 +1776,7 @@ ai-model-refusedBusy = Asystent AI pracuje. Spróbuj ponownie, gdy skończy.
 
 ai-model-download = Pobierz model domyślny
 
-ai-model-downloadNote = Pobiera jeden plik ({ $size } MB) z { $host }. Nic o Tobie ani o Twoich dokumentach nie jest wysyłane.
+ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $host }, tylko po kliknięciu. Nic o Tobie ani o Twoich dokumentach nie jest wysyłane. Strona, z której pobierasz, widzi Twój adres internetowy, jak przy każdym pobieraniu.
 
 ai-model-downloading = Pobieranie i sprawdzanie… { $done } z { $total } MB
 
@@ -1795,11 +1795,11 @@ ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stro
 ai-summary-noSource = Nie znaleziono źródła
 aiHelper-notice-title = O asystencie AI
 
-aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet Twoich dokumentów ani niczego o Tobie. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy zdecydujesz się go pobrać.
+aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet Twoich dokumentów ani niczego o Tobie. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy zdecydujesz się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której pobierasz.
 
-aiHelper-notice-intro = Asystent AI wyjaśnia dokument prostymi słowami, tutaj, na tym urządzeniu, i może przygotować tekst dokumentu dla wybranej usługi AI. Nigdy nie wysyła przez internet Twoich dokumentów ani niczego o Tobie. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy zdecydujesz się go pobrać.
+aiHelper-notice-intro = Asystent AI wyjaśnia dokument prostymi słowami, tutaj, na tym urządzeniu, i może przygotować tekst dokumentu dla wybranej usługi AI. Nigdy nie wysyła przez internet Twoich dokumentów ani niczego o Tobie. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy zdecydujesz się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której pobierasz.
 
-aiHelper-notice-testBuild = Ta wersja rozwojowa jest przeznaczona do użytku wyłącznie z fikcyjnymi plikami. Proszę nie używać jej z prawdziwymi informacjami o zdrowiu.
+aiHelper-notice-testBuild = Ta wersja rozwojowa jest przeznaczona do użytku wyłącznie z fikcyjnymi plikami. Nie używaj jej z prawdziwymi informacjami o zdrowiu.
 
 aiHelper-notice-shareHeading = Zapisywanie tekstu dla innej usługi AI
 
@@ -1817,7 +1817,7 @@ aiHelper-notice-adviceBody = Odpowiedzi napisane przez AI mogą być błędne. P
 
 aiHelper-notice-modelHeading = AI na tym urządzeniu
 
-aiHelper-notice-modelBody = AI korzysta z pliku modelu. To Ty wybierasz, jak go zdobyć: myCarlos może pobrać ten jeden plik z adresu podanego w Preferencjach (nic o Tobie ani o Twoich dokumentach nie jest wysyłane) albo możesz dodać plik, który już masz. Plik jest przechowywany poza sejfem, ponieważ nie zawiera żadnych danych o użytkowniku. myCarlos sprawdza go przed każdym użyciem i nie użyje pliku, który został zmieniony. Sama AI nie może korzystać z internetu ani otwierać innych plików.
+aiHelper-notice-modelBody = AI korzysta z pliku modelu. To Ty wybierasz, jak go zdobyć: myCarlos może pobrać ten jeden plik, jednorazowo i gdy tak zdecydujesz, z adresu podanego w Preferencjach (nic o Tobie ani o Twoich dokumentach nie jest wysyłane) albo możesz dodać plik, który już masz. Plik jest przechowywany poza sejfem, ponieważ nie zawiera niczego o Tobie. myCarlos sprawdza go przed każdym użyciem i nie użyje pliku, który został zmieniony. Sama AI nie może korzystać z internetu ani otwierać innych plików.
 
 aiHelper-notice-resultsBody = Odpowiedzi AI są zapisywane w sejfie, zaszyfrowane, razem z dokumentem, narzędziem, modelem i datą. Każda odpowiedź ma oznaczenie „Napisane przez AI, może zawierać błędy. Proszę skonsultować się z lekarzem.”
 

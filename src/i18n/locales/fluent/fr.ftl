@@ -1722,7 +1722,7 @@ ai-model-removeConfirm = Supprimer le modèle de cet ordinateur ? Vous pourrez l
 
 ai-model-damaged = Le fichier du modèle est endommagé ou a changé. Supprimez-le, puis ajoutez-le de nouveau.
 
-ai-model-unsupportedRam = Cet ordinateur n’a pas assez de mémoire pour l’assistant IA (il faut 8 Go).
+ai-model-unsupportedRam = Cet ordinateur n’a pas assez de mémoire pour l’assistant IA (il faut environ 8 Go).
 
 ai-model-unsupportedCpu = Le processeur de cet ordinateur n’est pas pris en charge par l’assistant IA.
 
@@ -1742,7 +1742,7 @@ ai-model-refusedBusy = L’assistant IA est en cours de travail. Réessayez quan
 
 ai-model-download = Télécharger le modèle par défaut
 
-ai-model-downloadNote = Télécharge un fichier ({ $size } Mo) depuis { $host }. Rien sur vous ni sur vos documents n’est envoyé.
+ai-model-downloadNote = Télécharge un fichier ({ $size } Mo), une seule fois, depuis { $host }, uniquement lorsque vous cliquez. Rien sur vous ni sur vos documents n’est envoyé. Le site de téléchargement voit votre adresse Internet, comme pour tout téléchargement.
 
 ai-model-downloading = Téléchargement et vérification… { $done } sur { $total } Mo
 
@@ -1761,9 +1761,9 @@ ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; 
 ai-summary-noSource = Source introuvable
 aiHelper-notice-title = À propos de l’assistant IA
 
-aiHelper-notice-introShare = myCarlos peut préparer le texte d’un document pour le service d’IA de votre choix. L’assistant IA n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger.
+aiHelper-notice-introShare = myCarlos peut préparer le texte d’un document pour le service d’IA de votre choix. L’assistant IA n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger. Son téléchargement montre l’adresse Internet de cet ordinateur au site de téléchargement.
 
-aiHelper-notice-intro = L’assistant IA explique un document en termes simples, ici sur cet appareil, et peut préparer le texte d’un document pour le service d’IA de votre choix. Il n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger.
+aiHelper-notice-intro = L’assistant IA explique un document en termes simples, ici sur cet appareil, et peut préparer le texte d’un document pour le service d’IA de votre choix. Il n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger. Son téléchargement montre l’adresse Internet de cet ordinateur au site de téléchargement.
 
 aiHelper-notice-testBuild = Cette version de développement est réservée aux fichiers fictifs. Ne l’utilisez pas avec de vraies informations de santé.
 
@@ -1783,7 +1783,7 @@ aiHelper-notice-adviceBody = Les réponses écrites par une IA peuvent être fau
 
 aiHelper-notice-modelHeading = L’IA sur cet appareil
 
-aiHelper-notice-modelBody = L’IA utilise un fichier de modèle. Vous choisissez comment l’obtenir : myCarlos peut télécharger ce fichier unique à l’adresse indiquée dans Préférences (rien sur vous ni sur vos documents n’est envoyé), ou vous pouvez ajouter un fichier que vous avez déjà. Ce fichier est conservé en dehors du coffre-fort, car il ne contient rien à votre sujet. myCarlos le vérifie avant chaque utilisation et n’utilise pas un fichier qui a été modifié. L’IA elle-même ne peut ni utiliser Internet ni ouvrir vos autres fichiers.
+aiHelper-notice-modelBody = L’IA utilise un fichier de modèle. Vous choisissez comment l’obtenir : myCarlos peut télécharger ce fichier unique, une seule fois et quand vous le choisissez, à l’adresse indiquée dans Préférences (rien sur vous ni sur vos documents n’est envoyé), ou vous pouvez ajouter un fichier que vous avez déjà. Ce fichier est conservé en dehors du coffre-fort, car il ne contient rien à votre sujet. myCarlos le vérifie avant chaque utilisation et n’utilise pas un fichier qui a été modifié. L’IA elle-même ne peut ni utiliser Internet ni ouvrir vos autres fichiers.
 
 aiHelper-notice-resultsBody = Les réponses de l’IA sont enregistrées dans le coffre-fort, chiffrées, avec le document, l’outil, le modèle et la date. Chaque réponse porte la mention « Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin. »
 

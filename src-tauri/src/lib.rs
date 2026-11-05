@@ -26,6 +26,8 @@ mod local_model;
 // ai_model_status to local_runner::Runner is a follow-up once the model is
 // chosen; until then ai_model_status answers "not installed" (local_model).
 mod local_runner;
+#[cfg(windows)]
+mod model_acl;
 mod model_download;
 mod pdf_unlock;
 mod pdf_view;
@@ -4206,6 +4208,11 @@ pub fn run() {
                 local_model::CATALOG,
             ));
             models.clean_leftovers();
+            // Windows: an existing folder gets the helper's read access too.
+            #[cfg(windows)]
+            if models.dir().exists() {
+                let _ = models.prepare_dir();
+            }
             app.manage(models);
             app.manage(Arc::new(PendingPicks::default()));
             app.manage(Arc::new(ReceivedFiles::default()));

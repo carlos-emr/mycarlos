@@ -22,13 +22,23 @@ export interface ModelInfo {
   sha256: string;
 }
 
+/** What `ai_model_status` says about the model on this computer. */
 export type ModelStatus =
   | { state: "notInstalled" }
   | { state: "installed"; model: ModelInfo }
-  /** This computer cannot run the helper: the row says why, with no Add. */
+  /** The model cannot run here: too little memory in all, a processor
+   * without the instructions it needs, or a system it does not run on yet
+   * (macOS, for now). */
   | { state: "unsupported"; reason: "ram" | "cpu" | "platform" }
-  /** The file is there but its size or hash is wrong: the row offers Remove. */
+  /** The model's file failed its check: Preferences can remove it. */
   | { state: "damaged" };
+
+/** One summary sentence as the model writes it: the words, and the words of
+ * the document it rests on, copied as they are. */
+export interface ModelSentence {
+  text: string;
+  quote: string;
+}
 
 /** One model the app accepts (`ai_model_catalog`). `sourceUrl` is shown as
  * text with a Copy button; the app opens nothing. */
@@ -63,13 +73,6 @@ export type ModelAddOutcome =
         | "unavailable";
     }
   | { outcome: "unsupported"; reason: "ram" | "cpu" | "platform" };
-
-/** One summary sentence as the model writes it: the words, and the words of
- * the document it rests on, copied as they are. */
-export interface ModelSentence {
-  text: string;
-  quote: string;
-}
 
 /** A summary sentence with its place in the document, or `null` when the
  * quote was not found there. The app never guesses a place. */
