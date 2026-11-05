@@ -12,6 +12,12 @@ file or opens a connection. Modes, by argument:
   --refuse          answers every request with a long error text
   --spawn-child F   starts a long-running child and writes its pid to F
   --allocate N      takes N bytes of memory before greeting
+  --read-all        reads every page (otherwise the first page only)
+  --cut-first       reads only the start of the first page
+  --last-page N     names page N as the last read, whatever was sent
+  --quote-unread    adds a sentence quoting a page it did not read
+  --read-fd         explains with the first bytes of descriptor 3
+  --greet-after S   waits that long before greeting (for the lock-during-start test)
 """
 import json
 import sys
@@ -33,6 +39,8 @@ if "--spawn-child" in args:
 if "--mute" in args:
     time.sleep(3600)
     sys.exit(0)
+if "--greet-after" in args:
+    time.sleep(float(args[args.index("--greet-after") + 1]))
 
 print(json.dumps({"hello": "mycarlos-model/1",
                   "model": {"name": "FAKE model", "sha256": "0" * 64}}), flush=True)
@@ -52,7 +60,12 @@ for line in sys.stdin:
               flush=True)
         continue
     if request.get("tool") == "summary":
-        text = request.get("text", "")
+        pages = request.get("pages", [])
+        read = pages if "--read-all" in args else pages[:1]
+        text = "\n\n".join(page["text"] for page in read)
+        last = read[-1]["index"] if read else 0
+        if "--last-page" in args:
+            last = int(args[args.index("--last-page") + 1])
         sentences = [s.strip() for s in text.replace("\n", " ").split(". ") if s.strip()]
         answer = []
         for sentence in sentences[: request.get("maxSentences", 5)]:
@@ -61,10 +74,16 @@ for line in sys.stdin:
             if "--unlocated" in args:
                 quote = "FAKE words the document never says"
             answer.append({"text": f"In short: {sentence.rstrip('.')}.", "quote": quote})
-        print(json.dumps({"id": request["id"], "sentences": answer}), flush=True)
+        if "--quote-unread" in args and len(pages) > 1:
+            answer.append({"text": "In short: the clinic phoned.", "quote": pages[1]["text"][:20]})
+        print(json.dumps({"id": request["id"], "sentences": answer, "lastPage": last,
+                          "lastPageCut": "--cut-first" in args}), flush=True)
     elif request.get("tool") == "explain":
-        print(json.dumps({"id": request["id"],
-                          "text": f"FAKE: {request.get('term', '')} means something plain."}),
-              flush=True)
+        if "--read-fd" in args:
+            import os
+            text = os.read(3, 64).decode()
+        else:
+            text = f"FAKE: {request.get('term', '')} means something plain."
+        print(json.dumps({"id": request["id"], "text": text}), flush=True)
     else:
         print(json.dumps({"id": request.get("id"), "error": "unknown tool"}), flush=True)

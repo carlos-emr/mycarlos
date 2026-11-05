@@ -1534,6 +1534,10 @@ ai-working = AI 助理正在處理…
 
 ai-failed = AI 助理未能完成。請重試。
 
+ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關閉其他程式後重試。
+
+ai-error-busy = 正在新增或移除 AI 助理的模型。請在完成後重試。
+
 ai-summary-pagesMissing = 部分頁面未能完整讀取，因此此摘要可能遺漏部分內容。
 
 ai-summary-noSource = 未找到來源
