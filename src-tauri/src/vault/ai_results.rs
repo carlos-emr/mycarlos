@@ -25,7 +25,7 @@ const MAX_LANG_LEN: usize = 16;
 const MAX_TERM_CHARS: usize = 200;
 const MAX_MODEL_NAME_CHARS: usize = 120;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AiTool {
     Summary,
