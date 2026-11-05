@@ -1044,12 +1044,26 @@ fn cut(text: &str, chars: usize) -> String {
     text.chars().take(chars).collect()
 }
 
-/// Whether the document contains the quote, word for word: whitespace runs
-/// count as one. The renderer places it exactly (locateQuote); here a quote
-/// that is not there at all is enough to drop the sentence.
+/// What a quote may start or end with that is not part of it, as the reader
+/// trims it (`locateQuote`): quotation marks, straight or curly, and `.,;:`.
+const QUOTE_ENDS: &[char] = &[
+    '"', '\'', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '.', ',', ';', ':',
+];
+
+/// Whether the document contains the quote, word for word, as the reader
+/// matches one (`locateQuote`): whitespace runs count as one, case does not
+/// count, and spaces and [`QUOTE_ENDS`] at either end of the quote are not
+/// part of it. A model often copies the colon of a "Label: value" line
+/// (": Admitted: 2026-10-01"). The renderer places it exactly; here a quote
+/// that is not there at all is enough to empty it.
 fn quote_in(text: &str, quote: &str) -> bool {
-    let fold = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-    let quote = fold(quote);
+    let fold = |s: &str| {
+        s.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    };
+    let quote = fold(quote.trim_matches(|c: char| c.is_whitespace() || QUOTE_ENDS.contains(&c)));
     !quote.is_empty() && fold(text).contains(&quote)
 }
 
@@ -1134,6 +1148,19 @@ mod tests {
         assert!(quote_in("The  blood\ntest was normal.", "blood test was"));
         assert!(!quote_in("The blood test was normal.", "blood work"));
         assert!(!quote_in("Anything.", "   "));
+        // As the reader matches: the ends' punctuation and the case do not count.
+        let letter = "Admitted: 2026-10-01\nIt lasts 3 to 5 minutes and settles with rest.";
+        assert!(quote_in(letter, ": Admitted: 2026-10-01"));
+        assert!(quote_in(
+            letter,
+            "\"it lasts 3 to 5 minutes and settles with rest\""
+        ));
+        assert!(quote_in(letter, "settles with rest.;"));
+        assert!(quote_in(letter, "“Admitted: 2026-10-01”"));
+        assert!(!quote_in(letter, ": Discharged: 2026-10-01"));
+        assert!(!quote_in(letter, " :.;'\" "));
+        // Inside the quote, the words still have to be there as written.
+        assert!(!quote_in(letter, "lasts 3 to 6 minutes"));
     }
 
     fn idle_config() -> RunnerConfig {
