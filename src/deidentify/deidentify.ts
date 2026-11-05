@@ -212,6 +212,9 @@ interface Finding {
   /** Found as another place a name stands: loses to anything a rule found
    * there. */
   swept?: true;
+  /** A relative named after a family word: never taken for a profile person
+   * because a surname is shared. */
+  kin?: true;
   /** Already decided (when more is removed later): kept as it was. */
   replacement?: string;
   /** The matching copy's text for this range (digits and letters folded),
@@ -226,7 +229,7 @@ interface Finding {
 
 interface MonthWord {
   month: number;
-  language: "en" | "fr";
+  language: "en" | "fr" | "es" | "pt" | "pl";
   full: boolean;
 }
 const MONTH_WORDS = new Map<string, MonthWord>();
@@ -291,6 +294,42 @@ FRENCH_SHORT.forEach((word, index) => {
   if (!MONTH_WORDS.has(bare))
     MONTH_WORDS.set(bare, { month: index + 1, language: "fr", full: false });
 });
+// Spanish, Portuguese and Polish month names (full words only: a short form
+// such as "ago" or "dic" is too often an ordinary word). Polish months are
+// written in the genitive in a date ("14 maja 2026"), so both forms count.
+const OTHER_MONTHS: [MonthWord["language"], string[]][] = [
+  [
+    "es",
+    "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre".split(
+      " ",
+    ),
+  ],
+  [
+    "pt",
+    "janeiro fevereiro março abril maio junho julho agosto setembro outubro novembro dezembro".split(
+      " ",
+    ),
+  ],
+  [
+    "pl",
+    "stycznia lutego marca kwietnia maja czerwca lipca sierpnia września października listopada grudnia".split(
+      " ",
+    ),
+  ],
+  [
+    "pl",
+    "styczeń luty marzec kwiecień maj czerwiec lipiec sierpień wrzesień październik listopad grudzień".split(
+      " ",
+    ),
+  ],
+];
+for (const [language, words] of OTHER_MONTHS)
+  words.forEach((word, index) => {
+    const key = fold(word);
+    if (!MONTH_WORDS.has(key))
+      MONTH_WORDS.set(key, { month: index + 1, language, full: true });
+  });
+MONTH_WORDS.set("setiembre", { month: 9, language: "es", full: true });
 const escapeRegExp = (text: string) =>
   text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Longest first, so that "mars" is not read as "mar" and "sept" as "sep".
@@ -313,6 +352,9 @@ interface DateForm {
     | "compact"
     | "monthYear"
     | "dayMonth"
+    | "zhYmd"
+    | "zhMonthYear"
+    | "zhMonthDay"
     | "monthDay"
     | "year";
   pattern: string;
@@ -343,6 +385,12 @@ const DATE_FORMS: DateForm[] = [
     read: (m) => ({ year: +m[1], month: +m[2], day: +m[3] }),
   },
   {
+    // 2026年10月8日 (Chinese)
+    id: "zhYmd",
+    pattern: "(?<!\\d)(\\d{4})年[ ]?(\\d{1,2})月[ ]?(\\d{1,2})日",
+    read: (m) => ({ year: +m[1], month: +m[2], day: +m[3] }),
+  },
+  {
     // 2026/10/08
     id: "slashYmd",
     pattern: "\\b(\\d{4})/(\\d{1,2})/(\\d{1,2})\\b",
@@ -358,7 +406,7 @@ const DATE_FORMS: DateForm[] = [
     // 8 October 2026, 17-Apr-1961, 2 mars 1958, 1er mars 1958, 8th October
     // 2026, 8th of October 2026
     id: "dmy",
-    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th)?(?:[ ]+of)?([ -])(${MONTH})[ ,-]*(\\d{4})\\b`,
+    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th)?(?:[ ]+(?:of|de|do))?([ -])(${MONTH})(?:[ ,-]+del?[ ]+|[ ,-]*)(\\d{4})\\b`,
     read: (m) => ({ year: +m[4], month: monthOf(m[3]), day: +m[1] }),
   },
   {
@@ -402,14 +450,28 @@ const DATE_FORMS: DateForm[] = [
   {
     // October 2026, oct. 2026, mars 2026: moved with its 15th day.
     id: "monthYear",
-    pattern: `(?<![\\p{L}\\d]|\\d[ -])(${MONTH})[ ,]+(\\d{4})\\b`,
+    pattern: `(?<![\\p{L}\\d]|\\d[ -])(${MONTH})(?:[ ,]+del?)?[ ,]+(\\d{4})\\b`,
     partial: "monthYear",
     read: (m) => ({ year: +m[2], month: monthOf(m[1]), day: 15 }),
   },
   {
+    // 2026年10月 (Chinese): moved with its 15th day.
+    id: "zhMonthYear",
+    pattern: "(?<!\\d)(\\d{4})年[ ]?(\\d{1,2})月(?![ ]?\\d{1,2}日)",
+    partial: "monthYear",
+    read: (m) => ({ year: +m[1], month: +m[2], day: 15 }),
+  },
+  {
+    // 10月8日 (Chinese), no year: a plain mark.
+    id: "zhMonthDay",
+    pattern: "(?<![\\d年])(\\d{1,2})月[ ]?(\\d{1,2})日",
+    partial: "monthDay",
+    read: (m) => ({ year: 2000, month: +m[1], day: +m[2] }),
+  },
+  {
     // 8 October, 8th October, le 8 octobre: no year, so a plain mark.
     id: "dayMonth",
-    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th)?(?:[ ]+of)?[ ]+(${MONTH})(?![\\p{L}\\d])`,
+    pattern: `\\b(\\d{1,2})(?:er|st|nd|rd|th)?(?:[ ]+(?:of|de|do))?[ ]+(${MONTH})(?![\\p{L}\\d])`,
     partial: "monthDay",
     read: (m) => ({ year: 2000, month: monthOf(m[2]), day: +m[1] }),
   },
@@ -1000,6 +1062,9 @@ interface Rule {
   /** Relational prose can also introduce a disease: flag that conflict. */
   reviewClinicalConflict?: true;
   upperPrefix?: true;
+  /** A name after a family word: a relative, who may share the patient's
+   * surname without being the patient. */
+  kin?: true;
   /** A day and a month: not when the month is the lower-case word "may"
    * ("may 5 mg"). */
   notLowerCaseMay?: true;
@@ -1054,8 +1119,29 @@ const RULES: Rule[] = [
   {
     kind: "dateOfBirth",
     pattern: new RegExp(
-      `(?:\\bDOB|\\bD\\.O\\.B\\.?|\\bDate of birth|\\bBirth ?date|\\bBorn|\\bDate de naissance|\\bDDN|\\bN[ée]e? le)[ \\t]*:?[ \\t]*(${DATE})`,
+      `(?:\\bDOB|\\bD\\.O\\.B\\.?|\\bDate of birth|\\bBirth ?date|\\bBorn(?:[ \\t]+on)?|(?<![\\p{L}\\d.])b\\.|\\bDate de naissance|\\bnaissance|\\bDDN|\\bN[ée]e?[ \\t]+(?:le|en)|` +
+        `\\bFecha de nacimiento|\\bNacid[oa](?:[ \\t]+el)?|\\bF\\.?[ \\t]?nac\\.?|\\bData de nascimento|\\bNascid[oa](?:[ \\t]+em)?|\\bNasc\\.|` +
+        `\\bData urodzenia|\\bur\\.|\\bUrodzon[ya](?:[ \\t]+dnia)?|出生日期|出生於|出生于|出生|生日)[ \\t]*:?[ \\t：]*(${DATE})`,
       "giu",
+    ),
+    group: 1,
+  },
+  // A date in brackets straight after an age ("Age 76 (2 January 1950)") is
+  // the date of birth.
+  {
+    kind: "dateOfBirth",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Age|Aged|Âge|Edad|Idade|Wiek|年龄|年齡)[ \\t]*:?[ \\t]*\\d{1,3}(?:[ \\t]*(?:years?(?:[ \\t]old)?|yrs?|ans|años|anos|lat|歲|岁))?[ \\t]*[,;]?[ \\t]*[(（][ \\t]*(${DATE})[ \\t]*[)）]`,
+      "giu",
+    ),
+    group: 1,
+  },
+  // A date in brackets straight after "Patient <name>" is the date of birth.
+  {
+    kind: "dateOfBirth",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Patient|Patiente|Paciente|Pacjent|Pacjentka|患者|病人)[ \\t]*:?[ \\t]+${CAPITALIZED_NAME}[ \\t]*[(（][ \\t]*(${DATE})[ \\t]*[)）]`,
+      "gu",
     ),
     group: 1,
   },
@@ -1249,6 +1335,145 @@ const RULES: Rule[] = [
       "gu",
     ),
     group: 1,
+    kin: true,
+  },
+  // More family and carer words, in the seven languages: "her guardian
+  // Vellin", "sa nièce, Jeanne", "su hija, Marta", "córka Anna", "o filho, Pedro".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase([
+        "guardian",
+        "caregiver",
+        "carer",
+        "neighbour",
+        "neighbor",
+        "grandmother",
+        "grandfather",
+        "grandson",
+        "granddaughter",
+        "grandchild",
+        "niece",
+        "nephew",
+        "aunt",
+        "uncle",
+        "cousin",
+        "sibling",
+        "stepmother",
+        "stepfather",
+        "stepson",
+        "stepdaughter",
+        "son-in-law",
+        "daughter-in-law",
+        "brother-in-law",
+        "sister-in-law",
+        "tuteur",
+        "tutrice",
+        "voisin",
+        "voisine",
+        "nièce",
+        "neveu",
+        "tante",
+        "oncle",
+        "cousine",
+        "grand-mère",
+        "grand-père",
+        "petit-fils",
+        "petite-fille",
+        "belle-fille",
+        "gendre",
+        "beau-père",
+        "belle-mère",
+        "beau-frère",
+        "belle-sœur",
+        "demi-frère",
+        "demi-sœur",
+        "aidant",
+        "aidante",
+        "esposo",
+        "esposa",
+        "hijo",
+        "hija",
+        "madre",
+        "padre",
+        "hermano",
+        "hermana",
+        "nieto",
+        "nieta",
+        "tío",
+        "tía",
+        "abuelo",
+        "abuela",
+        "yerno",
+        "nuera",
+        "cuñado",
+        "cuñada",
+        "tutor",
+        "tutora",
+        "vecino",
+        "vecina",
+        "cuidador",
+        "cuidadora",
+        "marido",
+        "filho",
+        "filha",
+        "mãe",
+        "pai",
+        "irmão",
+        "irmã",
+        "neto",
+        "neta",
+        "tio",
+        "avô",
+        "avó",
+        "genro",
+        "nora",
+        "cunhado",
+        "cunhada",
+        "vizinho",
+        "vizinha",
+        "cuidador",
+        "cuidadora",
+        "mąż",
+        "żona",
+        "syn",
+        "córka",
+        "matka",
+        "ojciec",
+        "brat",
+        "siostra",
+        "wnuk",
+        "wnuczka",
+        "babcia",
+        "dziadek",
+        "ciocia",
+        "wujek",
+        "teść",
+        "teściowa",
+        "zięć",
+        "synowa",
+        "szwagier",
+        "szwagierka",
+        "opiekun",
+        "opiekunka",
+        "sąsiad",
+        "sąsiadka",
+        "丈夫",
+        "妻子",
+        "儿子",
+        "女儿",
+        "母亲",
+        "父亲",
+        "兄弟",
+        "姐妹",
+        "孫子",
+        "监护人",
+        "監護人",
+      ])}[ \\t]*,?[ \\t]+(${CAPITALIZED_NAME})`,
+      "gu",
+    ),
+    group: 1,
+    kin: true,
   },
   // A closing, then the name on the next non-empty line.
   {
@@ -1442,6 +1667,7 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
             : rule.kind,
         start,
         end,
+        ...(rule.kin ? { kin: true as const } : {}),
       });
       // Only an immediately linked checksum control inherits a SIN/NAS
       // field. An unrelated nine-digit measurement never inherits it.
@@ -1514,6 +1740,29 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
             group: kind === "doctor" ? surname : undefined,
           });
     }
+  // A date in brackets right after a profile name is that person's date of
+  // birth ("Avery Example (14/03/1979)").
+  for (const name of options.knownNames) {
+    const parts = fold(name.trim())
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(escapeRegExp);
+    if (!parts.length) continue;
+    for (const order of nameOrders(parts))
+      for (const match of text.matchAll(
+        new RegExp(
+          `(?<![\\p{L}])${order}(?![\\p{L}])[ \\t]*[(（][ \\t]*(${DATE})[ \\t]*[)）]`,
+          "giu",
+        ),
+      )) {
+        const start = match.index + match[0].lastIndexOf(match[1]);
+        found.push({
+          kind: "dateOfBirth",
+          start,
+          end: start + match[1].length,
+        });
+      }
+  }
   // A known birth date is a date of birth wherever it stands, in any form.
   const birthDates = new Set(options.knownBirthDates ?? []);
   if (birthDates.size)
@@ -1529,7 +1778,35 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
           });
       }
     }
-  return found;
+  return dropMonthNames(text, found);
+}
+
+/**
+ * A month word inside a day-month-year (or month-year) date is part of the
+ * date, not a name: a vault name such as "Rose Mai" or "Avril Testeau" must
+ * not turn "le 14 mai 2026" into "le 14 [NAME 1] 2026". Names found only
+ * as the month word are dropped there, so the date rule wins.
+ */
+function dropMonthNames(text: string, found: Finding[]): Finding[] {
+  const spans: [number, number][] = [];
+  for (const form of DATE_FORMS)
+    for (const match of text.matchAll(new RegExp(form.pattern, "giu")))
+      spans.push([match.index, match.index + match[0].length]);
+  if (!spans.length) return found;
+  return found.filter((finding) => {
+    if (
+      finding.kind !== "name" &&
+      finding.kind !== "doctor" &&
+      finding.kind !== "possibleName"
+    )
+      return true;
+    const word = text
+      .slice(finding.start, finding.end)
+      .toLowerCase()
+      .replace(/\.$/, "");
+    if (!MONTH_WORDS.has(word)) return true;
+    return !spans.some(([a, b]) => a <= finding.start && finding.end <= b);
+  });
 }
 
 /** A name's parts as it stands in the document: as given, surname first
@@ -1648,6 +1925,7 @@ function otherPlaces(
         group: as,
         whole,
         swept: true,
+        ...(finding.kin ? { kin: true as const } : {}),
       });
     };
     const pattern = whole.trim().split(/\s+/).map(escapeRegExp).join("\\s+");
@@ -1720,7 +1998,7 @@ export function deidentify(
   const found = resolve(find(copy, options));
   const findings = resolve([
     ...found,
-    ...otherPlaces(copy, found, options),
+    ...dropMonthNames(copy, otherPlaces(copy, found, options)),
   ]).map((finding) => {
     const [start, end] = toSourceRange(matching, finding.start, finding.end);
     return {
@@ -1765,6 +2043,9 @@ function nextPlaceholder(
  * "[DATE 2]". */
 const baseOf = (replacement: string) =>
   replacement.replace(/,[^\][]*\]$/u, "]");
+
+/** 90 years in days: the age at which the app promises "90+". */
+const NINETY_YEARS = Math.floor(90 * 365.2425);
 
 function build(
   source: string,
@@ -1838,11 +2119,22 @@ function build(
   for (const reading of readings.values())
     if (reading.kind === "full") wholeDates.set(reading.iso, reading.epochDay);
   const calendar = [...wholeDates.entries()].sort((a, b) => a[1] - b[1]);
-  const earliestDay = calendar.length ? calendar[0][1] : 0;
+  // A date 90 or more years before the latest one is most likely an unread
+  // date of birth: a gap from it would give the patient's age to the day,
+  // and the 90+ promise would not hold. It still gets its own number, but
+  // is never the earliest date and never in a gap.
+  const latestDay = calendar.length ? calendar[calendar.length - 1][1] : 0;
+  const tooOld = new Set(
+    calendar
+      .filter(([, day]) => latestDay - day >= NINETY_YEARS)
+      .map(([iso]) => iso),
+  );
+  const earliest = calendar.find(([iso]) => !tooOld.has(iso));
+  const earliestDay = earliest ? earliest[1] : 0;
   let earliestNumber = 0;
-  calendar.forEach(([iso], index) => {
+  calendar.forEach(([iso]) => {
     const number = numberFor("date", dateWord, `date:${iso}`);
-    if (index === 0) earliestNumber = number;
+    if (earliest && iso === earliest[0]) earliestNumber = number;
   });
   const datePlaceholder = (reading: DateReading) => {
     if (reading.kind === "full") {
@@ -1851,7 +2143,9 @@ function build(
       return noted(
         dateWord,
         number,
-        days > 0 ? notes.daysAfter(days, dateWord, earliestNumber) : undefined,
+        days > 0 && !tooOld.has(reading.iso)
+          ? notes.daysAfter(days, dateWord, earliestNumber)
+          : undefined,
       );
     }
     return noted(
@@ -1904,7 +2198,8 @@ function build(
     } else {
       const person =
         finding.kind === "name" || finding.kind === "doctor"
-          ? (finding.person ?? personOf(finding.whole ?? original))
+          ? (finding.person ??
+            (finding.kin ? undefined : personOf(finding.whole ?? original)))
           : undefined;
       replacement = placeholder(
         person ? { ...finding, kind: "name", person } : finding,
