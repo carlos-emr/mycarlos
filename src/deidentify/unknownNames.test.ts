@@ -98,3 +98,23 @@ describe("record-number shapes and spaced social insurance numbers", () => {
     expect(send(text)).toBe(text);
   });
 });
+
+describe("a date after a record label stays a date; look-alikes stay", () => {
+  it.each([
+    "Visit 2026-10-12 was routine.",
+    "Exam 2026-05-20 showed no change.",
+    "Next visit 2026-05-28.",
+  ])("%s", (text) => {
+    const out = send(text);
+    expect(out).toMatch(/\[DATE \d/);
+    expect(out).not.toMatch(/RECORD NUMBER/);
+  });
+
+  it.each([
+    "She takes St. John's wort daily.",
+    "Dr. Reddy's tablets were refilled.",
+    "Plan B was discussed.",
+  ])("%s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});

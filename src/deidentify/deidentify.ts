@@ -1132,6 +1132,8 @@ interface Rule {
   /** Relational prose can also introduce a disease: flag that conflict. */
   reviewClinicalConflict?: true;
   upperPrefix?: true;
+  /** A value that reads as a whole date is a date, not this record number. */
+  skipDates?: true;
   /** A name after a family word: a relative, who may share the patient's
    * surname without being the patient. */
   kin?: true;
@@ -1197,6 +1199,7 @@ const RULES: Rule[] = [
       "giu",
     ),
     group: 1,
+    skipDates: true,
   },
   {
     kind: "dateOfBirth",
@@ -1749,10 +1752,16 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       )
         continue;
       if (
-        (rule.kind === "name" || rule.kind === "doctor") &&
+        (rule.kind === "name" ||
+          rule.kind === "doctor" ||
+          rule.kind === "address") &&
         isMedicalTerm(text, start, start + trimmed.length)
       )
         continue;
+      if (rule.skipDates) {
+        const reading = readDateText(trimmed, options.dayFirst ?? true);
+        if (reading !== null) continue;
+      }
       const end = start + trimmed.length;
       found.push({
         kind:
@@ -1971,6 +1980,8 @@ for (const entry of allowList.eponyms) {
   }
 }
 const DRUG_NAMES = new Set(allowList.drugs.map(guardKey));
+// Phrases that look like a name or an address ("Dr. Reddy's", "St. John's wort") but are not.
+const LOOKALIKES = allowList.lookalikes.map(guardKey);
 const GUARD_REACH = 60;
 function isMedicalTerm(text: string, start: number, end: number): boolean {
   const span = guardKey(text.slice(start, end));
@@ -1979,6 +1990,13 @@ function isMedicalTerm(text: string, start: number, end: number): boolean {
   const window = guardKey(text.slice(from, end + GUARD_REACH));
   const spanStart = start - from;
   const spanEnd = end - from;
+  for (const phrase of LOOKALIKES)
+    for (
+      let at = window.indexOf(phrase);
+      at >= 0;
+      at = window.indexOf(phrase, at + 1)
+    )
+      if (at < spanEnd && spanStart < at + phrase.length) return true;
   for (const word of new Set([span, ...span.split(/[^\p{L}'-]+/u)])) {
     const forms = EPONYM_FORMS.get(word);
     if (!forms) continue;
