@@ -5,6 +5,10 @@
   "windows": ["main"],
   "permissions": [
     "allow-runtime-info",
+    "allow-background-status",
+    "allow-background-set-keep-running",
+    "allow-background-set-start-at-login",
+    "allow-background-report-locale",
     "allow-ai-model-status",
     "allow-kdf-benchmark",
     "allow-vault-status",

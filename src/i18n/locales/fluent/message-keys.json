@@ -841,5 +841,16 @@
   "notifications.autoHelp",
   "notifications.autoPaused",
   "notifications.checkBusy",
-  "native.notice.arrival"
+  "native.notice.arrival",
+  "background.title",
+  "background.keepRunning",
+  "background.keepRunningHelp",
+  "background.startAtLogin",
+  "background.startAtLoginHelp",
+  "background.paused",
+  "background.unavailable",
+  "background.error",
+  "native.tray.open",
+  "native.tray.quit",
+  "native.tray.tooltip"
 ]

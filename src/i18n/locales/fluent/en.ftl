@@ -1822,3 +1822,15 @@ notifications-autoAllow = Check for clinic documents automatically while unlocke
 notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
 notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
+
+background-title = Running in the background
+background-keepRunning = Keep myCarlos running in the background after I close its window
+background-keepRunningHelp = When you close the window, myCarlos can stay in the background with an icon in the notification area (the menu bar on a Mac). Your vault locks as the window closes and stays locked until you open myCarlos and unlock it. Choose Quit from the icon to close myCarlos completely.
+background-startAtLogin = Start myCarlos when I sign in to this computer
+background-startAtLoginHelp = myCarlos starts when you sign in to this computer. With the choice above on, it starts quietly in the background with your vault locked. With it off, its window opens.
+background-paused = While your vault is locked, myCarlos cannot check for new clinic documents. Unlock it to check.
+background-unavailable = A background icon is not available on this computer. myCarlos closes completely when you close its window.
+background-error = This setting could not be changed. It stays as it was.
+native-tray-open = Open myCarlos
+native-tray-quit = Quit myCarlos
+native-tray-tooltip = myCarlos — vault locked

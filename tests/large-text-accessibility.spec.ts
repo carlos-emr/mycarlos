@@ -260,6 +260,15 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return current;
+        // No background mode in these journeys.
+        if (command === "background_status")
+          return {
+            supported: false,
+            keepRunning: false,
+            startAtLogin: false,
+            trayReady: false,
+            pausedWhileLocked: false,
+          };
         if (command === "vault_notification_status")
           return {
             supported: false,

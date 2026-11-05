@@ -13,4 +13,6 @@
 ; The helper's AppContainer profile, made the first time the helper runs, goes with myCarlos.
 !macro NSIS_HOOK_POSTUNINSTALL
   System::Call 'userenv::DeleteAppContainerProfile(w "mycarlos.pdfhelper") i .r0'
+  ; "Start myCarlos when I sign in" (desktop_background.rs) is a per-user Run value; it goes too.
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "myCarlos"
 !macroend

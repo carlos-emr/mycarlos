@@ -1686,3 +1686,15 @@ notifications-autoAllow = 保险库解锁时自动检查诊所文档
 notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
 notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
 notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。
+
+background-title = 后台运行
+background-keepRunning = 关闭窗口后让 myCarlos 继续在后台运行
+background-keepRunningHelp = 关闭窗口后，myCarlos 可以在后台继续运行，并在通知区域（Mac 上为菜单栏）显示一个图标。保险库会在窗口关闭时锁定，并保持锁定，直到您打开 myCarlos 并解锁。从图标中选择“退出”可完全关闭 myCarlos。
+background-startAtLogin = 登录此电脑时启动 myCarlos
+background-startAtLoginHelp = 您登录此电脑时，myCarlos 会启动。上面的选项开启时，它会在后台静默启动，保险库保持锁定；关闭时，它的窗口会打开。
+background-paused = 保险库锁定期间，myCarlos 无法检查诊所的新文档。解锁后即可检查。
+background-unavailable = 此电脑不支持后台图标。关闭窗口时，myCarlos 会完全关闭。
+background-error = 无法更改此设置，它保持原样。
+native-tray-open = 打开 myCarlos
+native-tray-quit = 退出 myCarlos
+native-tray-tooltip = myCarlos — 保险库已锁定

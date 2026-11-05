@@ -1686,3 +1686,15 @@ notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
 notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
+
+background-title = 背景執行
+background-keepRunning = 關閉視窗後讓 myCarlos 繼續在背景執行
+background-keepRunningHelp = 關閉視窗後，myCarlos 可以在背景繼續執行，並在通知區域（Mac 上為選單列）顯示一個圖示。保險庫會在視窗關閉時鎖定，並保持鎖定，直到您開啟 myCarlos 並解鎖。從圖示選擇「結束」可完全關閉 myCarlos。
+background-startAtLogin = 登入此電腦時啟動 myCarlos
+background-startAtLoginHelp = 您登入此電腦時，myCarlos 會啟動。上面的選項開啟時，它會在背景靜默啟動，保險庫保持鎖定；關閉時，它的視窗會開啟。
+background-paused = 保險庫鎖定期間，myCarlos 無法檢查診所的新文件。解鎖後即可檢查。
+background-unavailable = 此電腦不支援背景圖示。關閉視窗時，myCarlos 會完全關閉。
+background-error = 無法變更此設定，它維持原樣。
+native-tray-open = 開啟 myCarlos
+native-tray-quit = 結束 myCarlos
+native-tray-tooltip = myCarlos — 保險庫已鎖定

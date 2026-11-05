@@ -1890,3 +1890,15 @@ notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy se
 notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Sprawdzanie może trwać, gdy Windows blokuje powiadomienia. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie.
 notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Dokumenty z przychodni” i wybrać „Sprawdź nowe dokumenty”.
 notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za chwilę ponownie wybrać „Sprawdź nowe dokumenty”.
+
+background-title = Praca w tle
+background-keepRunning = Utrzymuj myCarlos w tle po zamknięciu jego okna
+background-keepRunningHelp = Po zamknięciu okna myCarlos może pozostać w tle z ikoną w obszarze powiadomień (na komputerze Mac — na pasku menu). Sejf blokuje się wraz z zamknięciem okna i pozostaje zablokowany, dopóki nie otworzysz myCarlos i go nie odblokujesz. Wybierz z ikony polecenie Zakończ, aby całkowicie zamknąć myCarlos.
+background-startAtLogin = Uruchamiaj myCarlos po zalogowaniu się na tym komputerze
+background-startAtLoginHelp = myCarlos uruchamia się po zalogowaniu się na tym komputerze. Gdy powyższy wybór jest włączony, uruchamia się po cichu w tle z zablokowanym sejfem. Gdy jest wyłączony, otwiera się jego okno.
+background-paused = Gdy sejf jest zablokowany, myCarlos nie może sprawdzać nowych dokumentów z przychodni. Odblokuj go, aby sprawdzić.
+background-unavailable = Ikona w tle nie jest dostępna na tym komputerze. myCarlos zamyka się całkowicie po zamknięciu jego okna.
+background-error = Nie udało się zmienić tego ustawienia. Pozostaje bez zmian.
+native-tray-open = Otwórz myCarlos
+native-tray-quit = Zakończ myCarlos
+native-tray-tooltip = myCarlos — sejf zablokowany
