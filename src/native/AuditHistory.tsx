@@ -44,6 +44,7 @@ const howLabels: Record<string, MessageKey> = {
   damaged: "interface.history.how.damaged",
   camera: "interface.history.how.camera",
   replaced: "interface.history.how.replaced",
+  anonymizedText: "interface.history.how.anonymizedText",
 };
 
 /** Dates keep the computer's own format, whatever language myCarlos uses (D130), as

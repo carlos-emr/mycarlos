@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { page } from "vitest/browser";
 import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
 import { humanText } from "../test/humanText";
@@ -153,6 +154,56 @@ describe("AuditHistory verified native results", () => {
       expect(shown.bridge.history).toHaveBeenCalledOnce();
     },
   );
+
+  it("keeps audit detail labels and values inside their columns with enlarged text on a narrow screen", async () => {
+    const original = {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      fontSize: document.documentElement.style.fontSize,
+    };
+    try {
+      await page.viewport(320, 760);
+      document.documentElement.style.fontSize = "200%";
+      render(
+        <AuditHistory
+          {...props(
+            bridge(
+              vi.fn().mockResolvedValue(
+                complete([
+                  entry({
+                    event: "renamed",
+                    oldName: "FAKE previous.pdf",
+                    previousSession: "notRecorded",
+                  }),
+                ]),
+              ),
+            ),
+          )}
+        />,
+      );
+      const article = await screen.findByRole("article");
+      expect(within(article).getByText("FAKE previous.pdf")).toBeVisible();
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
+        window.innerWidth,
+      );
+      for (const label of article.querySelectorAll("dt")) {
+        expect(label, label.textContent ?? "History label").toBeVisible();
+        expect(
+          label.scrollWidth,
+          label.textContent ?? "History label",
+        ).toBeLessThanOrEqual(label.clientWidth + 1);
+      }
+      for (const value of article.querySelectorAll("dd")) {
+        expect(
+          value.scrollWidth,
+          value.textContent ?? "History value",
+        ).toBeLessThanOrEqual(value.clientWidth + 1);
+      }
+    } finally {
+      document.documentElement.style.fontSize = original.fontSize;
+      await page.viewport(original.width, original.height);
+    }
+  });
 
   it("shows only the localized verification failure and no partial history", async () => {
     const shown = props(bridge(vi.fn().mockRejectedValue(unverified)));

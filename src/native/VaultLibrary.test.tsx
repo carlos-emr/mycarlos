@@ -12,7 +12,20 @@ import { describe, expect, it, vi } from "vitest";
 import type { VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const snapshot: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [{ id: "profile-1", displayName: "FAKE Avery", createdAtMs: 1 }],
   folders: [
     {
@@ -47,7 +60,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
     updateFolder: vi.fn().mockResolvedValue(undefined),
     renameProfile: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
-    snapshot: vi.fn().mockResolvedValue(shown),
+    snapshot: vi.fn().mockImplementation(async () => captureSnapshot(shown)),
     history: vi.fn().mockResolvedValue({
       entries: [],
       laterEntries: [],
@@ -56,6 +69,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       checkedFromMs: null,
     }),
     isLockedPdf: vi.fn().mockResolvedValue(false),
+    aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   render(
@@ -252,6 +266,7 @@ describe("clinic service dates", () => {
   });
 });
 const filed: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: snapshot.profiles,
   folders: [
     folder("lab", "FAKE Lab results", null),
@@ -614,8 +629,23 @@ describe("VaultLibrary controls for older patients (#67)", () => {
     ],
   };
 
-  it("puts words on its buttons and shows both sort choices", () => {
-    renderLibrary(withRecord);
+  it("puts words on its buttons and sorts the documents with both choices", () => {
+    renderLibrary({
+      ...withRecord,
+      records: [
+        withRecord.records[0],
+        {
+          ...record("blood-pressure", "FAKE Blood pressure log.pdf", []),
+          importedAtMs: Date.UTC(2026, 0, 14, 12),
+        },
+        {
+          ...record("manual-document", "FAKE Manual document.pdf", []),
+          importedAtMs: Date.UTC(2026, 0, 15, 12),
+        },
+      ],
+    });
+    const documentNames = () =>
+      humanValue(shownDocuments().map(([name]) => name));
     const details = screen.getByRole("button", {
       name: humanText("Details for FAKE Results.pdf"),
     });
@@ -636,12 +666,33 @@ describe("VaultLibrary controls for older patients (#67)", () => {
     expect(
       within(sort).getByRole("radio", { name: humanText("Newest first") }),
     ).toBeChecked();
+    expect(documentNames()).toEqual([
+      "FAKE Results.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Blood pressure log.pdf",
+    ]);
     fireEvent.click(
       within(sort).getByRole("radio", { name: humanText("Name A–Z") }),
     );
     expect(
       within(sort).getByRole("radio", { name: humanText("Name A–Z") }),
     ).toBeChecked();
+    expect(documentNames()).toEqual([
+      "FAKE Blood pressure log.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Results.pdf",
+    ]);
+    fireEvent.click(
+      within(sort).getByRole("radio", { name: humanText("Newest first") }),
+    );
+    expect(
+      within(sort).getByRole("radio", { name: humanText("Newest first") }),
+    ).toBeChecked();
+    expect(documentNames()).toEqual([
+      "FAKE Results.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Blood pressure log.pdf",
+    ]);
     fireEvent.click(details);
     expect(
       screen.getByRole("button", { name: humanText("Close document details") }),
@@ -791,6 +842,67 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       "FAKE June Letters",
       "Shared with me",
     ]);
+  });
+
+  it("forgets the previous person's bulk selection and destination before moving another person's document", async () => {
+    const shown: VaultSnapshot = {
+      ...twoPatients,
+      folders: [
+        ...twoPatients.folders,
+        {
+          ...folder("blake-visits", "FAKE Blake visits", null),
+          profileId: "profile-2",
+        },
+      ],
+      records: [
+        record("avery-document", "FAKE Avery note.pdf", []),
+        {
+          ...record("blake-document", "FAKE Blake note.pdf", ["blake-visits"]),
+          profileId: "profile-2",
+        },
+      ],
+    };
+    const { bridge } = renderLibrary(shown);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Select FAKE Avery note.pdf"),
+      }),
+    );
+    const oldDestination = screen.getByLabelText(humanText("Move selected to"));
+    fireEvent.change(oldDestination, { target: { value: "letters" } });
+    expect(oldDestination).toHaveValue("letters");
+    expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+
+    openFolder(/^FAKE Blake visits/);
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: humanText("FAKE Blake visits"),
+      }),
+    ).toBeVisible();
+    expect(screen.queryByLabelText(humanText("Move selected to"))).toBeNull();
+    expect(screen.queryByText(humanText("FAKE Avery note.pdf"))).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Select FAKE Blake note.pdf"),
+      }),
+    );
+    const destination = screen.getByLabelText(humanText("Move selected to"));
+    expect(destination).toHaveValue("");
+    expect(
+      within(destination).queryByRole("option", {
+        name: humanText("FAKE Letters"),
+      }),
+    ).toBeNull();
+    // A select can visually fall back to the first option while retaining a
+    // stale folder ID in state. Check the actual move, not just its label.
+    fireEvent.click(screen.getByRole("button", { name: humanText("Move") }));
+    await vi.waitFor(() =>
+      expect(bridge.assignFoldersBatch).toHaveBeenCalledExactlyOnceWith(
+        ["blake-document"],
+        [],
+      ),
+    );
   });
 
   it("shows Shared with me's whole name in the sidebar, with its new count on one line (#61)", () => {

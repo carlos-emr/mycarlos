@@ -24,6 +24,7 @@ const hiddenRecord = (id: string, profileId: string): VaultRecord => ({
 
 function library(options: { busy?: boolean; readOnly?: boolean } = {}) {
   let current: VaultSnapshot = {
+    capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
     profiles: [
       { id: "avery", displayName: "FAKE Avery", createdAtMs: 1 },
       { id: "jamie", displayName: "FAKE Jamie", createdAtMs: 1 },
