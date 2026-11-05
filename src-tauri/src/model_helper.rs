@@ -539,8 +539,12 @@ pub(crate) fn thinking_off(template: &str, templated: String) -> String {
 }
 
 /// Whether a model's words still carry its thinking: they are never shown as an answer.
+/// Qwen's thinking is in `<think>…</think>`; Gemma 4's in `<|channel>thought…<channel|>`
+/// (written out as text: llama.cpp shows its user-defined tokens).
 pub(crate) fn thinks(text: &str) -> bool {
-    text.contains("<think>") || text.contains("</think>")
+    ["<think>", "</think>", "<|channel>", "<channel|>"]
+        .iter()
+        .any(|marker| text.contains(marker))
 }
 
 /// An explanation the model wrote; when it stopped at its cap mid-sentence, up to the last
@@ -982,6 +986,16 @@ mod tests {
         assert_eq!(read_explanation("Fine. <think>more", false), None);
         let thinking = r#"{"sentences":[{"text":"<think>plan</think>","quote":"Normal study."}]}"#;
         assert_eq!(read_summary(thinking, false), None);
+        // Gemma 4's thinking, as its template writes it, is never shown either.
+        assert_eq!(
+            read_explanation(
+                "<|channel>thought\nLet me see.\n<channel|>It is a test.",
+                false
+            ),
+            None
+        );
+        let gemma = r#"{"sentences":[{"text":"Normal study.","quote":"<|channel>thought"}]}"#;
+        assert_eq!(read_summary(gemma, false), None);
     }
 
     #[test]
