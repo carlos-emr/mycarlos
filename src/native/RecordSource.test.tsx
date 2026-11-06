@@ -57,6 +57,8 @@ const snapshot: VaultSnapshot = {
   records: [VERIFIED, MANUAL, CLAIMS],
   recovery: null,
   recoveryKeySetAtMs: 1,
+  // Main's snapshots carry their native capture (epoch and sequence).
+  capture: { epoch: "00000000-0000-4000-8000-000000000139", sequence: 1 },
 };
 
 function renderLibrary() {

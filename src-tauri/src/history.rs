@@ -87,6 +87,7 @@ pub enum HistoryEvent {
     /// The patient chose Try again for a clinic: its remembered refusals
     /// were forgotten, so its documents are checked again (#143).
     DeliveryRefusalsCleared,
+    ReadingAidFiled,
 }
 
 /// A folder as it was named at the time of the event.

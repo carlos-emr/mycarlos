@@ -321,6 +321,51 @@ describe("CreateVault passphrase help (#69)", () => {
     expect(rule("Not easy to guess")).toHaveAttribute("data-met", "false");
   });
 
+  it("drops stale passphrase rules when only the person's name changes", async () => {
+    vi.useFakeTimers();
+    let answerEarlier!: (rules: typeof allMet) => void;
+    const earlier = new Promise<typeof allMet>((resolve) => {
+      answerEarlier = resolve;
+    });
+    const checkRules = vi
+      .fn()
+      .mockReturnValueOnce(earlier)
+      .mockResolvedValueOnce({ ...allMet, notAName: false })
+      .mockResolvedValue(allMet);
+    const { onCreate } = renderCreate(checkRules);
+    try {
+      type("Whose records will you keep here?", "FAKE First");
+      type("Passphrase", strong);
+      type("Confirm passphrase", strong);
+      await pause();
+      expect(checkRules).toHaveBeenCalledExactlyOnceWith(strong, "FAKE First");
+
+      // The secret is unchanged; its assessment now belongs to a different
+      // name. The earlier allowed result must not approve that new pairing.
+      type("Whose records will you keep here?", "River");
+      await act(async () => answerEarlier(allMet));
+      expect(rule("Not your name")).toHaveAttribute("data-met", "false");
+      await pause();
+      expect(checkRules).toHaveBeenNthCalledWith(2, strong, "River");
+      const create = screen.getByRole("button", {
+        name: humanText("Create vault"),
+      });
+      expect(create).toBeDisabled();
+      expect(onCreate).not.toHaveBeenCalled();
+
+      type("Whose records will you keep here?", "FAKE Rowan");
+      await pause();
+      expect(checkRules).toHaveBeenNthCalledWith(3, strong, "FAKE Rowan");
+      expect(rule("Not your name")).toHaveAttribute("data-met", "true");
+      expect(create).toBeEnabled();
+      fireEvent.click(create);
+      expect(onCreate).toHaveBeenCalledExactlyOnceWith("FAKE Rowan", strong);
+      expect(checkRules).toHaveBeenCalledTimes(3);
+    } finally {
+      await act(async () => answerEarlier(allMet));
+    }
+  });
+
   it("never asks again once Create is pressed", async () => {
     vi.useFakeTimers();
     const { checkRules, onCreate } = renderCreate();
