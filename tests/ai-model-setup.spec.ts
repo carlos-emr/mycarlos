@@ -155,7 +155,7 @@ test("the download's progress bar fits the row, wide and at 320 px with 200% tex
   page,
   context,
 }) => {
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await holdAi(page, AI_COMMANDS.download);
   await rowButton(row, "ai.model.download").click();
   // Half way, as the text says.
@@ -207,7 +207,7 @@ test("the download's progress bar fits the row, wide and at 320 px with 200% tex
 test("a download still running when the patient comes back shows its bar, not the button (#275)", async ({
   page,
 }) => {
-  let row = await openPreferences(page);
+  let row = await openAiSettings(page);
   await holdAi(page, AI_COMMANDS.download);
   await rowButton(row, "ai.model.download").click();
   await expect(row.getByRole("status")).toHaveText(
@@ -221,7 +221,7 @@ test("a download still running when the patient comes back shows its bar, not th
     page.getByRole("heading", { name: en("security.title"), level: 1 }),
   ).toBeVisible();
   await sidebar(page)
-    .getByRole("button", { name: en("sidebar.preferences"), exact: true })
+    .getByRole("button", { name: en("ai.preferences.title"), exact: true })
     .click();
   row = aiRow(page);
   await expect(
