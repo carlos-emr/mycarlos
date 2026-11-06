@@ -1386,7 +1386,7 @@ portal-connecting = 正在连接并申请诊所批准…
 
 portal-errorBusy = 另一项诊所操作正在进行。请等其完成后重试。
 
-portal-linkedApprovalIssue = 设备已关联，但无法确认批准请求。请查看「安全」的「诊所文档」下的状态，了解下一步操作。
+portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「诊所文档」下的批准状态，了解下一步操作。
 
 portal-retryApproval = 重试已保存的批准请求
 

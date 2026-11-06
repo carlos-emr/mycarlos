@@ -11010,6 +11010,216 @@ describe("clinic connection operations", () => {
     },
   );
 
+  it.each([
+    ["during save", "announce"],
+    ["before announcement", "announce"],
+    ["during save", "lock"],
+    ["before announcement", "lock"],
+    ["before announcement", "change document"],
+    ["before announcement", "rename"],
+    ["before announcement", "change person"],
+  ] as const)(
+    "settles photo and clinic results arriving %s before %s",
+    async (arrival, nextAction) => {
+      let current = clinicSnapshot;
+      const pending = pendingConnection();
+      let finishPhoto!: (outcome: ImportOutcome) => void;
+      const streamCanvas = document.createElement("canvas");
+      streamCanvas.width = 64;
+      streamCanvas.height = 48;
+      const paint = () => streamCanvas.getContext("2d")!.fillRect(0, 0, 64, 48);
+      paint();
+      const stream = streamCanvas.captureStream(15);
+      const painter = window.setInterval(paint, 40);
+      const camera = vi
+        .spyOn(navigator.mediaDevices, "getUserMedia")
+        .mockResolvedValue(stream);
+      window.localStorage.setItem("mycarlos.cameraExplained.v1", "1");
+      onTestFinished(() => {
+        vi.useRealTimers();
+        camera.mockRestore();
+        window.clearInterval(painter);
+        stream.getTracks().forEach((track) => track.stop());
+        window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+      });
+      const photo = {
+        ...clinicSnapshot.records[0],
+        id: "FAKE-photo-notice",
+        displayName: "FAKE_Camera.jpg",
+        mediaType: "application/octet-stream",
+      };
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        platform: vi.fn().mockResolvedValue("windows"),
+        snapshot: vi.fn(async () => captureSnapshot(current)),
+        unlock: vi.fn(async () => captureSnapshot(current)),
+        connectPortal: vi.fn().mockReturnValue(pending.promise),
+        checkDocuments: vi
+          .fn()
+          .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+        savePhoto: vi.fn().mockReturnValue(
+          new Promise<ImportOutcome>((resolve) => {
+            finishPhoto = resolve;
+          }),
+        ),
+        isPhoto: vi.fn(async (id) => id === photo.id),
+        renameRecord: vi.fn(async (id, name) => {
+          current = {
+            ...current,
+            records: current.records.map((record) =>
+              record.id === id ? { ...record, displayName: name } : record,
+            ),
+          };
+        }),
+      });
+      render(<VaultApp bridge={bridge} />);
+      const form = await openConnectForm();
+      await act(async () => fireEvent.submit(form));
+      await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+      const user = userEvent.setup();
+      await user.click(
+        screen.getAllByRole("button", { name: /^My records/ })[0],
+      );
+      await user.click(screen.getByRole("button", { name: "Take a photo" }));
+      const shutter = screen.getByRole("button", { name: "Take photo" });
+      await waitFor(() => expect(shutter).toBeEnabled());
+      fireEvent.click(shutter);
+      fireEvent.click(screen.getByRole("button", { name: "Use photo" }));
+      await waitFor(() => expect(bridge.savePhoto).toHaveBeenCalledOnce());
+
+      // Control the actual deferred announcement, after camera encoding has
+      // finished, without changing the native save or clinic promise order.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const finishClinic = async () => {
+        current = { ...current, portalLinks: [connectedLink] };
+        if (nextAction === "change person")
+          current = {
+            ...current,
+            profiles: [
+              ...current.profiles,
+              {
+                id: "FAKE-other-person",
+                displayName: "FAKE Second Patient",
+                createdAtMs: 2,
+              },
+            ],
+          };
+        await act(async () =>
+          pending.finish({ link: connectedLink, approvalError: null }),
+        );
+      };
+      if (arrival === "during save") await finishClinic();
+      current = { ...current, records: [...current.records, photo] };
+      await act(async () =>
+        finishPhoto({ imported: [photo.id], skippedDuplicates: [] }),
+      );
+      const details = screen.getByRole("dialog", { name: photo.displayName });
+      expect(details).toBeVisible();
+      if (arrival === "before announcement") await finishClinic();
+      const closeDetails = () =>
+        fireEvent.click(
+          within(details).getByRole("button", {
+            name: "Close document details",
+          }),
+        );
+      if (nextAction === "lock") {
+        closeDetails();
+        await act(async () =>
+          fireEvent.click(
+            screen.getAllByRole("button", { name: /Lock now/ })[0],
+          ),
+        );
+        expect(
+          screen.getByRole("heading", { name: "Unlock your vault" }),
+        ).toBeVisible();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+        });
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved|Device linked/),
+        ).not.toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+          target: { value: "FAKE photo notice passphrase" },
+        });
+        await act(async () =>
+          fireEvent.submit(
+            screen.getByRole("button", { name: "Unlock" }).closest("form")!,
+          ),
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+        });
+        expect(
+          screen.getByRole("heading", { name: "My records" }),
+        ).toBeVisible();
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved|Device linked/),
+        ).not.toBeInTheDocument();
+        expect(bridge.savePhoto).toHaveBeenCalledOnce();
+        return;
+      }
+      if (nextAction === "change document") {
+        closeDetails();
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", { name: "FAKE_Results.pdf" }),
+          ),
+        );
+      } else if (nextAction === "change person") {
+        closeDetails();
+        const otherPerson = () =>
+          within(
+            screen.getByRole("navigation", { name: "Record library" }),
+          ).getByRole("button", { name: /^FAKE Second Patient\b/ });
+        await act(async () => fireEvent.click(otherPerson()));
+        expect(otherPerson()).toHaveAttribute("aria-current", "page");
+      } else if (nextAction === "rename") {
+        await act(async () =>
+          fireEvent.click(
+            within(details).getByRole("button", { name: "Rename document" }),
+          ),
+        );
+        fireEvent.change(screen.getByRole("textbox", { name: "File name" }), {
+          target: { value: "FAKE_Renamed" },
+        });
+        await act(async () =>
+          fireEvent.click(screen.getByRole("button", { name: "Save name" })),
+        );
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+      });
+      const clinicNotice =
+        "Device linked. Its approval status is shown in Security, under Clinic documents.";
+      if (nextAction === "announce")
+        expect(within(details).getByRole("status")).toHaveHumanTextContent(
+          `FAKE_Camera.jpg was saved in myCarlos. ${clinicNotice}`,
+        );
+      else if (nextAction === "rename")
+        expect(
+          within(
+            screen.getByRole("dialog", { name: "FAKE_Renamed.jpg" }),
+          ).getByRole("status"),
+        ).toHaveHumanTextContent(
+          `Document renamed to FAKE_Renamed.jpg. ${clinicNotice}`,
+        );
+      else if (nextAction === "change document")
+        expect(
+          within(
+            screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+          ).getByRole("status"),
+        ).toHaveHumanTextContent(clinicNotice);
+      else
+        expect(screen.getByText(clinicNotice, { exact: true })).toBeVisible();
+      if (nextAction !== "announce")
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved/),
+        ).not.toBeInTheDocument();
+      expect(bridge.savePhoto).toHaveBeenCalledOnce();
+      expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    },
+  );
+
   it("forgets a held clinic result when the vault locks", async () => {
     let current = clinicSnapshot;
     const pending = pendingConnection();
