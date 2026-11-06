@@ -819,7 +819,19 @@ impl Runner {
         &self,
         ticket: Ticket,
         tool: &str,
+        request: serde_json::Value,
+    ) -> Result<(Answer, ModelInfo), RunnerError> {
+        self.ask_with_sampler(ticket, tool, request, sample_busy_share)
+    }
+
+    /// Keep sampling outside the process lock; a per-call sampler also lets tests
+    /// control cancellation during that interval without a shared timing hook.
+    fn ask_with_sampler(
+        &self,
+        ticket: Ticket,
+        tool: &str,
         mut request: serde_json::Value,
+        sample: impl FnOnce() -> Option<f64>,
     ) -> Result<(Answer, ModelInfo), RunnerError> {
         if !self.is_current(ticket) {
             return Err(RunnerError::Cancelled);
@@ -838,8 +850,13 @@ impl Runner {
                 .unwrap_or_else(|e| e.into_inner())
                 .as_ref()
                 .is_some_and(|running| running.generation_threads.is_some());
-        let busy = if chooses { sample_busy_share() } else { None };
+        let busy = if chooses { sample() } else { None };
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
+        // A newer request may have reused this helper while sampling ran. The
+        // stale caller must not send to it, change its status, or drop it.
+        if !self.is_current(ticket) {
+            return Err(RunnerError::Cancelled);
+        }
         let Some(running) = slot.as_mut() else {
             return Err(RunnerError::NotRunning);
         };
@@ -1658,6 +1675,105 @@ mod tests {
                 runner.summarize(runner.ticket(), &request()),
                 Err(RunnerError::NotRunning)
             );
+        }
+
+        #[test]
+        fn a_ticket_cancelled_while_sampling_leaves_the_newer_requests_helper_alone() {
+            use std::sync::atomic::AtomicUsize;
+            use std::sync::mpsc;
+
+            struct CountWrites {
+                input: Box<dyn Write + Send>,
+                bytes: Arc<AtomicUsize>,
+            }
+
+            impl Write for CountWrites {
+                fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                    let written = self.input.write(bytes)?;
+                    self.bytes.fetch_add(written, Ordering::SeqCst);
+                    Ok(written)
+                }
+
+                fn flush(&mut self) -> std::io::Result<()> {
+                    self.input.flush()
+                }
+            }
+
+            let mut adaptive = config(&[], GIB);
+            adaptive.generation_threads = Some(4);
+            let runner = Arc::new(Runner::new(adaptive));
+            let model = runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let written = Arc::new(AtomicUsize::new(0));
+            {
+                let mut slot = runner.sidecar.lock().unwrap();
+                let running = slot.as_mut().unwrap();
+                let input = std::mem::replace(&mut running.input, Box::new(std::io::sink()));
+                running.input = Box::new(CountWrites {
+                    input,
+                    bytes: Arc::clone(&written),
+                });
+            }
+            let helper_state = || {
+                let slot = runner.sidecar.lock().unwrap();
+                let running = slot.as_ref().expect("the resident helper must remain");
+                let Process::Plain(child) = &running.process;
+                (child.id(), running.next_id)
+            };
+            let (pid, next_id) = helper_state();
+            assert_eq!(next_id, 1);
+
+            let launch = |ticket, term: &'static str| {
+                let (sampled_tx, sampled_rx) = mpsc::channel();
+                let (release_tx, release_rx) = mpsc::channel();
+                let worker = Arc::clone(&runner);
+                let asked = std::thread::spawn(move || {
+                    worker.ask_with_sampler(
+                        ticket,
+                        "explain",
+                        serde_json::json!({ "term": term, "context": TEXT, "lang": "en" }),
+                        || {
+                            sampled_tx.send(()).unwrap();
+                            release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                            Some(0.0)
+                        },
+                    )
+                });
+                // Both requests must actually enter the adaptive sampling path.
+                sampled_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                (release_tx, asked)
+            };
+
+            let (release_old, old) = launch(runner.ticket(), "older");
+            let newer = runner.ticket();
+            // As the runtime does before its new request: keep the resident helper.
+            assert_eq!(runner.start(&Fixed(Some(8 * GIB))).unwrap(), model);
+            assert_eq!(helper_state(), (pid, 1));
+            let (release_new, new) = launch(newer, "newer");
+
+            // Finish the stale sample first, with the newer request still sampling.
+            release_old.send(()).unwrap();
+            assert!(matches!(old.join().unwrap(), Err(RunnerError::Cancelled)));
+            assert_eq!(written.load(Ordering::SeqCst), 0);
+            assert_eq!(helper_state(), (pid, 1));
+            assert!(runner.is_running());
+            assert_eq!(
+                runner.status(),
+                RunnerStatus::Ready {
+                    model: model.clone()
+                }
+            );
+
+            release_new.send(()).unwrap();
+            let (answer, attributed) = new.join().unwrap().unwrap();
+            assert_eq!(
+                answer.text.as_deref(),
+                Some("FAKE: newer means something plain.")
+            );
+            assert_eq!(attributed, model);
+            assert!(written.load(Ordering::SeqCst) > 0);
+            assert_eq!(helper_state(), (pid, 2));
+            assert!(runner.is_running());
+            runner.stop();
         }
 
         #[test]
