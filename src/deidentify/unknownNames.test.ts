@@ -503,3 +503,148 @@ describe("a header's subject beside a person field is no name (#264 review)", ()
     expect(send(text)).toMatch(/\[NAME 1\]/);
   });
 });
+
+describe("words that are also names, and conditions in capitals", () => {
+  // A word on a refusal list that is also a name never refuses it: a wrong refusal leaks it.
+  it.each([
+    ["Paramedics brought Emma Walker to the emergency department.", "Walker"],
+    ["Paramedics brought Doris Day to the emergency department.", "Day"],
+    ["Discharge letter: WARD, Emma", "Emma"],
+    ["Discharge letter: RANA, Aisha", "Aisha"],
+    ["Paramedics brought Martin Head to the emergency department.", "Head"],
+    ["Les ambulanciers ont amené Paul Pain aux urgences.", "Pain"],
+  ])("removes the name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Discharge Summary: FRACTURE, Displaced",
+    "Consult Note: ANGINA, Unstable",
+    "Informe de alta: FRACTURA, Desplazada",
+    "Compte rendu : ANGINE, Instable",
+    "Wypis: UDAR, Niedokrwienny",
+    "Brought Walker And Wheelchair.",
+    "Referral: Right Hand",
+    "Wypis: Rana Pooperacyjna",
+  ])("leaves a condition or a thing: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+});
+
+describe("a first word that is also a name (Head, Son, Nie, Elle)", () => {
+  // These words end a label's value ("Patient: Head CT"), but a title before them, or more
+  // name-like words after them, make them a name.
+  it.each([
+    ["Dr. Head saw her.", "Head"],
+    ["Seen by Dr. Head today.", "Head"],
+    ["Mr. Son is stable.", "Son"],
+    ["Mme Elle Dubois a appelé.", "Dubois"],
+    ["Pani Nie Wei zgłosiła się.", "Wei"],
+    ["Physiotherapy summary — SON, Min-jun", "Min-jun"],
+    ["Patient: NIE, Wei", "Wei"],
+    ["Patient: Elle Martin", "Martin"],
+    ["Patient: Nie Wei", "Wei"],
+    ["Patient: Son Min-jun", "Min-jun"],
+    ["Patiente : Elle Vasseur", "Vasseur"],
+    ["PATIENT  ELLE MARTIN", "MARTIN"],
+    ["Paramedics brought Elle Martin to the emergency department.", "Martin"],
+    ["Discharge letter: HEAD, Martin", "Martin"],
+  ])("removes the name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Patient: Head CT normal.",
+    "PATIENT  HEAD CT",
+    "Patient: Stable",
+    "Pacjent: Nie zgłasza dolegliwości.",
+    "Pacjentka: Nie wymaga opieki.",
+    "Patiente : Elle dort mal.",
+    "Patiente : elle se plaint de douleurs.",
+    "Plan: Echo tomorrow.",
+    "Echo: normal LV function.",
+    "Referral: Head Injury",
+    "Head: normocephalic.",
+    "Patient: Son of the deceased",
+    "Dr. on call: see note.",
+    "Nurse: Plan reviewed with patient.",
+    "Report: ECHO, Normal",
+    "Care Plan: HEAD, Injury",
+    "Consult: HEAD, Neck",
+  ])("leaves a label value or a clinical phrase: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+});
+
+describe("a relative named in passing, in title-case text", () => {
+  it.each([
+    "Brought Son Home.",
+    "Brought Daughter Home.",
+    "Daughter Present At Visit.",
+    "Wife Aware Of Diagnosis.",
+    "Husband Called Clinic.",
+    "Son Drove Patient Home.",
+    "Spouse At Bedside.",
+    "Partner Supportive.",
+    "Father Unknown.",
+    "Fils Présent Lors De La Visite.",
+    "Fille Informée Du Plan.",
+    "Wife Declined Interpreter.",
+    "Mother Deceased.",
+    "Son Updated By Phone.",
+    "Patient: Son Visited Today.",
+    "Mother: Son Lives Nearby.",
+  ])("leaves the words after the relative: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+  });
+
+  it.each([
+    ["Her husband, Jordan, called.", "Jordan"],
+    ["Her daughter Maya Okafor visited.", "Maya"],
+    ["Son Theo Vance visited.", "Theo"],
+    ["Sa fille Camille appelle.", "Camille"],
+    ["Daughter Grace At Bedside.", "Grace"],
+    ["Brought By Son Marcus.", "Marcus"],
+    ["Wife Rose Present.", "Rose"],
+    ["Wife María De La Cruz called.", "Cruz"],
+    ["Son Will Smith called.", "Smith"],
+  ])("removes the relative's name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+});
+
+describe("relative names retain the existing name exceptions", () => {
+  it.each([
+    ["Her daughter Elle Martin visited.", ["Elle", "Martin"]],
+    ["Her husband Son Min-jun called.", ["Son", "Min-jun"]],
+    ["Her sister Nie Wei called.", ["Nie", "Wei"]],
+    ["Her husband Martin Head called.", ["Martin", "Head"]],
+    ["Her daughter Summer Vale visited.", ["Summer", "Vale"]],
+    ["Her husband Paul Pain called.", ["Paul", "Pain"]],
+  ])("removes the full name in %j", (text, parts) => {
+    const result = send(text);
+    for (const part of parts) expect(result).not.toContain(part);
+  });
+});
+
+describe("relative surname particles remain inside the full name", () => {
+  it.each([
+    ["Her wife Camille Du Verne called.", "Her wife [NAME 1] called."],
+    ["Her wife Camille du Verne called.", "Her wife [NAME 1] called."],
+    ["Her husband Pascal Des Ormes called.", "Her husband [NAME 1] called."],
+    ["Her husband Pascal des Ormes called.", "Her husband [NAME 1] called."],
+    ["Her wife Camille DU Verne called.", "Her wife [NAME 1] called."],
+    ["Her husband Pascal DES Ormes called.", "Her husband [NAME 1] called."],
+    ["Her wife Camille Du Verne Present.", "Her wife [NAME 1] Present."],
+  ])("removes every word of the relative's name in %j", (text, expected) => {
+    expect(send(text)).toBe(expected);
+  });
+
+  it.each([
+    "Fille Informée Du Plan.",
+    "Fille Informée Des Résultats.",
+    "Fils Avisé Du Plan.",
+  ])("keeps the clinical phrase %j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
