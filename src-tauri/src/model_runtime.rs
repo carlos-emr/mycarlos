@@ -1265,9 +1265,13 @@ pub mod engine_testing {
                 || "no stats".to_owned(),
                 |s| {
                     format!(
-                        "prompt {} tokens {:.1} s, answer {} tokens {:.1} s{}, {} grammar scans",
+                        "prompt {} tokens {:.1} s (prefix {} tokens, {}, {} bytes), answer {} \
+                         tokens {:.1} s{}, {} grammar scans",
                         s.prompt_tokens,
                         s.prompt_ms as f64 / 1000.0,
+                        s.prefix_len,
+                        if s.cache_hit { "put back" } else { "read" },
+                        s.snapshot_bytes,
                         s.answer_tokens,
                         s.answer_ms as f64 / 1000.0,
                         if s.capped { " (capped)" } else { "" },
@@ -1275,6 +1279,14 @@ pub mod engine_testing {
                     )
                 },
             )
+        }
+
+        /// The last answer's instruction prefix: its length in tokens, whether its state was put
+        /// back rather than read, and the size of that kept state.
+        pub fn last_prefix(&self) -> Option<(u32, bool, u64)> {
+            self.runner
+                .last_stats()
+                .map(|stats| (stats.prefix_len, stats.cache_hit, stats.snapshot_bytes))
         }
 
         /// What `term` means in `context`, in `lang`.

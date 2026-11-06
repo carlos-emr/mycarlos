@@ -336,7 +336,7 @@ struct TextAnswer {
 /// writing the answer, whether it stopped at its cap, and how often the grammar had to look at
 /// the whole vocabulary. Counts and times only, never words.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub(crate) struct Stats {
     pub(crate) prompt_tokens: u32,
     pub(crate) answer_tokens: u32,
@@ -344,6 +344,11 @@ pub(crate) struct Stats {
     pub(crate) answer_ms: u64,
     pub(crate) capped: bool,
     pub(crate) grammar_scans: u32,
+    /// The prompt's instruction prefix, in tokens (in `prompt_tokens`), whether its state was
+    /// put back rather than read, and the size of that kept state.
+    pub(crate) prefix_len: u32,
+    pub(crate) cache_hit: bool,
+    pub(crate) snapshot_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
