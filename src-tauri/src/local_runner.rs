@@ -1067,8 +1067,8 @@ const HEADING_WORDS: usize = 4;
 /// Whether the quote is a heading of the pages rather than something they say: a whole line
 /// on its own, of at most [`HEADING_WORDS`] words and no digit, that reads as a heading. A
 /// line reads as one when it ends with a colon ("Follow-up:"), is in capitals ("DISCHARGE
-/// SUMMARY"), or has a list or table under it: its next line with words is indented, a bullet
-/// or numbered ("Medications at discharge" over the medicines). A quote must support its
+/// SUMMARY"), or has a list or table under it: its next line with words is indented further
+/// than it, a bullet or numbered ("Medications at discharge" over the medicines). A quote must support its
 /// sentence, and a heading only names a part of the document; the reader would link the
 /// sentence to it. A short finding on a line of its own ("No known allergies", "Non-smoker",
 /// "Allergies: none") is no heading, nor is a line with a value in it ("Admitted:
@@ -1091,6 +1091,9 @@ fn quote_is_heading(text: &str, quote: &str) -> bool {
 /// Whether a short line reads as a heading, from its own shape and from the line with words
 /// after it (see [`quote_is_heading`]).
 fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
+    // In characters, so that any kind of space counts as one (a no-break space is 2 bytes).
+    let indent = |text: &str| text.chars().take_while(|c| c.is_whitespace()).count();
+    let line_indent = indent(line);
     let line = line.trim();
     if line.ends_with(['.', '!', '?']) {
         // A sentence on a line of its own says something.
@@ -1104,7 +1107,9 @@ fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
             .trim_start_matches(|c: char| c.is_ascii_digit())
             .starts_with(['.', ')'])
             && item.starts_with(|c: char| c.is_ascii_digit());
-        next.starts_with(char::is_whitespace)
+        // PDF text often indents ordinary lines too: only a line indented further than this
+        // one is under it.
+        indent(next) > line_indent
             || item.starts_with(['-', '*', '\u{2022}', '\u{2013}'])
             || numbered
     });
@@ -1227,6 +1232,13 @@ mod tests {
                        Follow-up:\nBlood tests in 1 week.\nAdmitted: 2026-10-01\n\
                        Instructions to the patient\n- Weigh yourself every morning.\n\
                        Diagnoses\n1. Heart attack\nHypertension is treated.";
+        // Indented itself, a heading still has its table under it when that is deeper.
+        let indented = "  Medications at discharge\n      Ticagrelor  90 mg twice daily  NEW";
+        assert!(quote_is_heading(indented, "Medications at discharge"));
+        assert!(!quote_is_heading(
+            "  Medications at discharge\n  Ticagrelor  90 mg twice daily  NEW",
+            "Medications at discharge"
+        ));
         for heading in [
             "Discharge summary",
             "Medications at discharge",
@@ -1266,7 +1278,20 @@ mod tests {
             findings.join("\n")
         );
         let paragraphs = format!("{}\n\nPlan as discussed.", findings.join("\n\n"));
-        for text in [&lines, &paragraphs] {
+        // PDF text often indents every line alike: one as deep as the line before is not under it.
+        let indented = format!(
+            "  Social history\n  {}\n  Plan as discussed.",
+            findings.join("\n  ")
+        );
+        // Spaces of other kinds count as one each: a no-break or ideographic space under a
+        // plain one is no deeper.
+        let mixed = format!(
+            " {}\n\u{a0}Lives alone\n  Non-smoker\n\u{3000}Plan as discussed.",
+            findings[0]
+        );
+        assert!(!quote_is_heading(&mixed, findings[0]));
+        assert!(!quote_is_heading(&mixed, "Non-smoker"));
+        for text in [&lines, &paragraphs, &indented] {
             for finding in findings {
                 assert!(quote_in(text, finding), "{finding}");
                 assert!(!quote_is_heading(text, finding), "{finding} in {text:?}");
