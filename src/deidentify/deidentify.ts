@@ -3080,15 +3080,15 @@ const followsTitle = (text: string, at: number) =>
 // A short birth cue that is also an everyday abbreviation: "DN:" (district nurse), "FN:"
 // (febrile neutropenia), "b." (the second item of a lettered list, "Plan B.").
 const SHORT_BIRTH_CUE =
-  /(?:(?<![\p{L}])(?:D\.?N\.?|F\.?N\.?)[ \t]*:|(?<![\p{L}\d.])[Bb]\.)[ \t：]*$/u;
+  /(?:(?<![\p{L}])(?:D\.?N\.?|F\.?N\.?)[ \t]*:|(?<![\p{L}\d.])[Bb]\.)[ \t：]*$/iu;
 /**
  * A date after a short birth cue is a birth date only when it is at least a year before
- * another date in the text (an adult's birth date is decades before a visit), or when no
- * other date stands on its line, before or after it. Otherwise it is an event date (#259
- * review).
+ * another date in the text (an adult's birth date is decades before a visit), or when it is
+ * the only date in the text. Otherwise it is an event date (#259 review). The cost, accepted:
+ * an unknown infant's birth date beside a visit days later is read as an event, so the gap
+ * gives the age in days; the patient's own birth date is still covered by knownBirthDates.
  */
 function keepShortBirthCue(
-  text: string,
   finding: Finding,
   dates: { finding: Finding; days: number[] }[],
 ): boolean {
@@ -3104,13 +3104,7 @@ function keepShortBirthCue(
     )
   )
     return true;
-  const lineStart = text.lastIndexOf("\n", finding.start - 1) + 1;
-  const lineEnd = text.indexOf("\n", finding.end);
-  return !others.some(
-    (date) =>
-      date.finding.start >= lineStart &&
-      (lineEnd < 0 || date.finding.start < lineEnd),
-  );
+  return others.length === 0;
 }
 
 function find(text: string, options: DeidentifyOptions): Finding[] {
@@ -3135,7 +3129,7 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
         return [{ finding, days }];
       });
       const dropped = new Set(
-        short.filter((finding) => !keepShortBirthCue(text, finding, dates)),
+        short.filter((finding) => !keepShortBirthCue(finding, dates)),
       );
       // The plain date found at the same place stays, as an event date.
       if (dropped.size)

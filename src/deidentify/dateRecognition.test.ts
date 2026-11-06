@@ -222,6 +222,9 @@ describe("a short birth cue that is also an everyday abbreviation (#259 review)"
     "DN : 12/03/2026 pansement, revu le 19/03/2026.",
     "a. 2026-03-02 start; b. 2026-03-12 stop.",
     "Plan B. 2026-03-12 switch. Review 2026-04-01.",
+    "dn: 2026-03-12 dressing changed. Seen 2026-03-20.",
+    "fn: 2026-03-12, admitted; reviewed 2026-03-14.",
+    "DN: 2026-03-12 dressing changed.\nSeen 2026-03-20.",
   ])("is an event date beside a nearby date: %j", (text) => {
     expect(send(text)).not.toMatch(/DATE OF BIRTH/);
   });
@@ -232,6 +235,7 @@ describe("a short birth cue that is also an everyday abbreviation (#259 review)"
     "D.N.: 14/03/1941\nConsulta 12/03/2026.",
     "b. 1941-03-14. Seen 2026-03-12.",
     "DN: 14/03/1941",
+    "dn: 14/03/1941. Visit 2026-03-12.",
   ])("is a birth date a year or more before a visit, or alone: %j", (text) => {
     const out = send(text);
     expect(out).toMatch(/\[DATE OF BIRTH 1\]/);
@@ -247,5 +251,20 @@ describe("a short birth cue that is also an everyday abbreviation (#259 review)"
     "Birth: 1941-03-14. Seen 2026-03-12.",
   ])("reads more birth labels: %j", (text) => {
     expect(send(text)).toMatch(/\[DATE OF BIRTH 1\]/);
+  });
+});
+
+describe("the accepted cost of the short-cue guard (#259 review)", () => {
+  it("reads an unknown infant's short-cue birth date beside a visit days later as an event", () => {
+    // The patient's own birth date stays covered by knownBirthDates.
+    expect(send("DN: 2026-03-01.\nSeen 2026-03-12.")).not.toMatch(
+      /DATE OF BIRTH/,
+    );
+    expect(
+      deidentify("DN: 2026-03-01.\nSeen 2026-03-12.", {
+        knownNames: [],
+        knownBirthDates: ["2026-03-01"],
+      }).toSend,
+    ).toMatch(/\[DATE OF BIRTH 1\]/);
   });
 });
