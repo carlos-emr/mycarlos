@@ -1,8 +1,12 @@
 import {
   useI18n,
   t as translateNow,
+  getLocale,
+  translatePlain,
   useTextState,
   deferredText,
+  LOCALES,
+  type Locale,
   type MessageKey,
 } from "../i18n";
 import {
@@ -26,10 +30,15 @@ import type { DocumentText } from "../documentText";
 import {
   deidentify,
   removeMore,
+  restoreChecked,
   type Deidentified,
   type PlaceholderLabels,
+  type PlaceholderVocabulary,
   type RemovedKind,
+  type RestoredPart,
 } from "../deidentify/deidentify";
+import { detectDocumentLanguage } from "../deidentify/documentLanguage";
+import { cleanText } from "../deidentify/textCleaning";
 
 /** The kinds a removal can have, for the labels. */
 const KINDS: (RemovedKind | "date")[] = [
@@ -56,15 +65,50 @@ const kindKey = (kind: RemovedKind | "date"): MessageKey =>
     ? "interface.AnonymizePreview.movedDate"
     : (`interface.AnonymizePreview.kind.${kind}` as MessageKey);
 
-/** The placeholder words in the app's language ("[NOM 1]"). */
-function placeholderLabels(): PlaceholderLabels {
+/** The placeholder words ("[NOM 1]") and the notes after a placeholder's
+ * number, in one language. They are stored and sent as data, so they are
+ * formatted with no bidi isolation. */
+function placeholderWords(locale: Locale): PlaceholderVocabulary {
   const labels = {} as PlaceholderLabels;
   for (const kind of KINDS)
     if (kind !== "date")
-      labels[kind] = translateNow(
+      labels[kind] = translatePlain(
+        locale,
         `interface.AnonymizePreview.placeholder.${kind}` as MessageKey,
       );
-  return labels;
+  return {
+    labels,
+    notes: {
+      daysAfter: (days, label, number) =>
+        translatePlain(locale, "interface.AnonymizePreview.note.daysAfter", {
+          days,
+          label,
+          number,
+        }),
+      ageOver90: translatePlain(
+        locale,
+        "interface.AnonymizePreview.note.ageOver90",
+      ),
+    },
+  };
+}
+
+/** The placeholders follow the document's language, which may not be the
+ * app's (#215): an English app exporting a French letter writes "[NOM 1]".
+ * When the text does not say clearly, the app's language is used. The
+ * other languages' words come along, for numbering and for the paste-back. */
+function placeholderLanguages(text: string): {
+  labels: PlaceholderLabels;
+  notes: PlaceholderVocabulary["notes"];
+  otherLanguages: PlaceholderVocabulary[];
+} {
+  const { locale } = detectDocumentLanguage(cleanText(text).text, getLocale());
+  return {
+    ...placeholderWords(locale),
+    otherLanguages: LOCALES.filter((other) => other !== locale).map(
+      placeholderWords,
+    ),
+  };
 }
 
 const pageList = (pages: number[]) =>
@@ -125,6 +169,15 @@ export function AnonymizePreview({
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ticket, setTicket] = useState<string | null>(null);
+  // After a save: the AI's answer pasted back, and what it came to. The list
+  // of what was replaced is `current`, in memory only; it goes with this
+  // window, and so with the unlocked session.
+  const [saved, setSaved] = useState(false);
+  const [pasted, setPasted] = useState("");
+  const [putBack, setPutBack] = useState<{
+    parts: RestoredPart[];
+    flagged: number;
+  } | null>(null);
   const close = useCallback(() => {
     cancelRead();
     onClose();
@@ -157,7 +210,7 @@ export function AnonymizePreview({
           knownBirthDates,
           knownClinics: [...clinicNames, ...known.clinicNames],
           knownDoctors: known.doctorNames,
-          labels: placeholderLabels(),
+          ...placeholderLanguages(read.joined),
         });
         setText(read);
         setTicket(read.ticket);
@@ -311,6 +364,12 @@ export function AnonymizePreview({
     setNotice("");
   };
 
+  const putDetailsBack = () => {
+    if (!current) return;
+    const result = restoreChecked(pasted, current);
+    setPutBack({ parts: result.parts, flagged: result.flagged.length });
+  };
+
   const save = async () => {
     setConfirming(false);
     if (!current || !ticket) return;
@@ -329,6 +388,7 @@ export function AnonymizePreview({
       const outcome = await saveText(pickId, ticket, current.toSend);
       if (outcome.saved) {
         setTicket(null);
+        setSaved(true);
         setNotice(
           deferredText(() => translateNow("interface.AnonymizePreview.saved")),
         );
@@ -510,9 +570,6 @@ export function AnonymizePreview({
                     key={run.start}
                     data-start={run.start}
                     data-kind={run.kind}
-                    className={
-                      run.kind === "date" ? "native-anonymize-moved" : undefined
-                    }
                   >
                     {run.text}
                     <span className="sr-only">
@@ -620,6 +677,85 @@ export function AnonymizePreview({
                 {translateNow("interface.AnonymizePreview.save")}
               </button>
             </footer>
+            {saved && (
+              <section
+                className="native-anonymize-paste"
+                aria-labelledby="anonymize-paste-title"
+              >
+                <h3 id="anonymize-paste-title">
+                  {translateNow("interface.AnonymizePreview.pasteTitle")}
+                </h3>
+                <p id="anonymize-paste-help">
+                  {translateNow("interface.AnonymizePreview.pasteHelp")}
+                </p>
+                <label htmlFor="anonymize-paste">
+                  {translateNow("interface.AnonymizePreview.pasteLabel")}
+                </label>
+                <textarea
+                  id="anonymize-paste"
+                  rows={6}
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-describedby="anonymize-paste-help"
+                  value={pasted}
+                  onChange={(event) => {
+                    setPasted(event.target.value);
+                    setPutBack(null);
+                  }}
+                />
+                <div>
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={!pasted.trim()}
+                    onClick={putDetailsBack}
+                  >
+                    {translateNow("interface.AnonymizePreview.pasteButton")}
+                  </button>
+                </div>
+                {putBack && (
+                  <>
+                    <p role="status">
+                      {putBack.flagged > 0
+                        ? translateNow(
+                            "interface.AnonymizePreview.pasteFlagged",
+                            { count: putBack.flagged },
+                          )
+                        : translateNow(
+                            "interface.AnonymizePreview.pasteAllMatched",
+                          )}
+                    </p>
+                    <div
+                      className="native-anonymize-text"
+                      role="region"
+                      aria-label={translateNow(
+                        "interface.AnonymizePreview.pasteResult",
+                      )}
+                    >
+                      {putBack.parts.map((part, index) =>
+                        part.kind === "flagged" ? (
+                          <mark
+                            key={index}
+                            className="native-anonymize-flagged"
+                            data-kind="flagged"
+                          >
+                            {part.text}
+                            <span className="sr-only">
+                              {" "}
+                              {translateNow(
+                                "interface.AnonymizePreview.pasteFlaggedSr",
+                              )}
+                            </span>
+                          </mark>
+                        ) : (
+                          <span key={index}>{part.text}</span>
+                        ),
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
           </>
         )}
       </section>

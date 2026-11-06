@@ -38,6 +38,13 @@ format changes still require the full protocol.
 
 ## Manifest additions (formats 1 → 2 → 3)
 
+The later formats (4 profile details, 5 portal links, 6 and 7 delivery and approval evidence, 8
+reading aids, 9 remote notices, 10 the AI helper's answers, 11 a cap of their own for hidden
+answers: `VAULT_FORMAT.md`) are additions of the
+same kind, upgraded by the same commit of their own, and read by the same rule: a field a format
+cannot hold makes the manifest corrupt. Format 10's answers are new objects beside the documents', as the
+history's segments are, which is why an older build must refuse the vault rather than open it.
+
 Manifest format 2 (#71) adds an optional field to records (`hidden`) and pads the manifest; format 3
 (#71's second part) adds the history, whose segments are new objects beside the documents'. Neither
 rewrites a document's object. Like a header-only change, it relies on the two-slot commit instead of the

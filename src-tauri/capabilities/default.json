@@ -73,6 +73,9 @@
     "allow-vault-is-photo",
     "allow-vault-view-photo",
     "allow-vault-hide-record",
+    "allow-vault-ai-result-save",
+    "allow-vault-ai-results",
+    "allow-vault-ai-result-read",
     "allow-vault-unhide-record",
     "allow-vault-hide-unavailable-records",
     "allow-vault-reset"

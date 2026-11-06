@@ -62,6 +62,47 @@ describe("native idle deadline bridge", () => {
     expect(invoke.mock.calls).toEqual([["ai_model_status"]]);
   });
 
+  it("keeps, lists and reads AI answers through the native vault (#72)", async () => {
+    const bridge = createVaultBridge();
+    const info = {
+      id: "r1",
+      tool: "summary",
+      lang: "fr",
+      modelName: "FAKE model",
+      modelSha256: "a".repeat(64),
+      createdAtMs: 1,
+      size: 2,
+    };
+    invoke.mockResolvedValueOnce(info);
+    await expect(
+      bridge.saveAiResult("rec", "kept-1", [
+        { page: 0, start: 0, end: 4 },
+        null,
+      ]),
+    ).resolves.toEqual(info);
+    invoke.mockResolvedValueOnce([info]);
+    await expect(bridge.aiResults("rec")).resolves.toEqual([info]);
+    invoke.mockResolvedValueOnce("{}");
+    await expect(bridge.readAiResult("rec", "r1")).resolves.toBe("{}");
+    expect(invoke.mock.calls).toEqual([
+      [
+        "vault_ai_result_save",
+        {
+          request: {
+            recordId: "rec",
+            keptId: "kept-1",
+            sources: [{ page: 0, start: 0, end: 4 }, null],
+          },
+        },
+      ],
+      ["vault_ai_results", { request: { recordId: "rec" } }],
+      [
+        "vault_ai_result_read",
+        { request: { recordId: "rec", resultId: "r1" } },
+      ],
+    ]);
+  });
+
   it("names each text read by the screen that asks, and cancels that read only", async () => {
     const bridge = createVaultBridge();
     invoke.mockResolvedValue(undefined);
@@ -122,6 +163,46 @@ describe("native idle deadline bridge", () => {
         },
       ],
       ["ai_cancel"],
+    ]);
+  });
+
+  it("names the document, and a summary's text ticket, when an answer is to be kept (#212)", async () => {
+    const bridge = createVaultBridge();
+    const pages = [{ index: 0, text: "FAKE page one." }];
+    invoke.mockResolvedValueOnce({
+      sentences: [],
+      model: { name: "FAKE", sha256: "test-only" },
+      lastPage: 0,
+      lastPageCut: false,
+      keptId: "kept-1",
+    });
+    await expect(
+      bridge.aiSummarize(pages, "fr", { recordId: "rec", ticket: "t-1" }),
+    ).resolves.toMatchObject({ keptId: "kept-1" });
+    invoke.mockResolvedValueOnce({
+      text: "FAKE",
+      model: { name: "FAKE", sha256: "test-only" },
+      keptId: "kept-2",
+    });
+    await expect(
+      bridge.aiExplain("potassium", "Potassium 5.4.", "pl", "rec"),
+    ).resolves.toMatchObject({ keptId: "kept-2" });
+    expect(invoke.mock.calls).toEqual([
+      [
+        "ai_summarize",
+        { request: { pages, lang: "fr", recordId: "rec", ticket: "t-1" } },
+      ],
+      [
+        "ai_explain",
+        {
+          request: {
+            term: "potassium",
+            context: "Potassium 5.4.",
+            lang: "pl",
+            recordId: "rec",
+          },
+        },
+      ],
     ]);
   });
 
