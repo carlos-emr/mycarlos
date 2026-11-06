@@ -2910,6 +2910,23 @@ impl VaultStore {
     /// birth date, the provider and the clinic from the document's delivery
     /// manifest, if it has one. Nothing is stored or logged.
     pub fn known_identifiers(&self, record_id: Uuid) -> Result<KnownIdentifiers, VaultError> {
+        // A person's former folder names ("FAKE Person" renamed "Mom"): older documents still
+        // carry them. The history is read before the session is taken, since history_view
+        // takes it too. A history that cannot be read leaves only the current names.
+        let former_names: Vec<String> = self
+            .history_view()
+            .map(|view| {
+                view.entries
+                    .into_iter()
+                    .chain(view.later)
+                    .filter(|entry| {
+                        entry.event == HistoryEvent::FolderRenamed
+                            && entry.how.as_deref() == Some("personFolder")
+                    })
+                    .filter_map(|entry| entry.old_name)
+                    .collect()
+            })
+            .unwrap_or_default();
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let manifest = &unlocked.manifest;
@@ -2927,6 +2944,7 @@ impl VaultStore {
                 known.birth_dates.push(birth_date.clone());
             }
         }
+        known.names.extend(former_names);
         let record = manifest
             .records
             .iter()
@@ -8757,6 +8775,26 @@ mod tests {
             display_name: name.to_owned(),
             reader: Box::new(Cursor::new(data.to_vec())),
         }
+    }
+
+    #[test]
+    fn known_identifiers_include_a_person_folders_former_names() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store.rename_profile(profile, "FAKE Mom", 3).unwrap();
+        store.rename_profile(profile, "FAKE Mother", 4).unwrap();
+        let folder = store
+            .create_folder(profile, None, "FAKE Results", 5)
+            .unwrap();
+        store
+            .update_folder(folder, None, "FAKE Old results")
+            .unwrap();
+        let known = store.known_identifiers(record).unwrap();
+        for name in ["FAKE Person", "FAKE Mom", "FAKE Mother"] {
+            assert!(known.names.contains(&name.to_owned()), "{name}");
+        }
+        // A plain folder's old name is no person's name.
+        assert!(!known.names.contains(&"FAKE Results".to_owned()));
     }
 
     fn original_pdf_fixture() -> (tempfile::TempDir, VaultStore, Uuid, Vec<u8>) {
