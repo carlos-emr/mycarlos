@@ -251,7 +251,8 @@ fn a_model_file_that_is_not_a_model_ends_the_helper_before_it_greets() {
 
 /// A real model from the environment over FAKE documents, for trying a model by hand:
 /// `MYCARLOS_TEST_MODEL` names a GGUF file, `MYCARLOS_TEST_DOCS` a folder of FAKE `.txt`
-/// documents, `MYCARLOS_TEST_LANG` the summaries' language (default `en`). Prints each answer
+/// documents, `MYCARLOS_TEST_LANG` the summaries' language (default `en`), `MYCARLOS_TEST_CHAT_FORMAT` the model's chat
+/// format (`builtin`, the default, or `gemma4`). Prints each answer
 /// and its time. Never in CI: run with `--ignored --nocapture`.
 #[test]
 #[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
@@ -266,7 +267,10 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
     );
     let lang = std::env::var("MYCARLOS_TEST_LANG").unwrap_or_else(|_| "en".to_owned());
     let started = Instant::now();
-    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let format =
+        std::env::var("MYCARLOS_TEST_CHAT_FORMAT").unwrap_or_else(|_| "builtin".to_owned());
+    let runner = ModelRunner::start_with(executable(), &model, &format)
+        .unwrap_or_else(|error| panic!("{error}"));
     println!("started in {:.1} s", started.elapsed().as_secs_f64());
     let mut names: Vec<_> = std::fs::read_dir(&docs)
         .unwrap()
@@ -288,6 +292,10 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
                 for (text, quote) in sentences {
                     println!("- {text}\n    [{quote}]");
                 }
+                println!("  stats: {}", runner.last_stats());
+                for quote in runner.last_unlocated() {
+                    println!("  quote not in the text: [{quote}]");
+                }
             }
             Err(error) => println!("  failed: {error}"),
         }
@@ -302,5 +310,6 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
         "\n== explain ({:.1} s): {explained:?}",
         asked.elapsed().as_secs_f64()
     );
+    println!("  stats: {}", runner.last_stats());
     runner.stop();
 }

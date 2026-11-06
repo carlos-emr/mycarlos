@@ -2,10 +2,10 @@
 //! one thing at a time, each from a fresh cache. Only the helper process runs this.
 
 use super::{
-    document_budget, explain_prompt, fit_pages, language_name, read_explanation, read_summary,
-    summary_grammar, summary_prompt, thinking_off, without_slot, Fit, ModelFile, Page, Sentence,
-    Settings, BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
-    SYSTEM_PROMPT,
+    document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
+    read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
+    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, BATCH_TOKENS, CONTEXT_TOKENS,
+    EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -29,7 +29,11 @@ const MAP_FILE: bool = cfg!(windows);
 pub(super) struct Engine {
     model: &'static LlamaModel,
     context: LlamaContext<'static>,
-    template: LlamaChatTemplate,
+    /// The model's own template, for [`ChatFormat::Builtin`] only.
+    template: Option<LlamaChatTemplate>,
+    chat_format: ChatFormat,
+    /// How the last answer was made.
+    stats: Stats,
 }
 
 /// Why a request got no answer, as the helper's error line says it: short, fixed words.
@@ -59,7 +63,12 @@ impl Engine {
         let model =
             LlamaModel::load_from_file(backend, &path, &params).map_err(|_| failed("model"))?;
         let model: &'static LlamaModel = Box::leak(Box::new(model));
-        let template = model.chat_template(None).map_err(|_| failed("template"))?;
+        // Gemma 4's turns are written here; llama.cpp's built-in template code cannot apply its
+        // template. Every other model's own template is used.
+        let template = match settings.chat_format {
+            ChatFormat::Builtin => Some(model.chat_template(None).map_err(|_| failed("template"))?),
+            ChatFormat::Gemma4 => None,
+        };
         let threads = i32::try_from(settings.threads).map_err(|_| failed("threads"))?;
         let params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(CONTEXT_TOKENS))
@@ -74,23 +83,38 @@ impl Engine {
             model,
             context,
             template,
+            chat_format: settings.chat_format,
+            stats: Stats::default(),
         })
+    }
+
+    /// How the last answer was made (counts and times only).
+    pub(super) fn stats(&self) -> Stats {
+        self.stats
     }
 
     /// The prompt's tokens: the chat template around `user`, with each [`SLOT`] in it replaced
     /// by the next of `parts`. The template's own words are read with their control tokens;
     /// the parts, the document's words, never are.
     fn prompt_tokens(&self, user: &str, parts: &[&str]) -> Result<Vec<LlamaToken>, Failure> {
-        let message = |role: &str, content: &str| {
-            LlamaChatMessage::new(role.to_owned(), content.to_owned()).map_err(|_| failed("prompt"))
+        let templated = match self.chat_format {
+            ChatFormat::Builtin => {
+                let message = |role: &str, content: &str| {
+                    LlamaChatMessage::new(role.to_owned(), content.to_owned())
+                        .map_err(|_| failed("prompt"))
+                };
+                let messages = [message("system", SYSTEM_PROMPT)?, message("user", user)?];
+                let template = self.template.as_ref().ok_or_else(|| failed("template"))?;
+                let templated = self
+                    .model
+                    .apply_chat_template(template, &messages, true)
+                    .map_err(|_| failed("prompt"))?;
+                // A thinking model answers at once, as its template has it with thinking off.
+                thinking_off(template.to_str().unwrap_or_default(), templated)
+            }
+            // Thinking is already off: Gemma 4's template adds `<|think|>` only to turn it on.
+            ChatFormat::Gemma4 => gemma4_conversation(SYSTEM_PROMPT, user),
         };
-        let messages = [message("system", SYSTEM_PROMPT)?, message("user", user)?];
-        let templated = self
-            .model
-            .apply_chat_template(&self.template, &messages, true)
-            .map_err(|_| failed("prompt"))?;
-        // A thinking model answers at once, as its template has it with thinking off.
-        let templated = thinking_off(self.template.to_str().unwrap_or_default(), templated);
         let pieces: Vec<&str> = templated.split(SLOT).collect();
         if pieces.len() != parts.len() + 1 {
             return Err(failed("prompt"));
@@ -149,6 +173,11 @@ impl Engine {
             return Err(failed("too long"));
         }
         self.context.clear_kv_cache();
+        let started = std::time::Instant::now();
+        self.stats = Stats {
+            prompt_tokens: tokens.len() as u32,
+            ..Stats::default()
+        };
         let mut grammar = match grammar {
             Some(grammar) => Some(
                 LlamaSampler::grammar(self.model, grammar, "root")
@@ -171,13 +200,18 @@ impl Engine {
                 .decode(&mut batch)
                 .map_err(|_| failed("decode"))?;
         }
+        let read = std::time::Instant::now();
+        self.stats.prompt_ms = (read - started).as_millis() as u64;
         let vocab = self.model.vocab();
         let mut written = Vec::new();
         for position in (tokens.len()..).take(max) {
-            let token = self.pick(batch.n_tokens() - 1, grammar.as_mut());
+            let (token, scanned) = self.pick(batch.n_tokens() - 1, grammar.as_mut());
+            self.stats.grammar_scans += u32::from(scanned);
             if vocab.is_eog(token) {
+                self.stats.answer_ms = read.elapsed().as_millis() as u64;
                 return Ok((String::from_utf8_lossy(&written).into_owned(), false));
             }
+            self.stats.answer_tokens += 1;
             if let Some(grammar) = grammar.as_mut() {
                 grammar.accept(token);
             }
@@ -190,6 +224,8 @@ impl Engine {
                 .decode(&mut batch)
                 .map_err(|_| failed("decode"))?;
         }
+        self.stats.answer_ms = read.elapsed().as_millis() as u64;
+        self.stats.capped = true;
         Ok((String::from_utf8_lossy(&written).into_owned(), true))
     }
 
@@ -198,7 +234,8 @@ impl Engine {
     /// Checking one token first spares the grammar the whole vocabulary at most steps, as
     /// llama.cpp's own server does. Ties go to the lower token id, as llama.cpp's greedy
     /// sampler gives them.
-    fn pick(&self, index: i32, grammar: Option<&mut LlamaSampler>) -> LlamaToken {
+    /// Also says whether the whole vocabulary had to be looked at.
+    fn pick(&self, index: i32, grammar: Option<&mut LlamaSampler>) -> (LlamaToken, bool) {
         let logits = self.context.get_logits_ith(index);
         let Some((best, score)) = first_best(
             logits
@@ -206,10 +243,10 @@ impl Engine {
                 .enumerate()
                 .map(|(id, score)| (LlamaToken::new(id as i32), *score)),
         ) else {
-            return self.model.vocab().eos();
+            return (self.model.vocab().eos(), false);
         };
         let Some(grammar) = grammar else {
-            return best;
+            return (best, false);
         };
         let mut alone =
             LlamaTokenDataArray::new(vec![LlamaTokenData::new(best, score, 0.0)], false);
@@ -219,7 +256,7 @@ impl Engine {
             .first()
             .is_some_and(|data| data.logit().is_finite())
         {
-            return best;
+            return (best, false);
         }
         let mut all = self.context.token_data_array_ith(index);
         all.apply_sampler(grammar);
@@ -229,7 +266,10 @@ impl Engine {
                 .filter(|data| data.logit().is_finite())
                 .map(|data| (data.id(), data.logit())),
         )
-        .map_or_else(|| self.model.vocab().eos(), |(token, _)| token)
+        .map_or_else(
+            || (self.model.vocab().eos(), true),
+            |(token, _)| (token, true),
+        )
     }
 
     /// A summary of the pages that fit, in `lang`, with the fit it read.

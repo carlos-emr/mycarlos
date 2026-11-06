@@ -81,6 +81,21 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       .fn()
       .mockRejectedValue(new Error("FAKE: no model in this test")),
     aiCancel: vi.fn().mockResolvedValue(undefined),
+    // The answers kept with a document (#212): none yet.
+    aiResults: vi.fn().mockResolvedValue([]),
+    readAiResult: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no kept answer in this test")),
+    // Saved by the id the native side kept the answer under (#212).
+    saveAiResult: vi.fn(async () => ({
+      id: "FAKE-kept-1",
+      tool: "summary",
+      lang: "en",
+      modelName: "FAKE test model",
+      modelSha256: "test-only",
+      createdAtMs: 1,
+      size: 2,
+    })),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   render(
@@ -1208,10 +1223,12 @@ describe("the AI helper's notice before the reader's first Summary", () => {
         model: FAKE_MODEL,
         lastPage: 0,
         lastPageCut: false,
+        keptId: "FAKE-kept-1",
       })),
       aiExplain: vi.fn(async () => ({
         text: "FAKE explanation.",
         model: FAKE_MODEL,
+        keptId: "FAKE-kept-2",
       })),
     });
     fireEvent.click(
@@ -1246,10 +1263,10 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       name: humanText("About the AI helper"),
     });
     // The model runs on this computer: the notice says what it does here,
-    // and promises no kept answers (#212).
+    // and that its answers are kept in the vault (#212).
     expect(shown).toHaveTextContent("here on this device");
     expect(shown).toHaveTextContent("The AI on this device");
-    expect(shown).not.toHaveTextContent("saved in the vault, encrypted");
+    expect(shown).toHaveTextContent("saved in the vault, encrypted");
     // Its effects run after the status answer: wait for the focus to move.
     await waitFor(() =>
       expect(
@@ -1275,9 +1292,18 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       ),
     ).toBeVisible();
     expect(native.aiSummarize).toHaveBeenCalledTimes(1);
+    // Asked to keep it for this document, with its text read's ticket.
     expect(native.aiSummarize).toHaveBeenCalledWith(
       [{ index: 0, text: pageText }],
       "en",
+      { recordId: expect.any(String), ticket: expect.any(String) },
+    );
+    await waitFor(() =>
+      expect(native.saveAiResult).toHaveBeenCalledWith(
+        expect.any(String),
+        "FAKE-kept-1",
+        expect.any(Array),
+      ),
     );
 
     // Once a session: Explain opens at once.
@@ -1378,6 +1404,63 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     });
     expect(device).toHaveTextContent("The AI on this device");
     expect(native.aiSummarize).not.toHaveBeenCalled();
+  });
+
+  it("reads the reader's text and the preview's under ids of their own, and each closing cancels only its own", async () => {
+    const { native, reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    const reading = () => new Promise<never>(() => undefined);
+    native.documentText.mockImplementation(reading);
+    Object.assign(native, {
+      recordKnownDetails: vi.fn().mockResolvedValue({
+        names: [],
+        birthDates: [],
+        doctorNames: [],
+        clinicNames: [],
+      }),
+    });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Summary") }),
+    );
+    const shown = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    fireEvent.click(
+      within(shown).getByRole("button", { name: humanText("Continue") }),
+    );
+    await waitFor(() => expect(native.documentText).toHaveBeenCalledTimes(1));
+    const readerRead = native.documentText.mock.calls[0][1] as string;
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Close") }),
+    );
+    expect(native.cancelDocumentText).toHaveBeenCalledTimes(1);
+    expect(native.cancelDocumentText).toHaveBeenLastCalledWith(readerRead);
+
+    // The preview: a read of its own, and its own cancel.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Letter.pdf"),
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: humanText("FAKE Letter.pdf") }),
+      ).getByRole("button", { name: humanText("Prepare text for an AI…") }),
+    );
+    const preview = await screen.findByRole("dialog", {
+      name: humanText("Text with identifying details removed"),
+    });
+    await waitFor(() => expect(native.documentText).toHaveBeenCalledTimes(2));
+    const previewRead = native.documentText.mock.calls[1][1] as string;
+    expect(previewRead).toMatch(/^[0-9a-f-]{36}$/);
+    expect(previewRead).not.toBe(readerRead);
+    fireEvent.click(
+      within(preview).getByRole("button", { name: humanText("Close") }),
+    );
+    expect(native.cancelDocumentText).toHaveBeenCalledTimes(2);
+    expect(native.cancelDocumentText).toHaveBeenLastCalledWith(previewRead);
   });
 
   it("is not shown with no model: the panel says so, and nothing is read", async () => {

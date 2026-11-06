@@ -7,7 +7,7 @@ import {
   type Removed,
 } from "./deidentify";
 
-const options = { knownNames: [], dateShiftDays: -40 };
+const options = { knownNames: [] };
 
 function removeWord(value: Deidentified, word: string): Deidentified {
   const start = value.toSend.indexOf(word);
@@ -115,7 +115,7 @@ describe("literal placeholder collisions", () => {
           end,
         }));
     expect(dates(more)).toEqual(dates(result));
-    expect(more.onDevice.dateShiftDays).toBe(-40);
+    expect(more.onDevice.notes).toEqual(result.onDevice.notes);
     expect(more.onDevice.dayFirst).toBe(false);
     expect(more.onDevice.labels).toEqual(result.onDevice.labels);
     expect(more.onDevice.cleaning).toEqual(result.onDevice.cleaning);
