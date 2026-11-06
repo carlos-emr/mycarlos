@@ -11737,8 +11737,12 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
   ) {
     const state = { current: start };
     const bridge = nativeBridge({
-      snapshot: vi.fn().mockImplementation(async () => state.current),
-      unlock: vi.fn().mockImplementation(async () => state.current),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(state.current)),
+      unlock: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(state.current)),
       connectPortal: vi.fn(),
       checkDocuments: vi.fn().mockResolvedValue(found()),
       requestDeviceApproval: vi.fn(),
