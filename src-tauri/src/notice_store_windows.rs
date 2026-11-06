@@ -37,21 +37,22 @@ impl WrapKeyStore for CredentialManagerStore {
             Ok(()) => {}
         }
         // SAFETY: CredReadW succeeded, so `found` points at its CREDENTIALW,
-        // whose blob is `CredentialBlobSize` bytes. The blob is copied, then
-        // zeroed before the credential is freed, so no copy of the key is
-        // left in freed memory.
+        // whose blob is `CredentialBlobSize` bytes. A 32-byte blob is copied;
+        // any blob, of any size, is then zeroed before the credential is
+        // freed, so nothing of it is left in freed memory.
         let key = unsafe {
             let credential = &*found;
             let size = credential.CredentialBlobSize as usize;
-            let key = if credential.CredentialBlob.is_null() || size != 32 {
-                None
-            } else {
-                let blob = std::slice::from_raw_parts(credential.CredentialBlob, size);
-                let mut key = Zeroizing::new([0_u8; 32]);
-                key.copy_from_slice(blob);
+            let mut key = None;
+            if !credential.CredentialBlob.is_null() {
+                if size == 32 {
+                    let blob = std::slice::from_raw_parts(credential.CredentialBlob, size);
+                    let mut copy = Zeroizing::new([0_u8; 32]);
+                    copy.copy_from_slice(blob);
+                    key = Some(copy);
+                }
                 std::ptr::write_bytes(credential.CredentialBlob, 0, size);
-                Some(key)
-            };
+            }
             CredFree(found as *const _);
             key
         };

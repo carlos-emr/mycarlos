@@ -36,7 +36,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use uuid::Uuid;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 /// One entry per linked Portal, at most: the cap on remote-notice
 /// destinations (format 9, `remote_notices`).
@@ -91,13 +91,24 @@ pub(crate) struct NoticeKeyEntry {
     /// names it when it registers the key with the Portal (`waiting-keys`).
     pub(crate) key_id: String,
     /// The Ed25519 seed, base64.
-    seed: String,
+    seed: Seed,
+}
+
+/// A seed in base64, wiped from memory when it is dropped (each clone too).
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
+struct Seed(String);
+
+impl Drop for Seed {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
 }
 
 impl NoticeKeyEntry {
     pub(crate) fn signing_key(&self) -> Option<SigningKey> {
-        let bytes = Zeroizing::new(B64.decode(&self.seed).ok()?);
-        let seed: [u8; 32] = bytes.as_slice().try_into().ok()?;
+        let bytes = Zeroizing::new(B64.decode(&self.seed.0).ok()?);
+        let seed = Zeroizing::new(<[u8; 32]>::try_from(bytes.as_slice()).ok()?);
         Some(SigningKey::from_bytes(&seed))
     }
 }
@@ -215,7 +226,7 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
             link_id,
             vault_id,
             key_id: key_id.clone(),
-            seed: B64.encode(seed.as_slice()),
+            seed: Seed(B64.encode(seed.as_slice())),
         });
         self.seal(&slots)?;
         Ok(NewNoticeKey {
@@ -231,9 +242,25 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
         &self,
         which: impl Fn(&NoticeKeyEntry) -> bool,
     ) -> Result<Wiped, NoticeKeyError> {
+        self.wipe_where(which, false)
+    }
+
+    fn wipe_where(
+        &self,
+        which: impl Fn(&NoticeKeyEntry) -> bool,
+        all: bool,
+    ) -> Result<Wiped, NoticeKeyError> {
         let _guard = self.lock.lock().map_err(|_| NoticeKeyError::Io)?;
-        // No file: nothing to wipe, and the keyring is not even asked.
         if !self.path.exists() {
+            // No file: no key to wipe. Wiping them all still removes a wrap
+            // key left without its file (the file removed by hand); any other
+            // wipe does not even ask the keyring.
+            if all {
+                match self.store.delete() {
+                    Ok(()) | Err(NoticeKeyError::NoKeyring) => {}
+                    Err(error) => return Err(error),
+                }
+            }
             return Ok(Wiped::default());
         }
         let mut slots = match self.read() {
@@ -251,9 +278,12 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
             }
         }
         if slots.iter().all(Option::is_none) {
-            // The last key gone: the file stays, empty, and the OS item goes.
-            self.seal_empty()?;
+            // The last key gone: the OS item goes, then the file stays, empty.
+            // In this order a failed delete changes nothing, so the wipe can
+            // be tried again; once the item is gone, any file reads as no
+            // keys, so a failed write after it leaves none either.
             self.store.delete()?;
+            self.seal_empty()?;
         } else {
             self.seal(&slots)?;
         }
@@ -267,7 +297,7 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
 
     /// Every key, when the vault is reset, erased or set aside.
     pub(crate) fn wipe_all(&self) -> Result<Wiped, NoticeKeyError> {
-        self.wipe(|_| true)
+        self.wipe_where(|_| true, true)
     }
 
     /// The keys of any other vault, when `vault_id` is unlocked.
@@ -408,8 +438,8 @@ fn open(key: &[u8; 32], data: &[u8]) -> Result<Vec<Option<NoticeKeyEntry>>, Noti
 }
 
 /// Where this build has no OS store yet (Linux until its Secret Service
-/// store, macOS, phones): no keyring, so nothing is made, and wipes of a file
-/// that is not there ask nothing.
+/// store, macOS, phones): no keyring, so nothing is made, and a wipe with no
+/// file changes nothing.
 #[cfg_attr(windows, allow(dead_code))]
 pub(crate) struct NoKeyringStore;
 
@@ -480,6 +510,8 @@ pub(crate) struct FakeWrapKeyStore {
     key: Mutex<Option<[u8; 32]>>,
     /// As a Linux desktop without Secret Service.
     pub(crate) absent: bool,
+    /// How many of the next deletes fail, as a locked OS store might.
+    failing_deletes: Mutex<u32>,
 }
 
 #[cfg(test)]
@@ -498,6 +530,14 @@ impl WrapKeyStore for FakeWrapKeyStore {
         Ok(())
     }
     fn delete(&self) -> Result<(), NoticeKeyError> {
+        if self.absent {
+            return Err(NoticeKeyError::NoKeyring);
+        }
+        let mut failing = self.failing_deletes.lock().unwrap();
+        if *failing > 0 {
+            *failing -= 1;
+            return Err(NoticeKeyError::Io);
+        }
         *self.key.lock().unwrap() = None;
         Ok(())
     }
@@ -600,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn with_no_keyring_nothing_is_made_and_a_wipe_with_no_file_asks_nothing() {
+    fn with_no_keyring_nothing_is_made_and_a_wipe_with_no_file_still_succeeds() {
         let temp = tempfile::tempdir().unwrap();
         let keys = NoticeKeys::new(
             temp.path(),
@@ -617,6 +657,8 @@ mod tests {
             !temp.path().join(FILE_NAME).exists(),
             "no plain-file fallback"
         );
+        // Wiping all asks the keyring to remove its item, and none is fine.
+        assert_eq!(keys.wipe_link(uuid(10)), Ok(Wiped::default()));
         assert_eq!(keys.wipe_all(), Ok(Wiped::default()));
     }
 
@@ -645,8 +687,34 @@ mod tests {
         keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
         let entry = keys.entries().unwrap().remove(0);
         let printed = format!("{entry:?}");
-        assert!(!printed.contains(&entry.seed), "{printed}");
+        assert!(!printed.contains(&entry.seed.0), "{printed}");
         assert!(!printed.contains("seed"), "{printed}");
+    }
+
+    #[test]
+    fn a_last_wipe_whose_os_delete_fails_changes_nothing_and_can_be_tried_again() {
+        let (_temp, keys) = keys();
+        let first = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap().key_id;
+        *keys.store.failing_deletes.lock().unwrap() = 1;
+        assert_eq!(keys.wipe_link(uuid(10)), Err(NoticeKeyError::Io));
+        // The key is still there, and new keys can still be made.
+        assert_eq!(keys.entries().unwrap().len(), 1);
+        let second = keys.make_for(uuid(1), uuid(11), ORIGIN).unwrap().key_id;
+        assert_eq!(keys.wipe_all().unwrap().key_ids, vec![first, second]);
+        assert_eq!(keys.entries(), Ok(vec![]));
+        assert_eq!(keys.store.get().map(|key| key.is_some()), Ok(false));
+    }
+
+    #[test]
+    fn wiping_all_with_no_file_still_removes_a_wrap_key_left_behind() {
+        let (temp, keys) = keys();
+        keys.store.put(&[7_u8; 32]).unwrap();
+        assert!(!temp.path().join(FILE_NAME).exists());
+        // Another wipe leaves the keyring alone; wiping all removes it.
+        assert_eq!(keys.wipe_link(uuid(10)), Ok(Wiped::default()));
+        assert_eq!(keys.store.get().map(|key| key.is_some()), Ok(true));
+        assert_eq!(keys.wipe_all(), Ok(Wiped::default()));
+        assert_eq!(keys.store.get().map(|key| key.is_some()), Ok(false));
     }
 
     #[test]
