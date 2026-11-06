@@ -327,6 +327,21 @@ describe("Notices after the first clinic link", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("sends the focus to the new clinic's heading on closing, where the panel has one", async () => {
+    linkForm([], [link]);
+    const user = await submitLink();
+    await screen.findByRole("dialog");
+    // The clinic chain's panel gives each linked clinic a focusable heading.
+    const heading = document.createElement("h3");
+    heading.id = `portal-link-title-${link.id}`;
+    heading.tabIndex = -1;
+    heading.textContent = "FAKE Clinic";
+    document.body.append(heading);
+    await user.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    heading.remove();
+  });
+
   it("is not offered for a second clinic, nor when the link fails", async () => {
     const second = { ...link, id: "fake-link-2", clinicName: "FAKE Clinic 2" };
     linkForm([link], [link, second]);

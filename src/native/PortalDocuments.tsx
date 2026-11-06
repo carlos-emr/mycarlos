@@ -22,9 +22,11 @@ interface Props {
   compact?: boolean;
 }
 
-/** Whether any link has finished linking (an incomplete one has not). */
+/** The first link that has finished linking (an incomplete one has not).
+ * From the snapshot only, on purpose: a link the portal later says was removed
+ * still counts, so live state alone never makes a vault look newly linked. */
 const workingLink = (links: PortalLinkSummary[] | undefined) =>
-  (links ?? []).some((link) => !link.incomplete);
+  (links ?? []).find((link) => !link.incomplete) ?? null;
 
 export function PortalDocuments({
   bridge,
@@ -42,24 +44,26 @@ export function PortalDocuments({
   const [device, setDevice] = useState("myCarlos");
   const [person, setPerson] = useState("");
   const [copyState, setCopyState] = useTextState();
-  const [offerNotices, setOfferNotices] = useState(false);
+  // The link the notices step follows, while it is offered.
+  const [offerNotices, setOfferNotices] = useState<string | null>(null);
   // The first working clinic link (#235): when the vault, open here, goes from
   // no working link to one, document notices are offered once. Watching the
   // vault rather than one button keeps it right whichever action made the link.
   // Only the full panel offers it, so a compact copy never opens a second one.
   // Links not known yet (linking off, or no list in this snapshot) are not
   // "no link": an already linked vault must not look newly linked at unlock.
-  const hasWorkingLink =
+  const firstWorking =
     snapshot.portalLinkingEnabled === true && snapshot.portalLinks !== undefined
-      ? workingLink(snapshot.portalLinks)
+      ? (workingLink(snapshot.portalLinks)?.id ?? "")
       : null;
+  const hasWorkingLink = firstWorking === null ? null : firstWorking !== "";
   const hadWorkingLink = useRef<boolean | null>(null);
   useEffect(() => {
     if (compact || hasWorkingLink === null) return;
-    if (hadWorkingLink.current === false && hasWorkingLink)
-      setOfferNotices(true);
+    if (hadWorkingLink.current === false && hasWorkingLink && firstWorking)
+      setOfferNotices(firstWorking);
     hadWorkingLink.current = hasWorkingLink;
-  }, [hasWorkingLink, compact]);
+  }, [hasWorkingLink, firstWorking, compact]);
   const shown = useRef(true);
   useEffect(() => {
     shown.current = true;
@@ -337,7 +341,17 @@ export function PortalDocuments({
       <p role="status">{copyState}</p>
       {checkButton}
       {offerNotices && (
-        <NoticesAfterLink onClose={() => setOfferNotices(false)} />
+        <NoticesAfterLink
+          onClose={() => {
+            const linked = offerNotices;
+            setOfferNotices(null);
+            // Then to the new clinic's heading, where the panel has one: the
+            // control that made the link may be gone once a clinic is linked.
+            requestAnimationFrame(() =>
+              document.getElementById(`portal-link-title-${linked}`)?.focus(),
+            );
+          }}
+        />
       )}
     </section>
   );
