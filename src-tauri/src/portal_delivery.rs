@@ -1,7 +1,6 @@
 //! Frozen delivery-v1 package checks. Untrusted wire values never grant custody.
 //! PDF verification and durable filing are separate mandatory steps in the vault.
 
-#[cfg(feature = "portal-linking")]
 use crate::portal_link::{frame, StoredLink};
 use crate::portal_link::{ClinicKey, KeyStatus};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
@@ -12,40 +11,34 @@ use p256::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-#[cfg(feature = "portal-linking")]
 use zeroize::Zeroizing;
 
 pub const MAX_SEALED: usize = 20 * 1024 * 1024;
-#[cfg(feature = "portal-linking")]
-const MAX_COMPACT: usize = 16 * 1024;
+pub(crate) const MAX_COMPACT: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Refusal {
     UnsupportedVersion,
-    #[cfg(feature = "portal-linking")]
     HashMismatch,
-    #[cfg(feature = "portal-linking")]
     WrongRecipient,
-    #[cfg(feature = "portal-linking")]
     WrongDevice,
-    #[cfg(feature = "portal-linking")]
     DecryptFailed,
     BadPackage,
     BadManifest,
-    #[cfg(feature = "portal-linking")]
     WrongClinic,
     UnknownClinicKey,
     RevokedClinicKey,
     BadSignature,
-    #[cfg(feature = "portal-linking")]
     IdMismatch,
-    #[cfg(feature = "portal-linking")]
     DocumentHashMismatch,
-    #[cfg(feature = "portal-linking")]
     Expired,
-    #[cfg(all(test, feature = "portal-linking"))]
     Replayed,
+    /// Reading aids (delivery contract, "Reading aids"): refusals of the second copy.
+    TooLarge,
+    BadReadingAid,
+    ReadingAidHashMismatch,
+    PairMismatch,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +60,10 @@ pub struct Outer {
     pub ciphertext_sha256: String,
     pub created_at: u64,
     pub expires_at: u64,
+    /// Absent on an original. A reading aid's is `reading-aid/1`; a copy of a kind this build
+    /// does not implement is never opened as an original.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 impl Outer {
     pub fn validate(&self) -> Result<(), Refusal> {
@@ -88,11 +85,25 @@ impl Outer {
             || self.created_at >= self.expires_at
             || self.expires_at - self.created_at > 604800
             || self.expires_at > 9_007_199_254_740_991
+            || self.kind.as_deref().is_some_and(|kind| !kind_ok(kind))
         {
             return Err(Refusal::BadPackage);
         }
         Ok(())
     }
+}
+/// An outer record's `kind`: printable ASCII, at most 64 characters, `name/version`.
+pub fn kind_ok(kind: &str) -> bool {
+    let Some((name, version)) = kind.split_once('/') else {
+        return false;
+    };
+    kind.len() <= 64
+        && !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !version.is_empty()
+        && version.bytes().all(|b| b.is_ascii_digit())
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -129,7 +140,6 @@ pub struct Manifest {
     pub kid: String,
 }
 
-#[cfg(feature = "portal-linking")]
 pub struct Opened {
     pub manifest: Manifest,
     pub manifest_compact: String,
@@ -180,7 +190,6 @@ fn verify_compact(
     Ok(payload)
 }
 
-#[cfg(feature = "portal-linking")]
 pub fn open(
     outer: &Outer,
     sealed: &[u8],
@@ -189,6 +198,10 @@ pub fn open(
     now: u64,
 ) -> Result<Opened, Refusal> {
     outer.validate()?;
+    // An original has no `kind`: a copy of any kind is opened by its own receiver, never as a PDF.
+    if outer.kind.is_some() {
+        return Err(Refusal::BadPackage);
+    }
     if sealed.len() as u64 != outer.size || sha256(sealed) != outer.ciphertext_sha256 {
         return Err(Refusal::HashMismatch);
     }
@@ -275,8 +288,7 @@ pub fn open(
     })
 }
 
-#[cfg(feature = "portal-linking")]
-fn unframe(mut bytes: &[u8]) -> Result<Vec<&[u8]>, Refusal> {
+pub(crate) fn unframe(mut bytes: &[u8]) -> Result<Vec<&[u8]>, Refusal> {
     let mut parts = Vec::new();
     while !bytes.is_empty() {
         if parts.len() == 4 || bytes.len() < 8 {
@@ -334,8 +346,7 @@ pub fn key_id(s: &str) -> bool {
 pub fn uuid4(s: &str) -> bool {
     Uuid::parse_str(s).is_ok_and(|u| u.get_version_num() == 4 && u.to_string() == s)
 }
-#[cfg(feature = "portal-linking")]
-fn label(s: &str, max: usize) -> bool {
+pub(crate) fn label(s: &str, max: usize) -> bool {
     !s.is_empty() && s.chars().count() <= max && !s.chars().any(char::is_control)
 }
 pub(crate) fn service_date(s: &str) -> bool {
@@ -344,7 +355,6 @@ pub(crate) fn service_date(s: &str) -> bool {
 
 /// Unknown v1 dates bind only to unknown dates in the signed PDF. A missing
 /// PDF date never authorizes a known delivery date or a guessed timestamp.
-#[cfg(feature = "portal-linking")]
 pub(crate) fn service_dates_match(pdf: Option<&str>, delivery: &str) -> bool {
     service_date(delivery)
         && match pdf {
@@ -389,7 +399,7 @@ fn date(s: &str) -> bool {
     y > 0 && d > 0 && d <= days
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::portal_link::{LinkedClinic, PrivateKeys};
@@ -718,6 +728,104 @@ pub struct Custody {
     pub receipt: String,
     pub receipt_outcome: Option<ReceiptOutcome>,
 }
+/// A reading aid the vault holds (format 8), kept on the record of the original it reads:
+/// the signed manifest, the checked JSON and the receipt signed at filing. Like `Custody`
+/// it lives inside the encrypted manifest. The manifest is kept as its signed compact form
+/// and parsed where its claims are needed, so this type exists in every build.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AidCustody {
+    pub link_id: Uuid,
+    pub outer: Outer,
+    pub manifest_compact: String,
+    /// The aid's JSON, exactly the bytes whose hash the manifest signs.
+    pub json: String,
+    pub checked_at_ms: u64,
+    pub anchor_head: String,
+    pub receipt: String,
+    pub receipt_outcome: Option<ReceiptOutcome>,
+}
+/// A verified reading aid kept while its original is not filed (contract, step 12): by its
+/// delivery ID and ciphertext hash, so the same copy is never downloaded again and a different
+/// copy under that ID is replayed. It holds the checked manifest and JSON, not the sealed copy,
+/// and is deleted silently at expiry. Format 8; at most `MAX_WAITING_AIDS` in a vault.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WaitingAid {
+    pub link_id: Uuid,
+    pub outer: Outer,
+    pub manifest_compact: String,
+    pub json: String,
+    pub kept_at_ms: u64,
+}
+pub const MAX_WAITING_AIDS: usize = 32;
+
+/// A filed reading aid as the reader shows it: the checked JSON's notice, overview and points,
+/// the clinician's review time from the signed manifest, and the aid's delivery ID. Plain text
+/// only: the reader never renders any of it as markup.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadingAidView {
+    pub delivery_id: String,
+    pub language: String,
+    pub reviewed_at_ms: u64,
+    pub notice: ReadingAidNotice,
+    pub overview: String,
+    pub points: Vec<ReadingAidPoint>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ReadingAidNotice {
+    pub version: String,
+    pub heading: String,
+    pub body: String,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ReadingAidPoint {
+    pub text: String,
+    pub evidence: Vec<String>,
+}
+impl AidCustody {
+    /// The reader's view of this aid, or None when the kept JSON or manifest cannot be read as
+    /// one (it was checked when it arrived and on every manifest read, so this is a safety net).
+    pub fn view(&self) -> Option<ReadingAidView> {
+        let json: serde_json::Value = serde_json::from_str(&self.json).ok()?;
+        let (payload, _) = split_compact(&self.manifest_compact, 16 * 1024).ok()?;
+        let claims: serde_json::Value = serde_json::from_slice(&payload).ok()?;
+        let text = |v: &serde_json::Value, key: &str| v.get(key)?.as_str().map(str::to_owned);
+        let points = json
+            .get("points")?
+            .as_array()?
+            .iter()
+            .map(|point| {
+                Some(ReadingAidPoint {
+                    text: text(point, "text")?,
+                    evidence: point
+                        .get("evidence")?
+                        .as_array()?
+                        .iter()
+                        .map(|e| e.as_str().map(str::to_owned))
+                        .collect::<Option<Vec<_>>>()?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let notice = json.get("notice")?;
+        Some(ReadingAidView {
+            delivery_id: self.outer.delivery_id.clone(),
+            language: text(&json, "language")?,
+            reviewed_at_ms: claims
+                .pointer("/approval/reviewed_at")?
+                .as_u64()?
+                .checked_mul(1000)?,
+            notice: ReadingAidNotice {
+                version: text(notice, "version")?,
+                heading: text(notice, "heading")?,
+                body: text(notice, "body")?,
+            },
+            overview: text(&json, "overview")?,
+            points,
+        })
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReceiptOutcome {
@@ -739,7 +847,6 @@ pub struct Receipt {
     pub vault_head_link: String,
 }
 impl Receipt {
-    #[cfg(feature = "portal-linking")]
     pub fn new(outer: &Outer, manifest: &Manifest, anchor: String, now: u64) -> Self {
         Self {
             aud: "carlos-delivery-receipt".into(),

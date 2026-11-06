@@ -4,27 +4,29 @@
 use crate::portal_link::{LinkError, LinkRequest, LinkedClinic};
 
 pub const fn available() -> bool {
-    cfg!(all(feature = "portal-linking", not(target_os = "android")))
+    cfg!(not(target_os = "android"))
 }
 
-#[cfg(feature = "portal-linking")]
 pub fn link(
     request: LinkRequest,
     expected_device: &str,
     cancelled: impl Fn() -> bool,
 ) -> Result<LinkedClinic, LinkError> {
-    use crate::portal_link::{parse_response, MAX_RESPONSE_BYTES};
-
     if cancelled() {
         return Err(LinkError::Cancelled);
     }
     // Android needs the verifier's Kotlin component and initialized JVM context.
     // Fail closed until that reviewed platform integration exists.
     #[cfg(target_os = "android")]
-    return Err(LinkError::Network);
+    {
+        let _ = (request, expected_device);
+        return Err(LinkError::Network);
+    }
 
     #[cfg(not(target_os = "android"))]
     {
+        use crate::portal_link::{parse_response, MAX_RESPONSE_BYTES};
+
         let client = client()?;
         let exchange = async {
             let mut response = client
@@ -90,23 +92,7 @@ pub fn link(
     }
 }
 
-#[cfg(not(feature = "portal-linking"))]
-pub fn link(
-    request: LinkRequest,
-    _: &str,
-    _: impl Fn() -> bool,
-) -> Result<LinkedClinic, LinkError> {
-    // Disabled builds discard prepared material locally; no transport exists.
-    let LinkRequest {
-        endpoint,
-        body,
-        assertion,
-    } = request;
-    drop((endpoint, body, assertion));
-    Err(LinkError::Disabled)
-}
-
-#[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+#[cfg(not(target_os = "android"))]
 fn client() -> Result<reqwest::Client, LinkError> {
     use std::{sync::Arc, time::Duration};
     let provider = Arc::new(rustls::crypto::ring::default_provider());
@@ -138,7 +124,7 @@ fn client() -> Result<reqwest::Client, LinkError> {
 /// bytes. Small replies keep 30 s. A package download also gets the time it
 /// takes at a slow but steady rate, so it isn't cut off just for being large,
 /// up to an overall cap. A stalled body still fails at the read timeout.
-#[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+#[cfg(not(target_os = "android"))]
 pub(crate) fn request_timeout(max: usize) -> std::time::Duration {
     use std::time::Duration;
     const BASE: Duration = Duration::from_secs(30);
@@ -149,7 +135,6 @@ pub(crate) fn request_timeout(max: usize) -> std::time::Duration {
     BASE.max(transfer).min(CAP)
 }
 
-#[cfg(feature = "portal-linking")]
 pub(crate) struct ApiResponse {
     pub status: u16,
     pub body: zeroize::Zeroizing<Vec<u8>>,
@@ -165,7 +150,6 @@ pub(crate) struct ApiResponse {
 /// `Sun, 06 Nov 1994 08:49:37 GMT`), as Unix seconds. The obsolete forms, a
 /// day the month does not have, a weekday that does not match the date, and
 /// anything else give `None`.
-#[cfg(feature = "portal-linking")]
 pub(crate) fn http_date(text: &str) -> Option<u64> {
     let bytes = text.as_bytes();
     if bytes.len() != 29
@@ -236,14 +220,12 @@ pub(crate) fn http_date(text: &str) -> Option<u64> {
 
 /// `Retry-After` as seconds to wait. Only its number form is read: its date
 /// form depends on the clocks agreeing.
-#[cfg(feature = "portal-linking")]
 pub(crate) fn retry_after_seconds(text: &str) -> Option<u64> {
     let text = text.trim();
     (!text.is_empty() && text.len() <= 9 && text.bytes().all(|c| c.is_ascii_digit()))
         .then(|| text.parse().ok())?
 }
 
-#[cfg(feature = "portal-linking")]
 pub(crate) fn api(
     link: &crate::portal_link::StoredLink,
     method: &str,
@@ -364,7 +346,7 @@ pub(crate) fn api(
     }
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(all(test, not(target_os = "android")))]
 mod tests {
     use super::*;
 
@@ -433,7 +415,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "portal-linking", not(target_os = "android")))]
+#[cfg(all(test, not(target_os = "android")))]
 mod timeout_tests {
     use super::request_timeout;
     use std::time::Duration;
