@@ -236,6 +236,8 @@ interface Finding {
   /** A relative named after a family word: never taken for a profile person
    * because a surname is shared. */
   kin?: true;
+  /** From a header line with no person cue: kept only as "SURNAME, Given". */
+  uncuedHeader?: true;
   /** Already decided (when more is removed later): kept as it was. */
   replacement?: string;
   /** The matching copy's text for this range (digits and letters folded),
@@ -1716,6 +1718,10 @@ interface Rule {
   notLowerCaseMay?: true;
   /** "Mother: First Last": refused in a family-history line or section. */
   relationLabel?: true;
+  /** A name with no person cue (a header line, a care verb): refused for any non-name word. */
+  uncued?: true;
+  /** A header line's name: kept only as "SURNAME, Given" (see find()). */
+  uncuedHeader?: true;
   /** A name in a header's column: refused for a section heading ("PATIENT INFORMATION"). */
   columnLabel?: true;
   /** A town in brackets: refused for a bracket note or a medical word. */
@@ -2156,6 +2162,377 @@ function familyHistoryLabel(text: string, at: number, name: string): boolean {
     // "Sudden Death" is two ordinary words; "Rose Baker" is a person.
     words.every((word) => ORDINARY_WORDS.has(word))
   );
+}
+// A heading that ends in a document word, before the patient's name: "Discharge letter: Wren
+// Halloway", "Plan de soins pour …", "Karta informacyjna — …" (uncued names, design note 2).
+const DOCUMENT_HEADING = `(?:[\\p{L}'’-]+[ \\t]+){0,4}${anyCase(
+  withSentenceCase([
+    "note",
+    "notes",
+    "letter",
+    "summary",
+    "report",
+    "plan",
+    "care plan",
+    "review",
+    "referral",
+    "consultation",
+    "assessment",
+    "discharge",
+    "consult",
+    "lettre",
+    "compte rendu",
+    "rapport",
+    "résumé",
+    "sommaire",
+    "plan de soins",
+    "bilan",
+    "note de suivi",
+    "demande",
+    "informe",
+    "informe de alta",
+    "resumen",
+    "carta",
+    "plan de cuidados",
+    "nota",
+    "valoración",
+    "resumo",
+    "resumo de alta",
+    "relatório",
+    "plano de cuidados",
+    "nota de alta",
+    "avaliação",
+    "encaminhamento",
+    "karta informacyjna",
+    "plan opieki",
+    "wypis",
+    "skierowanie",
+    "notatka",
+    "epikryza",
+    "opinia",
+  ]),
+)}(?:[ \\t]+(?:de|du|des|d['’]|of|da|do|z)[ \\t]*[\\p{L}'’-]+)?`;
+// Care verbs that take a person, not a thing: "Paramedics brought …", "ont amené …",
+// "trajo a …". Not received, transferred, saw: they take a vaccine or a unit as often (#264).
+const CARE_VERB = anyCase(
+  withSentenceCase([
+    "brought",
+    "accompanied",
+    "asked to see",
+    "amené",
+    "amenée",
+    "ont amené",
+    "a amené",
+    "a accompagné",
+    "trajo a",
+    "trajeron a",
+    "acompañó a",
+    "trouxe",
+    "trouxeram",
+    "acompanhou",
+    "przywiózł",
+    "przywiozła",
+    "przywieźli",
+  ]),
+);
+// Words that are never part of an uncued name: a side, a body part, a wound, a time word, a
+// severity or a course ("Wypis: ZAWAŁ, Ostry", "Informe de alta: ICTUS, Isquémico",
+// "PNEUMONIA, Resolving"). Whole words, not endings: given names end like participles too
+// (Mohammed, René, José, Margarida, Mário, Xiaoming), and a wrong refusal leaks a name.
+const UNCUED_NOT_NAME_WORDS = new Set(
+  foldAll([
+    "resolving",
+    "resolved",
+    "healing",
+    "healed",
+    "improving",
+    "improved",
+    "worsening",
+    "worsened",
+    "recovering",
+    "recovered",
+    "ongoing",
+    "treated",
+    "untreated",
+    "complicated",
+    "uncomplicated",
+    "suspected",
+    "confirmed",
+    "community-acquired",
+    "acquired",
+    "résolue",
+    "résolu",
+    "guérie",
+    "guéri",
+    "consolidée",
+    "consolidé",
+    "stabilisée",
+    "stabilisé",
+    "traitée",
+    "traité",
+    "compliquée",
+    "compliqué",
+    "améliorée",
+    "amélioré",
+    "aggravée",
+    "aggravé",
+    "communautaire",
+    "suspectée",
+    "confirmée",
+    "resuelta",
+    "resuelto",
+    "resolvida",
+    "resolvido",
+    "curada",
+    "curado",
+    "estabilizada",
+    "estabilizado",
+    "tratada",
+    "tratado",
+    "complicada",
+    "complicado",
+    "mejorada",
+    "mejorado",
+    "melhorada",
+    "melhorado",
+    "consolidada",
+    "consolidado",
+    "controlada",
+    "controlado",
+    "adquirida",
+    "adquirido",
+    "comunitaria",
+    "comunitario",
+    "comunitária",
+    "comunitário",
+    "sospechada",
+    "confirmada",
+    "confirmado",
+    "wyleczony",
+    "wyleczona",
+    "wyleczone",
+    "zagojony",
+    "zagojona",
+    "leczony",
+    "leczona",
+    "powikłany",
+    "powikłana",
+    "pozaszpitalne",
+    "pozaszpitalny",
+    "pozaszpitalna",
+    "ustępujący",
+    "ustępująca",
+    "ustępujące",
+    "acute",
+    "chronic",
+    "severe",
+    "mild",
+    "moderate",
+    "recurrent",
+    "uncontrolled",
+    "unspecified",
+    "aigu",
+    "aiguë",
+    "chronique",
+    "sévère",
+    "léger",
+    "légère",
+    "modéré",
+    "modérée",
+    "agudo",
+    "aguda",
+    "crónico",
+    "crónica",
+    "crônico",
+    "crônica",
+    "grave",
+    "leve",
+    "moderado",
+    "moderada",
+    "severo",
+    "severa",
+    "recurrente",
+    "recorrente",
+    "isquémico",
+    "isquémica",
+    "isquêmico",
+    "isquêmica",
+    "hemorrágico",
+    "hemorrágica",
+    "ostry",
+    "ostra",
+    "ostre",
+    "przewlekły",
+    "przewlekła",
+    "przewlekłe",
+    "ciężki",
+    "ciężka",
+    "łagodny",
+    "łagodna",
+    "umiarkowany",
+    "umiarkowana",
+    "left",
+    "right",
+    "bilateral",
+    "knee",
+    "hip",
+    "shoulder",
+    "back",
+    "chest",
+    "neck",
+    "head",
+    "foot",
+    "hand",
+    "arm",
+    "leg",
+    "wrist",
+    "ankle",
+    "elbow",
+    "eye",
+    "ear",
+    "gauche",
+    "droite",
+    "genou",
+    "hanche",
+    "épaule",
+    "izquierda",
+    "izquierdo",
+    "derecha",
+    "derecho",
+    "rodilla",
+    "cadera",
+    "esquerda",
+    "esquerdo",
+    "direita",
+    "direito",
+    "joelho",
+    "quadril",
+    "lewa",
+    "lewe",
+    "lewy",
+    "prawa",
+    "prawe",
+    "prawy",
+    "kolano",
+    "biodro",
+    "bark",
+    "injury",
+    "wound",
+    "ulcer",
+    "pressure",
+    "type",
+    "follow",
+    "up",
+    "day",
+    "week",
+    "month",
+    "year",
+    "insuffisance",
+    "insuficiencia",
+    "insuficiência",
+    "cardiaque",
+    "cardíaca",
+    "cardíaco",
+    "rénale",
+    "hépatique",
+    "pulmonaire",
+    "respiratoire",
+    "respiratória",
+    "respiratorio",
+    "plaie",
+    "úlcera",
+    "ulcère",
+    "escarre",
+    "chute",
+    "caída",
+    "queda",
+    "douleur",
+    "dolor",
+    "dor",
+    "ból",
+    "niewydolność",
+    "serca",
+    "nerek",
+    "cukrzyca",
+    "rana",
+    "odleżyna",
+    "upadek",
+    "diabète",
+    "diabetes",
+    "home",
+    "medications",
+    "medication",
+    "meds",
+    "results",
+    "records",
+    "papers",
+    "documents",
+    "exams",
+    "exames",
+    "anteriores",
+    "previous",
+    "old",
+    "wyniki",
+    "badań",
+    "dokumentację",
+    "dokumentacja",
+    "leki",
+    "médicaments",
+    "résultats",
+    "medicamentos",
+    "resultados",
+    "estudios",
+    "informes",
+    "laudos",
+    "wheelchair",
+    "walker",
+    "in",
+    "by",
+    "into",
+    "to",
+    "from",
+    "back",
+    "out",
+    "up",
+    "over",
+    "with",
+    "for",
+    "à",
+    "au",
+    "aux",
+    "en",
+    "por",
+    "para",
+    "com",
+    "em",
+    "ao",
+    "przez",
+    "do",
+    "na",
+  ]).map((word) => word.toLowerCase()),
+);
+/** An uncued name candidate is no name when any word is a clinical, document, heading, status,
+ * generic, body or drug word, or has a medical ending. */
+function uncuedNotName(candidate: string): boolean {
+  return candidate
+    .split(/[^\p{L}'’]+/u)
+    .filter(Boolean)
+    .some((word) => {
+      const lower = word.toLowerCase();
+      return (
+        UNCUED_NOT_NAME_WORDS.has(lower) ||
+        FAMILY_HISTORY_WORDS.has(lower) ||
+        HEADER_WORDS.has(lower) ||
+        STATUS_WORDS.has(lower) ||
+        NOT_NAMES.has(lower) ||
+        TREATMENT_WORDS.has(lower) ||
+        PLACE_WORDS.has(lower) ||
+        GENERIC_BEFORE_CLINIC.has(lower) ||
+        DRUG_NAMES.has(lower) ||
+        MEDICAL_ENDING.test(lower) ||
+        new RegExp(`^${CLINIC_WORDS}$`, "u").test(word)
+      );
+    });
 }
 const RULES: Rule[] = [
   {
@@ -2673,6 +3050,30 @@ const RULES: Rule[] = [
       "gu",
     ),
     group: 1,
+  },
+  // A patient named in a header line, after the document's title, as "SURNAME, Given":
+  // "Physiotherapy summary — HALLOWAY, Wren". The name ends the line or stops at a column gap.
+  // find() drops the other runs this matches: a header's subject is what the document is about.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<=(?:^|\\n)[ \\t]*${DOCUMENT_HEADING}(?:[ \\t]*(?:—|–|-|:)[ \\t]*|[ \\t]+(?:for|pour|concernant|concerning|regarding|para|dla|sobre|de)[ \\t]+))(${COLUMN_NAME})(?=[ \\t]*(?:[.,;]|\\n|$)|[ ]{2,}|\\t)`,
+      "gu",
+    ),
+    group: 1,
+    uncued: true,
+    uncuedHeader: true,
+  },
+  // A person after a care verb: "Paramedics brought Tobiah Farnsworth", "trajo a Lucas …".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      // Not after a Spanish clitic: "lo trajeron a Consultas Externas" is "to".
+      `(?<![\\p{L}])(?<![Ll](?:o|a|os|as|e|es)[ \\t]+)${CARE_VERB}[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+    uncued: true,
   },
   // A relative named in passing: "her husband, Jordan", "son conjoint, Jean".
   {
@@ -3228,6 +3629,7 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
         continue;
+      if (rule.uncued && uncuedNotName(trimmed)) continue;
       if (rule.columnLabel) {
         const words = trimmed
           .split(/[^\p{L}'’]+/u)
@@ -3297,6 +3699,7 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         start,
         end,
         ...(rule.kin ? { kin: true as const } : {}),
+        ...(rule.uncuedHeader ? { uncuedHeader: true as const } : {}),
       });
       // Only an immediately linked checksum control inherits a SIN/NAS
       // field. An unrelated nine-digit measurement never inherits it.
@@ -3355,6 +3758,12 @@ function keepShortBirthCue(
   return others.length === 0;
 }
 
+// "HALLOWAY, Wren": a surname in capitals, a comma and a given name. A header line's name with
+// no person cue counts only in this form. A person field near a "Given Surname" run tells a
+// person's document, not that the run is the person: "Referral Letter: Orthopaedic Surgery"
+// stands over "DOB: …" as often as a name does, on the next line or in a column (#264 review).
+const SURNAME_FIRST_IN_CAPITALS = /^\p{Lu}[\p{Lu}'’ -]+,[ \t]+\p{Lu}/u;
+
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
   found.push(...ruleFindings(text, options));
@@ -3386,6 +3795,21 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
           found.length,
           ...found.filter((finding) => !dropped.has(finding)),
         );
+    }
+  }
+  {
+    const header = found.filter(
+      (finding) =>
+        finding.uncuedHeader &&
+        !SURNAME_FIRST_IN_CAPITALS.test(text.slice(finding.start, finding.end)),
+    );
+    if (header.length) {
+      const dropped = new Set(header);
+      found.splice(
+        0,
+        found.length,
+        ...found.filter((finding) => !dropped.has(finding)),
+      );
     }
   }
   // A town inside a clinic's name ("CLSC de Saint-Michel-des-Saints") is part of that name.
