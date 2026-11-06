@@ -89,6 +89,21 @@ function answer(
   native.onEnded = (outcome) => added(outcome, activeIndex, pickedCopy);
   native.invoke.mockImplementation(
     (command: string, args?: { request?: { index: number } }) => {
+      if (command === "ai_model_status" && !(command in map)) {
+        const chosen = rows.find(
+          (row) => row.inUse && row.state !== "notDownloaded",
+        );
+        return Promise.resolve(
+          chosen?.state === "installed"
+            ? {
+                state: "installed",
+                model: { name: chosen.model.name, sha256: chosen.model.sha256 },
+              }
+            : chosen?.state === "damaged"
+              ? { state: "damaged" }
+              : { state: "notInstalled" },
+        );
+      }
       if (command === "ai_models" && typeof map.ai_models !== "function")
         return Promise.resolve(structuredClone(rows));
       if (
@@ -623,12 +638,16 @@ describe("A copy still running when the row opens again (#275)", () => {
   });
 
   it("does not restore a removed model from a delayed hydration status", async () => {
+    let reads = 0;
     let snapshot!: (status: ModelStatus) => void;
     answer(
       {
         ai_model_catalog: [fake],
         ai_model_add_active: null,
-        ai_model_status: () => new Promise((resolve) => (snapshot = resolve)),
+        ai_model_status: () =>
+          ++reads === 1
+            ? new Promise((resolve) => (snapshot = resolve))
+            : Promise.resolve({ state: "notInstalled" }),
         ai_model_remove: { state: "notInstalled" },
       },
       installed,
@@ -967,6 +986,218 @@ describe("Device model catalog (#276A)", () => {
   ];
   const region = (name: string) => screen.getByRole("region", { name });
   const radio = (name: string) => screen.getByRole("radio", { name });
+
+  for (const operation of ["use", "remove", "failure"] as const) {
+    it(`reconciles ${operation} after an older completion during its native request`, async () => {
+      let currentRows = entries();
+      let currentStatus = installed;
+      let settle!: () => void;
+      answer({
+        ai_models: () => Promise.resolve(structuredClone(currentRows)),
+        ai_model_status: () => Promise.resolve(currentStatus),
+        ai_model_add_active: () => new Promise(() => undefined),
+        [operation === "remove" ? "ai_model_remove" : "ai_model_use"]: () =>
+          new Promise((resolve, reject) => {
+            settle = () => {
+              currentRows = entries().map((row) => ({
+                ...row,
+                inUse: row.index === 1,
+                ...(operation === "remove" && row.index === 0
+                  ? { state: "notDownloaded" as const }
+                  : {}),
+              }));
+              currentStatus = usedSecond;
+              if (operation === "failure") reject({ code: "busy" });
+              else resolve(currentStatus);
+            };
+          }),
+      });
+      const onStatus = vi.fn();
+      render(<AiModelSetting status={installed} onStatus={onStatus} />);
+      await screen.findByRole("radio", { name: second.name });
+      if (operation === "remove") {
+        await userEvent.click(
+          screen.getByRole("button", { name: "Remove FAKE model" }),
+        );
+        await userEvent.click(
+          within(screen.getByRole("alertdialog")).getByRole("button", {
+            name: "Remove FAKE model",
+          }),
+        );
+      } else await userEvent.click(radio(second.name));
+      act(() =>
+        native.listeners["ai-model-add-ended"]?.({
+          payload: { outcome: "added", status: installed },
+        }),
+      );
+      expect(radio(second.name)).toHaveAttribute("aria-disabled", "true");
+      await act(async () => settle());
+      await waitFor(() => expect(radio(second.name)).toBeChecked());
+      expect(onStatus).toHaveBeenLastCalledWith(usedSecond);
+      if (operation === "remove") expect(radio(fake.name)).toBeDisabled();
+      if (operation === "failure")
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "The AI helper is working",
+        );
+      expect(screen.getByRole("status")).not.toHaveTextContent("Model added");
+    });
+  }
+
+  it("reconciles a historical completion delivered after the choice has settled", async () => {
+    let currentRows = entries();
+    let currentStatus = installed;
+    answer({
+      ai_models: () => Promise.resolve(structuredClone(currentRows)),
+      ai_model_status: () => Promise.resolve(currentStatus),
+      ai_model_add_active: () => new Promise(() => undefined),
+      ai_model_use: () => {
+        currentRows = entries().map((row) => ({
+          ...row,
+          inUse: row.index === 1,
+        }));
+        currentStatus = usedSecond;
+        return Promise.resolve(usedSecond);
+      },
+    });
+    const onStatus = vi.fn();
+    render(<AiModelSetting status={installed} onStatus={onStatus} />);
+    await userEvent.click(
+      await screen.findByRole("radio", { name: second.name }),
+    );
+    await waitFor(() => expect(radio(second.name)).toBeChecked());
+    act(() =>
+      native.listeners["ai-model-add-ended"]?.({
+        payload: { outcome: "added", status: installed },
+      }),
+    );
+    await waitFor(() => expect(onStatus).toHaveBeenLastCalledWith(usedSecond));
+    expect(radio(second.name)).toBeChecked();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Model in use changed",
+    );
+  });
+
+  for (const failedHalf of ["status", "rows"] as const) {
+    it(`publishes no half pair when ${failedHalf} fails; explicit Retry reads both`, async () => {
+      let changed = false;
+      let fail = false;
+      const statusRead = vi.fn(() =>
+        fail && failedHalf === "status"
+          ? Promise.reject(new Error("FAKE unreadable status"))
+          : Promise.resolve(changed ? usedSecond : installed),
+      );
+      const rowsRead = vi.fn(() =>
+        fail && failedHalf === "rows"
+          ? Promise.reject(new Error("FAKE unreadable rows"))
+          : Promise.resolve(
+              entries().map((row) => ({
+                ...row,
+                inUse: changed ? row.index === 1 : row.index === 0,
+              })),
+            ),
+      );
+      answer({
+        ai_models: rowsRead,
+        ai_model_status: statusRead,
+        ai_model_add_active: () => new Promise(() => undefined),
+        ai_model_use: () => {
+          changed = true;
+          fail = true;
+          return Promise.resolve(usedSecond);
+        },
+      });
+      const onStatus = vi.fn();
+      render(<AiModelSetting status={installed} onStatus={onStatus} />);
+      await userEvent.click(
+        await screen.findByRole("radio", { name: second.name }),
+      );
+      await screen.findByRole("alert");
+      expect(radio(fake.name)).toBeChecked();
+      expect(onStatus).not.toHaveBeenCalledWith(usedSecond);
+      const beforeStatus = statusRead.mock.calls.length;
+      const beforeRows = rowsRead.mock.calls.length;
+      fail = false;
+      await userEvent.click(
+        screen.getByRole("button", { name: "Read the model list again" }),
+      );
+      await waitFor(() => expect(radio(second.name)).toBeChecked());
+      expect(onStatus).toHaveBeenLastCalledWith(usedSecond);
+      expect(statusRead.mock.calls.length).toBe(beforeStatus + 1);
+      expect(rowsRead.mock.calls.length).toBe(beforeRows + 1);
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+  }
+
+  for (const ending of [
+    "completion",
+    "unmount",
+    "read failure after completion",
+  ] as const) {
+    it(`guards an in-flight reconciliation against ${ending}`, async () => {
+      let changed = false;
+      let statusReads = 0;
+      let rowReads = 0;
+      let releaseStatus!: (status: ModelStatus) => void;
+      let releaseRows!: (rows: ModelRow[]) => void;
+      const chosen = entries().map((row) => ({
+        ...row,
+        inUse: row.index === 1,
+      }));
+      answer({
+        ai_models: () => {
+          if (!changed) return Promise.resolve(entries());
+          return ++rowReads === 1
+            ? new Promise((resolve) => {
+                releaseRows = resolve;
+              })
+            : Promise.resolve(chosen);
+        },
+        ai_model_status: () =>
+          ++statusReads === 1
+            ? new Promise((resolve, reject) => {
+                releaseStatus = (value) =>
+                  ending === "read failure after completion"
+                    ? reject(new Error("FAKE superseded read failure"))
+                    : resolve(value);
+              })
+            : Promise.resolve(usedSecond),
+        ai_model_add_active: () => new Promise(() => undefined),
+        ai_model_use: () => {
+          changed = true;
+          return Promise.resolve(usedSecond);
+        },
+      });
+      const onStatus = vi.fn();
+      const view = render(
+        <AiModelSetting status={installed} onStatus={onStatus} />,
+      );
+      await userEvent.click(
+        await screen.findByRole("radio", { name: second.name }),
+      );
+      await waitFor(() => expect(rowReads).toBe(1));
+      if (ending === "unmount") view.unmount();
+      else
+        act(() =>
+          native.listeners["ai-model-add-ended"]?.({
+            payload: { outcome: "added", status: installed },
+          }),
+        );
+      await act(async () => {
+        releaseRows(entries());
+        releaseStatus(installed);
+      });
+      if (ending === "unmount") expect(onStatus).not.toHaveBeenCalled();
+      else {
+        await waitFor(() => expect(radio(second.name)).toBeChecked());
+        expect(onStatus).toHaveBeenCalledExactlyOnceWith(usedSecond);
+        expect(rowReads).toBe(2);
+        expect(statusReads).toBe(2);
+        expect(screen.getByRole("status")).toHaveTextContent(
+          "Model in use changed",
+        );
+      }
+    });
+  }
 
   it("lists every offered model with size, licence, device choice and Add even when installed", async () => {
     answer({ ai_models: entries(false) });

@@ -143,10 +143,21 @@ export function AiModelSetting({
   const listRequest = useRef(0);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  const publishedStatus = useRef(status);
+  const statusProp = useRef(status);
+  if (statusProp.current !== status) {
+    statusProp.current = status;
+    publishedStatus.current = status;
+  }
   const onStatusRef = useRef(onStatus);
-  onStatusRef.current = onStatus;
+  onStatusRef.current = (next) => {
+    publishedStatus.current = next;
+    onStatus(next);
+  };
   const own = useRef(false);
   const mutating = useRef(false);
+  const mutationRequest = useRef(0);
+  const mutationNotice = useRef(false);
   const endedWhileOwn = useRef<ModelAddOutcome | null>(null);
   const starter = useRef<"download" | "add">("add");
   const targetIndex = useRef<number | null>(null);
@@ -179,27 +190,49 @@ export function AiModelSetting({
     return !!scope?.contains(active);
   };
 
-  /** Replies started before another mutation/completion must not restore an old choice. */
-  const reloadRows = async () => {
-    const revision = activityRevision.current;
+  /** Status and rows from a reconciliation are published together. A completion
+   * invalidates the read, never the admitted mutation's ownership. */
+  const reloadRows = async (reconcile = false, duringMutation = false) => {
+    if (mutating.current && !duringMutation) return;
     const request = ++listRequest.current;
     setRefreshing(true);
-    const current = () =>
-      mounted.current &&
-      revision === activityRevision.current &&
-      request === listRequest.current;
+    const current = () => mounted.current && request === listRequest.current;
     try {
-      const next = await invoke<ModelRow[]>("ai_models");
-      if (!Array.isArray(next)) throw new Error("Unreadable model list");
-      if (!current()) return;
-      setRows(next);
-      setLoaded(true);
-      setListError(false);
-    } catch {
-      if (current()) setListError(true);
+      while (current()) {
+        const revision = activityRevision.current;
+        try {
+          const [next, nextStatus] = await Promise.all([
+            invoke<ModelRow[]>("ai_models"),
+            reconcile
+              ? invoke<ModelStatus>("ai_model_status")
+              : Promise.resolve(null),
+          ]);
+          if (!Array.isArray(next) || (reconcile && !nextStatus))
+            throw new Error("Unreadable model list");
+          if (!current() || (mutating.current && !duringMutation)) return;
+          if (revision !== activityRevision.current) {
+            if (reconcile) continue;
+            return;
+          }
+          setRows(next);
+          if (
+            nextStatus &&
+            JSON.stringify(publishedStatus.current) !==
+              JSON.stringify(nextStatus)
+          )
+            onStatusRef.current(nextStatus);
+          setLoaded(true);
+          setListError(false);
+          return;
+        } catch {
+          if (!current() || (mutating.current && !duringMutation)) return;
+          if (reconcile && revision !== activityRevision.current) continue;
+          setListError(true);
+          return;
+        }
+      }
     } finally {
-      if (mounted.current && request === listRequest.current)
-        setRefreshing(false);
+      if (current()) setRefreshing(false);
     }
   };
   const reloadRef = useRef(reloadRows);
@@ -233,7 +266,8 @@ export function AiModelSetting({
   }, [progress]);
   useEffect(() => {
     const what = after.current;
-    if (!what || adding || working || refreshing || !loaded) return;
+    if (!what || adding || working || refreshing || !loaded || listError)
+      return;
     const index = targetIndex.current;
     let target: HTMLElement | null | undefined;
     if (what === "installed") {
@@ -270,9 +304,10 @@ export function AiModelSetting({
     if (!target) return;
     after.current = null;
     if (focusIsFree()) target.focus();
-  }, [rows, loaded, adding, working, refreshing, refusal]);
+  }, [rows, loaded, adding, working, refreshing, refusal, listError]);
 
   const attach = (now: ModelAddNow) => {
+    mutationNotice.current = false;
     setDownloading(now.kind === "download");
     starter.current = now.kind === "download" ? "download" : "add";
     targetIndex.current = now.index ?? null;
@@ -283,18 +318,22 @@ export function AiModelSetting({
         : { done: now.done, total: now.total, index: now.index ?? null },
     );
   };
-  const finish = (result: ModelAddOutcome) => {
+  const finish = (result: ModelAddOutcome, foreign = false) => {
     activityRevision.current += 1;
     setNote(null);
     setProgress(null);
-    if (result.outcome === "added") {
+    if (result.outcome === "added" && (!foreign || !mutationNotice.current)) {
       after.current = "installed";
-      onStatusRef.current(result.status);
+      if (!foreign) onStatusRef.current(result.status);
       setMessage("ai.model.added");
-    } else if (result.outcome !== "cancelled") {
+    } else if (
+      result.outcome !== "cancelled" &&
+      result.outcome !== "added" &&
+      (!foreign || !mutationNotice.current)
+    ) {
       setRefusal(refusalKey(result));
     }
-    void reloadRef.current();
+    void reloadRef.current(foreign);
   };
   const finishRef = useRef(finish);
   finishRef.current = finish;
@@ -304,7 +343,11 @@ export function AiModelSetting({
       if (!live || !mounted.current) return;
       activityRevision.current += 1;
       if (own.current) endedWhileOwn.current = event.payload;
-      else finishRef.current(event.payload);
+      else if (!mutating.current) finishRef.current(event.payload, true);
+      else {
+        setProgress(null);
+        setNote(null);
+      }
     });
     void stop
       .then(async () => {
@@ -318,13 +361,9 @@ export function AiModelSetting({
         const now = await invoke<ModelAddNow | null>("ai_model_add_active");
         if (!current()) return;
         if (now) attach(now);
-        else {
-          const next = await invoke<ModelStatus>("ai_model_status");
-          if (current() && next) {
-            onStatusRef.current(next);
-            // Covers a completion that happened before listener registration.
-            void reloadRef.current();
-          }
+        else if (current() && now === null) {
+          // A completion may have preceded listener registration.
+          void reloadRef.current(true);
         }
       })
       .catch(() => undefined);
@@ -341,6 +380,7 @@ export function AiModelSetting({
     if (busy || own.current || mutating.current) return;
     activityRevision.current += 1;
     endedWhileOwn.current = null;
+    mutationNotice.current = false;
     setRefusal(null);
     setMessage(null);
     setNote(null);
@@ -405,7 +445,9 @@ export function AiModelSetting({
   ) => {
     if (busy || own.current || mutating.current) return;
     mutating.current = true;
-    const revision = ++activityRevision.current;
+    mutationNotice.current = true;
+    const mutation = ++mutationRequest.current;
+    activityRevision.current += 1;
     setWorking(true);
     setRefusal(null);
     setMessage(null);
@@ -413,13 +455,11 @@ export function AiModelSetting({
     after.current = command === "ai_model_remove" ? "removed" : null;
     if (command === "ai_model_remove") targetIndex.current = index;
     try {
-      const next = await invoke<ModelStatus>(command, { request: { index } });
-      if (!mounted.current || revision !== activityRevision.current) return;
-      onStatusRef.current(next);
+      await invoke<ModelStatus>(command, { request: { index } });
+      if (!mounted.current || mutation !== mutationRequest.current) return;
       if (command === "ai_model_use") setMessage("ai.models.changed");
-      await reloadRef.current();
     } catch (failure) {
-      if (!mounted.current || revision !== activityRevision.current) return;
+      if (!mounted.current || mutation !== mutationRequest.current) return;
       after.current = null;
       setRefusal(
         (failure as { code?: string })?.code === "busy"
@@ -427,8 +467,11 @@ export function AiModelSetting({
           : "ai.model.refusedStorage",
       );
     } finally {
-      mutating.current = false;
-      if (mounted.current) setWorking(false);
+      if (mounted.current && mutation === mutationRequest.current) {
+        await reloadRef.current(true, true);
+        mutating.current = false;
+        setWorking(false);
+      }
     }
   };
   const progressIndex = progress?.index;
@@ -631,7 +674,7 @@ export function AiModelSetting({
             <button
               className="button"
               type="button"
-              onClick={() => void reloadRef.current()}
+              onClick={() => void reloadRef.current(true)}
             >
               {t("ai.models.retry")}
             </button>
