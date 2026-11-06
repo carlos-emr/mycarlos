@@ -72,7 +72,15 @@ const aiRow = (page: Page) =>
     has: page.getByRole("heading", { name: en("ai.preferences.title") }),
   });
 const rowButton = (row: Locator, key: Parameters<typeof translate>[1]) =>
-  row.getByRole("button", { name: en(key), exact: true });
+  row.getByRole("button", {
+    name:
+      key === "ai.model.download"
+        ? `${en("ai.models.download")} ${FAKE_MODEL.name}`
+        : key === "ai.model.remove"
+          ? `${en("ai.models.remove")} ${FAKE_MODEL.name}`
+          : en(key),
+    exact: true,
+  });
 
 test("downloads the default model with its progress, and the reader's Summary uses it", async ({
   page,
@@ -102,9 +110,9 @@ test("downloads the default model with its progress, and the reader's Summary us
 
   await releaseAi(page, AI_COMMANDS.download);
   await expect(row.getByRole("status")).toHaveText(en("ai.model.added"));
-  await expect(row).toContainText(
-    en("ai.model.installed", { name: FAKE_MODEL.name }),
-  );
+  await expect(
+    row.getByRole("radio", { name: FAKE_MODEL.name, exact: true }),
+  ).toBeChecked();
   await expect(rowButton(row, "ai.model.remove")).toBeVisible();
   await expect(rowButton(row, "ai.model.download")).toHaveCount(0);
   expect(await aiCalls(page, AI_COMMANDS.download)).toHaveLength(1);
@@ -150,6 +158,99 @@ test("downloads the default model with its progress, and the reader's Summary us
   await expectOnlyFakedCommands(page);
 });
 
+test("the download's progress bar fits the row, wide and at 320 px with 200% text (#275)", async ({
+  page,
+  context,
+}) => {
+  const row = await openPreferences(page);
+  await holdAi(page, AI_COMMANDS.download);
+  await rowButton(row, "ai.model.download").click();
+  // Half way, as the text says.
+  const bar = row.getByRole("progressbar", {
+    name: en("ai.model.progressName"),
+    exact: true,
+  });
+  await expect(bar).toHaveAttribute("aria-valuenow", "50");
+  await expect(bar).toHaveAttribute(
+    "aria-valuetext",
+    en("ai.model.progressValue", {
+      percent: "50%",
+      done: MB(TOTAL / 2),
+      total: MB(TOTAL),
+    }),
+  );
+  const fits = async () => {
+    const [box, rowBox] = [await bar.boundingBox(), await row.boundingBox()];
+    expect(box && rowBox).toBeTruthy();
+    expect(box!.width).toBeGreaterThan(40);
+    expect(box!.x).toBeGreaterThanOrEqual(rowBox!.x);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(
+      rowBox!.x + rowBox!.width + 0.5,
+    );
+    await expect(rowButton(row, "common.cancel")).toBeInViewport();
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  };
+  await fits();
+  // A narrow window with the text at 200%: the line wraps, nothing scrolls
+  // sideways.
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Page.setFontSizes", { fontSizes: { standard: 32 } });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await bar.scrollIntoViewIfNeeded();
+  await fits();
+  // Gone once the download ends.
+  await releaseAi(page, AI_COMMANDS.download);
+  await expect(row.getByRole("status")).toHaveText(en("ai.model.added"));
+  await expect(bar).toHaveCount(0);
+  await expectOnlyFakedCommands(page);
+});
+
+test("a download still running when the patient comes back shows its bar, not the button (#275)", async ({
+  page,
+}) => {
+  let row = await openPreferences(page);
+  await holdAi(page, AI_COMMANDS.download);
+  await rowButton(row, "ai.model.download").click();
+  await expect(row.getByRole("status")).toHaveText(
+    en("ai.model.downloading", { done: MB(TOTAL / 2), total: MB(TOTAL) }),
+  );
+  // Another page, then back: the row is new, and the download still runs.
+  await sidebar(page)
+    .getByRole("button", { name: en("security.title"), exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: en("security.title"), level: 1 }),
+  ).toBeVisible();
+  await sidebar(page)
+    .getByRole("button", { name: en("sidebar.preferences"), exact: true })
+    .click();
+  row = aiRow(page);
+  await expect(
+    row.getByRole("progressbar", {
+      name: en("ai.model.progressName"),
+      exact: true,
+    }),
+  ).toHaveAttribute("aria-valuenow", "50");
+  await expect(row.getByRole("status")).toHaveText(
+    en("ai.model.downloading", { done: MB(TOTAL / 2), total: MB(TOTAL) }),
+  );
+  await expect(rowButton(row, "common.cancel")).toBeVisible();
+  await expect(rowButton(row, "ai.model.download")).toBeDisabled();
+  await expect(row.getByRole("alert")).toHaveCount(0);
+  // It ends as it would have: the model is added.
+  await releaseAi(page, AI_COMMANDS.download);
+  await expect(row.getByRole("status")).toHaveText(en("ai.model.added"));
+  await expect(rowButton(row, "ai.model.remove")).toBeVisible();
+  expect(await aiCalls(page, AI_COMMANDS.download)).toHaveLength(1);
+  await expectOnlyFakedCommands(page);
+});
+
 test("cancelling a download leaves no model and says nothing went wrong", async ({
   page,
 }) => {
@@ -165,9 +266,9 @@ test("cancelling a download leaves no model and says nothing went wrong", async 
   await expect(row.getByRole("status")).toHaveText("");
   await expect(row.getByRole("alert")).toHaveCount(0);
   await expect(rowButton(row, "ai.model.download")).toBeEnabled();
-  await expect(row).not.toContainText(
-    en("ai.model.installed", { name: FAKE_MODEL.name }),
-  );
+  await expect(
+    row.getByRole("radio", { name: FAKE_MODEL.name, exact: true }),
+  ).toBeDisabled();
   await expectOnlyFakedCommands(page);
 });
 
@@ -186,9 +287,9 @@ for (const [outcome, key] of [
     await rowButton(row, "ai.model.download").click();
     await expect(row.getByRole("alert")).toHaveText(en(key));
     await expect(rowButton(row, "ai.model.download")).toBeEnabled();
-    await expect(row).not.toContainText(
-      en("ai.model.installed", { name: FAKE_MODEL.name }),
-    );
+    await expect(
+      row.getByRole("radio", { name: FAKE_MODEL.name, exact: true }),
+    ).toBeDisabled();
     await expectOnlyFakedCommands(page);
   });
 
@@ -203,9 +304,9 @@ test("adds a model file: the check's progress, then installed", async ({
   );
   await releaseAi(page, AI_COMMANDS.addPicked);
   await expect(row.getByRole("status")).toHaveText(en("ai.model.added"));
-  await expect(row).toContainText(
-    en("ai.model.installed", { name: FAKE_MODEL.name }),
-  );
+  await expect(
+    row.getByRole("radio", { name: FAKE_MODEL.name, exact: true }),
+  ).toBeChecked();
   // The page never sends a path: the picker opens inside the command.
   expect(await aiCalls(page, AI_COMMANDS.addPicked)).toEqual([{}]);
   await expectOnlyFakedCommands(page);
@@ -243,9 +344,9 @@ test("Remove asks first, then the model is gone and can be downloaded again", as
   page,
 }) => {
   const row = await openPreferences(page, { model: INSTALLED });
-  await expect(row).toContainText(
-    en("ai.model.installed", { name: FAKE_MODEL.name }),
-  );
+  await expect(
+    row.getByRole("radio", { name: FAKE_MODEL.name, exact: true }),
+  ).toBeChecked();
   await rowButton(row, "ai.model.remove").click();
   const confirm = page.getByRole("alertdialog");
   await expect(confirm).toContainText(en("ai.model.removeConfirm"));
@@ -258,12 +359,15 @@ test("Remove asks first, then the model is gone and can be downloaded again", as
   await rowButton(row, "ai.model.remove").click();
   await page
     .getByRole("alertdialog")
-    .getByRole("button", { name: en("ai.model.remove"), exact: true })
+    .getByRole("button", {
+      name: `${en("ai.models.remove")} ${FAKE_MODEL.name}`,
+      exact: true,
+    })
     .click();
   await expect(rowButton(row, "ai.model.download")).toBeVisible();
-  await expect(row).not.toContainText(
-    en("ai.model.installed", { name: FAKE_MODEL.name }),
-  );
+  await expect(
+    row.getByRole("radio", { name: FAKE_MODEL.name, exact: true }),
+  ).toBeDisabled();
   expect(await aiCalls(page, AI_COMMANDS.remove)).toHaveLength(1);
   await expectOnlyFakedCommands(page);
 });
@@ -276,12 +380,15 @@ test("a Remove refused while the helper works says so, and keeps the model", asy
   await rowButton(row, "ai.model.remove").click();
   await page
     .getByRole("alertdialog")
-    .getByRole("button", { name: en("ai.model.remove"), exact: true })
+    .getByRole("button", {
+      name: `${en("ai.models.remove")} ${FAKE_MODEL.name}`,
+      exact: true,
+    })
     .click();
   await expect(row.getByRole("alert")).toHaveText(en("ai.model.refusedBusy"));
-  await expect(row).toContainText(
-    en("ai.model.installed", { name: FAKE_MODEL.name }),
-  );
+  await expect(
+    row.getByRole("radio", { name: FAKE_MODEL.name, exact: true }),
+  ).toBeChecked();
   await expectOnlyFakedCommands(page);
 });
 
@@ -292,7 +399,7 @@ test("a damaged model is said, with Remove and no Download", async ({
   await expect(row).toContainText(en("ai.model.damaged"));
   await expect(rowButton(row, "ai.model.remove")).toBeVisible();
   await expect(rowButton(row, "ai.model.download")).toHaveCount(0);
-  await expect(rowButton(row, "ai.model.add")).toHaveCount(0);
+  await expect(rowButton(row, "ai.model.add")).toBeVisible();
   await expectOnlyFakedCommands(page);
 });
 
