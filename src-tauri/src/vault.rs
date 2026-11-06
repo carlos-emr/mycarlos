@@ -35,23 +35,45 @@ use uuid::Uuid;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
+mod ai_results;
 mod delivery;
-#[cfg(all(test, feature = "portal-linking"))]
+// The push hooks and the Preferences choice will call most of this (document_push.rs).
+#[cfg_attr(not(test), allow(dead_code))]
+mod remote_notices;
+pub(crate) use delivery::AidFiling;
+#[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
 
+use ai_results::StoredAiResult;
+pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
+
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
-/// size class; format 3 adds the history; format 4 adds profile identity details.
+/// size class; format 3 adds the history; format 4 adds profile identity details;
+/// formats 5–7 add portal links and delivery and approval evidence; format 8
+/// keeps reading aids with their original; format 9 adds remote notice consent
+/// and push destinations (#192); format 10 adds the AI helper's answers (#72),
+/// objects of their own; format 11 caps the hidden answers apart from the
+/// shown ones (D13).
 /// Formats 1–3 are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = 7;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_AI_HIDDEN_CAP;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
 /// The first format that can hold a history.
 const MANIFEST_FORMAT_HISTORY: u32 = 3;
+/// The first format that can hold the AI helper's answers (#72 part D): at
+/// most 32 per document, hidden ones included.
+const MANIFEST_FORMAT_AI_RESULTS: u32 = 10;
+/// The first format whose hidden AI answers have a cap of their own (D13):
+/// 32 shown and 96 hidden per document. The newest, so `VAULT_FORMAT` is this
+/// one. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
+/// taken at merge"): a renumber changes this line and the format's heading in
+/// VAULT_FORMAT.md, nothing else here.
+const MANIFEST_FORMAT_AI_HIDDEN_CAP: u32 = 11;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
@@ -240,24 +262,19 @@ pub enum VaultError {
     Localization,
     #[error("the portal link could not be completed")]
     Portal(portal_link::LinkError),
-    #[cfg(feature = "portal-linking")]
     #[error("a document from the clinic could not be verified; no receipt was sent")]
     PickupRefused,
-    #[cfg(feature = "portal-linking")]
     #[error("the clinic approval request is no longer pending")]
     ApprovalTerminal(
         crate::portal_approval::ApprovalState,
         Option<crate::portal_approval::ApprovalReason>,
     ),
-    #[cfg(feature = "portal-linking")]
     #[error("the saved approval request was not found on the portal")]
     ApprovalRequestMissing,
-    #[cfg(feature = "portal-linking")]
     #[error("clinic approval needs review before another request")]
     ApprovalNeedsClinic,
     #[error("another passphrase operation or speed test is running")]
     Busy,
-    #[cfg(feature = "portal-linking")]
     #[error("a document check is stopping; please try again")]
     DocumentCheckBusy,
     #[error("the vault has already been created")]
@@ -280,6 +297,10 @@ pub enum VaultError {
     NotFound,
     #[error("the requested change is not valid")]
     Invalid,
+    /// A document keeps at most 32 AI answers, hidden ones included, and
+    /// none is ever deleted (D3): a new one is refused, said as such.
+    #[error("the document keeps the most AI answers it can")]
+    AiResultsFull,
     #[error("the passphrase is too easy to guess")]
     WeakPassphrase,
     #[error("too many files were selected for one import")]
@@ -482,6 +503,12 @@ struct StoredRecord {
     original_pdf: Option<StoredOriginalPdf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     delivery: Option<crate::portal_delivery::Custody>,
+    /// The clinician-approved reading aid paired with this delivery (format 8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reading_aid: Option<crate::portal_delivery::AidCustody>,
+    /// What the AI helper wrote about this document (#72). Format 10 only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ai_results: Vec<StoredAiResult>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -519,6 +546,7 @@ impl StoredRecord {
             wrapped_key: &original.wrapped_object_key,
             sha256: Some(&original.sha256),
         }))
+        .chain(self.ai_results.iter().map(StoredAiResult::object))
     }
 }
 
@@ -569,6 +597,17 @@ struct Manifest {
     /// Format 3 only.
     #[serde(default, skip_serializing_if = "HistoryState::is_empty")]
     history: HistoryState,
+    /// Format 8. Reading aids verified and kept until their original is filed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    waiting_aids: Vec<crate::portal_delivery::WaitingAid>,
+    /// Format 9. Remote "documents ready" notices: the patient's consent, this vault's push
+    /// destinations and the revocations still to send (#192). Kept here, encrypted, so nothing
+    /// outside the vault says which clinics, or how many, the vault is linked to.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::document_notifications::RemoteNotices::is_empty"
+    )]
+    remote_notices: crate::document_notifications::RemoteNotices,
 }
 
 /// Where the history's entries are, and what pins its chain: how many there
@@ -626,6 +665,10 @@ pub struct VaultRecord {
     /// clinic did not record one. This is independent of the date added here.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clinic_service_date: Option<String>,
+    /// The clinician-approved reading aid filed with this delivery, if any (format 10). It is
+    /// reached from this record only, never listed as a document of its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reading_aid: Option<crate::portal_delivery::ReadingAidView>,
 }
 
 // JSON numbers must remain exact when the renderer compares capture order.
@@ -858,7 +901,6 @@ impl Drop for KdfWork<'_> {
 pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
-    #[cfg(feature = "portal-linking")]
     collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
     notifications: std::sync::OnceLock<Arc<crate::document_notification_runtime::Runtime>>,
     unlocked: Mutex<Option<UnlockedVault>>,
@@ -868,7 +910,6 @@ pub struct VaultStore {
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
     portal_session: Arc<AtomicU64>,
-    #[cfg(feature = "portal-linking")]
     portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
@@ -880,6 +921,9 @@ pub struct VaultStore {
     /// The folder this run of the app last set a vault aside in, for the
     /// next vault created (#71's third part). In memory only.
     last_set_aside: Mutex<Option<String>>,
+    /// Push notice tokens this run has handled, and whether one still waits for a check
+    /// (remote_notices.rs). In memory only, and holds no link or clinic.
+    push_inbox: Mutex<crate::document_push::PushInbox>,
 }
 
 impl VaultStore {
@@ -887,7 +931,6 @@ impl VaultStore {
         Self {
             root,
             collection: crate::document_collection::Controller::new(Instant::now()),
-            #[cfg(feature = "portal-linking")]
             collection_resume: Mutex::new(None),
             notifications: std::sync::OnceLock::new(),
             unlocked: Mutex::new(None),
@@ -895,12 +938,12 @@ impl VaultStore {
             snapshot_sequence: AtomicU64::new(0),
             kdf_running: AtomicBool::new(false),
             portal_session: Arc::new(AtomicU64::new(0)),
-            #[cfg(feature = "portal-linking")]
             portal_check_running: AtomicBool::new(false),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
+            push_inbox: Mutex::new(Default::default()),
         }
     }
 
@@ -918,7 +961,6 @@ impl VaultStore {
     }
 
     fn drop_idle_collection_cache(&self) {
-        #[cfg(feature = "portal-linking")]
         {
             *self
                 .collection_resume
@@ -930,7 +972,6 @@ impl VaultStore {
         self.collection.invalidate_cache();
         self.drop_idle_collection_cache();
     }
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn automatic_collection_allowed(&self) -> bool {
         self.collection.allowed()
             && self
@@ -983,15 +1024,7 @@ impl VaultStore {
         let stamp = self.collection.suspend();
         self.drop_idle_collection_cache();
         run_at_test_boundary("notifications.after-automatic-suspend");
-        if !cfg!(any(
-            test,
-            all(
-                windows,
-                feature = "document-notifications",
-                feature = "portal-linking",
-                feature = "document-automatic-checks"
-            )
-        )) {
+        if !cfg!(any(test, windows)) {
             return Err(VaultError::Invalid);
         }
         let status = self
@@ -1011,14 +1044,9 @@ impl VaultStore {
         self.drop_idle_collection_cache();
     }
 
-    /// Defined but launched only by the separate default-off build feature.
-    /// One weak app-owned worker; no strong vault reference while sleeping.
-    #[cfg(all(
-        windows,
-        feature = "document-notifications",
-        feature = "portal-linking",
-        feature = "document-automatic-checks"
-    ))]
+    /// Started at launch on Windows; it checks only while the patient has automatic
+    /// checks turned on. One weak app-owned worker; no strong vault reference while sleeping.
+    #[cfg(windows)]
     pub(crate) fn start_document_collection(self: &Arc<Self>) -> std::io::Result<()> {
         let weak = Arc::downgrade(self);
         std::thread::Builder::new()
@@ -1036,12 +1064,7 @@ impl VaultStore {
             .map(|_| ())
     }
 
-    #[cfg(all(
-        windows,
-        feature = "document-notifications",
-        feature = "portal-linking",
-        feature = "document-automatic-checks"
-    ))]
+    #[cfg(windows)]
     fn automatic_document_tick(&self) {
         if !self.automatic_collection_allowed() {
             return;
@@ -1305,6 +1328,8 @@ impl VaultStore {
                 records: Vec::new(),
                 history: HistoryState::default(),
                 portal_links: Vec::new(),
+                waiting_aids: Vec::new(),
+                remote_notices: Default::default(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -1738,12 +1763,7 @@ impl VaultStore {
         VaultSnapshot {
             capture,
             portal_linking_enabled: crate::portal_client::available(),
-            automatic_document_checks_supported: cfg!(all(
-                windows,
-                feature = "document-notifications",
-                feature = "portal-linking",
-                feature = "document-automatic-checks"
-            )),
+            automatic_document_checks_supported: cfg!(windows),
             portal_links: unlocked
                 .manifest
                 .portal_links
@@ -1778,6 +1798,10 @@ impl VaultStore {
                         record,
                         &unlocked.manifest.portal_links,
                     ),
+                    reading_aid: record
+                        .reading_aid
+                        .as_ref()
+                        .and_then(crate::portal_delivery::AidCustody::view),
                     clinic_service_date: record
                         .delivery
                         .as_ref()
@@ -1804,7 +1828,7 @@ impl VaultStore {
         )
     }
 
-    /// The feature check precedes key generation, vault writes and HTTP. The
+    /// The availability check precedes key generation, vault writes and HTTP. The
     /// one-use code is transient: only the pending private seeds are persisted.
     pub fn portal_link_ticket(&self) -> u64 {
         self.portal_session.load(Ordering::Acquire)
@@ -1844,9 +1868,6 @@ impl VaultStore {
     ) -> Result<LinkSummary, VaultError> {
         use portal_link::LinkError;
         let (now_ms, session) = context;
-        if !portal_link::enabled() {
-            return Err(VaultError::Portal(LinkError::Disabled));
-        }
         if !crate::portal_client::available() {
             return Err(VaultError::Portal(LinkError::Unavailable));
         }
@@ -2337,6 +2358,8 @@ impl VaultStore {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
+                    ai_results: Vec::new(),
                 };
                 // Preserve raw bytes before helper parsing/rendering, including
                 // unsigned or too-large PDFs whose signatures cannot be ruled
@@ -4666,12 +4689,25 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
                 return Err(VaultError::Corrupt);
             }
         }
+        ai_results::validate(
+            record,
+            manifest.format_version,
+            &mut object_ids,
+            &mut object_names,
+        )?;
         if (manifest.format_version < 6 && record.delivery.is_some())
             || record
                 .delivery
                 .as_ref()
                 .is_some_and(|c| !delivery_ids.insert((c.link_id, c.outer.delivery_id.as_str())))
             || !delivery::valid_custody(record, &manifest.portal_links)
+            // Format 8 is the first that can hold a reading aid; an older
+            // build would drop the unknown field and with it the receipt.
+            || (manifest.format_version < 8 && record.reading_aid.is_some())
+            || !delivery::valid_aid_custody(record, &manifest.portal_links)
+            || record.reading_aid.as_ref().is_some_and(|a| {
+                !delivery_ids.insert((a.link_id, a.outer.delivery_id.as_str()))
+            })
         {
             return Err(VaultError::Corrupt);
         }
@@ -4685,6 +4721,31 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         {
             return Err(VaultError::Corrupt);
         }
+    }
+    // Remote notices (format 9): a consistent state whose active destinations each name a
+    // completed link of this vault by its current device key.
+    let remote = &manifest.remote_notices;
+    if (manifest.format_version < 9 && !remote.is_empty())
+        || !remote.valid()
+        || !remote.active().iter().all(|d| {
+            manifest.portal_links.iter().any(|l| {
+                l.id == d.owner().link_id()
+                    && l.clinic.is_some()
+                    && l.keys.device_key_id() == d.owner().device_key_id()
+            })
+        })
+    {
+        return Err(VaultError::Corrupt);
+    }
+    // A waiting reading aid (format 8) shares the one delivery-ID space with filed deliveries.
+    if (manifest.format_version < 8 && !manifest.waiting_aids.is_empty())
+        || !delivery::valid_waiting_aids(
+            &manifest.waiting_aids,
+            &manifest.portal_links,
+            &mut delivery_ids,
+        )
+    {
+        return Err(VaultError::Corrupt);
     }
     validate_history(manifest, &mut object_names, &mut object_ids)
 }
@@ -6863,7 +6924,6 @@ mod collection_object_tests {
     use super::*;
     use crate::document_collection::{CycleControl, StopReason};
 
-    #[cfg(feature = "portal-linking")]
     fn consent_store(path: &Path) -> Arc<VaultStore> {
         use crate::document_notification_runtime::{active::Backend, Error, Permission, Runtime};
         struct BackendMock;
@@ -6887,7 +6947,6 @@ mod collection_object_tests {
         store
     }
     #[test]
-    #[cfg(feature = "portal-linking")]
     fn native_opt_out_suspends_new_cycle_before_persistence_and_drops_idle_resume() {
         let temp = tempfile::tempdir().unwrap();
         let store = consent_store(temp.path());
@@ -6915,7 +6974,6 @@ mod collection_object_tests {
         assert!(!store.automatic_collection_allowed());
     }
     #[test]
-    #[cfg(feature = "portal-linking")]
     #[allow(clippy::disallowed_methods)] // Simulated storage failure, no patient vault.
     fn failed_native_automatic_opt_out_persistence_cannot_restore_eligibility() {
         let temp = tempfile::tempdir().unwrap();
@@ -8566,27 +8624,7 @@ mod tests {
         assert!(matches!(store.snapshot(), Err(VaultError::Storage)));
     }
 
-    #[cfg(not(feature = "portal-linking"))]
-    #[test]
-    fn portal_link_default_off_refuses_before_creating_files_or_keys() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("not-created");
-        let store = VaultStore::new(root.clone());
-        assert!(matches!(
-            store.link_portal(
-                "https://fake.example",
-                "FAKE0001-FAKE7-Q2M4K",
-                "myCarlos",
-                None,
-                1,
-                store.portal_link_ticket()
-            ),
-            Err(VaultError::Portal(portal_link::LinkError::Disabled))
-        ));
-        assert!(!root.exists());
-    }
-
-    #[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn portal_link_lock_started_during_pending_commit_never_sends_http() {
         let temp = tempfile::tempdir().unwrap();
@@ -8646,7 +8684,7 @@ mod tests {
         assert!(summary[0].incomplete);
     }
 
-    #[cfg(all(feature = "portal-linking", not(target_os = "android")))]
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn portal_link_queued_old_session_ticket_does_not_mutate_new_session() {
         let temp = tempfile::tempdir().unwrap();
@@ -9135,6 +9173,8 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
+                    ai_results: Vec::new(),
                 },
                 StoredRecord {
                     id: second_record,
@@ -9151,10 +9191,14 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
+                    ai_results: Vec::new(),
                 },
             ],
             history: HistoryState::default(),
             portal_links: Vec::new(),
+            waiting_aids: Vec::new(),
+            remote_notices: Default::default(),
         };
         (vault_id, manifest)
     }
@@ -14867,10 +14911,14 @@ mod tests {
                     hidden: None,
                     original_pdf: None,
                     delivery: None,
+                    reading_aid: None,
+                    ai_results: Vec::new(),
                 })
                 .collect(),
             history: HistoryState::default(),
             portal_links: Vec::new(),
+            waiting_aids: Vec::new(),
+            remote_notices: Default::default(),
         }
     }
 
@@ -16701,6 +16749,12 @@ mod tests {
             MANIFEST_FORMAT_V1,
             MANIFEST_FORMAT_HIDDEN,
             MANIFEST_FORMAT_HISTORY,
+            // Reading aids, format 8, and the last format before the AI
+            // helper's answers (#72): remote notices, format 9.
+            MANIFEST_FORMAT_AI_RESULTS - 2,
+            MANIFEST_FORMAT_AI_RESULTS - 1,
+            // The AI helper's answers under one cap, format 10.
+            MANIFEST_FORMAT_AI_RESULTS,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =
@@ -19497,7 +19551,7 @@ mod tests {
     #[test]
     fn identity_survives_migration_of_all_older_formats_without_record_loss() {
         let temp = tempfile::tempdir().unwrap();
-        for version in [1, 2, 3, 4, 5, 6] {
+        for version in [1, 2, 3, 4, 5, 6, 7, 8] {
             let root = temp.path().join(format!("v{version}"));
             let (store, ids, key, vault_id) =
                 old_format_vault(&root, &["FAKE a.pdf", "FAKE b.pdf"], version);
@@ -19553,5 +19607,5 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 mod automatic_collection_tests;

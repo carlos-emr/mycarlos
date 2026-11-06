@@ -62,6 +62,13 @@ function renderLibrary() {
     snapshot: vi.fn().mockImplementation(async () => captureSnapshot(vault)),
     isLockedPdf: vi.fn().mockResolvedValue(false),
     aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
+    aiSummarize: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiExplain: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiCancel: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultBridge;
   render(
     <VaultLibrary

@@ -928,6 +928,24 @@ photo-zoomOut = Zoom out
 
 preferences-subtitle = How myCarlos looks on this computer
 
+readingAid-available = Your clinic also sent a reading aid for this document.
+
+readingAid-checked = Checked by a clinician on { $date }.
+
+readingAid-evidence = From the document:
+
+readingAid-open = Read the reading aid
+
+readingAid-openOriginal = Open the original document
+
+readingAid-overview = Overview
+
+readingAid-points = Main points
+
+readingAid-title = Reading aid from your clinic
+
+readingAid-unavailable = This reading aid cannot be shown safely. Open the original document instead.
+
 record-kind-document = Document
 
 record-source-manual = Manual import — unverified
@@ -1434,8 +1452,6 @@ portal-errorDamaged = A saved document from this clinic is damaged or missing, s
 
 portal-errorDeviceName = Choose a device name of 1 to 64 characters without control characters.
 
-portal-errorDisabled = Portal linking is not enabled in this build.
-
 portal-errorExists = This device is already registered. Check Linked devices in your patient portal.
 
 portal-errorIncomplete = The portal request could not be completed. Check your connection and device clock, then try again.
@@ -1494,6 +1510,18 @@ hidden-backToSecurity = Back to Security
 
 interface-history-appVersion = myCarlos version
 
+interface-history-approval-accepted = Approved
+
+interface-history-approval-cancelled = Cancelled
+
+interface-history-approval-challengeReady = Waiting for the code from the clinic's email
+
+interface-history-approval-expired = Expired
+
+interface-history-approval-pending = Waiting for the clinic
+
+interface-history-approval-refused = Refused by the clinic
+
 interface-history-damaged = Part of this history is damaged. Events after { $date } can't be checked and aren't shown.
 
 interface-history-damagedAll = Part of this history is damaged. Its events can't be checked, so none are shown.
@@ -1506,6 +1534,8 @@ interface-history-empty = There are no history events.
 
 interface-history-error-unverified = The history could not be read and verified. No events are shown.
 
+interface-history-event-aiResultSaved = AI answer kept
+
 interface-history-event-backupRestored = Backup restored
 
 interface-history-event-backupSaved = Encrypted backup saved
@@ -1513,6 +1543,18 @@ interface-history-event-backupSaved = Encrypted backup saved
 interface-history-event-copySaved = Readable copy saved
 
 interface-history-event-created = Vault created
+
+interface-history-event-deliveryFiled = Clinic document saved
+
+interface-history-event-deliveryReceiptSettled = Pickup receipt closed
+
+interface-history-event-deviceApprovalRequestRestarted = New approval request started
+
+interface-history-event-deviceApprovalRequested = Clinic approval requested
+
+interface-history-event-deviceApprovalStatusChanged = Clinic approval updated
+
+interface-history-event-deviceApprovalVerified = Device approved by the clinic
 
 interface-history-event-folderCreated = Folder created
 
@@ -1530,7 +1572,15 @@ interface-history-event-moved = Document moved
 
 interface-history-event-passphraseChanged = Passphrase changed
 
+interface-history-event-portalLinkStarted = Clinic link started
+
+interface-history-event-portalLinked = Clinic linked
+
 interface-history-event-profileCreated = Patient profile added
+
+interface-history-event-profileDetailsChanged = Personal details changed
+
+interface-history-event-readingAidFiled = Reading aid saved
 
 interface-history-event-recoveryKeySet = Recovery key set up
 
@@ -1554,7 +1604,13 @@ interface-history-gap = Events here can't be checked and aren't shown.
 
 interface-history-how = How
 
+interface-history-how-aidReplaced = Replaced an earlier reading aid
+
 interface-history-how-camera = Added with the camera
+
+interface-history-how-summary = Summary in plain words
+
+interface-history-how-explain = A term explained
 
 interface-history-how-damaged = Hidden because its file was missing
 
@@ -1620,7 +1676,7 @@ ai-explain-title = Explain a term
 
 ai-notInstalled-title = The AI helper isn't on this computer yet
 
-ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. Getting the model comes in a later version of myCarlos.
+ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Preferences you can download the model or add a model file you already have.
 
 ai-notInstalled-openPreferences = Open Preferences
 
@@ -1642,22 +1698,82 @@ ai-explain-submit = Explain
 
 ai-preferences-title = AI helper
 
-ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. Getting the model comes in a later version of myCarlos.
+ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.
 
 ai-preferences-notInstalled = Not installed
 
+ai-model-add = Add a model file…
+
+ai-model-accepted = { $name }, { $size } MB. Licence: { $licence }.
+
+ai-model-where = Where to get the file
+
+ai-model-copy = Copy address
+
+ai-model-copied = Address copied
+
+ai-model-checking = Checking the file… { $done } of { $total } MB
+
+ai-model-added = Model added
+
+ai-model-installed = Installed: { $name }
+
+ai-model-remove = Remove the model
+
+ai-model-removeConfirm = Remove the model from this computer? You can add it again later.
+
+ai-model-damaged = The model file is damaged or has changed. Remove it, then add it again.
+
+ai-model-unsupportedRam = This computer does not have enough memory for the AI helper (it needs about 8 GB).
+
+ai-model-unsupportedCpu = This computer’s processor is not supported by the AI helper.
+
+ai-model-unsupportedPlatform = The AI helper is not available on this kind of computer yet.
+
+ai-model-refusedList = This is not a file myCarlos accepts. Choose the model file listed above.
+
+ai-model-refusedHash = This is not the file we expect. Download it again and add the new copy.
+
+ai-model-refusedIncomplete = The file could not be read completely. Check that it finished downloading, then try again.
+
+ai-model-refusedDisk = There is not enough free space on this computer. The model needs about 4 GB.
+
+ai-model-refusedStorage = The model could not be saved on this computer.
+
+ai-model-refusedBusy = The AI helper is working. Try again when it has finished.
+
+ai-model-download = Download the default model
+
+ai-model-downloadNote = Downloads one file ({ $size } MB), once, from { $host }, only when you click. Nothing about you or your documents is sent. The download site sees your internet address, as for any download.
+
+ai-model-downloading = Downloading and checking… { $done } of { $total } MB
+
+ai-model-refusedNetwork = The download did not finish. Check your internet connection and try again.
+
+ai-model-refusedUnavailable = The model is not available at its address right now. Try again later, or add a file you already have.
+
+native-filter-models = Model files
+
 ai-working = The AI helper is working…
 
+ai-summary-ready = The summary is ready.
+
+ai-explain-ready = The explanation is ready.
+
 ai-failed = The AI helper could not finish. Try again.
+
+ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.
+
+ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
 
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 
 ai-summary-noSource = No source found
 aiHelper-notice-title = About the AI helper
 
-aiHelper-notice-introShare = myCarlos can prepare a document's text for an AI service you choose. The AI helper sends nothing over the internet.
+aiHelper-notice-introShare = myCarlos can prepare a document's text for an AI service you choose. The AI helper never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this computer’s internet address to the download site.
 
-aiHelper-notice-intro = The AI helper explains a document in plain words, here on this device, and can prepare a document's text for an AI service you choose. It sends nothing over the internet.
+aiHelper-notice-intro = The AI helper explains a document in plain words, here on this device, and can prepare a document's text for an AI service you choose. It never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this computer’s internet address to the download site.
 
 aiHelper-notice-testBuild = This development build is for synthetic (made-up) files only. Do not use it with real health information.
 
@@ -1677,7 +1793,7 @@ aiHelper-notice-adviceBody = Answers written by an AI can be wrong. Do not take 
 
 aiHelper-notice-modelHeading = The AI on this device
 
-aiHelper-notice-modelBody = The AI uses a model file that is added only if you choose to add it. The file is kept outside the vault, because it holds nothing about you. myCarlos checks it before every use and will not use a file that has been changed. The AI cannot use the internet or open your other files.
+aiHelper-notice-modelBody = The AI uses a model file. You choose how to get it: myCarlos can download the one file, once, when you choose to, from the address shown in Preferences (nothing about you or your documents is sent), or you can add a file you already have. The file is kept outside the vault, because it holds nothing about you. myCarlos checks it before every use and will not use a file that has been changed. The AI itself cannot use the internet or open your other files.
 
 aiHelper-notice-resultsBody = The AI's answers are saved in the vault, encrypted, with the document, the tool, the model and the date. Each answer is marked “Written by AI and may be wrong. Check with your doctor.”
 
@@ -1688,6 +1804,12 @@ aiHelper-exportCut = [Text cut after page { $page }]
 aiHelper-exportFileName = Anonymized text.txt
 
 interface-history-how-anonymizedText = Anonymized text saved
+
+interface-history-receipt-notFound = The document was no longer on the portal
+
+interface-history-receipt-pickedUp = The clinic recorded the pickup
+
+interface-history-status = Status
 
 interface-RecordDetails-anonymizeText = Prepare text for an AI…
 
@@ -1847,3 +1969,9 @@ notifications-autoAllow = Check for clinic documents automatically while unlocke
 notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
 notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
+
+ai-summary-again = Summarize again
+
+ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
+
+ai-keepFull = This document already keeps the most AI answers it can. New answers are shown but not kept.

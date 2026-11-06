@@ -34,7 +34,44 @@ const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   folderRenamed: "interface.history.event.folderRenamed",
   folderMoved: "interface.history.event.folderMoved",
   setAside: "interface.history.event.setAside",
+  readingAidFiled: "interface.history.event.readingAidFiled",
+  profileDetailsChanged: "interface.history.event.profileDetailsChanged",
+  portalLinkStarted: "interface.history.event.portalLinkStarted",
+  portalLinked: "interface.history.event.portalLinked",
+  deviceApprovalRequested: "interface.history.event.deviceApprovalRequested",
+  deviceApprovalVerified: "interface.history.event.deviceApprovalVerified",
+  deviceApprovalStatusChanged:
+    "interface.history.event.deviceApprovalStatusChanged",
+  deviceApprovalRequestRestarted:
+    "interface.history.event.deviceApprovalRequestRestarted",
+  deliveryFiled: "interface.history.event.deliveryFiled",
+  deliveryReceiptSettled: "interface.history.event.deliveryReceiptSettled",
+  aiResultSaved: "interface.history.event.aiResultSaved",
 };
+
+/** A device approval's state when the event was written (native
+ * `ApprovalState::code`), shown as its status rather than as "how". */
+const approvalLabels: Record<string, MessageKey> = {
+  pending: "interface.history.approval.pending",
+  challenge_ready: "interface.history.approval.challengeReady",
+  accepted: "interface.history.approval.accepted",
+  refused: "interface.history.approval.refused",
+  expired: "interface.history.approval.expired",
+  cancelled: "interface.history.approval.cancelled",
+};
+
+/** How a pickup receipt ended (native `ReceiptOutcome`). */
+const receiptLabels: Record<string, MessageKey> = {
+  picked_up: "interface.history.receipt.pickedUp",
+  delivery_not_found: "interface.history.receipt.notFound",
+};
+
+const approvalEvents = new Set<AuditHistoryEntry["event"]>([
+  "deviceApprovalRequested",
+  "deviceApprovalVerified",
+  "deviceApprovalStatusChanged",
+  "deviceApprovalRequestRestarted",
+]);
 
 const howLabels: Record<string, MessageKey> = {
   picked: "interface.history.how.picked",
@@ -43,6 +80,8 @@ const howLabels: Record<string, MessageKey> = {
   patient: "interface.history.how.patient",
   damaged: "interface.history.how.damaged",
   camera: "interface.history.how.camera",
+  summary: "interface.history.how.summary",
+  explain: "interface.history.how.explain",
   replaced: "interface.history.how.replaced",
   anonymizedText: "interface.history.how.anonymizedText",
 };
@@ -109,15 +148,30 @@ function details(entry: AuditHistoryEntry): [MessageKey, string][] {
       : "interface.history.rootFolder",
   );
   if (to) rows.push(["interface.history.to", to]);
-  if (entry.how) {
+  const statusLabels = approvalEvents.has(entry.event)
+    ? approvalLabels
+    : entry.event === "deliveryReceiptSettled"
+      ? receiptLabels
+      : null;
+  if (entry.how && statusLabels) {
+    const key = Object.hasOwn(statusLabels, entry.how)
+      ? statusLabels[entry.how]
+      : undefined;
+    rows.push([
+      "interface.history.status",
+      key ? translateNow(key) : entry.how,
+    ]);
+  } else if (entry.how) {
     const key =
       entry.how === "shared"
         ? movedFromShared
           ? "interface.history.how.movedFromShared"
           : "interface.history.how.importedShared"
-        : Object.hasOwn(howLabels, entry.how)
-          ? howLabels[entry.how]
-          : undefined;
+        : entry.event === "readingAidFiled" && entry.how === "replaced"
+          ? "interface.history.how.aidReplaced"
+          : Object.hasOwn(howLabels, entry.how)
+            ? howLabels[entry.how]
+            : undefined;
     rows.push(["interface.history.how", key ? translateNow(key) : entry.how]);
   }
   if (entry.place) rows.push(["interface.history.place", entry.place]);

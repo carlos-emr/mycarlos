@@ -836,6 +836,24 @@ photo-zoomed = 已放大至 { $percent }%。
 
 preferences-subtitle = 此電腦上 myCarlos 的外觀
 
+readingAid-available = 您的診所也為這份文件傳送了閱讀輔助。
+
+readingAid-checked = 已由臨床人員於 { $date } 核對。
+
+readingAid-evidence = 摘自文件：
+
+readingAid-open = 查看閱讀輔助
+
+readingAid-openOriginal = 開啟原始文件
+
+readingAid-overview = 概述
+
+readingAid-points = 重點
+
+readingAid-title = 診所提供的閱讀輔助
+
+readingAid-unavailable = 無法安全顯示此閱讀輔助。請改為開啟原始文件。
+
 record-kind-document = 文件
 
 record-source-manual = 手動匯入 — 未驗證
@@ -1306,8 +1324,6 @@ portal-errorDamaged = 此診所的一份已儲存文件已損毀或遺失，因�
 
 portal-errorDeviceName = 請選擇 1 到 64 個字元的裝置名稱，且不得包含控制字元。
 
-portal-errorDisabled = 此版本未啟用入口網站連結功能。
-
 portal-errorExists = 此裝置已註冊。請在病患入口網站查看「Linked devices」（已連結的裝置）頁面。
 
 portal-errorIncomplete = 無法完成入口網站請求。請檢查網路連線和裝置時鐘，然後重試。
@@ -1366,6 +1382,18 @@ hidden-backToSecurity = 返回「安全性」
 
 interface-history-appVersion = myCarlos 版本
 
+interface-history-approval-accepted = 已核准
+
+interface-history-approval-cancelled = 已取消
+
+interface-history-approval-challengeReady = 等待診所電子郵件中的驗證碼
+
+interface-history-approval-expired = 已過期
+
+interface-history-approval-pending = 等待診所處理
+
+interface-history-approval-refused = 診所已拒絕
+
 interface-history-damaged = 此紀錄有部分已損毀。{ $date } 之後的事件無法檢查，因此不顯示。
 
 interface-history-damagedAll = 此紀錄有部分已損毀。其中的事件無法檢查，因此全部不顯示。
@@ -1378,6 +1406,8 @@ interface-history-empty = 沒有任何紀錄事件。
 
 interface-history-error-unverified = 無法讀取並驗證紀錄，因此不顯示任何事件。
 
+interface-history-event-aiResultSaved = AI 回答已保存
+
 interface-history-event-backupRestored = 備份已還原
 
 interface-history-event-backupSaved = 加密備份已儲存
@@ -1385,6 +1415,18 @@ interface-history-event-backupSaved = 加密備份已儲存
 interface-history-event-copySaved = 可讀副本已儲存
 
 interface-history-event-created = 保險庫已建立
+
+interface-history-event-deliveryFiled = 已儲存診所文件
+
+interface-history-event-deliveryReceiptSettled = 領取回執已結束
+
+interface-history-event-deviceApprovalRequestRestarted = 已提出新的核准請求
+
+interface-history-event-deviceApprovalRequested = 已申請診所核准
+
+interface-history-event-deviceApprovalStatusChanged = 診所核准狀態已更新
+
+interface-history-event-deviceApprovalVerified = 診所已核准此裝置
 
 interface-history-event-folderCreated = 資料夾已建立
 
@@ -1402,7 +1444,15 @@ interface-history-event-moved = 文件已移動
 
 interface-history-event-passphraseChanged = 密語已變更
 
+interface-history-event-portalLinkStarted = 已開始連結診所
+
+interface-history-event-portalLinked = 已連結診所
+
 interface-history-event-profileCreated = 病患檔案已新增
+
+interface-history-event-profileDetailsChanged = 個人資料已變更
+
+interface-history-event-readingAidFiled = 已儲存閱讀輔助
 
 interface-history-event-recoveryKeySet = 復原金鑰已設定
 
@@ -1422,7 +1472,13 @@ interface-history-gap = 此處的事件無法檢查，因此不顯示。
 
 interface-history-how = 方式
 
+interface-history-how-aidReplaced = 取代了先前的閱讀輔助
+
 interface-history-how-camera = 使用相機新增
+
+interface-history-how-summary = 淺白易懂的摘要
+
+interface-history-how-explain = 已解釋術語
 
 interface-history-how-damaged = 因檔案遺失而隱藏
 
@@ -1484,7 +1540,7 @@ ai-explain-title = 解釋術語
 
 ai-notInstalled-title = 此電腦上尚未安裝 AI 助理
 
-ai-notInstalled-body = 安裝後，它會使用在此電腦上執行的 AI 模型，以淺白易懂的文字為您解釋文件。取得模型的功能將在 myCarlos 的後續版本中提供。
+ai-notInstalled-body = 安裝後，它會使用在此電腦上執行的 AI 模型，以淺白易懂的文字為您解釋文件。您可以在「偏好設定」中下載模型，或新增您已有的模型檔案。
 
 ai-notInstalled-openPreferences = 開啟偏好設定
 
@@ -1506,22 +1562,82 @@ ai-explain-submit = 解釋
 
 ai-preferences-title = AI 助理
 
-ai-preferences-body = 使用在此電腦上執行的 AI 模型，以淺白易懂的文字解釋您的文件。取得模型的功能將在 myCarlos 的後續版本中提供。
+ai-preferences-body = 使用在此電腦上執行的 AI 模型，以淺白易懂的文字解釋您的文件。您可以下載模型，或新增您已有的模型檔案；模型儲存在此電腦上。
 
 ai-preferences-notInstalled = 未安裝
 
+ai-model-add = 新增模型檔案…
+
+ai-model-accepted = { $name }，{ $size } MB。授權：{ $licence }。
+
+ai-model-where = 在哪裡取得檔案
+
+ai-model-copy = 複製網址
+
+ai-model-copied = 已複製網址
+
+ai-model-checking = 正在檢查檔案… { $done } / { $total } MB
+
+ai-model-added = 已新增模型
+
+ai-model-installed = 已安裝：{ $name }
+
+ai-model-remove = 移除模型
+
+ai-model-removeConfirm = 要從此電腦移除模型嗎？之後可以重新新增。
+
+ai-model-damaged = 模型檔案已損毀或已被變更。請移除後重新新增。
+
+ai-model-unsupportedRam = 此電腦的記憶體不足以執行 AI 助理（需要約 8 GB）。
+
+ai-model-unsupportedCpu = 此電腦的處理器不支援 AI 助理。
+
+ai-model-unsupportedPlatform = 此類電腦暫不支援 AI 助理。
+
+ai-model-refusedList = myCarlos 不接受此檔案。請選擇上方列出的模型檔案。
+
+ai-model-refusedHash = 這不是預期的檔案。請重新下載，然後新增新的副本。
+
+ai-model-refusedIncomplete = 無法完整讀取該檔案。請確認下載已完成，然後再試一次。
+
+ai-model-refusedDisk = 此電腦的可用空間不足。模型大約需要 4 GB。
+
+ai-model-refusedStorage = 無法將模型儲存到此電腦。
+
+ai-model-refusedBusy = AI 助理正在工作。請在它完成後再試一次。
+
+ai-model-download = 下載預設模型
+
+ai-model-downloadNote = 僅一次，且僅在您點擊時，從 { $host } 下載一個檔案（{ $size } MB）。不會傳送任何關於您或您的文件的資訊。下載網站會看到您的網際網路位址，就像任何下載一樣。
+
+ai-model-downloading = 正在下載並檢查… { $done } / { $total } MB
+
+ai-model-refusedNetwork = 下載未完成。請檢查您的網路連線，然後再試一次。
+
+ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍後再試，或新增您已有的檔案。
+
+native-filter-models = 模型檔案
+
 ai-working = AI 助理正在處理…
 
+ai-summary-ready = 摘要已產生。
+
+ai-explain-ready = 解釋已產生。
+
 ai-failed = AI 助理未能完成。請重試。
+
+ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關閉其他程式後重試。
+
+ai-error-busy = 正在新增或移除 AI 助理的模型。請在完成後重試。
 
 ai-summary-pagesMissing = 部分頁面未能完整讀取，因此此摘要可能遺漏部分內容。
 
 ai-summary-noSource = 未找到來源
 aiHelper-notice-title = 關於 AI 助理
 
-aiHelper-notice-introShare = myCarlos 可以為您選擇的 AI 服務準備文件的文字。AI 助理不會透過網際網路傳送任何內容。
+aiHelper-notice-introShare = myCarlos 可以為您選擇的 AI 服務準備文件的文字。AI 助理絕不會透過網際網路傳送您的文件或任何關於您的資訊。它唯一會取得的是其模型檔案，而且只有在您選擇下載時才會取得。下載時，下載網站會看到這台電腦的網際網路位址。
 
-aiHelper-notice-intro = AI 助理會在這台裝置上用淺白的文字說明文件內容，也可以為您選擇的 AI 服務準備文件的文字。它不會透過網際網路傳送任何內容。
+aiHelper-notice-intro = AI 助理會在這台裝置上用淺白的文字說明文件內容，也可以為您選擇的 AI 服務準備文件的文字。它絕不會透過網際網路傳送您的文件或任何關於您的資訊。它唯一會取得的是其模型檔案，而且只有在您選擇下載時才會取得。下載時，下載網站會看到這台電腦的網際網路位址。
 
 aiHelper-notice-testBuild = 此開發版本僅供合成（虛構）檔案使用。請勿用於真實的健康資訊。
 
@@ -1541,7 +1657,7 @@ aiHelper-notice-adviceBody = AI 撰寫的回答可能有誤。請勿將其視為
 
 aiHelper-notice-modelHeading = 這台裝置上的 AI
 
-aiHelper-notice-modelBody = AI 使用的模型檔案只有在您選擇新增時才會新增。此檔案存放在保險庫之外，因為其中不含任何關於您的資訊。myCarlos 每次使用前都會檢查它，不會使用遭到修改的檔案。AI 無法使用網際網路，也無法開啟您的其他檔案。
+aiHelper-notice-modelBody = AI 使用一個模型檔案。取得方式由您選擇：myCarlos 可以在您選擇時，從「偏好設定」中顯示的網址一次性下載這一個檔案（不會傳送任何關於您或您的文件的資訊），您也可以新增已有的檔案。此檔案存放在保險庫之外，因為其中不含任何關於您的資訊。myCarlos 每次使用前都會檢查它，不會使用遭到修改的檔案。AI 本身無法使用網際網路，也無法開啟您的其他檔案。
 
 aiHelper-notice-resultsBody = AI 的回答會加密儲存在保險庫中，並附上文件、工具、模型和日期。每則回答都標有「由 AI 撰寫，可能有誤。請向您的醫師確認。」
 
@@ -1552,6 +1668,12 @@ aiHelper-exportCut = [文字在第 { $page } 頁之後被截斷]
 aiHelper-exportFileName = 匿名化文字.txt
 
 interface-history-how-anonymizedText = 已儲存匿名化文字
+
+interface-history-receipt-notFound = 入口網站上已沒有該文件
+
+interface-history-receipt-pickedUp = 診所已記錄領取
+
+interface-history-status = 狀態
 
 interface-RecordDetails-anonymizeText = 為 AI 準備文字…
 
@@ -1708,3 +1830,9 @@ notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
 notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
+
+ai-summary-again = 重新產生摘要
+
+ai-keepFailed = myCarlos 無法將此回答與文件一起保存。此處仍會顯示該回答。
+
+ai-keepFull = 此文件保存的 AI 回答已達上限。新的回答會顯示，但不會保存。

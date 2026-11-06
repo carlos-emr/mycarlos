@@ -348,6 +348,63 @@ describe("more Polish titles (#262 review)", () => {
   });
 });
 
+describe("roles and titles after the #262 review", () => {
+  it.each([
+    ["Atendido por médico Julián Prueba Soto.", "Soto"],
+    ["Consulta com médica Joana Teste Prado.", "Prado"],
+    ["Mgr Anna Testowa przeprowadziła badanie.", "Testowa"],
+    ["Lek. med. Anna Testowa zbadała.", "Testowa"],
+    ["Zbadał lek. Marek Przykładny.", "Przykładny"],
+    ["Konsultował dr hab. n. med. Paweł Testowy.", "Testowy"],
+    ["Revisado con médica Ana Ficticia Ruiz.", "Ruiz"],
+  ])("removes the clinician: %s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Lekarz Kierujący Oddziałem zatwierdził plan.",
+    "Technik Elektroradiologii Medycznej wykonał zdjęcie.",
+    "Médico Interno Residente de guardia.",
+    "Przyjmuje jeden lek. Następnie Wizyta Kontrolna.",
+    "Nowy lek. Polopiryna Forte 500 mg.",
+    "Lek. Polopiryna Forte podano.",
+    "Ten lek. Kolejna Dawka jutro.",
+    "Historia por Médica Completa.",
+  ])("leaves a qualifier or the word for a medicine: %s", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+});
+
+describe("roles after a preposition, and Polish qualifiers (#271 review)", () => {
+  it.each([
+    ["Pielęgniarka oddziałowa Maria Testowa zmieniła opatrunek.", "Testowa"],
+    ["Pielęgniarka dyplomowana Ewa Testowska podała lek.", "Testowska"],
+    ["pielęgniarka koordynująca Anna Testowa", "Testowa"],
+    ["Położna naczelna Zofia Testowska.", "Testowska"],
+    ["Lekarz prowadzący Jan Przykładny wypisał.", "Przykładny"],
+    ["Atendido por el Médico Julián Prueba Soto.", "Soto"],
+    ["Consulta com a Médica Joana Teste Prado.", "Prado"],
+    ["Revisado sin médico Julián Prueba Soto presente.", "Soto"],
+    ["La Médica Inés Ficticia Peral firmó.", "Peral"],
+  ])("removes the clinician: %s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Licencia por Médica Laboral Temporal.",
+    "Certificado para Médico Forense Oficial.",
+    "Consulta para Médica Ocupacional Anual.",
+    "Atestado com Médico Perito Oficial.",
+    "Opiekun Medyczny Oddziału Geriatrii.",
+    "Lekarz prowadzący Oddziału Chirurgii nieobecny.",
+    "Pielęgniarka oddziałowa zatwierdziła grafik.",
+    "Pielęgniarka oddziałowa: brak uwag.",
+    "Zgłoszono do Pielęgniarki Naczelnej Szpitala.",
+  ])("leaves a title-case role or a ward word: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
+
 describe("a run right before an identity label", () => {
   // The label tells a person's line, not who the words before it are.
   it.each([

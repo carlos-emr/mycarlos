@@ -395,6 +395,43 @@ describe("SecuritySettings privacy notice", () => {
       /sets the vault aside: it stays on this device, encrypted. myCarlos never deletes a vault/,
     );
   });
+
+  it("puts Hidden and Audit history beside its text, and under it when narrow", async () => {
+    renderSettings({ hiddenCount: 2 });
+    const heading = screen.getByRole("heading", {
+      name: humanText("What myCarlos keeps"),
+    });
+    const section = heading.closest("section")!;
+    const text = heading.parentElement!;
+    const paragraphs = text.querySelectorAll("p");
+    const last = paragraphs[paragraphs.length - 1];
+    const [hidden, audit] = within(section).getAllByRole("button");
+    expect(hidden).toHaveHumanTextContent(/^Hidden 2/);
+    expect(audit).toHaveHumanTextContent("Audit history");
+    // Read after all of the text, Hidden first.
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(paragraphs).toHaveLength(3);
+    expect(follows(last, hidden)).toBe(true);
+    expect(follows(hidden, audit)).toBe(true);
+    const box = (element: Element) => element.getBoundingClientRect();
+    try {
+      // Wide: the right-hand column, at the top of the row.
+      await page.viewport(1100, 760);
+      expect(box(hidden).left).toBeGreaterThanOrEqual(box(text).right);
+      expect(Math.abs(box(hidden).top - box(heading).top)).toBeLessThan(2);
+      expect(box(audit).top).toBeGreaterThanOrEqual(box(hidden).bottom);
+      // Narrow (a phone, or the app's text size at 200%): under the text,
+      // at the row's right edge.
+      await page.viewport(360, 800);
+      expect(box(hidden).top).toBeGreaterThanOrEqual(box(last).bottom);
+      expect(box(section).right - box(hidden).right).toBeLessThan(3);
+      expect(box(audit).top).toBeGreaterThanOrEqual(box(hidden).bottom);
+      expect(section.scrollWidth).toBeLessThanOrEqual(section.clientWidth + 1);
+    } finally {
+      await page.viewport(1100, 760);
+    }
+  });
 });
 
 describe("SecuritySettings passphrase change", () => {
