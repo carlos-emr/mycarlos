@@ -297,6 +297,23 @@ model download (#219), only when the patient clicks it: the download site sees t
 computer's IP address, the time and which public file was fetched, and nothing else is sent
 (`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
 
+**Tray notices (planned, #230 with carlos-portal#87; not built).** With the tray, closing the
+window locks the vault. To still tell the patient that a clinic has sent something, the locked app
+may ask each linked portal "is anything waiting?" with a waiting key: one per link, made by the
+device, that can do nothing else. Each check sends only the key's id, signed; the answer is yes or
+no. The patient sees a generic notice ("A new document is waiting. Unlock myCarlos to see it."),
+with no clinic, document, name or count.
+
+To work while the vault is locked, the waiting keys and the linked portals' addresses are kept
+**outside the vault**: in a sealed file beside the settings, whose key is in the OS credential
+store of the patient's OS account (Ben accepted this on 5 November 2026). Anyone who can run as
+that OS account can therefore learn which portals the vault is linked to (so which clinics the
+patient uses), and ask whether something is waiting at each. They cannot read or pick up anything.
+The file always has 16 slots, so it doesn't show how many. The keys are wiped, and revoked at the
+portal, on unlink, when the notices or the tray are turned off, and on vault reset; they are not in
+backups. Where the OS has no credential store, there are no tray notices. Details:
+`VAULT_FORMAT.md` ("Settings kept outside the vault"), `SECURITY_OPERATIONS.md` ("Tray notices").
+
 ## 8. How it is protected
 
 - A random key for the vault, and a separate key for each document.

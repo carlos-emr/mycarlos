@@ -156,6 +156,57 @@ If a portal or a clinic key may be compromised, follow the incident steps above.
 revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a key that
 was not active in the key list it pinned at linking (it does not yet learn of a later revocation), and patients can remove a device under Account → Linked devices in the portal.
 
+## Tray notices (#230): the waiting key
+
+Planned with carlos-portal#87 and not built yet ([THREAT_MODEL](THREAT_MODEL.md) NET-04). With the
+tray (#206), closing the window locks the vault, and the device keys are inside it. A waiting key
+lets the locked app ask each linked portal one question: is anything waiting for this device?
+
+**What may leave the device:**
+
+- **Registering** (while unlocked, at link time): `POST /api/mycarlos/availability/waiting-keys`,
+  signed with the link's device key as any device request, carrying the waiting key's public half
+  and its `key_id`. A key the link already had is replaced.
+- **Asking** (locked, in the tray): `POST /api/mycarlos/availability/waiting`, body `key_id` only,
+  with the `X-MyCarlos-Waiting-Assertion` header signed by the waiting key: `aud`
+  (`carlos-patient-portal-waiting-check`), `iss`, `kid`, `jti`, `iat`, `exp` (60 s or less) and
+  `request_hash`. Not more than once every 120 s per key (the portal answers `429` with
+  `Retry-After`), with jitter and back-off. The answer is yes or no, the same size either way.
+- Nothing else: no vault, record or person id, no document or patient detail, no device detail
+  beyond what the link already sent. The network still sees the IP address, the portal's host name
+  and the times of the checks.
+
+A yes shows one generic notice, in the last-used language, with no clinic, document, name or count,
+once until the next unlock. Clicking it opens the unlock screen; after unlock the normal document
+check takes over.
+
+**Revoking and wiping.** A waiting key is revoked at the portal, and wiped on the device (its slot in
+`notice-keys.v1`; the OS item too when no key is left):
+
+- when the patient turns tray notices or the tray off, or unlinks the clinic: the device revokes it
+  with the link's device key (`DELETE /api/mycarlos/availability/waiting-keys/{key_id}`). If that
+  can't be sent, the revocation waits with the vault's other pending revocations (format 9's 64
+  places) and is sent after the next unlock;
+- when the vault is reset, erased or set aside, or another vault is opened: the device keys may be
+  gone, so the waiting key gives itself up (`DELETE /api/mycarlos/availability/waiting`, signed by
+  the waiting key);
+- when the portal answers `404`: the key was revoked there, the device was removed, or the portal
+  refused it for another reason it doesn't give. The device stops asking with that key. Open
+  (#230): whether it wipes the key at the first `404`, or only after a few, since a portal whose
+  notices are switched off may answer the same way.
+
+**At the portal:** staff revoking the key, or removing the device or the link, stops it at once.
+That is the clinic's kill switch for a lost or offline device, whose own revocation cannot land
+until it is online and unlocked. A revoked key gets `404`, like any other refusal, so the answer
+doesn't say why.
+
+**If a device is lost or its OS account may be compromised:** remove the device in the portal
+(Account → Linked devices), or ask the clinic to. Whoever has the device's files and its OS account
+can learn which portals the vault is linked to and whether something is waiting at each, until
+then; they cannot read, list or pick up anything with the waiting key. Uninstalling on Windows
+should remove the Credential Manager item (`myCarlos/notice-keys/v1`); if it is left, delete it in
+Credential Manager by hand.
+
 ## AI helper (#72): nothing about the patient leaves the device
 
 The anonymized text export (part B) is built on main (#171, computers only), and so are the reader's Summary and Explain behind the notice (#217), the model runtime (#218), the model download (#219) and kept answers (#212) ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
