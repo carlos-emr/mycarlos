@@ -335,3 +335,15 @@ describe("clinicians named by role, with no title, in es/pt/pl", () => {
     expect(send(text)).toBe(text);
   });
 });
+
+describe("more Polish titles (#262 review)", () => {
+  it.each([
+    ["Konsultował dr hab. n. med. Paweł Testowy.", "Testowy"],
+    ["Opinię wydał prof. dr hab. n. med. Jan Przykładny.", "Przykładny"],
+    ["Lek wydała mgr farm. Ewa Testowska.", "Testowska"],
+    ["Sprzęt sprawdził mgr inż. Adam Przykładny.", "Przykładny"],
+    ["Lek. med. Anna Testowa zbadała pacjenta.", "Testowa"],
+  ])("%s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+});

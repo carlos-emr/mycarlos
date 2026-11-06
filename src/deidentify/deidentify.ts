@@ -2430,7 +2430,7 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|lek\\.(?:[ \\t]*(?:med|dent)\\.)?|mgr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|(?:prof\\.[ \\t]*)?dr[ \\t]+hab\\.[ \\t]*n\\.[ \\t]*med|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|[Ll]ek\\.(?:[ \\t]*(?:med|dent)\\.)?|mgr[ \\t]+(?:farm|inż)|mgr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
