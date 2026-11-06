@@ -106,6 +106,113 @@ pub(crate) struct RunnerConfig {
     /// Started through the helpers' launcher (Windows: its own AppContainer and a job that
     /// caps its memory at `memory_limit_bytes`); on unix the helper sandboxes itself.
     pub(crate) sandboxed: bool,
+    /// The most threads the model writes an answer on (the helper's `--threads`). With it, each
+    /// answer is sent with a number chosen from the computer's load at the time
+    /// ([`generation_threads`]); `None` sends none (fakes, and the stub's tests).
+    pub(crate) generation_threads: Option<u32>,
+}
+
+// --- Threads from the computer's load --------------------------------------------------
+
+/// How long the computer's processor use is sampled before an answer.
+const LOAD_SAMPLE: Duration = Duration::from_millis(250);
+/// The threads an answer is written on when the rest of the computer is busy.
+const BUSY_THREADS: u32 = 2;
+
+/// The computer's processor time so far, busy and in all, in one unit (all cores together).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CpuTimes {
+    pub(crate) busy: u64,
+    pub(crate) total: u64,
+}
+
+/// `/proc/stat`'s first line in clock ticks: busy is all of it but idle and waiting for I/O
+/// (guest time is already in user time, so it is not counted twice).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))] // Linux reads it; tests everywhere.
+fn parse_proc_stat(text: &str) -> Option<CpuTimes> {
+    let line = text.lines().next()?;
+    let mut fields = line.split_whitespace();
+    if fields.next()? != "cpu" {
+        return None;
+    }
+    let ticks: Vec<u64> = fields
+        .take(8)
+        .map(|field| field.parse().ok())
+        .collect::<Option<_>>()?;
+    let [user, nice, system, idle, iowait, irq, softirq, steal] = ticks[..] else {
+        return None;
+    };
+    let busy = user + nice + system + irq + softirq + steal;
+    Some(CpuTimes {
+        busy,
+        total: busy + idle + iowait,
+    })
+}
+
+/// The computer's processor time so far, where it can be read.
+fn cpu_times() -> Option<CpuTimes> {
+    #[cfg(target_os = "linux")]
+    {
+        parse_proc_stat(&std::fs::read_to_string("/proc/stat").ok()?)
+    }
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::FILETIME;
+        use windows::Win32::System::Threading::GetSystemTimes;
+        let (mut idle, mut kernel, mut user) = (
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+        );
+        // SAFETY: three FILETIMEs of ours for the call to fill.
+        unsafe {
+            GetSystemTimes(
+                Some(std::ptr::addr_of_mut!(idle)),
+                Some(std::ptr::addr_of_mut!(kernel)),
+                Some(std::ptr::addr_of_mut!(user)),
+            )
+        }
+        .ok()?;
+        let ticks =
+            |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
+        // Kernel time includes the idle time.
+        let total = ticks(kernel) + ticks(user);
+        Some(CpuTimes {
+            busy: total.saturating_sub(ticks(idle)),
+            total,
+        })
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        None
+    }
+}
+
+/// How many of `cores` were busy between two samples.
+pub(crate) fn busy_cores(before: CpuTimes, after: CpuTimes, cores: usize) -> Option<f64> {
+    let total = after.total.checked_sub(before.total)?;
+    let busy = after.busy.checked_sub(before.busy)?;
+    (total > 0).then(|| busy.min(total) as f64 / total as f64 * cores as f64)
+}
+
+/// How many cores the computer keeps busy now, over [`LOAD_SAMPLE`]. Between answers the
+/// model's own threads rest, so this is the rest of the computer's work.
+fn sample_busy_cores(cores: usize) -> Option<f64> {
+    let before = cpu_times()?;
+    std::thread::sleep(LOAD_SAMPLE);
+    busy_cores(before, cpu_times()?, cores)
+}
+
+/// The threads to write an answer on: all of `most` when the computer has that many cores
+/// free and half a core to spare, else [`BUSY_THREADS`]. An answer is written a token at a
+/// time, and each token waits for its slowest thread: on a busy computer, threads that have to
+/// share cores make it 2 to 4 times slower than fewer threads (measured 5 Nov 2026). Unknown
+/// load counts as quiet.
+pub(crate) fn generation_threads(most: u32, cores: usize, busy: Option<f64>) -> u32 {
+    match busy {
+        Some(busy) if (cores as f64 - busy) < f64::from(most) + 0.5 => most.min(BUSY_THREADS),
+        _ => most,
+    }
 }
 
 /// Reads how much memory this device has free for a model.
@@ -306,6 +413,7 @@ struct Sidecar {
     model: ModelInfo,
     next_id: u64,
     answer_timeout: Duration,
+    generation_threads: Option<u32>,
     /// The model file while the process may still read it (see `RunnerConfig::model_file`).
     model_file: Option<Arc<std::fs::File>>,
 }
@@ -371,6 +479,8 @@ pub(crate) struct Runner {
     generation: AtomicU64,
     /// How the last answer was made, when the model said.
     last_stats: Mutex<Option<crate::model_helper::Stats>>,
+    /// Threads to write answers on whatever the load (measuring by hand: `engine_testing`).
+    threads_override: Mutex<Option<u32>>,
 }
 
 #[derive(Deserialize)]
@@ -412,7 +522,18 @@ impl Runner {
             status: Mutex::new(RunnerStatus::NotInstalled),
             generation: AtomicU64::new(0),
             last_stats: Mutex::new(None),
+            threads_override: Mutex::new(None),
         }
+    }
+
+    /// Answers are written on `threads` threads from now on, whatever the computer's load;
+    /// `None` chooses from the load again. For measuring by hand.
+    #[allow(dead_code)] // `engine_testing` only.
+    pub(crate) fn override_threads(&self, threads: Option<u32>) {
+        *self
+            .threads_override
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = threads;
     }
 
     pub(crate) fn status(&self) -> RunnerStatus {
@@ -708,6 +829,18 @@ impl Runner {
         if let Some(object) = request.as_object_mut() {
             object.insert("id".to_owned(), serde_json::json!(id));
             object.insert("tool".to_owned(), serde_json::json!(tool));
+            // The threads to write this answer on, from the computer's load now.
+            if let (Some(most), "summary" | "explain") = (running.generation_threads, tool) {
+                let forced = *self
+                    .threads_override
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let threads = forced.unwrap_or_else(|| {
+                    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+                    generation_threads(most, cores, sample_busy_cores(cores))
+                });
+                object.insert("threads".to_owned(), serde_json::json!(threads));
+            }
         }
         let model = running.model.clone();
         self.set_status(RunnerStatus::Working {
@@ -778,6 +911,7 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
         },
         next_id: 1,
         answer_timeout: config.answer_timeout,
+        generation_threads: config.generation_threads,
         model_file: config.model_file.clone(),
     };
     let deadline = Instant::now() + config.start_timeout;
@@ -1299,6 +1433,49 @@ mod tests {
         }
     }
 
+    #[test]
+    fn proc_stat_gives_busy_and_all_processor_time() {
+        let stat = "cpu  100 5 50 800 20 3 2 0 0 0\ncpu0 50 2 25 400 10 1 1 0 0 0\nintr 1\n";
+        assert_eq!(
+            parse_proc_stat(stat),
+            Some(CpuTimes {
+                busy: 100 + 5 + 50 + 3 + 2,
+                total: 100 + 5 + 50 + 3 + 2 + 800 + 20
+            })
+        );
+        assert_eq!(parse_proc_stat("cpu0 1 2 3 4 5 6 7 8"), None);
+        assert_eq!(parse_proc_stat("cpu 1 2 3"), None);
+        assert_eq!(parse_proc_stat("cpu 1 2 x 4 5 6 7 8"), None);
+        assert_eq!(parse_proc_stat(""), None);
+    }
+
+    #[test]
+    fn busy_cores_come_from_two_samples() {
+        let at = |busy, total| CpuTimes { busy, total };
+        assert_eq!(busy_cores(at(100, 1_000), at(400, 1_600), 6), Some(3.0));
+        assert_eq!(busy_cores(at(100, 1_000), at(100, 1_600), 4), Some(0.0));
+        // Nothing elapsed, or a counter that went back: unknown.
+        assert_eq!(busy_cores(at(100, 1_000), at(100, 1_000), 4), None);
+        assert_eq!(busy_cores(at(400, 1_600), at(100, 1_000), 4), None);
+        #[cfg(any(target_os = "linux", windows))]
+        assert!(sample_busy_cores(4).is_some_and(|busy| (0.0..=4.0).contains(&busy)));
+    }
+
+    #[test]
+    fn an_answer_is_written_on_fewer_threads_when_the_computer_is_busy() {
+        // Six cores, at most four threads: four while one and a half cores are left over.
+        assert_eq!(generation_threads(4, 6, None), 4);
+        assert_eq!(generation_threads(4, 6, Some(0.5)), 4);
+        assert_eq!(generation_threads(4, 6, Some(1.5)), 4);
+        assert_eq!(generation_threads(4, 6, Some(1.6)), 2);
+        assert_eq!(generation_threads(4, 6, Some(6.0)), 2);
+        // Four cores, at most three: busy as soon as half a core is taken.
+        assert_eq!(generation_threads(3, 4, Some(0.4)), 3);
+        assert_eq!(generation_threads(3, 4, Some(0.6)), 2);
+        // Never more than the most.
+        assert_eq!(generation_threads(1, 2, Some(1.9)), 1);
+    }
+
     fn idle_config() -> RunnerConfig {
         RunnerConfig {
             command: PathBuf::from("/nonexistent/FAKE-model"),
@@ -1310,6 +1487,7 @@ mod tests {
             expected_model: None,
             model_file: None,
             sandboxed: false,
+            generation_threads: None,
         }
     }
 
@@ -1387,6 +1565,7 @@ mod tests {
                 expected_model: None,
                 model_file: None,
                 sandboxed: false,
+                generation_threads: None,
             }
         }
 
