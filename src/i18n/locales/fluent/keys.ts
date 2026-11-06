@@ -970,6 +970,12 @@ export const MESSAGE_KEYS = [
   "ai.summary.again",
   "ai.keepFailed",
   "ai.keepFull",
+  "noticesStep.title",
+  "noticesStep.intro",
+  "noticesStep.later",
+  "noticesStep.done",
+  "noticesStep.notNow",
+  "notifications.autoNeedsNotices",
   "ai.settings.subtitle",
   "personDetails.setup",
   "personDetails.later",
@@ -2143,6 +2149,12 @@ const FLUENT_IDS_BY_KEY = {
   "ai.summary.again": "ai-summary-again",
   "ai.keepFailed": "ai-keepFailed",
   "ai.keepFull": "ai-keepFull",
+  "noticesStep.title": "noticesStep-title",
+  "noticesStep.intro": "noticesStep-intro",
+  "noticesStep.later": "noticesStep-later",
+  "noticesStep.done": "noticesStep-done",
+  "noticesStep.notNow": "noticesStep-notNow",
+  "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
   "ai.settings.subtitle": "ai-settings-subtitle",
   "personDetails.setup": "personDetails-setup",
   "personDetails.later": "personDetails-later",
@@ -3218,6 +3230,16 @@ export interface MessageArgsByKey {
   "ai.summary.again": undefined;
   "ai.keepFailed": undefined;
   "ai.keepFull": undefined;
+  "noticesStep.title": undefined;
+  "noticesStep.intro": undefined;
+  "noticesStep.later": {
+    notices: FluentArgument;
+    preferences: FluentArgument;
+    settings: FluentArgument;
+  };
+  "noticesStep.done": undefined;
+  "noticesStep.notNow": undefined;
+  "notifications.autoNeedsNotices": undefined;
   "ai.settings.subtitle": undefined;
   "personDetails.setup": undefined;
   "personDetails.later": undefined;
