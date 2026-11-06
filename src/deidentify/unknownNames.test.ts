@@ -503,3 +503,40 @@ describe("a header's subject beside a person field is no name (#264 review)", ()
     expect(send(text)).toMatch(/\[NAME 1\]/);
   });
 });
+
+describe("a relative named in passing, in title-case text", () => {
+  it.each([
+    "Brought Son Home.",
+    "Brought Daughter Home.",
+    "Daughter Present At Visit.",
+    "Wife Aware Of Diagnosis.",
+    "Husband Called Clinic.",
+    "Son Drove Patient Home.",
+    "Spouse At Bedside.",
+    "Partner Supportive.",
+    "Father Unknown.",
+    "Fils Présent Lors De La Visite.",
+    "Fille Informée Du Plan.",
+    "Wife Declined Interpreter.",
+    "Mother Deceased.",
+    "Son Updated By Phone.",
+    "Patient: Son Visited Today.",
+    "Mother: Son Lives Nearby.",
+  ])("leaves the words after the relative: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+  });
+
+  it.each([
+    ["Her husband, Jordan, called.", "Jordan"],
+    ["Her daughter Maya Okafor visited.", "Maya"],
+    ["Son Theo Vance visited.", "Theo"],
+    ["Sa fille Camille appelle.", "Camille"],
+    ["Daughter Grace At Bedside.", "Grace"],
+    ["Brought By Son Marcus.", "Marcus"],
+    ["Wife Rose Present.", "Rose"],
+    ["Wife María De La Cruz called.", "Cruz"],
+    ["Son Will Smith called.", "Smith"],
+  ])("removes the relative's name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+});
