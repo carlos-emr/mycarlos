@@ -560,6 +560,54 @@ describe("A copy still running when the row opens again (#275)", () => {
     expect(onStatus).toHaveBeenCalledExactlyOnceWith({ state: "notInstalled" });
   });
 
+  it.each(["cancelled", "notListed"] as const)(
+    "keeps a model installed while a picker was open when the picker ends %s",
+    async (outcome) => {
+      let snapshot!: (now: unknown) => void;
+      let picked!: (result: unknown) => void;
+      answer({
+        ai_model_catalog: [fake],
+        ai_model_add_active: () =>
+          new Promise((resolve) => (snapshot = resolve)),
+        ai_model_add_picked: () => new Promise((resolve) => (picked = resolve)),
+      });
+      const onStatus = vi.fn();
+      render(
+        <AiModelSetting
+          status={{ state: "notInstalled" }}
+          onStatus={onStatus}
+        />,
+      );
+      await waitFor(() =>
+        expect(native.invoke).toHaveBeenCalledWith("ai_model_add_active"),
+      );
+      await userEvent.click(
+        await screen.findByRole("button", {
+          name: humanText("Add a model file…"),
+        }),
+      );
+      await act(async () => {
+        native.listeners["ai-model-add-ended"]?.({
+          payload: { outcome: "added", status: installed },
+        });
+        picked({ outcome });
+        snapshot(running);
+      });
+      await waitFor(() =>
+        expect(onStatus).toHaveBeenCalledExactlyOnceWith(installed),
+      );
+      expect(bar()).toBeNull();
+      if (outcome === "cancelled")
+        expect(screen.queryByRole("alert")).toBeNull();
+      else
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          humanText(
+            "This is not a file myCarlos accepts. Choose the model file listed above.",
+          ),
+        );
+    },
+  );
+
   it("shows the download with its bar and Cancel, follows it, and hears how it ends", async () => {
     // The patient pressed Download, went to another page, and came back:
     // the row is new, and native still runs the download.

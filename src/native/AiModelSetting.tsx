@@ -311,6 +311,14 @@ export function AiModelSetting({
             return;
           }
         }
+        // An earlier download can finish while this command's picker is
+        // open. Cancelling that picker or refusing its file does not undo
+        // the model that was installed in the meantime.
+        if (
+          result.outcome !== "added" &&
+          endedWhileOwn.current?.outcome === "added"
+        )
+          onStatus(endedWhileOwn.current.status);
         finish(result);
       })
       .catch(() => {
