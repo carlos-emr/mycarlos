@@ -277,3 +277,73 @@ describe("a citation is not a Polish street (#252 review)", () => {
     expect(send("Adres: al. Testowa 45 m. 3")).not.toContain("Testowa 45");
   });
 });
+
+describe("clinicians named by role, with no title, in es/pt/pl", () => {
+  it.each([
+    ["La médica Inés Ficticia Peral revisó el caso.", "Peral"],
+    ["El médico de familia Julián Prueba Soto llamó.", "Soto"],
+    ["La trabajadora social Carmen Ejemplar Ruiz visitó el domicilio.", "Ruiz"],
+    ["La psicóloga Elena Prueba Vidal hizo la valoración.", "Vidal"],
+    ["La nutricionista Marta Ficticia Gil ajustó la dieta.", "Gil"],
+    ["La matrona Rosa Ejemplar Campos atendió el parto.", "Campos"],
+    ["El técnico de radiología Pablo Prueba Ortiz hizo la placa.", "Ortiz"],
+    ["La auxiliar de enfermería Lucía Ficticia Mora ayudó.", "Mora"],
+    ["El terapeuta ocupacional Daniel Prueba Gil valoró.", "Gil"],
+    ["A médica Helena Teste Souza examinou.", "Souza"],
+    ["O médico Paulo Fictício Herrera prescreveu.", "Herrera"],
+    ["A assistente social Carla Exemplo Lima ligou.", "Lima"],
+    ["A psicóloga Joana Teste Prado avaliou.", "Prado"],
+    ["A técnica de enfermagem Rita Exemplo Costa aferiu a pressão.", "Costa"],
+    ["A fonoaudióloga Bia Teste Lobo atendeu.", "Lobo"],
+    ["A nutricionista Ana Fictícia Moura orientou.", "Moura"],
+    ["O terapeuta ocupacional Davi Teste Rocha avaliou.", "Rocha"],
+    ["Lekarz Jan Testowy zbadał pacjenta.", "Testowy"],
+    ["Lekarka Ewa Przykładowa zleciła badania.", "Przykładowa"],
+    ["Psycholog Anna Testowa przeprowadziła rozmowę.", "Testowa"],
+    ["Dietetyk Marek Przykładny ułożył dietę.", "Przykładny"],
+    ["Położna Zofia Testowska odebrała poród.", "Testowska"],
+    ["Ratownik medyczny Piotr Testowy przywiózł pacjenta.", "Testowy"],
+    ["Logopeda Iwona Przykładowa prowadzi terapię.", "Przykładowa"],
+    ["Terapeuta zajęciowy Adam Testowy prowadzi zajęcia.", "Testowy"],
+    ["Pielęgniarka Katarzyna Przykładowa zmieniła opatrunek.", "Przykładowa"],
+    ["Fizjoterapeuta Michał Testowy prowadzi rehabilitację.", "Testowy"],
+    ["Badanie wykonał mgr Tomasz Przykładny.", "Przykładny"],
+    ["Konsultował dr n. med. Paweł Testowy.", "Testowy"],
+    ["Wypisał lek. dent. Ewa Testowska.", "Testowska"],
+  ])("%s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "El médico Residente de guardia llamó.",
+    "La técnica Superior Sanitaria revisó.",
+    "El médico de Atención Primaria lo derivó.",
+    "A médica Responsável Técnica assinou.",
+    "Lekarz Prowadzący zlecił badania.",
+    "La terapeuta Ocupacional Infantil vino.",
+    "El técnico de Rayos X informó.",
+    "La auxiliar Administrativa llamó.",
+    // "médica" and "técnica" are also "medical" and "technique" (#262 review).
+    "Historia Médica Completa Del Paciente",
+    "Licencia Médica Temporal Prolongada",
+    "Junta Médica Evaluadora Regional",
+    "Evaluación Médica Inicial Completa",
+    "Atestado Médico Ocupacional Padrão",
+    "Equipe Médica Plantonista Noturna",
+    "Se usó la técnica Seldinger Modificada.",
+  ])("leaves a role and its qualifier: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
+
+describe("more Polish titles (#262 review)", () => {
+  it.each([
+    ["Konsultował dr hab. n. med. Paweł Testowy.", "Testowy"],
+    ["Opinię wydał prof. dr hab. n. med. Jan Przykładny.", "Przykładny"],
+    ["Lek wydała mgr farm. Ewa Testowska.", "Testowska"],
+    ["Sprzęt sprawdził mgr inż. Adam Przykładny.", "Przykładny"],
+    ["Lek. med. Anna Testowa zbadała pacjenta.", "Testowa"],
+  ])("%s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+});
