@@ -36,7 +36,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
-use std::io::{self, BufRead, Read, Write};
+use std::io::{BufRead, Read, Write};
 
 #[cfg(any(target_os = "linux", windows))]
 mod confine;
@@ -640,11 +640,11 @@ fn serve_model(settings: &Settings) -> i32 {
     if confine::after_load(&settings.model).is_err() {
         return exit::NO_SANDBOX;
     }
-    let mut output = io::stdout().lock();
+    let mut output = std::io::stdout().lock();
     if !send(&mut output, &hello_line(&settings.name, &settings.sha256)) {
         return exit::OUTPUT;
     }
-    let mut input = io::stdin().lock();
+    let mut input = std::io::stdin().lock();
     loop {
         let Some(line) = next_line(&mut input) else {
             return exit::INPUT;
@@ -704,11 +704,11 @@ mod stub {
         if confine::before_load(&model).is_err() || confine::after_load(&model).is_err() {
             return exit::NO_SANDBOX;
         }
-        let mut output = io::stdout().lock();
+        let mut output = std::io::stdout().lock();
         if !send(&mut output, &hello_line(STUB_NAME, &"0".repeat(64))) {
             return exit::OUTPUT;
         }
-        let mut input = io::stdin().lock();
+        let mut input = std::io::stdin().lock();
         loop {
             let Some(line) = next_line(&mut input) else {
                 return exit::INPUT;
