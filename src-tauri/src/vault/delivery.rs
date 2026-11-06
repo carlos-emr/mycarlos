@@ -2618,7 +2618,19 @@ mod approval_recovery_tests {
                         .err()
                         .unwrap()
                 ));
-                assert!(busy(store.check_documents(session).err().unwrap()));
+                // A manual document check shares the guard. Main's rule waits
+                // for it (up to 10 s) and then refuses; a clock that jumps past
+                // the wait shows the refusal without sleeping.
+                let clock = std::cell::Cell::new(std::time::Instant::now());
+                let jump = || {
+                    let at = clock.get();
+                    clock.set(at + std::time::Duration::from_secs(11));
+                    at
+                };
+                assert!(store
+                    .collection
+                    .manual_acquire(&store.portal_check_running, jump, || {})
+                    .is_none());
                 assert!(busy(
                     store.poll_staff_approval(link_id, session).err().unwrap()
                 ));
