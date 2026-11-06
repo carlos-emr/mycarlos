@@ -33,6 +33,7 @@ mod model_acl;
 mod model_download;
 mod model_helper;
 mod model_runtime;
+mod notice_key;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -2254,7 +2255,13 @@ async fn vault_unlock(
 /// asked for) runs in the background, so opening never waits on the network.
 fn after_open(store: &Arc<VaultStore>) {
     let store = Arc::clone(store);
-    tauri::async_runtime::spawn_blocking(move || store.after_open());
+    tauri::async_runtime::spawn_blocking(move || {
+        // Notice keys of any other vault go (#230).
+        if let Some(vault_id) = store.open_vault_id() {
+            notice_key::after_open(vault_id);
+        }
+        store.after_open();
+    });
 }
 
 #[tauri::command]
@@ -4489,6 +4496,8 @@ async fn vault_reset(
     }
     picks.clear();
     run_blocking(store.inner(), VaultStore::reset).await?;
+    // Its notice keys go with it (#230).
+    let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
     forget_vault(throttle.inner()).await;
     Ok(true)
@@ -4676,6 +4685,9 @@ pub fn run() {
                     .join("vault-home")
                     .join("attempts.json"),
             ))));
+            // Notice keys (#230) live beside `vault-home` too, so no vault
+            // backup holds them.
+            notice_key::install(&app.path().app_local_data_dir()?);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
