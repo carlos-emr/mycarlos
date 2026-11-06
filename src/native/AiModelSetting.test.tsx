@@ -10,6 +10,7 @@ import { AiModelSetting } from "./AiModelSetting";
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
   listeners: {} as Record<string, (event: { payload: unknown }) => void>,
+  registerEnded: null as (() => Promise<void>) | null,
   /** The progress event's listener. */
   get listener() {
     return this.listeners["ai-model-add-progress"] ?? null;
@@ -17,9 +18,16 @@ const native = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (name: string, handler: (event: { payload: unknown }) => void) => {
+  listen: async (
+    name: string,
+    handler: (event: { payload: unknown }) => void,
+  ) => {
+    if (name === "ai-model-add-ended" && native.registerEnded)
+      await native.registerEnded();
     native.listeners[name] = handler;
-    return Promise.resolve(() => undefined);
+    return () => {
+      if (native.listeners[name] === handler) delete native.listeners[name];
+    };
   },
 }));
 
@@ -49,6 +57,7 @@ function answer(map: Record<string, unknown>) {
 beforeEach(() => {
   native.invoke.mockReset();
   native.listeners = {};
+  native.registerEnded = null;
   setLocaleOverride("en");
 });
 afterEach(() => setLocaleOverride(null));
@@ -409,6 +418,89 @@ describe("A copy still running when the row opens again (#275)", () => {
   const bar = () =>
     screen.queryByRole("progressbar", { name: humanText("Model download") });
   const running = { kind: "download", done: 900_000_000, total: TOTAL };
+
+  it("subscribes before querying and refreshes a copy that finished before subscription", async () => {
+    let registered!: () => void;
+    native.registerEnded = () =>
+      new Promise((resolve) => (registered = resolve));
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_add_active: null,
+      ai_model_status: installed,
+    });
+    const onStatus = vi.fn();
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={onStatus} />,
+    );
+    await screen.findByText(fake.sourceUrl);
+    expect(native.invoke).not.toHaveBeenCalledWith("ai_model_add_active");
+    await act(async () => registered());
+    await waitFor(() => expect(onStatus).toHaveBeenCalledWith(installed));
+    expect(bar()).toBeNull();
+  });
+
+  it("does not resurrect a stale active snapshot after completion during the query", async () => {
+    let snapshot!: (now: unknown) => void;
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_add_active: () => new Promise((resolve) => (snapshot = resolve)),
+    });
+    const onStatus = vi.fn();
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={onStatus} />,
+    );
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith("ai_model_add_active"),
+    );
+    await act(async () => {
+      native.listeners["ai-model-add-ended"]?.({
+        payload: { outcome: "added", status: installed },
+      });
+      snapshot(running);
+    });
+    await screen.findByText(humanText("Model added"));
+    expect(onStatus).toHaveBeenCalledExactlyOnceWith(installed);
+    expect(bar()).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Download the default model"),
+      }),
+    ).toHaveAttribute("aria-disabled", "false");
+  });
+
+  it("does not resurrect a stale busy snapshot after the running copy ends", async () => {
+    let asked = 0;
+    let snapshot!: (now: unknown) => void;
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_download: { outcome: "busy" },
+      ai_model_add_active: () =>
+        asked++ === 0
+          ? Promise.resolve(null)
+          : new Promise((resolve) => (snapshot = resolve)),
+    });
+    const onStatus = vi.fn();
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={onStatus} />,
+    );
+    await waitFor(() => expect(asked).toBe(1));
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Download the default model"),
+      }),
+    );
+    await waitFor(() => expect(asked).toBe(2));
+    await act(async () => {
+      native.listeners["ai-model-add-ended"]?.({
+        payload: { outcome: "added", status: installed },
+      });
+      snapshot(running);
+    });
+    await screen.findByText(humanText("Model added"));
+    expect(onStatus).toHaveBeenCalledExactlyOnceWith(installed);
+    expect(bar()).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 
   it("shows the download with its bar and Cancel, follows it, and hears how it ends", async () => {
     // The patient pressed Download, went to another page, and came back:
