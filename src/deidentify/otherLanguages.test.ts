@@ -252,3 +252,17 @@ describe("status words in a flowsheet column are not names (#252 review)", () =>
     expect(send(text)).toBe(expected);
   });
 });
+
+describe("a citation is not a Polish street (#252 review)", () => {
+  it.each([
+    "Smith et al. Lancet 2019 showed a benefit.",
+    "Jak wykazali Kowalski et al. Kardiologia 2021, lek działa.",
+    "Nowak i wsp. (Al. Med. 2020) opisali przypadek.",
+  ])("%s", (text) => {
+    expect(send(text)).not.toMatch(/ADDRESS/);
+  });
+
+  it("still removes an avenue with a house number", () => {
+    expect(send("Adres: al. Testowa 45 m. 3")).not.toContain("Testowa 45");
+  });
+});

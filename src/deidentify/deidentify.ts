@@ -2314,11 +2314,12 @@ const RULES: Rule[] = [
     ),
     townInBrackets: true,
   },
-  // A Polish street: "ul. Polna 3", "al. Testowa 45 m. 3", "os. Przykładowe 12/4".
+  // A Polish street: "ul. Polna 3", "al. Testowa 45 m. 3", "os. Przykładowe 12/4". Not a
+  // citation ("Smith et al. Lancet 2019"): never after "et", and a year is no house number.
   {
     kind: "address",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:ul\\.|al\\.|pl\\.|os\\.|ulica|aleja|plac|osiedle)[ \\t]*\\p{Lu}[\\p{L}.-]*(?:[ \\t]+\\p{Lu}[\\p{L}.-]*){0,3}[ \\t]+\\d{1,4}[A-Za-z]?(?:\\/\\d{1,4}[A-Za-z]?)?(?:[ \\t]*m\\.[ \\t]*\\d{1,4})?(?![\\p{L}\\d])${TOWN_AFTER}`,
+      `(?<![\\p{L}])(?<![Ee][Tt][ \\t]?)(?:ul\\.|al\\.|pl\\.|os\\.|ulica|aleja|plac|osiedle)[ \\t]*\\p{Lu}[\\p{L}.-]*(?:[ \\t]+\\p{Lu}[\\p{L}.-]*){0,3}[ \\t]+(?!(?:19|20)\\d{2}(?!\\d))\\d{1,4}[A-Za-z]?(?:\\/\\d{1,4}[A-Za-z]?)?(?:[ \\t]*m\\.[ \\t]*\\d{1,4})?(?![\\p{L}\\d])${TOWN_AFTER}`,
       "gu",
     ),
   },
