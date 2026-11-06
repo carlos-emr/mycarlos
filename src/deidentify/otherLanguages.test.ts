@@ -266,6 +266,7 @@ describe("a citation is not a Polish street (#252 review)", () => {
     ["Ul. Polna 3, Wola", "Polna"],
     ["Zam. Ul. Polna 3, Wola", "Polna"],
     ["Al. Testowa 45 m. 3", "Testowa"],
+    ["UL. POLNA 3, WOLA", "POLNA"],
   ])("removes a street written with a capital: %s", (text, part) => {
     const out = send(text);
     expect(out).not.toContain(part);
