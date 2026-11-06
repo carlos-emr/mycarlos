@@ -1,3 +1,8 @@
+import {
+  PersonDetailsOrLater,
+  detailsProblem,
+  trimmedDetails,
+} from "./PersonDetails";
 import { useI18n, MessageKey } from "../i18n";
 import { LanguageSetting } from "./LanguageSetting";
 import { SecretInput } from "./SecretInput";
@@ -24,7 +29,7 @@ import {
   useNewPassphraseRules,
   type CheckPassphraseRules,
 } from "./PassphraseChecklist";
-import type { VaultBridge } from "../vault";
+import type { PersonDetails, VaultBridge } from "../vault";
 
 export { MIN_PASSPHRASE_CHARS, tooShortPassphrase };
 
@@ -144,13 +149,23 @@ export function CreateVault({
   busy,
   notice,
   onCreate,
+  askDetails = false,
   checkRules,
   restoreBridge,
   onRestored,
 }: {
   busy: boolean;
   notice: string;
-  onCreate: (profile: string, passphrase: string) => Promise<void>;
+  /** `details` are the first person's full name and birth date, unless the
+   * patient chose to add them later (#234). */
+  onCreate: (
+    profile: string,
+    passphrase: string,
+    details?: PersonDetails,
+  ) => Promise<void>;
+  /** Whether the vault can keep a person's details: then they are asked for
+   * here, after whose records these are, or left for later. */
+  askDetails?: boolean;
   /** The vault's own judgement of a passphrase being typed (#69). Without
    * it, the checklist ticks only the length; Create still judges it all. */
   checkRules?: CheckPassphraseRules;
@@ -159,6 +174,13 @@ export function CreateVault({
 }) {
   const { t } = useI18n();
   const [profile, setProfile] = useState("");
+  const [details, setDetails] = useState<PersonDetails>({});
+  const [birthDateUnknown, setBirthDateUnknown] = useState(false);
+  const [detailsLater, setDetailsLater] = useState(false);
+  const detailsInvalid =
+    askDetails &&
+    !detailsLater &&
+    Boolean(detailsProblem(details, birthDateUnknown));
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
   // Opened by a button that is gone now (Continue on the comfort screen):
@@ -195,6 +217,7 @@ export function CreateVault({
   // A rule the vault has said is not met: Create would only be refused.
   const unmet = rules !== null && !(rules.notAName && rules.hardToGuess);
   const invalid =
+    detailsInvalid ||
     !profile.trim() ||
     profileTooLong ||
     profileShared ||
@@ -211,7 +234,9 @@ export function CreateVault({
     setShown(false);
     setConfirmationShown(false);
     forget();
-    void onCreate(profile, secret);
+    if (askDetails && !detailsLater)
+      void onCreate(profile, secret, trimmedDetails(details));
+    else void onCreate(profile, secret);
   };
   return (
     <VaultAuthFrame state="Setting up">
@@ -242,6 +267,16 @@ export function CreateVault({
                 folder: t("interface.LibrarySidebar.sharedWithMe"),
               })}
             </p>
+          )}
+          {askDetails && (
+            <PersonDetailsOrLater
+              details={details}
+              onChange={setDetails}
+              birthDateUnknown={birthDateUnknown}
+              onBirthDateUnknownChange={setBirthDateUnknown}
+              later={detailsLater}
+              onLaterChange={setDetailsLater}
+            />
           )}
           <label>
             {t("passphrase.label")}

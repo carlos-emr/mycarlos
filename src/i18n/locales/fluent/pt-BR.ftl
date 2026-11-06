@@ -1402,6 +1402,14 @@ personDetails-futureDate = A data de nascimento não pode estar no futuro.
 
 personDetails-help = Guardados neste cofre criptografado para sugerir a quem um documento compartilhado pertence. Esses dados não verificam a origem de um documento.
 
+personDetails-setup = Nome completo e data de nascimento
+
+personDetails-later = Adicionar depois
+
+personDetails-reminder = Adicione o nome completo e a data de nascimento de { $name }. Eles ajudam o myCarlos a saber para quem é um documento.
+
+personDetails-notNow = Agora não
+
 personDetails-invalidDate = Digite uma data de nascimento válida: ano, mês e dia.
 
 personDetails-list = Dados das pessoas

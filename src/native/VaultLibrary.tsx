@@ -1,3 +1,4 @@
+import { missingDetails } from "./PersonDetails";
 import {
   useTextState,
   deferredText,
@@ -348,6 +349,11 @@ export function VaultLibrary({
   // Shared with me is a reserved profile, shown as a folder (#61): with one
   // person, inside their records; with several, outside everyone's.
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
+  const [detailsFor, setDetailsFor] = useState<{ profileId: string } | null>(
+    null,
+  );
+  // People whose reminder was put off until the vault next opens.
+  const [detailsNotNow, setDetailsNotNow] = useState<string[]>([]);
   const sharedProfileId = snapshot.sharedProfileId;
   // Everything the people hold, for the sidebar's tree: not Shared with me's.
   const peopleFolders = useMemo(
@@ -522,6 +528,21 @@ export function VaultLibrary({
       ? confirmation.action
       : null;
   const readOnly = snapshot.recovery !== null;
+  // A person whose full name and birth date wait to be added (#234): the open
+  // person first. Not where details cannot be edited (recovery mode).
+  const detailsReminder =
+    readOnly || !bridge.updateProfileDetails
+      ? undefined
+      : (people.find(
+          (person) =>
+            person.id === profileId &&
+            missingDetails(person) &&
+            !detailsNotNow.includes(person.id),
+        ) ??
+        people.find(
+          (person) =>
+            missingDetails(person) && !detailsNotNow.includes(person.id),
+        ));
   const sharedRecords = useMemo(
     () =>
       snapshot.records.filter(
@@ -1626,6 +1647,39 @@ export function VaultLibrary({
                 >
                   {searchAnnouncement}
                 </p>
+                {!inShared && detailsReminder && (
+                  <div
+                    className="native-details-reminder"
+                    role="note"
+                    aria-label={translateNow("personDetails.setup")}
+                  >
+                    <p>
+                      {translateNow("personDetails.reminder", {
+                        name: detailsReminder.displayName,
+                      })}
+                    </p>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setDetailsFor({ profileId: detailsReminder.id });
+                        openSecurity();
+                      }}
+                    >
+                      {translateNow("personDetails.edit")}
+                    </button>
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={() =>
+                        setDetailsNotNow((ids) => [...ids, detailsReminder.id])
+                      }
+                    >
+                      {translateNow("personDetails.notNow")}
+                    </button>
+                  </div>
+                )}
                 <div className="native-profile-row">
                   {/* Shared with me is no one's: no person's path above it. */}
                   {inShared ? (
@@ -2284,6 +2338,7 @@ export function VaultLibrary({
                 onUpdateProfileDetails={
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
                 }
+                detailsFor={detailsFor}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}

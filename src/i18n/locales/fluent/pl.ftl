@@ -1434,6 +1434,14 @@ personDetails-futureDate = Data urodzenia nie może być w przyszłości.
 
 personDetails-help = Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.
 
+personDetails-setup = Imię i nazwisko oraz data urodzenia
+
+personDetails-later = Dodać je później
+
+personDetails-reminder = Proszę dodać imię i nazwisko oraz datę urodzenia dla profilu { $name }. Pomagają one myCarlos ustalić, dla kogo jest dokument.
+
+personDetails-notNow = Nie teraz
+
 personDetails-invalidDate = Proszę wpisać prawidłową datę urodzenia: rok, miesiąc i dzień.
 
 personDetails-list = Dane osób

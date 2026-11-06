@@ -918,6 +918,10 @@ export const MESSAGE_KEYS = [
   "ai.summary.again",
   "ai.keepFailed",
   "ai.keepFull",
+  "personDetails.setup",
+  "personDetails.later",
+  "personDetails.reminder",
+  "personDetails.notNow",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2033,6 +2037,10 @@ const FLUENT_IDS_BY_KEY = {
   "ai.summary.again": "ai-summary-again",
   "ai.keepFailed": "ai-keepFailed",
   "ai.keepFull": "ai-keepFull",
+  "personDetails.setup": "personDetails-setup",
+  "personDetails.later": "personDetails-later",
+  "personDetails.reminder": "personDetails-reminder",
+  "personDetails.notNow": "personDetails-notNow",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3050,6 +3058,10 @@ export interface MessageArgsByKey {
   "ai.summary.again": undefined;
   "ai.keepFailed": undefined;
   "ai.keepFull": undefined;
+  "personDetails.setup": undefined;
+  "personDetails.later": undefined;
+  "personDetails.reminder": { name: FluentArgument };
+  "personDetails.notNow": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

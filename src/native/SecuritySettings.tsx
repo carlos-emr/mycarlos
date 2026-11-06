@@ -8,7 +8,7 @@ import {
   deferredText,
 } from "../i18n";
 import {
-  PersonDetailsFields,
+  PersonDetailsOrLater,
   PersonDetailsList,
   detailsProblem,
   trimmedDetails,
@@ -57,6 +57,8 @@ interface SecuritySettingsProps {
     id: string,
     details: PersonDetails,
   ) => Promise<boolean>;
+  /** A person whose details form opens, from the library's reminder (#234). */
+  detailsFor?: { profileId: string } | null;
   hiddenCount: number;
   focusHiddenEntry?: boolean;
   hiddenScopeName: string;
@@ -166,6 +168,7 @@ export function SecuritySettings({
   onOpenAiHelperNotice,
   people = [],
   onUpdateProfileDetails,
+  detailsFor,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
@@ -227,6 +230,12 @@ export function SecuritySettings({
   const [profileName, setProfileName] = useState("");
   const [profileDetails, setProfileDetails] = useState<PersonDetails>({});
   const [profileBirthDateUnknown, setProfileBirthDateUnknown] = useState(false);
+  // The person's details can wait (#234): the reminder then stays.
+  const [profileLater, setProfileLater] = useState(false);
+  const profileDetailsProblem =
+    Boolean(onUpdateProfileDetails) &&
+    !profileLater &&
+    Boolean(detailsProblem(profileDetails, profileBirthDateUnknown));
   const [currentPassphrase, setCurrentPassphrase] = useState("");
   const [newPassphrase, setNewPassphrase] = useState("");
   const [newPassphraseConfirmation, setNewPassphraseConfirmation] =
@@ -254,15 +263,9 @@ export function SecuritySettings({
   const submitProfile = (event: FormEvent) => {
     event.preventDefault();
     // Cleared only once the profile exists, so a refused name can be corrected.
-    if (
-      busy ||
-      readOnly ||
-      (onUpdateProfileDetails &&
-        detailsProblem(profileDetails, profileBirthDateUnknown))
-    )
-      return;
+    if (busy || readOnly || profileDetailsProblem) return;
     void (
-      onUpdateProfileDetails
+      onUpdateProfileDetails && !profileLater
         ? onCreateProfile(profileName, trimmedDetails(profileDetails))
         : onCreateProfile(profileName)
     ).then((created) => {
@@ -270,6 +273,7 @@ export function SecuritySettings({
         setProfileName((current) => (current === profileName ? "" : current));
         setProfileDetails({});
         setProfileBirthDateUnknown(false);
+        setProfileLater(false);
       }
     });
   };
@@ -637,11 +641,13 @@ export function SecuritySettings({
             )}
             {onUpdateProfileDetails && (
               <fieldset disabled={busy || readOnly}>
-                <PersonDetailsFields
+                <PersonDetailsOrLater
                   details={profileDetails}
                   onChange={setProfileDetails}
                   birthDateUnknown={profileBirthDateUnknown}
                   onBirthDateUnknownChange={setProfileBirthDateUnknown}
+                  later={profileLater}
+                  onLaterChange={setProfileLater}
                 />
               </fieldset>
             )}
@@ -650,10 +656,7 @@ export function SecuritySettings({
               disabled={
                 busy ||
                 readOnly ||
-                Boolean(
-                  onUpdateProfileDetails &&
-                    detailsProblem(profileDetails, profileBirthDateUnknown),
-                ) ||
+                profileDetailsProblem ||
                 !profileName.trim() ||
                 nameTooLong(profileName) ||
                 nameIsShared(profileName)
@@ -667,6 +670,7 @@ export function SecuritySettings({
               people={people}
               busy={busy || readOnly}
               onSave={onUpdateProfileDetails}
+              openFor={detailsFor}
             />
           )}
         </section>

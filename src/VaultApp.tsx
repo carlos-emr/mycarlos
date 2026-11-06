@@ -952,10 +952,25 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         checkRules={bridge.passphraseRules}
         restoreBridge={trackedBridge}
         onRestored={restored}
-        onCreate={(profile, passphrase) =>
+        askDetails={Boolean(bridge.updateProfileDetails)}
+        onCreate={(profile, passphrase, details) =>
           run(
             async () => {
-              installOpeningSnapshot(await bridge.create(passphrase, profile));
+              const created = await bridge.create(passphrase, profile);
+              // The first person's details (#234), in the records Edit details
+              // writes, with their history event. If this fails the vault is
+              // still made, and the library's reminder asks for them again.
+              const first = created.profiles.find(
+                (person) => person.id !== created.sharedProfileId,
+              );
+              const withDetails =
+                details && first && bridge.updateProfileDetails
+                  ? await bridge
+                      .updateProfileDetails(first.id, details)
+                      .then(() => bridge.snapshot())
+                      .catch(() => created)
+                  : created;
+              installOpeningSnapshot(withDetails);
               // Nothing from a vault that is gone.
               pendingOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);

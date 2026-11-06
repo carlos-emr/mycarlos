@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import {
   localDateText,
@@ -87,14 +87,68 @@ export function PersonDetailsFields({
     </>
   );
 }
+/** A person's details where they can wait (#234, Ben's decision): at vault
+ * creation and when a person is added. "Later" leaves them out; a reminder
+ * then stays until they are added (`missingDetails`). */
+export function PersonDetailsOrLater({
+  details,
+  onChange,
+  birthDateUnknown,
+  onBirthDateUnknownChange,
+  later,
+  onLaterChange,
+}: {
+  details: PersonDetails;
+  onChange: (details: PersonDetails) => void;
+  birthDateUnknown: boolean;
+  onBirthDateUnknownChange: (unknown: boolean) => void;
+  later: boolean;
+  onLaterChange: (later: boolean) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <fieldset className="native-person-details-setup">
+      <legend>{t("personDetails.setup")}</legend>
+      <label className="native-person-date-unknown">
+        <input
+          type="checkbox"
+          checked={later}
+          onChange={(e) => onLaterChange(e.target.checked)}
+        />
+        <span>{t("personDetails.later")}</span>
+      </label>
+      {!later && (
+        <PersonDetailsFields
+          details={details}
+          onChange={onChange}
+          birthDateUnknown={birthDateUnknown}
+          onBirthDateUnknownChange={onBirthDateUnknownChange}
+        />
+      )}
+    </fieldset>
+  );
+}
+
+/** What a person's details still need before the reminder goes (#234): a
+ * full name. A birth date may be marked unknown, which Edit details saves as
+ * no date beside a full name, so a full name alone is complete. */
+export function missingDetails(person: PatientProfile): boolean {
+  return !person.fullName?.trim();
+}
+
 export function PersonDetailsList({
   people,
   busy,
   onSave,
+  openFor,
 }: {
   people: PatientProfile[];
   busy: boolean;
   onSave: (profileId: string, details: PersonDetails) => Promise<boolean>;
+  /** Opens this person's form, with the focus in it: the library's reminder
+   * leads here (#234). A new object each time, so the same person can be
+   * asked for again. */
+  openFor?: { profileId: string } | null;
 }) {
   const { t } = useI18n();
   const [editing, setEditing] = useState<{
@@ -102,6 +156,22 @@ export function PersonDetailsList({
     details: PersonDetails;
     birthDateUnknown: boolean;
   } | null>(null);
+  const opened = useRef<HTMLFormElement | null>(null);
+  useEffect(() => {
+    const person = people.find((p) => p.id === openFor?.profileId);
+    if (!person) return;
+    setEditing({
+      id: person.id,
+      details: { fullName: person.fullName, birthDate: person.birthDate },
+      birthDateUnknown: false,
+    });
+    // Once the form is there: its first box.
+    requestAnimationFrame(() =>
+      opened.current?.querySelector<HTMLInputElement>("input")?.focus(),
+    );
+    // `people` only finds the person asked for: a refresh must not reopen it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openFor]);
   return (
     <ul
       className="native-person-details-list"
@@ -111,6 +181,7 @@ export function PersonDetailsList({
         <li key={person.id}>
           {editing?.id === person.id ? (
             <form
+              ref={opened}
               aria-label={t("personDetails.for", { name: person.displayName })}
               onSubmit={(e) => {
                 e.preventDefault();

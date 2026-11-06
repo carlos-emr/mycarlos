@@ -1370,6 +1370,14 @@ personDetails-futureDate = A birth date cannot be in the future.
 
 personDetails-help = Kept in this encrypted vault, to suggest who a shared document is for. These details do not verify a document's source.
 
+personDetails-setup = Full name and date of birth
+
+personDetails-later = Add them later
+
+personDetails-reminder = Add { $name }'s full name and date of birth. They help myCarlos tell who a document is for.
+
+personDetails-notNow = Not now
+
 personDetails-invalidDate = Enter a valid birth date as year, month and day.
 
 personDetails-list = People's details
