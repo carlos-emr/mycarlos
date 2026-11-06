@@ -395,3 +395,44 @@ describe("a run right before an identity label", () => {
     ).not.toContain("Sanz");
   });
 });
+
+describe("identity labels after the review", () => {
+  it.each([
+    "Pronto Socorro Adulto    CNS 123456789012345",
+    "Ambulatório de Cardiologia    CPF 987.654.321-00",
+    "Pain Clinic    NHC 4471829",
+    "FRACTURE, Displaced    DNI 12345678Z",
+  ])("leaves a unit or a condition: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+  });
+
+  it.each([
+    ["WIERZBICKA, Zuzanna    PESEL 58031412345", "Zuzanna"],
+    ["PRUEBA SANZ, Lucía, DNI 12345678Z", "Lucía"],
+    ["Rana Khan, DNI 12345678Z", "Khan"],
+    ["Summer Hand, PESEL 58031412345", "Hand"],
+  ])(
+    "removes a name, also written SURNAME, Given or with a word that is a name: %j",
+    (text, part) => {
+      expect(send(text)).not.toContain(part);
+    },
+  );
+
+  // An identity label in capitals is never a word of the name before it.
+  it.each([
+    ["Pacjentka: WIERZBICKA, Zuzanna    PESEL 58031412345", "PESEL", "Zuzanna"],
+    ["Nombre: Lucía Prueba Sanz    DNI 12345678Z", "DNI", "Sanz"],
+  ])("keeps the label after the name: %j", (text, label, part) => {
+    const sent = send(text);
+    expect(sent).toContain(label);
+    expect(sent).not.toContain(part);
+  });
+
+  // "NAM" is a label in Quebec and a given name too: it stays part of a name.
+  it.each([
+    ["Patient: NGUYEN, Van Nam", "Patient: [NAME 1]"],
+    ["Patient: TRAN VAN NAM", "Patient: [NAME 1]"],
+  ])("removes a name with Nam in it whole: %j", (text, sent) => {
+    expect(send(text)).toBe(sent);
+  });
+});
