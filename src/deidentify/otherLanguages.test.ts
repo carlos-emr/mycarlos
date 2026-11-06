@@ -230,3 +230,25 @@ describe("a Polish town after a word that always means a place", () => {
     expect(send("Przyszła z Bólem brzucha.")).toBe("Przyszła z Bólem brzucha.");
   });
 });
+
+describe("status words in a flowsheet column are not names (#252 review)", () => {
+  it.each([
+    "PATIENT  REFUSED MEDICATION",
+    "PATIENT  TOLERATED PROCEDURE WELL",
+    "Patient  Comfortable overnight.",
+    "Patient\tDischarged home.",
+    "PACIENTE  ESTABLE",
+    "PACJENT  STABILNY",
+    "PATIENT  STABLE",
+  ])("%j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it.each([
+    ["PATIENT  MAY SAMPLETON", "PATIENT  [NAME 1]"],
+    ["Patient\tRose Ashdale", "Patient\t[NAME 1]"],
+    ["PATIENT  CALM, AVERY", "PATIENT  [NAME 1]"],
+  ])("still removes a name, also one that is a word: %j", (text, expected) => {
+    expect(send(text)).toBe(expected);
+  });
+});

@@ -753,6 +753,158 @@ const COLUMN_LABEL = `(?:(?:${COLUMN_LABELS.map((label) =>
 // A name in a column: its words joined by single spaces, so the next column ("    MRN …")
 // is not taken, and up to two surnames before a comma ("PRUEBA SANZ, LUCÍA").
 const COLUMN_NAME = `(?:(?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}(?:[ ]${LABEL_PART})?,[ ]${LABEL_PART}(?:[ ]${LABEL_PART})?(?:[ ]${UPPER}\\.?(?![\\p{L}]))?|${LABEL_PART}(?:[ ](?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}){0,3})`;
+// Status words a flowsheet writes after "Patient" in a column: "PATIENT  REFUSED
+// MEDICATION", "Patient\tDischarged home.", "PACIENTE  ESTABLE" are no names (#252 review).
+const STATUS_WORDS = new Set(
+  foldAll([
+    "stable",
+    "comfortable",
+    "refused",
+    "refuses",
+    "refusing",
+    "tolerated",
+    "tolerates",
+    "tolerating",
+    "discharged",
+    "improved",
+    "improving",
+    "alert",
+    "awake",
+    "asleep",
+    "oriented",
+    "ambulating",
+    "ambulatory",
+    "resting",
+    "sleeping",
+    "eating",
+    "afebrile",
+    "seen",
+    "assessed",
+    "transferred",
+    "admitted",
+    "declined",
+    "declines",
+    "agreed",
+    "agrees",
+    "consented",
+    "verbalized",
+    "verbalizes",
+    "reports",
+    "reported",
+    "states",
+    "stated",
+    "denies",
+    "denied",
+    "complains",
+    "feels",
+    "feeling",
+    "doing",
+    "ate",
+    "voided",
+    "calm",
+    "anxious",
+    "agitated",
+    "confused",
+    "cooperative",
+    "independent",
+    "mobile",
+    "sitting",
+    "lying",
+    "ready",
+    "unchanged",
+    "deteriorating",
+    "critical",
+    "fair",
+    "good",
+    "well",
+    "unwell",
+    "deceased",
+    "expired",
+    "left",
+    "returned",
+    "went",
+    "tired",
+    "weak",
+    "nauseous",
+    "drowsy",
+    "settled",
+    "confortable",
+    "refuse",
+    "refusé",
+    "tolère",
+    "toléré",
+    "sorti",
+    "sortie",
+    "amélioré",
+    "alerte",
+    "éveillé",
+    "éveillée",
+    "orienté",
+    "orientée",
+    "calme",
+    "conscient",
+    "consciente",
+    "collaborant",
+    "dort",
+    "repose",
+    "mange",
+    "estable",
+    "cómodo",
+    "cómoda",
+    "rechaza",
+    "rechazó",
+    "tolera",
+    "toleró",
+    "mejorado",
+    "mejorada",
+    "mejor",
+    "alerta",
+    "despierto",
+    "despierta",
+    "orientado",
+    "orientada",
+    "tranquilo",
+    "tranquila",
+    "colaborador",
+    "colaboradora",
+    "duerme",
+    "descansa",
+    "come",
+    "estável",
+    "confortável",
+    "recusa",
+    "recusou",
+    "tolerou",
+    "melhorado",
+    "melhorada",
+    "acordado",
+    "acordada",
+    "calmo",
+    "calma",
+    "colaborativo",
+    "dorme",
+    "stabilny",
+    "stabilna",
+    "stabilnie",
+    "komfortowo",
+    "odmawia",
+    "odmówił",
+    "odmówiła",
+    "toleruje",
+    "wypisany",
+    "wypisana",
+    "lepiej",
+    "przytomny",
+    "przytomna",
+    "zorientowany",
+    "zorientowana",
+    "spokojny",
+    "spokojna",
+    "śpi",
+    "odpoczywa",
+    "je",
+  ]).map((word) => word.toLowerCase()),
+);
 // Words of a section heading after such a label: "PATIENT INFORMATION" is no name.
 const HEADER_WORDS = new Set(
   foldAll([
@@ -2824,13 +2976,22 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
         continue;
-      if (
-        rule.columnLabel &&
-        trimmed
+      if (rule.columnLabel) {
+        const words = trimmed
           .split(/[^\p{L}'’]+/u)
-          .some((word) => HEADER_WORDS.has(word.toLowerCase()))
-      )
-        continue;
+          .filter(Boolean)
+          .map((word) => word.toLowerCase());
+        const first = words[0] ?? "";
+        if (
+          words.some((word) => HEADER_WORDS.has(word)) ||
+          // Not "SURNAME, Given": a first word that is a status or a
+          // not-a-name word ends it. Not ORDINARY_WORDS: those are first names
+          // that are also words ("PATIENT  MAY SAMPLETON").
+          (!trimmed.includes(",") &&
+            (STATUS_WORDS.has(first) || NOT_NAMES.has(first)))
+        )
+          continue;
+      }
       if (
         rule.townInBrackets &&
         (BRACKET_NOTES.has(trimmed.toLowerCase()) ||
