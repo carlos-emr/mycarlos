@@ -472,7 +472,34 @@ describe("a header's subject beside a person field is no name (#264 review)", ()
     "Informe de alta: ICTUS, Isquémico",
     "Resumo de alta: ASMA, Grave",
     "Compte rendu : INSUFFISANCE RÉNALE, Chronique",
-  ])("leaves a condition and its severity: %j", (text) => {
+    "Discharge Summary: PNEUMONIA, Resolving",
+    "Referral Letter: FRACTURE, Healing",
+    "Discharge Summary: CELLULITIS, Improving",
+    "Referral: ULCER, Healed",
+    "Compte rendu : FRACTURE, Consolidée",
+    "Compte rendu : PNEUMOPATHIE, Communautaire",
+    "Informe de alta: NEUMONÍA, Resuelta",
+    "Informe de alta: NEUMONÍA, Adquirida",
+    "Resumo de alta: PNEUMONIA, Comunitária",
+    "Wypis: ZAPALENIE PŁUC, Pozaszpitalne",
+  ])("leaves a condition and its severity or course: %j", (text) => {
     expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+
+  // Course words are refused whole, not by their ending: these given names end like one.
+  it.each([
+    "Discharge letter: KHAN, Mohammed",
+    "Discharge letter: HARGROVE, Mildred",
+    "Discharge letter: WANG, Xiaoming",
+    "Discharge letter: CHEN, Xiaoling",
+    "Compte rendu : DUBOIS, René",
+    "Compte rendu : FAVREAU, Désirée",
+    "Informe de alta — LÓPEZ, José",
+    "Resumo de alta — SILVA, Margarida",
+    "Resumo de alta — COSTA, Aparecida",
+    "Resumo de alta — PEREIRA, Mário",
+    "Wypis: NOWAK, Jadwiga",
+  ])("removes a given name that ends like a participle: %j", (text) => {
+    expect(send(text)).toMatch(/\[NAME 1\]/);
   });
 });
