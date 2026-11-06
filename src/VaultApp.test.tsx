@@ -395,6 +395,54 @@ function renameBridge() {
   });
 }
 
+describe("the first person's details at setup (#234)", () => {
+  it("says when the details typed at setup could not be saved, and the vault is still ready", async () => {
+    const user = userEvent.setup();
+    const updateProfileDetails = vi
+      .fn()
+      .mockRejectedValue({ code: "storage", message: "FAKE: not saved" });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      updateProfileDetails,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    await user.type(
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
+      "FAKE Patient",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Full name, as on clinic documents")),
+      "FAKE Patient Example",
+    );
+    fireEvent.change(screen.getByLabelText(humanText("Date of birth")), {
+      target: { value: "1980-04-12" },
+    });
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Confirm passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(updateProfileDetails).toHaveBeenCalledOnce();
+    expect(bridge.create).toHaveBeenCalledOnce();
+  });
+});
+
 describe("durable vault UI", () => {
   it.each(["status", "snapshot"])(
     "locks native state and shows unlock when the current startup %s fails",

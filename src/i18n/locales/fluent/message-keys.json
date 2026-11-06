@@ -920,5 +920,6 @@
   "personDetails.setup",
   "personDetails.later",
   "personDetails.reminder",
-  "personDetails.notNow"
+  "personDetails.notNow",
+  "personDetails.notSaved"
 ]

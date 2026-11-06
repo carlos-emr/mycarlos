@@ -662,6 +662,7 @@ pub enum MessageId {
     PersonDetailsNoDate,
     PersonDetailsNoName,
     PersonDetailsNotNow,
+    PersonDetailsNotSaved,
     PersonDetailsReminder,
     PersonDetailsSave,
     PersonDetailsSaved,
@@ -1588,6 +1589,7 @@ impl MessageId {
         Self::PersonDetailsNoDate,
         Self::PersonDetailsNoName,
         Self::PersonDetailsNotNow,
+        Self::PersonDetailsNotSaved,
         Self::PersonDetailsReminder,
         Self::PersonDetailsSave,
         Self::PersonDetailsSaved,
@@ -2790,6 +2792,7 @@ impl MessageId {
             Self::PersonDetailsNoDate => "personDetails-noDate",
             Self::PersonDetailsNoName => "personDetails-noName",
             Self::PersonDetailsNotNow => "personDetails-notNow",
+            Self::PersonDetailsNotSaved => "personDetails-notSaved",
             Self::PersonDetailsReminder => "personDetails-reminder",
             Self::PersonDetailsSave => "personDetails-save",
             Self::PersonDetailsSaved => "personDetails-saved",
@@ -4354,6 +4357,7 @@ impl MessageId {
             "personDetails.later" => Some(Self::PersonDetailsLater),
             "personDetails.reminder" => Some(Self::PersonDetailsReminder),
             "personDetails.notNow" => Some(Self::PersonDetailsNotNow),
+            "personDetails.notSaved" => Some(Self::PersonDetailsNotSaved),
             _ => None,
         }
     }

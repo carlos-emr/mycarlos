@@ -963,12 +963,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               const first = created.profiles.find(
                 (person) => person.id !== created.sharedProfileId,
               );
+              // A failure is said (review SHOULD): the patient typed them.
+              let detailsFailed = false;
               const withDetails =
                 details && first && bridge.updateProfileDetails
-                  ? await bridge
-                      .updateProfileDetails(first.id, details)
-                      .then(() => bridge.snapshot())
-                      .catch(() => created)
+                  ? await bridge.updateProfileDetails(first.id, details).then(
+                      () => bridge.snapshot().catch(() => created),
+                      () => {
+                        detailsFailed = true;
+                        return created;
+                      },
+                    )
                   : created;
               installOpeningSnapshot(withDetails);
               // Nothing from a vault that is gone.
@@ -1003,8 +1008,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               );
               setConcealed(false);
               setStatus("unlocked");
-              // With a key to set up, its dialog says what happened instead.
-              if (!recoveryKey)
+              // Details typed but not kept are said, key or not; otherwise,
+              // with a key to set up, its dialog says what happened instead.
+              if (detailsFailed)
+                setLibraryNotice({
+                  message: deferredText(() => t("personDetails.notSaved")),
+                  outcome: null,
+                });
+              else if (!recoveryKey)
                 setLibraryNotice({
                   message: deferredText(() => t("notice.created")),
                   outcome: null,

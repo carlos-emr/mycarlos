@@ -1410,6 +1410,8 @@ personDetails-reminder = Agregue el nombre completo y la fecha de nacimiento de 
 
 personDetails-notNow = Ahora no
 
+personDetails-notSaved = La bóveda está lista, pero el nombre completo y la fecha de nacimiento no se guardaron. Agréguelos en Editar datos.
+
 personDetails-invalidDate = Introduzca una fecha de nacimiento válida: año, mes y día.
 
 personDetails-list = Datos de las personas

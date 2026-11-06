@@ -1378,6 +1378,8 @@ personDetails-reminder = Add { $name }'s full name and date of birth. They help 
 
 personDetails-notNow = Not now
 
+personDetails-notSaved = The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.
+
 personDetails-invalidDate = Enter a valid birth date as year, month and day.
 
 personDetails-list = People's details

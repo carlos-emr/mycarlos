@@ -1410,6 +1410,8 @@ personDetails-reminder = Ajoutez le nom complet et la date de naissance de { $na
 
 personDetails-notNow = Pas maintenant
 
+personDetails-notSaved = Le coffre-fort est prêt, mais le nom complet et la date de naissance n’ont pas été enregistrés. Ajoutez-les dans Modifier les renseignements.
+
 personDetails-invalidDate = Saisissez une date de naissance valide : année, mois et jour.
 
 personDetails-list = Renseignements des personnes

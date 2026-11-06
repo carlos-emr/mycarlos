@@ -1442,6 +1442,8 @@ personDetails-reminder = Proszę dodać imię i nazwisko oraz datę urodzenia dl
 
 personDetails-notNow = Nie teraz
 
+personDetails-notSaved = Sejf jest gotowy, ale imię i nazwisko oraz data urodzenia nie zostały zapisane. Proszę je dodać w Edytuj dane.
+
 personDetails-invalidDate = Proszę wpisać prawidłową datę urodzenia: rok, miesiąc i dzień.
 
 personDetails-list = Dane osób

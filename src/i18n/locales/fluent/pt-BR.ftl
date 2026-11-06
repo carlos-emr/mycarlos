@@ -1410,6 +1410,8 @@ personDetails-reminder = Adicione o nome completo e a data de nascimento de { $n
 
 personDetails-notNow = Agora não
 
+personDetails-notSaved = O cofre está pronto, mas o nome completo e a data de nascimento não foram guardados. Adicione-os em Editar dados.
+
 personDetails-invalidDate = Digite uma data de nascimento válida: ano, mês e dia.
 
 personDetails-list = Dados das pessoas

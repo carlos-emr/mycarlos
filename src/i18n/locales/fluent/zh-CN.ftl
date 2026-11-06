@@ -1250,6 +1250,8 @@ personDetails-reminder = 请添加 { $name } 的全名和出生日期。这些�
 
 personDetails-notNow = 暂不
 
+personDetails-notSaved = 保险库已就绪，但全名和出生日期未能保存。请在“编辑资料”中添加。
+
 personDetails-invalidDate = 请按年、月、日输入有效的出生日期。
 
 personDetails-list = 个人资料
