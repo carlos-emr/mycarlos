@@ -507,6 +507,7 @@ fn idle_config() -> RunnerConfig {
         expected_model: None,
         model_file: None,
         sandboxed: true,
+        generation_threads: None,
     }
 }
 
@@ -532,9 +533,10 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
     } else {
         model_helper::ModelFile::Descriptor(model_helper::MODEL_FD)
     };
+    let threads = threads();
     let args = model_helper::arguments(&model_helper::Settings {
         chat_format: verified.chat_format,
-        threads: threads(),
+        threads,
         model,
         name: verified.info.name.clone(),
         sha256: verified.info.sha256.clone(),
@@ -549,6 +551,7 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
         expected_model: Some(verified.info.clone()),
         model_file: Some(Arc::new(file)),
         sandboxed: true,
+        generation_threads: Some(threads),
     })
 }
 
@@ -1074,6 +1077,7 @@ pub mod testing {
                 }),
                 model_file: None,
                 sandboxed: true,
+                generation_threads: None,
             };
             Self {
                 runner: Arc::new(Runner::new(config)),
@@ -1271,16 +1275,18 @@ pub mod engine_testing {
                 || "no stats".to_owned(),
                 |s| {
                     format!(
-                        "prompt {} tokens {:.1} s (prefix {} tokens, {}, {} bytes), answer {} \
-                         tokens {:.1} s{}, {} grammar scans",
+                        "prompt {} tokens {:.1} s on {} threads (prefix {} tokens, {}, {} bytes), \
+                         answer {} tokens {:.1} s{} on {} threads, {} grammar scans",
                         s.prompt_tokens,
                         s.prompt_ms as f64 / 1000.0,
+                        s.batch_threads,
                         s.prefix_len,
                         if s.cache_hit { "put back" } else { "read" },
                         s.snapshot_bytes,
                         s.answer_tokens,
                         s.answer_ms as f64 / 1000.0,
                         if s.capped { " (capped)" } else { "" },
+                        s.threads,
                         s.grammar_scans
                     )
                 },
@@ -1298,6 +1304,19 @@ pub mod engine_testing {
         /// The hash of the token ids the last answer was written in (see `Stats::answer_hash`).
         pub fn last_answer_hash(&self) -> Option<u64> {
             self.runner.last_stats().map(|stats| stats.answer_hash)
+        }
+
+        /// The threads the last answer was written on, and its prompt read on.
+        pub fn last_threads(&self) -> Option<(u32, u32)> {
+            self.runner
+                .last_stats()
+                .map(|stats| (stats.threads, stats.batch_threads))
+        }
+
+        /// Answers are written on `threads` threads from now on, whatever the computer's load;
+        /// `None` chooses from the load again.
+        pub fn override_threads(&self, threads: Option<u32>) {
+            self.runner.override_threads(threads);
         }
 
         /// What `term` means in `context`, in `lang`.
