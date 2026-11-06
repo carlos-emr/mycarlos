@@ -1750,6 +1750,14 @@ const BRACKET_NOTES = new Set(
     "poradnia",
     "clínica",
     "hospital",
+    "domu",
+    "dom",
+    "pomocy",
+    "społecznej",
+    "opieki",
+    "szpitalu",
+    "szpitala",
+    "przychodni",
   ]).map((word) => word.toLowerCase()),
 );
 // Words of a family-history line, never a relative's name after "Mother:": "Mother: Breast
@@ -2083,11 +2091,12 @@ const RULES: Rule[] = [
     pattern:
       /\b(?:https?:\/\/|www\.)[^\s<>"'()[\]]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|ca|org|net|gov|edu|info|io|health|fr|uk|us)\b(?:\/[^\s<>"'()[\]]*)?/gi,
   },
-  // An age of 90 or over, which is identifying on its own.
+  // An age of 90 or over, which is identifying on its own: "93 years old", "93 ans",
+  // "93 años", "93 anos", "93 lata", "Edad: 93", "Wiek: 93".
   {
     kind: "age",
     pattern:
-      /\b(?:(?:9\d|1[01]\d)[ -](?:years?|yrs?|y)[ -]?old|(?:9\d|1[01]\d)[ \t]?(?:y\.?o\.?|yo|y\/o)|aged?[ \t]*:?[ \t]*(?:9\d|1[01]\d)|(?:âgée?[ \t]+de[ \t]+)?(?:9\d|1[01]\d)[ \t]+ans)(?![\p{L}\d])/giu,
+      /\b(?:(?:9\d|1[01]\d)[ -](?:years?|yrs?|y)[ -]?old|(?:9\d|1[01]\d)[ \t]?(?:y\.?o\.?|yo|y\/o)|(?:aged?|edad|idade|wiek)[ \t]*:?[ \t]*(?:9\d|1[01]\d)|(?:âgée?[ \t]+de[ \t]+)?(?:9\d|1[01]\d)[ \t]+(?:ans|años|anos|lat|lata))(?![\p{L}\d])/giu,
   },
   {
     kind: "postalCode",
@@ -2141,6 +2150,25 @@ const RULES: Rule[] = [
       "gu",
     ),
     townInBrackets: true,
+  },
+  // A Polish town after a word that always means a place: "mieszka w Testowej Woli",
+  // "zam. Testowo", "z miejscowości Testowa Wola". A town after a bare "z" is left: "z"
+  // also means "with" ("z Piotrem").
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])(?:[Mm]ieszka(?:ł|ła|jący|jąca)?[ \\t]+w|[Zz]amieszkał[ay]?[ \\t]+w|[Zz]am\\.|[Zz][ \\t]+(?:miejscowości|miasta|gminy|wsi)|[Ww][ \\t]+(?:miejscowości|mieście|gminie|wsi))[ \\t]+)\\p{Lu}\\p{Ll}+(?:[ -]\\p{Lu}\\p{Ll}+){0,2}`,
+      "gu",
+    ),
+    townInBrackets: true,
+  },
+  // A Polish street: "ul. Polna 3", "al. Testowa 45 m. 3", "os. Przykładowe 12/4".
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:ul\\.|al\\.|pl\\.|os\\.|ulica|aleja|plac|osiedle)[ \\t]*\\p{Lu}[\\p{L}.-]*(?:[ \\t]+\\p{Lu}[\\p{L}.-]*){0,3}[ \\t]+\\d{1,4}[A-Za-z]?(?:\\/\\d{1,4}[A-Za-z]?)?(?:[ \\t]*m\\.[ \\t]*\\d{1,4})?(?![\\p{L}\\d])${TOWN_AFTER}`,
+      "gu",
+    ),
   },
   // A named residence: "Résidence Les Jardins du Parc", "Foyer Saint-Joseph", "Manoir des Pins".
   {

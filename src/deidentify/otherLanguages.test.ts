@@ -164,6 +164,33 @@ describe("a header laid out in columns, with no colon (#252 review)", () => {
   });
 });
 
+describe("an age of 90 or over in es/pt/pl", () => {
+  it.each([
+    ["Paciente de 92 años, vive sola.", "92"],
+    ["Mujer de 101 años con caída.", "101"],
+    ["Edad: 95", "95"],
+    ["Paciente com 91 anos, lúcida.", "91"],
+    ["Idosa (94 anos) com queda.", "94"],
+    ["Idade: 96", "96"],
+    ["Pacjentka w wieku 92 lat.", "92"],
+    ["Wiek: 97", "97"],
+    ["Mężczyzna, 93 lata, po upadku.", "93"],
+  ])("%s", (text, age) => {
+    const out = send(text);
+    expect(out).not.toContain(age);
+    expect(out).toMatch(/\[AGE/);
+  });
+
+  it.each([
+    "Paciente de 89 años.",
+    "Metformina 90 mg al día.",
+    "Paciente com 45 anos.",
+    "Pacjent, 67 lat.",
+  ])("leaves %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
+
 describe("short birth-date labels in es/pt", () => {
   it.each([
     "FECHA NAC.  14/03/1958\nVisita 12/03/2026",
@@ -175,5 +202,31 @@ describe("short birth-date labels in es/pt", () => {
     const out = send(text);
     expect(out).toMatch(/\[DATE OF BIRTH 1\]/);
     expect(out).not.toContain("1958");
+  });
+});
+
+describe("a Polish town after a word that always means a place", () => {
+  it.each([
+    ["Pacjentka mieszka w Testowej Woli z mężem.", "Testowej Woli"],
+    ["Zam. Przykładowo, ul. Polna 3.", "Przykładowo"],
+    [
+      "Adres korespondencyjny: al. Testowa 45 m. 3, Przykładowo.",
+      "Przykładowo",
+    ],
+    ["Dojazd z os. Przykładowe 12/4 karetką.", "Przykładowe 12"],
+    ["Pochodzi z miejscowości Testowa Wola.", "Testowa Wola"],
+    ["Mieszkała w mieście Przykładów Dolny.", "Przykładów"],
+  ])("%s", (text, town) => {
+    expect(send(text)).not.toContain(town);
+  });
+
+  it("leaves a care home's generic name", () => {
+    expect(send("mieszka w Domu Pomocy Społecznej")).toBe(
+      "mieszka w Domu Pomocy Społecznej",
+    );
+  });
+
+  it("leaves a word after a bare z, which also means with", () => {
+    expect(send("Przyszła z Bólem brzucha.")).toBe("Przyszła z Bólem brzucha.");
   });
 });
