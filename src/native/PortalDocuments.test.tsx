@@ -457,7 +457,8 @@ describe("native clinic document controls", () => {
       connectPortal,
       checkDocuments: vi.fn(),
     } as unknown as VaultBridge;
-    const { props } = fixture({ bridge });
+    // No clinic linked yet, so the form is on the panel (#145).
+    const { props } = fixture({ bridge, snapshot: unlinkedSnapshot });
     const user = userEvent.setup();
     expect(platform).toHaveBeenCalledOnce();
     const device = screen.getByLabelText("Name for this device");
@@ -542,7 +543,11 @@ describe("native clinic document controls", () => {
         finishRefresh = resolve;
       });
       const refresh = vi.fn().mockReturnValue(pendingRefresh);
-      const { bridge, failures } = fixture({ refresh });
+      // No clinic linked yet, so the form is on the panel (#145).
+      const { bridge, failures } = fixture({
+        refresh,
+        snapshot: unlinkedSnapshot,
+      });
       vi.mocked(bridge.connectPortal!).mockReturnValue(pendingLink);
       const user = userEvent.setup();
       const address = "https://portal.example.test/patient";
