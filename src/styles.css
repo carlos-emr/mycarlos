@@ -1298,12 +1298,13 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .portal-link-dialog label { display: grid; gap: .35rem; font-weight: 700; }
 .portal-link-dialog input, .portal-link-dialog select { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; box-sizing: border-box; font: inherit; }
 .portal-link-dialog select { padding: 8px 10px; border: 1px solid var(--control-line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); }
-/* Below 40em the dialogs' two footer buttons share a row and keep the
-   end alignment, so this dialog's long send label pushes Cancel out past
-   the start side, where it can't be scrolled to. Here each button gets its
-   own row, the dialog's width. */
+/* Below 40em the dialogs' footer buttons share a row, half each, and a
+   button gets a row of its own only when its longest word doesn't fit its
+   half (#157). A Chinese label has no long word, so this dialog's long send
+   label stayed beside Cancel, two characters to a line. Here each button
+   gets its own row, the dialog's width. */
 @media (max-width: 40em) {
-  .portal-link-dialog .dialog-actions { grid-template-columns: minmax(0, 1fr); }
+  .portal-link-dialog .dialog-actions > * { flex-basis: 100%; }
 }
 /* In Chinese, a button label that wraps splits evenly instead of leaving one
    character alone on its last line ("连接并申请批准" at 320 px, 200% text).

@@ -111,7 +111,12 @@ test("links this device to a clinic and asks for approval in one action: a refus
     level: 3,
   });
   await expect(clinic).toBeVisible();
-  await expect(code).toHaveValue("");
+  // Linked: the form leaves the panel for "Link another clinic" (#148),
+  // which opens empty (link-another-clinic.spec.ts), so no code is kept.
+  await expect(code).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: en("portal.linkAnother"), exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(en("portal.errorCodeRejected"), { exact: true }),
   ).toHaveCount(0);
