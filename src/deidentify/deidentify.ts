@@ -1671,6 +1671,8 @@ interface Rule {
   notLowerCaseMay?: true;
   /** "Mother: First Last": refused in a family-history line or section. */
   relationLabel?: true;
+  /** A name with no person cue (a header line, a care verb): refused for any non-name word. */
+  uncued?: true;
   /** A name in a header's column: refused for a section heading ("PATIENT INFORMATION"). */
   columnLabel?: true;
   /** A town in brackets: refused for a bracket note or a medical word. */
@@ -2111,6 +2113,217 @@ function familyHistoryLabel(text: string, at: number, name: string): boolean {
     // "Sudden Death" is two ordinary words; "Rose Baker" is a person.
     words.every((word) => ORDINARY_WORDS.has(word))
   );
+}
+// A heading that ends in a document word, before the patient's name: "Discharge letter: Wren
+// Halloway", "Plan de soins pour …", "Karta informacyjna — …" (uncued names, design note 2).
+const DOCUMENT_HEADING = `(?:[\\p{L}'’-]+[ \\t]+){0,4}${anyCase(
+  withSentenceCase([
+    "note",
+    "notes",
+    "letter",
+    "summary",
+    "report",
+    "plan",
+    "care plan",
+    "review",
+    "referral",
+    "consultation",
+    "assessment",
+    "discharge",
+    "consult",
+    "lettre",
+    "compte rendu",
+    "rapport",
+    "résumé",
+    "sommaire",
+    "plan de soins",
+    "bilan",
+    "note de suivi",
+    "demande",
+    "informe",
+    "informe de alta",
+    "resumen",
+    "carta",
+    "plan de cuidados",
+    "nota",
+    "valoración",
+    "resumo",
+    "resumo de alta",
+    "relatório",
+    "plano de cuidados",
+    "nota de alta",
+    "avaliação",
+    "encaminhamento",
+    "karta informacyjna",
+    "plan opieki",
+    "wypis",
+    "skierowanie",
+    "notatka",
+    "epikryza",
+    "opinia",
+  ]),
+)}(?:[ \\t]+(?:de|du|des|d['’]|of|da|do|z)[ \\t]*[\\p{L}'’-]+)?`;
+// Care verbs with a person after them: "Paramedics brought …", "ont amené …", "trajo a …".
+const CARE_VERB = anyCase(
+  withSentenceCase([
+    "brought",
+    "accompanied",
+    "referred",
+    "transferred",
+    "asked to see",
+    "we saw",
+    "we met",
+    "received",
+    "called on",
+    "amené",
+    "amenée",
+    "ont amené",
+    "a amené",
+    "adressé",
+    "adressée",
+    "reçu",
+    "reçue",
+    "avons reçu",
+    "accompagné",
+    "accompagnée",
+    "transféré",
+    "transférée",
+    "trajo a",
+    "trajeron a",
+    "recibimos a",
+    "acompañó a",
+    "trasladó a",
+    "trasladaron a",
+    "atendimos a",
+    "trouxe",
+    "trouxeram",
+    "recebemos",
+    "acompanhou",
+    "transferiu",
+    "atendemos",
+    "przywiozła",
+    "przywiózł",
+    "przywieźli",
+    "przyjęliśmy",
+    "przyjęto",
+    "przekazano",
+  ]),
+);
+// Words that are never part of an uncued name: a side, a body part, a wound, a time word.
+const UNCUED_NOT_NAME_WORDS = new Set(
+  foldAll([
+    "left",
+    "right",
+    "bilateral",
+    "knee",
+    "hip",
+    "shoulder",
+    "back",
+    "chest",
+    "neck",
+    "head",
+    "foot",
+    "hand",
+    "arm",
+    "leg",
+    "wrist",
+    "ankle",
+    "elbow",
+    "eye",
+    "ear",
+    "gauche",
+    "droite",
+    "genou",
+    "hanche",
+    "épaule",
+    "izquierda",
+    "izquierdo",
+    "derecha",
+    "derecho",
+    "rodilla",
+    "cadera",
+    "esquerda",
+    "esquerdo",
+    "direita",
+    "direito",
+    "joelho",
+    "quadril",
+    "lewa",
+    "lewe",
+    "lewy",
+    "prawa",
+    "prawe",
+    "prawy",
+    "kolano",
+    "biodro",
+    "bark",
+    "injury",
+    "wound",
+    "ulcer",
+    "pressure",
+    "type",
+    "follow",
+    "up",
+    "day",
+    "week",
+    "month",
+    "year",
+    "insuffisance",
+    "insuficiencia",
+    "insuficiência",
+    "cardiaque",
+    "cardíaca",
+    "cardíaco",
+    "rénale",
+    "hépatique",
+    "pulmonaire",
+    "respiratoire",
+    "respiratória",
+    "respiratorio",
+    "plaie",
+    "úlcera",
+    "ulcère",
+    "escarre",
+    "chute",
+    "caída",
+    "queda",
+    "douleur",
+    "dolor",
+    "dor",
+    "ból",
+    "niewydolność",
+    "serca",
+    "nerek",
+    "cukrzyca",
+    "rana",
+    "odleżyna",
+    "upadek",
+    "diabète",
+    "diabetes",
+  ]).map((word) => word.toLowerCase()),
+);
+/** An uncued name candidate is no name when any word is a clinical, document, heading, status,
+ * generic, body or drug word, or has a medical ending. */
+function uncuedNotName(candidate: string): boolean {
+  return candidate
+    .split(/[^\p{L}'’]+/u)
+    .filter(Boolean)
+    .some((word) => {
+      const lower = word.toLowerCase();
+      return (
+        UNCUED_NOT_NAME_WORDS.has(lower) ||
+        FAMILY_HISTORY_WORDS.has(lower) ||
+        HEADER_WORDS.has(lower) ||
+        STATUS_WORDS.has(lower) ||
+        NOT_NAMES.has(lower) ||
+        TREATMENT_WORDS.has(lower) ||
+        PLACE_WORDS.has(lower) ||
+        GENERIC_BEFORE_CLINIC.has(lower) ||
+        DRUG_NAMES.has(lower) ||
+        MEDICAL_ENDING.test(lower) ||
+        new RegExp(`^${CLINIC_WORDS}$`, "u").test(word)
+      );
+    });
 }
 const RULES: Rule[] = [
   {
@@ -2609,6 +2822,27 @@ const RULES: Rule[] = [
       "gu",
     ),
     group: 1,
+  },
+  // A patient named in a header line, after the document's title: "CONSULTATION NOTE — Tobiah
+  // Farnsworth", "Plan de soins pour Margaux Vellacourt". The name ends the line.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<=(?:^|\\n)[ \\t]*${DOCUMENT_HEADING}(?:[ \\t]*(?:—|–|-|:)[ \\t]*|[ \\t]+(?:for|pour|concernant|concerning|regarding|para|dla|sobre|de)[ \\t]+))(${COLUMN_NAME})(?=[ \\t]*(?:[.,;]|\\n|$))`,
+      "gu",
+    ),
+    group: 1,
+    uncued: true,
+  },
+  // A person after a care verb: "Paramedics brought Tobiah Farnsworth", "trajo a Lucas …".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${CARE_VERB}[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+    uncued: true,
   },
   // A relative named in passing: "her husband, Jordan", "son conjoint, Jean".
   {
@@ -3123,6 +3357,7 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
         continue;
+      if (rule.uncued && uncuedNotName(trimmed)) continue;
       if (rule.columnLabel) {
         const words = trimmed
           .split(/[^\p{L}'’]+/u)

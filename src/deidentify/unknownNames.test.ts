@@ -309,3 +309,45 @@ describe("a relative after a label, next to a family history", () => {
     expect(send(text)).toBe(text);
   });
 });
+
+describe("a patient named with no cue: a header line or a care verb (uncued-names note)", () => {
+  // FAKE sentences written apart from the harness's shared sets.
+  it.each([
+    "CONSULTATION NOTE — Tobiah Farnsworth\nSeen today for cough.",
+    "Discharge letter: Wren Halloway\nAdmitted with pneumonia.",
+    "Wound care plan for Idris Calloway\nDressing every two days.",
+    "Physiotherapy summary — HALLOWAY, Wren\nGait improved.",
+    "Lettre de sortie — Basile Fenwick\nHospitalisé pour pneumonie.",
+    "Plan de soins pour Margaux Vellacourt\nPansement aux deux jours.",
+    "Compte rendu concernant Odile Marchetti\nConsultation de suivi.",
+    "Informe de alta — Inés Valcárcel Pruneda\nIngresó por neumonía.",
+    "Plan de cuidados para Lucas Ferrabosco\nCuras cada dos días.",
+    "Resumo de alta — Tomé Vasconcelos Brito\nInternado por pneumonia.",
+    "Karta informacyjna — Zuzanna Wierzbicka\nPrzyjęta z zapaleniem płuc.",
+    "Plan opieki dla Bartosz Kowalczyk\nOpatrunek co dwa dni.",
+    "Re: Tobiah Farnsworth\nThank you for seeing this patient.",
+    "Paramedics brought Tobiah Farnsworth to the emergency department.",
+    "We were asked to see Wren Halloway on the ward.",
+    "Les ambulanciers ont amené Basile Fenwick aux urgences.",
+    "Nous avons reçu Margaux Vellacourt en consultation.",
+    "La ambulancia trajo a Lucas Ferrabosco a urgencias.",
+    "A ambulância trouxe Tomé Vasconcelos ao pronto-socorro.",
+    "Karetka przywiozła Zuzannę Wierzbicką na SOR.",
+  ])("removes the name: %j", (text) => {
+    expect(send(text)).toMatch(/\[NAME 1\]/);
+  });
+
+  it.each([
+    "Discharge letter: Community Care Access\nAdmitted with pneumonia.",
+    "Wound care plan for Pressure Injury\nDressing every two days.",
+    "Plan de soins pour Insuffisance Cardiaque\nSuivi infirmier.",
+    "Medication review: Ozempic Pen\nStarted last week.",
+    "Re: Follow Up\nThank you.",
+    "Paramedics brought Tylenol 500 mg from home.",
+    "We were asked to see Pediatric Neurology notes.",
+    "Plan de cuidados para Diabetes Tipo 2\nControl.",
+    "Physiotherapy summary — Left Knee\nGait improved.",
+  ])("leaves a heading's subject that is no name: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+  });
+});
