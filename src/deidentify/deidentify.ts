@@ -2825,14 +2825,51 @@ const RULES: Rule[] = [
 export function foldHazardsIn(source: string): string[] {
   const hazards: string[] = [];
   let inClass = false;
+  // The last literal character inside the class, for a range ("[À-ÿ]").
+  let previous = "";
   for (let at = 0; at < source.length; at++) {
     const char = source[at];
     if (char === "\\") {
-      at++;
+      // An escaped character the text's fold changes never matches: "\u00e9" (é)
+      // stays in the pattern while the text holds "e".
+      const escape =
+        /^(?:u\{([0-9a-fA-F]+)\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2}))/u.exec(
+          source.slice(at + 1),
+        );
+      if (escape) {
+        const escaped = String.fromCodePoint(
+          parseInt(escape[1] ?? escape[2] ?? escape[3], 16),
+        );
+        if (fold(escaped) !== escaped)
+          hazards.push(
+            `the escape at ${at} (${JSON.stringify(escaped)}) folds to ${JSON.stringify(fold(escaped))}`,
+          );
+        at += escape[0].length;
+        previous = escaped;
+      } else {
+        previous = source[at + 1] ?? "";
+        at++;
+      }
       continue;
     }
-    if (!inClass && char === "[") inClass = true;
-    else if (inClass && char === "]") inClass = false;
+    if (!inClass && char === "[") {
+      inClass = true;
+      previous = "";
+      continue;
+    }
+    if (inClass && char === "]") {
+      inClass = false;
+      continue;
+    }
+    // A range inside a class whose end folds changes its span: "[À-ÿ]" → "[A-y]".
+    if (inClass && char === "-" && previous && source[at + 1] !== "]") {
+      const next = source[at + 1] === "\\" ? "" : (source[at + 1] ?? "");
+      if (fold(previous) !== previous || (next && fold(next) !== next))
+        hazards.push(
+          `the range ${JSON.stringify(`${previous}-${next}`)} at ${at} has an end that folds`,
+        );
+    }
+    if (inClass) previous = char;
     const folded = fold(char);
     if (folded === char) continue;
     if (
@@ -2846,7 +2883,8 @@ export function foldHazardsIn(source: string): string[] {
   }
   return hazards;
 }
-/** Each rule and date form whose meaning folding would change; the tests require none. */
+/** Each rule, date form and date range whose meaning folding would change; the tests require
+ * none. */
 export const FOLD_HAZARDS: string[] = [];
 
 // The rules run on the matching copy, so their accented letters are folded
@@ -2889,8 +2927,11 @@ const RANGES = [
     monthFirst: true,
   },
 ];
-for (const range of RANGES)
+for (const [index, range] of RANGES.entries()) {
+  for (const hazard of foldHazardsIn(range.pattern.source))
+    FOLD_HAZARDS.push(`date range ${index}: ${hazard}`);
   range.pattern = new RegExp(fold(range.pattern.source), range.pattern.flags);
+}
 
 function findRanges(text: string): Finding[] {
   const found: Finding[] = [];
