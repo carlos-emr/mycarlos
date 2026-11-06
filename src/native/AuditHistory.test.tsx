@@ -731,12 +731,12 @@ describe("AuditHistory words for every recorded event and how", () => {
     for (const title of [
       "Clinic link started",
       "Clinic linked",
-      "Device approval requested",
-      "Approval status changed",
+      "Clinic approval requested",
+      "Clinic approval updated",
       "Device approved by the clinic",
-      "Clinic document received",
-      "Pickup confirmation sent to the clinic",
-      "Person's details changed",
+      "Clinic document saved",
+      "Pickup receipt closed",
+      "Personal details changed",
       "Other event",
     ])
       expect(
