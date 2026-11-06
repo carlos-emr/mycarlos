@@ -502,6 +502,64 @@ describe("A copy still running when the row opens again (#275)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("keeps completion heard before a pending command is refused as busy", async () => {
+    let refused!: (result: unknown) => void;
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_add_active: null,
+      ai_model_download: () => new Promise((resolve) => (refused = resolve)),
+    });
+    const onStatus = vi.fn();
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={onStatus} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Download the default model"),
+      }),
+    );
+    await act(async () => {
+      native.listeners["ai-model-add-ended"]?.({
+        payload: { outcome: "added", status: installed },
+      });
+      refused({ outcome: "busy" });
+    });
+    await screen.findByText(humanText("Model added"));
+    expect(onStatus).toHaveBeenCalledExactlyOnceWith(installed);
+    expect(bar()).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not restore a removed model from a delayed hydration status", async () => {
+    let snapshot!: (status: ModelStatus) => void;
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_add_active: null,
+      ai_model_status: () => new Promise((resolve) => (snapshot = resolve)),
+      ai_model_remove: { state: "notInstalled" },
+    });
+    const onStatus = vi.fn();
+    render(<AiModelSetting status={installed} onStatus={onStatus} />);
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith("ai_model_status"),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: humanText("Remove the model") }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: humanText("Remove the model"),
+      }),
+    );
+    await waitFor(() =>
+      expect(onStatus).toHaveBeenCalledExactlyOnceWith({
+        state: "notInstalled",
+      }),
+    );
+    await act(async () => snapshot(installed));
+    expect(onStatus).toHaveBeenCalledExactlyOnceWith({ state: "notInstalled" });
+  });
+
   it("shows the download with its bar and Cancel, follows it, and hears how it ends", async () => {
     // The patient pressed Download, went to another page, and came back:
     // the row is new, and native still runs the download.
