@@ -196,14 +196,17 @@ export function AiModelSetting({
   }, [status.state, adding, refusal, catalog]);
   // A copy this row did not start may still run (#275): the patient went to
   // another page while it ran, and came back. `own` is a copy this row
-  // started and waits for; `attached`, one it found running and shows.
+  // started and waits for through its command response.
   const own = useRef(false);
-  const attached = useRef(false);
+  // Events and actions supersede an older native snapshot, even when the
+  // snapshot was requested before a completion arrived.
+  const activityRevision = useRef(0);
+  const onStatusRef = useRef(onStatus);
+  onStatusRef.current = onStatus;
   const [note, setNote] = useState<
     "ai.model.stillDownloading" | "ai.model.stillChecking" | null
   >(null);
   const attach = (now: ModelAddNow) => {
-    attached.current = true;
     setDownloading(now.kind === "download");
     starter.current = now.kind === "download" ? "download" : "add";
     after.current = "restart";
@@ -215,7 +218,7 @@ export function AiModelSetting({
     );
   };
   const finish = (result: ModelAddOutcome) => {
-    attached.current = false;
+    activityRevision.current += 1;
     setNote(null);
     setProgress(null);
     if (result.outcome === "added") {
@@ -229,24 +232,43 @@ export function AiModelSetting({
   const finishRef = useRef(finish);
   finishRef.current = finish;
   useEffect(() => {
-    void invoke<ModelAddNow | null>("ai_model_add_active").then(
-      (now) => mounted.current && now && !own.current && attach(now),
-      () => undefined,
-    );
-    // How a copy it found running ends, as native says once it has.
-    const stop = listen<ModelAddOutcome>(
-      "ai-model-add-ended",
-      (event) =>
-        mounted.current &&
-        attached.current &&
-        !own.current &&
-        finishRef.current(event.payload),
-    ).catch(() => () => undefined);
-    return () => void stop.then((unlisten) => unlisten());
+    let live = true;
+    // Subscribe before reading the snapshot: completion can happen while
+    // registration or the query is pending. It must never resurrect a bar.
+    const stop = listen<ModelAddOutcome>("ai-model-add-ended", (event) => {
+      if (!live || !mounted.current) return;
+      activityRevision.current += 1;
+      if (!own.current) finishRef.current(event.payload);
+    });
+    void stop
+      .then(async () => {
+        if (!live || !mounted.current || own.current) return;
+        const revision = activityRevision.current;
+        const current = () =>
+          live &&
+          mounted.current &&
+          !own.current &&
+          revision === activityRevision.current;
+        const now = await invoke<ModelAddNow | null>("ai_model_add_active");
+        if (!current()) return;
+        if (now) attach(now);
+        else {
+          // A copy could have ended before subscription was ready. Refresh
+          // the installed state as well, without starting another download.
+          const next = await invoke<ModelStatus>("ai_model_status");
+          if (current() && next) onStatusRef.current(next);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+      void stop.then((unlisten) => unlisten()).catch(() => undefined);
+    };
     // Once, as the row opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const run = (command: "ai_model_add_picked" | "ai_model_download") => {
+    activityRevision.current += 1;
     setRefusal(null);
     setMessage(null);
     setNote(null);
@@ -264,10 +286,12 @@ export function AiModelSetting({
         // Refused because a copy is still running: that copy and its bar,
         // not "the AI helper is working".
         if (result.outcome === "busy") {
+          const revision = activityRevision.current;
           const now = await invoke<ModelAddNow | null>(
             "ai_model_add_active",
           ).catch(() => null);
           if (!mounted.current) return;
+          if (revision !== activityRevision.current) return;
           if (now) {
             attach(now);
             setNote(
@@ -283,7 +307,6 @@ export function AiModelSetting({
       .catch(() => {
         if (!mounted.current) return;
         own.current = false;
-        attached.current = false;
         setProgress(null);
         setRefusal("ai.model.refusedStorage");
       });
