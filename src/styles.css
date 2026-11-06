@@ -1261,3 +1261,7 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .native-ai-notice-body { display: grid; gap: 10px; padding: 12px 20px; }
 .native-ai-notice-body p, .native-ai-notice-body h3 { margin: 0; }
 .native-ai-notice-body h3 { font-size: 1rem; }
+
+/* The model's buttons (#72): apart, and wrapped onto their own lines at
+   large text (#253). */
+.native-ai-model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
