@@ -213,6 +213,41 @@ fn model_file(dir: &std::path::Path, bytes: &[u8]) -> std::path::PathBuf {
 }
 
 #[test]
+fn the_real_engine_reads_an_instruction_prefix_once_and_puts_it_back_after() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = model_file(dir.path(), &tiny_model());
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let summarize = |lang: &str, text: &str| {
+        runner.summarize(lang, &[(0, text)]).unwrap();
+        runner.last_prefix().unwrap()
+    };
+    let explain = |lang: &str| {
+        runner
+            .explain(lang, "blood test", "FAKE: a blood test was done.")
+            .unwrap();
+        runner.last_prefix().unwrap()
+    };
+    // Read the first time, and kept.
+    let (prefix_len, hit, bytes) = summarize("en", "FAKE: a blood test was done.");
+    assert!(
+        prefix_len > 0 && !hit && bytes > 0,
+        "{prefix_len} {hit} {bytes}"
+    );
+    // The same request on another document: put back.
+    assert_eq!(
+        summarize("en", "FAKE: another document, other words."),
+        (prefix_len, true, bytes)
+    );
+    // Another language, or an explanation: another prefix, read.
+    assert!(!summarize("fr", "FAKE: a blood test was done.").1);
+    assert!(!explain("en").1);
+    assert!(explain("en").1);
+    // Two are kept: the English summary's went when the others came.
+    assert!(!summarize("en", "FAKE: a blood test was done.").1);
+    runner.stop();
+}
+
+#[test]
 fn the_real_engine_loads_the_model_as_handed_over_and_summarizes_under_the_grammar() {
     let dir = tempfile::tempdir().unwrap();
     let model = model_file(dir.path(), &tiny_model());
@@ -312,4 +347,46 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
     );
     println!("  stats: {}", runner.last_stats());
     runner.stop();
+}
+
+/// By hand, with a real model (`MYCARLOS_TEST_MODEL`): an answer read from a put-back prefix
+/// after another document is word for word the answer a fresh helper gives, for a summary and
+/// for an explanation after it, so nothing of the first document carries over. Never in CI:
+/// run with `--ignored --nocapture`.
+#[test]
+#[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
+fn a_real_model_answers_the_same_after_another_document_as_fresh() {
+    let model = std::path::PathBuf::from(
+        std::env::var_os("MYCARLOS_TEST_MODEL").expect("MYCARLOS_TEST_MODEL"),
+    );
+    let first = "FAKE-MARKER-Q7 Rowan Testwood: potassium 6.9 mmol/L, start spironolactone \
+                 25 mg daily, see Dr. Fakeham in 3 days.";
+    let second = "FAKE lab report. Potassium is mildly high (5.3 mmol/L). The A1c of 8.1% is \
+                  above the usual target. Repeat the potassium within 1 week.";
+    let (term, context) = ("A1c", "The A1c of 8.1% is above the usual target.");
+    let warm = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    warm.summarize("en", &[(0, first)]).unwrap();
+    let warm_summary = warm.summarize("en", &[(0, second)]).unwrap();
+    assert!(warm.last_prefix().unwrap().1, "the prefix was put back");
+    let warm_explained = warm.explain("en", term, context).unwrap();
+    warm.explain("en", term, first).unwrap();
+    let warm_again = warm.explain("en", term, context).unwrap();
+    assert!(warm.last_prefix().unwrap().1, "the prefix was put back");
+    warm.stop();
+    let cold = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let cold_summary = cold.summarize("en", &[(0, second)]).unwrap();
+    assert!(
+        !cold.last_prefix().unwrap().1,
+        "a fresh helper reads the prefix"
+    );
+    let cold_explained = cold.explain("en", term, context).unwrap();
+    cold.stop();
+    println!("summary: {warm_summary:?}\nexplain: {warm_explained:?}");
+    assert_eq!(warm_summary, cold_summary);
+    assert_eq!(warm_explained, cold_explained);
+    assert_eq!(warm_again, cold_explained);
+    for (text, quote) in &warm_summary.0 {
+        assert!(!text.contains("FAKE-MARKER") && !quote.contains("FAKE-MARKER"));
+    }
+    assert!(!warm_explained.contains("FAKE-MARKER"));
 }
