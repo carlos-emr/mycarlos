@@ -1800,6 +1800,8 @@ ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA e
 
 ai-error-busy = Le modèle de l’assistant IA est en cours d’ajout ou de suppression. Réessayez quand ce sera terminé.
 
+ai-error-storage = Le modèle de l’assistant IA n’a pas pu être lu sur cet ordinateur. Réessayez. Si cela continue, supprimez le modèle dans les Préférences, puis ajoutez-le de nouveau.
+
 ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; ce résumé peut donc en omettre des parties.
 
 ai-summary-noSource = Source introuvable

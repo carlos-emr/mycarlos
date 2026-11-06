@@ -5,6 +5,7 @@ pub const FORMATTING_FAILURE_EN: &str =
 pub enum MessageId {
     AiErrorBusy,
     AiErrorMemory,
+    AiErrorStorage,
     AiExplainBox,
     AiExplainHint,
     AiExplainReady,
@@ -927,6 +928,7 @@ impl MessageId {
     pub const ALL: &'static [Self] = &[
         Self::AiErrorBusy,
         Self::AiErrorMemory,
+        Self::AiErrorStorage,
         Self::AiExplainBox,
         Self::AiExplainHint,
         Self::AiExplainReady,
@@ -1849,6 +1851,7 @@ impl MessageId {
         match self {
             Self::AiErrorBusy => "ai-error-busy",
             Self::AiErrorMemory => "ai-error-memory",
+            Self::AiErrorStorage => "ai-error-storage",
             Self::AiExplainBox => "ai-explain-box",
             Self::AiExplainHint => "ai-explain-hint",
             Self::AiExplainReady => "ai-explain-ready",
@@ -4088,6 +4091,7 @@ impl MessageId {
             "ai.failed" => Some(Self::AiFailed),
             "ai.error.memory" => Some(Self::AiErrorMemory),
             "ai.error.busy" => Some(Self::AiErrorBusy),
+            "ai.error.storage" => Some(Self::AiErrorStorage),
             "ai.summary.pagesMissing" => Some(Self::AiSummaryPagesMissing),
             "ai.summary.noSource" => Some(Self::AiSummaryNoSource),
             "aiHelper.notice.title" => Some(Self::AiHelperNoticeTitle),

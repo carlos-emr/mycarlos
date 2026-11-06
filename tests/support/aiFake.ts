@@ -64,6 +64,7 @@ export type FakeAiRefusal =
   | "aiDamaged"
   | "aiMemory"
   | "aiBusy"
+  | "aiStorage"
   | "aiCancelled"
   | "aiFailed";
 
