@@ -8,6 +8,7 @@ import {
   type UiText,
 } from "../i18n";
 import { vaultErrorMessage } from "../vault";
+import { NoticesAfterLink } from "./NoticesAfterLink";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 
 interface Props {
@@ -37,6 +38,7 @@ export function PortalDocuments({
   const [device, setDevice] = useState("myCarlos");
   const [person, setPerson] = useState("");
   const [copyState, setCopyState] = useTextState();
+  const [offerNotices, setOfferNotices] = useState(false);
   const shown = useRef(true);
   useEffect(() => {
     shown.current = true;
@@ -144,10 +146,14 @@ export function PortalDocuments({
     </button>
   );
   if (compact) return links.length > 0 ? checkButton : null;
+  const working = (list: PortalLinkSummary[] | undefined) =>
+    (list ?? []).some((link) => !link.incomplete);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (disabled) return;
+    const firstLink = !working(links);
     void run(async () => {
+      let linked = false;
       try {
         await bridge.linkPortal!({
           portalBase: address,
@@ -155,11 +161,16 @@ export function PortalDocuments({
           deviceName: device,
           profileId: person || null,
         });
+        linked = true;
         // The one-use code is not retained after this attempt.
         if (shown.current) setCode("");
       } finally {
         if (shown.current) setCode("");
-        await refresh();
+        const after = await refresh();
+        // The first working clinic link (#235): document notices are offered
+        // once, right after it, when they can do something.
+        if (linked && firstLink && shown.current && working(after.portalLinks))
+          setOfferNotices(true);
       }
     });
   };
@@ -313,6 +324,9 @@ export function PortalDocuments({
       ))}
       <p role="status">{copyState}</p>
       {checkButton}
+      {offerNotices && (
+        <NoticesAfterLink onClose={() => setOfferNotices(false)} />
+      )}
     </section>
   );
 }

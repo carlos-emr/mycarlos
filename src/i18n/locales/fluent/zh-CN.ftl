@@ -1830,6 +1830,11 @@ notifications-autoAllow = 保险库解锁时自动检查诊所文档
 notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
 notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
 notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。
+noticesStep-title = 来自诊所的通知
+noticesStep-intro = 您的诊所已关联。myCarlos 可以在新文档到达时通知您。除非您勾选，否则不会开启任何选项。
+noticesStep-later = 您随时可以在 { $settings } 的 { $preferences } 中变更这些设置：{ $notices }。
+noticesStep-done = 完成
+noticesStep-notNow = 暂不
 
 ai-summary-again = 重新生成摘要
 

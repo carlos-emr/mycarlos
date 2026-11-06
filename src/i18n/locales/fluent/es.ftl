@@ -2003,6 +2003,11 @@ notifications-autoAllow = Buscar documentos de las clínicas automáticamente mi
 notifications-autoHelp = Con su permiso, myCarlos consulta los enlaces guardados y aprobados de las clínicas mientras esta aplicación está abierta y la bóveda está desbloqueada, con al menos dos minutos entre intentos. Las consultas pueden continuar si Windows bloquea los avisos. Bloquear la bóveda o cerrar la aplicación detiene las consultas posteriores.
 notifications-autoPaused = Se necesita una consulta manual para continuar las consultas automáticas. Abra Documentos de la clínica y elija Buscar documentos nuevos.
 notifications-checkBusy = Se está deteniendo una consulta de documentos. Vuelva a elegir Buscar documentos nuevos dentro de un momento.
+noticesStep-title = Avisos de su clínica
+noticesStep-intro = Su clínica está vinculada. myCarlos puede avisarle cuando llegue un documento nuevo. No se activa nada a menos que usted lo marque.
+noticesStep-later = Puede cambiarlos cuando quiera en { $settings }, en { $preferences }: { $notices }.
+noticesStep-done = Listo
+noticesStep-notNow = Ahora no
 
 ai-summary-again = Resumir de nuevo
 

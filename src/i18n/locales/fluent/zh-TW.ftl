@@ -1830,6 +1830,11 @@ notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
 notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
+noticesStep-title = 來自診所的通知
+noticesStep-intro = 您的診所已連結。myCarlos 可以在新文件送達時通知您。除非您勾選，否則不會開啟任何選項。
+noticesStep-later = 您隨時可以在 { $settings } 的 { $preferences } 中變更這些設定：{ $notices }。
+noticesStep-done = 完成
+noticesStep-notNow = 暫不
 
 ai-summary-again = 重新產生摘要
 
