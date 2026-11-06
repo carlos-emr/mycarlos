@@ -329,14 +329,6 @@ pub(super) struct CodeProgress {
 /// more (clinic code v1).
 const MAX_CODE_MISMATCHES: u8 = 5;
 
-pub(super) struct PortalWork<'a>(&'a AtomicBool);
-
-impl Drop for PortalWork<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
-}
-
 impl VaultStore {
     /// Reserve portal work without queuing it behind another session's HTTP.
     /// Linking and approval requests take the same guard as document checks
