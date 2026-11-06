@@ -205,13 +205,14 @@ jobs:
       - name: The app as bundled has no model helper stub, and starts on a processor without AVX
         # The stub's argument is unknown outside test builds (exit 64). Under a Nehalem (no AVX)
         # processor the app's start code must not fault, and the model helper must refuse with
-        # its unsupported-processor code (5) before any of llama.cpp runs.
+        # its unsupported-processor code (5) before any of llama.cpp runs. The helper is given
+        # every argument the app passes (a missing one is refused first, with 64).
         run: |
           app=src-tauri/target/debug/mycarlos-tauri-poc
           set +e
           "$app" --mycarlos-model-helper --stub 0 < /dev/null; stub=$?
           qemu-x86_64 -cpu Nehalem "$app" --mycarlos-model-helper --threads 1 --name FAKE \
-            --sha256 "$(printf '0%.0s' $(seq 64))" --model-fd 3 < /dev/null; nehalem=$?
+            --sha256 "$(printf '0%.0s' $(seq 64))" --chat-format builtin --model-fd 3 < /dev/null; nehalem=$?
           set -e
           echo "stub argument: exit $stub; Nehalem: exit $nehalem"
           test "$stub" -eq 64
