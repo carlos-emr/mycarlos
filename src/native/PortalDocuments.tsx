@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useI18n, type MessageKey } from "../i18n";
+import {
+  useI18n,
+  useTextState,
+  message,
+  deferredText,
+  t as translateNow,
+  type MessageKey,
+  type UiText,
+} from "../i18n";
 import { hasVaultErrorCode, vaultErrorMessage } from "../vault";
 import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
 import { checkClinicDocuments, documentCheckText } from "./documentCheck";
@@ -28,7 +36,7 @@ interface Props {
   /** The session's per-portal waits after a portal asked to wait (#131). */
   waits?: PortalWaits;
   refresh: () => Promise<VaultSnapshot>;
-  setNotice: (text: string) => void;
+  setNotice: (text: UiText) => void;
   compact?: boolean;
 }
 
@@ -114,10 +122,14 @@ export function PortalDocuments({
   // The panel's own status line: a copy result, or what an automatic check
   // found that changed. Read out politely; nothing here takes focus. A
   // check's change is already on the device's card, so it is only heard.
-  const [statusLine, setStatusLine] = useState<{
-    text: string;
-    heardOnly?: boolean;
-  }>({ text: "" });
+  // Its text follows the app's language after it is set (main's text state).
+  const [statusText, setStatusText] = useTextState();
+  const [statusHeardOnly, setStatusHeardOnly] = useState(false);
+  const statusLine = { text: statusText, heardOnly: statusHeardOnly };
+  const setStatusLine = (next: { text: UiText; heardOnly?: boolean }) => {
+    setStatusText(next.text);
+    setStatusHeardOnly(Boolean(next.heardOnly));
+  };
   const [connecting, setConnecting] = useState(false);
   const [focusLink, setFocusLink] = useState<string | null>(null);
   // The code each device's clinic emailed, as typed, and what the last try
@@ -171,8 +183,9 @@ export function PortalDocuments({
       bridge.checkDocuments,
   );
   const links = snapshot.portalLinks ?? [];
+  // In the language now in use, also when read again later (deferred text).
   const stateText = (state: CardState) =>
-    "key" in state ? t(state.key) : vaultErrorMessage(state.failed);
+    "key" in state ? translateNow(state.key) : vaultErrorMessage(state.failed);
   // A control an automatic check is about to remove or disable, if it has
   // focus: focus then goes to its device's heading, not to the page.
   const checkFocus = useRef<{
@@ -206,14 +219,16 @@ export function PortalDocuments({
         now.key === "portal.awaitingClinic")
     )
       return;
+    const several = links.length > 1;
     setStatusLine({
-      text:
-        links.length > 1
-          ? t("portal.clinicIssue", {
+      text: deferredText(() =>
+        several
+          ? translateNow("portal.clinicIssue", {
               clinic: after.link.clinicName ?? after.link.portalBase,
               detail: stateText(now),
             })
           : stateText(now),
+      ),
       heardOnly: true,
     });
   };
@@ -297,7 +312,7 @@ export function PortalDocuments({
         ]),
       );
       // Reported after leaving this view too, as for connecting.
-      setNotice(documentCheckText(result));
+      setNotice(deferredText(() => documentCheckText(result)));
     }).finally(() => polling.restart(known));
   };
   const checkButton = (
@@ -359,10 +374,13 @@ export function PortalDocuments({
         // older error beside it. The setter drops it for a finished session.
         // A partial result gives the reason first, then where to look: the
         // reason's "try again" means the saved request, not a new link.
+        const approvalError = result.approvalError;
         setNotice(
-          result.approvalError
-            ? `${vaultErrorMessage(result.approvalError)} ${t("portal.linkedApprovalIssue")}`
-            : t("portal.connected"),
+          deferredText(() =>
+            approvalError
+              ? `${vaultErrorMessage(approvalError)} ${translateNow("portal.linkedApprovalIssue")}`
+              : translateNow("portal.connected"),
+          ),
         );
       } catch (error) {
         const next = await refresh();
@@ -658,10 +676,12 @@ export function PortalDocuments({
               onClick={() => {
                 void navigator.clipboard
                   ?.writeText(link.deviceKeyId)
-                  .then(() => setStatusLine({ text: t("portal.copied") }))
-                  .catch(() => setStatusLine({ text: t("portal.copyFailed") }));
+                  .then(() => setStatusLine({ text: message("portal.copied") }))
+                  .catch(() =>
+                    setStatusLine({ text: message("portal.copyFailed") }),
+                  );
                 if (!navigator.clipboard)
-                  setStatusLine({ text: t("portal.copyFailed") });
+                  setStatusLine({ text: message("portal.copyFailed") });
               }}
             >
               {t("portal.copy")}

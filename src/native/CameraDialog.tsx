@@ -61,12 +61,14 @@ export function CameraDialog({
   const [stage, setStage] = useState<Stage>(autoStart ? "starting" : "explain");
   const [failure, setFailure] = useState<CameraFailure | null>(null);
   const [ready, setReady] = useState(false);
+  const [photoReady, setPhotoReady] = useState(false);
   const [status, setStatus] = useTextState();
   const [preparing, setPreparing] = useState(false);
   const dialogRef = useRef<HTMLElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const shutterRef = useRef<HTMLButtonElement | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const retakeRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -93,6 +95,7 @@ export function CameraDialog({
   const start = useCallback(async () => {
     stopCamera();
     clearPhoto();
+    setPhotoReady(false);
     const attempt = attemptRef.current;
     setFailure(null);
     setStage("starting");
@@ -192,9 +195,10 @@ export function CameraDialog({
   // After useModalFocus, which keeps the button that opened the dialog to
   // give the focus back to: the dialog's first focus is its own.
   useEffect(() => {
-    if (stage === "preview") confirmRef.current?.focus();
+    if (stage === "preview")
+      (photoReady ? confirmRef : retakeRef).current?.focus();
     if (stage === "failed") retryRef.current?.focus();
-  }, [stage]);
+  }, [stage, photoReady]);
   useEffect(() => {
     if (ready) shutterRef.current?.focus();
   }, [ready]);
@@ -206,20 +210,35 @@ export function CameraDialog({
     const { width, height } = photoSize(video.videoWidth, video.videoHeight);
     canvas.width = width;
     canvas.height = height;
-    canvas.getContext("2d")?.drawImage(video, 0, 0, width, height);
+    let captured = false;
+    try {
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.drawImage(video, 0, 0, width, height);
+        captured = true;
+      }
+    } catch {
+      // A refused draw must not offer a blank or incomplete photo to save.
+    }
+    if (!captured) clearPhoto();
     // The still is all that is needed now.
     stopCamera();
+    setPhotoReady(captured);
     setStage("preview");
     setStatus(
       deferredText(() =>
-        translateNow("interface.CameraDialog.photoTakenRetakeOrUseThePhoto"),
+        translateNow(
+          captured
+            ? "interface.CameraDialog.photoTakenRetakeOrUseThePhoto"
+            : "interface.CameraDialog.thePhotoCouldNotBePreparedChoose",
+        ),
       ),
     );
   };
 
   const use = async () => {
     const canvas = canvasRef.current;
-    if (!canvas || saving || preparing) return;
+    if (!canvas || !photoReady || saving || preparing) return;
     setPreparing(true);
     try {
       // Kept under MAX_CAMERA_JPEG_BYTES (photo.ts).
@@ -312,7 +331,7 @@ export function CameraDialog({
           <canvas
             ref={canvasRef}
             className="camera-view"
-            hidden={stage !== "preview"}
+            hidden={stage !== "preview" || !photoReady}
             role="img"
             aria-label={translateNow("interface.CameraDialog.thePhotoYouTook")}
           />
@@ -366,6 +385,7 @@ export function CameraDialog({
               {/* Not disabled while saving: the focus would fall out of the
                   dialog. They do nothing until the save is over. */}
               <button
+                ref={retakeRef}
                 className="button"
                 type="button"
                 aria-disabled={working}
@@ -379,7 +399,7 @@ export function CameraDialog({
                 ref={confirmRef}
                 className="button primary"
                 type="button"
-                aria-disabled={working}
+                aria-disabled={working || !photoReady}
                 onClick={() => void use()}
               >
                 {working

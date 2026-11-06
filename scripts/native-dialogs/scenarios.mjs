@@ -4,6 +4,7 @@ const CANVAS_PHOTO =
   "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAIABADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAcJ/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/EABQBAQAAAAAAAAAAAAAAAAAAAAX/xAAbEQACAQUAAAAAAAAAAAAAAAAAB0RFgoPCw//aAAwDAQACEQMRAD8Ak7QsBTpp+XmHLaXZuf/Z";
 
 export async function runDialogScenarios({ backupPath }) {
+  delete window.__nativeDialogUiFixture;
   const state = (window.__nativeDialogTest = {
     results: [],
     request: null,
@@ -159,6 +160,7 @@ export async function runDialogScenarios({ backupPath }) {
       "The vault set aside is still in use",
     );
     await create();
+    await savePhoto();
     const groups = (key) => ({
       groups: key.split("-").map((value, index) => ({ index, value })),
     });
@@ -167,6 +169,17 @@ export async function runDialogScenarios({ backupPath }) {
     });
     await call("vault_recovery_key_confirm", groups(original));
     const snapshot = await call("vault_snapshot");
+    const { capture: initialCapture, ...initialContents } = snapshot;
+    const validCapture = (capture) =>
+      typeof capture?.epoch === "string" &&
+      capture.epoch.length > 0 &&
+      Number.isSafeInteger(capture.sequence) &&
+      capture.sequence > 0;
+    assert(
+      validCapture(initialCapture),
+      "Initial key snapshot capture is invalid",
+    );
+    let previousCapture = initialCapture;
     const replacement = await call("vault_recovery_key_begin", {
       passphrase: password,
     });
@@ -185,11 +198,21 @@ export async function runDialogScenarios({ backupPath }) {
         `Key replacement was authorized by ${action}`,
       );
       await unchanged(before, `key replacement ${action}`);
+      const { capture, ...contents } = await call("vault_snapshot");
       assert(
-        JSON.stringify(await call("vault_snapshot")) ===
-          JSON.stringify(snapshot),
-        "Current key snapshot changed on cancellation",
+        validCapture(capture),
+        "Cancelled key snapshot capture is invalid",
       );
+      assert(
+        capture.epoch === initialCapture.epoch &&
+          capture.sequence > previousCapture.sequence,
+        "Cancelled key snapshot capture did not advance in the same runtime",
+      );
+      assert(
+        JSON.stringify(contents) === JSON.stringify(initialContents),
+        "Current key snapshot contents changed on cancellation",
+      );
+      previousCapture = capture;
     }
     const replaced = await dialog(
       "vault_recovery_key_confirm",
@@ -275,6 +298,8 @@ export async function runDialogScenarios({ backupPath }) {
       (await call("vault_status")) === "absent",
       "Test vault remains after cleanup",
     );
+    // Synthetic credential for the Windows UI follow-up, never in the polled results.
+    window.__nativeDialogUiFixture = { recoveryKey: replacement };
   } catch (error) {
     state.error = error?.message
       ? `${error.message}\n${error.stack || ""}`
