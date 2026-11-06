@@ -961,5 +961,10 @@
   "ai.summary.again",
   "ai.keepFailed",
   "ai.keepFull",
-  "ai.settings.subtitle"
+  "ai.settings.subtitle",
+  "personDetails.setup",
+  "personDetails.later",
+  "personDetails.reminder",
+  "personDetails.notNow",
+  "personDetails.notSaved"
 ]

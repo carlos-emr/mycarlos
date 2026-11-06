@@ -605,6 +605,42 @@ describe("SecuritySettings profiles", () => {
   });
 });
 
+describe("Add profile with the person's details, or later (#234)", () => {
+  const withDetails = () =>
+    renderSettings({
+      people: [],
+      onUpdateProfileDetails: vi.fn().mockResolvedValue(true),
+    });
+
+  it("asks for the details, and adds the person with them", () => {
+    const props = withDetails();
+    change("New profile name", "FAKE Child");
+    const add = screen.getByRole("button", { name: humanText("Add profile") });
+    expect(add).toBeDisabled();
+    change("Full name, as on clinic documents", "FAKE Child Example");
+    change("Date of birth", "2015-06-01");
+    expect(add).toBeEnabled();
+    fireEvent.click(add);
+    expect(props.onCreateProfile).toHaveBeenCalledWith("FAKE Child", {
+      fullName: "FAKE Child Example",
+      birthDate: "2015-06-01",
+    });
+  });
+
+  it("can add the person now and the details later", () => {
+    const props = withDetails();
+    change("New profile name", "FAKE Child");
+    fireEvent.click(screen.getByLabelText(humanText("Add them later")));
+    expect(
+      screen.queryByLabelText(humanText("Full name, as on clinic documents")),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    expect(props.onCreateProfile).toHaveBeenCalledWith("FAKE Child");
+  });
+});
+
 describe("SecuritySettings backup", () => {
   it("saves an encrypted backup", () => {
     const props = renderSettings();

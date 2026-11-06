@@ -1372,10 +1372,30 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         checkRules={bridge.passphraseRules}
         restoreBridge={trackedBridge}
         onRestored={restored}
-        onCreate={(profile, passphrase) =>
+        askDetails={Boolean(bridge.updateProfileDetails)}
+        onCreate={(profile, passphrase, details) =>
           run(
             async () => {
-              installOpeningSnapshot(await bridge.create(passphrase, profile));
+              const created = await bridge.create(passphrase, profile);
+              // The first person's details (#234), in the records Edit details
+              // writes, with their history event. If this fails the vault is
+              // still made, and the library's reminder asks for them again.
+              const first = created.profiles.find(
+                (person) => person.id !== created.sharedProfileId,
+              );
+              // A failure is said (review SHOULD): the patient typed them.
+              let detailsFailed = false;
+              const withDetails =
+                details && first && bridge.updateProfileDetails
+                  ? await bridge.updateProfileDetails(first.id, details).then(
+                      () => bridge.snapshot().catch(() => created),
+                      () => {
+                        detailsFailed = true;
+                        return created;
+                      },
+                    )
+                  : created;
+              installOpeningSnapshot(withDetails);
               // Nothing from a vault that is gone.
               pendingOutcomeRef.current = null;
               rememberUnfinishedRecoveryKey(null);
@@ -1404,14 +1424,26 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               }
               const recoveryKey = begun.key;
               setOpeningRecoverySetup(
-                recoveryKey ? { vault: "created", key: recoveryKey } : null,
+                recoveryKey
+                  ? {
+                      vault: "created",
+                      key: recoveryKey,
+                      detailsNotSaved: detailsFailed,
+                    }
+                  : null,
               );
               setConcealed(false);
               setStatus("unlocked");
-              // With a key to set up, its dialog says what happened instead.
+              // With a key to set up, its result says what happened, details
+              // not kept included: a notice written under the dialog would
+              // not be read out. Without one, the library says it now.
               if (!recoveryKey)
                 setLibraryNotice({
-                  message: deferredText(() => t("notice.created")),
+                  message: deferredText(() =>
+                    detailsFailed
+                      ? t("personDetails.notSaved")
+                      : t("notice.created"),
+                  ),
                   outcome: null,
                 });
             },
