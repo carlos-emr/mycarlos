@@ -221,7 +221,7 @@ interface Finding {
   /** A relative named after a family word: never taken for a profile person
    * because a surname is shared. */
   kin?: true;
-  /** From a header line with no person cue: kept only with person evidence near it. */
+  /** From a header line with no person cue: kept only as "SURNAME, Given". */
   uncuedHeader?: true;
   /** Already decided (when more is removed later): kept as it was. */
   replacement?: string;
@@ -1675,7 +1675,7 @@ interface Rule {
   relationLabel?: true;
   /** A name with no person cue (a header line, a care verb): refused for any non-name word. */
   uncued?: true;
-  /** A header line's name: kept only with person evidence near it (see find()). */
+  /** A header line's name: kept only as "SURNAME, Given" (see find()). */
   uncuedHeader?: true;
   /** A name in a header's column: refused for a section heading ("PATIENT INFORMATION"). */
   columnLabel?: true;
@@ -2190,9 +2190,58 @@ const CARE_VERB = anyCase(
     "przywieźli",
   ]),
 );
-// Words that are never part of an uncued name: a side, a body part, a wound, a time word.
+// Words that are never part of an uncued name: a side, a body part, a wound, a time word, a
+// severity or a course ("Wypis: ZAWAŁ, Ostry", "Informe de alta: ICTUS, Isquémico").
 const UNCUED_NOT_NAME_WORDS = new Set(
   foldAll([
+    "acute",
+    "chronic",
+    "severe",
+    "mild",
+    "moderate",
+    "recurrent",
+    "uncontrolled",
+    "unspecified",
+    "aigu",
+    "aiguë",
+    "chronique",
+    "sévère",
+    "léger",
+    "légère",
+    "modéré",
+    "modérée",
+    "agudo",
+    "aguda",
+    "crónico",
+    "crónica",
+    "crônico",
+    "crônica",
+    "grave",
+    "leve",
+    "moderado",
+    "moderada",
+    "severo",
+    "severa",
+    "recurrente",
+    "recorrente",
+    "isquémico",
+    "isquémica",
+    "isquêmico",
+    "isquêmica",
+    "hemorrágico",
+    "hemorrágica",
+    "ostry",
+    "ostra",
+    "ostre",
+    "przewlekły",
+    "przewlekła",
+    "przewlekłe",
+    "ciężki",
+    "ciężka",
+    "łagodny",
+    "łagodna",
+    "umiarkowany",
+    "umiarkowana",
     "left",
     "right",
     "bilateral",
@@ -2877,8 +2926,9 @@ const RULES: Rule[] = [
     ),
     group: 1,
   },
-  // A patient named in a header line, after the document's title: "CONSULTATION NOTE — Tobiah
-  // Farnsworth", "Plan de soins pour Margaux Vellacourt". The name ends the line.
+  // A patient named in a header line, after the document's title, as "SURNAME, Given":
+  // "Physiotherapy summary — HALLOWAY, Wren". The name ends the line or stops at a column gap.
+  // find() drops the other runs this matches: a header's subject is what the document is about.
   {
     kind: "name",
     pattern: new RegExp(
@@ -3542,65 +3592,11 @@ function keepShortBirthCue(
   return others.length === 0;
 }
 
-// Labels that only a person's record has: a birth date, an age, a sex, a record number, an
-// identity or a health card. A phone, an email or a postal code are a clinic's too. Each must
-// look like a field, with a colon or a value after it, so prose does not count ("born in",
-// "edad avanzada"), and the short ids are capitals only (Polish "nie", "dni") (#264 review).
-const PERSON_WORD_FIELD =
-  /(?<![\p{L}])(?:DOB|D\.O\.B\.?|Date of birth|Born(?:[ \t]+on)?|N[ée]e?(?:\(e\))?[ \t]+le|Date de naissance|Fecha de nacimiento|F\.?[ \t]?(?:de[ \t]+)?nac\.?|Data de nascimento|Data urodzenia|ur\.|出生日期|Age|Âge|Edad|Idade|Wiek|年龄|Sex|Gender|Sexe|Sexo|Género|Płeć|性别|Prontuário|Nr księgi(?: głównej)?|Nr historii choroby|Health card|Carte d['’]assurance maladie|Tarjeta sanitaria)(?:[ \t]*[:：#]|[ \t]*\(?\d)/iu;
-// "CNS" and "DN" need a value: "CNS: no focal deficit" is an exam line, "DN:" a district nurse.
-const PERSON_ID_FIELD =
-  /(?<![\p{L}])(?:(?:DDN|MRN|HRN|NHC|IPP|NAM|RAMQ|OHIP|PESEL|CPF|DNI|NIE)(?:[ \t]*[:：#]|[ \t]+[A-Z]{0,4}[ \t]?\d)|(?:CNS|DN|D\.N\.)[ \t]*[:：#]?[ \t]*\d)/u;
-const personField = (text: string) =>
-  PERSON_WORD_FIELD.test(text) || PERSON_ID_FIELD.test(text);
-const PERSON_FINDINGS = new Set([
-  "dateOfBirth",
-  "recordNumber",
-  "healthCard",
-  "sin",
-  "age",
-]);
-// "HALLOWAY, Wren": a surname in capitals, a comma and a given name.
+// "HALLOWAY, Wren": a surname in capitals, a comma and a given name. A header line's name with
+// no person cue counts only in this form. A person field near a "Given Surname" run tells a
+// person's document, not that the run is the person: "Referral Letter: Orthopaedic Surgery"
+// stands over "DOB: …" as often as a name does, on the next line or in a column (#264 review).
 const SURNAME_FIRST_IN_CAPITALS = /^\p{Lu}[\p{Lu}'’ -]+,[ \t]+\p{Lu}/u;
-/**
- * A header line's name with no person cue ("CONSULTATION NOTE — …") is a person only when a
- * person field stands near it: on its line, on the line before, or on the next two lines (a
- * blank line ends that), or when it is written "SURNAME, Given". A header's subject is usually
- * what the document is about ("Care Plan: Fall Prevention"), not who (#264 review).
- */
-function personEvidenceNear(
-  text: string,
-  finding: Finding,
-  found: Finding[],
-): boolean {
-  if (SURNAME_FIRST_IN_CAPITALS.test(text.slice(finding.start, finding.end)))
-    return true;
-  const lineStart = text.lastIndexOf("\n", finding.start - 1) + 1;
-  let from = lineStart;
-  if (lineStart > 0) {
-    const before = text.lastIndexOf("\n", lineStart - 2) + 1;
-    if (text.slice(before, lineStart - 1).trim()) from = before;
-  }
-  let to = text.indexOf("\n", finding.end);
-  for (let more = 0; more < 2 && to >= 0; more++) {
-    const next = text.indexOf("\n", to + 1);
-    const line = text.slice(to + 1, next < 0 ? text.length : next);
-    if (!line.trim()) break;
-    to = next;
-  }
-  const end = to < 0 ? text.length : to;
-  const window = `${text.slice(from, finding.start)} ${text.slice(finding.end, end)}`;
-  return (
-    personField(window) ||
-    found.some(
-      (other) =>
-        other !== finding &&
-        PERSON_FINDINGS.has(other.kind) &&
-        other.start >= from &&
-        other.end <= end,
-    )
-  );
-}
 
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
@@ -3638,7 +3634,8 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
   {
     const header = found.filter(
       (finding) =>
-        finding.uncuedHeader && !personEvidenceNear(text, finding, found),
+        finding.uncuedHeader &&
+        !SURNAME_FIRST_IN_CAPITALS.test(text.slice(finding.start, finding.end)),
     );
     if (header.length) {
       const dropped = new Set(header);

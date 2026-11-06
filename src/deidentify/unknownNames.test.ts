@@ -313,18 +313,14 @@ describe("a relative after a label, next to a family history", () => {
 describe("a patient named with no cue: a header line or a care verb (#264)", () => {
   // FAKE sentences written apart from the harness's shared sets, and the review's look-alikes.
   it.each([
-    "CONSULTATION NOTE — Tobiah Farnsworth\nDOB: 1958-03-14\nSeen today for cough.",
-    "Discharge letter: Wren Halloway    MRN 4471829\nAdmitted with pneumonia.",
-    "Wound care plan for Idris Calloway\nAge: 81\nDressing every two days.",
     "Physiotherapy summary — HALLOWAY, Wren\nGait improved.",
-    "Lettre de sortie — Basile Fenwick\nDate de naissance : 14/03/1941",
-    "Plan de soins pour Margaux Vellacourt\nNAM : VELM 4103 1412",
-    "Informe de alta — Inés Valcárcel Pruneda\nNHC: 4471829",
-    "Plan de cuidados para Lucas Ferrabosco\nFecha de nacimiento: 14/03/1941",
-    "Resumo de alta — Tomé Vasconcelos Brito\nCPF: 987.654.321-00",
-    "Karta informacyjna — Zuzanna Wierzbicka\nPESEL: 58031412345",
-    "Plan opieki dla Bartosz Kowalczyk\nData urodzenia: 14.03.1941",
-    "DOB: 1958-03-14\nCONSULTATION NOTE — Tobiah Farnsworth",
+    "Discharge letter: QUENNELL, Odile\nAdmitted with pneumonia.",
+    "Discharge letter: O’BRIEN-HALE, Wren",
+    "Compte rendu : FENWICK, Basile",
+    "Plan de soins pour VELLACOURT, Margaux",
+    "Informe de alta — VALCÁRCEL PRUNEDA, Inés\nNHC: 4471829",
+    "Resumo de alta — VASCONCELOS BRITO, Tomé",
+    "Karta informacyjna — WIERZBICKA, Zuzanna",
     "Paramedics brought Tobiah Farnsworth to the emergency department.",
     "We were asked to see Wren Halloway on the ward.",
     "Les ambulanciers ont amené Basile Fenwick aux urgences.",
@@ -332,7 +328,7 @@ describe("a patient named with no cue: a header line or a care verb (#264)", () 
     "A ambulância trouxe Tomé Vasconcelos ao pronto-socorro.",
     "Karetka przywiozła Zuzannę Wierzbicką na SOR.",
   ])(
-    "removes the name, with a person field near a header or after a person-taking verb: %j",
+    "removes the name, written SURNAME, Given in a header or after a person-taking verb: %j",
     (text) => {
       expect(send(text)).toMatch(/\[NAME 1\]/);
     },
@@ -395,40 +391,88 @@ describe("a patient named with no cue: a header line or a care verb (#264)", () 
     expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
   });
 
-  // The stated cost: an unknown person's header name with no person field near it, or after a
-  // verb that also takes things, stays. A patient known to the app is still removed.
+  // The stated cost: an unknown person's header name written "Given Surname", even with a person
+  // field beside it, and a name after a verb that also takes things, stay. A patient known to
+  // the app is still removed.
   it.each([
-    "Discharge letter: Wren Halloway\nAdmitted with pneumonia.",
-    "Nous avons reçu Margaux Vellacourt en consultation.",
-  ])("keeps, by the stated trade: %j", (text) => {
+    [
+      "Discharge letter: Wren Halloway\nAdmitted with pneumonia.",
+      "Wren Halloway",
+    ],
+    [
+      "Nous avons reçu Margaux Vellacourt en consultation.",
+      "Margaux Vellacourt",
+    ],
+    [
+      "CONSULTATION NOTE — Tobiah Farnsworth\nDOB: 1958-03-14\nSeen today for cough.",
+      "Tobiah Farnsworth",
+    ],
+    [
+      "DOB: 1958-03-14\nCONSULTATION NOTE — Tobiah Farnsworth",
+      "Tobiah Farnsworth",
+    ],
+    ["Discharge letter: Wren Halloway    MRN 4471829", "Wren Halloway"],
+    [
+      "Informe de alta — Inés Valcárcel Pruneda\nNHC: 4471829",
+      "Inés Valcárcel Pruneda",
+    ],
+    [
+      "Plan de soins pour Margaux Vellacourt\nNAM : VELM 4103 1412",
+      "Margaux Vellacourt",
+    ],
+    [
+      "Karta informacyjna — Zuzanna Wierzbicka\nPESEL: 58031412345",
+      "Zuzanna Wierzbicka",
+    ],
+  ])("keeps, by the stated trade: %j", (text, known) => {
     expect(send(text)).not.toMatch(/\[NAME/);
-    expect(
-      deidentify(text, { knownNames: ["Wren Halloway", "Margaux Vellacourt"] })
-        .toSend,
-    ).toMatch(/\[NAME 1\]/);
+    expect(deidentify(text, { knownNames: [known] }).toSend).toMatch(
+      /\[NAME 1\]/,
+    );
   });
 });
 
-describe("a person field must look like a field (#264 review)", () => {
-  // Prose near a header's subject is no person evidence: Polish "nie" (not) and "dni" (days),
-  // "born in", "edad avanzada", an exam's "CNS:" line with no value.
+describe("a header's subject beside a person field is no name (#264 review)", () => {
+  // A person field tells a person's document, not who the header's words are: the usual letter
+  // puts its subject over the patient's DOB, age or record number, or in a column beside it.
   it.each([
+    "Referral Letter: Orthopaedic Surgery\nDOB: 1941-03-14",
+    "Care Plan: Fall Prevention\nAge: 81",
+    "Progress Note — Night Shift\nMRN: 448812",
+    "Consult Note: Infectious Diseases\nSex: F",
+    "Discharge Summary: HEART FAILURE, Acute\nDOB: 1941-03-14",
+    "Informe de alta: Neumonía Adquirida\nFecha de nacimiento: 14/03/1941",
+    "Resumo de alta: Pneumonia Comunitária\nData de nascimento: 14/03/1941",
+    "Karta informacyjna: Oddział Chorób Wewnętrznych\nPESEL: 41031412345",
+    "Lettre de consultation : Chirurgie Orthopédique\nDate de naissance : 02/06/1950",
+    "Compte rendu : Insuffisance Cardiaque\nÂge : 77 ans",
+    "Nota de evolución: Insuficiencia Renal\nEdad: 77",
+    "Relatório de alta: Fratura Femoral\nData de nascimento: 02/06/1950",
+    "Progress Note — Wound Review\nMRN: 552211",
+    "Medication Review: Blood Pressure\nSex: M",
+    "Referral Letter: Orthopaedic Surgery    DOB: 1941-03-14",
+    "Care Plan: Fall Prevention    Age: 81",
+    "Progress Note — Night Shift    MRN: 448812",
+    "Informe de alta: Neumonía Adquirida\tFecha de nacimiento: 14/03/1941",
+    "Lettre de consultation : Chirurgie Orthopédique    Né le 02/06/1950",
+    "Relatório de alta: Fratura Femoral    Idade: 77",
     "Wypis: Zapalenie Płuc\nPacjent nie gorączkuje od dwóch dni.",
     "Care Plan: Fall Prevention\nBorn in Toronto, she lives alone.",
-    "Informe de alta: Neumonía Adquirida\nEdad avanzada, sin fiebre.",
-    "Consult Note: Infectious Diseases\nAge-appropriate vaccines given.",
     "Consult Note: Infectious Diseases\nCNS: no focal deficit.",
-    "Care Plan: Wound Care\nDN: visit planned for next week.",
   ])("leaves the subject: %j", (text) => {
     expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
   });
 
+  // A condition in capitals, a comma and a severity or a course looks like "SURNAME, Given".
   it.each([
-    "CONSULTATION NOTE — Tobiah Farnsworth\nAge 81, lives alone.",
-    "Discharge letter: Wren Halloway\nSex: F",
-    "Informe de alta — Inés Valcárcel Pruneda\nNHC 4471829",
-    "Karta informacyjna — Zuzanna Wierzbicka\nur. 14.03.1941",
-  ])("removes the name beside a real field: %j", (text) => {
-    expect(send(text)).toMatch(/\[NAME 1\]/);
+    "Discharge Summary: COPD, Severe",
+    "Consult Note: ASTHMA, Uncontrolled",
+    "Care Plan: DEMENTIA, Moderate",
+    "Wypis: ZAWAŁ, Ostry",
+    "Informe de alta: ICTUS, Isquémico",
+    "Resumo de alta: ASMA, Grave",
+    "Compte rendu : INSUFFISANCE RÉNALE, Chronique",
+  ])("leaves a condition and its severity: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
   });
 });
