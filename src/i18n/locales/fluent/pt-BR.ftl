@@ -1614,6 +1614,8 @@ interface-history-empty = Não há eventos no histórico.
 
 interface-history-error-unverified = Não foi possível ler e verificar o histórico. Nenhum evento foi exibido.
 
+interface-history-event-aiResultSaved = Resposta da IA guardada
+
 interface-history-event-backupRestored = Backup restaurado
 
 interface-history-event-backupSaved = Backup criptografado salvo
@@ -1686,6 +1688,10 @@ interface-history-how = Como
 interface-history-how-aidReplaced = Substituiu um auxílio de leitura anterior
 
 interface-history-how-camera = Adicionado com a câmera
+
+interface-history-how-summary = Resumo em palavras simples
+
+interface-history-how-explain = Um termo explicado
 
 interface-history-how-damaged = Ocultado porque o arquivo estava ausente
 
@@ -1859,6 +1865,10 @@ native-filter-models = Arquivos de modelo
 
 ai-working = O assistente de IA está trabalhando…
 
+ai-summary-ready = O resumo está pronto.
+
+ai-explain-ready = A explicação está pronta.
+
 ai-failed = O assistente de IA não conseguiu terminar. Tente de novo.
 
 ai-error-memory = Não há memória livre suficiente para o assistente de IA agora. Feche outros programas e tente de novo.
@@ -1878,15 +1888,15 @@ aiHelper-notice-testBuild = Esta versão de desenvolvimento é só para arquivos
 
 aiHelper-notice-shareHeading = Salvar o texto para outro serviço de IA
 
-aiHelper-notice-shareBody = O myCarlos pode salvar o texto de um documento sem os dados que identificam pessoas, para que você possa entregá-lo ao serviço de IA que escolher. Ele procura os nomes das pessoas dos seus perfis e de “Dados das pessoas”, e os nomes que vêm depois de um título ou de um rótulo, como “Dr.”. Também procura números do cartão de saúde e de prontuário, datas de nascimento, idades de 90 anos ou mais, endereços, códigos postais, números de telefone e de fax, endereços de e-mail e de sites, nomes de clínicas e médicos, e outros números de identificação, como números de pedidos de exames, e remove o que encontra. Ele desloca as outras datas para trás pelo mesmo número de dias, para que o tempo entre elas continue igual.
+aiHelper-notice-shareBody = O myCarlos pode salvar o texto de um documento sem os dados que identificam pessoas, para que você possa entregá-lo ao serviço de IA que escolher. Ele procura os nomes das pessoas dos seus perfis e de “Dados das pessoas”, e os nomes que vêm depois de um título ou de um rótulo, como “Dr.”. Também procura números do cartão de saúde e de prontuário, datas de nascimento, idades de 90 anos ou mais, endereços, códigos postais, números de telefone e de fax, endereços de e-mail e de sites, nomes de clínicas e médicos, e outros números de identificação, como números de pedidos de exames, e remove o que encontra. As datas que ele reconhece não são enviadas. Cada uma é substituída por uma marca numerada, como “DATA 2, 14 dias depois de DATA 1”, para que o tempo entre as datas continue claro sem as datas reais. Uma idade de 90 anos ou mais é substituída por uma marca numerada que diz “90+”.
 
-aiHelper-notice-previewBody = Primeiro você vê o texto, com as partes removidas e as datas deslocadas marcadas, e pode remover mais. Uma data que não está marcada não foi deslocada. A prévia mostra todo o texto que o arquivo vai conter, inclusive texto escondido no documento. Nada é salvo até você decidir salvar.
+aiHelper-notice-previewBody = Primeiro você vê o texto, com as partes removidas e as datas substituídas marcadas, e pode remover mais. Uma data que não está marcada não foi reconhecida e continua no texto. A prévia mostra todo o texto que o arquivo vai conter, inclusive texto escondido no documento. Nada é salvo até você decidir salvar.
 
-aiHelper-notice-limitsBody = Remover esses dados nunca é perfeito. O myCarlos só encontra os nomes que conhece e os nomes que vêm depois de um título ou de um rótulo em inglês ou em francês, então outros nomes podem ficar. Ele também pode deixar passar um número, ou uma data escrita de outro jeito ou em outro idioma. Uma doença rara, uma profissão incomum ou uma cidade pequena ainda podem apontar para você ou para outra pessoa. Leia todo o texto antes de salvá-lo.
+aiHelper-notice-limitsBody = Remover esses dados nunca é perfeito. O myCarlos só encontra os nomes que conhece e os nomes que vêm depois de um título ou de um rótulo em inglês ou em francês, então outros nomes podem ficar. Ele também pode deixar passar um número, ou uma data escrita de outro jeito ou em outro idioma. Um ano sozinho, como em “Apendicectomia 2019”, não é removido. Uma doença rara, uma profissão incomum ou uma cidade pequena ainda podem apontar para você ou para outra pessoa. Leia todo o texto antes de salvá-lo.
 
 aiHelper-notice-fileBody = O texto é salvo como um arquivo de texto simples, no lugar que você escolher. Ele não é criptografado, e o myCarlos não consegue apagá-lo depois. Se esse lugar for uma pasta sincronizada com um armazenamento na nuvem, o arquivo também é copiado para lá. O salvamento fica registrado no histórico de auditoria.
 
-aiHelper-notice-serviceBody = Depois que você entrega o texto a outro serviço, o que acontece com ele depende desse serviço. Se você usa esse serviço com a sua conta, ele sabe quem você é, mesmo com os dados removidos, e mesmo sem a sua conta, ele vê o seu endereço IP. As datas que o myCarlos deslocou continuam deslocadas nas respostas dele. Um documento também pode conter instruções feitas para uma IA. Por isso, use uma IA que não possa agir por você (enviar mensagens, abrir links ou ler seus arquivos), ou desative esses recursos.
+aiHelper-notice-serviceBody = Depois que você entrega o texto a outro serviço, o que acontece com ele depende desse serviço. Se você usa esse serviço com a sua conta, ele sabe quem você é, mesmo com os dados removidos, e mesmo sem a sua conta, ele vê o seu endereço IP. As respostas dele vão usar as marcas, como DATA 2, e não as datas reais. No myCarlos, enquanto esta janela continuar aberta, você pode colar a resposta dele para recolocar os dados reais. Um documento também pode conter instruções feitas para uma IA. Por isso, use uma IA que não possa agir por você (enviar mensagens, abrir links ou ler seus arquivos), ou desative esses recursos.
 
 aiHelper-notice-adviceBody = Respostas escritas por uma IA podem estar erradas. Não as considere um diagnóstico nem um conselho sobre tratamentos ou remédios, e não mude um remédio ou um tratamento por causa do que uma IA diz. Pergunte ao seu médico.
 
@@ -1929,13 +1939,13 @@ interface-AnonymizePreview-replaced = { $count } sinais ilegíveis foram substit
 
 interface-AnonymizePreview-headerNote = O arquivo começará com esta linha:
 
-interface-AnonymizePreview-howMarked = Os dados removidos estão marcados e nomeados. As datas deslocadas também estão marcadas; uma data sem marca não foi deslocada.
+interface-AnonymizePreview-howMarked = Os dados removidos e as datas substituídas estão marcados e nomeados. Uma data sem marca não foi reconhecida e continua no texto.
 
 interface-AnonymizePreview-textRegion = O texto que será salvo
 
 interface-AnonymizePreview-removedKind = removido: { $kind }
 
-interface-AnonymizePreview-movedDate = data deslocada
+interface-AnonymizePreview-movedDate = data substituída
 
 interface-AnonymizePreview-kind-name = nome
 
@@ -1997,6 +2007,29 @@ interface-AnonymizePreview-placeholder-unclearDate = DATA
 
 interface-AnonymizePreview-placeholder-manual = REMOVIDO
 
+interface-AnonymizePreview-note-daysAfter = { $days ->
+    [one] { $days } dia depois de { $label } { $number }
+   *[other] { $days } dias depois de { $label } { $number }
+}
+
+interface-AnonymizePreview-note-ageOver90 = 90+
+
+interface-AnonymizePreview-pasteTitle = Recolocar os dados
+
+interface-AnonymizePreview-pasteHelp = Cole abaixo a resposta da IA. O myCarlos recoloca os nomes, as datas e os números que substituiu. Ele guarda a lista do que substituiu só na memória, enquanto o cofre continuar desbloqueado e esta janela continuar aberta. Nada é salvo.
+
+interface-AnonymizePreview-pasteLabel = A resposta da IA
+
+interface-AnonymizePreview-pasteButton = Recolocar os dados
+
+interface-AnonymizePreview-pasteResult = A resposta com os dados recolocados
+
+interface-AnonymizePreview-pasteFlagged = As marcas que não puderam ser associadas a este texto, ou que foram alteradas, estão destacadas ({ $count }). Confira-as com o original.
+
+interface-AnonymizePreview-pasteAllMatched = Todas as marcas foram reconhecidas e recolocadas.
+
+interface-AnonymizePreview-pasteFlaggedSr = (confira com o original)
+
 interface-AnonymizePreview-possibleNames = Palavras que podem ser nomes
 
 interface-AnonymizePreview-removeWord = Remover “{ $word }”
@@ -2045,3 +2078,9 @@ notifications-autoAllow = Buscar documentos das clínicas automaticamente enquan
 notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
 notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
 notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
+
+ai-summary-again = Resumir de novo
+
+ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.
+
+ai-keepFull = Este documento já guarda o máximo de respostas da IA. As respostas novas são mostradas, mas não são guardadas.

@@ -7,9 +7,12 @@ pub enum MessageId {
     AiErrorMemory,
     AiExplainBox,
     AiExplainHint,
+    AiExplainReady,
     AiExplainSubmit,
     AiExplainTitle,
     AiFailed,
+    AiKeepFailed,
+    AiKeepFull,
     AiModelAccepted,
     AiModelAdd,
     AiModelAdded,
@@ -42,11 +45,13 @@ pub enum MessageId {
     AiPreferencesNotInstalled,
     AiPreferencesTitle,
     AiResultMeta,
+    AiSummaryAgain,
     AiSummaryButton,
     AiSummaryNoSource,
     AiSummaryNoText,
     AiSummaryPagesMissing,
     AiSummaryPartial,
+    AiSummaryReady,
     AiSummaryShowInDocument,
     AiSummaryTitle,
     AiWorking,
@@ -152,6 +157,16 @@ pub enum MessageId {
     InterfaceAnonymizePreviewKindUnclearDate,
     InterfaceAnonymizePreviewKindWeb,
     InterfaceAnonymizePreviewMovedDate,
+    InterfaceAnonymizePreviewNoteAgeOver90,
+    InterfaceAnonymizePreviewNoteDaysAfter,
+    InterfaceAnonymizePreviewPasteAllMatched,
+    InterfaceAnonymizePreviewPasteButton,
+    InterfaceAnonymizePreviewPasteFlagged,
+    InterfaceAnonymizePreviewPasteFlaggedSr,
+    InterfaceAnonymizePreviewPasteHelp,
+    InterfaceAnonymizePreviewPasteLabel,
+    InterfaceAnonymizePreviewPasteResult,
+    InterfaceAnonymizePreviewPasteTitle,
     InterfaceAnonymizePreviewPhrase,
     InterfaceAnonymizePreviewPhraseNotFound,
     InterfaceAnonymizePreviewPlaceholderAddress,
@@ -349,6 +364,7 @@ pub enum MessageId {
     InterfaceHistoryDamagedBetween,
     InterfaceHistoryEmpty,
     InterfaceHistoryErrorUnverified,
+    InterfaceHistoryEventAiResultSaved,
     InterfaceHistoryEventBackupRestored,
     InterfaceHistoryEventBackupSaved,
     InterfaceHistoryEventCopySaved,
@@ -385,6 +401,7 @@ pub enum MessageId {
     InterfaceHistoryHowAnonymizedText,
     InterfaceHistoryHowCamera,
     InterfaceHistoryHowDamaged,
+    InterfaceHistoryHowExplain,
     InterfaceHistoryHowImportedShared,
     InterfaceHistoryHowMovedFromShared,
     InterfaceHistoryHowPassphrase,
@@ -392,6 +409,7 @@ pub enum MessageId {
     InterfaceHistoryHowPicked,
     InterfaceHistoryHowRecoveryKey,
     InterfaceHistoryHowReplaced,
+    InterfaceHistoryHowSummary,
     InterfaceHistoryIntro,
     InterfaceHistoryLaterSessionNotRecorded,
     InterfaceHistoryLoading,
@@ -944,9 +962,12 @@ impl MessageId {
         Self::AiErrorMemory,
         Self::AiExplainBox,
         Self::AiExplainHint,
+        Self::AiExplainReady,
         Self::AiExplainSubmit,
         Self::AiExplainTitle,
         Self::AiFailed,
+        Self::AiKeepFailed,
+        Self::AiKeepFull,
         Self::AiModelAccepted,
         Self::AiModelAdd,
         Self::AiModelAdded,
@@ -979,11 +1000,13 @@ impl MessageId {
         Self::AiPreferencesNotInstalled,
         Self::AiPreferencesTitle,
         Self::AiResultMeta,
+        Self::AiSummaryAgain,
         Self::AiSummaryButton,
         Self::AiSummaryNoSource,
         Self::AiSummaryNoText,
         Self::AiSummaryPagesMissing,
         Self::AiSummaryPartial,
+        Self::AiSummaryReady,
         Self::AiSummaryShowInDocument,
         Self::AiSummaryTitle,
         Self::AiWorking,
@@ -1089,6 +1112,16 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewKindUnclearDate,
         Self::InterfaceAnonymizePreviewKindWeb,
         Self::InterfaceAnonymizePreviewMovedDate,
+        Self::InterfaceAnonymizePreviewNoteAgeOver90,
+        Self::InterfaceAnonymizePreviewNoteDaysAfter,
+        Self::InterfaceAnonymizePreviewPasteAllMatched,
+        Self::InterfaceAnonymizePreviewPasteButton,
+        Self::InterfaceAnonymizePreviewPasteFlagged,
+        Self::InterfaceAnonymizePreviewPasteFlaggedSr,
+        Self::InterfaceAnonymizePreviewPasteHelp,
+        Self::InterfaceAnonymizePreviewPasteLabel,
+        Self::InterfaceAnonymizePreviewPasteResult,
+        Self::InterfaceAnonymizePreviewPasteTitle,
         Self::InterfaceAnonymizePreviewPhrase,
         Self::InterfaceAnonymizePreviewPhraseNotFound,
         Self::InterfaceAnonymizePreviewPlaceholderAddress,
@@ -1286,6 +1319,7 @@ impl MessageId {
         Self::InterfaceHistoryDamagedBetween,
         Self::InterfaceHistoryEmpty,
         Self::InterfaceHistoryErrorUnverified,
+        Self::InterfaceHistoryEventAiResultSaved,
         Self::InterfaceHistoryEventBackupRestored,
         Self::InterfaceHistoryEventBackupSaved,
         Self::InterfaceHistoryEventCopySaved,
@@ -1322,6 +1356,7 @@ impl MessageId {
         Self::InterfaceHistoryHowAnonymizedText,
         Self::InterfaceHistoryHowCamera,
         Self::InterfaceHistoryHowDamaged,
+        Self::InterfaceHistoryHowExplain,
         Self::InterfaceHistoryHowImportedShared,
         Self::InterfaceHistoryHowMovedFromShared,
         Self::InterfaceHistoryHowPassphrase,
@@ -1329,6 +1364,7 @@ impl MessageId {
         Self::InterfaceHistoryHowPicked,
         Self::InterfaceHistoryHowRecoveryKey,
         Self::InterfaceHistoryHowReplaced,
+        Self::InterfaceHistoryHowSummary,
         Self::InterfaceHistoryIntro,
         Self::InterfaceHistoryLaterSessionNotRecorded,
         Self::InterfaceHistoryLoading,
@@ -1881,9 +1917,12 @@ impl MessageId {
             Self::AiErrorMemory => "ai-error-memory",
             Self::AiExplainBox => "ai-explain-box",
             Self::AiExplainHint => "ai-explain-hint",
+            Self::AiExplainReady => "ai-explain-ready",
             Self::AiExplainSubmit => "ai-explain-submit",
             Self::AiExplainTitle => "ai-explain-title",
             Self::AiFailed => "ai-failed",
+            Self::AiKeepFailed => "ai-keepFailed",
+            Self::AiKeepFull => "ai-keepFull",
             Self::AiModelAccepted => "ai-model-accepted",
             Self::AiModelAdd => "ai-model-add",
             Self::AiModelAdded => "ai-model-added",
@@ -1916,11 +1955,13 @@ impl MessageId {
             Self::AiPreferencesNotInstalled => "ai-preferences-notInstalled",
             Self::AiPreferencesTitle => "ai-preferences-title",
             Self::AiResultMeta => "ai-result-meta",
+            Self::AiSummaryAgain => "ai-summary-again",
             Self::AiSummaryButton => "ai-summary-button",
             Self::AiSummaryNoSource => "ai-summary-noSource",
             Self::AiSummaryNoText => "ai-summary-noText",
             Self::AiSummaryPagesMissing => "ai-summary-pagesMissing",
             Self::AiSummaryPartial => "ai-summary-partial",
+            Self::AiSummaryReady => "ai-summary-ready",
             Self::AiSummaryShowInDocument => "ai-summary-showInDocument",
             Self::AiSummaryTitle => "ai-summary-title",
             Self::AiWorking => "ai-working",
@@ -2038,6 +2079,26 @@ impl MessageId {
             }
             Self::InterfaceAnonymizePreviewKindWeb => "interface-AnonymizePreview-kind-web",
             Self::InterfaceAnonymizePreviewMovedDate => "interface-AnonymizePreview-movedDate",
+            Self::InterfaceAnonymizePreviewNoteAgeOver90 => {
+                "interface-AnonymizePreview-note-ageOver90"
+            }
+            Self::InterfaceAnonymizePreviewNoteDaysAfter => {
+                "interface-AnonymizePreview-note-daysAfter"
+            }
+            Self::InterfaceAnonymizePreviewPasteAllMatched => {
+                "interface-AnonymizePreview-pasteAllMatched"
+            }
+            Self::InterfaceAnonymizePreviewPasteButton => "interface-AnonymizePreview-pasteButton",
+            Self::InterfaceAnonymizePreviewPasteFlagged => {
+                "interface-AnonymizePreview-pasteFlagged"
+            }
+            Self::InterfaceAnonymizePreviewPasteFlaggedSr => {
+                "interface-AnonymizePreview-pasteFlaggedSr"
+            }
+            Self::InterfaceAnonymizePreviewPasteHelp => "interface-AnonymizePreview-pasteHelp",
+            Self::InterfaceAnonymizePreviewPasteLabel => "interface-AnonymizePreview-pasteLabel",
+            Self::InterfaceAnonymizePreviewPasteResult => "interface-AnonymizePreview-pasteResult",
+            Self::InterfaceAnonymizePreviewPasteTitle => "interface-AnonymizePreview-pasteTitle",
             Self::InterfaceAnonymizePreviewPhrase => "interface-AnonymizePreview-phrase",
             Self::InterfaceAnonymizePreviewPhraseNotFound => {
                 "interface-AnonymizePreview-phraseNotFound"
@@ -2431,6 +2492,7 @@ impl MessageId {
             Self::InterfaceHistoryDamagedBetween => "interface-history-damagedBetween",
             Self::InterfaceHistoryEmpty => "interface-history-empty",
             Self::InterfaceHistoryErrorUnverified => "interface-history-error-unverified",
+            Self::InterfaceHistoryEventAiResultSaved => "interface-history-event-aiResultSaved",
             Self::InterfaceHistoryEventBackupRestored => "interface-history-event-backupRestored",
             Self::InterfaceHistoryEventBackupSaved => "interface-history-event-backupSaved",
             Self::InterfaceHistoryEventCopySaved => "interface-history-event-copySaved",
@@ -2483,6 +2545,7 @@ impl MessageId {
             Self::InterfaceHistoryHowAnonymizedText => "interface-history-how-anonymizedText",
             Self::InterfaceHistoryHowCamera => "interface-history-how-camera",
             Self::InterfaceHistoryHowDamaged => "interface-history-how-damaged",
+            Self::InterfaceHistoryHowExplain => "interface-history-how-explain",
             Self::InterfaceHistoryHowImportedShared => "interface-history-how-importedShared",
             Self::InterfaceHistoryHowMovedFromShared => "interface-history-how-movedFromShared",
             Self::InterfaceHistoryHowPassphrase => "interface-history-how-passphrase",
@@ -2490,6 +2553,7 @@ impl MessageId {
             Self::InterfaceHistoryHowPicked => "interface-history-how-picked",
             Self::InterfaceHistoryHowRecoveryKey => "interface-history-how-recoveryKey",
             Self::InterfaceHistoryHowReplaced => "interface-history-how-replaced",
+            Self::InterfaceHistoryHowSummary => "interface-history-how-summary",
             Self::InterfaceHistoryIntro => "interface-history-intro",
             Self::InterfaceHistoryLaterSessionNotRecorded => {
                 "interface-history-laterSessionNotRecorded"
@@ -4151,6 +4215,8 @@ impl MessageId {
             "ai.preferences.body" => Some(Self::AiPreferencesBody),
             "ai.preferences.notInstalled" => Some(Self::AiPreferencesNotInstalled),
             "ai.working" => Some(Self::AiWorking),
+            "ai.summary.ready" => Some(Self::AiSummaryReady),
+            "ai.explain.ready" => Some(Self::AiExplainReady),
             "ai.failed" => Some(Self::AiFailed),
             "ai.error.memory" => Some(Self::AiErrorMemory),
             "ai.error.busy" => Some(Self::AiErrorBusy),
@@ -4327,6 +4393,36 @@ impl MessageId {
             "interface.AnonymizePreview.footerNote" => {
                 Some(Self::InterfaceAnonymizePreviewFooterNote)
             }
+            "interface.AnonymizePreview.note.daysAfter" => {
+                Some(Self::InterfaceAnonymizePreviewNoteDaysAfter)
+            }
+            "interface.AnonymizePreview.note.ageOver90" => {
+                Some(Self::InterfaceAnonymizePreviewNoteAgeOver90)
+            }
+            "interface.AnonymizePreview.pasteTitle" => {
+                Some(Self::InterfaceAnonymizePreviewPasteTitle)
+            }
+            "interface.AnonymizePreview.pasteHelp" => {
+                Some(Self::InterfaceAnonymizePreviewPasteHelp)
+            }
+            "interface.AnonymizePreview.pasteLabel" => {
+                Some(Self::InterfaceAnonymizePreviewPasteLabel)
+            }
+            "interface.AnonymizePreview.pasteButton" => {
+                Some(Self::InterfaceAnonymizePreviewPasteButton)
+            }
+            "interface.AnonymizePreview.pasteResult" => {
+                Some(Self::InterfaceAnonymizePreviewPasteResult)
+            }
+            "interface.AnonymizePreview.pasteFlagged" => {
+                Some(Self::InterfaceAnonymizePreviewPasteFlagged)
+            }
+            "interface.AnonymizePreview.pasteAllMatched" => {
+                Some(Self::InterfaceAnonymizePreviewPasteAllMatched)
+            }
+            "interface.AnonymizePreview.pasteFlaggedSr" => {
+                Some(Self::InterfaceAnonymizePreviewPasteFlaggedSr)
+            }
             "notifications.allow" => Some(Self::NotificationsAllow),
             "notifications.blocked" => Some(Self::NotificationsBlocked),
             "notifications.error" => Some(Self::NotificationsError),
@@ -4366,6 +4462,14 @@ impl MessageId {
             "ai.model.refusedNetwork" => Some(Self::AiModelRefusedNetwork),
             "ai.model.refusedUnavailable" => Some(Self::AiModelRefusedUnavailable),
             "native.filter.models" => Some(Self::NativeFilterModels),
+            "interface.history.event.aiResultSaved" => {
+                Some(Self::InterfaceHistoryEventAiResultSaved)
+            }
+            "interface.history.how.summary" => Some(Self::InterfaceHistoryHowSummary),
+            "interface.history.how.explain" => Some(Self::InterfaceHistoryHowExplain),
+            "ai.summary.again" => Some(Self::AiSummaryAgain),
+            "ai.keepFailed" => Some(Self::AiKeepFailed),
+            "ai.keepFull" => Some(Self::AiKeepFull),
             _ => None,
         }
     }

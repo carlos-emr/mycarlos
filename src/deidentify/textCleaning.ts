@@ -108,6 +108,14 @@ export interface MatchingCopy {
  * UTS #39's confusables), and Latin letters whose accent is no combining
  * mark, so that NFD leaves them alone. */
 const FOLDS: Record<string, string> = {
+  // Hyphen look-alikes that PDFs write in dates and ranges (U+2011 folds to
+  // U+2010 first, under NFKC): hyphen, non-breaking hyphen, figure dash, en
+  // dash and the minus sign. The saved text keeps the original character.
+  "\u2010": "-",
+  "\u2011": "-",
+  "\u2012": "-",
+  "\u2013": "-",
+  "\u2212": "-",
   ł: "l",
   Ł: "L",
   ø: "o",

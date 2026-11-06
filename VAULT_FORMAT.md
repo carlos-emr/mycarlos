@@ -511,8 +511,9 @@ the whole, so that no entry can outgrow a segment.
 
 The AI helper's text export (#72 part B) is `copySaved` with `how: "anonymizedText"`, the
 document's `recordId` and `name`, and the `place` the text file was saved, cut and hashed
-as for any copy. Never the text, the details removed or the number of days the dates
-were moved. Older readers show it as a copy saved, with its method as written.
+as for any copy. Never the text or the details removed. (The anonymized text keeps no
+date, so there is no day count to record; the list of what was replaced stays in memory
+for the open window only and is never written.) Older readers show it as a copy saved, with its method as written.
 
 - `hash(entry) = SHA-256("mycarlos/history/v1" ‖ 0x00 ‖ canonical JSON)`, in lower-case hex.
 - `prev` is the previous entry's hash. The first entry's is the genesis value,
@@ -1061,3 +1062,58 @@ absent field reads as nothing saved, which is how every vault starts. Erasing or
 resetting the vault removes the field with it: its destinations stay enrolled at
 the portal until the device is removed there (the device keys that would sign a
 revocation are gone too).
+
+#### Format 10: the AI helper's answers (#72 part D)
+
+Format 10 adds one optional list to each record, `aiResults`: what the AI helper wrote
+about the document, a plain-words summary or the explanation of a term. Each
+answer is an encrypted object of its own beside the document's, in the same
+envelope, under a random key wrapped with the vault's object-wrap key and the
+answer's id, so backup, restore, orphan cleanup and the hidden state carry it
+with the document (a record's `objects()` lists it). The manifest names, for
+each answer: its id, the tool (`summary` or `explain`), the language, the term
+explained (explain only), the model's name and the SHA-256 of its file, when it
+was written, and its object's name, size and wrapped key. The bytes are the
+renderer's own JSON (sentences with their quotes, or an explanation), at most
+64 KiB; the vault stores and returns them as they are and never logs them.
+
+Nothing is deleted (#71; Ben's D3, 5 Nov). One answer is shown per question
+(tool, language, term), the one kept last. A new summary in the same language
+hides the older one: the older answer gets `superseded: true` and stays in the
+vault with its object, in every backup, for as long as the document does. A
+hidden answer is never listed or read again, and nothing removes it. A record
+keeps at most 32 answers, hidden ones included; past that, a new answer is
+refused and none is dropped. An answer cannot be
+saved for a hidden document or in recovery mode. Each save is recorded in the
+history as `aiResultSaved` with the document's name and the tool as `how`,
+never the text. A manifest below format 10 that holds answers is corrupt, as is
+an answer with a nil or repeated id, an object name another object has, a
+malformed key, language, term, model name or hash, a size of zero or over
+64 KiB, or two shown answers to one question (hidden ones may share it).
+
+A format 1–9 vault opens with no answers and is upgraded to format 10 at its
+next writable unlock, in a commit of its own, as for every earlier format. An
+older myCarlos then refuses the vault as newer: there is no downgrade. Header
+and object formats are unchanged.
+
+#### Format 11: hidden AI answers have a cap of their own (D13)
+
+Format 11 changes only how a record's `aiResults` are counted. A record shows
+at most **32** answers, one per question, and keeps at most **96** hidden
+(`superseded`) ones besides. Asking a question again hides the answer before,
+so it counts against the hidden cap; a new question counts against the shown
+cap. Past either cap a new answer is refused (`ai_results_full`, "This document
+already keeps the most AI answers it can."), and none is dropped: nothing is
+deleted (#71, D3).
+
+The hidden cap is kept to three per shown answer because every answer, shown or
+hidden, is a manifest entry of about 0.5 KB (0.8 KB at most), and the manifest
+is capped for the whole vault at 16 MiB: a vault can hold about 170 documents
+with both caps full before its manifest is.
+
+A format 11 manifest with more than 32 shown or 96 hidden answers on a record
+is corrupt. A format 10 manifest keeps its own rule, at most 32 answers in all.
+A format 1–10 vault is upgraded to format 11 at its next writable unlock, in a
+commit of its own, with nothing else changed. An older myCarlos then refuses
+the vault as newer rather than reading a record with more than 32 answers as
+damaged. Header and object formats are unchanged.
