@@ -218,6 +218,37 @@ impl<A: ApprovalExchange> ApprovalExchange for BoundedApproval<'_, A> {
             result
         }
     }
+    // A clinic code is sent only from the clinic view, never by a background
+    // check; bounded the same way all the same, as the trait asks (#141).
+    fn submit_code(
+        &self,
+        link: &StoredLink,
+        attempt: &Attempt,
+        code_r: &str,
+        anchor: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), VaultError> {
+        if !self.control.request() {
+            return Err(VaultError::Cancelled);
+        }
+        let deadline = Instant::now() + METADATA_TIME;
+        let stop =
+            || cancelled() || (self.stop)() || self.control.stopped() || Instant::now() >= deadline;
+        if stop() {
+            return Err(VaultError::Cancelled);
+        }
+        let result = self.inner.submit_code(link, attempt, code_r, anchor, &stop);
+        if stop() {
+            Err(VaultError::Cancelled)
+        } else {
+            result
+        }
+    }
+    // The portal's clock from the last status read, so a background check
+    // decides whether a request is still open as a manual one does (#131).
+    fn portal_time(&self) -> Option<u64> {
+        self.inner.portal_time()
+    }
 }
 
 pub(crate) fn check_cycle<F, A>(
@@ -604,6 +635,51 @@ mod tests {
         assert_eq!(s.after, 99);
     }
     #[test]
+    fn bounded_approval_passes_on_the_portal_clock() {
+        // Without it a background check read the default (none) and fell back
+        // to this device's clock where the portal had given its own (#131).
+        struct Clock;
+        impl ApprovalExchange for Clock {
+            fn get(
+                &self,
+                _: &StoredLink,
+                _: &Attempt,
+                _: &dyn Fn() -> bool,
+            ) -> Result<Option<Attempt>, VaultError> {
+                unreachable!("only the clock is read")
+            }
+            fn post(
+                &self,
+                _: &StoredLink,
+                _: &Attempt,
+                _: &str,
+                _: &dyn Fn() -> bool,
+            ) -> Result<Attempt, VaultError> {
+                unreachable!("only the clock is read")
+            }
+            fn submit_code(
+                &self,
+                _: &StoredLink,
+                _: &Attempt,
+                _: &str,
+                _: &str,
+                _: &dyn Fn() -> bool,
+            ) -> Result<(), VaultError> {
+                unreachable!("only the clock is read")
+            }
+            fn portal_time(&self) -> Option<u64> {
+                Some(1_700_000_000)
+            }
+        }
+        let control = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)));
+        let bound = BoundedApproval {
+            inner: &Clock,
+            control: &control,
+            stop: &|| false,
+        };
+        assert_eq!(bound.portal_time(), Some(1_700_000_000));
+    }
+    #[test]
     fn approval_get_and_publish_observe_same_old_token_and_request_budget() {
         struct Exchange {
             token: Arc<AtomicBool>,
@@ -635,6 +711,16 @@ mod tests {
                 self.token.store(true, Ordering::Release);
                 assert!(stop());
                 Err(VaultError::Cancelled)
+            }
+            fn submit_code(
+                &self,
+                _: &StoredLink,
+                _: &Attempt,
+                _: &str,
+                _: &str,
+                _: &dyn Fn() -> bool,
+            ) -> Result<(), VaultError> {
+                unreachable!("this test sends no clinic code")
             }
         }
         let l = link();
