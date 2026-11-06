@@ -290,13 +290,6 @@ export function LibrarySidebar({
       </nav>
       <div className="storage">
         <span>{translateNow("sidebar.storage")}</span>
-        <div className="storage-meter">
-          <span
-            style={{
-              width: `${Math.min(100, Math.max(8, totals.documents * 4))}%`,
-            }}
-          />
-        </div>
         <small>
           {translateNow("sidebar.documents", { count: totals.documents })} ·{" "}
           {translateNow("sidebar.folderCount", { count: totals.folders })}
