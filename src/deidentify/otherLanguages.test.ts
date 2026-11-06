@@ -100,3 +100,36 @@ describe("clinics and towns in es/pl/pt", () => {
     expect(send(text)).toBe(text);
   });
 });
+
+describe("look-alikes found in the #252 review", () => {
+  it.each([
+    "CNS EXAM NORMAL.",
+    "CNS: NO FOCAL DEFICIT.",
+    "Plaquetas 150.000.000/L.",
+    "Leukocyty 150 000 000/l.",
+    "Płytki 150 000 000 x 10/l.",
+  ])("leaves %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it.each(["Patient ABC reviewed.", "Paciente ABC revisado.", "Client OKAFOR"])(
+    "leaves capitals after a label with no colon or dash whole: %s",
+    (text) => {
+      expect(send(text)).not.toMatch(/[A-Z]\[NAME/);
+    },
+  );
+
+  it("still removes a name after a label and a dash", () => {
+    expect(send("Patient – Avery Sampleton")).toBe("Patient – [NAME 1]");
+  });
+
+  it("keeps an identity label and removes its number", () => {
+    expect(send("Paciente CPF 987.654.321-00, acompanhada.")).toBe(
+      "Paciente CPF [SIN 1], acompanhada.",
+    );
+  });
+
+  it("still removes a health card of digits after CNS", () => {
+    expect(send("CNS 700 5009 1234 5678")).toBe("CNS [HEALTH CARD 1]");
+  });
+});

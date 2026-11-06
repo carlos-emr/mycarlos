@@ -705,6 +705,8 @@ const anyCase = (labels: string[]) =>
     .join("|")})`;
 // The labels a person's name follows. A dash needs a space before it, so
 // "Patient-centred" is no label.
+// The dash after a label is an alternation, not a character class: the rules are folded,
+// and "[-–—]" would fold to the range "[--—]", which holds every letter ("Patient ABC").
 const NAME_LABEL = `${anyCase([
   "Patient name",
   "Patient",
@@ -734,7 +736,7 @@ const NAME_LABEL = `${anyCase([
   "Nombre",
   "Nome",
   "Imię i nazwisko",
-])}(?:[ \\t]*:|[ \\t]+[-–—])`;
+])}(?:[ \\t]*:|[ \\t]+(?:-|–|—))`;
 // Other clinicians' titles, in any case and longest first, so "Nurse
 // Practitioner:" is one title, not "Nurse" before a name (#80 review).
 const CLINICIAN_TITLE = anyCase([
@@ -1203,6 +1205,16 @@ const PLACE_WORDS = new Set(
 );
 const NOT_NAMES = new Set(
   foldAll([
+    "cpf",
+    "dni",
+    "nie",
+    "nif",
+    "pesel",
+    "rg",
+    "cns",
+    "nhc",
+    "tsi",
+    "cip",
     "follow-up",
     "followup",
     "seen",
@@ -1965,7 +1977,7 @@ const RULES: Rule[] = [
   {
     kind: "healthCard",
     pattern:
-      /(?<![\p{L}])(?:[Tt]arjeta sanitaria(?: individual)?|TSI|CIP|CNS|[Cc]art[ãa]o (?:[Nn]acional de [Ss]a[úu]de|SUS|do SUS))[ \t]*(?:n[º°o.][ \t]*)?[:#]?[ \t]*([A-Z0-9][A-Z0-9 -]{7,22}[A-Z0-9])(?![\p{L}\d])/gu,
+      /(?<![\p{L}])(?:[Tt]arjeta sanitaria(?: individual)?|TSI|CIP|CNS|[Cc]art[ãa]o (?:[Nn]acional de [Ss]a[úu]de|SUS|do SUS))[ \t]*(?:n[º°o.][ \t]*)?[:#]?[ \t]*((?=(?:[A-Z -]*\d){8})[A-Z0-9][A-Z0-9 -]{7,22}[A-Z0-9])(?![\p{L}\d])/gu,
     group: 1,
   },
   // A social insurance number: nine digits in threes (joined by a space, a
@@ -1990,7 +2002,7 @@ const RULES: Rule[] = [
   {
     kind: "sin",
     pattern:
-      /(?<![\d-])(?<!\d\.)(?<!\+\d{1,3}[ .-]?)(?<!(?:[Tt]el(?:éfono|efono|efone|efon)?|[Tt]fno|[Mm][óo]vil|[Cc]elular|[Cc]el|[Kk]om|[Pp]hone|[Cc]ell)\.?[ \t]*[:#]?[ \t]*)\d{3}([ .-])\d{3}\1\d{3}(?![\d-])(?!\.\d)/gu,
+      /(?<![\d-])(?<!\d\.)(?<!\+\d{1,3}[ .-]?)(?<!(?:[Tt]el(?:éfono|efono|efone|efon)?|[Tt]fno|[Mm][óo]vil|[Cc]elular|[Cc]el|[Kk]om|[Pp]hone|[Cc]ell)\.?[ \t]*[:#]?[ \t]*)\d{3}([ .-])\d{3}\1\d{3}(?![\d-])(?!\.\d)(?![ \t]*(?:\/|[x×][ \t]*10))/gu,
   },
   // A web address: with its scheme or "www.", or a bare domain with a common
   // ending, and whatever follows it.
