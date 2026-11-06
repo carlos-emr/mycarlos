@@ -28,6 +28,8 @@ mod local_model;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;
+// The model download runs on computers only (no AI helper on a phone).
+#[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
 mod model_runtime;
@@ -101,9 +103,12 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Manager, State, Url};
-use tauri_plugin_dialog::{
-    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
-};
+use tauri_plugin_dialog::DialogExt;
+// The plugin's message dialog is the confirmation off macOS (macOS has its own AppKit sheet).
+#[cfg(any(test, not(target_os = "macos")))]
+use tauri_plugin_dialog::MessageDialogResult;
+#[cfg(not(target_os = "macos"))]
+use tauri_plugin_dialog::{MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_fs::{FsExt, OpenOptions};
 use throttle::{Attempt, AttemptThrottle, Outcome};
 use uuid::Uuid;
@@ -2643,6 +2648,7 @@ const MAIN_WINDOW: &str = "main";
 
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
+#[cfg(any(test, not(target_os = "macos")))]
 fn agreed_natively(answer: &MessageDialogResult, go_ahead: &str) -> bool {
     matches!(answer, MessageDialogResult::Custom(label) if label == go_ahead)
 }
