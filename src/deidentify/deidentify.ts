@@ -1446,6 +1446,20 @@ const PLACE_WORDS = new Set(
 );
 const NOT_NAMES = new Set(
   foldAll([
+    "kierujący",
+    "kierująca",
+    "elektroradiologii",
+    "medycznej",
+    "medyczny",
+    "medyczna",
+    "oddziałowa",
+    "oddziałowy",
+    "naczelna",
+    "naczelny",
+    "zabiegowa",
+    "zabiegowy",
+    "dyplomowana",
+    "dyplomowany",
     "superior",
     "sanitario",
     "especialista",
@@ -2445,7 +2459,7 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|(?:prof\\.[ \\t]*)?dr[ \\t]+hab\\.[ \\t]*n\\.[ \\t]*med|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|[Ll]ek\\.(?:[ \\t]*(?:med|dent)\\.)?|mgr[ \\t]+(?:farm|inż)|mgr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|(?:prof\\.[ \\t]*)?dr[ \\t]+hab\\.[ \\t]*n\\.[ \\t]*med|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|[Ll]ek\\.[ \\t]*(?:med|dent)\\.|(?<!(?:[Jj]eden|[Nn]owy|[Tt]en|[Ii]nny|[Kk]ażdy|[Dd]rugi|[Kk]olejny|[Jj]akiś|[Dd]any|[Tt]amten)[ \\t]+)lek\\.|[Mm]gr[ \\t]+(?:farm|inż)|[Mm]gr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -2550,7 +2564,7 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
+      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua|[Pp]or|[Cc]on|[Pp]ara|[Cc]om|[Ss]in|[Ss]em)[ \\t]+)${anyCase(
         withSentenceCase([
           "médico de familia",
           "médica de familia",
@@ -2568,7 +2582,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
+      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua|[Pp]or|[Cc]on|[Pp]ara|[Cc]om|[Ss]in|[Ss]em)[ \\t]+)${anyCase(
         withSentenceCase([
           "trabajadora social",
           "trabajador social",

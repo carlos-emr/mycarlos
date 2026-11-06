@@ -347,3 +347,30 @@ describe("more Polish titles (#262 review)", () => {
     expect(send(text)).not.toContain(part);
   });
 });
+
+describe("roles and titles after the #262 review", () => {
+  it.each([
+    ["Atendido por médico Julián Prueba Soto.", "Soto"],
+    ["Consulta com médica Joana Teste Prado.", "Prado"],
+    ["Mgr Anna Testowa przeprowadziła badanie.", "Testowa"],
+    ["Lek. med. Anna Testowa zbadała.", "Testowa"],
+    ["Zbadał lek. Marek Przykładny.", "Przykładny"],
+    ["Konsultował dr hab. n. med. Paweł Testowy.", "Testowy"],
+    ["Revisado con médica Ana Ficticia Ruiz.", "Ruiz"],
+  ])("removes the clinician: %s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Lekarz Kierujący Oddziałem zatwierdził plan.",
+    "Technik Elektroradiologii Medycznej wykonał zdjęcie.",
+    "Médico Interno Residente de guardia.",
+    "Przyjmuje jeden lek. Następnie Wizyta Kontrolna.",
+    "Nowy lek. Polopiryna Forte 500 mg.",
+    "Lek. Polopiryna Forte podano.",
+    "Ten lek. Kolejna Dawka jutro.",
+    "Historia por Médica Completa.",
+  ])("leaves a qualifier or the word for a medicine: %s", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+});
