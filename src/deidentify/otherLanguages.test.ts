@@ -262,6 +262,17 @@ describe("a citation is not a Polish street (#252 review)", () => {
     expect(send(text)).not.toMatch(/ADDRESS/);
   });
 
+  it.each([
+    ["Ul. Polna 3, Wola", "Polna"],
+    ["Zam. Ul. Polna 3, Wola", "Polna"],
+    ["Al. Testowa 45 m. 3", "Testowa"],
+    ["UL. POLNA 3, WOLA", "POLNA"],
+  ])("removes a street written with a capital: %s", (text, part) => {
+    const out = send(text);
+    expect(out).not.toContain(part);
+    expect(out).not.toMatch(/\[ADDRESS 1\]\./);
+  });
+
   it("still removes an avenue with a house number", () => {
     expect(send("Adres: al. Testowa 45 m. 3")).not.toContain("Testowa 45");
   });
