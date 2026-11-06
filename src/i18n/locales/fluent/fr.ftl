@@ -1614,6 +1614,8 @@ interface-history-empty = Aucun événement dans l’historique.
 
 interface-history-error-unverified = L’historique n’a pas pu être lu et vérifié. Aucun événement ne s’affiche.
 
+interface-history-event-aiResultSaved = Réponse de l’IA conservée
+
 interface-history-event-backupRestored = Sauvegarde restaurée
 
 interface-history-event-backupSaved = Sauvegarde chiffrée enregistrée
@@ -1690,6 +1692,10 @@ interface-history-how = Méthode
 interface-history-how-aidReplaced = A remplacé une aide à la lecture précédente
 
 interface-history-how-camera = Ajouté avec l’appareil photo
+
+interface-history-how-summary = Résumé en mots simples
+
+interface-history-how-explain = Un terme expliqué
 
 interface-history-how-damaged = Masqué car le fichier était absent
 
@@ -1895,6 +1901,10 @@ native-filter-models = Fichiers de modèle
 
 ai-working = L’assistant IA travaille…
 
+ai-summary-ready = Le résumé est prêt.
+
+ai-explain-ready = L’explication est prête.
+
 ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
 
 ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.
@@ -1914,15 +1924,15 @@ aiHelper-notice-testBuild = Cette version de développement est réservée aux f
 
 aiHelper-notice-shareHeading = Enregistrer le texte pour un autre service d’IA
 
-aiHelper-notice-shareBody = myCarlos peut enregistrer le texte d’un document après en avoir retiré les renseignements qui permettent d’identifier une personne, pour que vous puissiez le donner au service d’IA de votre choix. Il recherche les noms des personnes inscrites dans vos profils et dans « Renseignements des personnes », ainsi que les noms qui suivent un titre ou une étiquette comme « Dr ». Il recherche aussi les numéros de carte santé et de dossier médical, les dates de naissance, les âges de 90 ans et plus, les adresses, les codes postaux, les numéros de téléphone et de télécopieur, les adresses courriel et Web, les noms des cliniques et des médecins, ainsi que d’autres numéros d’identification comme les numéros de demande d’analyse, et retire ce qu’il trouve. Il déplace les autres dates vers le passé d’un même nombre de jours, pour que l’écart entre elles reste le même.
+aiHelper-notice-shareBody = myCarlos peut enregistrer le texte d’un document après en avoir retiré les renseignements qui permettent d’identifier une personne, pour que vous puissiez le donner au service d’IA de votre choix. Il recherche les noms des personnes inscrites dans vos profils et dans « Renseignements des personnes », ainsi que les noms qui suivent un titre ou une étiquette comme « Dr ». Il recherche aussi les numéros de carte santé et de dossier médical, les dates de naissance, les âges de 90 ans et plus, les adresses, les codes postaux, les numéros de téléphone et de télécopieur, les adresses courriel et Web, les noms des cliniques et des médecins, ainsi que d’autres numéros d’identification comme les numéros de demande d’analyse, et retire ce qu’il trouve. Les dates qu’il reconnaît ne sont pas envoyées. Chacune est remplacée par une marque numérotée, comme « DATE 2, 14 jours après DATE 1 », pour que l’écart entre les dates reste clair sans les vraies dates. Un âge de 90 ans ou plus est remplacé par une marque numérotée qui indique « 90+ ».
 
-aiHelper-notice-previewBody = Vous voyez d’abord le texte, avec les parties retirées et les dates déplacées signalées, et vous pouvez en retirer davantage. Une date qui n’est pas signalée n’a pas été déplacée. L’aperçu montre tout le texte que contiendra le fichier, même le texte caché dans le document. Rien n’est enregistré tant que vous ne choisissez pas de l’enregistrer.
+aiHelper-notice-previewBody = Vous voyez d’abord le texte, avec les parties retirées et les dates remplacées signalées, et vous pouvez en retirer davantage. Une date qui n’est pas signalée n’a pas été reconnue : elle reste dans le texte. L’aperçu montre tout le texte que contiendra le fichier, même le texte caché dans le document. Rien n’est enregistré tant que vous ne choisissez pas de l’enregistrer.
 
-aiHelper-notice-limitsBody = Retirer ces renseignements n’est jamais parfait. myCarlos ne trouve que les noms qu’il connaît et les noms qui suivent un titre ou une étiquette en anglais ou en français, si bien que d’autres noms peuvent rester. Un numéro, ou une date écrite autrement ou dans une autre langue, peut aussi lui échapper. Une maladie rare, un métier peu courant ou une petite ville peuvent encore permettre de vous reconnaître, ou de reconnaître une autre personne. Lisez tout le texte avant de l’enregistrer.
+aiHelper-notice-limitsBody = Retirer ces renseignements n’est jamais parfait. myCarlos ne trouve que les noms qu’il connaît et les noms qui suivent un titre ou une étiquette en anglais ou en français, si bien que d’autres noms peuvent rester. Un numéro, ou une date écrite autrement ou dans une autre langue, peut aussi lui échapper. Une année seule, comme dans « Appendicectomie 2019 », n’est pas retirée. Une maladie rare, un métier peu courant ou une petite ville peuvent encore permettre de vous reconnaître, ou de reconnaître une autre personne. Lisez tout le texte avant de l’enregistrer.
 
 aiHelper-notice-fileBody = Le texte est enregistré dans un fichier texte simple, à l’endroit de votre choix. Il n’est pas chiffré, et myCarlos ne peut pas l’effacer par la suite. Si cet endroit est un dossier synchronisé avec un espace de stockage en nuage, le fichier y est aussi copié. L’enregistrement est noté dans l’historique des événements.
 
-aiHelper-notice-serviceBody = Une fois que vous avez donné le texte à un autre service, ce qu’il en advient dépend de ce service. Si vous utilisez ce service avec votre compte, il sait qui vous êtes, même si des renseignements ont été retirés, et même sans compte, il voit votre adresse IP. Les dates que myCarlos a déplacées restent déplacées dans ses réponses. Un document peut aussi contenir des instructions destinées à une IA. Utilisez donc une IA qui ne peut pas agir à votre place (envoyer des messages, ouvrir des liens ou lire vos fichiers), ou désactivez ces fonctions.
+aiHelper-notice-serviceBody = Une fois que vous avez donné le texte à un autre service, ce qu’il en advient dépend de ce service. Si vous utilisez ce service avec votre compte, il sait qui vous êtes, même si des renseignements ont été retirés, et même sans compte, il voit votre adresse IP. Ses réponses reprendront les marques, comme DATE 2, et non les vraies dates. Dans myCarlos, tant que cette fenêtre reste ouverte, vous pouvez coller sa réponse pour remettre les vrais renseignements. Un document peut aussi contenir des instructions destinées à une IA. Utilisez donc une IA qui ne peut pas agir à votre place (envoyer des messages, ouvrir des liens ou lire vos fichiers), ou désactivez ces fonctions.
 
 aiHelper-notice-adviceBody = Les réponses écrites par une IA peuvent être fausses. Ne les prenez pas pour un diagnostic ni pour un conseil sur un traitement ou des médicaments, et ne changez pas un médicament ou un traitement à cause de ce que dit une IA. Demandez à votre médecin.
 
@@ -1965,13 +1975,13 @@ interface-AnonymizePreview-replaced = { $count } signes illisibles ont été rem
 
 interface-AnonymizePreview-headerNote = Le fichier commencera par cette ligne :
 
-interface-AnonymizePreview-howMarked = Les détails retirés sont marqués et nommés. Les dates déplacées sont marquées aussi ; une date non marquée n'a pas été déplacée.
+interface-AnonymizePreview-howMarked = Les détails retirés et les dates remplacées sont marqués et nommés. Une date non marquée n'a pas été reconnue : elle reste dans le texte.
 
 interface-AnonymizePreview-textRegion = Le texte qui sera enregistré
 
 interface-AnonymizePreview-removedKind = retiré : { $kind }
 
-interface-AnonymizePreview-movedDate = date déplacée
+interface-AnonymizePreview-movedDate = date remplacée
 
 interface-AnonymizePreview-kind-name = nom
 
@@ -2033,6 +2043,29 @@ interface-AnonymizePreview-placeholder-unclearDate = DATE
 
 interface-AnonymizePreview-placeholder-manual = RETIRÉ
 
+interface-AnonymizePreview-note-daysAfter = { $days ->
+    [one] { $days } jour après { $label } { $number }
+   *[other] { $days } jours après { $label } { $number }
+}
+
+interface-AnonymizePreview-note-ageOver90 = 90+
+
+interface-AnonymizePreview-pasteTitle = Remettre les renseignements
+
+interface-AnonymizePreview-pasteHelp = Collez ci-dessous la réponse de l’IA. myCarlos remet les noms, les dates et les numéros qu’il a remplacés. Il garde la liste de ce qu’il a remplacé seulement en mémoire, tant que le coffre-fort reste déverrouillé et que cette fenêtre reste ouverte. Rien n’est enregistré.
+
+interface-AnonymizePreview-pasteLabel = La réponse de l’IA
+
+interface-AnonymizePreview-pasteButton = Remettre les renseignements
+
+interface-AnonymizePreview-pasteResult = La réponse avec les renseignements remis
+
+interface-AnonymizePreview-pasteFlagged = Les marques qui n’ont pas pu être associées à ce texte, ou qui ont été modifiées, sont surlignées ({ $count }). Vérifiez-les avec l’original.
+
+interface-AnonymizePreview-pasteAllMatched = Toutes les marques ont été reconnues et remises.
+
+interface-AnonymizePreview-pasteFlaggedSr = (à vérifier avec l’original)
+
 interface-AnonymizePreview-possibleNames = Mots qui pourraient être des noms
 
 interface-AnonymizePreview-removeWord = Retirer « { $word } »
@@ -2081,3 +2114,9 @@ notifications-autoAllow = Vérifier automatiquement les documents des cliniques 
 notifications-autoHelp = Avec votre accord, myCarlos vérifie les liens enregistrés et approuvés des cliniques lorsque cette application est ouverte et le coffre déverrouillé, avec au moins deux minutes entre les tentatives. Les vérifications peuvent continuer si Windows bloque les avis. Verrouiller le coffre ou fermer l’application arrête les vérifications suivantes.
 notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Documents de la clinique et choisissez Rechercher de nouveaux documents.
 notifications-checkBusy = Une vérification de documents est en cours d’arrêt. Choisissez à nouveau Rechercher de nouveaux documents dans un instant.
+
+ai-summary-again = Résumer à nouveau
+
+ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.
+
+ai-keepFull = Ce document conserve déjà le nombre maximal de réponses de l’IA. Les nouvelles réponses s’affichent, mais ne sont pas conservées.

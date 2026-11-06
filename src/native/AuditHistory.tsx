@@ -49,6 +49,7 @@ const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
     "interface.history.event.deviceApprovalRequestRestarted",
   deliveryFiled: "interface.history.event.deliveryFiled",
   deliveryReceiptSettled: "interface.history.event.deliveryReceiptSettled",
+  aiResultSaved: "interface.history.event.aiResultSaved",
 };
 
 /** A device approval's state when the event was written (native
@@ -82,6 +83,8 @@ const howLabels: Record<string, MessageKey> = {
   patient: "interface.history.how.patient",
   damaged: "interface.history.how.damaged",
   camera: "interface.history.how.camera",
+  summary: "interface.history.how.summary",
+  explain: "interface.history.how.explain",
   replaced: "interface.history.how.replaced",
   anonymizedText: "interface.history.how.anonymizedText",
 };

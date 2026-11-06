@@ -88,6 +88,9 @@ pub enum HistoryEvent {
     /// were forgotten, so its documents are checked again (#143).
     DeliveryRefusalsCleared,
     ReadingAidFiled,
+    /// The AI helper's answer was kept with the document (#72): `how` is
+    /// the tool, "summary" or "explain". No text is recorded.
+    AiResultSaved,
 }
 
 /// A folder as it was named at the time of the event.

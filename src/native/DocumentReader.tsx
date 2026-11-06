@@ -356,6 +356,9 @@ function ReadingDocument({
     setView("aid");
   };
   const showSource = (span: SourceSpan) => {
+    // A kept answer's place on a page this document does not have is not
+    // shown: the page asked for could not be drawn.
+    if (pageCount !== null && span.page >= pageCount) return;
     // Back to the original first, so the page turns where the words are.
     setView("original");
     setHighlight({ ...span });
