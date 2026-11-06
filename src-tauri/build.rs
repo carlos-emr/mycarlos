@@ -94,6 +94,7 @@ fn main() {
             "ai_model_status",
             "ai_model_add_picked",
             "ai_model_add_cancel",
+            "ai_model_add_active",
             "ai_model_download",
             "ai_model_remove",
             "ai_summarize",

@@ -9,12 +9,16 @@ import { AiModelSetting } from "./AiModelSetting";
 
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
-  listener: null as null | ((event: { payload: unknown }) => void),
+  listeners: {} as Record<string, (event: { payload: unknown }) => void>,
+  /** The progress event's listener. */
+  get listener() {
+    return this.listeners["ai-model-add-progress"] ?? null;
+  },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (_name: string, handler: (event: { payload: unknown }) => void) => {
-    native.listener = handler;
+  listen: (name: string, handler: (event: { payload: unknown }) => void) => {
+    native.listeners[name] = handler;
     return Promise.resolve(() => undefined);
   },
 }));
@@ -44,7 +48,7 @@ function answer(map: Record<string, unknown>) {
 
 beforeEach(() => {
   native.invoke.mockReset();
-  native.listener = null;
+  native.listeners = {};
   setLocaleOverride("en");
 });
 afterEach(() => setLocaleOverride(null));
@@ -287,6 +291,231 @@ describe("Add a model file", () => {
       expect(native.invoke).toHaveBeenCalledWith("ai_model_add_picked"),
     );
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("The progress bar (#275)", () => {
+  const TOTAL = 3_013_000_000;
+  const bar = () =>
+    screen.queryByRole("progressbar", { name: humanText("Model download") });
+  const tell = (done: number, total = TOTAL) =>
+    act(() => native.listener?.({ payload: { done, total } }));
+  async function startDownload(result: () => Promise<unknown>) {
+    answer({
+      ai_model_catalog: [{ ...fake, sizeBytes: TOTAL }],
+      ai_model_download: result,
+      ai_model_add_cancel: null,
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Download the default model"),
+      }),
+    );
+    await waitFor(() => expect(native.listener).not.toBeNull());
+  }
+
+  it("fills from the same byte counts as the text, with a name and its value in words", async () => {
+    await startDownload(() => new Promise(() => undefined));
+    // Nothing before the first count.
+    expect(bar()).toBeNull();
+    tell(0);
+    expect(bar()).toHaveAttribute("aria-valuenow", "0");
+    tell(1_240_000_000);
+    await screen.findByText(
+      humanText("Downloading and checking… 1,240 of 3,013 MB"),
+    );
+    expect(bar()).toHaveAttribute("aria-valuemin", "0");
+    expect(bar()).toHaveAttribute("aria-valuemax", "100");
+    expect(bar()).toHaveAttribute("aria-valuenow", "41");
+    expect(visibleText(bar()!.getAttribute("aria-valuetext") ?? "")).toBe(
+      "41%, 1,240 of 3,013 MB",
+    );
+    expect(screen.getByText("41%")).toBeVisible();
+    tell(TOTAL);
+    expect(bar()).toHaveAttribute("aria-valuenow", "100");
+    // Not a live region: the status text says the progress at its own pace.
+    expect(
+      bar()!.closest("[aria-live], [role=status], [role=alert]"),
+    ).toBeNull();
+    // Cancel sits beside it.
+    expect(
+      within(bar()!.parentElement!).getByRole("button", {
+        name: humanText("Cancel"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("starts a resumed download where it stopped", async () => {
+    await startDownload(() => new Promise(() => undefined));
+    // A resume's first count is what is already on disk.
+    tell(1_500_000_000);
+    expect(bar()).toHaveAttribute("aria-valuenow", "49");
+  });
+
+  it("shows for Add a model file's check too, and goes when it ends", async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_add_picked: () => new Promise((resolve) => (finish = resolve)),
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Add a model file…"),
+      }),
+    );
+    await waitFor(() => expect(native.listener).not.toBeNull());
+    tell(1_000_000_000, 2_500_000_000);
+    expect(bar()).toHaveAttribute("aria-valuenow", "40");
+    expect(visibleText(bar()!.getAttribute("aria-valuetext") ?? "")).toBe(
+      "40%, 1,000 of 2,500 MB",
+    );
+    await act(async () => finish({ outcome: "added", status: installed }));
+    await screen.findByText(humanText("Model added"));
+    expect(bar()).toBeNull();
+  });
+
+  it.each([
+    ["cancelled", null],
+    [
+      "network",
+      "The download did not finish. Check your internet connection and try again.",
+    ],
+  ])(
+    "goes when the download ends %s, and the messages stay as they are",
+    async (outcome, text) => {
+      let finish: (value: unknown) => void = () => undefined;
+      await startDownload(() => new Promise((resolve) => (finish = resolve)));
+      tell(700_000_000);
+      expect(bar()).not.toBeNull();
+      await act(async () => finish({ outcome }));
+      expect(bar()).toBeNull();
+      if (text)
+        expect(
+          visibleText((await screen.findByRole("alert")).textContent ?? ""),
+        ).toBe(text);
+      else expect(screen.queryByRole("alert")).toBeNull();
+    },
+  );
+});
+
+describe("A copy still running when the row opens again (#275)", () => {
+  const TOTAL = 2_500_000_000;
+  const bar = () =>
+    screen.queryByRole("progressbar", { name: humanText("Model download") });
+  const running = { kind: "download", done: 900_000_000, total: TOTAL };
+
+  it("shows the download with its bar and Cancel, follows it, and hears how it ends", async () => {
+    // The patient pressed Download, went to another page, and came back:
+    // the row is new, and native still runs the download.
+    let active: unknown = null;
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_download: () => new Promise(() => undefined),
+      ai_model_add_active: () => Promise.resolve(active),
+      ai_model_add_cancel: null,
+    });
+    const first = render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Download the default model"),
+      }),
+    );
+    await waitFor(() => expect(native.listener).not.toBeNull());
+    act(() =>
+      native.listener?.({ payload: { done: 700_000_000, total: TOTAL } }),
+    );
+    expect(bar()).toHaveAttribute("aria-valuenow", "28");
+    first.unmount();
+    native.listeners = {};
+
+    active = running;
+    const onStatus = vi.fn();
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={onStatus} />,
+    );
+    await screen.findByText(
+      humanText("Downloading and checking… 900 of 2,500 MB"),
+    );
+    expect(bar()).toHaveAttribute("aria-valuenow", "36");
+    expect(
+      screen.getByRole("button", { name: humanText("Cancel") }),
+    ).toBeVisible();
+    // Its buttons can't start a second copy.
+    expect(
+      screen
+        .getByRole("button", { name: humanText("Download the default model") })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
+    expect(screen.queryByRole("alert")).toBeNull();
+    // It follows the copy's progress, then hears how it ended.
+    act(() =>
+      native.listener?.({ payload: { done: 1_000_000_000, total: TOTAL } }),
+    );
+    expect(bar()).toHaveAttribute("aria-valuenow", "40");
+    act(() =>
+      native.listeners["ai-model-add-ended"]?.({
+        payload: { outcome: "added", status: installed },
+      }),
+    );
+    await screen.findByText(humanText("Model added"));
+    expect(onStatus).toHaveBeenCalledWith(installed);
+    expect(bar()).toBeNull();
+  });
+
+  it("Cancel there stops the copy that runs", async () => {
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_add_active: running,
+      ai_model_add_cancel: null,
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: humanText("Cancel") }),
+    );
+    expect(native.invoke).toHaveBeenCalledWith("ai_model_add_cancel");
+    act(() =>
+      native.listeners["ai-model-add-ended"]?.({
+        payload: { outcome: "cancelled" },
+      }),
+    );
+    await waitFor(() => expect(bar()).toBeNull());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("a press while it runs shows that copy and says it is still downloading", async () => {
+    let asked = 0;
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_download: { outcome: "busy" },
+      // Not yet when the row opens; running when the press is refused.
+      ai_model_add_active: () =>
+        Promise.resolve(asked++ === 0 ? null : running),
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Download the default model"),
+      }),
+    );
+    expect(
+      visibleText((await screen.findByRole("alert")).textContent ?? ""),
+    ).toBe("The model is still downloading.");
+    expect(bar()).toHaveAttribute("aria-valuenow", "36");
+    expect(
+      screen.queryByText(humanText(/The AI helper is working/)),
+    ).toBeNull();
   });
 });
 

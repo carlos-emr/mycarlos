@@ -1768,6 +1768,73 @@ struct ModelAddProgress {
     total: u64,
 }
 
+/// The model add or download running now, and how far it is (#275). A row
+/// that opens again while one runs asks for it (`ai_model_add_active`): it
+/// did not hear the progress sent while it was away.
+#[derive(Default)]
+struct ModelAddActive(Mutex<Option<ModelAddNow>>);
+
+#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ModelAddNow {
+    /// `download` for the default model's download and its check; `check`
+    /// for a picked file's.
+    kind: &'static str,
+    done: u64,
+    total: u64,
+}
+
+impl ModelAddActive {
+    fn get(&self) -> Option<ModelAddNow> {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+    fn set(&self, now: Option<ModelAddNow>) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = now;
+    }
+}
+
+/// One add's report into `ModelAddActive`. Only a run that has reported
+/// progress clears it when it ends, so a click refused as busy never touches
+/// the run in progress.
+struct ModelAddReport {
+    active: Arc<ModelAddActive>,
+    kind: &'static str,
+    reported: bool,
+}
+
+impl ModelAddReport {
+    fn new(active: Arc<ModelAddActive>, kind: &'static str) -> Self {
+        Self {
+            active,
+            kind,
+            reported: false,
+        }
+    }
+    fn progress(&mut self, done: u64, total: u64) {
+        self.reported = true;
+        self.active.set(Some(ModelAddNow {
+            kind: self.kind,
+            done,
+            total,
+        }));
+    }
+}
+
+impl Drop for ModelAddReport {
+    fn drop(&mut self) {
+        if self.reported {
+            self.active.set(None);
+        }
+    }
+}
+
+/// The model add or download running now, if any, and how far it is
+/// (#275), for a row that opens while one runs.
+#[tauri::command]
+fn ai_model_add_active(active: State<'_, Arc<ModelAddActive>>) -> Option<ModelAddNow> {
+    active.get()
+}
+
 /// How an add ended, always as a value: `outcome` is `added` (with the new
 /// `status`), `cancelled`, or the refusal's code (`notListed`, `tooBig`,
 /// `incomplete`, `wrongHash`, `noDisk`, `unreadable`, `storage`,
@@ -1803,6 +1870,7 @@ async fn ai_model_add_picked(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
+    active: State<'_, Arc<ModelAddActive>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<ModelAddOutcome> {
     use tauri::Emitter;
@@ -1834,20 +1902,25 @@ async fn ai_model_add_picked(
     };
     let models = Arc::clone(models.inner());
     let worker = Arc::clone(&models);
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let mut report = ModelAddReport::new(Arc::clone(active.inner()), "check");
+    let progress_app = app.clone();
+    let (result, ran) = tauri::async_runtime::spawn_blocking(move || {
         // About every 8 MiB, and at the start and the end.
         let mut shown = u64::MAX;
-        worker.add(&source, &local_model::Here, |done, total| {
+        let result = worker.add(&source, &local_model::Here, |done, total| {
             let step = done / (8 * 1024 * 1024);
             if done == 0 || done == total || step != shown {
                 shown = step;
-                let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                report.progress(done, total);
+                let _ =
+                    progress_app.emit("ai-model-add-progress", ModelAddProgress { done, total });
             }
-        })
+        });
+        (result, report.reported)
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
-    Ok(match result {
+    let ended = match result {
         Ok(_) => ModelAddOutcome {
             outcome: "added",
             status: Some(models.status(&local_model::Here)),
@@ -1855,7 +1928,12 @@ async fn ai_model_add_picked(
         },
         Err(local_model::ModelError::Cancelled) => outcome("cancelled"),
         Err(error) => ModelAddOutcome::of(error),
-    })
+    };
+    // For a row that opened again meanwhile: how this run ended.
+    if ran {
+        let _ = app.emit("ai-model-add-ended", &ended);
+    }
+    Ok(ended)
 }
 
 /// Downloads the default model (the catalog's first entry) from its pinned
@@ -1868,14 +1946,17 @@ async fn ai_model_download(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
+    active: State<'_, Arc<ModelAddActive>>,
 ) -> CommandResult<ModelAddOutcome> {
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
     let models = Arc::clone(models.inner());
     let worker = Arc::clone(&models);
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let mut report = ModelAddReport::new(Arc::clone(active.inner()), "download");
+    let progress_app = app.clone();
+    let (result, ran) = tauri::async_runtime::spawn_blocking(move || {
         let mut shown = u64::MAX;
-        worker.download(
+        let result = worker.download(
             0,
             &model_download::Https,
             &local_model::Here,
@@ -1883,14 +1964,17 @@ async fn ai_model_download(
                 let step = done / (8 * 1024 * 1024);
                 if done == 0 || done == total || step != shown {
                     shown = step;
-                    let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                    report.progress(done, total);
+                    let _ = progress_app
+                        .emit("ai-model-add-progress", ModelAddProgress { done, total });
                 }
             },
-        )
+        );
+        (result, report.reported)
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
-    Ok(match result {
+    let ended = match result {
         Ok(_) => ModelAddOutcome {
             outcome: "added",
             status: Some(models.status(&local_model::Here)),
@@ -1902,7 +1986,12 @@ async fn ai_model_download(
             reason: None,
         },
         Err(error) => ModelAddOutcome::of(error),
-    })
+    };
+    // For a row that opened again meanwhile: how this run ended.
+    if ran {
+        let _ = app.emit("ai-model-add-ended", &ended);
+    }
+    Ok(ended)
 }
 
 /// Stops the add in progress; it ends with the failure `cancelled` and
@@ -4961,6 +5050,7 @@ pub fn run() {
                 Box::new(local_model::SystemMemory),
             );
             app.manage(models);
+            app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
             app.manage(Arc::new(ReceivedFiles::default()));
             // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
@@ -4986,6 +5076,7 @@ pub fn run() {
             ai_model_status,
             ai_model_add_picked,
             ai_model_add_cancel,
+            ai_model_add_active,
             ai_model_download,
             ai_model_remove,
             ai_summarize,
@@ -6693,6 +6784,25 @@ mod tests {
             );
             assert!(build_script.contains(&format!("\"{command}\"")));
         }
+    }
+
+    #[test]
+    fn a_model_add_report_clears_only_the_run_it_reported() {
+        let active = Arc::new(ModelAddActive::default());
+        let mut running = ModelAddReport::new(Arc::clone(&active), "download");
+        running.progress(5, 10);
+        // A second click, refused as busy before any progress, leaves it be.
+        drop(ModelAddReport::new(Arc::clone(&active), "download"));
+        assert_eq!(
+            active.get(),
+            Some(ModelAddNow {
+                kind: "download",
+                done: 5,
+                total: 10
+            })
+        );
+        drop(running);
+        assert_eq!(active.get(), None);
     }
 
     proptest! {
