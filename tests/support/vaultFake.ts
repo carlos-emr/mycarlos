@@ -184,6 +184,9 @@ export interface FakeVaultSetup {
    * linked and approved, unless `approval` says the request did not end in
    * approval. */
   portal?: "unlinked" | "linked";
+  /** The service date the clinic's document from a check carries, as the
+   * clinic sent it ("" = not recorded). Default: none. */
+  clinicServiceDate?: string;
   /** With a clinic linked ("linked" only; anything else is refused by
    * fakeVaultWith) but not approved: the current approval request's state,
    * and whether a new request may be started (natively: an expired or
@@ -268,6 +271,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         available: boolean;
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
+        clinicServiceDate?: string;
         readingAid?: {
           deliveryId: string;
           language: string;
@@ -1352,6 +1356,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               importedAtMs: Date.now(),
               available: true,
               verifiedClinicName: setup.clinic,
+              ...(setup.clinicServiceDate !== null
+                ? { clinicServiceDate: setup.clinicServiceDate }
+                : {}),
             });
             return { added: 1, refused: 0, receiptsPending: 0, issues: [] };
           // Nothing in the fake documents names a person.
@@ -1665,6 +1672,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       pageText: PAGE_TEXT,
       pageCount: FAKE_PAGE_COUNT,
       portal: setup.portal ?? null,
+      clinicServiceDate: setup.clinicServiceDate ?? null,
       approval: setup.approval ?? null,
       backup: setup.backup ?? null,
       missingFiles: setup.missingFiles ?? [],

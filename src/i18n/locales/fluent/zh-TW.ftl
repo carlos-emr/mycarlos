@@ -1447,6 +1447,8 @@ interface-history-empty = 沒有任何紀錄事件。
 
 interface-history-error-unverified = 無法讀取並驗證紀錄，因此不顯示任何事件。
 
+interface-history-event-aiResultSaved = AI 回答已保存
+
 interface-history-event-backupRestored = 備份已還原
 
 interface-history-event-backupSaved = 加密備份已儲存
@@ -1514,6 +1516,10 @@ interface-history-how = 方式
 interface-history-how-aidReplaced = 取代了先前的閱讀輔助
 
 interface-history-how-camera = 使用相機新增
+
+interface-history-how-summary = 淺白易懂的摘要
+
+interface-history-how-explain = 已解釋術語
 
 interface-history-how-damaged = 因檔案遺失而隱藏
 
@@ -1699,6 +1705,10 @@ native-filter-models = 模型檔案
 
 ai-working = AI 助理正在處理…
 
+ai-summary-ready = 摘要已產生。
+
+ai-explain-ready = 解釋已產生。
+
 ai-failed = AI 助理未能完成。請重試。
 
 ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關閉其他程式後重試。
@@ -1718,15 +1728,15 @@ aiHelper-notice-testBuild = 此開發版本僅供合成（虛構）檔案使用�
 
 aiHelper-notice-shareHeading = 為其他 AI 服務儲存文字
 
-aiHelper-notice-shareBody = myCarlos 可以在移除身分資訊後儲存文件的文字，讓您提供給您選擇的 AI 服務。它會尋找您的病患檔案與「個人資料」中各人的姓名，以及稱謂或標籤（例如「Dr.」）後面的姓名；也會尋找健康卡號與病歷號碼、出生日期、90 歲及以上的年齡、地址、郵遞區號、電話與傳真號碼、電子郵件地址與網址、診所名稱與醫師姓名，以及檢驗單號等其他識別號碼，並移除找到的內容。其他日期會統一提前相同的天數，因此日期之間的間隔不變。
+aiHelper-notice-shareBody = myCarlos 可以在移除身分資訊後儲存文件的文字，讓您提供給您選擇的 AI 服務。它會尋找您的病患檔案與「個人資料」中各人的姓名，以及稱謂或標籤（例如「Dr.」）後面的姓名；也會尋找健康卡號與病歷號碼、出生日期、90 歲及以上的年齡、地址、郵遞區號、電話與傳真號碼、電子郵件地址與網址、診所名稱與醫師姓名，以及檢驗單號等其他識別號碼，並移除找到的內容。它辨識出的日期不會被傳送。每個日期都會換成附編號的標記，例如「日期 2, 日期 1 之後 14 天」，這樣不用真實日期也能看清日期之間的間隔。90 歲及以上的年齡會換成附編號的標記，並註明「90+」。
 
-aiHelper-notice-previewBody = 您會先看到文字，已移除的部分和已移動的日期都會標示出來，您也可以再移除更多內容。未標示的日期沒有被移動。預覽會顯示檔案將包含的全部文字，包括文件中隱藏的文字。在您選擇儲存之前，不會儲存任何內容。
+aiHelper-notice-previewBody = 您會先看到文字，已移除的部分和已替換的日期都會標示出來，您也可以再移除更多內容。未標示的日期沒有被辨識，仍留在文字中。預覽會顯示檔案將包含的全部文字，包括文件中隱藏的文字。在您選擇儲存之前，不會儲存任何內容。
 
-aiHelper-notice-limitsBody = 移除身分資訊永遠無法做到完美。myCarlos 只能找到它已知的姓名，以及英文或法文中稱謂或標籤後面的姓名，因此其他姓名可能會保留。它也可能漏掉號碼，或以其他寫法、其他語言書寫的日期。罕見疾病、少見的職業或小鎮仍可能讓人認出您或其他人。儲存前請閱讀全部文字。
+aiHelper-notice-limitsBody = 移除身分資訊永遠無法做到完美。myCarlos 只能找到它已知的姓名，以及英文或法文中稱謂或標籤後面的姓名，因此其他姓名可能會保留。它也可能漏掉號碼，或以其他寫法、其他語言書寫的日期。單獨出現的年份（例如「闌尾切除術 2019」）不會被移除。罕見疾病、少見的職業或小鎮仍可能讓人認出您或其他人。儲存前請閱讀全部文字。
 
 aiHelper-notice-fileBody = 文字會儲存為純文字檔，儲存位置由您選擇。此檔案未加密，myCarlos 之後無法清除它。如果該位置是會同步到雲端硬碟的資料夾，檔案也會被複製到那裡。此次儲存會記錄在操作紀錄中。
 
-aiHelper-notice-serviceBody = 您將文字交給其他服務後，如何處理由該服務決定。如果您登入了該服務，即使移除了身分資訊，它也知道您是誰；即使不登入，它也能看到您的 IP 位址。myCarlos 移動過的日期在其回答中仍是移動後的日期。文件中也可能含有寫給 AI 的指令，因此請使用無法代您操作（傳送訊息、開啟連結或讀取您的檔案）的 AI，或關閉這些功能。
+aiHelper-notice-serviceBody = 您將文字交給其他服務後，如何處理由該服務決定。如果您登入了該服務，即使移除了身分資訊，它也知道您是誰；即使不登入，它也能看到您的 IP 位址。它的回答會使用這些標記，例如「日期 2」，而不是真實日期。只要此視窗保持開啟，您就可以在 myCarlos 中貼上它的回答，把真實資訊放回去。文件中也可能含有寫給 AI 的指令，因此請使用無法代您操作（傳送訊息、開啟連結或讀取您的檔案）的 AI，或關閉這些功能。
 
 aiHelper-notice-adviceBody = AI 撰寫的回答可能有誤。請勿將其視為診斷或治療、用藥方面的建議，也不要因為 AI 的說法而更改用藥或治療。請詢問您的醫師。
 
@@ -1769,13 +1779,13 @@ interface-AnonymizePreview-replaced = { $count } 個無法讀取的符號已取�
 
 interface-AnonymizePreview-headerNote = 檔案將以這一行開頭：
 
-interface-AnonymizePreview-howMarked = 已移除的資訊會被標記並註明類型。被移動的日期也會標記；未標記的日期沒有被移動。
+interface-AnonymizePreview-howMarked = 已移除的資訊和已替換的日期會被標示並註明類型。未標示的日期沒有被辨識，仍留在文字中。
 
 interface-AnonymizePreview-textRegion = 將要儲存的文字
 
 interface-AnonymizePreview-removedKind = 已移除：{ $kind }
 
-interface-AnonymizePreview-movedDate = 日期已移動
+interface-AnonymizePreview-movedDate = 日期已替換
 
 interface-AnonymizePreview-kind-name = 姓名
 
@@ -1837,6 +1847,26 @@ interface-AnonymizePreview-placeholder-unclearDate = 日期
 
 interface-AnonymizePreview-placeholder-manual = 已移除
 
+interface-AnonymizePreview-note-daysAfter = { $label } { $number } 之後 { $days } 天
+
+interface-AnonymizePreview-note-ageOver90 = 90+
+
+interface-AnonymizePreview-pasteTitle = 放回資訊
+
+interface-AnonymizePreview-pasteHelp = 請在下方貼上 AI 的回答。myCarlos 會把它替換掉的姓名、日期和號碼放回去。替換清單只保存在記憶體中，僅在保險庫保持解鎖、此視窗保持開啟時有效。不會儲存任何內容。
+
+interface-AnonymizePreview-pasteLabel = AI 的回答
+
+interface-AnonymizePreview-pasteButton = 放回資訊
+
+interface-AnonymizePreview-pasteResult = 已放回資訊的回答
+
+interface-AnonymizePreview-pasteFlagged = 無法對應到此文字或已被更動的標記已醒目標示（{ $count } 處）。請與原文核對。
+
+interface-AnonymizePreview-pasteAllMatched = 所有標記都已辨識並放回。
+
+interface-AnonymizePreview-pasteFlaggedSr = （請與原文核對）
+
 interface-AnonymizePreview-possibleNames = 可能是姓名的詞
 
 interface-AnonymizePreview-removeWord = 移除「{ $word }」
@@ -1885,3 +1915,9 @@ notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
 notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
+
+ai-summary-again = 重新產生摘要
+
+ai-keepFailed = myCarlos 無法將此回答與文件一起保存。此處仍會顯示該回答。
+
+ai-keepFull = 此文件保存的 AI 回答已達上限。新的回答會顯示，但不會保存。
