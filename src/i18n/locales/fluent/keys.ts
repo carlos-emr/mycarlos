@@ -759,6 +759,7 @@ export const MESSAGE_KEYS = [
   "interface.history.status",
   "interface.history.title",
   "interface.history.to",
+  "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
   "ai.explain.title",
@@ -1815,6 +1816,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.status": "interface-history-status",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
+  "interface.history.damagedStorageOnly":
+    "interface-history-damagedStorageOnly",
   "ai.summary.button": "ai-summary-button",
   "ai.summary.title": "ai-summary-title",
   "ai.explain.title": "ai-explain-title",
@@ -2879,6 +2882,7 @@ export interface MessageArgsByKey {
   "interface.history.status": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
+  "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;
   "ai.explain.title": undefined;

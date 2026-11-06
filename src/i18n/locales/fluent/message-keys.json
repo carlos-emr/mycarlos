@@ -758,6 +758,7 @@
   "interface.history.status",
   "interface.history.title",
   "interface.history.to",
+  "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
   "ai.explain.title",
