@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { page } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
-import type { VaultBridge, VaultSnapshot } from "../vault";
+import type { PortalLinkSummary, VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 import type { ModelStatus } from "../ai/types";
 import { FAKE_MODEL, fakeDocumentText } from "../test/fakeLocalModel";
@@ -1176,6 +1176,71 @@ describe("the reminder to add a person's details (#234)", () => {
   });
 });
 
+describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
+  // A clinic this vault is linked to (FAKE), so the library shows its
+  // compact Check for new documents.
+  const link: PortalLinkSummary = {
+    id: "fake-link",
+    portalBase: "https://portal.example.test/patient",
+    deviceName: "myCarlos on Windows",
+    profileId: null,
+    clinicName: "FAKE Clinic",
+    fingerprints: [],
+    incomplete: false,
+    deviceKeyId: "fake-device",
+    deviceFingerprint: "11".repeat(32),
+    approvalRequested: true,
+    clinicApproved: true,
+  };
+  const portal = {
+    linkPortal: vi.fn(),
+    checkDocuments: vi
+      .fn()
+      .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+  };
+  const box = (element: Element) => element.getBoundingClientRect();
+
+  it("sits to the right of the search box, and under it on a narrow window", async () => {
+    renderLibrary(
+      { ...snapshot, portalLinkingEnabled: true, portalLinks: [link] },
+      0,
+      true,
+      portal,
+    );
+    const search = screen.getByRole("searchbox").closest("label")!;
+    const check = screen.getByRole("button", {
+      name: humanText("Check for new documents"),
+    });
+    // After the search box in reading and Tab order, in the same row.
+    expect(
+      search.compareDocumentPosition(check) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(check.parentElement).toBe(search.parentElement);
+    try {
+      await page.viewport(1100, 760);
+      expect(box(check).left).toBeGreaterThanOrEqual(box(search).right);
+      expect(box(check).top).toBeLessThan(box(search).bottom);
+      // Narrow (a phone, or large text): the box keeps its width and the
+      // button goes under it.
+      await page.viewport(360, 800);
+      expect(box(check).top).toBeGreaterThanOrEqual(box(search).bottom);
+    } finally {
+      await page.viewport(1100, 760);
+    }
+  });
+
+  it("leaves the search box the whole row when there is no clinic link", () => {
+    renderLibrary({ ...snapshot, portalLinkingEnabled: true }, 0, true, portal);
+    const search = screen.getByRole("searchbox").closest("label")!;
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeNull();
+    expect(box(search).width).toBeCloseTo(box(search.parentElement!).width, 0);
+  });
+});
+
 describe("Audit history keeps Security's Hidden location", () => {
   it.each(["back", "persistent navigation"])(
     "keeps Shared with me after returning by %s",
@@ -1230,6 +1295,87 @@ describe("Audit history keeps Security's Hidden location", () => {
       ).not.toBeInTheDocument();
     },
   );
+});
+
+describe("VaultLibrary person dialogs (Ben, 29 Oct)", () => {
+  // A status line reads out only text that changes while it is on the page,
+  // and a dialog makes the page behind it inert: each result is given once
+  // the dialog has closed.
+  function watchNotices(setNotice: ReturnType<typeof vi.fn>) {
+    const said: { text: string; dialogOpen: boolean }[] = [];
+    setNotice.mockImplementation((notice) => {
+      const text = humanValue(resolveText(notice));
+      if (text)
+        said.push({ text, dialogOpen: screen.queryByRole("dialog") !== null });
+    });
+    return said;
+  }
+
+  it("says a person's details were saved once the Edit details dialog has closed", async () => {
+    const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
+    const { setNotice } = renderLibrary(
+      {
+        ...snapshot,
+        profiles: [
+          {
+            id: "profile-1",
+            displayName: "FAKE Avery",
+            createdAtMs: 1,
+            fullName: "FAKE-EXAMPLE, Avery",
+            birthDate: "1980-01-02",
+          },
+        ],
+      },
+      0,
+      true,
+      { updateProfileDetails },
+    );
+    const said = watchNotices(setNotice as ReturnType<typeof vi.fn>);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Avery"),
+      }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Edit details"),
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Save details") }),
+    );
+    await vi.waitFor(() => expect(updateProfileDetails).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(said).toEqual([
+        { text: "Details for FAKE Avery saved.", dialogOpen: false },
+      ]),
+    );
+  });
+
+  it("says a profile was added once the Add profile dialog has closed", async () => {
+    const createProfile = vi.fn().mockResolvedValue("profile-2");
+    const { setNotice } = renderLibrary(snapshot, 0, true, { createProfile });
+    const said = watchNotices(setNotice as ReturnType<typeof vi.fn>);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
+    fireEvent.change(
+      within(dialog).getByLabelText(humanText("New profile name")),
+      { target: { value: "FAKE Riley" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
+    await vi.waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(said).toEqual([
+        { text: "FAKE Riley was added.", dialogOpen: false },
+      ]),
+    );
+  });
 });
 
 describe("reading aid button in document details", () => {
