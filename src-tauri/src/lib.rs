@@ -1763,7 +1763,12 @@ struct ModelAddProgress {
 /// that opens again while one runs asks for it (`ai_model_add_active`): it
 /// did not hear the progress sent while it was away.
 #[derive(Default)]
-struct ModelAddActive(Mutex<Option<ModelAddNow>>);
+struct ModelAddActive {
+    now: Mutex<Option<ModelAddNow>>,
+    // Store operations release their lock before the command reports completion.
+    // Keep the next command out until that completion has been emitted too.
+    admission: Mutex<()>,
+}
 
 #[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1777,24 +1782,49 @@ struct ModelAddNow {
 
 impl ModelAddActive {
     fn get(&self) -> Option<ModelAddNow> {
-        *self.0.lock().unwrap_or_else(|e| e.into_inner())
+        *self.now.lock().unwrap_or_else(|e| e.into_inner())
     }
     fn set(&self, now: Option<ModelAddNow>) {
-        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = now;
+        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = now;
+    }
+
+    /// Called inside the blocking worker: no admission guard crosses an await.
+    /// Both progress cleanup and completion emission belong to this admission.
+    fn run(
+        &self,
+        kind: &'static str,
+        work: impl FnOnce(&mut ModelAddReport<'_>) -> ModelAddOutcome,
+        ended: impl FnOnce(&ModelAddOutcome),
+    ) -> ModelAddOutcome {
+        let _admission = match self.admission.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return ModelAddOutcome::of(local_model::ModelError::Busy);
+            }
+        };
+        let mut report = ModelAddReport::new(self, kind);
+        let outcome = work(&mut report);
+        let reported = report.reported;
+        drop(report);
+        if reported {
+            ended(&outcome);
+        }
+        outcome
     }
 }
 
 /// One add's report into `ModelAddActive`. Only a run that has reported
 /// progress clears it when it ends, so a click refused as busy never touches
 /// the run in progress.
-struct ModelAddReport {
-    active: Arc<ModelAddActive>,
+struct ModelAddReport<'a> {
+    active: &'a ModelAddActive,
     kind: &'static str,
     reported: bool,
 }
 
-impl ModelAddReport {
-    fn new(active: Arc<ModelAddActive>, kind: &'static str) -> Self {
+impl<'a> ModelAddReport<'a> {
+    fn new(active: &'a ModelAddActive, kind: &'static str) -> Self {
         Self {
             active,
             kind,
@@ -1811,7 +1841,7 @@ impl ModelAddReport {
     }
 }
 
-impl Drop for ModelAddReport {
+impl Drop for ModelAddReport<'_> {
     fn drop(&mut self) {
         if self.reported {
             self.active.set(None);
@@ -1892,39 +1922,38 @@ async fn ai_model_add_picked(
         return Ok(ModelAddOutcome::of(local_model::ModelError::Unreadable));
     };
     let models = Arc::clone(models.inner());
-    let worker = Arc::clone(&models);
-    let mut report = ModelAddReport::new(Arc::clone(active.inner()), "check");
-    let progress_app = app.clone();
-    let (result, ran) = tauri::async_runtime::spawn_blocking(move || {
-        // About every 8 MiB, and at the start and the end.
-        let mut shown = u64::MAX;
-        let result = worker.add(&source, &local_model::Here, |done, total| {
-            let step = done / (8 * 1024 * 1024);
-            if done == 0 || done == total || step != shown {
-                shown = step;
-                report.progress(done, total);
-                let _ =
-                    progress_app.emit("ai-model-add-progress", ModelAddProgress { done, total });
-            }
-        });
-        (result, report.reported)
+    let active = Arc::clone(active.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        active.run(
+            "check",
+            |report| {
+                // About every 8 MiB, and at the start and the end.
+                let mut shown = u64::MAX;
+                let result = models.add(&source, &local_model::Here, |done, total| {
+                    let step = done / (8 * 1024 * 1024);
+                    if done == 0 || done == total || step != shown {
+                        shown = step;
+                        report.progress(done, total);
+                        let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                    }
+                });
+                match result {
+                    Ok(_) => ModelAddOutcome {
+                        outcome: "added",
+                        status: Some(models.status(&local_model::Here)),
+                        reason: None,
+                    },
+                    Err(error) => ModelAddOutcome::of(error),
+                }
+            },
+            |ended| {
+                // For a row that opened again meanwhile: how this run ended.
+                let _ = app.emit("ai-model-add-ended", ended);
+            },
+        )
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?;
-    let ended = match result {
-        Ok(_) => ModelAddOutcome {
-            outcome: "added",
-            status: Some(models.status(&local_model::Here)),
-            reason: None,
-        },
-        Err(local_model::ModelError::Cancelled) => outcome("cancelled"),
-        Err(error) => ModelAddOutcome::of(error),
-    };
-    // For a row that opened again meanwhile: how this run ended.
-    if ran {
-        let _ = app.emit("ai-model-add-ended", &ended);
-    }
-    Ok(ended)
+    .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
 /// Downloads a model (catalog entry `index`; the default, the first, without one) from its
@@ -1944,47 +1973,43 @@ async fn ai_model_download(
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
     let models = Arc::clone(models.inner());
-    let worker = Arc::clone(&models);
-    let mut report = ModelAddReport::new(Arc::clone(active.inner()), "download");
-    let progress_app = app.clone();
-    let (result, ran) = tauri::async_runtime::spawn_blocking(move || {
-        let mut shown = u64::MAX;
-        let result = worker.download(
-            index,
-            &model_download::Https,
-            &local_model::Here,
-            |done, total| {
-                let step = done / (8 * 1024 * 1024);
-                if done == 0 || done == total || step != shown {
-                    shown = step;
-                    report.progress(done, total);
-                    let _ = progress_app
-                        .emit("ai-model-add-progress", ModelAddProgress { done, total });
+    let active = Arc::clone(active.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        active.run(
+            "download",
+            |report| {
+                let mut shown = u64::MAX;
+                let result = models.download(
+                    index,
+                    &model_download::Https,
+                    &local_model::Here,
+                    |done, total| {
+                        let step = done / (8 * 1024 * 1024);
+                        if done == 0 || done == total || step != shown {
+                            shown = step;
+                            report.progress(done, total);
+                            let _ =
+                                app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                        }
+                    },
+                );
+                match result {
+                    Ok(_) => ModelAddOutcome {
+                        outcome: "added",
+                        status: Some(models.status(&local_model::Here)),
+                        reason: None,
+                    },
+                    Err(error) => ModelAddOutcome::of(error),
                 }
             },
-        );
-        (result, report.reported)
+            |ended| {
+                // For a row that opened again meanwhile: how this run ended.
+                let _ = app.emit("ai-model-add-ended", ended);
+            },
+        )
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?;
-    let ended = match result {
-        Ok(_) => ModelAddOutcome {
-            outcome: "added",
-            status: Some(models.status(&local_model::Here)),
-            reason: None,
-        },
-        Err(local_model::ModelError::Cancelled) => ModelAddOutcome {
-            outcome: "cancelled",
-            status: None,
-            reason: None,
-        },
-        Err(error) => ModelAddOutcome::of(error),
-    };
-    // For a row that opened again meanwhile: how this run ended.
-    if ran {
-        let _ = app.emit("ai-model-add-ended", &ended);
-    }
-    Ok(ended)
+    .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
 /// Stops the add in progress; it ends with the failure `cancelled` and
@@ -6424,10 +6449,10 @@ mod tests {
     #[test]
     fn a_model_add_report_clears_only_the_run_it_reported() {
         let active = Arc::new(ModelAddActive::default());
-        let mut running = ModelAddReport::new(Arc::clone(&active), "download");
+        let mut running = ModelAddReport::new(&active, "download");
         running.progress(5, 10);
         // A second click, refused as busy before any progress, leaves it be.
-        drop(ModelAddReport::new(Arc::clone(&active), "download"));
+        drop(ModelAddReport::new(&active, "download"));
         assert_eq!(
             active.get(),
             Some(ModelAddNow {
@@ -6437,6 +6462,108 @@ mod tests {
             })
         );
         drop(running);
+        assert_eq!(active.get(), None);
+    }
+
+    #[test]
+    fn model_add_admission_stays_held_until_completion_is_emitted() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let active = Arc::new(ModelAddActive::default());
+        let (progress_tx, progress_rx) = mpsc::channel();
+        let (finish_work_tx, finish_work_rx) = mpsc::channel();
+        let (ending_tx, ending_rx) = mpsc::channel();
+        let (finish_emit_tx, finish_emit_rx) = mpsc::channel();
+        let worker_active = Arc::clone(&active);
+        let worker = std::thread::spawn(move || {
+            worker_active.run(
+                "download",
+                |report| {
+                    report.progress(5, 10);
+                    progress_tx.send(()).unwrap();
+                    finish_work_rx
+                        .recv_timeout(Duration::from_secs(10))
+                        .unwrap();
+                    ModelAddOutcome::of(local_model::ModelError::Network)
+                },
+                |ended| {
+                    assert_eq!(ended.outcome, "network");
+                    // Store::download has returned and the report has dropped,
+                    // but the old completion has not finished being emitted.
+                    assert_eq!(worker_active.get(), None);
+                    ending_tx.send(()).unwrap();
+                    finish_emit_rx
+                        .recv_timeout(Duration::from_secs(10))
+                        .unwrap();
+                },
+            )
+        });
+
+        progress_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        let progress = active.get();
+        assert_eq!(
+            active
+                .run(
+                    "check",
+                    |_| panic!("a Busy attempt must not start work or publish progress"),
+                    |_| panic!("a Busy attempt must not emit completion"),
+                )
+                .outcome,
+            "busy"
+        );
+        assert_eq!(active.get(), progress);
+
+        finish_work_tx.send(()).unwrap();
+        ending_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(
+            active
+                .run(
+                    "check",
+                    |_| panic!("the old completion must be emitted before a new add"),
+                    |_| panic!("a Busy attempt must not emit completion"),
+                )
+                .outcome,
+            "busy"
+        );
+        assert_eq!(active.get(), None);
+        finish_emit_tx.send(()).unwrap();
+        assert_eq!(worker.join().unwrap().outcome, "network");
+
+        let mut completed = false;
+        let next = active.run(
+            "check",
+            |report| {
+                report.progress(2, 20);
+                assert_eq!(
+                    active.get(),
+                    Some(ModelAddNow {
+                        kind: "check",
+                        done: 2,
+                        total: 20,
+                    })
+                );
+                ModelAddOutcome::of(local_model::ModelError::Cancelled)
+            },
+            |ended| {
+                assert_eq!(active.get(), None);
+                assert_eq!(ended.outcome, "cancelled");
+                completed = true;
+            },
+        );
+        assert_eq!(next.outcome, "cancelled");
+        assert!(completed);
+    }
+
+    #[test]
+    fn model_add_refused_before_progress_emits_no_completion() {
+        let active = ModelAddActive::default();
+        let outcome = active.run(
+            "download",
+            |_| ModelAddOutcome::of(local_model::ModelError::Busy),
+            |_| panic!("a store refusal before progress must not emit completion"),
+        );
+        assert_eq!(outcome.outcome, "busy");
         assert_eq!(active.get(), None);
     }
 
