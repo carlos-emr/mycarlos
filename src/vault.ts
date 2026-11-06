@@ -1,5 +1,7 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
+import type { ModelInfo, ModelStatus, ModelSummary } from "./ai/types";
+import type { DocumentPageText, DocumentText } from "./documentText";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -48,6 +50,20 @@ export interface VaultRecord {
   verifiedClinicName?: string;
   /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
   clinicServiceDate?: string;
+  /** The clinician-approved reading aid filed with this delivery (vault format 10). Reached from
+   * this document only; never a document of its own. */
+  readingAid?: ReadingAidRecord;
+}
+
+/** A filed reading aid as the reader shows it (the native receiver verified it). */
+export interface ReadingAidRecord {
+  deliveryId: string;
+  language: string;
+  /** When the clinician's review was recorded: the signed approval's time. */
+  reviewedAtMs: number;
+  notice: { version: string; heading: string; body: string };
+  overview: string;
+  points: { text: string; evidence: string[] }[];
 }
 
 /** When, and why, a document was hidden (#71). */
@@ -61,12 +77,21 @@ export interface HiddenRecord {
  * the vault's metadata could not be read, or a write failed. */
 export type RecoveryReason = "lostObjects" | "unreadableSlot" | "writeFailed";
 
+export interface SnapshotCapture {
+  /** Opaque native-store runtime identity; epochs are never ordered. */
+  epoch: string;
+  /** Native capture order, bounded to JavaScript's positive safe integers. */
+  sequence: number;
+}
+
 export interface VaultSnapshot {
+  capture: SnapshotCapture;
   profiles: PatientProfile[];
   folders: VaultFolder[];
   records: VaultRecord[];
   /** Native compile capability; absent/false keeps the linking flow hidden. */
   portalLinkingEnabled?: boolean;
+  automaticDocumentChecksSupported?: boolean;
   portalLinks?: PortalLinkSummary[];
   recovery: RecoveryReason | null;
   /** When the vault's recovery key was set up, if it has one. */
@@ -309,7 +334,17 @@ export interface AuditHistoryEntry {
     | "folderCreated"
     | "folderRenamed"
     | "folderMoved"
-    | "setAside";
+    | "setAside"
+    | "profileDetailsChanged"
+    | "portalLinkStarted"
+    | "portalLinked"
+    | "deviceApprovalRequested"
+    | "deviceApprovalVerified"
+    | "deviceApprovalStatusChanged"
+    | "deviceApprovalRequestRestarted"
+    | "deliveryFiled"
+    | "deliveryReceiptSettled"
+    | "readingAidFiled";
   name: string | null;
   oldName: string | null;
   from: string[] | null;
@@ -504,9 +539,72 @@ export interface VaultBridge {
     width: number,
     password?: string,
   ): Promise<ViewedPage>;
-  /** Stops a page still being drawn: the reader closed. */
+  /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** Whether the AI helper (#72) has a model on this computer. */
+  aiModelStatus(): Promise<ModelStatus>;
+  /** A plain-words summary of a document's pages, written by the model on
+   * this computer. One run at a time; `aiCancel` stops it. */
+  aiSummarize(pages: DocumentPageText[], lang: string): Promise<ModelSummary>;
+  /** A term explained in plain words, with the sentence it is in. */
+  aiExplain(
+    term: string,
+    context: string,
+    lang: string,
+  ): Promise<{ text: string; model: ModelInfo }>;
+  /** Stops the model's answer in flight, if any. */
+  aiCancel(): Promise<void>;
+  /** The whole text of a stored PDF for the AI helper's preview (#72):
+   * every page's readable text, read once by the PDF helper on this device.
+   * Computers only. `password` is the document's own, when it is locked
+   * with one; it is not kept. The result carries the ticket one save
+   * needs. `readId` names the screen that asks (a random id of its own), so
+   * that its cancel ends only its own read. */
+  documentText(
+    recordId: string,
+    readId: string,
+    password?: string,
+  ): Promise<DocumentText>;
+  /** Stops the text the screen `readId` is still reading: it closed.
+   * Another screen's read goes on. */
+  cancelDocumentText(readId: string): Promise<void>;
+  /** What the vault knows about a document's patient, for the remover:
+   * names, birth dates, the provider and the clinic of its delivery. */
+  recordKnownDetails(recordId: string): Promise<KnownIdentifiers>;
+  /** Opens the save picker for an anonymized text, with a generic name in
+   * the app's language. Needs the preview's ticket. The id of the chosen
+   * place, or null when cancelled. */
+  pickTextExportDestination(
+    recordId: string,
+    ticket: string,
+  ): Promise<string | null>;
+  /** Writes the anonymized text where the picker chose, after the native
+   * re-check: saved, or refused with the ranges still holding a detail the
+   * vault knows. One save ends the ticket. */
+  exportTextToPicked(
+    pickId: string,
+    recordId: string,
+    ticket: string,
+    text: string,
+  ): Promise<TextSaveOutcome>;
   reset(confirmation: string): Promise<boolean>;
+}
+
+/** What the vault knows about a document's patient (#72 part B). */
+export interface KnownIdentifiers {
+  names: string[];
+  /** As "1961-04-17". */
+  birthDates: string[];
+  doctorNames: string[];
+  clinicNames: string[];
+}
+
+/** How a text save ended (#72 part B, AI-02). */
+export interface TextSaveOutcome {
+  saved: boolean;
+  /** Ranges of the text, in UTF-16 units, that still hold a detail the
+   * vault knows or a character the cleaning drops. Empty when saved. */
+  hits: { start: number; end: number }[];
 }
 
 export interface PublicError {
@@ -592,6 +690,7 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     approval_code_not_open: "portal.codeNotOpen",
     approval_code_format: "portal.codeFormat",
     approval_code_refused: "portal.codeRefused",
+    document_check_busy: "notifications.checkBusy",
   } as const;
   for (const [code, key] of Object.entries(portalErrors))
     if (hasErrorCode(error, code)) {
@@ -752,6 +851,10 @@ function isNativeRuntime(): boolean {
 
 export function createVaultBridge(): VaultBridge {
   const native = isNativeRuntime();
+  // A delayed cancellation must finish before a newer page takes a native
+  // ticket. Keep this on the bridge, including across reader close/reopen.
+  let pendingViewCancellation: Promise<void> | undefined;
+  let viewGeneration = 0;
   return {
     native,
     status: () => invoke<VaultStatus>("vault_status"),
@@ -765,7 +868,10 @@ export function createVaultBridge(): VaultBridge {
       }),
     unlock: (passphrase) =>
       invoke<VaultSnapshot>("vault_unlock", { request: { passphrase } }),
-    lock: () => invoke<void>("vault_lock"),
+    lock: () => {
+      viewGeneration += 1;
+      return invoke<void>("vault_lock");
+    },
     touch: () => invoke<void>("vault_touch"),
     setAutoLock: (minutes) =>
       invoke<void>("vault_set_auto_lock", { request: { minutes } }),
@@ -898,11 +1004,61 @@ export function createVaultBridge(): VaultBridge {
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
       }),
-    viewPage: (recordId, page, width, password) =>
-      invoke<ViewedPage>("vault_view_page", {
+    viewPage: async (recordId, page, width, password) => {
+      const generation = ++viewGeneration;
+      if (pendingViewCancellation) {
+        // A failed cancel is still reported to its caller. A new native page
+        // ticket can supersede older work, so it need not strand this reader.
+        await pendingViewCancellation.catch(() => undefined);
+      }
+      if (generation !== viewGeneration) throw { code: "cancelled" };
+      return invoke<ViewedPage>("vault_view_page", {
         request: { recordId, page, width, password: password ?? null },
+      });
+    },
+    cancelView: () => {
+      viewGeneration += 1;
+      // No newer page can start while this is pending, so one cancellation
+      // also covers repeated close/supersede calls during the same wait.
+      if (pendingViewCancellation) return pendingViewCancellation;
+      const cancellation = invoke<void>("vault_view_cancel");
+      pendingViewCancellation = cancellation;
+      const clear = () => {
+        if (pendingViewCancellation === cancellation) {
+          pendingViewCancellation = undefined;
+        }
+      };
+      void cancellation.then(clear, clear);
+      return cancellation;
+    },
+    aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
+    aiSummarize: (pages, lang) =>
+      invoke<ModelSummary>("ai_summarize", { request: { pages, lang } }),
+    aiExplain: (term, context, lang) =>
+      invoke<{ text: string; model: ModelInfo }>("ai_explain", {
+        request: { term, context, lang },
       }),
-    cancelView: () => invoke<void>("vault_view_cancel"),
+    aiCancel: () => invoke<void>("ai_cancel"),
+    documentText: (recordId, readId, password) =>
+      invoke<DocumentText>("vault_document_text", {
+        request: { recordId, readId, password: password ?? null },
+      }),
+    cancelDocumentText: (readId) =>
+      invoke<void>("vault_document_text_cancel", { request: { readId } }),
+    recordKnownDetails: (recordId) =>
+      invoke<KnownIdentifiers>("vault_record_known_details", {
+        request: { recordId },
+      }),
+    pickTextExportDestination: (recordId, ticket) =>
+      invoke<string | null>("vault_export_text_pick", {
+        request: { recordId, ticket },
+        locale: getLocale(),
+      }),
+    exportTextToPicked: (pickId, recordId, ticket, text) =>
+      invoke<TextSaveOutcome>("vault_export_text_picked", {
+        request: { pickId, recordId, ticket, text },
+        locale: getLocale(),
+      }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>

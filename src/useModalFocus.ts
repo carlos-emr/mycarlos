@@ -128,6 +128,7 @@ export function useModalFocus(
     const containFocus = (event: KeyboardEvent) => {
       if (!onTop()) return;
       if (event.key === "Escape") {
+        if (event.isComposing || event.keyCode === 229) return;
         event.preventDefault();
         closeRef.current();
         return;
