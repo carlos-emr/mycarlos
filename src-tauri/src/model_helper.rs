@@ -300,12 +300,18 @@ enum Request {
         lang: String,
         pages: Vec<Page>,
         max_sentences: usize,
+        /// The threads to write the answer on (see `Engine::use_threads`); none keeps them.
+        #[serde(default)]
+        threads: Option<u32>,
     },
+    #[serde(rename_all = "camelCase")]
     Explain {
         id: u64,
         term: String,
         context: String,
         lang: String,
+        #[serde(default)]
+        threads: Option<u32>,
     },
     /// The trial start of a model the patient added (#276): its template around a FAKE request
     /// and one token, under the answer-stage sandbox, then the parent stops it.
@@ -376,6 +382,9 @@ pub(crate) struct Stats {
     /// A hash of the token ids the answer was written in (FNV-1a over each id's bytes), so
     /// that two answers can be compared exactly, token for token, without their words.
     pub(crate) answer_hash: u64,
+    /// The threads the answer was written on, and the prompt read on.
+    pub(crate) threads: u32,
+    pub(crate) batch_threads: u32,
 }
 
 /// FNV-1a's starting value and step (64-bit).
@@ -700,7 +709,11 @@ fn serve_model(settings: &Settings) -> i32 {
                 lang,
                 pages,
                 max_sentences,
-            }) => match engine.summarize(&lang, &pages, max_sentences) {
+                threads,
+            }) => match engine
+                .use_threads(threads)
+                .and_then(|()| engine.summarize(&lang, &pages, max_sentences))
+            {
                 Ok((sentences, fit)) => serde_json::to_string(&SummaryAnswer {
                     id,
                     sentences,
@@ -715,7 +728,11 @@ fn serve_model(settings: &Settings) -> i32 {
                 term,
                 context,
                 lang,
-            }) => match engine.explain(&term, &context, &lang) {
+                threads,
+            }) => match engine
+                .use_threads(threads)
+                .and_then(|()| engine.explain(&term, &context, &lang))
+            {
                 Ok(text) => serde_json::to_string(&TextAnswer {
                     id,
                     text,
@@ -742,6 +759,11 @@ fn serve_model(settings: &Settings) -> i32 {
         match answer {
             Ok(line) if send(&mut output, &line) => {}
             _ => return exit::OUTPUT,
+        }
+        // Its context could not be made again: the helper ends, and the next request starts
+        // a new one.
+        if !engine.has_context() {
+            return exit::NO_MODEL;
         }
     }
 }
@@ -1140,6 +1162,26 @@ mod tests {
         assert_ne!(of(&[1, 2]), of(&[1, 2, 0]));
         assert_ne!(of(&[256]), of(&[1]));
         assert_eq!(of(&[]), ANSWER_HASH_START);
+    }
+
+    #[test]
+    fn a_request_may_say_how_many_threads_to_write_its_answer_on() {
+        let summary =
+            r#"{"tool":"summary","id":1,"lang":"en","pages":[],"maxSentences":6,"threads":2}"#;
+        assert!(matches!(
+            serde_json::from_str::<Request>(summary),
+            Ok(Request::Summary {
+                threads: Some(2),
+                ..
+            })
+        ));
+        let explain = r#"{"tool":"explain","id":2,"term":"a","context":"b","lang":"en"}"#;
+        assert!(matches!(
+            serde_json::from_str::<Request>(explain),
+            Ok(Request::Explain { threads: None, .. })
+        ));
+        let unknown = r#"{"tool":"explain","id":2,"term":"a","context":"b","lang":"en","x":1}"#;
+        assert!(serde_json::from_str::<Request>(unknown).is_err());
     }
 
     #[test]

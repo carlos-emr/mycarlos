@@ -575,3 +575,76 @@ describe("a first word that is also a name (Head, Son, Nie, Elle)", () => {
     expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
   });
 });
+
+describe("a relative named in passing, in title-case text", () => {
+  it.each([
+    "Brought Son Home.",
+    "Brought Daughter Home.",
+    "Daughter Present At Visit.",
+    "Wife Aware Of Diagnosis.",
+    "Husband Called Clinic.",
+    "Son Drove Patient Home.",
+    "Spouse At Bedside.",
+    "Partner Supportive.",
+    "Father Unknown.",
+    "Fils Présent Lors De La Visite.",
+    "Fille Informée Du Plan.",
+    "Wife Declined Interpreter.",
+    "Mother Deceased.",
+    "Son Updated By Phone.",
+    "Patient: Son Visited Today.",
+    "Mother: Son Lives Nearby.",
+  ])("leaves the words after the relative: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+  });
+
+  it.each([
+    ["Her husband, Jordan, called.", "Jordan"],
+    ["Her daughter Maya Okafor visited.", "Maya"],
+    ["Son Theo Vance visited.", "Theo"],
+    ["Sa fille Camille appelle.", "Camille"],
+    ["Daughter Grace At Bedside.", "Grace"],
+    ["Brought By Son Marcus.", "Marcus"],
+    ["Wife Rose Present.", "Rose"],
+    ["Wife María De La Cruz called.", "Cruz"],
+    ["Son Will Smith called.", "Smith"],
+  ])("removes the relative's name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+});
+
+describe("relative names retain the existing name exceptions", () => {
+  it.each([
+    ["Her daughter Elle Martin visited.", ["Elle", "Martin"]],
+    ["Her husband Son Min-jun called.", ["Son", "Min-jun"]],
+    ["Her sister Nie Wei called.", ["Nie", "Wei"]],
+    ["Her husband Martin Head called.", ["Martin", "Head"]],
+    ["Her daughter Summer Vale visited.", ["Summer", "Vale"]],
+    ["Her husband Paul Pain called.", ["Paul", "Pain"]],
+  ])("removes the full name in %j", (text, parts) => {
+    const result = send(text);
+    for (const part of parts) expect(result).not.toContain(part);
+  });
+});
+
+describe("relative surname particles remain inside the full name", () => {
+  it.each([
+    ["Her wife Camille Du Verne called.", "Her wife [NAME 1] called."],
+    ["Her wife Camille du Verne called.", "Her wife [NAME 1] called."],
+    ["Her husband Pascal Des Ormes called.", "Her husband [NAME 1] called."],
+    ["Her husband Pascal des Ormes called.", "Her husband [NAME 1] called."],
+    ["Her wife Camille DU Verne called.", "Her wife [NAME 1] called."],
+    ["Her husband Pascal DES Ormes called.", "Her husband [NAME 1] called."],
+    ["Her wife Camille Du Verne Present.", "Her wife [NAME 1] Present."],
+  ])("removes every word of the relative's name in %j", (text, expected) => {
+    expect(send(text)).toBe(expected);
+  });
+
+  it.each([
+    "Fille Informée Du Plan.",
+    "Fille Informée Des Résultats.",
+    "Fils Avisé Du Plan.",
+  ])("keeps the clinical phrase %j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});

@@ -3731,6 +3731,100 @@ function findRanges(text: string): Finding[] {
   return found;
 }
 
+// A relative named in passing, in title-case text: "Daughter Present At Visit", "Brought Son
+// Home", "Patient: Son Visited Today". The run ends at a capitalised small word, words that
+// follow a relative are dropped from its end, and it is no name when its first word is one.
+// Name particles (De, La, Van …) stay. "Will" is a given name, so it is neither.
+const KIN_CUT_WORDS = new Set([
+  "at",
+  "of",
+  "by",
+  "up",
+  "to",
+  "in",
+  "on",
+  "with",
+  "for",
+  "from",
+  "is",
+  "was",
+  "and",
+  "du",
+  "des",
+  "au",
+  "aux",
+  "lors",
+  "avec",
+  "pour",
+  "par",
+  "en",
+  "et",
+  "por",
+  "con",
+  "para",
+  "com",
+  "em",
+  "na",
+  "przez",
+  "i",
+]);
+const KIN_FOLLOW_WORDS = new Set(
+  foldAll([
+    "present",
+    "aware",
+    "called",
+    "drove",
+    "supportive",
+    "updated",
+    "informed",
+    "notified",
+    "visiting",
+    "visited",
+    "arrived",
+    "lives",
+    "home",
+    "bedside",
+    "nearby",
+    "présent",
+    "présente",
+    "informé",
+    "informée",
+    "avisé",
+    "avisée",
+    "presente",
+    "informado",
+    "informada",
+    "avisado",
+    "avisada",
+    "obecny",
+    "obecna",
+    "poinformowany",
+    "poinformowana",
+  ]).map((word) => word.toLowerCase()),
+);
+function kinName(candidate: string): string {
+  const words = [...candidate.matchAll(/[^ \t]+/gu)];
+  const listWord = (word: string) => {
+    const lower = word.toLowerCase();
+    // Keep the same name exceptions as the surrounding refusal checks.
+    if (ALSO_NAMES.has(lower) || NAMES_ON_NOT_NAMES.has(lower)) return false;
+    return (
+      KIN_FOLLOW_WORDS.has(lower) ||
+      STATUS_WORDS.has(lower) ||
+      NOT_NAMES.has(lower) ||
+      HEADER_WORDS.has(lower)
+    );
+  };
+  let count = words.findIndex((word) => {
+    const lower = word[0].toLowerCase();
+    return KIN_CUT_WORDS.has(lower) && !PARTICLES.has(lower);
+  });
+  if (count < 0) count = words.length;
+  while (count > 0 && listWord(words[count - 1][0])) count--;
+  if (count === 0 || listWord(words[0][0])) return "";
+  const last = words[count - 1];
+  return candidate.slice(0, (last.index ?? 0) + last[0].length);
+}
 function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = [];
   for (const rule of RULES) {
@@ -3830,6 +3924,10 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
         continue;
+      if (rule.kin) {
+        trimmed = kinName(trimmed);
+        if (!trimmed) continue;
+      }
       if (rule.uncued && uncuedNotName(trimmed)) continue;
       if (rule.columnLabel) {
         const words = trimmed

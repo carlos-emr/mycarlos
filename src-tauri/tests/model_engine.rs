@@ -258,6 +258,42 @@ fn the_real_engine_reads_an_instruction_prefix_once_and_puts_it_back_after() {
 }
 
 #[test]
+fn the_real_engine_writes_an_answer_on_the_threads_it_is_given() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = model_file(dir.path(), &tiny_model());
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let pages = [(0, "FAKE: a blood test was done.")];
+    runner.override_threads(Some(1));
+    runner.summarize("en", &pages).unwrap();
+    let (threads, batch) = runner.last_threads().unwrap();
+    assert_eq!(threads, 1);
+    assert!(batch >= 1);
+    // The prefix is kept for the next summary on as many threads...
+    runner.summarize("en", &pages).unwrap();
+    assert_eq!(runner.last_threads(), Some((1, batch)));
+    assert!(runner.last_prefix().unwrap().1);
+    // ...and goes with the context when it is made again.
+    if batch > 1 {
+        runner.override_threads(Some(batch));
+        runner.summarize("en", &pages).unwrap();
+        assert!(!runner.last_prefix().unwrap().1);
+    }
+    // As many as the prompt's again: the context is made again, inside the sandbox.
+    runner.override_threads(Some(batch));
+    runner
+        .explain("en", "blood test", "FAKE: a blood test was done.")
+        .unwrap();
+    assert_eq!(runner.last_threads(), Some((batch, batch)));
+    // Chosen from the computer's load: never more than the prompt's.
+    runner.override_threads(None);
+    runner.summarize("en", &pages).unwrap();
+    assert!(runner
+        .last_threads()
+        .is_some_and(|(threads, read_on)| (1..=batch).contains(&threads) && read_on == batch));
+    runner.stop();
+}
+
+#[test]
 fn the_real_engine_loads_the_model_as_handed_over_and_summarizes_under_the_grammar() {
     let dir = tempfile::tempdir().unwrap();
     let model = model_file(dir.path(), &tiny_model());
@@ -464,7 +500,8 @@ fn loader_mutation_campaign() {
 /// A real model from the environment over FAKE documents, for trying a model by hand:
 /// `MYCARLOS_TEST_MODEL` names a GGUF file, `MYCARLOS_TEST_DOCS` a folder of FAKE `.txt`
 /// documents, `MYCARLOS_TEST_LANG` the summaries' language (default `en`), `MYCARLOS_TEST_CHAT_FORMAT` the model's chat
-/// format (`builtin`, the default, or `gemma4`). Prints each answer
+/// format (`builtin`, the default, or `gemma4`), and `MYCARLOS_TEST_THREADS` a fixed number of
+/// threads to write the answers on (default: chosen from the load). Prints each answer
 /// and its time. Never in CI: run with `--ignored --nocapture`.
 #[test]
 #[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
@@ -484,6 +521,14 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
     let runner = ModelRunner::start_with(executable(), &model, &format)
         .unwrap_or_else(|error| panic!("{error}"));
     println!("started in {:.1} s", started.elapsed().as_secs_f64());
+    // MYCARLOS_TEST_THREADS: write every answer on that many threads, whatever the load.
+    if let Some(threads) = std::env::var("MYCARLOS_TEST_THREADS")
+        .ok()
+        .and_then(|n| n.parse().ok())
+    {
+        runner.override_threads(Some(threads));
+        println!("answers on {threads} threads");
+    }
     let mut names: Vec<_> = std::fs::read_dir(&docs)
         .unwrap()
         .map(|entry| entry.unwrap().path())
