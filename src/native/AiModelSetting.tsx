@@ -198,6 +198,7 @@ export function AiModelSetting({
   // another page while it ran, and came back. `own` is a copy this row
   // started and waits for through its command response.
   const own = useRef(false);
+  const endedWhileOwn = useRef<ModelAddOutcome | null>(null);
   // Events and actions supersede an older native snapshot, even when the
   // snapshot was requested before a completion arrived.
   const activityRevision = useRef(0);
@@ -238,7 +239,8 @@ export function AiModelSetting({
     const stop = listen<ModelAddOutcome>("ai-model-add-ended", (event) => {
       if (!live || !mounted.current) return;
       activityRevision.current += 1;
-      if (!own.current) finishRef.current(event.payload);
+      if (own.current) endedWhileOwn.current = event.payload;
+      else finishRef.current(event.payload);
     });
     void stop
       .then(async () => {
@@ -269,6 +271,7 @@ export function AiModelSetting({
   }, []);
   const run = (command: "ai_model_add_picked" | "ai_model_download") => {
     activityRevision.current += 1;
+    endedWhileOwn.current = null;
     setRefusal(null);
     setMessage(null);
     setNote(null);
@@ -286,6 +289,12 @@ export function AiModelSetting({
         // Refused because a copy is still running: that copy and its bar,
         // not "the AI helper is working".
         if (result.outcome === "busy") {
+          // The other copy may have finished before this refused command
+          // returned. Its completion is newer than the refusal.
+          if (endedWhileOwn.current) {
+            finish(endedWhileOwn.current);
+            return;
+          }
           const revision = activityRevision.current;
           const now = await invoke<ModelAddNow | null>(
             "ai_model_add_active",
@@ -314,6 +323,7 @@ export function AiModelSetting({
   const add = () => run("ai_model_add_picked");
   const download = () => run("ai_model_download");
   const remove = () => {
+    activityRevision.current += 1;
     setConfirming(false);
     setRefusal(null);
     setMessage(null);
