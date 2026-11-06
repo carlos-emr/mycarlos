@@ -104,6 +104,13 @@ const PICKER_SETTLED_EVENT = "mycarlos:picker-settled";
 // Time in a picker counts as activity for at most this long, the longest
 // auto-lock delay, so a picker left open cannot keep the vault unlocked.
 const PICKER_GRACE_MS = 15 * 60 * 1000;
+// Dispatched on the document when an AI answer this app asked for settles.
+const ANSWER_SETTLED_EVENT = "mycarlos:answer-settled";
+// An AI answer being written counts as activity until it ends (D19), for at
+// most its own limit, which native says once the answer is asked
+// (`onAiAnswerStarted`). Until then, while the helper may be starting, for
+// at most the longest limit (native `ANSWER_LIMIT.ceiling`).
+const ANSWER_HOLD_MAX_MS = 20 * 60 * 1000;
 // User input is reported to the native idle deadline at most this often, so the
 // last report is less than 10 seconds before the last input. The native
 // deadline fires the delay plus 15 seconds after the last report, so at least
@@ -565,6 +572,30 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       }
     }
   }, []);
+  // AI answers this app asked for and has not yet heard back from, and until
+  // when they count as activity (D19). A newer answer ends an older one.
+  const answersOpenRef = useRef(0);
+  const answerHeldUntilRef = useRef(0);
+  const answering = useCallback(async <T,>(answer: Promise<T>): Promise<T> => {
+    answersOpenRef.current += 1;
+    answerHeldUntilRef.current = Date.now() + ANSWER_HOLD_MAX_MS;
+    try {
+      return await answer;
+    } finally {
+      answersOpenRef.current -= 1;
+      // The time it took was not idle: restart the inactivity deadline.
+      document.dispatchEvent(new Event(ANSWER_SETTLED_EVENT));
+    }
+  }, []);
+  useEffect(
+    () =>
+      bridge.onAiAnswerStarted?.((limitMs) => {
+        if (answersOpenRef.current === 0 || !Number.isFinite(limitMs)) return;
+        answerHeldUntilRef.current =
+          Date.now() + Math.min(Math.max(limitMs, 0), ANSWER_HOLD_MAX_MS);
+      }),
+    [bridge],
+  );
   const trackedBridge = useMemo<VaultBridge>(() => {
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
       // `run` locks once the operation has reported the transfer's outcome.
@@ -611,8 +642,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
       exportToPicked: (pickId, recordId) =>
         transfer(() => bridge.exportToPicked(pickId, recordId)),
+      aiSummarize: (pages, lang, keep) =>
+        answering(bridge.aiSummarize(pages, lang, keep)),
+      aiExplain: (term, context, lang, recordId) =>
+        answering(bridge.aiExplain(term, context, lang, recordId)),
     };
-  }, [bridge, track, transferHold]);
+  }, [answering, bridge, track, transferHold]);
 
   useEffect(() => {
     if (status !== "unlocked") return;
@@ -635,12 +670,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
     const inPickerGrace = () =>
       Date.now() - pickerOpenedAtRef.current < PICKER_GRACE_MS;
+    const inAnswerHold = () => Date.now() < answerHeldUntilRef.current;
     const check = () => {
       if (sessionRef.current !== session) return;
       if (!delaySent) sendDelay();
       // Time spent in a picker the app opened is not idle time: the user is
       // choosing files for this vault. The deadline restarts once it closes.
-      if (pickersOpenRef.current > 0 && inPickerGrace())
+      // Nor is the time an AI answer takes to write, up to its limit (D19).
+      if (
+        (pickersOpenRef.current > 0 && inPickerGrace()) ||
+        (answersOpenRef.current > 0 && inAnswerHold())
+      )
         deadline = Date.now() + delayMs;
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
@@ -683,6 +723,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       if (!concealedRef.current && inPickerGrace())
         deadline = Date.now() + delayMs;
     };
+    // The same for an AI answer that ended within its limit.
+    const onAnswerSettled = () => {
+      if (!concealedRef.current && inAnswerHold())
+        deadline = Date.now() + delayMs;
+    };
     // Keep open in the warning: as use, and told to the native deadline at
     // once, whenever it was last told.
     keepOpenRef.current = () => {
@@ -711,6 +756,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       window.addEventListener(event, postpone, { passive: true });
     }
     document.addEventListener(PICKER_SETTLED_EVENT, onPickerSettled);
+    document.addEventListener(ANSWER_SETTLED_EVENT, onAnswerSettled);
     document.addEventListener("visibilitychange", onVisibility);
     onVisibility();
     return () => {
@@ -721,6 +767,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         window.removeEventListener(event, postpone);
       }
       document.removeEventListener(PICKER_SETTLED_EVENT, onPickerSettled);
+      document.removeEventListener(ANSWER_SETTLED_EVENT, onAnswerSettled);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [autoLockMinutes, bridge, lockWhenIdle, status]);

@@ -21,7 +21,8 @@ use std::{
 /// How long after the last activity the native deadline fires, beyond the delay.
 pub const MARGIN: Duration = Duration::from_secs(15);
 /// A picker the app opened counts as activity for at most this long, the
-/// longest auto-lock delay, as it does in the renderer.
+/// longest auto-lock delay, as it does in the renderer. Other holds bring
+/// their own cap (an AI answer: its time limit).
 pub const GRACE: Duration = Duration::from_secs(60 * MAX_DELAY_MINUTES);
 /// The longest automatic lock delay the renderer offers.
 const MAX_DELAY_MINUTES: u64 = 15;
@@ -56,11 +57,25 @@ impl From<Instant> for Now {
 
 pub struct IdleDeadline(Mutex<State>);
 
+/// Names one hold, for its end and its restart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HoldId(u64);
+
+/// A stretch that counts as activity while it lasts, for at most its cap: a
+/// picker the app opened, or an AI answer being written.
+struct Hold {
+    id: u64,
+    since: Now,
+    cap: Duration,
+}
+
 struct State {
     /// Only an unlocked session has a deadline.
     armed: bool,
     delay: Duration,
-    holds: usize,
+    /// The holds open now, each counted from its own start up to its own cap.
+    holds: Vec<Hold>,
+    next_hold: u64,
     openings: usize,
     /// Counts locked sessions, so an opening from an earlier session ending
     /// late cannot release the current one's.
@@ -69,11 +84,10 @@ struct State {
     wall: Times<SystemTime>,
 }
 
-/// The deadline's moments on one clock.
+/// The deadline's last activity on one clock.
 #[derive(Clone, Copy)]
 struct Times<T> {
     last_activity: T,
-    held_since: T,
 }
 
 impl IdleDeadline {
@@ -82,7 +96,8 @@ impl IdleDeadline {
         Self(Mutex::new(State {
             armed: false,
             delay: DEFAULT_DELAY,
-            holds: 0,
+            holds: Vec::new(),
+            next_hold: 0,
             openings: 0,
             session: 0,
             mono: Times::new(now.mono),
@@ -109,8 +124,10 @@ impl IdleDeadline {
         let mut state = self.state();
         state.armed = false;
         state.delay = DEFAULT_DELAY;
-        // An opening still under way belongs to the session that ended.
+        // An opening or a hold still under way belongs to the session that
+        // ended: its end, when it comes, finds nothing to release.
         state.openings = 0;
+        state.holds.clear();
         state.session += 1;
     }
 
@@ -155,35 +172,70 @@ impl IdleDeadline {
         state.wall.touch(now.wall);
     }
 
-    /// Starts a stretch that counts as activity until it ends, up to the grace:
-    /// a picker the app opened.
-    pub fn hold_started(&self, now: impl Into<Now>) {
-        let now = now.into();
+    /// Starts a stretch that counts as activity until it ends, for at most
+    /// `cap`: a picker the app opened (`GRACE`), or an AI answer being
+    /// written.
+    pub fn hold_started(&self, now: impl Into<Now>, cap: Duration) -> HoldId {
+        let since = now.into();
         let mut state = self.state();
-        if state.holds == 0 {
-            state.mono.held_since = now.mono;
-            state.wall.held_since = now.wall;
-        }
-        state.holds += 1;
+        let id = state.next_hold;
+        state.next_hold += 1;
+        state.holds.push(Hold { id, since, cap });
+        HoldId(id)
     }
 
-    pub fn hold_ended(&self, now: impl Into<Now>) {
+    /// Starts the hold again from now, for at most `cap`: an AI answer's, once
+    /// the answer is asked and its own limit is known. What it held until now
+    /// counts as activity, up to its earlier cap. A hold that has ended, or
+    /// was dropped by a lock, is left alone.
+    pub fn hold_restarted(&self, id: HoldId, now: impl Into<Now>, cap: Duration) {
         let now = now.into();
         let mut state = self.state();
-        let open = state.holds > 0;
-        state.mono.hold_ended(now.mono, open);
-        state.wall.hold_ended(now.wall, open);
-        state.holds = state.holds.saturating_sub(1);
+        let Some(index) = state.holds.iter().position(|hold| hold.id == id.0) else {
+            return;
+        };
+        let (mono, wall) = state.holds[index].held_until(now);
+        state.mono.touch(mono);
+        state.wall.touch(wall);
+        state.holds[index].since = now;
+        state.holds[index].cap = cap;
+    }
+
+    /// Ends the hold: the time it held counts as activity, up to its cap.
+    pub fn hold_ended(&self, id: HoldId, now: impl Into<Now>) {
+        let now = now.into();
+        let mut state = self.state();
+        let Some(index) = state.holds.iter().position(|hold| hold.id == id.0) else {
+            return;
+        };
+        let (mono, wall) = state.holds.swap_remove(index).held_until(now);
+        state.mono.touch(mono);
+        state.wall.touch(wall);
     }
 
     pub fn is_due(&self, now: impl Into<Now>) -> bool {
         let now = now.into();
         let state = self.state();
-        let open = state.holds > 0;
+        let held = state.holds.iter().map(|hold| hold.held_until(now));
+        let (mono, wall) = (
+            held.clone().map(|(mono, _)| mono).max(),
+            held.map(|(_, wall)| wall).max(),
+        );
         state.armed
             && state.openings == 0
-            && (state.mono.is_due(now.mono, open, state.delay)
-                || state.wall.is_due(now.wall, open, state.delay))
+            && (state.mono.is_due(now.mono, mono, state.delay)
+                || state.wall.is_due(now.wall, wall, state.delay))
+    }
+}
+
+impl Hold {
+    /// Until when it has counted as activity, on each clock: now, but never
+    /// past its cap.
+    fn held_until(&self, now: Now) -> (Instant, SystemTime) {
+        (
+            now.mono.min(self.since.mono + self.cap),
+            now.wall.min(self.since.wall + self.cap),
+        )
     }
 }
 
@@ -209,33 +261,17 @@ impl Drop for Opening<'_> {
 
 impl<T: Copy + Ord + Add<Duration, Output = T>> Times<T> {
     fn new(now: T) -> Self {
-        Self {
-            last_activity: now,
-            held_since: now,
-        }
+        Self { last_activity: now }
     }
 
     fn touch(&mut self, now: T) {
         self.last_activity = self.last_activity.max(now);
     }
 
-    /// Until when an open hold has counted as activity: now, capped at the
-    /// grace. With no hold open, it adds nothing.
-    fn held_until(&self, now: T, open: bool) -> T {
-        if open {
-            now.min(self.held_since + GRACE)
-        } else {
-            self.last_activity
-        }
-    }
-
-    fn hold_ended(&mut self, now: T, open: bool) {
-        let active_until = self.held_until(now, open);
-        self.touch(active_until);
-    }
-
-    fn is_due(&self, now: T, open: bool, delay: Duration) -> bool {
-        let last = self.last_activity.max(self.held_until(now, open));
+    /// Due once the delay and the margin have passed since the last activity,
+    /// or since the end of what the open holds have held, whichever is later.
+    fn is_due(&self, now: T, held_until: Option<T>, delay: Duration) -> bool {
+        let last = held_until.map_or(self.last_activity, |held| self.last_activity.max(held));
         now >= last + delay + MARGIN
     }
 }
@@ -347,7 +383,7 @@ mod tests {
     fn an_open_picker_counts_as_activity_for_at_most_the_grace() {
         let start = Instant::now();
         let deadline = armed(start);
-        deadline.hold_started(start + MINUTE);
+        deadline.hold_started(start + MINUTE, GRACE);
         assert!(!deadline.is_due(start + 14 * MINUTE));
         // After the grace, the ordinary delay runs from its end.
         let grace_end = start + MINUTE + GRACE;
@@ -359,29 +395,90 @@ mod tests {
     fn closing_a_picker_restarts_the_delay_only_within_the_grace() {
         let start = Instant::now();
         let deadline = armed(start);
-        deadline.hold_started(start);
-        deadline.hold_ended(start + 10 * MINUTE);
+        let picker = deadline.hold_started(start, GRACE);
+        deadline.hold_ended(picker, start + 10 * MINUTE);
         assert!(!deadline.is_due(start + 15 * MINUTE));
         assert!(deadline.is_due(start + 15 * MINUTE + MARGIN));
 
         let deadline = armed(start);
-        deadline.hold_started(start);
+        let picker = deadline.hold_started(start, GRACE);
         // Left open for an hour: the time counts only up to the grace.
-        deadline.hold_ended(start + 60 * MINUTE);
+        deadline.hold_ended(picker, start + 60 * MINUTE);
         assert!(deadline.is_due(start + 60 * MINUTE));
     }
 
     #[test]
-    fn overlapping_pickers_count_from_the_first() {
+    fn overlapping_pickers_each_count_up_to_their_own_grace() {
         let start = Instant::now();
         let deadline = armed(start);
-        deadline.hold_started(start);
-        deadline.hold_started(start + 10 * MINUTE);
-        deadline.hold_ended(start + 11 * MINUTE);
+        deadline.hold_started(start, GRACE);
+        let second = deadline.hold_started(start + 10 * MINUTE, GRACE);
+        deadline.hold_ended(second, start + 11 * MINUTE);
         // One is still open, from the start, until the grace ends.
         assert!(!deadline.is_due(start + 14 * MINUTE));
         assert!(!deadline.is_due(start + GRACE + 5 * MINUTE));
         assert!(deadline.is_due(start + GRACE + 5 * MINUTE + MARGIN));
+    }
+
+    #[test]
+    fn a_hold_counts_for_at_most_its_own_cap() {
+        let start = Instant::now();
+        let deadline = armed(start);
+        // An AI answer allowed 20 minutes, longer than a picker's grace.
+        let answer = deadline.hold_started(start, 20 * MINUTE);
+        assert!(!deadline.is_due(start + 24 * MINUTE));
+        assert!(!deadline.is_due(start + 25 * MINUTE));
+        assert!(deadline.is_due(start + 25 * MINUTE + MARGIN));
+        // Ending it later still counts it only up to its cap.
+        deadline.hold_ended(answer, start + 40 * MINUTE);
+        assert!(deadline.is_due(start + 40 * MINUTE));
+
+        // A picker's grace and an answer's limit each run from their own start.
+        let deadline = armed(start);
+        deadline.hold_started(start, GRACE);
+        deadline.hold_started(start + 10 * MINUTE, 7 * MINUTE);
+        assert!(!deadline.is_due(start + 20 * MINUTE + MARGIN));
+        assert!(deadline.is_due(start + 22 * MINUTE + MARGIN));
+    }
+
+    #[test]
+    fn a_restarted_hold_counts_from_its_restart_for_its_new_cap() {
+        let start = Instant::now();
+        let deadline = armed(start);
+        // Held while the helper starts, up to the longest limit; then the
+        // answer is asked at 2 minutes with a limit of 6.
+        let answer = deadline.hold_started(start, 20 * MINUTE);
+        deadline.hold_restarted(answer, start + 2 * MINUTE, 6 * MINUTE);
+        assert!(!deadline.is_due(start + 13 * MINUTE));
+        assert!(deadline.is_due(start + 13 * MINUTE + MARGIN));
+        // Restarted after its first cap passed: it holds again from the restart.
+        let deadline = armed(start);
+        let answer = deadline.hold_started(start, MINUTE);
+        deadline.hold_restarted(answer, start + 3 * MINUTE, 6 * MINUTE);
+        assert!(!deadline.is_due(start + 14 * MINUTE));
+        assert!(deadline.is_due(start + 14 * MINUTE + MARGIN));
+        // Ended at 4 minutes: the delay runs from there, and a late restart
+        // does not bring it back.
+        deadline.hold_ended(answer, start + 4 * MINUTE);
+        assert!(deadline.is_due(start + 9 * MINUTE + MARGIN));
+        deadline.hold_restarted(answer, start + 9 * MINUTE, 6 * MINUTE);
+        assert!(deadline.is_due(start + 9 * MINUTE + MARGIN));
+    }
+
+    #[test]
+    fn a_lock_ends_every_hold_so_none_holds_the_next_session() {
+        let start = Instant::now();
+        let deadline = armed(start);
+        let answer = deadline.hold_started(start, 20 * MINUTE);
+        deadline.disarm();
+        deadline.set_delay_minutes(5, start + MINUTE);
+        deadline.arm(start + MINUTE);
+        // The next session's delay runs from its unlock.
+        assert!(deadline.is_due(start + 6 * MINUTE + MARGIN));
+        // The old hold's end, or a restart, changes nothing.
+        deadline.hold_restarted(answer, start + 2 * MINUTE, 20 * MINUTE);
+        deadline.hold_ended(answer, start + 2 * MINUTE);
+        assert!(deadline.is_due(start + 6 * MINUTE + MARGIN));
     }
 
     #[test]
@@ -397,7 +494,7 @@ mod tests {
         assert!(deadline.is_due(woke));
         // An open picker's grace is counted the same way.
         let deadline = armed(Now { mono: start, wall });
-        deadline.hold_started(Now { mono: start, wall });
+        deadline.hold_started(Now { mono: start, wall }, GRACE);
         assert!(deadline.is_due(woke));
     }
 
@@ -424,9 +521,9 @@ mod tests {
         };
         deadline.touch(at(4));
         assert!(!deadline.is_due(at(9)));
-        deadline.hold_started(at(9));
+        let hold = deadline.hold_started(at(9), GRACE);
         assert!(!deadline.is_due(at(20)));
-        deadline.hold_ended(at(20));
+        deadline.hold_ended(hold, at(20));
         assert!(!deadline.is_due(at(25)));
         assert!(deadline.is_due(Now {
             mono: start + 25 * MINUTE + MARGIN,

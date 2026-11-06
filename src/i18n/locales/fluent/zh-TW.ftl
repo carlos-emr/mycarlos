@@ -1731,6 +1731,10 @@ native-filter-models = 模型檔案
 
 ai-working = AI 助理正在處理…
 
+ai-workingLong = 文件較長時，可能需要幾分鐘。
+
+ai-workingFor = 已處理 { $minutes } 分鐘。
+
 ai-summary-ready = 摘要已產生。
 
 ai-explain-ready = 解釋已產生。

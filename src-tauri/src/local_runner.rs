@@ -73,6 +73,60 @@ pub(crate) struct ModelInfo {
     pub(crate) sha256: String,
 }
 
+/// How long one answer may take, from the size of its request: a fixed part, a cost for each
+/// prompt token (reading the prompt is most of an answer's time on a computer's processor) and
+/// for each answer token allowed, kept between a floor and a ceiling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AnswerLimit {
+    pub(crate) fixed: Duration,
+    pub(crate) per_prompt_token: Duration,
+    pub(crate) per_answer_token: Duration,
+    pub(crate) floor: Duration,
+    pub(crate) ceiling: Duration,
+}
+
+impl AnswerLimit {
+    /// The same limit whatever the request.
+    #[allow(dead_code)] // Tests' runners, and the runtime's test helpers.
+    pub(crate) const fn fixed(limit: Duration) -> Self {
+        Self {
+            fixed: limit,
+            per_prompt_token: Duration::ZERO,
+            per_answer_token: Duration::ZERO,
+            floor: limit,
+            ceiling: limit,
+        }
+    }
+
+    /// The limit for a request whose prompt is about `prompt_tokens` and whose answer may run
+    /// to `answer_tokens`.
+    pub(crate) fn for_request(&self, prompt_tokens: u32, answer_tokens: u32) -> Duration {
+        self.fixed
+            .saturating_add(self.per_prompt_token.saturating_mul(prompt_tokens))
+            .saturating_add(self.per_answer_token.saturating_mul(answer_tokens))
+            .max(self.floor)
+            .min(self.ceiling)
+    }
+}
+
+/// About how many tokens a prompt is: the helper's own words (`fixed`: system text,
+/// instructions, the answer's shape) and `text_bytes` of the document's or the term's words at
+/// three bytes a token. That is a cautious rate (English runs about 4.5, accented and CJK text
+/// fewer), so the estimate errs long, and so does the limit. At most the model's context.
+fn prompt_tokens(fixed: u32, text_bytes: usize) -> u32 {
+    let tokens = u64::from(fixed).saturating_add((text_bytes as u64).div_ceil(3));
+    tokens.min(u64::from(crate::model_helper::CONTEXT_TOKENS)) as u32
+}
+
+/// The helper's own words around a summary's pages, and around a term and its sentence, in
+/// tokens, with room to spare (about 450 and 300 today).
+const SUMMARY_PROMPT_TOKENS: u32 = 750;
+const EXPLAIN_PROMPT_TOKENS: u32 = 400;
+/// The answer a summary's limit allows for: about 53 tokens a sentence were measured (5 Nov
+/// 2026), so six sentences run to about 320; its cap (`SUMMARY_TOKENS`) stops it anyway,
+/// keeping the sentences it finished.
+const SUMMARY_ANSWER_TOKENS: u32 = 400;
+
 /// What a runner starts and how much it may use.
 #[derive(Debug, Clone)]
 pub(crate) struct RunnerConfig {
@@ -85,8 +139,8 @@ pub(crate) struct RunnerConfig {
     pub(crate) needed_bytes: u64,
     /// The longest wait for the hello line after the start.
     pub(crate) start_timeout: Duration,
-    /// The longest wait for one answer.
-    pub(crate) answer_timeout: Duration,
+    /// The longest wait for one answer, from the size of its request.
+    pub(crate) answer_limit: AnswerLimit,
     /// The most data memory the process may take (Linux, `RLIMIT_DATA`):
     /// above it, allocations fail and the model ends instead of taking the
     /// computer down. `None` sets no limit. Other platforms do not enforce it.
@@ -305,7 +359,7 @@ struct Sidecar {
     lines: Receiver<std::io::Result<String>>,
     model: ModelInfo,
     next_id: u64,
-    answer_timeout: Duration,
+    answer_limit: AnswerLimit,
     /// The model file while the process may still read it (see `RunnerConfig::model_file`).
     model_file: Option<Arc<std::fs::File>>,
 }
@@ -371,7 +425,13 @@ pub(crate) struct Runner {
     generation: AtomicU64,
     /// How the last answer was made, when the model said.
     last_stats: Mutex<Option<crate::model_helper::Stats>>,
+    /// Told the time limit of the answer asked under its ticket, as it is asked.
+    answer_watch: Mutex<Option<(Ticket, AnswerWatch)>>,
 }
+
+/// What is told an answer's own time limit as the answer is asked: the idle lock's hold on
+/// the answer, and the renderer's (D19).
+pub(crate) type AnswerWatch = Box<dyn FnOnce(Duration) + Send>;
 
 #[derive(Deserialize)]
 struct Hello {
@@ -412,7 +472,14 @@ impl Runner {
             status: Mutex::new(RunnerStatus::NotInstalled),
             generation: AtomicU64::new(0),
             last_stats: Mutex::new(None),
+            answer_watch: Mutex::new(None),
         }
+    }
+
+    /// Tells `watch` the time limit of the answer asked under `ticket`, as it is asked; never,
+    /// if none is (a failed start, a cancel first). Takes the place of an earlier watch.
+    pub(crate) fn watch_answer(&self, ticket: Ticket, watch: AnswerWatch) {
+        *self.answer_watch.lock().unwrap_or_else(|e| e.into_inner()) = Some((ticket, watch));
     }
 
     pub(crate) fn status(&self) -> RunnerStatus {
@@ -606,7 +673,16 @@ impl Runner {
     ) -> Result<Summary, RunnerError> {
         let request_json = serde_json::to_value(request)
             .map_err(|error| RunnerError::Protocol(error.to_string()))?;
-        let (answer, model) = self.ask(ticket, "summary", request_json)?;
+        let text_bytes = request.pages.iter().map(|page| page.text.len()).sum();
+        let (answer, model) = self.ask(
+            ticket,
+            "summary",
+            request_json,
+            (
+                prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
+                SUMMARY_ANSWER_TOKENS,
+            ),
+        )?;
         let Some(sentences) = answer.sentences else {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
         };
@@ -668,6 +744,10 @@ impl Runner {
             ticket,
             "explain",
             serde_json::json!({ "term": term, "context": context, "lang": lang }),
+            (
+                prompt_tokens(EXPLAIN_PROMPT_TOKENS, term.len() + context.len()),
+                crate::model_helper::EXPLAIN_TOKENS as u32,
+            ),
         )?;
         let text = answer
             .text
@@ -681,25 +761,29 @@ impl Runner {
     /// Test builds only: asks the stub helper what its sandbox allows (`model_helper`).
     #[cfg(all(feature = "ai-helper-stub", any(target_os = "linux", windows)))]
     pub(crate) fn probe(&self, ticket: Ticket, what: &str) -> Result<String, RunnerError> {
-        let (answer, _model) = self.ask(ticket, "probe", serde_json::json!({ "what": what }))?;
+        let (answer, _model) =
+            self.ask(ticket, "probe", serde_json::json!({ "what": what }), (0, 0))?;
         answer
             .text
             .ok_or_else(|| RunnerError::Protocol("no text".to_owned()))
     }
 
-    /// One request, one answer, bounded by `answer_timeout` and by the
-    /// ticket. Holds the process for the whole exchange; the answer comes
-    /// with the model it is attributed to.
+    /// One request, one answer, bounded by the answer limit for its `size` (prompt tokens,
+    /// answer tokens allowed) and by the ticket. Holds the process for the whole exchange; the
+    /// answer comes with the model it is attributed to.
     fn ask(
         &self,
         ticket: Ticket,
         tool: &str,
         mut request: serde_json::Value,
+        size: (u32, u32),
     ) -> Result<(Answer, ModelInfo), RunnerError> {
         if !self.is_current(ticket) {
             return Err(RunnerError::Cancelled);
         }
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
+        // A failed answer leaves none: never the stats of the one before.
+        *self.last_stats.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let Some(running) = slot.as_mut() else {
             return Err(RunnerError::NotRunning);
         };
@@ -713,7 +797,21 @@ impl Runner {
         self.set_status(RunnerStatus::Working {
             model: model.clone(),
         });
-        let answer_timeout = running.answer_timeout;
+        let answer_timeout = running.answer_limit.for_request(size.0, size.1);
+        // Only this ticket's watch: a newer request's waits for its own answer.
+        let watch = {
+            let mut slot = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
+            match slot.take() {
+                Some((watched, watch)) if watched == ticket => Some(watch),
+                other => {
+                    *slot = other;
+                    None
+                }
+            }
+        };
+        if let Some(watch) = watch {
+            watch(answer_timeout);
+        }
         let mut outcome = exchange(
             running,
             || self.is_current(ticket),
@@ -777,7 +875,7 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
             sha256: String::new(),
         },
         next_id: 1,
-        answer_timeout: config.answer_timeout,
+        answer_limit: config.answer_limit,
         model_file: config.model_file.clone(),
     };
     let deadline = Instant::now() + config.start_timeout;
@@ -1299,13 +1397,62 @@ mod tests {
         }
     }
 
+    #[test]
+    fn an_answer_limit_grows_with_its_request_between_its_floor_and_ceiling() {
+        let fixed = AnswerLimit::fixed(Duration::from_secs(7));
+        assert_eq!(fixed.for_request(0, 0), Duration::from_secs(7));
+        assert_eq!(
+            fixed.for_request(u32::MAX, u32::MAX),
+            Duration::from_secs(7)
+        );
+        let scaled = AnswerLimit {
+            fixed: Duration::from_secs(30),
+            per_prompt_token: Duration::from_millis(150),
+            per_answer_token: Duration::from_millis(600),
+            floor: Duration::from_secs(300),
+            ceiling: Duration::from_secs(1200),
+        };
+        assert_eq!(scaled.for_request(0, 0), Duration::from_secs(300));
+        assert_eq!(
+            scaled.for_request(2_000, 350),
+            Duration::from_secs(30 + 300 + 210)
+        );
+        // No overflow: the ceiling.
+        assert_eq!(
+            scaled.for_request(u32::MAX, u32::MAX),
+            Duration::from_secs(1200)
+        );
+    }
+
+    #[test]
+    fn a_prompt_is_estimated_long_from_its_bytes_and_never_past_the_context() {
+        assert_eq!(prompt_tokens(750, 0), 750);
+        assert_eq!(prompt_tokens(750, 3_563), 750 + 1_188);
+        assert_eq!(
+            prompt_tokens(750, usize::MAX),
+            crate::model_helper::CONTEXT_TOKENS
+        );
+    }
+
+    #[test]
+    fn a_new_request_forgets_the_last_answers_stats() {
+        let runner = Runner::new(idle_config());
+        *runner.last_stats.lock().unwrap() = Some(crate::model_helper::Stats::default());
+        // Not running: the request fails, and leaves no stats from the one before.
+        assert!(matches!(
+            runner.explain(runner.ticket(), "FAKE", "FAKE context", "en"),
+            Err(RunnerError::NotRunning)
+        ));
+        assert_eq!(runner.last_stats(), None);
+    }
+
     fn idle_config() -> RunnerConfig {
         RunnerConfig {
             command: PathBuf::from("/nonexistent/FAKE-model"),
             args: Vec::new(),
             needed_bytes: GIB,
             start_timeout: Duration::from_secs(1),
-            answer_timeout: Duration::from_secs(1),
+            answer_limit: AnswerLimit::fixed(Duration::from_secs(1)),
             memory_limit_bytes: None,
             expected_model: None,
             model_file: None,
@@ -1382,7 +1529,7 @@ mod tests {
                 args,
                 needed_bytes,
                 start_timeout: Duration::from_secs(10),
-                answer_timeout: Duration::from_secs(10),
+                answer_limit: AnswerLimit::fixed(Duration::from_secs(10)),
                 memory_limit_bytes: None,
                 expected_model: None,
                 model_file: None,
@@ -1483,6 +1630,106 @@ mod tests {
             assert!(locked_at.elapsed() < Duration::from_secs(5));
             assert!(!runner.is_running());
             assert!(matches!(runner.status(), RunnerStatus::Installed { .. }));
+        }
+
+        #[test]
+        fn a_watch_is_told_its_own_answers_limit_once_as_it_is_asked() {
+            let limit = AnswerLimit {
+                fixed: Duration::from_secs(2),
+                per_prompt_token: Duration::from_millis(1),
+                per_answer_token: Duration::from_millis(1),
+                floor: Duration::from_secs(1),
+                ceiling: Duration::from_secs(60),
+            };
+            let runner = Runner::new(RunnerConfig {
+                answer_limit: limit,
+                ..config(&[], GIB)
+            });
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let text_bytes = request().pages.iter().map(|page| page.text.len()).sum();
+            let own = limit.for_request(
+                prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
+                SUMMARY_ANSWER_TOKENS,
+            );
+            let (told, heard) = mpsc::channel();
+            let ticket = runner.ticket();
+            runner.watch_answer(ticket, Box::new(move |limit| told.send(limit).unwrap()));
+            runner.summarize(ticket, &request()).unwrap();
+            assert_eq!(heard.try_recv(), Ok(own));
+            // Told once: the watch is used up.
+            runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Disconnected));
+
+            // A watch for an older request is not told a newer one's limit.
+            let (told, heard) = mpsc::channel();
+            let older = runner.ticket();
+            runner.watch_answer(older, Box::new(move |limit| told.send(limit).unwrap()));
+            runner
+                .explain(runner.ticket(), "tablet", "Take one tablet.", "en")
+                .unwrap();
+            assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Empty));
+            // Nor is a request cancelled before it was asked.
+            assert_eq!(
+                runner.summarize(older, &request()),
+                Err(RunnerError::Cancelled)
+            );
+            assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Empty));
+            runner.stop();
+        }
+
+        #[test]
+        fn lock_now_during_a_held_answer_stops_it_at_once_and_ends_the_hold() {
+            use crate::idle::{IdleDeadline, MARGIN};
+            use crate::model_runtime::AiError;
+            let runner = Arc::new(Runner::new(config(&["--slow", "30"], GIB)));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let armed_at = Instant::now();
+            let idle = Arc::new(IdleDeadline::new(armed_at));
+            idle.arm(armed_at);
+            let (told, asked) = mpsc::channel();
+            let answering = {
+                let (runner, idle) = (runner.clone(), idle.clone());
+                std::thread::spawn(move || {
+                    tauri::async_runtime::block_on(crate::held_for_answer(
+                        &idle,
+                        move |limit| told.send(limit).unwrap(),
+                        move |watch| {
+                            let ticket = runner.ticket();
+                            runner.watch_answer(ticket, watch);
+                            match runner.summarize(ticket, &request()) {
+                                Ok(_) => Ok(()),
+                                Err(RunnerError::Cancelled) => Err(AiError::Cancelled),
+                                Err(_) => Err(AiError::Failed),
+                            }
+                        },
+                    ))
+                })
+            };
+            // The answer is being written, under its limit (10 s here), and
+            // the idle lock waits for it.
+            assert_eq!(
+                asked.recv_timeout(Duration::from_secs(5)),
+                Ok(Duration::from_secs(10))
+            );
+            // Unheld, the delay would have run out a second past this.
+            let heard_at = Instant::now();
+            assert!(!idle
+                .is_due(heard_at + Duration::from_secs(15 * 60) + MARGIN + Duration::from_secs(1)));
+            // Lock now, as vault_lock does it: the model stops, and the vault
+            // locks, which ends every hold.
+            install(runner.clone());
+            let locked_at = Instant::now();
+            on_lock();
+            idle.disarm();
+            assert!(locked_at.elapsed() < Duration::from_millis(200));
+            uninstall();
+            assert_eq!(answering.join().unwrap(), Err(AiError::Cancelled));
+            assert!(locked_at.elapsed() < Duration::from_secs(5));
+            assert!(!runner.is_running());
+            // The next session's delay runs from its unlock.
+            let unlocked_at = Instant::now();
+            idle.arm(unlocked_at);
+            assert!(idle.is_due(unlocked_at + Duration::from_secs(15 * 60) + MARGIN));
         }
 
         #[test]
