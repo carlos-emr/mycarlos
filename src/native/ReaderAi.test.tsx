@@ -703,6 +703,85 @@ describe("the reader's AI helper", () => {
     );
   });
 
+  it("says a summary can take several minutes, and how many it has taken, outside its status", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const model = fakeLocalModel();
+      const written = model.summarize.bind(model);
+      let release!: () => void;
+      model.summarize = async (...args) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return written(...args);
+      };
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      const panel = screen.getByRole("region", {
+        name: "Summary in plain words",
+      });
+      const status = within(panel).getByRole("status");
+      await waitFor(() =>
+        expect(status).toHaveTextContent("The AI helper is working…"),
+      );
+      expect(
+        within(panel).getByText(
+          humanText("This can take several minutes for a long document."),
+        ),
+      ).toBeVisible();
+      // No time before the first minute.
+      expect(within(panel).queryByText(/so far/)).toBeNull();
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(
+        within(panel).getByText(humanText("Working for 1 minute so far.")),
+      ).toBeVisible();
+      await act(async () => vi.advanceTimersByTime(2 * 60_000));
+      expect(
+        within(panel).getByText(humanText("Working for 3 minutes so far.")),
+      ).toBeVisible();
+      // A screen reader is told the work once, not each minute.
+      expect(status).toHaveTextContent(/^The AI helper is working…$/);
+      // Both go once the answer is written.
+      await act(async () => release());
+      await waitFor(() =>
+        expect(status).toHaveTextContent("The summary is ready."),
+      );
+      expect(within(panel).queryByText(/several minutes|so far/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts an explanation's minutes too, without the long-document note", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const model = fakeLocalModel();
+      model.explain = () => new Promise(() => undefined);
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.click(screen.getByRole("button", { name: "Explain a term" }));
+      const panel = screen.getByRole("region", { name: "Explain a term" });
+      await user.type(
+        within(panel).getByRole("textbox", { name: "Word or phrase" }),
+        "potassium",
+      );
+      await user.click(within(panel).getByRole("button", { name: "Explain" }));
+      await waitFor(() =>
+        expect(within(panel).getByRole("status")).toHaveTextContent(
+          "The AI helper is working…",
+        ),
+      );
+      await act(async () => vi.advanceTimersByTime(2 * 60_000));
+      expect(
+        within(panel).getByText(humanText("Working for 2 minutes so far.")),
+      ).toBeVisible();
+      expect(within(panel).queryByText(/several minutes/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("says an answer is ready once: not for one read back from the vault, nor again on coming back to it", async () => {
     const model = fakeLocalModel();
     // A summary the vault kept earlier, in English.
