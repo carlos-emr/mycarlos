@@ -15,7 +15,10 @@ import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "../Icon";
 import {
+  isLockedError,
   isWrongPdfPassword,
+  isCancelledError,
+  isMissingVaultError,
   localDateText,
   namedDamage,
   type BoxKey,
@@ -40,6 +43,10 @@ import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
+import { modelRunsHere, nativeLocalModel } from "../ai/localModel";
+import type { ModelStatus } from "../ai/types";
+import { AnonymizePreview } from "./AnonymizePreview";
+import { AiHelperNotice } from "./AiHelperNotice";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
@@ -53,6 +60,7 @@ import {
 import { useVaultDragDrop, type DragItem } from "./useVaultDragDrop";
 import { folderPath, folderSubtree, recordPath } from "./folderTree";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import { useLibraryFocus } from "./useLibraryFocus";
 import type { UnfinishedRecoveryKey } from "./unfinishedRecoveryKey";
 import {
   OLD_BACKUPS_EXPOSED,
@@ -121,6 +129,7 @@ export function VaultLibrary({
   cameraAsking,
   sharedNew = 0,
   onSharedSeen,
+  onSecurityEntry,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -135,7 +144,7 @@ export function VaultLibrary({
   pollApproval?: PollApproval;
   /** The session's per-portal waits for those checks (#131). */
   approvalWaits?: PortalWaits;
-  setPortalNotice?: (value: string) => void;
+  setPortalNotice?: (value: UiText) => void;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
   /** Shows the vault as it is now: `known` if a command just returned it,
@@ -178,12 +187,17 @@ export function VaultLibrary({
   sharedNew?: number;
   /** The patient opened Shared with me: its new files have been seen. */
   onSharedSeen?: () => void;
+  /** Security opened (Clinic documents lives there): a chance to show arrivals. */
+  onSecurityEntry?: () => Promise<void>;
 }) {
   const { t } = useI18n();
   const [profileId, setProfileId] = useState(
     () => peopleOf(snapshot)[0]?.id ?? "",
   );
   const [section, setSection] = useState<NativeSection>("records");
+  useEffect(() => {
+    if (section === "security") void onSecurityEntry?.();
+  }, [section, onSecurityEntry]);
   // Keep Security’s Hidden entry scoped to the location it was opened from,
   // including Shared; returning from Hidden must retain that location.
   const [hiddenProfileId, setHiddenProfileId] = useState<string | null>(null);
@@ -227,6 +241,80 @@ export function VaultLibrary({
   activeRecordIdRef.current = activeRecordId;
   // The document open in the reader, if any.
   const [readerRecordId, setReaderRecordId] = useState<string | null>(null);
+  // Whether the reader opens on the clinic's reading aid (under its notice) rather than the original.
+  const [readerShowsAid, setReaderShowsAid] = useState(false);
+  // The AI helper (#72): on a computer only, as the reader's text is.
+  const localModel = useMemo(() => nativeLocalModel(bridge), [bridge]);
+  const [aiStatus, setAiStatus] = useState<ModelStatus | null>(null);
+  useEffect(() => {
+    if (section !== "preferences" || !computer) return;
+    let current = true;
+    localModel.status().then(
+      (found) => current && setAiStatus(found),
+      () => current && setAiStatus({ state: "notInstalled" }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [computer, localModel, section]);
+  // The AI helper's preview (#72): open for one document at a time.
+  const [anonymizeRecordId, setAnonymizeRecordId] = useState<string | null>(
+    null,
+  );
+  // Each screen that reads a document's whole text names its reads, so that
+  // closing one (the reader's Summary) never stops the other's (the
+  // preview's): a new id each time the preview or the reader opens. While
+  // neither is open the id is "", and nothing reads or cancels with it: both
+  // uses below are inside the open preview or reader.
+  const previewReadId = useMemo(
+    () => (anonymizeRecordId ? crypto.randomUUID() : ""),
+    [anonymizeRecordId],
+  );
+  const readerReadId = useMemo(
+    () => (readerRecordId ? crypto.randomUUID() : ""),
+    [readerRecordId],
+  );
+  // The notice about the AI helper: before the first export of this
+  // unlocked session (then the preview opens for `before`), before the first
+  // Summary or Explain with a model (then `then` opens it), or from Security.
+  // `onThisDevice`: the model can run here, so the notice says what it does.
+  const [aiNotice, setAiNotice] = useState<{
+    before: string | null;
+    then?: () => void;
+    onThisDevice: boolean;
+  } | null>(null);
+  // Which notice was seen this session: "device" when it said what the AI
+  // on this computer does, "share" when it gave only the export's text.
+  const [aiNoticeSeen, setAiNoticeSeen] = useState<"share" | "device" | null>(
+    null,
+  );
+  const openAiNotice = (next: { before: string | null; then?: () => void }) =>
+    void localModel.status().then(
+      (status) =>
+        mountedRef.current &&
+        setAiNotice({ ...next, onThisDevice: modelRunsHere(status) }),
+      () => mountedRef.current && setAiNotice({ ...next, onThisDevice: false }),
+    );
+  // Before the reader's Summary or Explain: the notice comes first, once a
+  // session, when there is a model to use. With none, nothing can reach one:
+  // the panel says so at once.
+  const beforeFirstAiUse = (open: () => void) => {
+    // The export's text alone (a status that could not be read then) does
+    // not count: the device's text still comes first.
+    if (aiNoticeSeen === "device") {
+      open();
+      return;
+    }
+    void localModel.status().then(
+      (status) => {
+        if (!mountedRef.current) return;
+        if (status.state === "installed")
+          setAiNotice({ before: null, then: open, onThisDevice: true });
+        else open();
+      },
+      () => mountedRef.current && open(),
+    );
+  };
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   // "Link another clinic" in Security (#145): its dialog is drawn in this
@@ -242,6 +330,7 @@ export function VaultLibrary({
     recordId: string;
     url: string;
   } | null>(null);
+  const photoRequestRef = useRef<symbol | null>(null);
   // The result of a dialog's action (a rename, a recovery key), given once the
   // dialog has closed (see the effect below), and the document whose details
   // it was started from, if any.
@@ -448,6 +537,8 @@ export function VaultLibrary({
     records.find((record) => record.id === activeRecordId) ?? null;
   const readerRecord =
     records.find((record) => record.id === readerRecordId) ?? null;
+  const anonymizeRecord =
+    records.find((record) => record.id === anonymizeRecordId) ?? null;
   const pendingAction =
     activeRecord && confirmation?.recordId === activeRecord.id
       ? confirmation.action
@@ -540,6 +631,9 @@ export function VaultLibrary({
       ? activeRecord.id
       : null;
   useEffect(() => {
+    // Closing/reopening details starts a new selection session, even for the
+    // same record. An older native read no longer owns its photo view.
+    photoRequestRef.current = null;
     setPhotoRecordId(null);
     setShownPhoto(null);
     if (!photoCandidate) return;
@@ -553,6 +647,7 @@ export function VaultLibrary({
     );
     return () => {
       current = false;
+      photoRequestRef.current = null;
     };
   }, [bridge, photoCandidate]);
   // A PDF that may be locked with a password can be unlocked from its details
@@ -615,8 +710,26 @@ export function VaultLibrary({
   };
   const viewPhoto = (recordId: string) =>
     run(async () => {
-      const url = await bridge.viewPhoto(recordId);
-      setShownPhoto({ recordId, url });
+      const request = Symbol();
+      photoRequestRef.current = request;
+      const current = () =>
+        mountedRef.current &&
+        photoRequestRef.current === request &&
+        activeRecordIdRef.current === recordId;
+      try {
+        const url = await bridge.viewPhoto(recordId);
+        if (current()) setShownPhoto({ recordId, url });
+      } catch (failure) {
+        // A dismissed view's ordinary read failure does not belong to the next
+        // document. Native lock/session failures still reach the app's runner.
+        if (
+          current() ||
+          isLockedError(failure) ||
+          isCancelledError(failure) ||
+          isMissingVaultError(failure)
+        )
+          throw failure;
+      }
     });
 
   // A folder opened from another person's tree in the sidebar: the person
@@ -663,12 +776,26 @@ export function VaultLibrary({
   // gone by then (the banner that offered the setup, the Create screen), focus
   // would be left on nothing: put it on the page's heading.
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const focusPageIfLost = () =>
-    window.setTimeout(() => {
-      const focused = document.activeElement;
-      if (!focused || focused === document.body || !focused.isConnected)
-        pageHeadingRef.current?.focus();
-    }, ANNOUNCE_DELAY_MS);
+  const libraryRef = useRef<HTMLDivElement | null>(null);
+  // Library actions put focus back only after keyboard use. The recovery key
+  // setup asks for it however it was closed, as its opener may be gone.
+  const focusPageIfLost = useLibraryFocus(
+    libraryRef,
+    pageHeadingRef,
+    Boolean(
+      busy ||
+        covered ||
+        activeRecord ||
+        readerRecordId ||
+        shownPhoto ||
+        renameTarget ||
+        cameraOpen ||
+        confirmation ||
+        confirmHideDamaged ||
+        recoverySetup,
+    ),
+    `${section}:${profileId}:${currentFolderId ?? ""}`,
+  );
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
   // The recovery key offer the library opened on has closed: the app is
@@ -1212,7 +1339,7 @@ export function VaultLibrary({
       saved = true;
       await refresh();
       setNotice(
-        t("personDetails.saved", {
+        message("personDetails.saved", {
           name: people.find((p) => p.id === id)?.displayName ?? "",
         }),
       );
@@ -1285,7 +1412,6 @@ export function VaultLibrary({
         ];
       };
       setNotice(deferredText(() => said().filter(Boolean).join(" ")));
-      focusPageIfLost();
     });
 
   const moveRecord = (recordId: string, folderId: string | null) =>
@@ -1305,7 +1431,7 @@ export function VaultLibrary({
     void run(async () => {
       await bridge.createFolder(profileId, currentFolderId, name);
       // Cleared only once the folder exists, so a refused name can be corrected.
-      setFolderName("");
+      setFolderName((current) => (current === name ? "" : current));
       await refresh();
       setShowFolderForm(false);
       setNotice(
@@ -1368,7 +1494,11 @@ export function VaultLibrary({
       : translateNow("interface.search.all", { location: rootLocationTitle });
 
   return (
-    <div className="evaluation-page native-vault-page" inert={covered}>
+    <div
+      ref={libraryRef}
+      className="evaluation-page native-vault-page"
+      inert={covered}
+    >
       {/* Polite, but not a second status line: the library has one. */}
       <p className="sr-only" aria-live="polite">
         {sharedAnnouncement}
@@ -2150,7 +2280,12 @@ export function VaultLibrary({
               />
             )}
 
-            {section === "preferences" && <PreferencesSettings />}
+            {section === "preferences" && (
+              <PreferencesSettings
+                aiStatus={computer ? aiStatus : undefined}
+                onAiStatus={setAiStatus}
+              />
+            )}
 
             {section === "security" && (
               <SecuritySettings
@@ -2187,6 +2322,9 @@ export function VaultLibrary({
                   setReturnFocusToHistory(false);
                   setSection("history");
                 }}
+                onOpenAiHelperNotice={
+                  computer ? () => openAiNotice({ before: null }) : undefined
+                }
                 people={people}
                 onUpdateProfileDetails={
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
@@ -2285,7 +2423,7 @@ export function VaultLibrary({
                 }
                 focusPageIfLost();
               }}
-              onLocked={() => void onLock()}
+              onLocked={() => void lockAndConceal()}
               onLockAndLeave={onRequestLock ?? (() => void onLock())}
             />
           )}
@@ -2293,7 +2431,13 @@ export function VaultLibrary({
             <RenameDialog
               target={renameTarget}
               readOnly={busy || readOnly}
-              onSave={saveName}
+              onSave={(name) =>
+                saveName(name).catch((error: unknown) => {
+                  if (mountedRef.current && isLockedError(error))
+                    void lockAndConceal();
+                  throw error;
+                })
+              }
               onClose={() => setRenameTarget(null)}
             />
           )}
@@ -2389,21 +2533,124 @@ export function VaultLibrary({
                 onRead={
                   namedAsPdf(activeRecord.displayName)
                     ? () => {
+                        setReaderShowsAid(false);
                         setReaderRecordId(activeRecord.id);
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
+                onReadAid={
+                  activeRecord.readingAid &&
+                  namedAsPdf(activeRecord.displayName)
+                    ? () => {
+                        setReaderShowsAid(true);
+                        setReaderRecordId(activeRecord.id);
+                        setActiveRecordId(null);
+                      }
+                    : undefined
+                }
+                // Computers only: the text comes from the PDF helper.
+                onAnonymize={
+                  namedAsPdf(activeRecord.displayName) && computer
+                    ? () => {
+                        if (aiNoticeSeen) setAnonymizeRecordId(activeRecord.id);
+                        else openAiNotice({ before: activeRecord.id });
                         setActiveRecordId(null);
                       }
                     : undefined
                 }
               />
             )}
+          {anonymizeRecord && !aiNotice && (
+            <AnonymizePreview
+              record={anonymizeRecord}
+              people={people}
+              clinicNames={[
+                ...(anonymizeRecord.verifiedClinicName
+                  ? [anonymizeRecord.verifiedClinicName]
+                  : []),
+                ...(snapshot.portalLinks ?? []).flatMap((link) =>
+                  link.clinicName ? [link.clinicName] : [],
+                ),
+              ]}
+              readText={(password) =>
+                bridge.documentText(anonymizeRecord.id, previewReadId, password)
+              }
+              cancelRead={() =>
+                void bridge
+                  .cancelDocumentText(previewReadId)
+                  .catch(() => undefined)
+              }
+              knownDetails={() => bridge.recordKnownDetails(anonymizeRecord.id)}
+              pickDestination={(ticket) =>
+                bridge.pickTextExportDestination(anonymizeRecord.id, ticket)
+              }
+              saveText={(pickId, ticket, text) =>
+                bridge.exportTextToPicked(
+                  pickId,
+                  anonymizeRecord.id,
+                  ticket,
+                  text,
+                )
+              }
+              exportHeader={translateNow("aiHelper.exportHeader")}
+              onClose={() => setAnonymizeRecordId(null)}
+            />
+          )}
           {readerRecord && (
             <DocumentReader
               record={readerRecord}
+              startWithAid={readerShowsAid}
               viewPage={(page, width, password) =>
-                bridge.viewPage(readerRecord.id, page, width, password)
+                bridge
+                  .viewPage(readerRecord.id, page, width, password)
+                  .catch((error: unknown) => {
+                    if (mountedRef.current && isLockedError(error))
+                      void lockAndConceal();
+                    throw error;
+                  })
               }
               cancelView={() => void bridge.cancelView().catch(() => undefined)}
               onClose={() => setReaderRecordId(null)}
+              ai={
+                computer
+                  ? {
+                      model: localModel,
+                      // Part B's whole-document text (#171). A locked PDF
+                      // is refused there, which the panel says as a failure;
+                      // passing the reader's document password is the model
+                      // step's work.
+                      loadText: () =>
+                        bridge.documentText(readerRecord.id, readerReadId),
+                      cancelText: () =>
+                        void bridge
+                          .cancelDocumentText(readerReadId)
+                          .catch(() => undefined),
+                      onOpenPreferences: () => {
+                        setReaderRecordId(null);
+                        setSection("preferences");
+                      },
+                      beforeFirstUse: beforeFirstAiUse,
+                    }
+                  : undefined
+              }
+            />
+          )}
+          {/* After the reader, so that it opens over it. */}
+          {aiNotice && (
+            <AiHelperNotice
+              action={aiNotice.before || aiNotice.then ? "continue" : "close"}
+              onThisDevice={aiNotice.onThisDevice}
+              // Answers are not kept in the vault yet (#212).
+              answersKept={false}
+              onClose={() => {
+                setAiNoticeSeen((seen) =>
+                  aiNotice.onThisDevice ? "device" : (seen ?? "share"),
+                );
+                if (aiNotice.before) setAnonymizeRecordId(aiNotice.before);
+                aiNotice.then?.();
+                setAiNotice(null);
+              }}
             />
           )}
           {confirmHideDamaged && (

@@ -5,6 +5,9 @@ import viteConfig from "./vite.config.ts";
 export default mergeConfig(
   viteConfig,
   defineConfig({
+    optimizeDeps: {
+      include: ["@tauri-apps/api/mocks"],
+    },
     test: {
       setupFiles: "./src/test/setup.ts",
       include: ["src/**/*.test.{ts,tsx}"],
