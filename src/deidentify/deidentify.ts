@@ -3806,6 +3806,8 @@ function kinName(candidate: string): string {
   const words = [...candidate.matchAll(/[^ \t]+/gu)];
   const listWord = (word: string) => {
     const lower = word.toLowerCase();
+    // Keep the same name exceptions as the surrounding refusal checks.
+    if (ALSO_NAMES.has(lower) || NAMES_ON_NOT_NAMES.has(lower)) return false;
     return (
       KIN_FOLLOW_WORDS.has(lower) ||
       STATUS_WORDS.has(lower) ||

@@ -612,3 +612,17 @@ describe("a relative named in passing, in title-case text", () => {
     expect(send(text)).not.toContain(part);
   });
 });
+
+describe("relative names retain the existing name exceptions", () => {
+  it.each([
+    ["Her daughter Elle Martin visited.", ["Elle", "Martin"]],
+    ["Her husband Son Min-jun called.", ["Son", "Min-jun"]],
+    ["Her sister Nie Wei called.", ["Nie", "Wei"]],
+    ["Her husband Martin Head called.", ["Martin", "Head"]],
+    ["Her daughter Summer Vale visited.", ["Summer", "Vale"]],
+    ["Her husband Paul Pain called.", ["Paul", "Pain"]],
+  ])("removes the full name in %j", (text, parts) => {
+    const result = send(text);
+    for (const part of parts) expect(result).not.toContain(part);
+  });
+});
