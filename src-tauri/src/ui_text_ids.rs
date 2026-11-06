@@ -629,6 +629,7 @@ pub enum MessageId {
     NotificationsAllow,
     NotificationsAutoAllow,
     NotificationsAutoHelp,
+    NotificationsAutoNeedsNotices,
     NotificationsAutoPaused,
     NotificationsBlocked,
     NotificationsCheckBusy,
@@ -1556,6 +1557,7 @@ impl MessageId {
         Self::NotificationsAllow,
         Self::NotificationsAutoAllow,
         Self::NotificationsAutoHelp,
+        Self::NotificationsAutoNeedsNotices,
         Self::NotificationsAutoPaused,
         Self::NotificationsBlocked,
         Self::NotificationsCheckBusy,
@@ -2759,6 +2761,7 @@ impl MessageId {
             Self::NotificationsAllow => "notifications-allow",
             Self::NotificationsAutoAllow => "notifications-autoAllow",
             Self::NotificationsAutoHelp => "notifications-autoHelp",
+            Self::NotificationsAutoNeedsNotices => "notifications-autoNeedsNotices",
             Self::NotificationsAutoPaused => "notifications-autoPaused",
             Self::NotificationsBlocked => "notifications-blocked",
             Self::NotificationsCheckBusy => "notifications-checkBusy",
@@ -4358,6 +4361,7 @@ impl MessageId {
             "noticesStep.later" => Some(Self::NoticesStepLater),
             "noticesStep.done" => Some(Self::NoticesStepDone),
             "noticesStep.notNow" => Some(Self::NoticesStepNotNow),
+            "notifications.autoNeedsNotices" => Some(Self::NotificationsAutoNeedsNotices),
             _ => None,
         }
     }

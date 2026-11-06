@@ -23,6 +23,8 @@ export function NoticesAfterLink({ onClose }: { onClose: () => void }) {
   const { t, locale } = useI18n();
   const [offer, setOffer] = useState<"checking" | "offer" | "none">("checking");
   const dialogRef = useRef<HTMLElement | null>(null);
+  // Once a box is saved, "Not now" would read as undoing it: only Done stays.
+  const [changed, setChanged] = useState(false);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const close = () => closeRef.current();
@@ -73,7 +75,10 @@ export function NoticesAfterLink({ onClose }: { onClose: () => void }) {
         </header>
         <div className="notices-after-link-body">
           <p id="notices-step-intro">{t("noticesStep.intro")}</p>
-          <NotificationSetting />
+          <NotificationSetting
+            headingLevel={3}
+            onSaved={() => setChanged(true)}
+          />
           <p>
             {t("noticesStep.later", {
               settings: t("sidebar.settings"),
@@ -86,9 +91,11 @@ export function NoticesAfterLink({ onClose }: { onClose: () => void }) {
           <button className="button primary" type="button" onClick={close}>
             {t("noticesStep.done")}
           </button>
-          <button className="button" type="button" onClick={close}>
-            {t("noticesStep.notNow")}
-          </button>
+          {!changed && (
+            <button className="button" type="button" onClick={close}>
+              {t("noticesStep.notNow")}
+            </button>
+          )}
         </footer>
       </section>
     </div>

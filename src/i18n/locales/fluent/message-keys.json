@@ -921,5 +921,6 @@
   "noticesStep.intro",
   "noticesStep.later",
   "noticesStep.done",
-  "noticesStep.notNow"
+  "noticesStep.notNow",
+  "notifications.autoNeedsNotices"
 ]

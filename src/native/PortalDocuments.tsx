@@ -22,6 +22,10 @@ interface Props {
   compact?: boolean;
 }
 
+/** Whether any link has finished linking (an incomplete one has not). */
+const workingLink = (links: PortalLinkSummary[] | undefined) =>
+  (links ?? []).some((link) => !link.incomplete);
+
 export function PortalDocuments({
   bridge,
   snapshot,
@@ -39,6 +43,23 @@ export function PortalDocuments({
   const [person, setPerson] = useState("");
   const [copyState, setCopyState] = useTextState();
   const [offerNotices, setOfferNotices] = useState(false);
+  // The first working clinic link (#235): when the vault, open here, goes from
+  // no working link to one, document notices are offered once. Watching the
+  // vault rather than one button keeps it right whichever action made the link.
+  // Only the full panel offers it, so a compact copy never opens a second one.
+  // Links not known yet (linking off, or no list in this snapshot) are not
+  // "no link": an already linked vault must not look newly linked at unlock.
+  const hasWorkingLink =
+    snapshot.portalLinkingEnabled === true && snapshot.portalLinks !== undefined
+      ? workingLink(snapshot.portalLinks)
+      : null;
+  const hadWorkingLink = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (compact || hasWorkingLink === null) return;
+    if (hadWorkingLink.current === false && hasWorkingLink)
+      setOfferNotices(true);
+    hadWorkingLink.current = hasWorkingLink;
+  }, [hasWorkingLink, compact]);
   const shown = useRef(true);
   useEffect(() => {
     shown.current = true;
@@ -146,14 +167,10 @@ export function PortalDocuments({
     </button>
   );
   if (compact) return links.length > 0 ? checkButton : null;
-  const working = (list: PortalLinkSummary[] | undefined) =>
-    (list ?? []).some((link) => !link.incomplete);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (disabled) return;
-    const firstLink = !working(links);
     void run(async () => {
-      let linked = false;
       try {
         await bridge.linkPortal!({
           portalBase: address,
@@ -161,16 +178,11 @@ export function PortalDocuments({
           deviceName: device,
           profileId: person || null,
         });
-        linked = true;
         // The one-use code is not retained after this attempt.
         if (shown.current) setCode("");
       } finally {
         if (shown.current) setCode("");
-        const after = await refresh();
-        // The first working clinic link (#235): document notices are offered
-        // once, right after it, when they can do something.
-        if (linked && firstLink && shown.current && working(after.portalLinks))
-          setOfferNotices(true);
+        await refresh();
       }
     });
   };

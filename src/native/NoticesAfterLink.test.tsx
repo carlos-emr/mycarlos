@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
@@ -44,7 +44,7 @@ const link: PortalLinkSummary = {
   approvalRequested: false,
   clinicApproved: false,
 };
-const snapshot = (links: PortalLinkSummary[]): VaultSnapshot => ({
+const snapshot = (links: PortalLinkSummary[] | undefined): VaultSnapshot => ({
   capture: { epoch: "00000000-0000-4000-8000-000000000235", sequence: 1 },
   profiles: [
     { id: "fake-person", displayName: "FAKE Patient", createdAtMs: 1 },
@@ -84,7 +84,7 @@ afterEach(() => {
 
 /** The link form over `before`; the link answers with `after` once made. */
 function linkForm(
-  before: PortalLinkSummary[],
+  before: PortalLinkSummary[] | undefined,
   after: PortalLinkSummary[],
   linkPortal = vi.fn().mockResolvedValue(link),
 ) {
@@ -99,18 +99,27 @@ function linkForm(
   const run = async (operation: () => Promise<void>) => {
     await operation().catch(() => {});
   };
-  render(
+  // As the app does: a refresh hands the panel the vault's new snapshot.
+  const panel = (shown: VaultSnapshot) => (
     <PortalDocuments
       bridge={bridge}
-      snapshot={snapshot(before)}
+      snapshot={shown}
       busy={false}
       readOnly={false}
       run={run}
-      refresh={vi.fn().mockResolvedValue(snapshot(after))}
+      refresh={refresh}
       setNotice={vi.fn()}
-    />,
+    />
   );
-  return bridge;
+  const refresh = vi.fn(async () => {
+    view.rerender(panel(snapshot(after)));
+    return snapshot(after);
+  });
+  const view = render(panel(snapshot(before)));
+  return {
+    bridge,
+    show: (shown: VaultSnapshot) => view.rerender(panel(shown)),
+  };
 }
 
 async function submitLink() {
@@ -240,6 +249,81 @@ describe("Notices after the first clinic link", () => {
     linkForm([], [link]);
     await submitLink();
     await waitFor(() => expect(native.invoke).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps only Done once a box is saved, so nothing reads as undo", async () => {
+    linkForm([], [link]);
+    const user = await submitLink();
+    const dialog = await screen.findByRole("dialog");
+    expect(screen.getByRole("button", { name: "Not now" })).toBeVisible();
+    await user.click(
+      await screen.findByRole("checkbox", {
+        name: humanText("Allow document arrival notices"),
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Not now" })).toBeNull(),
+    );
+    expect(screen.getByRole("button", { name: "Done" })).toBeVisible();
+    expect(dialog).toBeVisible();
+  });
+
+  it("says why the automatic checks wait, and nests the setting's heading", async () => {
+    linkForm([], [link]);
+    const user = await submitLink();
+    const dialog = await screen.findByRole("dialog");
+    const checks = await screen.findByRole("checkbox", {
+      name: humanText(
+        "Check for clinic documents automatically while unlocked",
+      ),
+    });
+    expect(checks).toBeDisabled();
+    expect(checks).toHaveHumanAccessibleDescription(
+      /Allow document arrival notices first to turn this on\./,
+    );
+    expect(
+      screen.getByRole("heading", {
+        level: 3,
+        name: humanText("Notices after document checks"),
+      }),
+    ).toBeVisible();
+    expect(dialog).toContainElement(
+      screen.getByRole("heading", {
+        level: 2,
+        name: humanText("Notices from your clinic"),
+      }),
+    );
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: humanText("Allow document arrival notices"),
+      }),
+    );
+    await waitFor(() => expect(checks).toBeEnabled());
+    expect(dialog).not.toHaveTextContent(
+      "Allow document arrival notices first to turn this on.",
+    );
+  });
+
+  it("is offered whichever action made the first link, but not for an unfinished link or at unlock", async () => {
+    const view = linkForm([], []);
+    // An unfinished link is not a working one.
+    view.show(snapshot([{ ...link, incomplete: true }]));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Another action (not this form) made the first working link.
+    view.show(snapshot([link]));
+    expect(
+      await screen.findByRole("dialog", {
+        name: humanText("Notices from your clinic"),
+      }),
+    ).toBeVisible();
+    cleanup();
+    native.invoke.mockClear();
+    // At unlock the links may not be known at first: an already linked vault
+    // is not newly linked.
+    const unlocked = linkForm(undefined, []);
+    unlocked.show(snapshot([link]));
+    await waitFor(() => expect(native.invoke).not.toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
