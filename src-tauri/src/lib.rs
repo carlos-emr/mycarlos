@@ -1757,6 +1757,9 @@ impl From<local_model::ModelError> for ModelFailure {
 struct ModelAddProgress {
     done: u64,
     total: u64,
+    /// Catalog row for a download; picked-file checks stay global.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
 }
 
 /// The model add or download running now, and how far it is (#275). A row
@@ -1773,11 +1776,13 @@ struct ModelAddActive {
 #[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct ModelAddNow {
-    /// `download` for the default model's download and its check; `check`
+    /// `download` for a catalog model's download and its check; `check`
     /// for a picked file's.
     kind: &'static str,
     done: u64,
     total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
 }
 
 impl ModelAddActive {
@@ -1820,6 +1825,7 @@ impl ModelAddActive {
 struct ModelAddReport<'a> {
     active: &'a ModelAddActive,
     kind: &'static str,
+    index: Option<usize>,
     reported: bool,
 }
 
@@ -1828,6 +1834,7 @@ impl<'a> ModelAddReport<'a> {
         Self {
             active,
             kind,
+            index: None,
             reported: false,
         }
     }
@@ -1837,6 +1844,7 @@ impl<'a> ModelAddReport<'a> {
             kind: self.kind,
             done,
             total,
+            index: self.index,
         }));
     }
 }
@@ -1934,7 +1942,14 @@ async fn ai_model_add_picked(
                     if done == 0 || done == total || step != shown {
                         shown = step;
                         report.progress(done, total);
-                        let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                        let _ = app.emit(
+                            "ai-model-add-progress",
+                            ModelAddProgress {
+                                done,
+                                total,
+                                index: None,
+                            },
+                        );
                     }
                 });
                 match result {
@@ -1978,6 +1993,7 @@ async fn ai_model_download(
         active.run(
             "download",
             |report| {
+                report.index = Some(index);
                 let mut shown = u64::MAX;
                 let result = models.download(
                     index,
@@ -1988,8 +2004,14 @@ async fn ai_model_download(
                         if done == 0 || done == total || step != shown {
                             shown = step;
                             report.progress(done, total);
-                            let _ =
-                                app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                            let _ = app.emit(
+                                "ai-model-add-progress",
+                                ModelAddProgress {
+                                    done,
+                                    total,
+                                    index: Some(index),
+                                },
+                            );
                         }
                     },
                 );
@@ -6458,11 +6480,51 @@ mod tests {
             Some(ModelAddNow {
                 kind: "download",
                 done: 5,
+                index: None,
                 total: 10
             })
         );
         drop(running);
         assert_eq!(active.get(), None);
+    }
+
+    #[test]
+    fn model_add_metadata_keeps_the_download_row_but_picker_checks_stay_global() {
+        let active = ModelAddActive::default();
+        let mut report = ModelAddReport::new(&active, "download");
+        report.index = Some(1);
+        report.progress(5, 10);
+        let snapshot = active.get().unwrap();
+        assert_eq!(snapshot.index, Some(1));
+        let encoded = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(encoded["index"], 1);
+        assert_eq!(encoded["done"], 5);
+        drop(ModelAddReport::new(&active, "check"));
+        assert_eq!(active.get(), Some(snapshot));
+        drop(report);
+        assert_eq!(active.get(), None);
+
+        let mut picked = ModelAddReport::new(&active, "check");
+        picked.progress(2, 20);
+        let check = serde_json::to_value(active.get().unwrap()).unwrap();
+        assert!(check.get("index").is_none());
+        let legacy = serde_json::to_value(ModelAddProgress {
+            done: 2,
+            total: 20,
+            index: None,
+        })
+        .unwrap();
+        assert_eq!(legacy, serde_json::json!({"done": 2, "total": 20}));
+        let indexed = serde_json::to_value(ModelAddProgress {
+            done: 5,
+            total: 10,
+            index: Some(1),
+        })
+        .unwrap();
+        assert_eq!(
+            indexed,
+            serde_json::json!({"done": 5, "total": 10, "index": 1})
+        );
     }
 
     #[test]
@@ -6539,6 +6601,7 @@ mod tests {
                     active.get(),
                     Some(ModelAddNow {
                         kind: "check",
+                        index: None,
                         done: 2,
                         total: 20,
                     })
