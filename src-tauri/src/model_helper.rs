@@ -512,14 +512,15 @@ struct Sentences {
 }
 
 /// The sentences of a summary the model wrote, whole. When it stopped at its token cap partway,
-/// the sentences it finished; `None` when there is not one, or when any part still carries the
-/// model's thinking.
+/// the sentences it finished. A sentence whose words or quote still carry the model's thinking
+/// is left out, and the others are kept; `None` when no sentence is left.
+///
+/// A document that really contains such a marker as text (`<think>`, say), quoted by the
+/// model, loses that sentence the same way: a marker is never shown, whoever wrote it.
 pub(crate) fn read_summary(written: &str, capped: bool) -> Option<Vec<Sentence>> {
-    read_sentences(written, capped).filter(|sentences| {
-        sentences
-            .iter()
-            .all(|sentence| !thinks(&sentence.text) && !thinks(&sentence.quote))
-    })
+    let mut sentences = read_sentences(written, capped)?;
+    sentences.retain(|sentence| !thinks(&sentence.text) && !thinks(&sentence.quote));
+    (!sentences.is_empty()).then_some(sentences)
 }
 
 fn read_sentences(written: &str, capped: bool) -> Option<Vec<Sentence>> {
@@ -1022,6 +1023,24 @@ mod tests {
         );
         let gemma = r#"{"sentences":[{"text":"Normal study.","quote":"<|channel>thought"}]}"#;
         assert_eq!(read_summary(gemma, false), None);
+        // One sentence still thinking is left out; the others are kept.
+        let one_of_three = r#"{"sentences":[{"text":"First.","quote":"FAKE one"},
+            {"text":"<think>plan</think>","quote":"FAKE two"},
+            {"text":"Third.","quote":"FAKE </think> three"},
+            {"text":"Fourth.","quote":"FAKE four"}]}"#;
+        assert_eq!(
+            read_summary(one_of_three, false),
+            Some(vec![
+                Sentence {
+                    text: "First.".to_owned(),
+                    quote: "FAKE one".to_owned()
+                },
+                Sentence {
+                    text: "Fourth.".to_owned(),
+                    quote: "FAKE four".to_owned()
+                },
+            ])
+        );
     }
 
     #[test]
