@@ -1248,9 +1248,15 @@ pub mod engine_testing {
             };
             let config = launch_at(executable.to_owned(), &verified)
                 .map_err(|error| format!("{error:?}"))?;
-            let runner = Arc::new(Runner::new(config));
+            // The runner keeps no model file of its own: this one start hands the sealed copy
+            // over and lets it go once the helper has greeted, as the app does. So a test holds
+            // the model once, in the helper, not twice (Linux: a 3 GB memfd beside the weights).
+            let runner = Arc::new(Runner::new(RunnerConfig {
+                model_file: None,
+                ..config.clone()
+            }));
             runner
-                .start(&Plenty)
+                .start_with(&Plenty, move || Ok(config))
                 .map_err(|error| format!("{error:?}"))?;
             Ok(Self {
                 runner,

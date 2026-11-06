@@ -56,6 +56,15 @@ pub(crate) const DAMAGED_CODE: &str = "pickup_damaged";
 /// the connection is taken to be down for this clinic, rather than waiting
 /// out a timeout for every delivery still listed.
 const MAX_DOWNLOAD_FAILURES_IN_A_ROW: usize = 3;
+/// A portal from before reading aids (the 29 Oct demo portal, 1705edb) refuses a listing
+/// that names the kinds this device understands: it answers any query key it does not know
+/// with 400 `{"code":"invalid_cursor"}`.
+fn refuses_unknown_query(response: &crate::portal_client::ApiResponse) -> bool {
+    response.status == 400
+        && serde_json::from_slice::<serde_json::Value>(&response.body)
+            .ok()
+            .is_some_and(|body| body.get("code").and_then(|c| c.as_str()) == Some("invalid_cursor"))
+}
 fn add_issue_code(result: &mut CheckResult, link: &crate::portal_link::StoredLink, code: &str) {
     if result
         .issues
@@ -321,7 +330,12 @@ where
             let mut download_failures = 0;
             // The kinds this device understands, named in every listing: the portal only
             // lists a reading aid to a device that asks for it (a format-version guard).
-            let accept = format!("accept={}", crate::reading_aid::accepted_kinds().join(","));
+            // A portal from before reading aids refuses the unknown key (see
+            // refuses_unknown_query) and never lists an aid either: for this link and this
+            // check its first page is asked again once without the kinds, and its later
+            // pages leave them out. Any other refusal stays an error.
+            let accept = format!("&accept={}", crate::reading_aid::accepted_kinds().join(","));
+            let mut ask_kinds = true;
             // Reading aids wait until every original of this check is filed, so an aid
             // delivered with its original is filed in the same check.
             let mut aids: Vec<Outer> = Vec::new();
@@ -329,25 +343,30 @@ where
                 if cancelled() {
                     return Err(VaultError::Cancelled);
                 }
-                let suffix = match through {
-                    None => format!("/api/mycarlos/deliveries?limit=50&{accept}"),
-                    Some(t) => {
-                        format!(
-                            "/api/mycarlos/deliveries?after={after}&through={t}&limit=50&{accept}"
-                        )
-                    }
+                let list = |kinds: &str| -> Result<crate::portal_client::ApiResponse, VaultError> {
+                    let suffix = match through {
+                        None => format!("/api/mycarlos/deliveries?limit=50{kinds}"),
+                        Some(t) => format!(
+                            "/api/mycarlos/deliveries?after={after}&through={t}&limit=50{kinds}"
+                        ),
+                    };
+                    let anchor = store.delivery_anchor(&link, session)?;
+                    exchange(
+                        &link,
+                        "GET",
+                        &suffix,
+                        Vec::new(),
+                        Some(&anchor),
+                        524288,
+                        &cancelled,
+                    )
+                    .map_err(VaultError::Portal)
                 };
-                let anchor = store.delivery_anchor(&link, session)?;
-                let response = exchange(
-                    &link,
-                    "GET",
-                    &suffix,
-                    Vec::new(),
-                    Some(&anchor),
-                    524288,
-                    &cancelled,
-                )
-                .map_err(VaultError::Portal)?;
+                let mut response = list(if ask_kinds { accept.as_str() } else { "" })?;
+                if ask_kinds && page_number == 0 && refuses_unknown_query(&response) {
+                    ask_kinds = false;
+                    response = list("")?;
+                }
                 if response.status != 200 {
                     // The device's own list: "not found" here ends this
                     // link's check, so the error returned is this answer.
