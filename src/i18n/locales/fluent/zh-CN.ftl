@@ -1757,6 +1757,8 @@ ai-error-memory = 目前可用内存不足，AI 助手无法运行。请关闭�
 
 ai-error-busy = 正在添加或移除 AI 助手的模型。请在完成后重试。
 
+ai-error-storage = 无法从此电脑读取 AI 助手的模型。请重试。如果问题持续，请在偏好设置中删除模型，然后重新添加。
+
 ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能遗漏部分内容。
 
 ai-summary-noSource = 未找到来源
