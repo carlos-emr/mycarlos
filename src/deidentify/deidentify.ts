@@ -2152,7 +2152,7 @@ const RULES: Rule[] = [
   {
     kind: "dateOfBirth",
     pattern: new RegExp(
-      `(?:\\bDOB(?:[ \\t]*\\/[ \\t]*(?:Age|Âge|Edad|Idade|Wiek))?|\\bD\\.O\\.B\\.?|\\bDate of birth(?:[ \\t]*\\((?:DOB|D\\.O\\.B\\.?)\\))?|\\bDate[ \\t]+(?:de[ \\t]+)?naiss\\.?|\\bF\\.?[ \\t]?de[ \\t]+nac\\.?|\\bFN[ \\t]*:|\\bD\\.?N\\.?[ \\t]*:|\\bur\\.[ \\t]+dnia|\\bBirth ?date|\\bBorn(?:[ \\t]+on)?|(?<![\\p{L}\\d.])b\\.|\\bDate de naissance|\\bnaissance|\\bDDN|\\bN[ée]e?[ \\t]+(?:le|en)|` +
+      `(?:\\bDOB(?:[ \\t]*\\/[ \\t]*(?:Age|Âge|Edad|Idade|Wiek))?|\\bD\\.O\\.B\\.?|\\bDate of birth(?:[ \\t]*\\((?:DOB|D\\.O\\.B\\.?)\\))?|\\bDate[ \\t]+(?:de[ \\t]+)?naiss\\.?|\\bF\\.?[ \\t]?de[ \\t]+nac\\.?|\\bF\\.?N\\.?[ \\t]*:|\\bD\\.?N\\.?[ \\t]*:|\\bur\\.[ \\t]+dnia|\\bN[ée]\\(e\\)[ \\t]+le|\\bData[ \\t]+urodz\\.?|\\bDt\\.?[ \\t]+nasc\\.?|\\bBirth[ \\t]*:|出生年月日|\\bBirth ?date|\\bBorn(?:[ \\t]+on)?|(?<![\\p{L}\\d.])b\\.|\\bDate de naissance|\\bnaissance|\\bDDN|\\bN[ée]e?[ \\t]+(?:le|en)|` +
         `\\bFecha de nacimiento|\\bFecha[ \\t]+(?:de[ \\t]+)?nac\\.?|\\bFec\\.?[ \\t]?nac\\.?|\\bNacid[oa](?:[ \\t]+el)?|\\bF\\.?[ \\t]?nac\\.?|\\bData de nascimento|\\bData[ \\t]+(?:de[ \\t]+)?nasc\\.?|\\bNascid[oa](?:[ \\t]+em)?|\\bNasc\\.|` +
         `\\bData urodzenia|\\bur\\.|\\bUrodzon[ya](?:[ \\t]+dnia)?|出生日期|出生於|出生于|出生|生日)[ \\t]*:?[ \\t：]*(${DATE})`,
       "giu",
@@ -2312,7 +2312,7 @@ const RULES: Rule[] = [
   {
     kind: "address",
     pattern: new RegExp(
-      `(?<=(?<![\\p{L}])(?:[Mm]ieszka(?:ł|ła|jący|jąca)?[ \\t]+w|[Zz]amieszkał[ay]?[ \\t]+w|[Zz]am\\.|[Zz][ \\t]+(?:miejscowości|miasta|gminy|wsi)|[Ww][ \\t]+(?:miejscowości|mieście|gminie|wsi))[ \\t]+)(?!(?:Ul|Al|Pl|Os|Ulica|Aleja|Plac|Osiedle)(?![\\p{L}]))\\p{Lu}\\p{Ll}+(?:[ -]\\p{Lu}\\p{Ll}+){0,2}`,
+      `(?<=(?<![\\p{L}])(?:[Mm]ieszka(?:ł|ła|jący|jąca)?[ \\t]+w|[Zz]amieszkał[ay]?[ \\t]+w|[Zz]am\\.|[Zz][ \\t]+(?:miejscowości|miasta|gminy|wsi)|[Ww][ \\t]+(?:miejscowości|mieście|gminie|wsi))[ \\t]+)(?!(?:Ul|Al|Pl|Os|Ulica|Aleja|Plac|Osiedle|UL|AL|PL|OS)(?![\\p{L}]))\\p{Lu}\\p{Ll}+(?:[ -]\\p{Lu}\\p{Ll}+){0,2}`,
       "gu",
     ),
     townInBrackets: true,
@@ -2322,7 +2322,7 @@ const RULES: Rule[] = [
   {
     kind: "address",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?<![Ee][Tt][ \\t]?)(?:[Uu]l\\.|[Aa]l\\.|[Pp]l\\.|[Oo]s\\.|[Uu]lica|[Aa]leja|[Pp]lac|[Oo]siedle)[ \\t]*\\p{Lu}[\\p{L}.-]*(?:[ \\t]+\\p{Lu}[\\p{L}.-]*){0,3}[ \\t]+(?!(?:19|20)\\d{2}(?!\\d))\\d{1,4}[A-Za-z]?(?:\\/\\d{1,4}[A-Za-z]?)?(?:[ \\t]*m\\.[ \\t]*\\d{1,4})?(?![\\p{L}\\d])${TOWN_AFTER}`,
+      `(?<![\\p{L}])(?<![Ee][Tt][ \\t]?)(?:[Uu]l\\.|[Aa]l\\.|[Pp]l\\.|[Oo]s\\.|UL\\.|AL\\.|PL\\.|OS\\.|[Uu]lica|[Aa]leja|[Pp]lac|[Oo]siedle|ULICA|ALEJA|PLAC|OSIEDLE)[ \\t]*\\p{Lu}[\\p{L}.-]*(?:[ \\t]+\\p{Lu}[\\p{L}.-]*){0,3}[ \\t]+(?!(?:19|20)\\d{2}(?!\\d))\\d{1,4}[A-Za-z]?(?:\\/\\d{1,4}[A-Za-z]?)?(?:[ \\t]*m\\.[ \\t]*\\d{1,4})?(?![\\p{L}\\d])${TOWN_AFTER}`,
       "gu",
     ),
   },
@@ -3077,9 +3077,75 @@ const TITLE_BEFORE =
 const followsTitle = (text: string, at: number) =>
   TITLE_BEFORE.test(text.slice(Math.max(0, at - 30), at));
 
+// A short birth cue that is also an everyday abbreviation: "DN:" (district nurse), "FN:"
+// (febrile neutropenia), "b." (the second item of a lettered list, "Plan B.").
+const SHORT_BIRTH_CUE =
+  /(?:(?<![\p{L}])(?:D\.?N\.?|F\.?N\.?)[ \t]*:|(?<![\p{L}\d.])[Bb]\.)[ \t：]*$/u;
+/**
+ * A date after a short birth cue is a birth date only when it is at least a year before
+ * another date in the text (an adult's birth date is decades before a visit), or when no
+ * other date stands on its line, before or after it. Otherwise it is an event date (#259
+ * review).
+ */
+function keepShortBirthCue(
+  text: string,
+  finding: Finding,
+  dates: { finding: Finding; days: number[] }[],
+): boolean {
+  const own = dates.find((date) => date.finding === finding)?.days ?? [];
+  const others = dates.filter(
+    (date) =>
+      date.finding.end <= finding.start || date.finding.start >= finding.end,
+  );
+  // An unclear day and month ("12/03/2026") has both readings: years apart either way.
+  if (
+    others.some((date) =>
+      date.days.some((day) => own.some((birth) => day - birth >= 365)),
+    )
+  )
+    return true;
+  const lineStart = text.lastIndexOf("\n", finding.start - 1) + 1;
+  const lineEnd = text.indexOf("\n", finding.end);
+  return !others.some(
+    (date) =>
+      date.finding.start >= lineStart &&
+      (lineEnd < 0 || date.finding.start < lineEnd),
+  );
+}
+
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
   found.push(...ruleFindings(text, options));
+  {
+    const short = found.filter(
+      (finding) =>
+        finding.kind === "dateOfBirth" &&
+        SHORT_BIRTH_CUE.test(
+          text.slice(Math.max(0, finding.start - 12), finding.start),
+        ),
+    );
+    if (short.length) {
+      const dates = found.flatMap((finding) => {
+        if (finding.kind !== "date" && finding.kind !== "dateOfBirth")
+          return [];
+        const days = readDate(
+          text.slice(finding.start, finding.end).replace(WEEKDAY_SUFFIX, ""),
+          options.dayFirst ?? true,
+        ).map((iso) => Math.round(Date.parse(`${iso}T00:00:00Z`) / 86_400_000));
+        return [{ finding, days }];
+      });
+      const dropped = new Set(
+        short.filter((finding) => !keepShortBirthCue(text, finding, dates)),
+      );
+      // The plain date found at the same place stays, as an event date.
+      if (dropped.size)
+        found.splice(
+          0,
+          found.length,
+          ...found.filter((finding) => !dropped.has(finding)),
+        );
+    }
+  }
   // A town inside a clinic's name ("CLSC de Saint-Michel-des-Saints") is part of that name.
   const clinics = found.filter((finding) => finding.kind === "clinic");
   const inClinic = (span: { start: number; end: number }) =>

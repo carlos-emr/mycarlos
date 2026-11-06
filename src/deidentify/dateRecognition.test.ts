@@ -211,3 +211,41 @@ describe("birth-date cues for an age under 90, so no gap gives the age (#253)", 
     expect(send(text)).not.toMatch(/DATE OF BIRTH/);
   });
 });
+
+describe("a short birth cue that is also an everyday abbreviation (#259 review)", () => {
+  // DN: district nurse, FN: febrile neutropenia, b.: a lettered list or "Plan B.".
+  it.each([
+    "DN: 2026-03-12 dressing changed. Seen 2026-03-20.",
+    "Visits - GP: 2026-03-02, DN: 2026-03-12, OT: 2026-03-19.",
+    "FN: 2026-03-12, admitted; reviewed 2026-03-14.",
+    "D.N.: 2026-03-12 review. Next 2026-04-02.",
+    "DN : 12/03/2026 pansement, revu le 19/03/2026.",
+    "a. 2026-03-02 start; b. 2026-03-12 stop.",
+    "Plan B. 2026-03-12 switch. Review 2026-04-01.",
+  ])("is an event date beside a nearby date: %j", (text) => {
+    expect(send(text)).not.toMatch(/DATE OF BIRTH/);
+  });
+
+  it.each([
+    "DN: 14/03/1941. Consulta 12/03/2026.",
+    "FN: 14/03/1941. Visita 12/03/2026.",
+    "D.N.: 14/03/1941\nConsulta 12/03/2026.",
+    "b. 1941-03-14. Seen 2026-03-12.",
+    "DN: 14/03/1941",
+  ])("is a birth date a year or more before a visit, or alone: %j", (text) => {
+    const out = send(text);
+    expect(out).toMatch(/\[DATE OF BIRTH 1\]/);
+    expect(out).not.toContain("1941");
+  });
+
+  it.each([
+    "Né(e) le 14/03/1941. Vu le 12/03/2026.",
+    "出生年月日：1941年3月14日。2026年3月12日就诊。",
+    "Data urodz.: 14.03.1941. Wizyta 12.03.2026.",
+    "Dt nasc: 14/03/1941. Consulta 12/03/2026.",
+    "F.N.: 14/03/1941. Visita 12/03/2026.",
+    "Birth: 1941-03-14. Seen 2026-03-12.",
+  ])("reads more birth labels: %j", (text) => {
+    expect(send(text)).toMatch(/\[DATE OF BIRTH 1\]/);
+  });
+});
