@@ -383,6 +383,8 @@ describe("native clinic document controls", () => {
         );
       try {
         fixture();
+        // The device code and Copy wait behind Show device details (#166).
+        await user.click(screen.getByText("Show device details"));
         await user.click(
           screen.getByRole("button", { name: "Copy device code" }),
         );
