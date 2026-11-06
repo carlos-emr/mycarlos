@@ -18,8 +18,8 @@ import {
   myRecords,
 } from "./support/vaultFake";
 
-// The demo runbook (kept outside the repo), step by step: Preferences → AI
-// helper → Download the default model → Installed →
+// The demo runbook (kept outside the repo), step by step: AI helper (its
+// own Settings page) → Download the default model → Installed →
 // import the three FAKE PDFs → open each → Summary (notice → Continue) → the
 // answer → Show in document; then the runbook's "If it stalls" messages. Every
 // button and text the runbook names is written here as the runbook writes it,
@@ -128,7 +128,7 @@ async function start(page: Page, setup: FakeAiSetup = {}) {
 
 async function preferences(page: Page) {
   await (
-    await named(page.locator("body"), "Preferences", "step 3 (sidebar)")
+    await named(page.locator("body"), "AI helper", "step 3 (sidebar)")
   ).click();
   return page.locator("section.setting-row").filter({
     has: page.getByRole("heading", { name: /AI helper/ }),
@@ -138,7 +138,7 @@ async function preferences(page: Page) {
 test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
   await start(page);
 
-  // Step 3: Preferences → the AI helper row, Not installed.
+  // Step 3: AI helper, its own Settings page → the model row, Not installed.
   const row = await preferences(page);
   await says(row, "AI helper", "step 3");
   await says(row, "Not installed", "step 3");
@@ -440,5 +440,5 @@ test("the runbook's 'If it stalls' messages match the app", async ({
   await refuseAi(reader, AI_COMMANDS.summarize, "aiDamaged");
   await open.getByRole("button", { name: "Summary", exact: true }).click();
   await says(open, "The AI helper isn't on this computer yet", "If it stalls");
-  await named(open, "Open Preferences", "If it stalls");
+  await named(open, "Open AI helper settings", "If it stalls");
 });

@@ -26,7 +26,7 @@ import {
 
 // The AI helper's new screens (#72) for people who use a keyboard, a screen
 // reader or large text: the reader's Summary and Explain panel, the notice
-// over it, and the model's row in Preferences (Download, Cancel, Add,
+// over it, and the model's row on its Settings page (Download, Cancel, Add,
 // Remove). Each checks axe (WCAG 2.2 AA), that every control is named and
 // reached by Tab with its focus shown, where the focus goes after an action,
 // what live regions read out, and 200% text in a 320 px window. The native
@@ -82,15 +82,16 @@ async function openReader(page: Page) {
   return reader;
 }
 
-async function openPreferences(page: Page) {
-  // In the sidebar, or, in a narrow window, among the section tabs.
+async function openAiSettings(page: Page) {
+  // The AI helper's own Settings page (#242): in the sidebar, or, in a
+  // narrow window, among the section tabs.
   await page
-    .getByRole("button", { name: en("sidebar.preferences"), exact: true })
+    .getByRole("button", { name: en("ai.preferences.title"), exact: true })
     .locator("visible=true")
     .first()
     .click();
   await expect(
-    page.getByRole("heading", { name: en("sidebar.preferences"), level: 1 }),
+    page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
   ).toBeVisible();
   return page.locator("section.setting-row").filter({
     has: page.getByRole("heading", { name: en("ai.preferences.title") }),
@@ -200,7 +201,7 @@ test("a run that could not finish is an alert, and no model leads on by keyboard
   await press(button(reader, en("photo.close")));
   await expect(reader).toBeHidden();
 
-  // A model file that failed its check reads as none: Open Preferences.
+  // A model file that failed its check reads as none: Open AI helper settings.
   await refuseAi(page, AI_COMMANDS.summarize, "aiDamaged");
   reader = await openReader(page);
   await press(button(reader, en("ai.summary.button")));
@@ -213,7 +214,7 @@ test("a run that could not finish is an alert, and no model leads on by keyboard
   await screenReaderSmoke(page, "the reader, no model to use", reader);
   await press(preferences);
   await expect(
-    page.getByRole("heading", { name: en("sidebar.preferences"), level: 1 }),
+    page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
   ).toBeVisible();
   await expectOnlyFakedCommands(page);
 });
@@ -222,8 +223,8 @@ test("Download by keyboard: the focus stays in the AI helper row through the pro
   page,
 }) => {
   await openLibrary(page);
-  const row = await openPreferences(page);
-  await screenReaderSmoke(page, "Preferences, no model");
+  const row = await openAiSettings(page);
+  await screenReaderSmoke(page, "AI helper settings, no model");
 
   // Started, then cancelled.
   await holdAi(page, AI_COMMANDS.download);
@@ -233,7 +234,7 @@ test("Download by keyboard: the focus stays in the AI helper row through the pro
     en("ai.model.downloading", { done: MB(TOTAL / 2), total: MB(TOTAL) }),
   );
   await expectFocusIn(row, "the row while it downloads");
-  await screenReaderSmoke(page, "Preferences, downloading");
+  await screenReaderSmoke(page, "AI helper settings, downloading");
   const cancel = button(row, en("common.cancel"));
   await press(cancel);
   await expect(button(row, en("ai.model.download"))).toBeEnabled();
@@ -249,7 +250,7 @@ test("Download by keyboard: the focus stays in the AI helper row through the pro
     en("ai.model.installed", { name: FAKE_MODEL.name }),
   );
   await expectFocusIn(row, "the row once the model is added");
-  await screenReaderSmoke(page, "Preferences, a model added");
+  await screenReaderSmoke(page, "AI helper settings, a model added");
   await expectOnlyFakedCommands(page);
 });
 
@@ -257,7 +258,7 @@ test("a refused download is an alert, and the focus stays in the row", async ({
   page,
 }) => {
   await openLibrary(page);
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await answerAi(page, AI_COMMANDS.download, { outcome: "network" });
   await press(button(row, en("ai.model.download")));
   await expectAnnounced(page, en("ai.model.refusedNetwork"));
@@ -269,7 +270,7 @@ test("Remove by keyboard: the question takes the focus, Cancel gives it back, an
   page,
 }) => {
   await openLibrary(page, { model: INSTALLED });
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   const remove = button(row, en("ai.model.remove"));
   await press(remove);
   const question = page.getByRole("alertdialog");
@@ -290,13 +291,13 @@ test("the row's other states are named and pass axe: damaged, and a computer tha
   page,
 }) => {
   await openLibrary(page, { model: { state: "damaged" } });
-  await openPreferences(page);
-  await screenReaderSmoke(page, "Preferences, a damaged model");
+  await openAiSettings(page);
+  await screenReaderSmoke(page, "AI helper settings, a damaged model");
   // A page of its own: the fakes are installed once per page.
   const other = await page.context().newPage();
   await openLibrary(other, { model: { state: "unsupported", reason: "ram" } });
-  await openPreferences(other);
-  await screenReaderSmoke(other, "Preferences, not enough memory");
+  await openAiSettings(other);
+  await screenReaderSmoke(other, "AI helper settings, not enough memory");
 });
 
 /** Nothing scrolls sideways, and no control's words spill out or are cut. */
@@ -367,7 +368,7 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
           "https://huggingface.co/FAKE-organisation/FAKE-model-name-instruct-GGUF/resolve/FAKE-revision/FAKE-model-name-instruct-Q4_K_M.gguf",
       },
     ]);
-    const row = await openPreferences(second);
+    const row = await openAiSettings(second);
     // The address itself (the download note names its host too).
     await expect(
       row.locator("code", { hasText: "huggingface.co" }),
@@ -375,7 +376,7 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
     await answerAi(second, AI_COMMANDS.download, { outcome: "unavailable" });
     await button(row, en("ai.model.download")).click();
     await expect(row.getByRole("alert")).toBeVisible();
-    await expectReflow(second, "Preferences, the model's row");
+    await expectReflow(second, "AI helper settings, the model's row");
   } finally {
     await context.close();
   }
