@@ -60,6 +60,9 @@ describe("summarizeDocument", () => {
       lang: "fr",
       createdAt: 1234,
       partial: true,
+      // Three pages read (the empty one counts), the last being page 3.
+      lastPage: 3,
+      pagesMissing: true,
     });
     expect(result.sentences.map((s) => s.source)).toEqual([
       { page: 0, start: 41, end: 68 },
@@ -171,7 +174,11 @@ describe("nativeLocalModel", () => {
       document,
       "fr",
     );
-    expect(native.aiSummarize).toHaveBeenCalledWith(document.pages, "fr");
+    expect(native.aiSummarize).toHaveBeenCalledWith(
+      document.pages,
+      "fr",
+      undefined,
+    );
     expect(result.sentences).toEqual([
       {
         text: "FAKE summary.",
@@ -200,7 +207,60 @@ describe("nativeLocalModel", () => {
       "potassium",
       "Potassium 5.4.",
       "es",
+      undefined,
     );
+  });
+
+  it("asks the native side to keep an answer for the document, a summary with its text read's ticket, and carries the keep id", async () => {
+    const native = bridge({
+      aiSummarize: vi.fn().mockResolvedValue({
+        sentences: [{ text: "FAKE summary.", quote: "Repeat in 2 weeks." }],
+        model: FAKE_MODEL,
+        lastPage: 2,
+        lastPageCut: false,
+        keptId: "FAKE-kept-1",
+      }),
+      aiExplain: vi.fn().mockResolvedValue({
+        text: "FAKE explanation.",
+        model: FAKE_MODEL,
+        keptId: "FAKE-kept-2",
+      }),
+    });
+    const model = nativeLocalModel(native);
+    const summary = await summarizeDocument(
+      model,
+      document,
+      "fr",
+      Date.now,
+      "FAKE-record",
+    );
+    expect(native.aiSummarize).toHaveBeenCalledWith(document.pages, "fr", {
+      recordId: "FAKE-record",
+      ticket: document.ticket,
+    });
+    expect(summary.keptId).toBe("FAKE-kept-1");
+    const explained = await explainTerm(
+      model,
+      "potassium",
+      "Potassium 5.4.",
+      "es",
+      Date.now,
+      "FAKE-record",
+    );
+    expect(native.aiExplain).toHaveBeenCalledWith(
+      "potassium",
+      "Potassium 5.4.",
+      "es",
+      "FAKE-record",
+    );
+    expect(explained.keptId).toBe("FAKE-kept-2");
+    // Without a document, nothing is asked to be kept, and no id comes back.
+    const plain = await summarizeDocument(
+      nativeLocalModel(bridge()),
+      document,
+      "fr",
+    );
+    expect(plain.keptId).toBeUndefined();
   });
 
   it.each(["aiNotInstalled", "aiDamaged"])(
