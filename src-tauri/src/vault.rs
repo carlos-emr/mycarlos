@@ -2912,21 +2912,19 @@ impl VaultStore {
     pub fn known_identifiers(&self, record_id: Uuid) -> Result<KnownIdentifiers, VaultError> {
         // A person's former folder names ("FAKE Person" renamed "Mom"): older documents still
         // carry them. The history is read before the session is taken, since history_view
-        // takes it too. A history that cannot be read leaves only the current names.
-        let former_names: Vec<String> = self
-            .history_view()
-            .map(|view| {
-                view.entries
-                    .into_iter()
-                    .chain(view.later)
-                    .filter(|entry| {
-                        entry.event == HistoryEvent::FolderRenamed
-                            && entry.how.as_deref() == Some("personFolder")
-                    })
-                    .filter_map(|entry| entry.old_name)
-                    .collect()
+        // takes it too. A damaged history still gives the entries that check out; an error
+        // (locked, cancelled, storage) is the caller's, not an empty list.
+        let view = self.history_view()?;
+        let former_names: Vec<String> = view
+            .entries
+            .into_iter()
+            .chain(view.later)
+            .filter(|entry| {
+                entry.event == HistoryEvent::FolderRenamed
+                    && entry.how.as_deref() == Some("personFolder")
             })
-            .unwrap_or_default();
+            .filter_map(|entry| entry.old_name)
+            .collect();
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let manifest = &unlocked.manifest;
