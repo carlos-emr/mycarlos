@@ -648,6 +648,11 @@ export function SecuritySettings({
                   onBirthDateUnknownChange={setProfileBirthDateUnknown}
                   later={profileLater}
                   onLaterChange={setProfileLater}
+                  otherwiseReady={
+                    Boolean(profileName.trim()) &&
+                    !nameTooLong(profileName) &&
+                    !nameIsShared(profileName)
+                  }
                 />
               </fieldset>
             )}

@@ -216,8 +216,8 @@ export function CreateVault({
   const profileShared = nameIsShared(profile);
   // A rule the vault has said is not met: Create would only be refused.
   const unmet = rules !== null && !(rules.notAName && rules.hardToGuess);
-  const invalid =
-    detailsInvalid ||
+  // Everything but the person's details.
+  const otherwiseInvalid =
     !profile.trim() ||
     profileTooLong ||
     profileShared ||
@@ -225,6 +225,7 @@ export function CreateVault({
     tooShort ||
     unmet ||
     passphrase !== confirmation;
+  const invalid = detailsInvalid || otherwiseInvalid;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (invalid) return;
@@ -276,6 +277,7 @@ export function CreateVault({
               onBirthDateUnknownChange={setBirthDateUnknown}
               later={detailsLater}
               onLaterChange={setDetailsLater}
+              otherwiseReady={!otherwiseInvalid}
             />
           )}
           <label>

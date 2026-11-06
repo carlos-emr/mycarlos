@@ -85,6 +85,40 @@ describe("CreateVault: the first person's details (#234)", () => {
     });
   });
 
+  it("says nothing in red before the details are started, unless only they hold Create back", () => {
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={vi.fn()}
+        askDetails
+      />,
+    );
+    const missing = () =>
+      screen.queryByText(humanText("Enter the person's full name."));
+    fireEvent.change(
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
+      { target: { value: "FAKE Robin" } },
+    );
+    expect(missing()).toBeNull();
+    // Started on, then emptied: now it is said.
+    const fullName = screen.getByLabelText(
+      humanText("Full name, as on clinic documents"),
+    );
+    fireEvent.change(fullName, { target: { value: "F" } });
+    fireEvent.change(fullName, { target: { value: "" } });
+    expect(missing()).toBeVisible();
+  });
+
+  it("says what the details need once everything else is ready", () => {
+    form();
+    expect(
+      screen.getByText(humanText("Enter the person's full name.")),
+    ).toBeVisible();
+  });
+
   it("can leave them for later: no fields, and none passed on", () => {
     const { onCreate, create } = form();
     fireEvent.click(screen.getByLabelText(humanText("Add them later")));

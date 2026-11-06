@@ -40,11 +40,15 @@ export function PersonDetailsFields({
   onChange,
   birthDateUnknown,
   onBirthDateUnknownChange,
+  showProblem = true,
 }: {
   details: PersonDetails;
   onChange: (details: PersonDetails) => void;
   birthDateUnknown: boolean;
   onBirthDateUnknownChange: (unknown: boolean) => void;
+  /** Whether to say what is missing yet: Edit details always does; where
+   * the details can wait, only once the patient has started on them. */
+  showProblem?: boolean;
 }) {
   const { t } = useI18n();
   const problem = detailsProblem(details, birthDateUnknown);
@@ -83,7 +87,7 @@ export function PersonDetailsFields({
         <span>{t("personDetails.birthDateUnknown")}</span>
       </label>
       <p>{t("personDetails.help")}</p>
-      {problem && <p role="alert">{t(problem)}</p>}
+      {problem && showProblem && <p role="alert">{t(problem)}</p>}
     </>
   );
 }
@@ -97,6 +101,7 @@ export function PersonDetailsOrLater({
   onBirthDateUnknownChange,
   later,
   onLaterChange,
+  otherwiseReady,
 }: {
   details: PersonDetails;
   onChange: (details: PersonDetails) => void;
@@ -104,8 +109,13 @@ export function PersonDetailsOrLater({
   onBirthDateUnknownChange: (unknown: boolean) => void;
   later: boolean;
   onLaterChange: (later: boolean) => void;
+  /** The rest of the form is ready, so only these details hold it back:
+   * then what is missing is said even before they are started. */
+  otherwiseReady: boolean;
 }) {
   const { t } = useI18n();
+  // Nothing in red before the patient starts on the details (they may wait).
+  const [started, setStarted] = useState(false);
   return (
     <fieldset className="native-person-details-setup">
       <legend>{t("personDetails.setup")}</legend>
@@ -120,9 +130,16 @@ export function PersonDetailsOrLater({
       {!later && (
         <PersonDetailsFields
           details={details}
-          onChange={onChange}
+          onChange={(next) => {
+            setStarted(true);
+            onChange(next);
+          }}
           birthDateUnknown={birthDateUnknown}
-          onBirthDateUnknownChange={onBirthDateUnknownChange}
+          onBirthDateUnknownChange={(unknown) => {
+            setStarted(true);
+            onBirthDateUnknownChange(unknown);
+          }}
+          showProblem={started || otherwiseReady}
         />
       )}
     </fieldset>
