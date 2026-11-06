@@ -48,6 +48,7 @@ export const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
     "interface.history.event.deviceApprovalRequestRestarted",
   deliveryFiled: "interface.history.event.deliveryFiled",
   deliveryReceiptSettled: "interface.history.event.deliveryReceiptSettled",
+  aiResultSaved: "interface.history.event.aiResultSaved",
 };
 
 /** The title of an entry's event; never the formatting-failure text, even for an
@@ -91,6 +92,8 @@ export const howLabels: Record<string, MessageKey> = {
   patient: "interface.history.how.patient",
   damaged: "interface.history.how.damaged",
   camera: "interface.history.how.camera",
+  summary: "interface.history.how.summary",
+  explain: "interface.history.how.explain",
   replaced: "interface.history.how.replaced",
   anonymizedText: "interface.history.how.anonymizedText",
   personFolder: "interface.history.how.personFolder",
