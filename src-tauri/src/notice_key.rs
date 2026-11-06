@@ -391,6 +391,7 @@ fn open(key: &[u8; 32], data: &[u8]) -> Result<Vec<Option<NoticeKeyEntry>>, Noti
 /// Where this build has no OS store yet (Linux until its Secret Service
 /// store, macOS, phones): no keyring, so nothing is made, and wipes of a file
 /// that is not there ask nothing.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) struct NoKeyringStore;
 
 impl WrapKeyStore for NoKeyringStore {
@@ -419,6 +420,9 @@ impl WrapKeyStore for Box<dyn WrapKeyStore> {
 
 /// This OS user's store, for this build.
 fn os_store() -> Box<dyn WrapKeyStore> {
+    #[cfg(windows)]
+    return Box::new(crate::notice_store_windows::CredentialManagerStore);
+    #[cfg(not(windows))]
     Box::new(NoKeyringStore)
 }
 

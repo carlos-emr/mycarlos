@@ -34,6 +34,8 @@ mod model_download;
 mod model_helper;
 mod model_runtime;
 mod notice_key;
+#[cfg(windows)]
+mod notice_store_windows;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
