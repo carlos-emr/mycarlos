@@ -22,6 +22,7 @@ export type IconName =
   | "search"
   | "settings"
   | "shield"
+  | "sparkle"
   | "sort"
   | "star"
   | "text-size"
@@ -120,6 +121,15 @@ export function Icon({ name }: { name: IconName }) {
       break;
     case "shield":
       content = <path d="M12 3 5 6v5c0 4.7 2.9 8 7 10 4.1-2 7-5.3 7-10V6Z" />;
+      break;
+    case "sparkle":
+      // The AI helper (#72): a large four-point star and a small one.
+      content = (
+        <>
+          <path d="M10 3.5 11.9 8.6 17 10.5 11.9 12.4 10 17.5 8.1 12.4 3 10.5 8.1 8.6Z" />
+          <path d="M18 14.5v5M15.5 17h5" />
+        </>
+      );
       break;
     case "settings":
       content = (

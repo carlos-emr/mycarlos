@@ -57,7 +57,11 @@ const snapshot: VaultSnapshot = {
   recovery: null,
 };
 
-function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
+function renderLibrary(
+  shown: VaultSnapshot = snapshot,
+  sharedNew = 0,
+  computer = true,
+) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
@@ -111,6 +115,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       autoLockMinutes={5}
       onAutoLockMinutes={vi.fn()}
       sharedNew={sharedNew}
+      computer={computer}
     />,
   );
   return { bridge, setNotice };
@@ -1009,10 +1014,12 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       const tabs = within(sections).getAllByRole("button");
       // Records holds the people and Shared with me (Ben, 21 Oct); it says
       // how many shared files are new (#61).
+      // On a computer the AI helper's settings are a tab too (#72).
       expect(humanValue(tabs.map((tab) => tab.textContent))).toEqual([
         "Records (2 new)",
         "Security",
         "Preferences",
+        "AI helper",
       ]);
       expect(tabs[0]).toHaveAttribute("aria-current", "page");
       // The sidebar is hidden here; the same top-level folders sit under
@@ -1053,6 +1060,48 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     } finally {
       await page.viewport(1100, 760);
     }
+  });
+});
+
+describe("Settings > AI helper (#72)", () => {
+  it("is its own page on a computer, beside Security and Preferences, and Preferences no longer holds it", async () => {
+    renderLibrary();
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: humanText("AI helper") }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: humanText("AI helper"),
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(humanText("How the AI helper works on this computer")),
+    ).toBeVisible();
+    // The model's row, as Preferences had it: not installed here.
+    expect(await screen.findByText(humanText("Not installed"))).toBeVisible();
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: humanText("Preferences") }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: humanText("Preferences"),
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: humanText(/AI helper/) }),
+    ).toBeNull();
+  });
+
+  it("is not offered on a phone, where the helper cannot run", () => {
+    renderLibrary(snapshot, 0, false);
+    expect(
+      screen.queryByRole("button", { name: humanText("AI helper") }),
+    ).toBeNull();
   });
 });
 

@@ -1771,9 +1771,9 @@ ai-explain-title = Explain a term
 
 ai-notInstalled-title = The AI helper isn't on this computer yet
 
-ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Preferences you can download the model or add a model file you already have.
+ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Settings, under AI helper, you can download the model or add a model file you already have.
 
-ai-notInstalled-openPreferences = Open Preferences
+ai-notInstalled-openPreferences = Open AI helper settings
 
 aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
@@ -1796,6 +1796,8 @@ ai-preferences-title = AI helper
 ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.
 
 ai-preferences-notInstalled = Not installed
+
+ai-settings-subtitle = How the AI helper works on this computer
 
 ai-model-add = Add a model file…
 

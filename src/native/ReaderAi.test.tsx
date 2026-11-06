@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
 import { DocumentReader, sentenceAround } from "./DocumentReader";
 import { PreferencesSettings } from "./PreferencesSettings";
+import { AiSettings } from "./AiSettings";
 import type { ReaderAi } from "./ReaderAiPanel";
 import type { KeptAnswers } from "../ai/kept";
 import type { SourceSpan } from "../documentText";
@@ -165,7 +166,9 @@ describe("the reader's AI helper", () => {
       ),
     ).toBeVisible();
     await user.click(
-      within(panel).getByRole("button", { name: "Open Preferences" }),
+      within(panel).getByRole("button", {
+        name: "Open AI helper settings",
+      }),
     );
     expect(onOpenPreferences).toHaveBeenCalledTimes(1);
     expect(loadText).not.toHaveBeenCalled();
@@ -607,7 +610,9 @@ describe("the reader's AI helper", () => {
       ),
     ).toBeVisible();
     await user.click(
-      within(panel).getByRole("button", { name: "Open Preferences" }),
+      within(panel).getByRole("button", {
+        name: "Open AI helper settings",
+      }),
     );
     expect(onOpenPreferences).toHaveBeenCalledTimes(1);
     expect(loadText).not.toHaveBeenCalled();
@@ -953,13 +958,19 @@ describe("sentenceAround", () => {
   });
 });
 
-describe("Preferences", () => {
-  it("shows the AI helper as not installed on a computer, and not at all elsewhere", () => {
-    const { rerender } = render(
-      <PreferencesSettings aiStatus={{ state: "notInstalled" }} />,
+describe("Settings > AI helper", () => {
+  it("has its own page with the model's row, and Preferences no longer holds it", () => {
+    const { unmount } = render(
+      <AiSettings aiStatus={{ state: "notInstalled" }} onAiStatus={vi.fn()} />,
     );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "AI helper" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText("How the AI helper works on this computer"),
+    ).toBeVisible();
     const row = screen
-      .getByRole("heading", { name: /AI helper/ })
+      .getByRole("heading", { level: 2, name: /AI helper/ })
       .closest("section")!;
     expect(within(row).getByText("Not installed")).toBeVisible();
     expect(
@@ -967,7 +978,8 @@ describe("Preferences", () => {
         "Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.",
       ),
     ).toBeVisible();
-    rerender(<PreferencesSettings />);
+    unmount();
+    render(<PreferencesSettings />);
     expect(screen.queryByRole("heading", { name: /AI helper/ })).toBeNull();
   });
 });
