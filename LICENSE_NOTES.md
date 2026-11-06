@@ -41,6 +41,12 @@ libraries, nor tools used only to build (such as `target-lexicon`, under Apache-
 exception), and it has to be checked again when dependencies change. The licences stay recorded in
 the packages and in the generated SBOMs; see [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md).
 
+The Windows and Linux builds also contain llama.cpp and ggml (MIT, "The ggml authors"), built from
+source by `llama-cpp-sys-2` for the AI helper's model helper (#72). Their MIT notice must go with
+those builds, as the other MIT libraries' do. The AI model a patient adds is not part of myCarlos;
+its own licence and any notice it requires are shown with the accepted-model list (the install
+step, D201).
+
 ## Code from CARLOS
 
 The application was written in the CARLOS repository by its author, Ben Heerema, who relicensed it
@@ -75,3 +81,7 @@ same review.
   declaration, is gone.
 
 This file records what the project declares. It is not legal advice.
+
+## Anonymizer gazetteers (src/deidentify/gazetteers)
+
+Contains information licensed under the Open Government Licence – Canada (https://open.canada.ca/en/open-government-licence-canada): Statistics Canada, Open Database of Healthcare Facilities, version 1.1; and Statistics Canada, Standard Geographical Classification (SGC) 2021. The names were tidied and filtered for use as an on-device list; Statistics Canada does not endorse this product.

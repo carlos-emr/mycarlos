@@ -10,6 +10,8 @@ async function fakeVault(
 ) {
   await page.addInitScript(
     ({ platform, locked, recovery }) => {
+      const captureEpoch = crypto.randomUUID();
+      let captureSequence = 0;
       let status = locked ? "locked" : "unlocked";
       const calls: string[] = [];
       const themes: unknown[] = [];
@@ -21,8 +23,20 @@ async function fakeVault(
           calls.push(command);
           if (command === "runtime_info") return { platform };
           if (command === "vault_status") return status;
+          if (command === "vault_notification_status")
+            return {
+              supported: false,
+              available: false,
+              enabled: false,
+              permission: "unavailable",
+              automaticChecksEnabled: false,
+              automaticChecksSupported: false,
+              automaticChecksPaused: false,
+              lastOutcome: null,
+            };
           if (command === "vault_snapshot")
             return {
+              capture: { epoch: captureEpoch, sequence: ++captureSequence },
               profiles: [
                 { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
               ],
@@ -357,6 +371,7 @@ test("remembers appearance and follows live system changes without vault mutatio
         command.startsWith("vault_") &&
         ![
           "vault_status",
+          "vault_notification_status",
           "vault_snapshot",
           "vault_touch",
           "vault_set_auto_lock",

@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
-import { setLocaleOverride } from "../i18n";
+import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
 import { printedDate } from "./KeyLabel";
 import { SecuritySettings, speedTestLine } from "./SecuritySettings";
@@ -395,6 +395,43 @@ describe("SecuritySettings privacy notice", () => {
       /sets the vault aside: it stays on this device, encrypted. myCarlos never deletes a vault/,
     );
   });
+
+  it("puts Hidden and Audit history beside its text, and under it when narrow", async () => {
+    renderSettings({ hiddenCount: 2 });
+    const heading = screen.getByRole("heading", {
+      name: humanText("What myCarlos keeps"),
+    });
+    const section = heading.closest("section")!;
+    const text = heading.parentElement!;
+    const paragraphs = text.querySelectorAll("p");
+    const last = paragraphs[paragraphs.length - 1];
+    const [hidden, audit] = within(section).getAllByRole("button");
+    expect(hidden).toHaveHumanTextContent(/^Hidden 2/);
+    expect(audit).toHaveHumanTextContent("Audit history");
+    // Read after all of the text, Hidden first.
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(paragraphs).toHaveLength(3);
+    expect(follows(last, hidden)).toBe(true);
+    expect(follows(hidden, audit)).toBe(true);
+    const box = (element: Element) => element.getBoundingClientRect();
+    try {
+      // Wide: the right-hand column, at the top of the row.
+      await page.viewport(1100, 760);
+      expect(box(hidden).left).toBeGreaterThanOrEqual(box(text).right);
+      expect(Math.abs(box(hidden).top - box(heading).top)).toBeLessThan(2);
+      expect(box(audit).top).toBeGreaterThanOrEqual(box(hidden).bottom);
+      // Narrow (a phone, or the app's text size at 200%): under the text,
+      // at the row's right edge.
+      await page.viewport(360, 800);
+      expect(box(hidden).top).toBeGreaterThanOrEqual(box(last).bottom);
+      expect(box(section).right - box(hidden).right).toBeLessThan(3);
+      expect(box(audit).top).toBeGreaterThanOrEqual(box(hidden).bottom);
+      expect(section.scrollWidth).toBeLessThanOrEqual(section.clientWidth + 1);
+    } finally {
+      await page.viewport(1100, 760);
+    }
+  });
 });
 
 describe("SecuritySettings passphrase change", () => {
@@ -437,6 +474,73 @@ describe("SecuritySettings passphrase change", () => {
     );
     // Nothing in myCarlos deletes a document since #71.
     expect(section).not.toHaveHumanTextContent(/delet/i);
+  });
+
+  it("keeps mismatched passphrase drafts while translating and clears all three only on explicit submit", () => {
+    setLocaleOverride("en");
+    const props = renderSettings();
+    const current = screen.getByLabelText(
+      "Current passphrase",
+    ) as HTMLInputElement;
+    const replacement = screen.getByLabelText("New passphrase");
+    const confirmation = screen.getByLabelText(
+      "Confirm new passphrase",
+    ) as HTMLInputElement;
+    const button = screen.getByRole("button", { name: "Change passphrase" });
+    const form = button.closest("form")!;
+    const currentValue = "FAKE current e\u0301{ $name }";
+    const newValue = "FAKE lantern-e\u0301-orbit-cobalt-934";
+    const mismatched = "FAKE different confirmation";
+    fireEvent.change(current, { target: { value: currentValue } });
+    fireEvent.change(replacement, { target: { value: newValue } });
+    fireEvent.change(confirmation, { target: { value: mismatched } });
+    confirmation.focus();
+    confirmation.setSelectionRange(2, 5);
+
+    for (const locale of ["pl", "fr"] as const) {
+      act(() => setLocaleOverride(locale));
+      expect(
+        screen.getByLabelText(translate(locale, "security.passphrase.current")),
+      ).toBe(current);
+      expect(
+        screen.getByLabelText(translate(locale, "passphrase.new.label")),
+      ).toBe(replacement);
+      expect(
+        screen.getByLabelText(translate(locale, "passphrase.confirmNew.label")),
+      ).toBe(confirmation);
+      expect(current).toHaveValue(currentValue);
+      expect(replacement).toHaveValue(newValue);
+      expect(confirmation).toHaveValue(mismatched);
+      expect(confirmation).toHaveFocus();
+      expect([confirmation.selectionStart, confirmation.selectionEnd]).toEqual([
+        2, 5,
+      ]);
+      expect(within(form).getByRole("alert")).toHaveHumanTextContent(
+        translate(locale, "security.passphrase.mismatch"),
+      );
+      expect(
+        screen.getByRole("button", {
+          name: translate(locale, "security.passphrase.submit"),
+        }),
+      ).toBe(button);
+      expect(button).toBeDisabled();
+      expect(props.onChangePassphrase).not.toHaveBeenCalled();
+    }
+
+    fireEvent.change(confirmation, { target: { value: newValue } });
+    expect(within(form).queryByRole("alert")).toBeNull();
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(props.onChangePassphrase).toHaveBeenCalledExactlyOnceWith(
+      currentValue,
+      newValue,
+    );
+    for (const field of [current, replacement, confirmation])
+      expect(field).toHaveValue("");
+    act(() => setLocaleOverride("pt-BR"));
+    for (const field of [current, replacement, confirmation])
+      expect(field).toHaveValue("");
+    expect(props.onChangePassphrase).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a replacement under the minimum length before sending it", () => {

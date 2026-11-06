@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -12,8 +13,23 @@ import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
+import type { ModelStatus } from "../ai/types";
+import { FAKE_MODEL, fakeDocumentText } from "../test/fakeLocalModel";
+
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
 
 const snapshot: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [{ id: "profile-1", displayName: "FAKE Avery", createdAtMs: 1 }],
   folders: [
     {
@@ -48,7 +64,7 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
     updateFolder: vi.fn().mockResolvedValue(undefined),
     renameProfile: vi.fn().mockResolvedValue(undefined),
     assignFoldersBatch: vi.fn().mockResolvedValue(undefined),
-    snapshot: vi.fn().mockResolvedValue(shown),
+    snapshot: vi.fn().mockImplementation(async () => captureSnapshot(shown)),
     history: vi.fn().mockResolvedValue({
       entries: [],
       laterEntries: [],
@@ -57,6 +73,30 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       checkedFromMs: null,
     }),
     isLockedPdf: vi.fn().mockResolvedValue(false),
+    isPhoto: vi.fn().mockResolvedValue(false),
+    aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
+    aiSummarize: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiExplain: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiCancel: vi.fn().mockResolvedValue(undefined),
+    // The answers kept with a document (#212): none yet.
+    aiResults: vi.fn().mockResolvedValue([]),
+    readAiResult: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no kept answer in this test")),
+    // Saved by the id the native side kept the answer under (#212).
+    saveAiResult: vi.fn(async () => ({
+      id: "FAKE-kept-1",
+      tool: "summary",
+      lang: "en",
+      modelName: "FAKE test model",
+      modelSha256: "test-only",
+      createdAtMs: 1,
+      size: 2,
+    })),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   const onLock = vi.fn().mockResolvedValue(undefined);
@@ -258,6 +298,7 @@ describe("clinic service dates", () => {
   });
 });
 const filed: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: snapshot.profiles,
   folders: [
     folder("lab", "FAKE Lab results", null),
@@ -620,8 +661,23 @@ describe("VaultLibrary controls for older patients (#67)", () => {
     ],
   };
 
-  it("puts words on its buttons and shows both sort choices", () => {
-    renderLibrary(withRecord);
+  it("puts words on its buttons and sorts the documents with both choices", () => {
+    renderLibrary({
+      ...withRecord,
+      records: [
+        withRecord.records[0],
+        {
+          ...record("blood-pressure", "FAKE Blood pressure log.pdf", []),
+          importedAtMs: Date.UTC(2026, 0, 14, 12),
+        },
+        {
+          ...record("manual-document", "FAKE Manual document.pdf", []),
+          importedAtMs: Date.UTC(2026, 0, 15, 12),
+        },
+      ],
+    });
+    const documentNames = () =>
+      humanValue(shownDocuments().map(([name]) => name));
     const details = screen.getByRole("button", {
       name: humanText("Details for FAKE Results.pdf"),
     });
@@ -642,9 +698,27 @@ describe("VaultLibrary controls for older patients (#67)", () => {
     ]);
     expect(sortChoices.map((choice) => choice.tabIndex)).toEqual([0, 0]);
     expect(sortChoices[0]).toHaveAttribute("aria-pressed", "true");
+    expect(documentNames()).toEqual([
+      "FAKE Results.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Blood pressure log.pdf",
+    ]);
     fireEvent.click(sortChoices[1]);
     expect(sortChoices[1]).toHaveAttribute("aria-pressed", "true");
     expect(sortChoices[0]).toHaveAttribute("aria-pressed", "false");
+    expect(documentNames()).toEqual([
+      "FAKE Blood pressure log.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Results.pdf",
+    ]);
+    fireEvent.click(sortChoices[0]);
+    expect(sortChoices[0]).toHaveAttribute("aria-pressed", "true");
+    expect(sortChoices[1]).toHaveAttribute("aria-pressed", "false");
+    expect(documentNames()).toEqual([
+      "FAKE Results.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Blood pressure log.pdf",
+    ]);
     fireEvent.click(details);
     expect(
       screen.getByRole("button", { name: humanText("Close document details") }),
@@ -794,6 +868,67 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       "FAKE June Letters",
       "Shared with me",
     ]);
+  });
+
+  it("forgets the previous person's bulk selection and destination before moving another person's document", async () => {
+    const shown: VaultSnapshot = {
+      ...twoPatients,
+      folders: [
+        ...twoPatients.folders,
+        {
+          ...folder("blake-visits", "FAKE Blake visits", null),
+          profileId: "profile-2",
+        },
+      ],
+      records: [
+        record("avery-document", "FAKE Avery note.pdf", []),
+        {
+          ...record("blake-document", "FAKE Blake note.pdf", ["blake-visits"]),
+          profileId: "profile-2",
+        },
+      ],
+    };
+    const { bridge } = renderLibrary(shown);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Select FAKE Avery note.pdf"),
+      }),
+    );
+    const oldDestination = screen.getByLabelText(humanText("Move selected to"));
+    fireEvent.change(oldDestination, { target: { value: "letters" } });
+    expect(oldDestination).toHaveValue("letters");
+    expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+
+    openFolder(/^FAKE Blake visits/);
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: humanText("FAKE Blake visits"),
+      }),
+    ).toBeVisible();
+    expect(screen.queryByLabelText(humanText("Move selected to"))).toBeNull();
+    expect(screen.queryByText(humanText("FAKE Avery note.pdf"))).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Select FAKE Blake note.pdf"),
+      }),
+    );
+    const destination = screen.getByLabelText(humanText("Move selected to"));
+    expect(destination).toHaveValue("");
+    expect(
+      within(destination).queryByRole("option", {
+        name: humanText("FAKE Letters"),
+      }),
+    ).toBeNull();
+    // A select can visually fall back to the first option while retaining a
+    // stale folder ID in state. Check the actual move, not just its label.
+    fireEvent.click(screen.getByRole("button", { name: humanText("Move") }));
+    await vi.waitFor(() =>
+      expect(bridge.assignFoldersBatch).toHaveBeenCalledExactlyOnceWith(
+        ["blake-document"],
+        [],
+      ),
+    );
   });
 
   it("shows Shared with me's whole name in the sidebar, with its new count on one line (#61)", () => {
@@ -1216,4 +1351,374 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       expect(within(sort).getAllByRole("button")).toHaveLength(2);
     },
   );
+});
+
+describe("reading aid button in document details", () => {
+  const readingAid = {
+    deliveryId: "aid-1",
+    language: "en",
+    reviewedAtMs: 1_792_450_680_000,
+    notice: { version: "carlos-5537-en-1", heading: "FAKE", body: "FAKE" },
+    overview: "FAKE overview.",
+    points: [],
+  };
+  const openDetails = (name: string) => {
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText(`Details for ${name}`) }),
+    );
+    return screen.getByRole("dialog", { name: humanText(name) });
+  };
+
+  it("appears beside Read for a PDF delivery that has an aid", () => {
+    renderLibrary({
+      ...snapshot,
+      records: [{ ...record("with-aid", "FAKE Result.pdf", []), readingAid }],
+    });
+    const details = openDetails("FAKE Result.pdf");
+    expect(
+      within(details).getByRole("button", { name: humanText("Read") }),
+    ).toBeVisible();
+    expect(
+      within(details).getByRole("button", {
+        name: humanText("Read the reading aid"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("is absent for a PDF without an aid", () => {
+    renderLibrary({
+      ...snapshot,
+      records: [record("no-aid", "FAKE Plain.pdf", [])],
+    });
+    const details = openDetails("FAKE Plain.pdf");
+    expect(
+      within(details).getByRole("button", { name: humanText("Read") }),
+    ).toBeVisible();
+    expect(
+      within(details).queryByRole("button", {
+        name: humanText("Read the reading aid"),
+      }),
+    ).toBeNull();
+  });
+
+  it("is absent wherever Read is absent, even when an aid is filed", () => {
+    renderLibrary({
+      ...snapshot,
+      records: [
+        {
+          ...record("not-pdf", "FAKE Notes.txt", []),
+          mediaType: "text/plain",
+          readingAid,
+        },
+      ],
+    });
+    const details = openDetails("FAKE Notes.txt");
+    expect(
+      within(details).queryByRole("button", { name: humanText("Read") }),
+    ).toBeNull();
+    expect(
+      within(details).queryByRole("button", {
+        name: humanText("Read the reading aid"),
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("the AI helper's notice before the reader's first Summary", () => {
+  // A real 1 x 1 PNG, drawn here, so the reader's page loads. FAKE text.
+  const png = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    return canvas.toDataURL("image/png");
+  };
+  const pageText = "FAKE letter. Potassium 5.4 mmol/L, a little high.";
+
+  async function openReader(status: ModelStatus) {
+    const { bridge } = renderLibrary({
+      ...snapshot,
+      records: [record("letter", "FAKE Letter.pdf", [])],
+    });
+    const native = bridge as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    native.aiModelStatus.mockResolvedValue(status);
+    Object.assign(native, {
+      viewPage: vi.fn(async () => ({
+        pageCount: 1,
+        width: 800,
+        height: 1035,
+        image: png(),
+        text: pageText,
+      })),
+      cancelView: vi.fn().mockResolvedValue(undefined),
+      documentText: vi.fn(async () => fakeDocumentText([pageText])),
+      cancelDocumentText: vi.fn().mockResolvedValue(undefined),
+      aiSummarize: vi.fn(async () => ({
+        sentences: [
+          {
+            text: "FAKE: the potassium is a little high.",
+            quote: "Potassium 5.4 mmol/L",
+          },
+        ],
+        model: FAKE_MODEL,
+        lastPage: 0,
+        lastPageCut: false,
+        keptId: "FAKE-kept-1",
+      })),
+      aiExplain: vi.fn(async () => ({
+        text: "FAKE explanation.",
+        model: FAKE_MODEL,
+        keptId: "FAKE-kept-2",
+      })),
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Letter.pdf"),
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: humanText("FAKE Letter.pdf") }),
+      ).getByRole("button", { name: humanText("Read") }),
+    );
+    const picture = await screen.findByRole("img", {
+      name: humanText(/Page 1 of 1/),
+    });
+    const reader = picture.closest<HTMLElement>('[role="dialog"]');
+    if (!reader) throw new Error("the reader is a dialog");
+    return { native, reader };
+  }
+  const notice = () =>
+    screen.queryByRole("dialog", { name: humanText("About the AI helper") });
+
+  it("comes first when a model is there, and nothing reaches the model before it closes", async () => {
+    const { native, reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Summary") }),
+    );
+    const shown = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    // The model runs on this computer: the notice says what it does here,
+    // and that its answers are kept in the vault (#212).
+    expect(shown).toHaveTextContent("here on this device");
+    expect(shown).toHaveTextContent("The AI on this device");
+    expect(shown).toHaveTextContent("saved in the vault, encrypted");
+    // Its effects run after the status answer: wait for the focus to move.
+    await waitFor(() =>
+      expect(
+        within(shown).getByRole("button", { name: humanText("Continue") }),
+      ).toHaveFocus(),
+    );
+    // Nothing is read, and nothing reaches the model, while it is open.
+    expect(native.documentText).not.toHaveBeenCalled();
+    expect(native.aiSummarize).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("region", {
+        name: humanText("Summary in plain words"),
+      }),
+    ).toBeNull();
+
+    fireEvent.click(
+      within(shown).getByRole("button", { name: humanText("Continue") }),
+    );
+    expect(notice()).toBeNull();
+    expect(
+      await screen.findByText(
+        humanText("FAKE: the potassium is a little high."),
+      ),
+    ).toBeVisible();
+    expect(native.aiSummarize).toHaveBeenCalledTimes(1);
+    // Asked to keep it for this document, with its text read's ticket.
+    expect(native.aiSummarize).toHaveBeenCalledWith(
+      [{ index: 0, text: pageText }],
+      "en",
+      { recordId: expect.any(String), ticket: expect.any(String) },
+    );
+    await waitFor(() =>
+      expect(native.saveAiResult).toHaveBeenCalledWith(
+        expect.any(String),
+        "FAKE-kept-1",
+        expect.any(Array),
+      ),
+    );
+
+    // Once a session: Explain opens at once.
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Explain a term") }),
+    );
+    expect(
+      await screen.findByRole("region", { name: humanText("Explain a term") }),
+    ).toBeVisible();
+    expect(notice()).toBeNull();
+  });
+
+  it("comes first for Explain too, before any term is sent", async () => {
+    const { native, reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Explain a term") }),
+    );
+    const shown = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    expect(
+      screen.queryByRole("region", { name: humanText("Explain a term") }),
+    ).toBeNull();
+    fireEvent.click(
+      within(shown).getByRole("button", { name: humanText("Continue") }),
+    );
+    const panel = await screen.findByRole("region", {
+      name: humanText("Explain a term"),
+    });
+    fireEvent.change(within(panel).getByRole("textbox"), {
+      target: { value: "potassium" },
+    });
+    fireEvent.click(
+      within(panel).getByRole("button", { name: humanText("Explain") }),
+    );
+    expect(
+      await within(panel).findByText(humanText("FAKE explanation.")),
+    ).toBeVisible();
+    expect(native.aiExplain).toHaveBeenCalledTimes(1);
+  });
+
+  it("still gives the device's text before the first Summary when only the export's was seen", async () => {
+    const { native, reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    // Seen from Security while the model's status could not be read: the
+    // export's text only.
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Close") }),
+    );
+    native.aiModelStatus.mockRejectedValueOnce(new Error("FAKE: no status"));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Security") }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("About the AI helper"),
+      }),
+    );
+    const shareOnly = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    expect(shareOnly).not.toHaveTextContent("The AI on this device");
+    fireEvent.click(
+      within(shareOnly).getByRole("button", { name: humanText("Close") }),
+    );
+    expect(notice()).toBeNull();
+
+    // The first Summary still waits for the device's text.
+    fireEvent.click(
+      // The sidebar's entry carries the count of documents in it.
+      screen.getByRole("button", { name: humanText(/^My records/) }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Details for FAKE Letter.pdf"),
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: humanText("FAKE Letter.pdf") }),
+      ).getByRole("button", { name: humanText("Read") }),
+    );
+    const picture = await screen.findByRole("img", {
+      name: humanText(/Page 1 of 1/),
+    });
+    const again = picture.closest<HTMLElement>('[role="dialog"]');
+    if (!again) throw new Error("the reader is a dialog");
+    fireEvent.click(
+      within(again).getByRole("button", { name: humanText("Summary") }),
+    );
+    const device = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    expect(device).toHaveTextContent("The AI on this device");
+    expect(native.aiSummarize).not.toHaveBeenCalled();
+  });
+
+  it("reads the reader's text and the preview's under ids of their own, and each closing cancels only its own", async () => {
+    const { native, reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    const reading = () => new Promise<never>(() => undefined);
+    native.documentText.mockImplementation(reading);
+    Object.assign(native, {
+      recordKnownDetails: vi.fn().mockResolvedValue({
+        names: [],
+        birthDates: [],
+        doctorNames: [],
+        clinicNames: [],
+      }),
+    });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Summary") }),
+    );
+    const shown = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    fireEvent.click(
+      within(shown).getByRole("button", { name: humanText("Continue") }),
+    );
+    await waitFor(() => expect(native.documentText).toHaveBeenCalledTimes(1));
+    const readerRead = native.documentText.mock.calls[0][1] as string;
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Close") }),
+    );
+    expect(native.cancelDocumentText).toHaveBeenCalledTimes(1);
+    expect(native.cancelDocumentText).toHaveBeenLastCalledWith(readerRead);
+
+    // The preview: a read of its own, and its own cancel.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Letter.pdf"),
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: humanText("FAKE Letter.pdf") }),
+      ).getByRole("button", { name: humanText("Prepare text for an AI…") }),
+    );
+    const preview = await screen.findByRole("dialog", {
+      name: humanText("Text with identifying details removed"),
+    });
+    await waitFor(() => expect(native.documentText).toHaveBeenCalledTimes(2));
+    const previewRead = native.documentText.mock.calls[1][1] as string;
+    expect(previewRead).toMatch(/^[0-9a-f-]{36}$/);
+    expect(previewRead).not.toBe(readerRead);
+    fireEvent.click(
+      within(preview).getByRole("button", { name: humanText("Close") }),
+    );
+    expect(native.cancelDocumentText).toHaveBeenCalledTimes(2);
+    expect(native.cancelDocumentText).toHaveBeenLastCalledWith(previewRead);
+  });
+
+  it("is not shown with no model: the panel says so, and nothing is read", async () => {
+    const { native, reader } = await openReader({ state: "notInstalled" });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Summary") }),
+    );
+    const panel = await screen.findByRole("region", {
+      name: humanText("Summary in plain words"),
+    });
+    expect(
+      await within(panel).findByText(
+        humanText("The AI helper isn't on this computer yet"),
+      ),
+    ).toBeVisible();
+    expect(notice()).toBeNull();
+    expect(native.documentText).not.toHaveBeenCalled();
+    expect(native.aiSummarize).not.toHaveBeenCalled();
+  });
 });
