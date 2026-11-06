@@ -30,6 +30,11 @@
 
 import { cleanText, matchingCopy, toSourceRange } from "./textCleaning";
 import allowList from "./eponymAllowList.json";
+import {
+  bracketedMunicipalities,
+  facilitySpans,
+  municipalitySpans,
+} from "./gazetteer";
 
 /** A word or a pattern as it stands in the matching copy: accents and
  * look-alike letters folded, as `matchingCopy` folds the text. Regular
@@ -572,6 +577,10 @@ const WEEKDAY_BEFORE = `(?:(?<![\\p{L}])${WEEKDAY}\\.?,?[ \\t]+)?`;
 const WEEKDAY_PREFIX = new RegExp(`^(${WEEKDAY})(\\.?,?[ \\t]+)`, "iu");
 /** A weekday after a date, plain or in brackets: "2026-10-08 (Thursday)". */
 const WEEKDAY_AFTER = `(?:[ \\t]*[(,]?[ \\t]*(?<![\\p{L}])${WEEKDAY}(?![\\p{L}])\\.?\\)?)?`;
+/** Polish "r." (roku, "of the year") after a date's year: "5 marca 2026 r." is one date. */
+const POLISH_YEAR_AFTER = "(?:[ \\t]?r\\.(?![\\p{L}]))?";
+// The rules trim a trailing full stop before reading the date ("2026 r").
+const POLISH_YEAR_SUFFIX = /(?<=\d)[ \t]?r\.?$/u;
 const WEEKDAY_SUFFIX = new RegExp(
   `[ \\t]*[(,]?[ \\t]*(?<![\\p{L}])${WEEKDAY}(?![\\p{L}])\\.?\\)?$`,
   "iu",
@@ -588,7 +597,10 @@ type DateReading =
   | { kind: "unclear"; key: string };
 
 function readDateText(text: string, dayFirst: boolean): DateReading | null {
-  const dateText = text.replace(WEEKDAY_PREFIX, "").replace(WEEKDAY_SUFFIX, "");
+  const dateText = text
+    .replace(WEEKDAY_PREFIX, "")
+    .replace(WEEKDAY_SUFFIX, "")
+    .replace(POLISH_YEAR_SUFFIX, "");
   for (const form of DATE_FORMS) {
     const match = new RegExp(`^${form.pattern}$`, "iu").exec(dateText);
     if (!match) continue;
@@ -627,7 +639,9 @@ function readDateText(text: string, dayFirst: boolean): DateReading | null {
 /** The date read from `text`, as "1961-04-17", or null; an unclear date
  * gives both readings. */
 function readDate(text: string, dayFirst: boolean): string[] {
-  const dateText = text.replace(WEEKDAY_PREFIX, "");
+  const dateText = text
+    .replace(WEEKDAY_PREFIX, "")
+    .replace(POLISH_YEAR_SUFFIX, "");
   for (const form of DATE_FORMS) {
     if (form.partial) continue;
     const match = new RegExp(`^${form.pattern}$`, "iu").exec(dateText);
@@ -850,11 +864,25 @@ const FRENCH_STREET_TYPE = `(?:${[
 ]
   .map(either)
   .join("|")})`;
+// The town after a street address's comma: "77 Placeholder Crescent, Sampletown". Not a title or a
+// unit word.
+const TOWN_AFTER = `(?:,[ \\t]*(?!(?:Dr|Dre|Mr|Mrs|Ms|Mme|Mlle|Suite|Unit|Apt|App|Bureau|Local)\\b)${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}(?:,?[ \\t]+${PROVINCES}\\b)?)?`;
+// A unit written before the street: "Unit 6B, 217 Street Crescent", "Appartement 6B, 217 rue …".
+const UNIT_FIRST = `(?:(?:Unit|Apt\\.?|Apartment|Suite|Ste\\.?|Appartement|App\\.?|Bureau|Local|Unidad|Apto\\.?|Sala|#)[ \\t]*[\\w-]+,[ \\t]*)?`;
 const UNIT = `(?:,?[ \\t]*(?:Unit|Apt\\.?|Apartment|Suite|app\\.?|apt\\.?|appartement|bureau|unité|local|#)[ \\t]*[\\w-]+)?`;
 // In any case: a hospital's header is often in capitals (#80 review).
 const CLINIC_WORDS = anyCase([
+  "Community Health Centre",
+  "Community Health Center",
   "Family Health Team",
+  "Health Team",
   "Family Practice",
+  "Walk-in Clinic",
+  "Urgent Care Centre",
+  "Urgent Care",
+  "FHT",
+  "Institute",
+  "Foundation",
   "Medical Clinic",
   "Medical Centre",
   "Medical Center",
@@ -868,7 +896,63 @@ const CLINIC_WORDS = anyCase([
   "Imaging",
   "Diagnostics",
   "Pharmacy",
+  "Public School",
+  "Elementary School",
+  "Secondary School",
+  "High School",
+  "Middle School",
+  "School",
+  "Academy",
+  "Daycare",
 ]);
+// Words that name a clinic or an agency with no clinic word, after "at", "to", "from", "with"
+// or "by": "Silver Acorn Neurology", "Blue Compass Health", "Harbourview Family Services".
+const ORG_WORDS = `(?:${[
+  "Health",
+  "Wellness",
+  "Neurology",
+  "Cardiology",
+  "Dermatology",
+  "Radiology",
+  "Physiotherapy",
+  "Physio",
+  "Rehabilitation",
+  "Rehab",
+  "Pediatrics",
+  "Paediatrics",
+  "Orthopaedics",
+  "Orthopedics",
+  "Ophthalmology",
+  "Optometry",
+  "Eye Care",
+  "Dentistry",
+  "Dental",
+  "Audiology",
+  "Counselling",
+  "Counseling",
+  "Psychology",
+  "Psychiatry",
+  "Oncology",
+  "Endocrinology",
+  "Gastroenterology",
+  "Urology",
+  "Nephrology",
+  "Respirology",
+  "Rheumatology",
+  "Fertility",
+  "Midwifery",
+  "Chiropractic",
+  "Podiatry",
+  "Home Care",
+  "Care",
+  "Services",
+  "Society",
+  "Association",
+  "Agency",
+  "Outreach",
+  "Associates",
+  "Partners",
+].join("|")})(?:[ \\t]+(?:Centre|Center|Clinic|Group|Services|Associates))?`;
 // Words that, alone before a clinic word, make a heading, not a name.
 const GENERIC_BEFORE_CLINIC = new Set([
   "diagnostic",
@@ -890,6 +974,157 @@ const GENERIC_BEFORE_CLINIC = new Set([
   "breast",
   "cardiac",
   "vascular",
+  "health",
+  "public",
+  "mental",
+  "primary",
+  "home",
+  "oral",
+  "occupational",
+  "pediatric",
+  "paediatric",
+  "adult",
+  "geriatric",
+  "senior",
+  "seniors",
+  "youth",
+  "child",
+  "children's",
+  "women's",
+  "sports",
+  "social",
+  "support",
+  "care",
+  "services",
+  "wellness",
+  "dental",
+  "eye",
+  "sleep",
+  "pain",
+  "memory",
+  "cancer",
+  "diabetes",
+  "heart",
+  "stroke",
+  "emergency",
+  "outpatient",
+  "inpatient",
+  "addiction",
+  "addictions",
+  "palliative",
+  "neurology",
+  "cardiology",
+  "dermatology",
+  "radiology",
+  "imaging",
+  "physiotherapy",
+  "physio",
+  "rehabilitation",
+  "rehab",
+  "oncology",
+  "psychiatry",
+  "psychology",
+  "pediatrics",
+  "paediatrics",
+  "counselling",
+  "counseling",
+  "high",
+  "elementary",
+  "secondary",
+  "middle",
+  "nursing",
+  "sunday",
+  "summer",
+  // Articles and French clinic words, as the folded text has them: "La Santé
+  // publique" is not a clinic called "La".
+  "la",
+  "le",
+  "les",
+  "l'",
+  "un",
+  "une",
+  "des",
+  "du",
+  "de",
+  "a",
+  "an",
+  "sante",
+  "medical",
+  "medicale",
+  "imagerie",
+  "radiologie",
+  "dentaire",
+  "readaptation",
+  "physiotherapie",
+  "optometrie",
+  // Document words, folded: "Rapport Médical", "Informe Médico", "Laudo de Imagem" and
+  // "Karta Informacyjna" are headings, not clinics (#249 review).
+  "rapport",
+  "certificat",
+  "dossier",
+  "examen",
+  "bilan",
+  "suivi",
+  "compte",
+  "rendu",
+  "resume",
+  "formulaire",
+  "demande",
+  "ordonnance",
+  "consultation",
+  "attestation",
+  "note",
+  "lettre",
+  "avis",
+  "protocole",
+  "requete",
+  "prescription",
+  "evaluation",
+  "synthese",
+  "feuille",
+  "fiche",
+  "informe",
+  "certificado",
+  "historia",
+  "expediente",
+  "resumen",
+  "solicitud",
+  "receta",
+  "consulta",
+  "nota",
+  "carta",
+  "evaluacion",
+  "hoja",
+  "ficha",
+  "analisis",
+  "estudio",
+  "seguimiento",
+  "parte",
+  "relatorio",
+  "laudo",
+  "atestado",
+  "prontuario",
+  "resumo",
+  "pedido",
+  "receita",
+  "avaliacao",
+  "exame",
+  "encaminhamento",
+  "solicitacao",
+  "guia",
+  "raport",
+  "zaswiadczenie",
+  "skierowanie",
+  "karta",
+  "wypis",
+  "opis",
+  "wynik",
+  "wyniki",
+  "badanie",
+  "recepta",
+  "notatka",
+  "ocena",
+  "konsultacja",
 ]);
 // Profile-name words that are also ordinary words: removed only as part of
 // the whole name.
@@ -1199,6 +1434,8 @@ interface Rule {
   notLowerCaseMay?: true;
   /** "Mother: First Last": refused in a family-history line or section. */
   relationLabel?: true;
+  /** A town in brackets: refused for a bracket note or a medical word. */
+  townInBrackets?: true;
 }
 
 const HEALTH_CARD_LABEL =
@@ -1239,6 +1476,164 @@ const KIN_PLURAL = `(?:${KIN_PLURAL_WORDS}|kids)`;
 // Between names in a list: "Maribel and Odette", "Paul, Marc et Luc".
 const NAME_JOIN =
   "(?:[ \\t]*,[ \\t]*(?:(?:and|et|y|e|i)[ \\t]+)?|[ \\t]+(?:and|et|y|e|i)[ \\t]+)";
+// Specialties and services a town in brackets can follow: "Cardiologie (Ville-Exemple)".
+const SPECIALTY_BEFORE_TOWN = anyCase([
+  "cardiologie",
+  "neurologie",
+  "pédiatrie",
+  "radiologie",
+  "imagerie",
+  "dermatologie",
+  "orthopédie",
+  "ophtalmologie",
+  "oncologie",
+  "gériatrie",
+  "psychiatrie",
+  "gynécologie",
+  "obstétrique",
+  "urologie",
+  "néphrologie",
+  "pneumologie",
+  "gastro-entérologie",
+  "endocrinologie",
+  "rhumatologie",
+  "physiothérapie",
+  "ergothérapie",
+  "médecine interne",
+  "médecine familiale",
+  "chirurgie",
+  "urgence",
+  "clinique",
+  "CLSC",
+  "GMF",
+  "cardiology",
+  "neurology",
+  "pediatrics",
+  "paediatrics",
+  "radiology",
+  "imaging",
+  "dermatology",
+  "orthopaedics",
+  "orthopedics",
+  "ophthalmology",
+  "oncology",
+  "geriatrics",
+  "psychiatry",
+  "gynecology",
+  "obstetrics",
+  "urology",
+  "nephrology",
+  "respirology",
+  "gastroenterology",
+  "endocrinology",
+  "rheumatology",
+  "physiotherapy",
+  "internal medicine",
+  "family medicine",
+  "surgery",
+  "emergency",
+  "clinic",
+  "cardiologue",
+  "neurologue",
+  "pédiatre",
+  "radiologiste",
+  "radiologue",
+  "dermatologue",
+  "orthopédiste",
+  "ophtalmologiste",
+  "ophtalmologue",
+  "oncologue",
+  "gériatre",
+  "psychiatre",
+  "gynécologue",
+  "obstétricien",
+  "obstétricienne",
+  "urologue",
+  "néphrologue",
+  "pneumologue",
+  "gastro-entérologue",
+  "endocrinologue",
+  "rhumatologue",
+  "physiatre",
+  "interniste",
+  "chirurgien",
+  "chirurgienne",
+  "omnipraticien",
+  "omnipraticienne",
+  "médecin de famille",
+  "médecin",
+  "infirmière praticienne",
+  "physiothérapeute",
+  "ergothérapeute",
+  "physiatrie",
+  "médecine du sport",
+  "cardiologist",
+  "neurologist",
+  "pediatrician",
+  "paediatrician",
+  "radiologist",
+  "dermatologist",
+  "orthopaedic surgeon",
+  "orthopedic surgeon",
+  "ophthalmologist",
+  "oncologist",
+  "geriatrician",
+  "psychiatrist",
+  "gynecologist",
+  "obstetrician",
+  "urologist",
+  "nephrologist",
+  "respirologist",
+  "gastroenterologist",
+  "endocrinologist",
+  "rheumatologist",
+  "physiatrist",
+  "internist",
+  "surgeon",
+  "family physician",
+  "nurse practitioner",
+]);
+// Notes written in brackets after a specialty: never a town.
+const BRACKET_NOTES = new Set(
+  foldAll([
+    "urgent",
+    "urgente",
+    "suivi",
+    "externe",
+    "interne",
+    "adulte",
+    "adultes",
+    "pédiatrique",
+    "enfant",
+    "enfants",
+    "nouveau",
+    "nouvelle",
+    "demande",
+    "priorité",
+    "priority",
+    "new",
+    "adult",
+    "pediatric",
+    "paediatric",
+    "outpatient",
+    "inpatient",
+    "routine",
+    "semi-urgent",
+    "virtual",
+    "virtuel",
+    "virtuelle",
+    "phone",
+    "téléphone",
+    "telephone",
+    "video",
+    "vidéo",
+    "pending",
+    "en attente",
+    "annulé",
+    "cancelled",
+    "canceled",
+  ]).map((word) => word.toLowerCase()),
+);
 // Words of a family-history line, never a relative's name after "Mother:": "Mother: Breast
 // cancer at 52", "Father: Atrial Fibrillation". A list cannot hold every disease, so a word
 // with a medical ending ("Sclerosis", "Fibrillation", "Carcinoma") counts too (#228 review).
@@ -1379,23 +1774,47 @@ const FAMILY_HISTORY_WORDS = new Set(
     "clot",
     "clots",
     "failure",
+    "embolism",
+    "alcoholism",
+    "illness",
+    "sickness",
+    "blindness",
+    "deafness",
+    "weakness",
+    "obesity",
+    "disability",
   ]).map((word) => word.toLowerCase()),
 );
 const MEDICAL_ENDING =
-  /(?:osis|itis|emia|aemia|noma|coma|rcoma|pathy|ectomy|plasia|algia|ation|ition|ciency|gnancy|ism|ity|ness|ment|logy|ure|ous|ics|philia|plegia|trophy)$/u;
+  /(?:osis|itis|emia|aemia|noma|coma|rcoma|pathy|ectomy|plasia|algia|ation|ition|ciency|philia|plegia|trophy)$/u;
 const FAMILY_HISTORY_HEADING =
   /(?:family history|family hx|\bfhx\b|\bfh\b[ \t]*:|antecedents familiaux|histoire familiale|historia familiar|antecedentes familiares|historico familiar|wywiad rodzinny)/iu;
+/** In a family-history section: the nearest heading above, within the same block of lines
+ * (a blank line or a heading alone on its line, such as "Emergency contact:", ends it), or
+ * on the same line, is a family-history heading. */
+function inFamilyHistory(text: string, at: number): boolean {
+  const lines = text.slice(Math.max(0, at - 400), at).split("\n");
+  if (FAMILY_HISTORY_HEADING.test(lines[lines.length - 1])) return true;
+  for (let k = lines.length - 2; k >= 0; k--) {
+    const line = lines[k].trim();
+    if (line === "") return false;
+    if (FAMILY_HISTORY_HEADING.test(line)) return true;
+    if (/^[^:]{1,40}:$/u.test(line)) return false;
+  }
+  return false;
+}
 function familyHistoryLabel(text: string, at: number, name: string): boolean {
-  if (FAMILY_HISTORY_HEADING.test(text.slice(Math.max(0, at - 400), at)))
-    return true;
-  return name.split(/[ \t]+/u).some((word) => {
-    const lower = word.toLowerCase().replace(/[.,;:]+$/u, "");
-    return (
-      FAMILY_HISTORY_WORDS.has(lower) ||
-      ORDINARY_WORDS.has(lower) ||
-      MEDICAL_ENDING.test(lower)
-    );
-  });
+  if (inFamilyHistory(text, at)) return true;
+  const words = name
+    .split(/[ \t]+/u)
+    .map((word) => word.toLowerCase().replace(/[.,;:]+$/u, ""));
+  return (
+    words.some(
+      (word) => FAMILY_HISTORY_WORDS.has(word) || MEDICAL_ENDING.test(word),
+    ) ||
+    // "Sudden Death" is two ordinary words; "Rose Baker" is a person.
+    words.every((word) => ORDINARY_WORDS.has(word))
+  );
 }
 const RULES: Rule[] = [
   {
@@ -1443,7 +1862,7 @@ const RULES: Rule[] = [
   {
     kind: "recordNumber",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice)(?:[ \\t]+(?:number|no\\.?|n°|nº|#|numéro|número))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,8})?)`,
+      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice|Licencia|Licença|Licenca|CNH|CRM|COREN|CRO|CREFITO|Colegiado|Col\\.|Registro profissional)(?:-[A-Z]{2})?(?:[ \\t]+(?:number|no\\.?|n°|nº|n\\.º|#|numéro|número|de licencia|de licença))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,8})?)(?![ \\t]*(?:mg|mcg|µg|ug|g|kg|ml|l|dl|mmol|umol|µmol|meq|iu|u|%|mm|cm|m|bpm|mmhg|ng|pg|fl|\\/))`,
       "giu",
     ),
     group: 1,
@@ -1533,13 +1952,13 @@ const RULES: Rule[] = [
   {
     kind: "address",
     pattern:
-      /\b(?:Address|Mailing address|Home address|Adresse)[ \t]*:[ \t]*([^\n]+)/giu,
+      /(?<![\p{L}])(?:Address|Mailing address|Home address|Home|Adresse|Domicile|Direcci[oó]n|Domicilio|Endere[cç]o|Adres)[ \t]*(?:[:：]|[ \t][–—-])[ \t]*([^\n]+)/giu,
     group: 1,
   },
   {
     kind: "address",
     pattern: new RegExp(
-      `\\b\\d{1,6}(?:-\\d{1,6})?[ \\t]+(?:${NAME_WORD}\\.?[ \\t]+){1,4}${STREET_TYPE}\\b\\.?(?:[ \\t]+(?:East|West|North|South|E|W|N|S)\\b)?${UNIT}`,
+      `${UNIT_FIRST}\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?[ \\t]+(?:${NAME_WORD}\\.?[ \\t]+){1,4}${STREET_TYPE}\\b\\.?(?:[ \\t]+(?:East|West|North|South|E|W|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
       "gu",
     ),
   },
@@ -1547,9 +1966,35 @@ const RULES: Rule[] = [
     // 1234, rue Sherbrooke Est; 88, boul. René-Lévesque Ouest, app. 5
     kind: "address",
     pattern: new RegExp(
-      `\\b\\d{1,6}(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}`,
+      `${UNIT_FIRST}\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
       "gu",
     ),
+  },
+  // A town alone in brackets after a specialty or a service: "Cardiologie (Ville-Exemple)",
+  // "Pediatrics (Sampletown)". Not a note such as "(Urgent)" or "(Suivi)", an abbreviation
+  // such as "(ECG)", or a title.
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])${SPECIALTY_BEFORE_TOWN}[ \\t]*\\([ \\t]*)(?!(?:Dr|Dre|Mr|Mrs|Ms|Mme|Mlle|Pr|Prof)(?![\\p{L}]))(?:[LD]['’])?\\p{Lu}\\p{Ll}[\\p{L}'’]*(?:[ -]\\p{Lu}[\\p{L}'’]*|-(?:(?:sur|en|lès|les|de|du|des|la|le|aux|à)-)+\\p{Lu}[\\p{L}'’]*|-[dl]['’]\\p{Lu}[\\p{L}'’]*){0,4}(?=[ \\t]*\\))`,
+      "gu",
+    ),
+    townInBrackets: true,
+  },
+  // A named residence: "Résidence Les Jardins du Parc", "Foyer Saint-Joseph", "Manoir des Pins".
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Résidence|Residence|Foyer|Manoir|Maison de retraite|Residencia|Residência)[ \\t]+(?:(?:de|du|des|la|le|les|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+(?:(?:de|du|des|la|le|les)[ \\t]+)?${NAME_WORD}){0,4}`,
+      "gu",
+    ),
+  },
+  // "home address 99 Fable Quay, Town": a number and a street without a label's colon.
+  {
+    kind: "address",
+    pattern:
+      /(?<![\p{L}])(?:home|mailing|current|residential) address[ \t]+(\d[^\n.;]{4,80})/giu,
+    group: 1,
   },
   {
     kind: "address",
@@ -1573,7 +2018,49 @@ const RULES: Rule[] = [
     // Clinique médicale Saint-Laurent; Centre hospitalier de Fictiveville
     kind: "clinic",
     pattern: new RegExp(
-      `(?<![\\p{L}])${anyCase(["Hôpital", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire"])}(?:[ \\t]+(?:de|du|des|la|le|l['’]|d['’]|médicale|universitaire|régionale?|générale?|familiale|${NAME_WORD})){1,6}`,
+      `(?<![\\p{L}])(?:\\p{Lu}\\p{L}*-)?${anyCase(["Hôpital", "Polyclinique", "Cliniques", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire", "Cabinet médical"])}(?:(?:[ \\t]+|(?<=[ldLD]['’])|[ \\t]*[/&–][ \\t]*)(?:(?:de|du|des|la|le|les|médicales?|universitaire|régionale?|générale?|familiale)(?![\\p{L}])|l['’]|d['’]|${NAME_WORD})){1,8}(?:[ \\t]*\\(${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}\\))?`,
+      "gu",
+    ),
+  },
+  {
+    // Clínica San Rafael; Centro de Saúde Vila Exemplo; Szpital Wojewódzki w Testowie; GMF du Parc
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase(["Clínica", "Centro de Salud", "Centro de Saúde", "Unidade Básica de Saúde", "Posto de Saúde", "Hospital", "UBS", "Przychodnia", "Szpital", "Ośrodek Zdrowia", "GMF", "CISSS", "CIUSSS", "Centre médical", "Centre de réadaptation", "Groupe de médecine de famille", "Groupe de médecine familiale", "GMF-U", "GMF-R", "Super-clinique", "école primaire", "École primaire", "école secondaire", "École secondaire", "école", "Ecole", "collège", "Cégep", "cégep", "polyvalente", "CPE", "Centre de la petite enfance", "garderie", "escuela", "colegio", "escola", "Szkoła Podstawowa", "szkoła", "przedszkole"])}(?:[ \\t]+(?:(?:de|del|da|do|dos|das|du|des|la|le|les|w|we|nr)[ \\t]+)?(?:[lLdD]['’])?${NAME_WORD}){1,4}`,
+      "gu",
+    ),
+  },
+  {
+    // A clinic or an agency named with no clinic word, after "at", "to", "from", "with" or "by":
+    // "seen at Silver Acorn Neurology", "a referral from Harbourview Family Services".
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])(?:at|to|from|with|by|At|To|From|With|By)[ \\t]+(?:the[ \\t]+)?)(?:${NAME_WORD}[ \\t]+){1,4}${ORG_WORDS}(?![\\p{L}])`,
+      "gu",
+    ),
+  },
+  {
+    // A letterhead's first words: "Exemple Santé", "Testbourg Physio Plus", "Boréal Imagerie".
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<=(?:^|\\n)[ \\t]*)(?:${NAME_WORD}[ \\t]+){1,3}(?:Santé|Médical|Médicale|Physio|Physiothérapie|Réadaptation|Imagerie|Radiologie|Dentaire|Optométrie)(?:[ \\t]+Plus)?(?![\\p{L}])`,
+      "gu",
+    ),
+  },
+  {
+    // Imagerie du Quartz; Neurologie du Gland-Argenté; Santé de la Boussole-Bleue
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Imagerie|Neurologie|Cardiologie|Santé|Physiothérapie|Physio|Radiologie|Dermatologie|Pédiatrie|Ophtalmologie|Optométrie|Dentisterie|Ergothérapie|Réadaptation|Psychologie|Orthopédie|Soins|Polyclinique)[ \\t]+(?:du|des|de la|de l['’]|d['’]|de)[ \\t]*${NAME_WORD}(?:[ \\t]+${NAME_WORD}){0,3}`,
+      "gu",
+    ),
+  },
+  {
+    // Centre de jour Saint-Michel; Centre jeunesse de Laval; Centre Les Érables;
+    // CENTRE DE PÉDIATRIE LES PETITS PAS (a header line in capitals)
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Centre|CENTRE)(?:[ \\t]+(?:(?:de|d['’]|du|des)[ \\t]*)?(?:la[ \\t]+|l['’])?\\p{Ll}[\\p{Ll}-]*(?:[ \\t]+\\p{Ll}[\\p{Ll}-]*)?)?(?:(?:[ \\t]+|(?<=[ldLD]['’]))(?:(?:de|du|des|la|le|les)[ \\t]+|[ldLD]['’])*${NAME_WORD}){1,6}`,
       "gu",
     ),
   },
@@ -1885,7 +2372,7 @@ const RULES: Rule[] = [
     (form) => ({
       kind: "date" as const,
       pattern: new RegExp(
-        `${WEEKDAY_BEFORE}${form.pattern}${WEEKDAY_AFTER}`,
+        `${WEEKDAY_BEFORE}${form.pattern}${POLISH_YEAR_AFTER}${WEEKDAY_AFTER}`,
         "giu",
       ),
     }),
@@ -2018,6 +2505,13 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       // A label's value may run past the detail into trailing punctuation,
       // and a French clinic's name into connecting words.
       let trimmed = detail.replace(/[\s,;.]+$/u, "");
+      // Polish "2026 r.": the full stop belongs to the abbreviation.
+      if (
+        rule.kind === "date" &&
+        /\d[ \t]?r$/u.test(trimmed) &&
+        text.charAt(start + trimmed.length) === "."
+      )
+        trimmed += ".";
       // An unqualified Encounter followed by a valid whole date is a date
       // field. Explicit record labels and invalid date-shaped IDs retain
       // record-number protection.
@@ -2086,6 +2580,19 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
         continue;
+      if (
+        rule.townInBrackets &&
+        (BRACKET_NOTES.has(trimmed.toLowerCase()) ||
+          trimmed.split(/[ \t-]+/u).some((word) => {
+            const lower = word.toLowerCase();
+            return (
+              FAMILY_HISTORY_WORDS.has(lower) ||
+              ORDINARY_WORDS.has(lower) ||
+              MEDICAL_ENDING.test(lower)
+            );
+          }))
+      )
+        continue;
       // A bare "Nombre:" or "Nome:" is also French and Portuguese for "number":
       // only a first and a last name after it ("Nombre : Deux comprimés").
       if (
@@ -2147,9 +2654,39 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
   return found;
 }
 
+/** A title or a role word right before `at`: the name rules decide what follows, not a town list. */
+const TITLE_BEFORE =
+  /(?:\b(?:Dr|Dre|Mr|Mrs|Ms|Miss|Mme|Mlle|M|Pr|Prof|Sr|Sra|Srta|Pan|Pani)\.?|\b(?:nurse|pharmacist|physiotherapist|technologist|sonographer|radiologist|surgeon|infirmière|infirmier|pharmacienne|pharmacien|technologue|radiologue|chirurgien|chirurgienne|enfermera|enfermero|farmacéutico|farmacéutica|enfermeiro|enfermeira|farmacêutico|farmacêutica))[ \t]+$/iu;
+const followsTitle = (text: string, at: number) =>
+  TITLE_BEFORE.test(text.slice(Math.max(0, at - 30), at));
+
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
   found.push(...ruleFindings(text, options));
+  // A town inside a clinic's name ("CLSC de Saint-Michel-des-Saints") is part of that name.
+  const clinics = found.filter((finding) => finding.kind === "clinic");
+  const inClinic = (span: { start: number; end: number }) =>
+    clinics.some(
+      (clinic) => clinic.start <= span.start && span.end <= clinic.end,
+    );
+  // Names of Canadian health facilities and of municipalities of two or more words.
+  for (const [kind, spans] of [
+    ["clinic", facilitySpans(text)],
+    ["address", municipalitySpans(text)],
+  ] as const)
+    for (const span of spans)
+      if (
+        !isMedicalTerm(text, span.start, span.end) &&
+        !(
+          kind === "address" &&
+          (followsTitle(text, span.start) || inClinic(span))
+        )
+      )
+        found.push({ kind, start: span.start, end: span.end });
+  // A town alone in brackets ("(Rouyn-Noranda)").
+  for (const span of bracketedMunicipalities(text))
+    if (!isMedicalTerm(text, span.start, span.end))
+      found.push({ kind: "address", start: span.start, end: span.end });
   // Each known name: whole wherever it stands (even across a line break),
   // in either order and surname first ("EXAMPLE, Avery"), and each of its
   // words, in any case, unless it is also an ordinary word.
