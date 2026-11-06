@@ -530,3 +530,48 @@ describe("words that are also names, and conditions in capitals", () => {
     expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
   });
 });
+
+describe("a first word that is also a name (Head, Son, Nie, Elle)", () => {
+  // These words end a label's value ("Patient: Head CT"), but a title before them, or more
+  // name-like words after them, make them a name.
+  it.each([
+    ["Dr. Head saw her.", "Head"],
+    ["Seen by Dr. Head today.", "Head"],
+    ["Mr. Son is stable.", "Son"],
+    ["Mme Elle Dubois a appelé.", "Dubois"],
+    ["Pani Nie Wei zgłosiła się.", "Wei"],
+    ["Physiotherapy summary — SON, Min-jun", "Min-jun"],
+    ["Patient: NIE, Wei", "Wei"],
+    ["Patient: Elle Martin", "Martin"],
+    ["Patient: Nie Wei", "Wei"],
+    ["Patient: Son Min-jun", "Min-jun"],
+    ["Patiente : Elle Vasseur", "Vasseur"],
+    ["PATIENT  ELLE MARTIN", "MARTIN"],
+    ["Paramedics brought Elle Martin to the emergency department.", "Martin"],
+    ["Discharge letter: HEAD, Martin", "Martin"],
+  ])("removes the name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Patient: Head CT normal.",
+    "PATIENT  HEAD CT",
+    "Patient: Stable",
+    "Pacjent: Nie zgłasza dolegliwości.",
+    "Pacjentka: Nie wymaga opieki.",
+    "Patiente : Elle dort mal.",
+    "Patiente : elle se plaint de douleurs.",
+    "Plan: Echo tomorrow.",
+    "Echo: normal LV function.",
+    "Referral: Head Injury",
+    "Head: normocephalic.",
+    "Patient: Son of the deceased",
+    "Dr. on call: see note.",
+    "Nurse: Plan reviewed with patient.",
+    "Report: ECHO, Normal",
+    "Care Plan: HEAD, Injury",
+    "Consult: HEAD, Neck",
+  ])("leaves a label value or a clinical phrase: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+});

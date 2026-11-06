@@ -681,9 +681,10 @@ const PARTICLE_ANY_CASE = `(?:${[...PARTICLES]
 // "Tel:"), not more of the name.
 // An identity label in capitals is never a word of the name before it: "Pacjentka: WIERZBICKA,
 // Zuzanna    PESEL …", "Nombre: Lucía Prueba Sanz    DNI …". "NAM" is left out: it is a given
-// name too.
+// name too. Before a comma it is a surname in "SURNAME, Given" ("NIE, Wei"): a label is
+// followed by a colon or its value.
 const ID_LABEL_WORD =
-  "(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|MRN|HRN|IPP|RAMQ|OHIP|DOB)(?![\\p{L}'’-])";
+  "(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|MRN|HRN|IPP|RAMQ|OHIP|DOB)(?![\\p{L}'’-]|,)";
 const LABEL_PART = `(?!${ID_LABEL_WORD})${NAME_PART}(?![\\p{L}'’-]|[ \\t]*[:#])`;
 // Surname first, as lab, imaging and hospital headers have it (#80 review):
 // "Okafor, Margaret A.", "OKAFOR, MARGARET", "de la Cruz, Maria".
@@ -2667,6 +2668,34 @@ const UNCUED_NOT_NAME_WORDS = new Set(
 // body, time and unit lists leave these out; the clinic and role lists need "Pain", "Summer" and
 // "Head".
 const ALSO_NAMES = new Set(["summer", "pain", "good", "head"]);
+// Words on NOT_NAMES that are also names. As a first word they still end a label's value
+// ("Patient: Head CT", "Pacjent: Nie zgłasza …"), but not after a person title ("Dr. Head",
+// "Mr. Son"), nor before more words that are all name-like ("HEAD, Martin", "Patient: Elle
+// Martin", "Patient: Nie Wei"). "Echo" and "Plan" stay out: far more often a test and a plan.
+const NAMES_ON_NOT_NAMES = new Set(["head", "son", "nie", "elle"]);
+function firstWordIsName(
+  text: string,
+  start: number,
+  candidate: string,
+): boolean {
+  const words = candidate.split(/[^\p{L}'’-]+/u).filter(Boolean);
+  if (!NAMES_ON_NOT_NAMES.has(words[0]?.toLowerCase() ?? "")) return false;
+  if (TITLE_RIGHT_BEFORE.test(text.slice(Math.max(0, start - 14), start)))
+    return true;
+  const rest = words.slice(1);
+  return (
+    rest.length > 0 &&
+    rest.every((word) => {
+      const lower = word.toLowerCase();
+      return (
+        !NOT_NAMES.has(lower) &&
+        !STATUS_WORDS.has(lower) &&
+        !HEADER_WORDS.has(lower) &&
+        !uncuedNotName(word)
+      );
+    })
+  );
+}
 /** An uncued name candidate is no name when any word is a clinical, document, heading, status,
  * generic, body or drug word, or has a medical ending. */
 function uncuedNotName(candidate: string): boolean {
@@ -2681,7 +2710,7 @@ function uncuedNotName(candidate: string): boolean {
         FAMILY_HISTORY_WORDS.has(lower) ||
         HEADER_WORDS.has(lower) ||
         STATUS_WORDS.has(lower) ||
-        NOT_NAMES.has(lower) ||
+        (NOT_NAMES.has(lower) && !NAMES_ON_NOT_NAMES.has(lower)) ||
         TREATMENT_WORDS.has(lower) ||
         PLACE_WORDS.has(lower) ||
         GENERIC_BEFORE_CLINIC.has(lower) ||
@@ -3774,7 +3803,8 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (
         (rule.kind === "name" || rule.kind === "doctor") &&
-        NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
+        NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase()) &&
+        !firstWordIsName(text, start, trimmed)
       )
         continue;
       // A treatment after a role word is not a name ("a therapist Cognitive
@@ -3813,7 +3843,8 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
           // not-a-name word ends it. Not ORDINARY_WORDS: those are first names
           // that are also words ("PATIENT  MAY SAMPLETON").
           (!trimmed.includes(",") &&
-            (STATUS_WORDS.has(first) || NOT_NAMES.has(first)))
+            (STATUS_WORDS.has(first) ||
+              (NOT_NAMES.has(first) && !firstWordIsName(text, start, trimmed))))
         )
           continue;
       }
