@@ -745,7 +745,7 @@ export function PortalDocuments({
       <h2 id="portal-title" tabIndex={-1}>
         {t("portal.title")}
       </h2>
-      <p>{t("portal.intro")}</p>
+      <p className="section-intro">{t("portal.intro")}</p>
       <p>{t("portal.connectConsent")}</p>
       <p>{t("portal.unlockCheckConsent")}</p>
       <form className="native-inline-form" onSubmit={submit}>

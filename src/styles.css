@@ -1321,6 +1321,13 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 @media (max-width: 40em) {
   .portal-documents .native-inline-form { grid-template-columns: minmax(0, 1fr); }
 }
+/* A section's heading, its intro close under it, then a clear gap before the
+   form, box or buttons that follow: one rule for every such section (Clinic
+   documents, and the AI helper in Security and in Preferences). After the
+   rules above, so the gap also replaces the inline form's pull-up margin. */
+:where(h1, h2, h3):has(+ .section-intro) { margin-block-end: 0; }
+.section-intro { margin-block-start: 4px; }
+.section-intro + * { margin-block-start: 14px; }
 /* Visible choices before opening a vault, wrapping instead of a dropdown. */
 .language-compact { display: grid; gap: 6px; min-width: 0; margin-bottom: 16px; }
 .language-title { font-size: 0.875rem; font-weight: 700; }
