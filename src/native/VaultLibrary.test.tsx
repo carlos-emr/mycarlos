@@ -1192,8 +1192,10 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
     approvalRequested: true,
     clinicApproved: true,
   };
+  // The clinic-approval chain (#136 → #142) links with connectPortal; the
+  // panel, and its compact Check, are offered only with it.
   const portal = {
-    linkPortal: vi.fn(),
+    connectPortal: vi.fn(),
     checkDocuments: vi
       .fn()
       .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
