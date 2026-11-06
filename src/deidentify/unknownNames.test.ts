@@ -626,3 +626,25 @@ describe("relative names retain the existing name exceptions", () => {
     for (const part of parts) expect(result).not.toContain(part);
   });
 });
+
+describe("relative surname particles remain inside the full name", () => {
+  it.each([
+    ["Her wife Camille Du Verne called.", "Her wife [NAME 1] called."],
+    ["Her wife Camille du Verne called.", "Her wife [NAME 1] called."],
+    ["Her husband Pascal Des Ormes called.", "Her husband [NAME 1] called."],
+    ["Her husband Pascal des Ormes called.", "Her husband [NAME 1] called."],
+    ["Her wife Camille DU Verne called.", "Her wife [NAME 1] called."],
+    ["Her husband Pascal DES Ormes called.", "Her husband [NAME 1] called."],
+    ["Her wife Camille Du Verne Present.", "Her wife [NAME 1] Present."],
+  ])("removes every word of the relative's name in %j", (text, expected) => {
+    expect(send(text)).toBe(expected);
+  });
+
+  it.each([
+    "Fille Informée Du Plan.",
+    "Fille Informée Des Résultats.",
+    "Fils Avisé Du Plan.",
+  ])("keeps the clinical phrase %j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});

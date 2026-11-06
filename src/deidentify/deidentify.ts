@@ -3815,9 +3815,10 @@ function kinName(candidate: string): string {
       HEADER_WORDS.has(lower)
     );
   };
-  let count = words.findIndex((word) =>
-    KIN_CUT_WORDS.has(word[0].toLowerCase()),
-  );
+  let count = words.findIndex((word) => {
+    const lower = word[0].toLowerCase();
+    return KIN_CUT_WORDS.has(lower) && !PARTICLES.has(lower);
+  });
   if (count < 0) count = words.length;
   while (count > 0 && listWord(words[count - 1][0])) count--;
   if (count === 0 || listWord(words[0][0])) return "";
