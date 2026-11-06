@@ -964,7 +964,7 @@ describe("Preferences", () => {
     expect(within(row).getByText("Not installed")).toBeVisible();
     expect(
       within(row).getByText(
-        "Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.",
+        "Explains your documents in plain words with an AI model that runs on this computer. Download one of the models below, or add a matching file you already have. Models stay on this computer.",
       ),
     ).toBeVisible();
     rerender(<PreferencesSettings />);
