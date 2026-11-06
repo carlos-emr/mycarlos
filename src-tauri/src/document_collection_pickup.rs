@@ -375,6 +375,12 @@ where
         }
         // Rotate BEFORE even the first pending read or request, including failure.
         cache.last_visited = Some(original.id);
+        // A device this run of the app found gone from its portal (#168; a
+        // manual, after-unlock or status check found it) is not asked again
+        // by the background checks either.
+        if store.link_gone(original.id) {
+            continue;
+        }
         let i = cache.slot(&original)?;
         if cache.slots[i].as_ref().unwrap().manual_required {
             continue;
@@ -445,7 +451,16 @@ where
                         false,
                     )?;
                     if reply.status != 200 {
-                        return Err(VaultError::Portal(LinkError::Network));
+                        // A portal that removed this device says so (#128, as
+                        // the manual check reads it); any other answer is not
+                        // one this check can use.
+                        return Err(VaultError::Portal(
+                            if crate::portal_approval::device_removed(&reply) {
+                                LinkError::DeviceRemoved
+                            } else {
+                                LinkError::Network
+                            },
+                        ));
                     }
                     let page: Page = serde_json::from_slice(&reply.body).map_err(|_| {
                         cache.slots[i].as_mut().unwrap().pause();
@@ -581,6 +596,14 @@ where
             }
             if !crate::portal_pickup::is_per_link_failure(&error) {
                 return Err(error);
+            }
+            // The portal said this device was removed: not asked again in
+            // this run of the app (#168).
+            if matches!(
+                error,
+                VaultError::Portal(crate::portal_link::LinkError::DeviceRemoved)
+            ) {
+                store.mark_link_gone(original.id);
             }
         }
     }

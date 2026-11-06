@@ -845,3 +845,53 @@ fn actual_picker_oversized_pending_record_pauses_only_its_link() {
     assert!(fresh.test_counts().2 <= TEST_PHYSICAL_CAP);
     assert_physical_fixture_unsettled(&store, 3);
 }
+
+/// #168 in the background checks: a portal that says this device was removed
+/// marks it gone for this run of the app, and the next background check asks
+/// that device nothing.
+#[test]
+fn background_check_marks_a_removed_device_gone_and_then_skips_it() {
+    let links = accepted_links();
+    let (_temp, store, mut cache) = store_with(&links[..1]);
+    let calls = Cell::new(0);
+    let removed = |_: &StoredLink,
+                   _: &str,
+                   path: &str,
+                   _: Vec<u8>,
+                   _: Option<&str>,
+                   _: usize,
+                   _: &dyn Fn() -> bool|
+     -> Result<ApiResponse, LinkError> {
+        calls.set(calls.get() + 1);
+        assert!(path.contains('?'), "only the device's list is asked");
+        Ok(ApiResponse {
+            status: 403,
+            body: zeroize::Zeroizing::new(br#"{"code":"device_removed"}"#.to_vec()),
+            date: None,
+            retry_after: None,
+        })
+    };
+    let control = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)));
+    check_cycle(
+        &store,
+        store.portal_link_ticket(),
+        &control,
+        &mut cache,
+        &NoApprovalRequests,
+        removed,
+    )
+    .unwrap();
+    assert_eq!(calls.get(), 1);
+    assert!(store.link_gone(links[0].id));
+    let control = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)));
+    check_cycle(
+        &store,
+        store.portal_link_ticket(),
+        &control,
+        &mut cache,
+        &NoApprovalRequests,
+        removed,
+    )
+    .unwrap();
+    assert_eq!(calls.get(), 1, "a device found gone is not asked again");
+}
