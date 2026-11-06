@@ -671,7 +671,8 @@ export function SecuritySettings({
           {onUpdateProfileDetails && (
             <PersonDetailsList
               people={people}
-              busy={busy || readOnly}
+              busy={busy}
+              readOnly={readOnly}
               onSave={onUpdateProfileDetails}
               focusId={focusPersonId}
               onFocusLeft={() => setFocusPersonId(null)}

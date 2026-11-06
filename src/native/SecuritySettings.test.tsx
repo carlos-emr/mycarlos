@@ -30,7 +30,7 @@ const speedTest = {
   appVersion: "0.1.0",
 };
 
-function renderSettings(overrides: Record<string, unknown> = {}) {
+function settingsProps(overrides: Record<string, unknown> = {}) {
   const props = {
     busy: false,
     readOnly: false,
@@ -50,6 +50,10 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
     onSpeedTest: vi.fn().mockResolvedValue(speedTest),
     ...overrides,
   };
+  return props;
+}
+function renderSettings(overrides: Record<string, unknown> = {}) {
+  const props = settingsProps(overrides);
   render(<SecuritySettings {...props} />);
   return props;
 }
@@ -629,6 +633,76 @@ const FAKE_PEOPLE = [
 ];
 
 describe("SecuritySettings profiles", () => {
+  for (const dismissal of ["Cancel", "Escape", "backdrop"] as const) {
+    for (const blockedBy of [
+      "read-only recovery",
+      "actual mutation",
+    ] as const) {
+      it(`Edit details after ${blockedBy} transition: ${dismissal}`, async () => {
+        const save = vi.fn().mockResolvedValue(true);
+        const changed = vi.fn();
+        const props = settingsProps({
+          people: FAKE_PEOPLE,
+          onUpdateProfileDetails: save,
+          onDialogChange: changed,
+        });
+        const view = render(<SecuritySettings {...props} />);
+        const opener = screen.getByRole("button", {
+          name: humanText("Edit details for FAKE Avery"),
+        });
+        opener.focus();
+        fireEvent.click(opener);
+        const dialog = screen.getByRole("dialog", {
+          name: humanText("Edit details"),
+        });
+        const name = within(dialog).getByLabelText(
+          humanText("Full name, as on clinic documents"),
+        );
+        fireEvent.change(name, { target: { value: "FAKE retained draft" } });
+        view.rerender(
+          <SecuritySettings
+            {...props}
+            readOnly={blockedBy === "read-only recovery"}
+            busy={blockedBy === "actual mutation"}
+          />,
+        );
+        expect(name).toBeDisabled();
+        expect(
+          within(dialog).getByRole("button", {
+            name: humanText("Save details"),
+          }),
+        ).toBeDisabled();
+        fireEvent.submit(dialog.querySelector("form")!);
+        expect(save).not.toHaveBeenCalled();
+        const cancel = within(dialog).getByRole("button", {
+          name: humanText("Cancel"),
+        });
+        if (blockedBy === "read-only recovery") expect(cancel).toBeEnabled();
+        else expect(cancel).toBeDisabled();
+        if (dismissal === "Cancel") fireEvent.click(cancel);
+        else if (dismissal === "Escape")
+          fireEvent.keyDown(document.body, { key: "Escape" });
+        else fireEvent.mouseDown(dialog.parentElement!);
+        if (blockedBy === "actual mutation") {
+          expect(screen.getByRole("dialog")).toBe(dialog);
+          expect(name).toHaveValue("FAKE retained draft");
+          view.rerender(<SecuritySettings {...props} />);
+          expect(name).toBeEnabled();
+          fireEvent.click(
+            within(dialog).getByRole("button", { name: humanText("Cancel") }),
+          );
+          await waitFor(() => expect(opener).toHaveFocus());
+        } else {
+          await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+          expect(opener).toBeDisabled();
+          expect(screen.getByText("FAKE Avery").closest("span")).toHaveFocus();
+        }
+        expect(changed).toHaveBeenLastCalledWith(false);
+        expect(save).not.toHaveBeenCalled();
+      });
+    }
+  }
+
   it("limits a profile name by characters, as the vault does", () => {
     renderSettings();
     const { dialog } = openAddProfile();

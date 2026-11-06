@@ -179,6 +179,7 @@ export function PersonDialog({
 export function PersonDetailsList({
   people,
   busy,
+  readOnly = false,
   onSave,
   focusId = null,
   onFocusLeft,
@@ -188,6 +189,7 @@ export function PersonDetailsList({
 }: {
   people: PatientProfile[];
   busy: boolean;
+  readOnly?: boolean;
   onSave: (profileId: string, details: PersonDetails) => Promise<boolean>;
   /** A person just added: focus goes to their line (Ben, 29 Oct). */
   focusId?: string | null;
@@ -209,8 +211,8 @@ export function PersonDetailsList({
     details: PersonDetails;
     birthDateUnknown: boolean;
   } | null>(null);
-  // "Edit details" opens a dialog (Ben, 29 Oct). After saving, focus goes
-  // back to that person's Edit details button once it can take it again.
+  // Return to the Edit details button after closing, or to the person's
+  // line if the vault became read-only while the dialog was open.
   const [refused, setRefused] = useState(false);
   const [returnTo, setReturnTo] = useState<string | null>(null);
   const editButtons = useRef(new Map<string, HTMLButtonElement>());
@@ -224,9 +226,11 @@ export function PersonDetailsList({
   useEffect(() => () => dialogChange.current?.(false), []);
   useEffect(() => {
     if (!returnTo || busy) return;
-    editButtons.current.get(returnTo)?.focus();
+    const button = editButtons.current.get(returnTo);
+    if (button && !button.disabled) button.focus();
+    else lines.current.get(returnTo)?.focus();
     setReturnTo(null);
-  }, [returnTo, busy]);
+  }, [returnTo, busy, readOnly]);
   const editedPerson = editing
     ? people.find((person) => person.id === editing.id)
     : undefined;
@@ -239,12 +243,17 @@ export function PersonDetailsList({
       busy={busy}
       submitDisabled={
         busy ||
+        readOnly ||
         Boolean(detailsProblem(editing.details, editing.birthDateUnknown))
       }
       refusal={refused ? refusalText : ""}
       onSubmit={(e) => {
         e.preventDefault();
-        if (busy || detailsProblem(editing.details, editing.birthDateUnknown))
+        if (
+          busy ||
+          readOnly ||
+          detailsProblem(editing.details, editing.birthDateUnknown)
+        )
           return;
         const id = editing.id;
         setRefused(false);
@@ -255,10 +264,13 @@ export function PersonDetailsList({
           } else setRefused(true);
         });
       }}
-      onClose={() => showEdit(null)}
+      onClose={() => {
+        setReturnTo(editing.id);
+        showEdit(null);
+      }}
     >
       <strong>{editedPerson.displayName}</strong>
-      <fieldset disabled={busy}>
+      <fieldset disabled={busy || readOnly}>
         <PersonDetailsFields
           details={editing.details}
           onChange={(details) => {
@@ -281,13 +293,13 @@ export function PersonDetailsList({
       >
         {people.map((person) => (
           <li key={person.id}>
-            {/* Focusable only while it is the place focus was sent to. */}
+            {/* A programmatic focus target; never an extra Tab stop. */}
             <span
               ref={(line) => {
                 if (line) lines.current.set(person.id, line);
                 else lines.current.delete(person.id);
               }}
-              tabIndex={focusId === person.id ? -1 : undefined}
+              tabIndex={-1}
               onBlur={() => {
                 if (focusId === person.id) onFocusLeft?.();
               }}
@@ -301,7 +313,7 @@ export function PersonDetailsList({
             <button
               className="button"
               type="button"
-              disabled={busy}
+              disabled={busy || readOnly}
               aria-label={t("personDetails.editFor", {
                 name: person.displayName,
               })}

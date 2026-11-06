@@ -103,10 +103,10 @@ function renderLibrary(
     ...bridgeExtras,
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
-  render(
+  const library = (current: VaultSnapshot) => (
     <VaultLibrary
       bridge={bridge}
-      snapshot={shown}
+      snapshot={current}
       busy={false}
       notice=""
       setNotice={setNotice}
@@ -116,9 +116,14 @@ function renderLibrary(
       autoLockMinutes={5}
       onAutoLockMinutes={vi.fn()}
       sharedNew={sharedNew}
-    />,
+    />
   );
-  return { bridge, setNotice };
+  const view = render(library(shown));
+  return {
+    bridge,
+    setNotice,
+    rerenderSnapshot: (next: VaultSnapshot) => view.rerender(library(next)),
+  };
 }
 
 function dragFolder(from: Element, to: Element) {
@@ -1129,6 +1134,59 @@ describe("VaultLibrary person dialogs (Ben, 29 Oct)", () => {
         said.push({ text, dialogOpen: screen.queryByRole("dialog") !== null });
     });
     return said;
+  }
+
+  for (const dismissal of ["Cancel", "Escape"] as const) {
+    it(`dismisses Edit details after a read-only recovery transition by ${dismissal}`, async () => {
+      const shown: VaultSnapshot = {
+        ...snapshot,
+        profiles: [
+          {
+            ...snapshot.profiles[0],
+            fullName: "FAKE Avery Example",
+            birthDate: "1980-01-02",
+          },
+        ],
+      };
+      const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
+      const { rerenderSnapshot } = renderLibrary(shown, 0, {
+        updateProfileDetails,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      const opener = screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Avery"),
+      });
+      opener.focus();
+      fireEvent.click(opener);
+      const dialog = screen.getByRole("dialog", {
+        name: humanText("Edit details"),
+      });
+      expect(opener.closest("[inert]")).not.toBeNull();
+      const line = opener.parentElement!.querySelector("span")!;
+      const name = within(dialog).getByLabelText(
+        humanText("Full name, as on clinic documents"),
+      );
+      fireEvent.change(name, { target: { value: "FAKE retained draft" } });
+      rerenderSnapshot({ ...shown, recovery: "writeFailed" });
+      expect(name).toHaveValue("FAKE retained draft");
+      expect(name).toBeDisabled();
+      expect(
+        within(dialog).getByRole("button", { name: humanText("Save details") }),
+      ).toBeDisabled();
+      fireEvent.submit(dialog.querySelector("form")!);
+      expect(updateProfileDetails).not.toHaveBeenCalled();
+      const cancel = within(dialog).getByRole("button", {
+        name: humanText("Cancel"),
+      });
+      expect(cancel).toBeEnabled();
+      if (dismissal === "Cancel") fireEvent.click(cancel);
+      else fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(opener.closest("[inert]")).toBeNull();
+      expect(opener).toBeDisabled();
+      expect(line).toHaveFocus();
+      expect(updateProfileDetails).not.toHaveBeenCalled();
+    });
   }
 
   it("says a person's details were saved once the Edit details dialog has closed", async () => {
