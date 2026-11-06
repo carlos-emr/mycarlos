@@ -43,6 +43,8 @@ pub(crate) struct Verified {
     pub(crate) path: PathBuf,
     pub(crate) info: ModelInfo,
     pub(crate) size_bytes: u64,
+    /// How the helper puts the conversation to this model (from the model's list entry).
+    pub(crate) chat_format: model_helper::ChatFormat,
 }
 
 /// Why no model can be had now.
@@ -531,6 +533,7 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
         model_helper::ModelFile::Descriptor(model_helper::MODEL_FD)
     };
     let args = model_helper::arguments(&model_helper::Settings {
+        chat_format: verified.chat_format,
         threads: threads(),
         model,
         name: verified.info.name.clone(),
@@ -919,6 +922,7 @@ mod tests {
                     sha256: "ab".repeat(32),
                 },
                 size_bytes: 1024,
+                chat_format: model_helper::ChatFormat::Builtin,
             })
         }
     }
@@ -1015,6 +1019,7 @@ mod tests {
                 sha256: "ab".repeat(32),
             },
             size_bytes: 1024,
+            chat_format: model_helper::ChatFormat::Builtin,
         };
         assert_eq!(helper_launch(&verified).err(), Some(AiError::Damaged));
     }
@@ -1179,6 +1184,20 @@ pub mod engine_testing {
         /// sealed memfd as it is hashed, on Windows held open with writers denied (the file must
         /// be readable by AppContainers). The reason, when it does not start.
         pub fn start(executable: &std::path::Path, path: &std::path::Path) -> Result<Self, String> {
+            Self::start_with(executable, path, "builtin")
+        }
+
+        /// As [`Self::start`], with the model's chat format by its word (`builtin`, `gemma4`).
+        pub fn start_with(
+            executable: &std::path::Path,
+            path: &std::path::Path,
+            chat_format: &str,
+        ) -> Result<Self, String> {
+            let chat_format = match chat_format {
+                "builtin" => model_helper::ChatFormat::Builtin,
+                "gemma4" => model_helper::ChatFormat::Gemma4,
+                other => return Err(format!("unknown chat format {other}")),
+            };
             let (file, sha256, size_bytes) = handed_over(path)?;
             let verified = Verified {
                 file,
@@ -1188,6 +1207,7 @@ pub mod engine_testing {
                     sha256,
                 },
                 size_bytes,
+                chat_format,
             };
             let config = launch_at(executable.to_owned(), &verified)
                 .map_err(|error| format!("{error:?}"))?;
