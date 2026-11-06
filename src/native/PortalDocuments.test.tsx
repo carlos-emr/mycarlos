@@ -2019,11 +2019,11 @@ describe("clinic documents that failed their checks (#143)", () => {
     const pl = (count: number) =>
       humanValue(translate("pl", "portal.refusedDocuments", { count }));
     expect(pl(1)).toBe(
-      "Nie udało się zweryfikować 1 dokumentu z tej przychodni. Poproś przychodnię o ponowne wysłanie.",
+      "Nie udało się zweryfikować 1 dokumentu z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.",
     );
     for (const count of [2, 5, 22])
       expect(pl(count)).toBe(
-        `Nie udało się zweryfikować ${count} dokumentów z tej przychodni. Poproś przychodnię o ponowne wysłanie.`,
+        `Nie udało się zweryfikować ${count} dokumentów z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.`,
       );
   });
 });
