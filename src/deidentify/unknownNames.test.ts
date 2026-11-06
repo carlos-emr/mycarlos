@@ -310,44 +310,101 @@ describe("a relative after a label, next to a family history", () => {
   });
 });
 
-describe("a patient named with no cue: a header line or a care verb (uncued-names note)", () => {
-  // FAKE sentences written apart from the harness's shared sets.
+describe("a patient named with no cue: a header line or a care verb (#264)", () => {
+  // FAKE sentences written apart from the harness's shared sets, and the review's look-alikes.
   it.each([
-    "CONSULTATION NOTE — Tobiah Farnsworth\nSeen today for cough.",
-    "Discharge letter: Wren Halloway\nAdmitted with pneumonia.",
-    "Wound care plan for Idris Calloway\nDressing every two days.",
+    "CONSULTATION NOTE — Tobiah Farnsworth\nDOB: 1958-03-14\nSeen today for cough.",
+    "Discharge letter: Wren Halloway    MRN 4471829\nAdmitted with pneumonia.",
+    "Wound care plan for Idris Calloway\nAge: 81\nDressing every two days.",
     "Physiotherapy summary — HALLOWAY, Wren\nGait improved.",
-    "Lettre de sortie — Basile Fenwick\nHospitalisé pour pneumonie.",
-    "Plan de soins pour Margaux Vellacourt\nPansement aux deux jours.",
-    "Compte rendu concernant Odile Marchetti\nConsultation de suivi.",
-    "Informe de alta — Inés Valcárcel Pruneda\nIngresó por neumonía.",
-    "Plan de cuidados para Lucas Ferrabosco\nCuras cada dos días.",
-    "Resumo de alta — Tomé Vasconcelos Brito\nInternado por pneumonia.",
-    "Karta informacyjna — Zuzanna Wierzbicka\nPrzyjęta z zapaleniem płuc.",
-    "Plan opieki dla Bartosz Kowalczyk\nOpatrunek co dwa dni.",
-    "Re: Tobiah Farnsworth\nThank you for seeing this patient.",
+    "Lettre de sortie — Basile Fenwick\nDate de naissance : 14/03/1941",
+    "Plan de soins pour Margaux Vellacourt\nNAM : VELM 4103 1412",
+    "Informe de alta — Inés Valcárcel Pruneda\nNHC: 4471829",
+    "Plan de cuidados para Lucas Ferrabosco\nFecha de nacimiento: 14/03/1941",
+    "Resumo de alta — Tomé Vasconcelos Brito\nCPF: 987.654.321-00",
+    "Karta informacyjna — Zuzanna Wierzbicka\nPESEL: 58031412345",
+    "Plan opieki dla Bartosz Kowalczyk\nData urodzenia: 14.03.1941",
+    "DOB: 1958-03-14\nCONSULTATION NOTE — Tobiah Farnsworth",
     "Paramedics brought Tobiah Farnsworth to the emergency department.",
     "We were asked to see Wren Halloway on the ward.",
     "Les ambulanciers ont amené Basile Fenwick aux urgences.",
-    "Nous avons reçu Margaux Vellacourt en consultation.",
     "La ambulancia trajo a Lucas Ferrabosco a urgencias.",
     "A ambulância trouxe Tomé Vasconcelos ao pronto-socorro.",
     "Karetka przywiozła Zuzannę Wierzbicką na SOR.",
-  ])("removes the name: %j", (text) => {
-    expect(send(text)).toMatch(/\[NAME 1\]/);
-  });
+  ])(
+    "removes the name, with a person field near a header or after a person-taking verb: %j",
+    (text) => {
+      expect(send(text)).toMatch(/\[NAME 1\]/);
+    },
+  );
 
   it.each([
-    "Discharge letter: Community Care Access\nAdmitted with pneumonia.",
-    "Wound care plan for Pressure Injury\nDressing every two days.",
-    "Plan de soins pour Insuffisance Cardiaque\nSuivi infirmier.",
-    "Medication review: Ozempic Pen\nStarted last week.",
-    "Re: Follow Up\nThank you.",
-    "Paramedics brought Tylenol 500 mg from home.",
-    "We were asked to see Pediatric Neurology notes.",
-    "Plan de cuidados para Diabetes Tipo 2\nControl.",
-    "Physiotherapy summary — Left Knee\nGait improved.",
-  ])("leaves a heading's subject that is no name: %j", (text) => {
+    "Discharge Summary: Congestive Heart Failure",
+    "Consultation Note: Cardiology",
+    "Referral Letter: Orthopaedic Surgery",
+    "Care Plan: Fall Prevention",
+    "Assessment: Stable Angina",
+    "Plan: Home Care",
+    "Review: Annual Physical",
+    "Discharge Summary - Emergency Department",
+    "Discharge: Home With Support",
+    "Progress Note — Night Shift",
+    "Nursing Note: Wound Care",
+    "Consult Note: Infectious Diseases",
+    "Report: Abdominal Ultrasound",
+    "Summary: Acute Kidney Injury",
+    "Referral: Physiotherapy",
+    "Bilan : Hypertension Artérielle",
+    "Lettre de sortie : Service de Cardiologie",
+    "Plan de soins : Prévention des Chutes",
+    "Compte rendu : Coloscopie Totale",
+    "Informe de alta: Neumonía Adquirida",
+    "Valoración: Riesgo de Caídas",
+    "Resumen: Paciente Estable",
+    "Resumo de alta: Pneumonia Comunitária",
+    "Encaminhamento: Ortopedia",
+    "Karta informacyjna: Oddział Chorób Wewnętrznych",
+    "Skierowanie: Poradnia Kardiologiczna",
+    "Wypis: Zapalenie Płuc",
+    "Patient Referred To Cardiology Clinic.",
+    "Received Influenza Vaccine today.",
+    "She received Tylenol Extra Strength.",
+    "Transferred To Intensive Care.",
+    "Brought In By Ambulance.",
+    "Accompanied By Daughter.",
+    "La ambulancia lo trasladó a Urgencias Generales.",
+    "Lo trajeron a Consultas Externas.",
+    "Recebemos Paciente Estável no setor.",
+    "Transferiu Unidade Coronariana hoje.",
+    "Przekazano Oddział Kardiologii.",
+    "Przyjęto Pacjenta Stabilnego.",
+    "Il a reçu Doliprane Codéine.",
+    "Adressé Centre Hospitalier Régional.",
+    "We saw Improvement Overall.",
+    "Care Plan: Diabetes Education",
+    "Progress Note — Day Three",
+    "Nota de evolución: Paciente Estable",
+    "Plan de soins : Prévention des Chutes",
+    "Plano de cuidados: Úlcera Venosa",
+    "Wypis: Oddział Chirurgii Ogólnej",
+    "Brought Home Medications.",
+    "Trouxe Exames Anteriores.",
+    "Przywiózł Wyniki Badań.",
+    "Care Plan: Fall Prevention\nChart reviewed.",
+  ])("leaves a title-case subject or a thing: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+
+  // The stated cost: an unknown person's header name with no person field near it, or after a
+  // verb that also takes things, stays. A patient known to the app is still removed.
+  it.each([
+    "Discharge letter: Wren Halloway\nAdmitted with pneumonia.",
+    "Nous avons reçu Margaux Vellacourt en consultation.",
+  ])("keeps, by the stated trade: %j", (text) => {
     expect(send(text)).not.toMatch(/\[NAME/);
+    expect(
+      deidentify(text, { knownNames: ["Wren Halloway", "Margaux Vellacourt"] })
+        .toSend,
+    ).toMatch(/\[NAME 1\]/);
   });
 });

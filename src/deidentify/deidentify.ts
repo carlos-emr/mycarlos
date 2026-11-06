@@ -221,6 +221,8 @@ interface Finding {
   /** A relative named after a family word: never taken for a profile person
    * because a surname is shared. */
   kin?: true;
+  /** From a header line with no person cue: kept only with person evidence near it. */
+  uncuedHeader?: true;
   /** Already decided (when more is removed later): kept as it was. */
   replacement?: string;
   /** The matching copy's text for this range (digits and letters folded),
@@ -1673,6 +1675,8 @@ interface Rule {
   relationLabel?: true;
   /** A name with no person cue (a header line, a care verb): refused for any non-name word. */
   uncued?: true;
+  /** A header line's name: kept only with person evidence near it (see find()). */
+  uncuedHeader?: true;
   /** A name in a header's column: refused for a section heading ("PATIENT INFORMATION"). */
   columnLabel?: true;
   /** A town in brackets: refused for a bracket note or a medical word. */
@@ -2163,50 +2167,27 @@ const DOCUMENT_HEADING = `(?:[\\p{L}'’-]+[ \\t]+){0,4}${anyCase(
     "opinia",
   ]),
 )}(?:[ \\t]+(?:de|du|des|d['’]|of|da|do|z)[ \\t]*[\\p{L}'’-]+)?`;
-// Care verbs with a person after them: "Paramedics brought …", "ont amené …", "trajo a …".
+// Care verbs that take a person, not a thing: "Paramedics brought …", "ont amené …",
+// "trajo a …". Not received, transferred, saw: they take a vaccine or a unit as often (#264).
 const CARE_VERB = anyCase(
   withSentenceCase([
     "brought",
     "accompanied",
-    "referred",
-    "transferred",
     "asked to see",
-    "we saw",
-    "we met",
-    "received",
-    "called on",
     "amené",
     "amenée",
     "ont amené",
     "a amené",
-    "adressé",
-    "adressée",
-    "reçu",
-    "reçue",
-    "avons reçu",
-    "accompagné",
-    "accompagnée",
-    "transféré",
-    "transférée",
+    "a accompagné",
     "trajo a",
     "trajeron a",
-    "recibimos a",
     "acompañó a",
-    "trasladó a",
-    "trasladaron a",
-    "atendimos a",
     "trouxe",
     "trouxeram",
-    "recebemos",
     "acompanhou",
-    "transferiu",
-    "atendemos",
-    "przywiozła",
     "przywiózł",
+    "przywiozła",
     "przywieźli",
-    "przyjęliśmy",
-    "przyjęto",
-    "przekazano",
   ]),
 );
 // Words that are never part of an uncued name: a side, a body part, a wound, a time word.
@@ -2300,6 +2281,56 @@ const UNCUED_NOT_NAME_WORDS = new Set(
     "upadek",
     "diabète",
     "diabetes",
+    "home",
+    "medications",
+    "medication",
+    "meds",
+    "results",
+    "records",
+    "papers",
+    "documents",
+    "exams",
+    "exames",
+    "anteriores",
+    "previous",
+    "old",
+    "wyniki",
+    "badań",
+    "dokumentację",
+    "dokumentacja",
+    "leki",
+    "médicaments",
+    "résultats",
+    "medicamentos",
+    "resultados",
+    "estudios",
+    "informes",
+    "laudos",
+    "wheelchair",
+    "walker",
+    "in",
+    "by",
+    "into",
+    "to",
+    "from",
+    "back",
+    "out",
+    "up",
+    "over",
+    "with",
+    "for",
+    "à",
+    "au",
+    "aux",
+    "en",
+    "por",
+    "para",
+    "com",
+    "em",
+    "ao",
+    "przez",
+    "do",
+    "na",
   ]).map((word) => word.toLowerCase()),
 );
 /** An uncued name candidate is no name when any word is a clinical, document, heading, status,
@@ -2851,17 +2882,19 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<=(?:^|\\n)[ \\t]*${DOCUMENT_HEADING}(?:[ \\t]*(?:—|–|-|:)[ \\t]*|[ \\t]+(?:for|pour|concernant|concerning|regarding|para|dla|sobre|de)[ \\t]+))(${COLUMN_NAME})(?=[ \\t]*(?:[.,;]|\\n|$))`,
+      `(?<=(?:^|\\n)[ \\t]*${DOCUMENT_HEADING}(?:[ \\t]*(?:—|–|-|:)[ \\t]*|[ \\t]+(?:for|pour|concernant|concerning|regarding|para|dla|sobre|de)[ \\t]+))(${COLUMN_NAME})(?=[ \\t]*(?:[.,;]|\\n|$)|[ ]{2,}|\\t)`,
       "gu",
     ),
     group: 1,
     uncued: true,
+    uncuedHeader: true,
   },
   // A person after a care verb: "Paramedics brought Tobiah Farnsworth", "trajo a Lucas …".
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])${CARE_VERB}[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      // Not after a Spanish clitic: "lo trajeron a Consultas Externas" is "to".
+      `(?<![\\p{L}])(?<![Ll](?:o|a|os|as|e|es)[ \\t]+)${CARE_VERB}[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -3450,6 +3483,7 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         start,
         end,
         ...(rule.kin ? { kin: true as const } : {}),
+        ...(rule.uncuedHeader ? { uncuedHeader: true as const } : {}),
       });
       // Only an immediately linked checksum control inherits a SIN/NAS
       // field. An unrelated nine-digit measurement never inherits it.
@@ -3508,6 +3542,59 @@ function keepShortBirthCue(
   return others.length === 0;
 }
 
+// Labels that only a person's record has: a birth date, an age, a sex, a record number, an
+// identity or a health card. A phone, an email or a postal code are a clinic's too.
+const PERSON_FIELD_LABEL =
+  /(?<![\p{L}])(?:DOB|D\.O\.B\.?|Date of birth|Born|N[ée]e?(?:\(e\))?[ \t]+le|Date de naissance|DDN|Fecha de nacimiento|F\.?[ \t]?nac|Data de nascimento|DN[ \t]*:|Data urodzenia|ur\.|出生日期|Age|Âge|Edad|Idade|Wiek|年龄|Sex|Gender|Sexe|Sexo|Género|Płeć|性别|MRN|HRN|NHC|IPP|Prontuário|Nr księgi|Nr historii|Health card|Carte d['’]assurance maladie|NAM|RAMQ|OHIP|PESEL|CPF|DNI|NIE|CNS|Tarjeta sanitaria)(?![\p{L}])/iu;
+const PERSON_FINDINGS = new Set([
+  "dateOfBirth",
+  "recordNumber",
+  "healthCard",
+  "sin",
+  "age",
+]);
+// "HALLOWAY, Wren": a surname in capitals, a comma and a given name.
+const SURNAME_FIRST_IN_CAPITALS = /^\p{Lu}[\p{Lu}'’ -]+,[ \t]+\p{Lu}/u;
+/**
+ * A header line's name with no person cue ("CONSULTATION NOTE — …") is a person only when a
+ * person field stands near it: on its line, on the line before, or on the next two lines (a
+ * blank line ends that), or when it is written "SURNAME, Given". A header's subject is usually
+ * what the document is about ("Care Plan: Fall Prevention"), not who (#264 review).
+ */
+function personEvidenceNear(
+  text: string,
+  finding: Finding,
+  found: Finding[],
+): boolean {
+  if (SURNAME_FIRST_IN_CAPITALS.test(text.slice(finding.start, finding.end)))
+    return true;
+  const lineStart = text.lastIndexOf("\n", finding.start - 1) + 1;
+  let from = lineStart;
+  if (lineStart > 0) {
+    const before = text.lastIndexOf("\n", lineStart - 2) + 1;
+    if (text.slice(before, lineStart - 1).trim()) from = before;
+  }
+  let to = text.indexOf("\n", finding.end);
+  for (let more = 0; more < 2 && to >= 0; more++) {
+    const next = text.indexOf("\n", to + 1);
+    const line = text.slice(to + 1, next < 0 ? text.length : next);
+    if (!line.trim()) break;
+    to = next;
+  }
+  const end = to < 0 ? text.length : to;
+  const window = `${text.slice(from, finding.start)} ${text.slice(finding.end, end)}`;
+  return (
+    PERSON_FIELD_LABEL.test(window) ||
+    found.some(
+      (other) =>
+        other !== finding &&
+        PERSON_FINDINGS.has(other.kind) &&
+        other.start >= from &&
+        other.end <= end,
+    )
+  );
+}
+
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
   found.push(...ruleFindings(text, options));
@@ -3539,6 +3626,20 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
           found.length,
           ...found.filter((finding) => !dropped.has(finding)),
         );
+    }
+  }
+  {
+    const header = found.filter(
+      (finding) =>
+        finding.uncuedHeader && !personEvidenceNear(text, finding, found),
+    );
+    if (header.length) {
+      const dropped = new Set(header);
+      found.splice(
+        0,
+        found.length,
+        ...found.filter((finding) => !dropped.has(finding)),
+      );
     }
   }
   // A town inside a clinic's name ("CLSC de Saint-Michel-des-Saints") is part of that name.
