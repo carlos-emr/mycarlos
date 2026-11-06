@@ -159,3 +159,55 @@ describe("ordinal first days in Spanish and Portuguese", () => {
     expect(out).not.toMatch(/\b1[º°ªo.]|2026/);
   });
 });
+
+describe("birth-date cues for an age under 90, so no gap gives the age (#253)", () => {
+  // The 90-and-over net does not cover an 85-year-old: only the cue does.
+  it.each([
+    "DOB 1941-03-14",
+    "D.O.B.: 14/03/1941",
+    "Date of Birth (DOB): 1941-03-14",
+    "Birth date: 1941-03-14",
+    "Birthdate 14 March 1941",
+    "Born 14 March 1941",
+    "Born on 1941-03-14",
+    "b. 1941-03-14",
+    "DOB/Age: 1941-03-14 / 85",
+    "Date of birth 14-Mar-1941",
+    "Date de naissance : 14/03/1941",
+    "Né le 14/03/1941",
+    "Née le 14 mars 1941",
+    "DDN : 14/03/1941",
+    "Date naiss. : 14/03/1941",
+    "Date de naiss. 14/03/1941",
+    "Fecha de nacimiento: 14/03/1941",
+    "F. de nac.: 14/03/1941",
+    "Fecha de nac. 14/03/1941",
+    "Nacida el 14 de marzo de 1941",
+    "FN: 14/03/1941",
+    "Data de nascimento: 14/03/1941",
+    "Nascida em 14/03/1941",
+    "Nasc.: 14/03/1941",
+    "DN: 14/03/1941",
+    "D.N.: 14/03/1941",
+    "Data urodzenia: 14.03.1941",
+    "ur. 14.03.1941",
+    "ur. dnia 14.03.1941",
+    "Urodzona 14 marca 1941 r.",
+    "data ur. 14.03.1941",
+    "Urodzony dnia 14.03.1941",
+    "出生日期：1941-03-14",
+    "出生：1941年3月14日",
+  ])("%s", (cue) => {
+    const out = send(`${cue}. Visit 2026-03-12.`);
+    expect(out).toMatch(/\[DATE OF BIRTH 1\]/);
+    expect(out).not.toMatch(/1941|days after DATE OF BIRTH/);
+  });
+
+  it.each([
+    "DN 2026-03-12 reviewed.",
+    "Visit 2026-03-12; FN negative.",
+    "Date de consultation : 12/03/2026.",
+  ])("leaves an event date: %s", (text) => {
+    expect(send(text)).not.toMatch(/DATE OF BIRTH/);
+  });
+});

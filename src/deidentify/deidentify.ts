@@ -2146,10 +2146,13 @@ const RULES: Rule[] = [
     group: 1,
     skipDates: true,
   },
+  // A birth date after its cue. These cues are the real defence for the age: the 90-and-over
+  // net only covers ages of 90 and more, so an unread birth date of an 85-year-old becomes
+  // DATE 1, and every day gap counted from it then gives the exact age (#253).
   {
     kind: "dateOfBirth",
     pattern: new RegExp(
-      `(?:\\bDOB|\\bD\\.O\\.B\\.?|\\bDate of birth|\\bBirth ?date|\\bBorn(?:[ \\t]+on)?|(?<![\\p{L}\\d.])b\\.|\\bDate de naissance|\\bnaissance|\\bDDN|\\bN[ée]e?[ \\t]+(?:le|en)|` +
+      `(?:\\bDOB(?:[ \\t]*\\/[ \\t]*(?:Age|Âge|Edad|Idade|Wiek))?|\\bD\\.O\\.B\\.?|\\bDate of birth(?:[ \\t]*\\((?:DOB|D\\.O\\.B\\.?)\\))?|\\bDate[ \\t]+(?:de[ \\t]+)?naiss\\.?|\\bF\\.?[ \\t]?de[ \\t]+nac\\.?|\\bFN[ \\t]*:|\\bD\\.?N\\.?[ \\t]*:|\\bur\\.[ \\t]+dnia|\\bBirth ?date|\\bBorn(?:[ \\t]+on)?|(?<![\\p{L}\\d.])b\\.|\\bDate de naissance|\\bnaissance|\\bDDN|\\bN[ée]e?[ \\t]+(?:le|en)|` +
         `\\bFecha de nacimiento|\\bFecha[ \\t]+(?:de[ \\t]+)?nac\\.?|\\bFec\\.?[ \\t]?nac\\.?|\\bNacid[oa](?:[ \\t]+el)?|\\bF\\.?[ \\t]?nac\\.?|\\bData de nascimento|\\bData[ \\t]+(?:de[ \\t]+)?nasc\\.?|\\bNascid[oa](?:[ \\t]+em)?|\\bNasc\\.|` +
         `\\bData urodzenia|\\bur\\.|\\bUrodzon[ya](?:[ \\t]+dnia)?|出生日期|出生於|出生于|出生|生日)[ \\t]*:?[ \\t：]*(${DATE})`,
       "giu",
