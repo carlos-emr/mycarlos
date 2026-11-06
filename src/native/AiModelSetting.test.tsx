@@ -600,10 +600,8 @@ describe("A copy still running when the row opens again (#275)", () => {
       if (outcome === "cancelled")
         expect(screen.queryByRole("alert")).toBeNull();
       else
-        expect(screen.getByRole("alert")).toHaveTextContent(
-          humanText(
-            "This is not a file myCarlos accepts. Choose the model file listed above.",
-          ),
+        expect(visibleText(screen.getByRole("alert").textContent ?? "")).toBe(
+          "This is not a file myCarlos accepts. Choose the model file listed above.",
         );
     },
   );
