@@ -18,6 +18,13 @@ import {
 } from "./native/recoveryOffer";
 
 const offerIsDue = () => forgetRecoveryOffer();
+// The window's own lock button, named by its words "Lock now" (#121). Security
+// has a Lock now button too, so look only in the title bar.
+const windowLock = (name: string | RegExp = "Lock now") =>
+  within(document.querySelector(".titlebar") as HTMLElement).getByRole(
+    "button",
+    { name: typeof name === "string" ? humanText(name) : name },
+  );
 import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type {
@@ -579,9 +586,7 @@ describe("durable vault UI", () => {
           ? "FAKE pending lock secret"
           : "Checking and reading the complete history…",
       );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Unlocked · Lock now" }),
-      );
+      fireEvent.click(windowLock());
       expect(
         screen.getByText(
           "Vault content is hidden while myCarlos finishes locking…",
@@ -681,9 +686,7 @@ describe("durable vault UI", () => {
       fireEvent.click(screen.getByRole("button", { name: "Security" }));
       fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
       await screen.findByText("Checking and reading the complete history…");
-      fireEvent.click(
-        screen.getByRole("button", { name: "Unlocked · Lock now" }),
-      );
+      fireEvent.click(windowLock());
       await screen.findByLabelText("Passphrase");
       expect(
         screen.queryByRole("heading", { name: "Audit history" }),
@@ -765,9 +768,7 @@ describe("durable vault UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
     await screen.findByText("FAKE verified session secret");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Unlocked · Lock now" }),
-    );
+    fireEvent.click(windowLock());
     await screen.findByLabelText("Passphrase");
     expect(document.body).not.toHaveTextContent("FAKE verified session secret");
   });
@@ -2494,9 +2495,7 @@ describe("durable vault UI", () => {
 
       // Intake runs in the background: Lock remains available while the
       // native reply containing this document name is still in flight.
-      await user.click(
-        screen.getByRole("button", { name: humanText("Unlocked · Lock now") }),
-      );
+      await user.click(windowLock());
       expect(
         await screen.findByLabelText(humanText("Passphrase")),
       ).toBeVisible();
@@ -2826,9 +2825,7 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByRole("dialog", { name: humanText("FAKE_Letter.pdf") }),
     ).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
-    );
+    await user.click(windowLock());
     expect(
       await screen.findByRole("heading", {
         name: humanText("Unlock your vault"),
@@ -4725,9 +4722,7 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await screen.findByText(humanText("FAKE_Results.pdf"));
-    await user.click(
-      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
-    );
+    await user.click(windowLock());
     await user.type(
       await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
@@ -5216,9 +5211,7 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
-    await user.click(
-      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
-    );
+    await user.click(windowLock());
     await screen.findByRole("heading", {
       name: humanText("Unlock your vault"),
     });
@@ -6755,9 +6748,7 @@ describe("durable vault UI", () => {
         const { bridge, started } = await askForSummary();
         await started(15 * 60 * 1000);
         await act(async () => {
-          fireEvent.click(
-            screen.getByRole("button", { name: "Unlocked · Lock now" }),
-          );
+          fireEvent.click(windowLock());
         });
         expect(bridge.lock).toHaveBeenCalledOnce();
         expect(bridge.aiCancel).toHaveBeenCalled();
@@ -10642,11 +10633,7 @@ describe("durable vault UI", () => {
     ).not.toBeInTheDocument();
     expect(document.body).not.toHaveHumanTextContent(previousBackup);
     expect(window.localStorage.getItem(guideKey)).toBeNull();
-    await user.click(
-      await screen.findByRole("button", {
-        name: humanText(/Unlocked · Lock now/),
-      }),
-    );
+    await user.click(await waitFor(() => windowLock()));
     await screen.findByLabelText(humanText("Passphrase"));
     await expectNothingKeptAfterUnlock();
   });
@@ -10893,11 +10880,7 @@ describe("the app's notices in the language in use (#46)", () => {
     ).toBeVisible();
     expect(screen.queryByText(humanText(/Automatic locking set/))).toBeNull();
 
-    await user.click(
-      screen.getByRole("button", {
-        name: humanText(pl("interface.VaultLibrary.unlockedLockNow")),
-      }),
-    );
+    await user.click(windowLock(pl("security.lockNow")));
     expect(
       await screen.findByText(humanText(pl("notice.locked"))),
     ).toBeVisible();
@@ -13298,9 +13281,7 @@ describe("Automatic arrival snapshot ownership", () => {
     await waitFor(() =>
       expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Unlocked · Lock now") }),
-    );
+    fireEvent.click(windowLock());
     await screen.findByLabelText(humanText("Passphrase"));
     act(() => window.dispatchEvent(new Event("focus")));
     await Promise.resolve();
