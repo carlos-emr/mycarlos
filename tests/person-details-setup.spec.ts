@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
@@ -57,6 +57,41 @@ const reminder = (page: Page, name: string) =>
   reminders(page).filter({
     hasText: en("personDetails.reminder", { name }),
   });
+
+/** Opens My records or Security: from the sidebar, or on a phone from the
+ * row of section tabs that takes its place (#67). */
+async function openSection(
+  page: Page,
+  info: TestInfo,
+  section: "records" | "security",
+) {
+  if (info.project.name === "phone") {
+    await page
+      .getByRole("navigation", {
+        name: en("interface.VaultLibrary.section"),
+        exact: true,
+      })
+      .getByRole("button", {
+        name: en(
+          section === "records"
+            ? "interface.VaultLibrary.records"
+            : "security.title",
+        ),
+        exact: true,
+      })
+      .click();
+    return;
+  }
+  await sidebar(page)
+    .getByRole("button", {
+      name:
+        section === "records"
+          ? new RegExp(`^${en("sidebar.myRecords")}\\b`)
+          : en("security.title"),
+      ...(section === "security" && { exact: true }),
+    })
+    .click();
+}
 
 test("a new vault keeps the first person's full name and date of birth, as Edit details does", async ({
   page,
@@ -127,7 +162,7 @@ test("a new vault can leave the details for later: nothing is saved for them", a
 
 test("the library reminds until a person's details are added, and its button opens Edit details", async ({
   page,
-}) => {
+}, info) => {
   await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
@@ -159,9 +194,7 @@ test("the library reminds until a person's details are added, and its button ope
     }),
   ).toBeVisible();
   // One person: the sidebar's top entry is My records.
-  await sidebar(page)
-    .getByRole("button", { name: new RegExp(`^${en("sidebar.myRecords")}\\b`) })
-    .click();
+  await openSection(page, info, "records");
   await expect(myRecords(page)).toBeVisible();
   await expect(reminders(page)).toHaveCount(0);
   await expectOnlyFakedCommands(page);
@@ -169,13 +202,15 @@ test("the library reminds until a person's details are added, and its button ope
 
 test("a person added with their details left for later is reminded about too", async ({
   page,
-}) => {
+}, info) => {
+  test.skip(
+    info.project.name === "phone",
+    "this one moves between two people in the sidebar, which a phone does not have; the test above covers the reminder on a phone",
+  );
   await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
-  await sidebar(page)
-    .getByRole("button", { name: en("security.title"), exact: true })
-    .click();
+  await openSection(page, info, "security");
   await page
     .getByLabel(en("security.profiles.label"), { exact: true })
     .fill("FAKE Child");
