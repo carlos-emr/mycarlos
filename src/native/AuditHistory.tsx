@@ -15,7 +15,9 @@ import {
   type VaultBridge,
 } from "../vault";
 
-const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
+/** A title for each event the vault records (history.rs `HistoryEvent`). A test checks
+ * that every event there has one; an event from a newer build is "Other event". */
+export const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   created: "interface.history.event.created",
   historyStarted: "interface.history.event.historyStarted",
   unlocked: "interface.history.event.unlocked",
@@ -49,9 +51,17 @@ const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   aiResultSaved: "interface.history.event.aiResultSaved",
 };
 
+/** The title of an entry's event; never the formatting-failure text, even for an
+ * event this build does not know (#167). */
+export function eventTitle(event: string): MessageKey {
+  return Object.hasOwn(eventLabels, event)
+    ? eventLabels[event as AuditHistoryEntry["event"]]
+    : "interface.history.event.other";
+}
+
 /** A device approval's state when the event was written (native
  * `ApprovalState::code`), shown as its status rather than as "how". */
-const approvalLabels: Record<string, MessageKey> = {
+export const approvalLabels: Record<string, MessageKey> = {
   pending: "interface.history.approval.pending",
   challenge_ready: "interface.history.approval.challengeReady",
   accepted: "interface.history.approval.accepted",
@@ -61,7 +71,7 @@ const approvalLabels: Record<string, MessageKey> = {
 };
 
 /** How a pickup receipt ended (native `ReceiptOutcome`). */
-const receiptLabels: Record<string, MessageKey> = {
+export const receiptLabels: Record<string, MessageKey> = {
   picked_up: "interface.history.receipt.pickedUp",
   delivery_not_found: "interface.history.receipt.notFound",
 };
@@ -73,7 +83,9 @@ const approvalEvents = new Set<AuditHistoryEntry["event"]>([
   "deviceApprovalRequestRestarted",
 ]);
 
-const howLabels: Record<string, MessageKey> = {
+/** Words for each other `how` the vault records. A how this build does not know is shown
+ * as it is. A test checks the values history.rs and the vault can write. */
+export const howLabels: Record<string, MessageKey> = {
   picked: "interface.history.how.picked",
   passphrase: "interface.history.how.passphrase",
   recoveryKey: "interface.history.how.recoveryKey",
@@ -84,6 +96,7 @@ const howLabels: Record<string, MessageKey> = {
   explain: "interface.history.how.explain",
   replaced: "interface.history.how.replaced",
   anonymizedText: "interface.history.how.anonymizedText",
+  personFolder: "interface.history.how.personFolder",
 };
 
 /** Dates keep the computer's own format, whatever language myCarlos uses (D130), as
@@ -331,7 +344,7 @@ function historyItem(entry: AuditHistoryEntry) {
   return (
     <li key={entry.seq}>
       <article className="audit-history-entry">
-        <h2>{translateNow(eventLabels[entry.event])}</h2>
+        <h2>{translateNow(eventTitle(entry.event))}</h2>
         <p className="audit-history-date">{formatTimestamp(entry.atMs)}</p>
         <dl>
           {details(entry).map(([label, value], index) => (

@@ -706,6 +706,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.created",
   "interface.history.event.deliveryFiled",
   "interface.history.event.deliveryReceiptSettled",
+  "interface.history.event.other",
+  "interface.history.how.personFolder",
   "interface.history.event.deviceApprovalRequestRestarted",
   "interface.history.event.deviceApprovalRequested",
   "interface.history.event.deviceApprovalStatusChanged",
@@ -1795,6 +1797,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-event-deliveryFiled",
   "interface.history.event.deliveryReceiptSettled":
     "interface-history-event-deliveryReceiptSettled",
+  "interface.history.event.other": "interface-history-event-other",
+  "interface.history.how.personFolder": "interface-history-how-personFolder",
   "interface.history.event.deviceApprovalRequestRestarted":
     "interface-history-event-deviceApprovalRequestRestarted",
   "interface.history.event.deviceApprovalRequested":
@@ -2934,6 +2938,8 @@ export interface MessageArgsByKey {
   "interface.history.event.created": undefined;
   "interface.history.event.deliveryFiled": undefined;
   "interface.history.event.deliveryReceiptSettled": undefined;
+  "interface.history.event.other": undefined;
+  "interface.history.how.personFolder": undefined;
   "interface.history.event.deviceApprovalRequestRestarted": undefined;
   "interface.history.event.deviceApprovalRequested": undefined;
   "interface.history.event.deviceApprovalStatusChanged": undefined;

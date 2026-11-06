@@ -1821,6 +1821,10 @@ portal-codeSubmit = Confirmer le code
 
 portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
 
+interface-history-event-other = Autre événement
+
+interface-history-how-personFolder = Dossier d’une personne
+
 ai-summary-button = Résumé
 
 ai-summary-title = Résumé en mots simples

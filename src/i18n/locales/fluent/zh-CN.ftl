@@ -1637,6 +1637,10 @@ portal-codeSubmit = 确认验证码
 
 portal-codeSubmitted = 验证码已发送。正在等待诊所确认此设备。如果 10 分钟内仍未确认，请重新申请。
 
+interface-history-event-other = 其他事件
+
+interface-history-how-personFolder = 某人的文件夹
+
 ai-summary-button = 摘要
 
 ai-summary-title = 通俗易懂的摘要

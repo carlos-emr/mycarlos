@@ -1785,6 +1785,10 @@ portal-codeSubmit = Confirm code
 
 portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
 
+interface-history-event-other = Other event
+
+interface-history-how-personFolder = A person's folder
+
 ai-summary-button = Summary
 
 ai-summary-title = Summary in plain words

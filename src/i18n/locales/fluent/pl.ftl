@@ -1859,6 +1859,10 @@ portal-codeSubmit = Potwierdź kod
 
 portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, poproś ponownie.
 
+interface-history-event-other = Inne zdarzenie
+
+interface-history-how-personFolder = Folder osoby
+
 ai-summary-button = Podsumowanie
 
 ai-summary-title = Podsumowanie prostymi słowami
