@@ -3590,6 +3590,142 @@ mod approval_recovery_tests {
             assert_eq!(result.issues[0].code, "portal_link_incomplete");
         }
     }
+    /// What a portal from before reading aids (1705edb) answers a query key it does not know.
+    fn older_portal_refusal() -> crate::portal_client::ApiResponse {
+        reply(400, br#"{"code":"invalid_cursor"}"#)
+    }
+    fn page(
+        outers: &[wire::Outer],
+        next: Option<&str>,
+        through: &str,
+    ) -> crate::portal_client::ApiResponse {
+        reply(
+            200,
+            &serde_json::to_vec(&serde_json::json!({
+                "deliveries": outers,
+                "next_cursor": next,
+                "through": through,
+                "anchor_recorded": true,
+            }))
+            .unwrap(),
+        )
+    }
+    #[test]
+    fn a_portal_from_before_reading_aids_is_listed_again_without_the_kinds_for_the_whole_check() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, second, sealed, _) = fixture_package();
+        add_link(&store, &link);
+        let mut first = second.clone();
+        first.delivery_id = Uuid::new_v4().to_string();
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                assert_eq!(method, "GET", "nothing is filed, so no receipt is sent");
+                fetched.lock().unwrap().push(path.to_owned());
+                if path.contains("accept=") {
+                    Ok(older_portal_refusal())
+                } else if path == "/api/mycarlos/deliveries?limit=50" {
+                    Ok(page(std::slice::from_ref(&first), Some("1"), "2"))
+                } else if path.starts_with("/api/mycarlos/deliveries?") {
+                    Ok(page(std::slice::from_ref(&second), None, "2"))
+                } else {
+                    Ok(reply(200, &sealed))
+                }
+            },
+        )
+        .unwrap();
+        // Asked once with the kinds, then without them, and the next page without them too.
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                "/api/mycarlos/deliveries?limit=50".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", first.delivery_id),
+                "/api/mycarlos/deliveries?after=1&through=2&limit=50".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", second.delivery_id),
+            ]
+        );
+        // Both deliveries were downloaded and checked; the checked-in package is past its
+        // pickup window, so both are refused instead of filed. The listing itself is no issue.
+        assert_eq!((result.added, result.refused), (0, 2));
+        assert!(
+            result.issues.is_empty(),
+            "{:?}",
+            result.issues.iter().map(|i| &i.code).collect::<Vec<_>>()
+        );
+    }
+    #[test]
+    fn a_listing_refused_without_the_kinds_too_is_an_incomplete_check_as_before() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, _, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                fetched.lock().unwrap().push(path.to_owned());
+                Ok(older_portal_refusal())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                "/api/mycarlos/deliveries?limit=50".to_owned(),
+            ]
+        );
+        assert_eq!((result.added, result.refused), (0, 0));
+        assert_eq!(result.issues.len(), 1);
+        assert_eq!(result.issues[0].link_id, link.id);
+        assert_eq!(result.issues[0].code, "portal_link_incomplete");
+    }
+    #[test]
+    fn any_other_listing_refusal_is_not_asked_again_without_the_kinds() {
+        for refusal in [
+            reply(400, br#"{"code":"invalid_anchor"}"#),
+            reply(400, b"not json"),
+            reply(500, br#"{"code":"invalid_cursor"}"#),
+            reply(403, br#"{"code":"invalid_cursor"}"#),
+        ] {
+            let (_temp, store, _, _) = setup(false);
+            let (link, _, _, _) = fixture_package();
+            add_link(&store, &link);
+            let fetched = Mutex::new(Vec::new());
+            let result = crate::portal_pickup::check_using(
+                &store,
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![]),
+                |l, _, path, _, _, _, _| {
+                    if l.id != link.id {
+                        return Ok(empty_page());
+                    }
+                    fetched.lock().unwrap().push(path.to_owned());
+                    Ok(reply(refusal.status, &refusal.body))
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                fetched.into_inner().unwrap(),
+                vec!["/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned()],
+                "status {}",
+                refusal.status
+            );
+            assert_eq!(result.issues.len(), 1, "status {}", refusal.status);
+            assert_eq!(result.issues[0].link_id, link.id);
+        }
+    }
     #[test]
     fn a_check_asks_for_reading_aids_and_downloads_them_after_the_originals() {
         let (_temp, store, link, _) = vault_with_pair_original();
