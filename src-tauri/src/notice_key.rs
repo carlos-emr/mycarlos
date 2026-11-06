@@ -1,4 +1,5 @@
-//! Notice keys (#230, design note "Tray mode, choice B"): one Ed25519 key per
+//! Notice keys (#230, design note "Tray mode, choice B"; the Portal calls
+//! them "waiting keys", #87): one Ed25519 key per
 //! linked Portal that lets a locked myCarlos ask "is anything waiting?", and
 //! nothing else. They are kept outside the vault, so a lock does not take
 //! them, and outside `vault-home`, so no vault backup holds them:
@@ -18,7 +19,10 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD as B64URL},
+    Engine as _,
+};
 use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
     XChaCha20Poly1305, XNonce,
@@ -26,6 +30,7 @@ use chacha20poly1305::{
 use ed25519_dalek::SigningKey;
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -82,9 +87,9 @@ pub(crate) struct NoticeKeyEntry {
     pub(crate) link_id: Uuid,
     /// The vault the link belongs to: an unlock of another vault wipes it.
     pub(crate) vault_id: Uuid,
-    /// The Portal's id for the public key, once enrollment has given it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) key_id: Option<String>,
+    /// The key's id, from its public key (`waiting_key_id`): the device
+    /// names it when it registers the key with the Portal (`waiting-keys`).
+    pub(crate) key_id: String,
     /// The Ed25519 seed, base64.
     seed: String,
 }
@@ -105,6 +110,32 @@ impl std::fmt::Debug for NoticeKeyEntry {
             .field("vault_id", &self.vault_id)
             .field("key_id", &self.key_id)
             .finish_non_exhaustive()
+    }
+}
+
+/// The key's id as the Portal knows it (#87): unpadded base64url of
+/// SHA-256("mycarlos-waiting-key-v1" || u64be(32) || public key), framed as
+/// the device key's id is, with its own label. 43 characters.
+pub(crate) fn waiting_key_id(public_key: &[u8; 32]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"mycarlos-waiting-key-v1");
+    digest.update(crate::portal_link::frame(&[public_key]));
+    B64URL.encode(digest.finalize())
+}
+
+/// A key just made, for the Portal to register.
+#[derive(Debug)]
+pub(crate) struct NewNoticeKey {
+    pub(crate) key_id: String,
+    pub(crate) public_key: [u8; 32],
+    /// The link's earlier key, if it had one.
+    pub(crate) replaced: Wiped,
+}
+
+impl NewNoticeKey {
+    /// The public key as the Portal takes it: unpadded base64url.
+    pub(crate) fn public_key_b64url(&self) -> String {
+        B64URL.encode(self.public_key)
     }
 }
 
@@ -146,15 +177,16 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
         Ok(self.read()?.into_iter().flatten().collect())
     }
 
-    /// Makes the notice key for a link, at opt-in while unlocked, and returns
-    /// its public key for the Portal's enrollment. A link that has one gets a
-    /// new one: the earlier key is replaced, and its id is in `Wiped`.
+    /// Makes the notice key for a link, while unlocked, and returns what the
+    /// Portal registers (`waiting-keys`: the key id and the public key). A
+    /// link that has one gets a new one, as the Portal replaces it too: the
+    /// earlier key is wiped, and its id is in `replaced`.
     pub(crate) fn make_for(
         &self,
         vault_id: Uuid,
         link_id: Uuid,
         portal_origin: &str,
-    ) -> Result<([u8; 32], Wiped), NoticeKeyError> {
+    ) -> Result<NewNoticeKey, NoticeKeyError> {
         if portal_origin.is_empty() || portal_origin.len() > MAX_ORIGIN_BYTES {
             return Err(NoticeKeyError::Damaged);
         }
@@ -165,8 +197,8 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
         let mut wiped = Wiped::default();
         for slot in slots.iter_mut() {
             if slot.as_ref().is_some_and(|entry| entry.link_id == link_id) {
-                if let Some(key_id) = slot.take().and_then(|entry| entry.key_id) {
-                    wiped.key_ids.push(key_id);
+                if let Some(entry) = slot.take() {
+                    wiped.key_ids.push(entry.key_id);
                 }
             }
         }
@@ -176,32 +208,21 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
             .ok_or(NoticeKeyError::Full)?;
         let mut seed = Zeroizing::new([0_u8; 32]);
         OsRng.fill_bytes(seed.as_mut());
-        let public = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+        let public_key = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+        let key_id = waiting_key_id(&public_key);
         slots[free] = Some(NoticeKeyEntry {
             portal_origin: portal_origin.to_owned(),
             link_id,
             vault_id,
-            key_id: None,
+            key_id: key_id.clone(),
             seed: B64.encode(seed.as_slice()),
         });
         self.seal(&slots)?;
-        Ok((public, wiped))
-    }
-
-    /// Records the Portal's id for a link's key, once enrollment answered.
-    pub(crate) fn set_key_id(&self, link_id: Uuid, key_id: &str) -> Result<(), NoticeKeyError> {
-        if key_id.is_empty() || key_id.len() > MAX_KEY_ID_BYTES {
-            return Err(NoticeKeyError::Damaged);
-        }
-        let _guard = self.lock.lock().map_err(|_| NoticeKeyError::Io)?;
-        let mut slots = self.read()?;
-        let entry = slots
-            .iter_mut()
-            .flatten()
-            .find(|entry| entry.link_id == link_id)
-            .ok_or(NoticeKeyError::Damaged)?;
-        entry.key_id = Some(key_id.to_owned());
-        self.seal(&slots)
+        Ok(NewNoticeKey {
+            key_id,
+            public_key,
+            replaced: wiped,
+        })
     }
 
     /// Wipes the keys `which` picks (a link unlinked, a device removed,
@@ -224,8 +245,8 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
         let mut wiped = Wiped::default();
         for slot in slots.iter_mut() {
             if slot.as_ref().is_some_and(&which) {
-                if let Some(key_id) = slot.take().and_then(|entry| entry.key_id) {
-                    wiped.key_ids.push(key_id);
+                if let Some(entry) = slot.take() {
+                    wiped.key_ids.push(entry.key_id);
                 }
             }
         }
@@ -376,10 +397,8 @@ fn open(key: &[u8; 32], data: &[u8]) -> Result<Vec<Option<NoticeKeyEntry>>, Noti
         || plain.slots.iter().flatten().any(|entry| {
             entry.portal_origin.is_empty()
                 || entry.portal_origin.len() > MAX_ORIGIN_BYTES
-                || entry
-                    .key_id
-                    .as_ref()
-                    .is_some_and(|id| id.is_empty() || id.len() > MAX_KEY_ID_BYTES)
+                || entry.key_id.is_empty()
+                || entry.key_id.len() > MAX_KEY_ID_BYTES
                 || entry.signing_key().is_none()
         })
     {
@@ -504,22 +523,27 @@ mod tests {
     #[test]
     fn a_key_made_for_a_link_signs_as_its_public_key_says_and_reads_back() {
         let (_temp, keys) = keys();
-        let (public, wiped) = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
-        assert_eq!(wiped, Wiped::default());
+        let made = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
+        assert_eq!(made.replaced, Wiped::default());
         let entries = keys.entries().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].portal_origin, ORIGIN);
-        assert_eq!(entries[0].key_id, None);
+        // The id comes from the public key, as the Portal checks it.
+        assert_eq!(entries[0].key_id, made.key_id);
+        assert_eq!(made.key_id.len(), 43);
+        let mut framed = b"mycarlos-waiting-key-v1".to_vec();
+        framed.extend_from_slice(&32_u64.to_be_bytes());
+        framed.extend_from_slice(&made.public_key);
+        assert_eq!(made.key_id, B64URL.encode(Sha256::digest(&framed)));
+        // The public key as registered: 43 unpadded base64url characters.
+        let registered = made.public_key_b64url();
+        assert_eq!(registered.len(), 43);
+        assert_eq!(B64URL.decode(&registered).unwrap(), made.public_key);
         let signature = entries[0].signing_key().unwrap().sign(b"FAKE request");
-        VerifyingKey::from_bytes(&public)
+        VerifyingKey::from_bytes(&made.public_key)
             .unwrap()
             .verify(b"FAKE request", &signature)
             .unwrap();
-        keys.set_key_id(uuid(10), "FAKE-key-1").unwrap();
-        assert_eq!(
-            keys.entries().unwrap()[0].key_id.as_deref(),
-            Some("FAKE-key-1")
-        );
     }
 
     #[test]
@@ -544,32 +568,26 @@ mod tests {
     #[test]
     fn a_new_key_for_a_link_replaces_its_old_one_and_names_it_for_revocation() {
         let (_temp, keys) = keys();
-        keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
-        keys.set_key_id(uuid(10), "FAKE-old").unwrap();
-        let (_, wiped) = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
-        assert_eq!(wiped.key_ids, vec!["FAKE-old".to_owned()]);
+        let old = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
+        let new = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
+        assert_eq!(new.replaced.key_ids, vec![old.key_id]);
+        assert_ne!(new.key_id, new.replaced.key_ids[0]);
         assert_eq!(keys.entries().unwrap().len(), 1);
     }
 
     #[test]
     fn wipes_take_a_link_another_vault_or_all_and_the_last_takes_the_os_item() {
         let (temp, keys) = keys();
-        keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
-        keys.make_for(uuid(1), uuid(11), ORIGIN).unwrap();
-        keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap();
-        for (link, id) in [(10, "FAKE-10"), (11, "FAKE-11"), (20, "FAKE-20")] {
-            keys.set_key_id(uuid(link), id).unwrap();
-        }
-        assert_eq!(keys.wipe_link(uuid(10)).unwrap().key_ids, vec!["FAKE-10"]);
+        let k10 = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap().key_id;
+        let k11 = keys.make_for(uuid(1), uuid(11), ORIGIN).unwrap().key_id;
+        let k20 = keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap().key_id;
+        assert_eq!(keys.wipe_link(uuid(10)).unwrap().key_ids, vec![k10]);
         // An unlock of vault 1: vault 2's key goes.
-        assert_eq!(
-            keys.keep_only_vault(uuid(1)).unwrap().key_ids,
-            vec!["FAKE-20"]
-        );
+        assert_eq!(keys.keep_only_vault(uuid(1)).unwrap().key_ids, vec![k20]);
         assert_eq!(keys.entries().unwrap().len(), 1);
         assert!(keys.store.get().unwrap().is_some());
         // Reset: the rest, and the wrap key with it; the file stays, its size.
-        assert_eq!(keys.wipe_all().unwrap().key_ids, vec!["FAKE-11"]);
+        assert_eq!(keys.wipe_all().unwrap().key_ids, vec![k11]);
         assert!(keys.store.get().unwrap().is_none());
         assert_eq!(
             fs::read(temp.path().join(FILE_NAME)).unwrap().len(),
@@ -632,17 +650,14 @@ mod tests {
     }
 
     #[test]
-    fn an_origin_or_key_id_out_of_bounds_is_refused() {
+    fn an_origin_out_of_bounds_is_refused() {
         let (_temp, keys) = keys();
-        assert_eq!(
-            keys.make_for(uuid(1), uuid(10), &"x".repeat(MAX_ORIGIN_BYTES + 1))
-                .map(|_| ()),
-            Err(NoticeKeyError::Damaged)
-        );
-        keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
-        assert_eq!(
-            keys.set_key_id(uuid(10), &"k".repeat(MAX_KEY_ID_BYTES + 1)),
-            Err(NoticeKeyError::Damaged)
-        );
+        for origin in ["".to_owned(), "x".repeat(MAX_ORIGIN_BYTES + 1)] {
+            assert_eq!(
+                keys.make_for(uuid(1), uuid(10), &origin).map(|_| ()),
+                Err(NoticeKeyError::Damaged)
+            );
+        }
+        assert_eq!(keys.entries(), Ok(vec![]));
     }
 }
