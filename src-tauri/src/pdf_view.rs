@@ -16,34 +16,111 @@
 use crate::pdf_unlock::{self, Refusal, Request};
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
+use uuid::Uuid;
 #[cfg(desktop)]
 use zeroize::Zeroizing;
 
 /// The latest page request; an older one still drawing is stopped.
 static VIEW_GENERATION: AtomicU64 = AtomicU64::new(0);
 static IDENTITY_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// The whole-document text reads (#72, AI-10).
+static TEXT_READS: TextReads = TextReads::new();
+
+/// The whole-document text reads (#72, AI-10): one at a time, with a
+/// generation of their own, so the reader's page requests and closing do not
+/// end them. Each read is started for a reader: an id the screen that asked
+/// for it chose (the preview, or the reader's Summary). A screen's cancel ends
+/// only its own read, so one screen closing never stops another's. A newer
+/// read and a lock end any.
+pub(crate) struct TextReads {
+    generation: AtomicU64,
+    /// The read in flight: who asked for it, and its generation.
+    current: Mutex<Option<(Uuid, u64)>>,
+}
+
+impl TextReads {
+    pub(crate) const fn new() -> Self {
+        Self {
+            generation: AtomicU64::new(0),
+            current: Mutex::new(None),
+        }
+    }
+
+    /// Starts a read for `reader`; an older read ends. The lock makes the
+    /// start and its owner one step, so no cancel falls between them.
+    fn begin(&self, reader: Uuid) -> u64 {
+        let mut current = self.current.lock().unwrap_or_else(PoisonError::into_inner);
+        let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        *current = Some((reader, generation));
+        generation
+    }
+
+    /// Ends the read `reader` started, if it is still the one in flight.
+    fn cancel(&self, reader: Uuid) {
+        let current = self.current.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((owner, generation)) = *current {
+            if owner == reader {
+                // That read only: a newer generation, a lock's, stays as it is.
+                let _ = self.generation.compare_exchange(
+                    generation,
+                    generation + 1,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                );
+            }
+        }
+    }
+
+    /// Ends any read: the vault locked.
+    fn cancel_all(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn is_current(&self, generation: u64) -> bool {
+        self.generation.load(Ordering::SeqCst) == generation
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TicketKind {
+    View,
+    Identity,
+    Text,
+}
 
 /// One page request. It stays current until a newer request, a lock or the reader closing.
 #[derive(Clone, Copy)]
-pub(crate) struct ViewTicket(u64, bool);
+pub(crate) struct ViewTicket(u64, TicketKind);
 
 impl ViewTicket {
     pub(crate) fn new() -> Self {
-        Self(VIEW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1, false)
+        Self(
+            VIEW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1,
+            TicketKind::View,
+        )
     }
 
     /// Background suggestions cannot supersede the reader's page request.
     pub(crate) fn identity() -> Self {
-        Self(IDENTITY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1, true)
+        Self(
+            IDENTITY_GENERATION.fetch_add(1, Ordering::SeqCst) + 1,
+            TicketKind::Identity,
+        )
+    }
+
+    /// A whole-document text read for `reader`: ended by a lock, a newer
+    /// read, or `cancel_text_read(reader)`; never by the reader's pages.
+    pub(crate) fn text_for(reader: Uuid) -> Self {
+        Self(TEXT_READS.begin(reader), TicketKind::Text)
     }
 
     pub(crate) fn is_current(&self) -> bool {
-        let generation = if self.1 {
-            &IDENTITY_GENERATION
-        } else {
-            &VIEW_GENERATION
-        };
-        generation.load(Ordering::SeqCst) == self.0
+        match self.1 {
+            TicketKind::View => VIEW_GENERATION.load(Ordering::SeqCst) == self.0,
+            TicketKind::Identity => IDENTITY_GENERATION.load(Ordering::SeqCst) == self.0,
+            TicketKind::Text => TEXT_READS.is_current(self.0),
+        }
     }
 }
 
@@ -51,6 +128,17 @@ impl ViewTicket {
 pub(crate) fn cancel_views() {
     IDENTITY_GENERATION.fetch_add(1, Ordering::SeqCst);
     VIEW_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Stops any whole-document text read: when the vault locks.
+pub(crate) fn cancel_text_reads() {
+    TEXT_READS.cancel_all();
+}
+
+/// Stops the text read `reader` started, if it is still in flight: when the
+/// screen that asked for it closes. Another screen's read goes on.
+pub(crate) fn cancel_text_read(reader: Uuid) {
+    TEXT_READS.cancel(reader);
 }
 
 /// The request that asks the helper for a page.
@@ -78,6 +166,7 @@ pub(crate) struct Page {
 }
 
 /// What asking the helper for a page came to.
+#[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
 pub(crate) enum Outcome {
     Shown(Page),
     Refused(Refusal),
@@ -506,6 +595,54 @@ pub(crate) fn view_in_helper(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Text reads on a store of their own, not the app's: tests run at once.
+    fn reader(index: u128) -> Uuid {
+        Uuid::from_u128(0xFAC0_0000_0000_4000_8000_0000_0000_0000 + index)
+    }
+
+    #[test]
+    fn a_screens_cancel_ends_only_its_own_text_read() {
+        let reads = TextReads::new();
+        let summary = reader(1);
+        let preview = reader(2);
+        let read = reads.begin(preview);
+        // The reader's Summary closing, after the preview started its read.
+        reads.cancel(summary);
+        assert!(reads.is_current(read));
+        reads.cancel(preview);
+        assert!(!reads.is_current(read));
+    }
+
+    #[test]
+    fn a_newer_read_ends_the_older_and_a_late_cancel_of_the_older_does_not_end_it() {
+        let reads = TextReads::new();
+        let first = reads.begin(reader(1));
+        let second = reads.begin(reader(2));
+        assert!(!reads.is_current(first));
+        assert!(reads.is_current(second));
+        // The first screen's cancel arrives after the second read started.
+        reads.cancel(reader(1));
+        assert!(reads.is_current(second));
+    }
+
+    #[test]
+    fn the_same_screens_next_read_is_its_own_and_a_lock_ends_any() {
+        let reads = TextReads::new();
+        let preview = reader(3);
+        let first = reads.begin(preview);
+        // A password retry: the same screen, a new read.
+        let retry = reads.begin(preview);
+        assert!(!reads.is_current(first));
+        assert!(reads.is_current(retry));
+        reads.cancel_all();
+        assert!(!reads.is_current(retry));
+        // Nothing in flight: a cancel changes nothing, and the next read
+        // starts current.
+        reads.cancel(preview);
+        let after = reads.begin(reader(4));
+        assert!(reads.is_current(after));
+    }
 
     const PASSWORD: &str = "FAKE-portal-2026";
 

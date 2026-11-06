@@ -65,6 +65,9 @@ interface SecuritySettingsProps {
   onOpenHidden: () => void;
   focusAuditEntry?: boolean;
   onOpenAuditHistory: () => void;
+  /** Opens the notice about the AI helper (#72), when the helper is offered
+   * on this platform. */
+  onOpenAiHelperNotice?: () => void;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -168,6 +171,7 @@ export function SecuritySettings({
   onOpenHidden,
   focusAuditEntry = false,
   onOpenAuditHistory,
+  onOpenAiHelperNotice,
   people = [],
   onUpdateProfileDetails,
   recoveryKeySetAtMs,
@@ -343,7 +347,10 @@ export function SecuritySettings({
           </div>
         </section>
         {/* #71: the privacy notice says what is kept. */}
-        <section className="setting-row" aria-labelledby="what-is-kept">
+        <section
+          className="setting-row kept-setting"
+          aria-labelledby="what-is-kept"
+        >
           <div>
             <h2 id="what-is-kept">
               {translateNow("interface.SecuritySettings.whatMyCarlosKeeps")}
@@ -353,6 +360,19 @@ export function SecuritySettings({
                 "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne",
               )}
             </p>
+            <p>
+              {translateNow(
+                "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
+              )}
+            </p>
+            <p>
+              {translateNow(
+                "interface.SecuritySettings.startingAgainOrRestoringABackupOver",
+              )}
+            </p>
+          </div>
+          {/* Its controls on the right, as in the other rows. */}
+          <div className="kept-entries">
             <button
               ref={hiddenEntryRef}
               className="button hidden-settings-entry"
@@ -366,11 +386,6 @@ export function SecuritySettings({
                 <span className="hidden-entry-scope">{hiddenScopeName}</span>
               </span>
             </button>
-            <p>
-              {translateNow(
-                "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
-              )}
-            </p>
             <button
               ref={auditEntryRef}
               className="button hidden-settings-entry"
@@ -382,13 +397,21 @@ export function SecuritySettings({
                 {translateNow("interface.history.title")}
               </span>
             </button>
-            <p>
-              {translateNow(
-                "interface.SecuritySettings.startingAgainOrRestoringABackupOver",
-              )}
-            </p>
           </div>
         </section>
+        {onOpenAiHelperNotice && (
+          <section className="native-setting">
+            <h3>{translateNow("aiHelper.notice.title")}</h3>
+            <p>{translateNow("aiHelper.notice.introShare")}</p>
+            <button
+              className="button"
+              type="button"
+              onClick={onOpenAiHelperNotice}
+            >
+              {translateNow("aiHelper.notice.title")}
+            </button>
+          </section>
+        )}
         <section className="setting-row native-setting-form">
           <div>
             <div className="native-auto-lock-heading">
