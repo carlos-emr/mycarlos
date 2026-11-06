@@ -2196,6 +2196,22 @@ const CARE_VERB = anyCase(
 // (Mohammed, René, José, Margarida, Mário, Xiaoming), and a wrong refusal leaks a name.
 const UNCUED_NOT_NAME_WORDS = new Set(
   foldAll([
+    "ward",
+    "unit",
+    "oddział",
+    "oddziału",
+    "oddziale",
+    "unité",
+    "unidad",
+    "unidade",
+    "medicina",
+    "médecine",
+    "atención",
+    "atenção",
+    "primaria",
+    "primária",
+    "zapalenie",
+    "zapalenia",
     "resolving",
     "resolved",
     "healing",
@@ -3268,14 +3284,18 @@ const RULES: Rule[] = [
     ),
     group: 1,
   },
-  // A full name right before an identity label: "Tomás Prueba Iglesias, DNI …".
+  // A full name right before an identity label: "Tomás Prueba Iglesias, DNI …". The label
+  // tells a person's line, not who the words before it are, so the run is refused for any
+  // non-name word, is never a document heading's subject ("Informe de alta: Neumonía Adquirida
+  // NHC …"), and never starts inside a capitalised run ("Oddział Chorób Wewnętrznych PESEL …").
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
+      `(?<![\\p{L}])(?<!(?:^|\\n)[ \\t]*${DOCUMENT_HEADING}[ \\t]*(?:—|–|-|:)[ \\t]*)(?<!\\p{Lu}[\\p{L}'’-]*[ \\t]+)(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
       "gu",
     ),
     group: 1,
+    uncued: true,
   },
   // A closing, then the name on the next non-empty line.
   {

@@ -347,3 +347,51 @@ describe("more Polish titles (#262 review)", () => {
     expect(send(text)).not.toContain(part);
   });
 });
+
+describe("a run right before an identity label", () => {
+  // The label tells a person's line, not who the words before it are.
+  it.each([
+    "Karta informacyjna: Oddział Chorób Wewnętrznych    PESEL: 41031412345",
+    "Oddział Chorób Wewnętrznych PESEL 41031412345",
+    "Oddział Ratunkowy    Nr księgi 12345/2026",
+    "Zapalenie Płuc    PESEL 41031412345",
+    "Servicio de Cardiología    DNI 12345678Z",
+    "Medicina Interna    NHC 4471829",
+    "Neumonía Adquirida    NHC 4471829",
+    "Informe de alta: Neumonía Adquirida    NHC 4471829",
+    "Insuficiencia Renal Crónica, DNI 12345678Z",
+    "Consulta Externa    CNS 123456789012345",
+    "Atención Primaria, Tarjeta sanitaria BBBB123456",
+    "Unidade Coronariana    CPF 987.654.321-00",
+    "Resumo de alta: Pneumonia Comunitária    CPF 987.654.321-00",
+  ])("leaves a ward, a service or a diagnosis: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+  });
+
+  it.each([
+    ["Tomás Prueba Iglesias, DNI 12345678Z", "Iglesias"],
+    ["Zuzanna Wierzbicka    PESEL 58031412345", "Wierzbicka"],
+    ["Bożena Kwiatkowska, PESEL 50060212345", "Kwiatkowska"],
+    ["Tomé Vasconcelos Brito, CPF 987.654.321-00", "Brito"],
+    ["Inés Valcárcel Pruneda    NHC 4471829", "Pruneda"],
+    ["Remedios Falcón Ibarra, Tarjeta sanitaria BBBB123456", "Ibarra"],
+    ["Firmado: Lucía Prueba Sanz, DNI 12345678Z", "Sanz"],
+    ["Atendemos a Lucía Prueba Sanz, DNI 12345678Z", "Sanz"],
+    [
+      "Karta informacyjna — WIERZBICKA, Zuzanna    PESEL 58031412345",
+      "Zuzanna",
+    ],
+  ])("removes the person: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  // The stated cost, as for a header line: a document heading's "Given Surname" subject stays
+  // when the person is unknown, even with an identity number beside it.
+  it("keeps a heading's Given Surname unless the person is known", () => {
+    const text = "Informe de alta — Lucía Prueba Sanz    NHC 4471829";
+    expect(send(text)).toContain("Lucía Prueba Sanz");
+    expect(
+      deidentify(text, { knownNames: ["Lucía Prueba Sanz"] }).toSend,
+    ).not.toContain("Sanz");
+  });
+});
