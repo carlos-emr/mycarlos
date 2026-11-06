@@ -1617,6 +1617,55 @@ const BRACKET_NOTES = new Set(
     "annulé",
     "cancelled",
     "canceled",
+    "externa",
+    "externo",
+    "interna",
+    "interno",
+    "urgente",
+    "consulta",
+    "seguimiento",
+    "control",
+    "nueva",
+    "nuevo",
+    "retorno",
+    "primera",
+    "primeira",
+    "revisión",
+    "revisão",
+    "telefónica",
+    "presencial",
+    "pilne",
+    "kontrola",
+    // Hospital units and specialties: "en Medicina Interna (Planta)" is not a town.
+    "medicina",
+    "cardiología",
+    "cardiologia",
+    "neurología",
+    "neurologia",
+    "pediatría",
+    "pediatria",
+    "urgencias",
+    "urgencia",
+    "cirugía",
+    "cirurgia",
+    "enfermería",
+    "enfermagem",
+    "consultorio",
+    "consultório",
+    "planta",
+    "piso",
+    "sala",
+    "andar",
+    "box",
+    "cama",
+    "unidad",
+    "unidade",
+    "servicio",
+    "serviço",
+    "oddział",
+    "poradnia",
+    "clínica",
+    "hospital",
   ]).map((word) => word.toLowerCase()),
 );
 // Words of a family-history line, never a relative's name after "Mother:": "Mother: Breast
@@ -1847,7 +1896,7 @@ const RULES: Rule[] = [
   {
     kind: "recordNumber",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice|Licencia|Licença|Licenca|CNH|CRM|COREN|CRO|CREFITO|Colegiado|Col\\.|Registro profissional)(?:-[A-Z]{2})?(?:[ \\t]+(?:number|no\\.?|n°|nº|n\\.º|#|numéro|número|de licencia|de licença))?[ \\t]*[:#]?[ \\t]*((?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,8})?)(?![ \\t]*(?:mg|mcg|µg|ug|g|kg|ml|l|dl|mmol|umol|µmol|meq|iu|u|%|mm|cm|m|bpm|mmhg|ng|pg|fl|\\/))`,
+      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice|Póliza|Polisa|Apólice|Pedido|N\\.?º de petición|Número de petición|historia clínica|historii choroby|Nr zlecenia|Numer zlecenia|numer prawa wykonywania zawodu|NPWZ|PWZ|Colegiada|Licencia|Licença|Licenca|CNH|CRM|COREN|CRO|CREFITO|Colegiado|Col\\.|Registro profissional)(?:-[A-Z]{2})?(?:[ \\t]+(?:number|no\\.?|nr\\.?|n°|nº|n\\.º|#|numéro|número|numer|de licencia|de licença))?[ \\t]*[:#]?[ \\t]*((?:[A-Z]{1,4}[ ](?=\\d{4}))?(?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,8})?)(?![ \\t]*(?:mg|mcg|µg|ug|g|kg|ml|l|dl|mmol|umol|µmol|meq|iu|u|%|mm|cm|m|bpm|mmhg|ng|pg|fl|\\/))`,
       "giu",
     ),
     group: 1,
@@ -1887,6 +1936,38 @@ const RULES: Rule[] = [
     pattern:
       /(?:\+?1[ .-]?)?(?:\(\d{3}\)[ ]?|\b\d{3}[ .-]?)\d{3}[ .-]?\d{4}\b(?:[ \t]*(?:ext\.?|x|poste)[ \t]*\d{1,5}\b)?/gi,
   },
+  // A phone with a country code ("+34 612 345 678", "+48 601 234 567"), a Brazilian
+  // phone ("(11) 91234-5678"), or any phone after its label in es/pl/pt.
+  {
+    kind: "phone",
+    pattern:
+      /(?<![\d+])\+(?:[2-9]\d{0,2})[ .-]?\(?\d{1,3}\)?(?:[ .-]?\d{2,4}){2,4}(?!\d)|(?<![\d(])\(\d{2}\)[ ]?9?\d{4}-?\d{4}(?!\d)/g,
+  },
+  {
+    kind: "phone",
+    pattern:
+      /(?<![\p{L}])(?:Teléfono|Telefono|Telefone|Telefon|Tel|Tfno|Móvil|Movil|Celular|Cel|kom|tel\. kom)\.?[ \t]*[:#]?[ \t]*(\+?[\d(][\d ().-]{6,16}\d)(?!\d)/giu,
+    group: 1,
+  },
+  // A national identity number after its label: DNI/NIE "12345678Z", PESEL, CPF
+  // "123.456.789-09", RG, NIF; and a CPF by its shape.
+  {
+    kind: "sin",
+    pattern:
+      /(?<![\p{L}])(?:DNI|NIE|NIF|PESEL|CPF|RG|documento de identidad)[ \t]*(?:n[º°o.][ \t]*)?[:#]?[ \t]*([0-9XYZ][0-9 .-]{6,16}[0-9A-Z])(?![\p{L}\d])/gu,
+    group: 1,
+  },
+  {
+    kind: "sin",
+    pattern: /(?<![\d.])\d{3}\.\d{3}\.\d{3}-\d{2}(?![\d-])/g,
+  },
+  // A health card after its label: "tarjeta sanitaria SNSA…", "CNS 898 0012 3456 7890".
+  {
+    kind: "healthCard",
+    pattern:
+      /(?<![\p{L}])(?:[Tt]arjeta sanitaria(?: individual)?|TSI|CIP|CNS|[Cc]art[ãa]o (?:[Nn]acional de [Ss]a[úu]de|SUS|do SUS))[ \t]*(?:n[º°o.][ \t]*)?[:#]?[ \t]*([A-Z0-9][A-Z0-9 -]{7,22}[A-Z0-9])(?![\p{L}\d])/gu,
+    group: 1,
+  },
   // A social insurance number: nine digits in threes (joined by a space, a
   // hyphen or, as French documents write it, a point), or after its label.
   {
@@ -1908,7 +1989,8 @@ const RULES: Rule[] = [
   // is removed too, as "Lot 123 456 789" always was.
   {
     kind: "sin",
-    pattern: /(?<![\d-])(?<!\d\.)\d{3}([ .-])\d{3}\1\d{3}(?![\d-])(?!\.\d)/g,
+    pattern:
+      /(?<![\d-])(?<!\d\.)(?<!\+\d{1,3}[ .-]?)(?<!(?:[Tt]el(?:éfono|efono|efone|efon)?|[Tt]fno|[Mm][óo]vil|[Cc]elular|[Cc]el|[Kk]om|[Pp]hone|[Cc]ell)\.?[ \t]*[:#]?[ \t]*)\d{3}([ .-])\d{3}\1\d{3}(?![\d-])(?!\.\d)/gu,
   },
   // A web address: with its scheme or "www.", or a bare domain with a common
   // ending, and whatever follows it.
@@ -1966,6 +2048,16 @@ const RULES: Rule[] = [
     ),
     townInBrackets: true,
   },
+  // A town with its region in brackets after "de", "da", "do" or "z": "de Valdeprueba
+  // (Toledo)", "de Vila Teste (Campinas)".
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])(?:de|da|do|desde|en|em|no|na|z|ze)[ \\t]+)\\p{Lu}\\p{Ll}[\\p{L}'’]*(?:[ -]\\p{Lu}\\p{Ll}[\\p{L}'’]*){0,2}[ \\t]*\\(\\p{Lu}\\p{Ll}[\\p{L}'’]*(?:[ -]\\p{Lu}\\p{Ll}[\\p{L}'’]*){0,2}\\)`,
+      "gu",
+    ),
+    townInBrackets: true,
+  },
   // A named residence: "Résidence Les Jardins du Parc", "Foyer Saint-Joseph", "Manoir des Pins".
   {
     kind: "address",
@@ -2011,7 +2103,7 @@ const RULES: Rule[] = [
     // Clínica San Rafael; Centro de Saúde Vila Exemplo; Szpital Wojewódzki w Testowie; GMF du Parc
     kind: "clinic",
     pattern: new RegExp(
-      `(?<![\\p{L}])${anyCase(["Clínica", "Centro de Salud", "Centro de Saúde", "Unidade Básica de Saúde", "Posto de Saúde", "Hospital", "UBS", "Przychodnia", "Szpital", "Ośrodek Zdrowia", "GMF", "CISSS", "CIUSSS", "Centre médical", "Centre de réadaptation", "Groupe de médecine de famille", "Groupe de médecine familiale", "GMF-U", "GMF-R", "Super-clinique", "école primaire", "École primaire", "école secondaire", "École secondaire", "école", "Ecole", "collège", "Cégep", "cégep", "polyvalente", "CPE", "Centre de la petite enfance", "garderie", "escuela", "colegio", "escola", "Szkoła Podstawowa", "szkoła", "przedszkole"])}(?:[ \\t]+(?:(?:de|del|da|do|dos|das|du|des|la|le|les|w|we|nr)[ \\t]+)?(?:[lLdD]['’])?${NAME_WORD}){1,4}`,
+      `(?<![\\p{L}])${anyCase(["Clínica", "Centro de Salud", "Centro de Saúde", "Unidade Básica de Saúde", "Posto de Saúde", "Hospital", "UBS", "Przychodnia", "Przychodni", "Przychodnią", "Poradnia", "Poradni", "Szpital", "Szpitala", "Szpitalu", "Szpitalem", "Ośrodek Zdrowia", "Ośrodka Zdrowia", "Ośrodku Zdrowia", "Centrum Medyczne", "Centrum Medycznego", "Centrum Medycznym", "Laboratorium", "Laboratorio", "Laboratório", "GMF", "CISSS", "CIUSSS", "Centre médical", "Centre de réadaptation", "Groupe de médecine de famille", "Groupe de médecine familiale", "GMF-U", "GMF-R", "Super-clinique", "école primaire", "École primaire", "école secondaire", "École secondaire", "école", "Ecole", "collège", "Cégep", "cégep", "polyvalente", "CPE", "Centre de la petite enfance", "garderie", "escuela", "colegio", "escola", "Szkoła Podstawowa", "szkoła", "przedszkole"])}(?:[ \\t]+(?:(?:de|del|da|do|dos|das|du|des|la|le|les|w|we|nr)[ \\t]+)?(?:[lLdD]['’])?${NAME_WORD}|[ \\t]+nr[ \\t]*\\d{1,4}){1,5}`,
       "gu",
     ),
   },
@@ -2052,7 +2144,7 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Dr|Dre|Doctor|Docteur|Docteure)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|lek\\.(?:[ \\t]*med\\.)?)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -2305,6 +2397,29 @@ const RULES: Rule[] = [
         "namorada",
         "przyjaciel",
         "przyjaciółka",
+        "córkę",
+        "córką",
+        "córki",
+        "syna",
+        "synem",
+        "mężem",
+        "męża",
+        "żoną",
+        "żonę",
+        "matką",
+        "matkę",
+        "ojcem",
+        "ojca",
+        "bratem",
+        "brata",
+        "siostrą",
+        "siostrę",
+        "wnuczką",
+        "wnuczkę",
+        "wnukiem",
+        "wnuka",
+        "opiekunem",
+        "opiekunką",
         "朋友",
       ])}[ \\t]*,?[ \\t]+(${CAPITALIZED_NAME})`,
       "gu",
@@ -2344,11 +2459,30 @@ const RULES: Rule[] = [
     kin: true,
     relationLabel: true,
   },
+  // A patient after a referral verb: "Le remito a Rosa Ejemplar", "encaminho Rosa Exemplo",
+  // "kieruję Różę Przykładową".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:[Rr]emito a|[Dd]erivo a|[Ee]nv[íi]o a|[Pp]resento a|[Ee]ncaminho|[Ee]ncaminhamos|[Aa]presento|[Kk]ieruję|[Kk]ierujemy|[Pp]rzekazuję)[ \\t]+(?:(?:al|a la|o|a|el paciente|la paciente|o paciente|a paciente|pana|panią|pacjenta|pacjentkę)[ \\t]+)?(${CAPITALIZED_NAME})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // A full name right before an identity label: "Tomás Prueba Iglesias, DNI …".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
+      "gu",
+    ),
+    group: 1,
+  },
   // A closing, then the name on the next non-empty line.
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Sincerely|Yours truly|Regards|Best regards|Kind regards|Cordialement|Salutations distinguées),[ \\t]*\\n(?:[ \\t]*\\n)*[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Sincerely|Yours truly|Regards|Best regards|Kind regards|Cordialement|Salutations distinguées|Atentamente|Saludos cordiales|Un saludo|Atenciosamente|Z poważaniem|Z wyrazami szacunku|Pozdrawiam),[ \\t]*\\n(?:[ \\t]*\\n)*[ \\t]*(?:(?:Dr|Dra|Dre|dr|Doutor|Doutora|lek\\.)\\.?[ \\t]+)?(${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -2512,6 +2646,13 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       // A value cut inside a longer token ("135-14" of "135-145 mmol/L"), an amount
       // ("Claim 1250.00") or a lab reference range ("Reference: 135-145") is not a
       // record number (#228 review).
+      // "HC 3390127": a letter prefix before the digits must really be capitals.
+      if (
+        rule.kind === "recordNumber" &&
+        /^[A-Za-z]{1,4} \d/u.test(trimmed) &&
+        !/^[A-Z]{1,4} \d/u.test(trimmed)
+      )
+        continue;
       if (
         rule.kind === "recordNumber" &&
         (/[\p{L}\p{N}]/u.test(text.charAt(start + detail.length)) ||
@@ -2568,9 +2709,10 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       if (
         rule.townInBrackets &&
         (BRACKET_NOTES.has(trimmed.toLowerCase()) ||
-          trimmed.split(/[ \t-]+/u).some((word) => {
+          trimmed.split(/[^\p{L}'’]+/u).some((word) => {
             const lower = word.toLowerCase();
             return (
+              BRACKET_NOTES.has(lower) ||
               FAMILY_HISTORY_WORDS.has(lower) ||
               ORDINARY_WORDS.has(lower) ||
               MEDICAL_ENDING.test(lower)
