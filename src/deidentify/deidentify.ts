@@ -3543,9 +3543,16 @@ function keepShortBirthCue(
 }
 
 // Labels that only a person's record has: a birth date, an age, a sex, a record number, an
-// identity or a health card. A phone, an email or a postal code are a clinic's too.
-const PERSON_FIELD_LABEL =
-  /(?<![\p{L}])(?:DOB|D\.O\.B\.?|Date of birth|Born|N[ée]e?(?:\(e\))?[ \t]+le|Date de naissance|DDN|Fecha de nacimiento|F\.?[ \t]?nac|Data de nascimento|DN[ \t]*:|Data urodzenia|ur\.|出生日期|Age|Âge|Edad|Idade|Wiek|年龄|Sex|Gender|Sexe|Sexo|Género|Płeć|性别|MRN|HRN|NHC|IPP|Prontuário|Nr księgi|Nr historii|Health card|Carte d['’]assurance maladie|NAM|RAMQ|OHIP|PESEL|CPF|DNI|NIE|CNS|Tarjeta sanitaria)(?![\p{L}])/iu;
+// identity or a health card. A phone, an email or a postal code are a clinic's too. Each must
+// look like a field, with a colon or a value after it, so prose does not count ("born in",
+// "edad avanzada"), and the short ids are capitals only (Polish "nie", "dni") (#264 review).
+const PERSON_WORD_FIELD =
+  /(?<![\p{L}])(?:DOB|D\.O\.B\.?|Date of birth|Born(?:[ \t]+on)?|N[ée]e?(?:\(e\))?[ \t]+le|Date de naissance|Fecha de nacimiento|F\.?[ \t]?(?:de[ \t]+)?nac\.?|Data de nascimento|Data urodzenia|ur\.|出生日期|Age|Âge|Edad|Idade|Wiek|年龄|Sex|Gender|Sexe|Sexo|Género|Płeć|性别|Prontuário|Nr księgi(?: głównej)?|Nr historii choroby|Health card|Carte d['’]assurance maladie|Tarjeta sanitaria)(?:[ \t]*[:：#]|[ \t]*\(?\d)/iu;
+// "CNS" and "DN" need a value: "CNS: no focal deficit" is an exam line, "DN:" a district nurse.
+const PERSON_ID_FIELD =
+  /(?<![\p{L}])(?:(?:DDN|MRN|HRN|NHC|IPP|NAM|RAMQ|OHIP|PESEL|CPF|DNI|NIE)(?:[ \t]*[:：#]|[ \t]+[A-Z]{0,4}[ \t]?\d)|(?:CNS|DN|D\.N\.)[ \t]*[:：#]?[ \t]*\d)/u;
+const personField = (text: string) =>
+  PERSON_WORD_FIELD.test(text) || PERSON_ID_FIELD.test(text);
 const PERSON_FINDINGS = new Set([
   "dateOfBirth",
   "recordNumber",
@@ -3584,7 +3591,7 @@ function personEvidenceNear(
   const end = to < 0 ? text.length : to;
   const window = `${text.slice(from, finding.start)} ${text.slice(finding.end, end)}`;
   return (
-    PERSON_FIELD_LABEL.test(window) ||
+    personField(window) ||
     found.some(
       (other) =>
         other !== finding &&

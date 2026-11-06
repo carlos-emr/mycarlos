@@ -408,3 +408,27 @@ describe("a patient named with no cue: a header line or a care verb (#264)", () 
     ).toMatch(/\[NAME 1\]/);
   });
 });
+
+describe("a person field must look like a field (#264 review)", () => {
+  // Prose near a header's subject is no person evidence: Polish "nie" (not) and "dni" (days),
+  // "born in", "edad avanzada", an exam's "CNS:" line with no value.
+  it.each([
+    "Wypis: Zapalenie Płuc\nPacjent nie gorączkuje od dwóch dni.",
+    "Care Plan: Fall Prevention\nBorn in Toronto, she lives alone.",
+    "Informe de alta: Neumonía Adquirida\nEdad avanzada, sin fiebre.",
+    "Consult Note: Infectious Diseases\nAge-appropriate vaccines given.",
+    "Consult Note: Infectious Diseases\nCNS: no focal deficit.",
+    "Care Plan: Wound Care\nDN: visit planned for next week.",
+  ])("leaves the subject: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+
+  it.each([
+    "CONSULTATION NOTE — Tobiah Farnsworth\nAge 81, lives alone.",
+    "Discharge letter: Wren Halloway\nSex: F",
+    "Informe de alta — Inés Valcárcel Pruneda\nNHC 4471829",
+    "Karta informacyjna — Zuzanna Wierzbicka\nur. 14.03.1941",
+  ])("removes the name beside a real field: %j", (text) => {
+    expect(send(text)).toMatch(/\[NAME 1\]/);
+  });
+});
