@@ -1756,6 +1756,10 @@ native-filter-models = Model files
 
 ai-working = The AI helper is working…
 
+ai-summary-ready = The summary is ready.
+
+ai-explain-ready = The explanation is ready.
+
 ai-failed = The AI helper could not finish. Try again.
 
 ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.

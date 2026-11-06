@@ -39,19 +39,52 @@ pub(crate) struct Accepted {
     /// Where to get the file: shown as text with a Copy button. The app
     /// opens nothing.
     pub(crate) source_url: &'static str,
+    /// How the helper puts a conversation to this model.
+    pub(crate) chat_format: crate::model_helper::ChatFormat,
+    /// Whether Preferences lists it (name, address, Copy). An entry that is
+    /// not listed is still accepted by "Add a model file…": its size and hash
+    /// are on the list.
+    #[serde(skip)]
+    pub(crate) listed: bool,
 }
 
 /// The models the app accepts. The demo build's pick (the bake-off's best on
 /// both blind graders, and the one that works through the engine): Qwen3.5 4B.
-pub(crate) const CATALOG: &[Accepted] = &[Accepted {
-    name: "Qwen3.5 4B (Q4_K_M)",
-    file_name: "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
-    size_bytes: 3_013_027_808,
-    sha256: "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
-    licence: "Apache-2.0",
-    notices: &[],
-    source_url: "https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
-}];
+// Indented by hand: rustfmt leaves this array alone (the pinned addresses are
+// longer than its line width).
+pub(crate) const CATALOG: &[Accepted] = &[
+    Accepted {
+        name: "Qwen3.5 4B (Q4_K_M)",
+        file_name: "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+        size_bytes: 3_013_027_808,
+        sha256: "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
+        licence: "Apache-2.0",
+        notices: &[],
+        source_url: "https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+        chat_format: crate::model_helper::ChatFormat::Builtin,
+        listed: true,
+    },
+    // The team's backup, not listed for patients: its file can be added, but
+    // its summary is not yet proven (listing it is a later decision). The
+    // default is the first entry. Gemma 4's chat template is not applied by
+    // llama.cpp's built-in code, so its turns are written by the helper.
+    Accepted {
+        name: "Gemma 4 E2B Instruct (Q4_0)",
+        file_name: "gemma-4-E2B-it-Q4_0.gguf",
+        size_bytes: 2_841_481_184,
+        sha256: "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52",
+        licence: "Apache-2.0",
+        notices: &[],
+        source_url: "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf",
+        chat_format: crate::model_helper::ChatFormat::Gemma4,
+        listed: false,
+    },
+];
+
+/// The entries Preferences lists, in catalog order.
+pub(crate) fn listed(catalog: &[Accepted]) -> Vec<Accepted> {
+    catalog.iter().filter(|m| m.listed).copied().collect()
+}
 
 /// What the renderer is told about the model on this computer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -139,18 +172,23 @@ impl ModelError {
 /// Where a download's bytes come from: the real network ([`crate::model_download::Https`])
 /// or a fake in tests.
 pub(crate) trait Opener {
-    /// Opens the model's pinned address. `cancelled` is looked at while
-    /// waiting for bytes.
+    /// Opens the model's pinned address, from byte `from` when the server
+    /// can resume there (it may answer from 0 instead: see [`Opened::start`]).
+    /// `cancelled` is looked at while waiting for bytes.
     fn open<'a>(
         &self,
         model: &Accepted,
+        from: u64,
         cancelled: &'a dyn Fn() -> bool,
     ) -> Result<Opened<'a>, OpenerError>;
 }
 
 pub(crate) struct Opened<'a> {
-    /// The length the server announced, when it did.
+    /// The length of the whole file the server announced, when it did.
     pub(crate) size: Option<u64>,
+    /// Where `reader` starts: the `from` asked for, or 0 when the server
+    /// sent the file from its start.
+    pub(crate) start: u64,
     pub(crate) reader: Box<dyn Read + 'a>,
 }
 
@@ -292,6 +330,7 @@ pub(crate) struct VerifiedModel {
     pub(crate) path: PathBuf,
     pub(crate) info: ModelInfo,
     pub(crate) size_bytes: u64,
+    pub(crate) chat_format: crate::model_helper::ChatFormat,
 }
 
 impl Store {
@@ -334,6 +373,7 @@ impl crate::model_runtime::ModelSource for RuntimeSource {
             path: model.path,
             info: model.info,
             size_bytes: model.size_bytes,
+            chat_format: model.chat_format,
         })
     }
 }
@@ -363,6 +403,10 @@ pub(crate) struct Store {
     damaged: Mutex<bool>,
     /// One add, remove or use-check at a time.
     busy: Mutex<()>,
+    /// Run, with the lock held, before the model file is replaced or removed:
+    /// the app ends the helper that holds it. A new run cannot start meanwhile
+    /// (its use-check finds the lock taken and answers busy).
+    before_replace: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Runs holding the model now (see [`VerifiedModel`]).
     uses: Arc<AtomicUsize>,
     /// Asked to stop the add in progress.
@@ -388,6 +432,7 @@ impl Store {
             catalog,
             damaged: Mutex::new(false),
             busy: Mutex::new(()),
+            before_replace: Mutex::new(None),
             uses: Arc::new(AtomicUsize::new(0)),
             cancel_add: AtomicBool::new(false),
         }
@@ -404,6 +449,26 @@ impl Store {
 
     fn largest(&self) -> u64 {
         self.catalog.iter().map(|m| m.size_bytes).max().unwrap_or(0)
+    }
+
+    /// Names what runs, under the lock, before the model file is replaced or
+    /// removed (adds, downloads and removes).
+    pub(crate) fn set_before_replace(&self, hook: Box<dyn Fn() + Send + Sync>) {
+        *self
+            .before_replace
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(hook);
+    }
+
+    fn run_before_replace(&self) {
+        if let Some(hook) = self
+            .before_replace
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            hook();
+        }
     }
 
     /// The add/remove/use lock, or `Busy` when another holds it (an add or
@@ -443,13 +508,19 @@ impl Store {
         self.cancel_add.store(true, Ordering::SeqCst);
     }
 
-    /// Removes any `.part` left by an add that did not finish.
+    /// Removes any `.part` left by an add that did not finish. (A download
+    /// that was cut short keeps its own `.part` to resume: see `download`.)
     pub(crate) fn clean_leftovers(&self) {
+        self.clean_leftovers_except(None);
+    }
+
+    fn clean_leftovers_except(&self, keep: Option<&str>) {
         let Ok(entries) = fs::read_dir(&self.dir) else {
             return;
         };
         for entry in entries.flatten() {
-            if entry.file_name().to_string_lossy().ends_with(PART_SUFFIX) {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.ends_with(PART_SUFFIX) && Some(name.as_str()) != keep {
                 let _ = remove_model_file(entry.path());
             }
         }
@@ -497,13 +568,14 @@ impl Store {
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
+        self.run_before_replace();
         if let Some(reason) = unsupported(&hardware.machine()) {
             return Err(ModelError::Unsupported(reason));
         }
         let mut input =
             crate::vault::open_regular_read(source).map_err(|_| ModelError::Unreadable)?;
         let size = input.metadata().map_err(|_| ModelError::Unreadable)?.len();
-        self.add_stream(&mut input, size, None, hardware, &mut progress)
+        self.add_stream(&mut input, size, None, 0, hardware, &mut progress)
     }
 
     /// The checks and the copy for any byte source (a picked file now; a
@@ -516,6 +588,7 @@ impl Store {
         input: &mut dyn Read,
         size: u64,
         want: Option<&Accepted>,
+        have: u64,
         hardware: &dyn Hardware,
         progress: &mut impl FnMut(u64, u64),
     ) -> Result<ModelInfo, ModelError> {
@@ -529,19 +602,32 @@ impl Store {
             .find(|m| m.size_bytes == size && want.is_none_or(|w| w.sha256 == m.sha256))
             .ok_or(ModelError::NotOnList)?;
         self.prepare_dir()?;
-        self.clean_leftovers();
+        let part_name = format!("{}{PART_SUFFIX}", model.file_name);
+        self.clean_leftovers_except((have > 0).then_some(part_name.as_str()));
         let free = hardware.free_disk_bytes(&self.dir);
+        // What is still to be written; a resumed `.part` already holds `have`.
+        let to_write = size.saturating_sub(have);
         if free.is_none_or(|free| {
-            free < size
+            free < to_write
                 .saturating_add(DISK_MARGIN_BYTES)
                 .max(MIN_FREE_DISK_BYTES)
         }) {
             return Err(ModelError::NotEnoughDisk);
         }
-        let part = self.dir.join(format!("{}{PART_SUFFIX}", model.file_name));
-        let result = copy_checked(input, &part, model, &self.cancel_add, progress);
+        let part = self.dir.join(&part_name);
+        let result = copy_checked(input, &part, model, &self.cancel_add, have, progress);
         if let Err(error) = result {
-            let _ = remove_model_file(&part);
+            // A download cut short (the connection lost, a read that failed)
+            // keeps what it has, to resume: only when the source was a
+            // download and the file is still short. Cancel is the patient
+            // saying no: what arrived is removed (up to the model's size).
+            let short = fs::metadata(&part).is_ok_and(|m| m.len() < size);
+            let resumable = want.is_some()
+                && short
+                && matches!(error, ModelError::Unreadable | ModelError::Truncated);
+            if !resumable {
+                let _ = remove_model_file(&part);
+            }
             return Err(error);
         }
         let target = self.dir.join(model.file_name);
@@ -574,16 +660,32 @@ impl Store {
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
+        self.run_before_replace();
         if let Some(reason) = unsupported(&hardware.machine()) {
             return Err(ModelError::Unsupported(reason));
         }
         let model = self.catalog.get(index).ok_or(ModelError::NotOnList)?;
         self.prepare_dir()?;
-        self.clean_leftovers();
+        // A `.part` from a download that was cut short is resumed (its bytes
+        // are hashed again from the start; only the rest is fetched). Any
+        // other `.part`, one that cannot be this file's rest, is removed.
+        let part_name = format!("{}{PART_SUFFIX}", model.file_name);
+        let part = self.dir.join(&part_name);
+        let mut have = match fs::symlink_metadata(&part) {
+            Ok(meta) if meta.is_file() && meta.len() > 0 && meta.len() < model.size_bytes => {
+                meta.len()
+            }
+            _ => 0,
+        };
+        self.clean_leftovers_except((have > 0).then_some(part_name.as_str()));
+        if have == 0 {
+            let _ = remove_model_file(&part);
+        }
         let free = hardware.free_disk_bytes(&self.dir);
         if free.is_none_or(|free| {
             free < model
                 .size_bytes
+                .saturating_sub(have)
                 .saturating_add(DISK_MARGIN_BYTES)
                 .max(MIN_FREE_DISK_BYTES)
         }) {
@@ -591,11 +693,20 @@ impl Store {
         }
         let cancelled = || self.cancel_add.load(Ordering::SeqCst);
         let mut opened = opener
-            .open(model, &cancelled)
+            .open(model, have, &cancelled)
             .map_err(|error| match error {
                 OpenerError::Denied | OpenerError::Gone => ModelError::Unavailable,
                 OpenerError::Network | OpenerError::BadRedirect => ModelError::Network,
             })?;
+        if opened.start != have {
+            // The server sent the file from its start (or from somewhere
+            // else): start the `.part` again from nothing.
+            if opened.start != 0 {
+                return Err(ModelError::Network);
+            }
+            have = 0;
+            let _ = remove_model_file(&part);
+        }
         // The server's own length must be the listed size, before a byte is read.
         if opened
             .size
@@ -607,6 +718,7 @@ impl Store {
             &mut opened.reader,
             model.size_bytes,
             Some(model),
+            have,
             hardware,
             &mut progress,
         )
@@ -623,6 +735,7 @@ impl Store {
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
+        self.run_before_replace();
         for model in self.catalog {
             match remove_model_file(self.dir.join(model.file_name)) {
                 Ok(()) => {}
@@ -704,6 +817,7 @@ impl Store {
                     sha256: model.sha256.to_owned(),
                 },
                 size_bytes: model.size_bytes,
+                chat_format: model.chat_format,
             });
         }
         Err(ModelError::NotInstalled)
@@ -928,22 +1042,51 @@ fn copy_checked(
     part: &Path,
     model: &Accepted,
     cancel: &AtomicBool,
+    have: u64,
     progress: &mut impl FnMut(u64, u64),
 ) -> Result<(), ModelError> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut output = options.open(part).map_err(|_| ModelError::Storage)?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; BUFFER_BYTES];
     let mut done = 0u64;
     progress(0, model.size_bytes);
-    // One byte more than the size is read, so a file that grew is seen.
-    let mut reader = Read::take(input, model.size_bytes + 1);
+    let mut output = if have > 0 {
+        // Resuming: hash what is already there, from its start, then append.
+        let mut kept = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(part)
+            .map_err(|_| ModelError::Storage)?;
+        if kept.metadata().map_err(|_| ModelError::Storage)?.len() != have {
+            return Err(ModelError::Storage);
+        }
+        let mut prefix = Read::take(&mut kept, have);
+        while done < have {
+            if cancel.load(Ordering::SeqCst) {
+                return Err(ModelError::Cancelled);
+            }
+            let n = prefix.read(&mut buffer).map_err(|_| ModelError::Storage)?;
+            if n == 0 {
+                return Err(ModelError::Storage);
+            }
+            hasher.update(&buffer[..n]);
+            done += n as u64;
+            progress(done, model.size_bytes);
+        }
+        kept.seek(SeekFrom::End(0))
+            .map_err(|_| ModelError::Storage)?;
+        kept
+    } else {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        options.open(part).map_err(|_| ModelError::Storage)?
+    };
+    // One byte more than what is left is read, so a source that grew is seen.
+    let mut reader = Read::take(input, model.size_bytes - have + 1);
     loop {
         if cancel.load(Ordering::SeqCst) {
             return Err(ModelError::Cancelled);
@@ -1053,6 +1196,8 @@ mod tests {
             licence: "none",
             notices: &[],
             source_url: "https://example.invalid/fake",
+            chat_format: crate::model_helper::ChatFormat::Builtin,
+            listed: true,
         }];
         (bytes, Box::leak(list.into_boxed_slice()))
     }
@@ -1410,6 +1555,12 @@ mod tests {
         announce: Option<u64>,
         refuse: Option<OpenerError>,
         opened: std::cell::Cell<u32>,
+        /// Whether the server resumes from the asked offset.
+        ranges: bool,
+        /// The offsets asked for, in order.
+        asked: std::cell::RefCell<Vec<u64>>,
+        /// The next body ends after this many bytes, as a lost connection does.
+        cut_once: std::cell::Cell<Option<usize>>,
     }
     impl Fake {
         fn serving(bytes: &[u8]) -> Self {
@@ -1418,6 +1569,9 @@ mod tests {
                 announce: Some(bytes.len() as u64),
                 refuse: None,
                 opened: std::cell::Cell::new(0),
+                ranges: true,
+                asked: std::cell::RefCell::new(Vec::new()),
+                cut_once: std::cell::Cell::new(None),
             }
         }
     }
@@ -1425,15 +1579,23 @@ mod tests {
         fn open<'a>(
             &self,
             _: &Accepted,
+            from: u64,
             _: &'a dyn Fn() -> bool,
         ) -> Result<Opened<'a>, OpenerError> {
             self.opened.set(self.opened.get() + 1);
+            self.asked.borrow_mut().push(from);
             if let Some(error) = self.refuse {
                 return Err(error);
             }
+            let start = if self.ranges { from } else { 0 };
+            let mut body = self.bytes[start as usize..].to_vec();
+            if let Some(cut) = self.cut_once.take() {
+                body.truncate(cut);
+            }
             Ok(Opened {
                 size: self.announce,
-                reader: Box::new(std::io::Cursor::new(self.bytes.clone())),
+                start,
+                reader: Box::new(std::io::Cursor::new(body)),
             })
         }
     }
@@ -1479,19 +1641,22 @@ mod tests {
                 .unwrap_err(),
             ModelError::Network
         );
-        // Silent about the length, then cut short or too long: refused, cleaned.
-        for body in [
-            &bytes[..bytes.len() - 1],
-            &[bytes.as_slice(), b"x"].concat()[..],
-        ] {
-            let mut net = Fake::serving(body);
-            net.announce = None;
-            assert_eq!(
-                store.download(0, &net, &good(), |_, _| {}).unwrap_err(),
-                ModelError::Network
-            );
-            assert!(folder_names(&store).is_empty());
-        }
+        // Silent about the length. Too long: refused, cleaned. Cut short: refused,
+        // and what arrived is kept to resume.
+        let mut net = Fake::serving(&[bytes.as_slice(), b"x"].concat());
+        net.announce = None;
+        assert_eq!(
+            store.download(0, &net, &good(), |_, _| {}).unwrap_err(),
+            ModelError::Network
+        );
+        assert!(folder_names(&store).is_empty());
+        let mut net = Fake::serving(&bytes[..bytes.len() - 1]);
+        net.announce = None;
+        assert_eq!(
+            store.download(0, &net, &good(), |_, _| {}).unwrap_err(),
+            ModelError::Network
+        );
+        assert_eq!(folder_names(&store), ["fake.gguf.part"]);
     }
 
     #[test]
@@ -1541,20 +1706,204 @@ mod tests {
     }
 
     #[test]
-    fn a_cancelled_download_leaves_nothing() {
+    fn a_cancelled_download_leaves_nothing_even_when_it_was_resuming() {
         let (_temp, bytes, store) = setup(3 << 20);
         let net = Fake::serving(&bytes);
         let store = Arc::new(store);
-        let stopper = Arc::clone(&store);
-        let error = store
-            .download(0, &net, &good(), |done, _| {
-                if done > 0 {
-                    stopper.cancel_add();
-                }
-            })
-            .unwrap_err();
-        assert_eq!(error, ModelError::Cancelled);
+        let cancel_once_started = |store: &Arc<Store>| {
+            let stopper = Arc::clone(store);
+            store
+                .download(0, &net, &good(), |done, _| {
+                    if done > 0 {
+                        stopper.cancel_add();
+                    }
+                })
+                .unwrap_err()
+        };
+        assert_eq!(cancel_once_started(&store), ModelError::Cancelled);
         assert!(folder_names(&store).is_empty());
+        assert_eq!(store.status(&good()), ModelStatus::NotInstalled);
+        // Cut short first, so a part is kept; then Cancel during the resume
+        // removes it too.
+        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
+        assert_eq!(folder_names(&store), ["fake.gguf.part"]);
+        assert_eq!(cancel_once_started(&store), ModelError::Cancelled);
+        assert!(folder_names(&store).is_empty());
+    }
+
+    /// The connection ends `after` bytes into the next download.
+    fn cut_short(store: &Store, net: &Fake, after: usize) -> ModelError {
+        net.cut_once.set(Some(after));
+        store.download(0, net, &good(), |_, _| {}).unwrap_err()
+    }
+
+    #[test]
+    fn a_cut_download_is_resumed_from_where_it_stopped_and_installs() {
+        let (_temp, bytes, store) = setup(4 << 20);
+        let store = Arc::new(store);
+        let net = Fake::serving(&bytes);
+        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
+        // What it had is kept, short of the whole.
+        let kept = fs::metadata(store.dir.join("fake.gguf.part"))
+            .unwrap()
+            .len();
+        assert!(kept > 0 && kept < 4 << 20, "{kept}");
+        let mut last = (0, 0);
+        store
+            .download(0, &net, &good(), |d, t| last = (d, t))
+            .unwrap();
+        assert_eq!(*net.asked.borrow(), [0, kept]);
+        assert_eq!(last, (4 << 20, 4 << 20));
+        assert_eq!(folder_names(&store), ["fake.gguf"]);
+        let mut verified = store.verified_model_with(&Free(Some(100 << 30))).unwrap();
+        let mut read = Vec::new();
+        verified.file.read_to_end(&mut read).unwrap();
+        assert_eq!(read, bytes);
+    }
+
+    #[test]
+    fn a_lost_connection_keeps_the_part_for_the_next_try() {
+        let (_temp, bytes, store) = setup(4 << 20);
+        let store = Arc::new(store);
+        // The server sends only the first 2 MiB, then the connection ends.
+        let mut net = Fake::serving(&bytes);
+        net.bytes = bytes[..2 << 20].to_vec();
+        net.announce = None;
+        assert_eq!(
+            store.download(0, &net, &good(), |_, _| {}).unwrap_err(),
+            ModelError::Network
+        );
+        assert_eq!(
+            fs::metadata(store.dir.join("fake.gguf.part"))
+                .unwrap()
+                .len(),
+            2 << 20
+        );
+        let net = Fake::serving(&bytes);
+        store.download(0, &net, &good(), |_, _| {}).unwrap();
+        assert_eq!(*net.asked.borrow(), [2 << 20]);
+    }
+
+    #[test]
+    fn a_server_that_cannot_resume_sends_it_all_again_and_it_still_installs() {
+        let (_temp, bytes, store) = setup(3 << 20);
+        let store = Arc::new(store);
+        let mut net = Fake::serving(&bytes);
+        net.ranges = false;
+        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
+        store.download(0, &net, &good(), |_, _| {}).unwrap();
+        assert_eq!(folder_names(&store), ["fake.gguf"]);
+        store.verified_model_with(&Free(Some(100 << 30))).unwrap();
+    }
+
+    #[test]
+    fn a_part_with_wrong_bytes_is_refused_at_the_end_and_removed() {
+        let (_temp, bytes, store) = setup(3 << 20);
+        let store = Arc::new(store);
+        let net = Fake::serving(&bytes);
+        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
+        // Someone changed the kept bytes: the re-hash from the start finds it.
+        let part = store.dir.join("fake.gguf.part");
+        let mut kept = fs::read(&part).unwrap();
+        kept[3] ^= 1;
+        fs::write(&part, kept).unwrap();
+        assert_eq!(
+            store.download(0, &net, &good(), |_, _| {}).unwrap_err(),
+            ModelError::WrongHash
+        );
+        assert!(folder_names(&store).is_empty());
+    }
+
+    #[test]
+    fn a_part_that_cannot_be_the_rest_is_dropped_not_resumed() {
+        let (_temp, bytes, store) = setup(2 << 20);
+        fs::create_dir_all(&store.dir).unwrap();
+        // As long as the whole file, or empty: nothing to resume.
+        for len in [2usize << 20, 0] {
+            fs::write(store.dir.join("fake.gguf.part"), vec![1u8; len]).unwrap();
+            let net = Fake::serving(&bytes);
+            store.download(0, &net, &good(), |_, _| {}).unwrap();
+            assert_eq!(*net.asked.borrow(), [0]);
+            store.remove().unwrap();
+        }
+    }
+
+    #[test]
+    fn an_add_from_a_file_never_resumes_and_clears_a_download_part() {
+        let (temp, bytes, store) = setup(2 << 20);
+        fs::create_dir_all(&store.dir).unwrap();
+        fs::write(store.dir.join("fake.gguf.part"), b"half").unwrap();
+        store
+            .add(&source(&temp, &bytes), &good(), |_, _| {})
+            .unwrap();
+        assert_eq!(folder_names(&store), ["fake.gguf"]);
+    }
+
+    #[test]
+    fn the_before_replace_hook_runs_under_the_lock_so_no_run_can_start_meanwhile() {
+        let (temp, bytes, store) = setup(1 << 20);
+        let store = Arc::new(store);
+        store
+            .add(&source(&temp, &bytes), &good(), |_, _| {})
+            .unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (inner, record) = (Arc::clone(&store), Arc::clone(&seen));
+        store.set_before_replace(Box::new(move || {
+            // A run starting now finds the lock taken.
+            let started = inner.verified_model_with(&Free(Some(100 << 30))).err();
+            record.lock().unwrap().push(started);
+        }));
+        store.remove().unwrap();
+        assert_eq!(*seen.lock().unwrap(), [Some(ModelError::Busy)]);
+        // And once the add finishes (nothing installed): a download runs it too.
+        let net = Fake::serving(&bytes);
+        store.download(0, &net, &good(), |_, _| {}).unwrap();
+        assert_eq!(seen.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn the_catalog_has_the_default_first_and_gemma_4_as_the_backup_with_its_own_format() {
+        use crate::model_helper::ChatFormat;
+        assert_eq!(CATALOG[0].chat_format, ChatFormat::Builtin);
+        let gemma = CATALOG
+            .iter()
+            .find(|m| m.file_name.starts_with("gemma-4"))
+            .unwrap();
+        assert_eq!(gemma.chat_format, ChatFormat::Gemma4);
+        assert_eq!(gemma.size_bytes, 2_841_481_184);
+        let mut names: Vec<_> = CATALOG.iter().map(|m| m.file_name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), CATALOG.len());
+        let mut hashes: Vec<_> = CATALOG.iter().map(|m| m.sha256).collect();
+        hashes.sort_unstable();
+        hashes.dedup();
+        assert_eq!(hashes.len(), CATALOG.len());
+    }
+
+    #[test]
+    fn preferences_lists_the_default_only_and_an_unlisted_file_is_still_accepted() {
+        // The default, which "Download" fetches, is listed; the backup is not.
+        let shown = listed(CATALOG);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].sha256, CATALOG[0].sha256);
+        assert!(CATALOG
+            .iter()
+            .any(|m| !m.listed && m.file_name.starts_with("gemma-4")));
+        // An entry left out of the list is still added from a file whose
+        // size and hash match it.
+        let temp = tempfile::tempdir().unwrap();
+        let (bytes, list) = fake(1 << 20);
+        let unlisted: &'static [Accepted] = Box::leak(Box::new([Accepted {
+            listed: false,
+            ..list[0]
+        }]));
+        assert!(listed(unlisted).is_empty());
+        let store = Store::new(temp.path().join("models"), unlisted);
+        store
+            .add(&source(&temp, &bytes), &good(), |_, _| {})
+            .unwrap();
+        assert_eq!(folder_names(&store), ["fake.gguf"]);
     }
 
     #[test]

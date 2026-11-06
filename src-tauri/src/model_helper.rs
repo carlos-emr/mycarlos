@@ -36,7 +36,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
-use std::io::{self, BufRead, Read, Write};
+use std::io::{BufRead, Read, Write};
 
 #[cfg(any(target_os = "linux", windows))]
 mod confine;
@@ -127,9 +127,53 @@ pub(crate) enum ModelFile {
     Path(std::path::PathBuf),
 }
 
+/// How the conversation is put to the model: the model's turn markers around the system
+/// words and the user's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ChatFormat {
+    /// The model's own chat template, applied by llama.cpp (Qwen, today's models).
+    Builtin,
+    /// Gemma 4's turn markers, written here: llama.cpp's built-in template code cannot apply
+    /// its template (the engine answers "prompt"), and the markers are fixed.
+    Gemma4,
+}
+
+impl ChatFormat {
+    /// The word the parent passes with `--chat-format`.
+    pub(crate) fn word(self) -> &'static str {
+        match self {
+            Self::Builtin => "builtin",
+            Self::Gemma4 => "gemma4",
+        }
+    }
+
+    fn from_word(word: &str) -> Option<Self> {
+        match word {
+            "builtin" => Some(Self::Builtin),
+            "gemma4" => Some(Self::Gemma4),
+            _ => None,
+        }
+    }
+}
+
+/// Gemma 4's conversation: `system` and `user`, each trimmed as its chat template trims
+/// them, in its turn markers, up to where the answer begins. The model's template with
+/// thinking off writes exactly `<bos><|turn>system\n…<turn|>\n<|turn>user\n…<turn|>\n<|turn>model\n`;
+/// the `<bos>` is left out here because the tokenizer adds it. Any [`SLOT`] in `user` stays in
+/// place, for the document's words to go in without being read as markers.
+pub(crate) fn gemma4_conversation(system: &str, user: &str) -> String {
+    format!(
+        "<|turn>system\n{}<turn|>\n<|turn>user\n{}<turn|>\n<|turn>model\n",
+        system.trim(),
+        user.trim()
+    )
+}
+
 /// What the parent starts the helper with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Settings {
+    pub(crate) chat_format: ChatFormat,
     pub(crate) threads: u32,
     pub(crate) model: ModelFile,
     /// The verified model's name and hash, which the hello repeats.
@@ -150,6 +194,8 @@ pub(crate) fn arguments(settings: &Settings) -> Vec<OsString> {
         settings.name.clone().into(),
         "--sha256".into(),
         settings.sha256.clone().into(),
+        "--chat-format".into(),
+        settings.chat_format.word().into(),
     ];
     match &settings.model {
         ModelFile::Descriptor(fd) => {
@@ -182,6 +228,7 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> Option<Mode> {
     let mut name = None;
     let mut sha256 = None;
     let mut model = None;
+    let mut chat_format = None;
     while let Some(flag) = arguments.next() {
         let flag = flag.into_string().ok()?;
         let value = arguments.next()?;
@@ -206,6 +253,9 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> Option<Mode> {
                 sha256 = hex.then_some(hash);
                 sha256.as_ref()?;
             }
+            "--chat-format" if chat_format.is_none() => {
+                chat_format = Some(ChatFormat::from_word(&value.into_string().ok()?)?);
+            }
             "--model-fd" if model.is_none() => {
                 let fd: i32 = value.into_string().ok()?.parse().ok()?;
                 model = (fd == MODEL_FD).then_some(ModelFile::Descriptor(fd));
@@ -218,6 +268,7 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> Option<Mode> {
         }
     }
     Some(Mode::Model(Settings {
+        chat_format: chat_format?,
         threads: threads?,
         model: model?,
         name: name?,
@@ -285,7 +336,7 @@ struct TextAnswer {
 /// writing the answer, whether it stopped at its cap, and how often the grammar had to look at
 /// the whole vocabulary. Counts and times only, never words.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub(crate) struct Stats {
     pub(crate) prompt_tokens: u32,
     pub(crate) answer_tokens: u32,
@@ -293,6 +344,25 @@ pub(crate) struct Stats {
     pub(crate) answer_ms: u64,
     pub(crate) capped: bool,
     pub(crate) grammar_scans: u32,
+    /// The prompt's instruction prefix, in tokens (in `prompt_tokens`), whether its state was
+    /// put back rather than read, and the size of that kept state.
+    pub(crate) prefix_len: u32,
+    pub(crate) cache_hit: bool,
+    pub(crate) snapshot_bytes: u64,
+    /// A hash of the token ids the answer was written in (FNV-1a over each id's bytes), so
+    /// that two answers can be compared exactly, token for token, without their words.
+    pub(crate) answer_hash: u64,
+}
+
+/// FNV-1a's starting value and step (64-bit).
+pub(crate) const ANSWER_HASH_START: u64 = 0xcbf2_9ce4_8422_2325;
+const ANSWER_HASH_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+/// `hash` with one more token id in it.
+pub(crate) fn answer_hash(hash: u64, token: i32) -> u64 {
+    token.to_le_bytes().iter().fold(hash, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(ANSWER_HASH_PRIME)
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -461,14 +531,15 @@ struct Sentences {
 }
 
 /// The sentences of a summary the model wrote, whole. When it stopped at its token cap partway,
-/// the sentences it finished; `None` when there is not one, or when any part still carries the
-/// model's thinking.
+/// the sentences it finished. A sentence whose words or quote still carry the model's thinking
+/// is left out, and the others are kept; `None` when no sentence is left.
+///
+/// A document that really contains such a marker as text (`<think>`, say), quoted by the
+/// model, loses that sentence the same way: a marker is never shown, whoever wrote it.
 pub(crate) fn read_summary(written: &str, capped: bool) -> Option<Vec<Sentence>> {
-    read_sentences(written, capped).filter(|sentences| {
-        sentences
-            .iter()
-            .all(|sentence| !thinks(&sentence.text) && !thinks(&sentence.quote))
-    })
+    let mut sentences = read_sentences(written, capped)?;
+    sentences.retain(|sentence| !thinks(&sentence.text) && !thinks(&sentence.quote));
+    (!sentences.is_empty()).then_some(sentences)
 }
 
 fn read_sentences(written: &str, capped: bool) -> Option<Vec<Sentence>> {
@@ -506,8 +577,12 @@ pub(crate) fn thinking_off(template: &str, templated: String) -> String {
 }
 
 /// Whether a model's words still carry its thinking: they are never shown as an answer.
+/// Qwen's thinking is in `<think>…</think>`; Gemma 4's in `<|channel>thought…<channel|>`
+/// (written out as text: llama.cpp shows its user-defined tokens).
 pub(crate) fn thinks(text: &str) -> bool {
-    text.contains("<think>") || text.contains("</think>")
+    ["<think>", "</think>", "<|channel>", "<channel|>"]
+        .iter()
+        .any(|marker| text.contains(marker))
 }
 
 /// An explanation the model wrote; when it stopped at its cap mid-sentence, up to the last
@@ -585,11 +660,11 @@ fn serve_model(settings: &Settings) -> i32 {
     if confine::after_load(&settings.model).is_err() {
         return exit::NO_SANDBOX;
     }
-    let mut output = io::stdout().lock();
+    let mut output = std::io::stdout().lock();
     if !send(&mut output, &hello_line(&settings.name, &settings.sha256)) {
         return exit::OUTPUT;
     }
-    let mut input = io::stdin().lock();
+    let mut input = std::io::stdin().lock();
     loop {
         let Some(line) = next_line(&mut input) else {
             return exit::INPUT;
@@ -649,11 +724,11 @@ mod stub {
         if confine::before_load(&model).is_err() || confine::after_load(&model).is_err() {
             return exit::NO_SANDBOX;
         }
-        let mut output = io::stdout().lock();
+        let mut output = std::io::stdout().lock();
         if !send(&mut output, &hello_line(STUB_NAME, &"0".repeat(64))) {
             return exit::OUTPUT;
         }
-        let mut input = io::stdin().lock();
+        let mut input = std::io::stdin().lock();
         loop {
             let Some(line) = next_line(&mut input) else {
                 return exit::INPUT;
@@ -729,6 +804,7 @@ mod tests {
 
     fn settings(model: ModelFile) -> Settings {
         Settings {
+            chat_format: ChatFormat::Builtin,
             threads: 3,
             model,
             name: "FAKE model".to_owned(),
@@ -749,6 +825,43 @@ mod tests {
                 Some(Mode::Model(settings(model)))
             );
         }
+    }
+
+    #[test]
+    fn the_chat_format_goes_to_the_helper_and_back_and_an_unknown_one_refuses() {
+        let mut gemma = settings(ModelFile::Descriptor(MODEL_FD));
+        gemma.chat_format = ChatFormat::Gemma4;
+        let built = arguments(&gemma);
+        assert_eq!(
+            parse(built.iter().skip(1).cloned()),
+            Some(Mode::Model(gemma))
+        );
+        let mut unknown: Vec<OsString> = built.iter().skip(1).cloned().collect();
+        let at = unknown.iter().position(|a| a == "--chat-format").unwrap();
+        unknown[at + 1] = "llama9".into();
+        assert_eq!(parse(unknown), None);
+    }
+
+    /// Gemma 4's own template, run by llama.cpp's server on the model's GGUF for
+    /// `[system "You help patients.\nBe kind. ", user "Summarize:\n<<<\nHELLO\n>>>"]` with the
+    /// generation prompt and thinking off, wrote this after its `<bos>`. (With thinking on it
+    /// adds `<|think|>\n` after the system header.)
+    #[test]
+    fn gemma_4_turns_match_the_models_own_template() {
+        assert_eq!(
+            gemma4_conversation(
+                "You help patients.\nBe kind. ",
+                "Summarize:\n<<<\nHELLO\n>>>"
+            ),
+            "<|turn>system\nYou help patients.\nBe kind.<turn|>\n<|turn>user\nSummarize:\n<<<\nHELLO\n>>><turn|>\n<|turn>model\n"
+        );
+        // The template trims both; a placeholder inside the user words is untouched.
+        assert_eq!(
+            gemma4_conversation("S", &format!("  padded {SLOT} text  \n")),
+            format!(
+                "<|turn>system\nS<turn|>\n<|turn>user\npadded {SLOT} text<turn|>\n<|turn>model\n"
+            )
+        );
     }
 
     #[test]
@@ -919,6 +1032,47 @@ mod tests {
         assert_eq!(read_explanation("Fine. <think>more", false), None);
         let thinking = r#"{"sentences":[{"text":"<think>plan</think>","quote":"Normal study."}]}"#;
         assert_eq!(read_summary(thinking, false), None);
+        // Gemma 4's thinking, as its template writes it, is never shown either.
+        assert_eq!(
+            read_explanation(
+                "<|channel>thought\nLet me see.\n<channel|>It is a test.",
+                false
+            ),
+            None
+        );
+        let gemma = r#"{"sentences":[{"text":"Normal study.","quote":"<|channel>thought"}]}"#;
+        assert_eq!(read_summary(gemma, false), None);
+        // One sentence still thinking is left out; the others are kept.
+        let one_of_three = r#"{"sentences":[{"text":"First.","quote":"FAKE one"},
+            {"text":"<think>plan</think>","quote":"FAKE two"},
+            {"text":"Third.","quote":"FAKE </think> three"},
+            {"text":"Fourth.","quote":"FAKE four"}]}"#;
+        assert_eq!(
+            read_summary(one_of_three, false),
+            Some(vec![
+                Sentence {
+                    text: "First.".to_owned(),
+                    quote: "FAKE one".to_owned()
+                },
+                Sentence {
+                    text: "Fourth.".to_owned(),
+                    quote: "FAKE four".to_owned()
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn an_answer_hash_tells_token_ids_and_their_order_apart() {
+        let of = |ids: &[i32]| {
+            ids.iter()
+                .fold(ANSWER_HASH_START, |hash, id| answer_hash(hash, *id))
+        };
+        assert_eq!(of(&[1, 2, 3]), of(&[1, 2, 3]));
+        assert_ne!(of(&[1, 2, 3]), of(&[3, 2, 1]));
+        assert_ne!(of(&[1, 2]), of(&[1, 2, 0]));
+        assert_ne!(of(&[256]), of(&[1]));
+        assert_eq!(of(&[]), ANSWER_HASH_START);
     }
 
     #[test]

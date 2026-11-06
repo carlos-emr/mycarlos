@@ -1620,6 +1620,10 @@ native-filter-models = 模型文件
 
 ai-working = AI 助手正在处理…
 
+ai-summary-ready = 摘要已生成。
+
+ai-explain-ready = 解释已生成。
+
 ai-failed = AI 助手未能完成。请重试。
 
 ai-error-memory = 目前可用内存不足，AI 助手无法运行。请关闭其他程序后重试。

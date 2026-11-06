@@ -18,6 +18,7 @@ export {
   t,
   tPlain,
   translate,
+  translatePlain,
 } from "./core";
 export type { Params } from "./core";
 export { withElements } from "./elements";

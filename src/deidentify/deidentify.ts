@@ -29,6 +29,12 @@
  */
 
 import { cleanText, matchingCopy, toSourceRange } from "./textCleaning";
+import allowList from "./eponymAllowList.json";
+import {
+  bracketedMunicipalities,
+  facilitySpans,
+  municipalitySpans,
+} from "./gazetteer";
 
 /** A word or a pattern as it stands in the matching copy: accents and
  * look-alike letters folded, as `matchingCopy` folds the text. Regular
@@ -99,6 +105,9 @@ export interface OnDevice {
   labels: PlaceholderLabels;
   /** The notes written after a placeholder's number, kept for `removeMore`. */
   notes: PlaceholderNotes;
+  /** The other languages' placeholder words and notes (#215), kept for
+   * `removeMore` and `restoreChecked`. None in a result from before #215. */
+  otherLanguages?: PlaceholderVocabulary[];
   /** The document as the file will hold it before any removal: the text
    * given, cleaned (`cleanText`). */
   source: string;
@@ -134,10 +143,22 @@ export interface DeidentifyOptions {
    * date becomes a plain placeholder with no gap; this only decides which
    * day it is when it is a known birth date. */
   dayFirst?: boolean;
-  /** The placeholder words, in the app's language; English when not given. */
+  /** The placeholder words, in the document's language (#215); English when
+   * not given. */
   labels?: Partial<PlaceholderLabels>;
-  /** The notes after a placeholder's number, in the app's language. */
+  /** The notes after a placeholder's number, in the document's language. */
   notes?: Partial<PlaceholderNotes>;
+  /** The same words and notes in the app's other languages (#215). They are
+   * never written, but a new placeholder skips a number that one of them
+   * already shows in the document, and an answer that writes one of this
+   * export's placeholders in one of them still puts its detail back. */
+  otherLanguages?: PlaceholderVocabulary[];
+}
+
+/** One language's placeholder words and notes (#215). */
+export interface PlaceholderVocabulary {
+  labels: PlaceholderLabels;
+  notes: PlaceholderNotes;
 }
 
 /** The notes a placeholder can carry after its number: "[DATE 2, 14 days
@@ -556,6 +577,10 @@ const WEEKDAY_BEFORE = `(?:(?<![\\p{L}])${WEEKDAY}\\.?,?[ \\t]+)?`;
 const WEEKDAY_PREFIX = new RegExp(`^(${WEEKDAY})(\\.?,?[ \\t]+)`, "iu");
 /** A weekday after a date, plain or in brackets: "2026-10-08 (Thursday)". */
 const WEEKDAY_AFTER = `(?:[ \\t]*[(,]?[ \\t]*(?<![\\p{L}])${WEEKDAY}(?![\\p{L}])\\.?\\)?)?`;
+/** Polish "r." (roku, "of the year") after a date's year: "5 marca 2026 r." is one date. */
+const POLISH_YEAR_AFTER = "(?:[ \\t]?r\\.(?![\\p{L}]))?";
+// The rules trim a trailing full stop before reading the date ("2026 r").
+const POLISH_YEAR_SUFFIX = /(?<=\d)[ \t]?r\.?$/u;
 const WEEKDAY_SUFFIX = new RegExp(
   `[ \\t]*[(,]?[ \\t]*(?<![\\p{L}])${WEEKDAY}(?![\\p{L}])\\.?\\)?$`,
   "iu",
@@ -572,7 +597,10 @@ type DateReading =
   | { kind: "unclear"; key: string };
 
 function readDateText(text: string, dayFirst: boolean): DateReading | null {
-  const dateText = text.replace(WEEKDAY_PREFIX, "").replace(WEEKDAY_SUFFIX, "");
+  const dateText = text
+    .replace(WEEKDAY_PREFIX, "")
+    .replace(WEEKDAY_SUFFIX, "")
+    .replace(POLISH_YEAR_SUFFIX, "");
   for (const form of DATE_FORMS) {
     const match = new RegExp(`^${form.pattern}$`, "iu").exec(dateText);
     if (!match) continue;
@@ -611,7 +639,9 @@ function readDateText(text: string, dayFirst: boolean): DateReading | null {
 /** The date read from `text`, as "1961-04-17", or null; an unclear date
  * gives both readings. */
 function readDate(text: string, dayFirst: boolean): string[] {
-  const dateText = text.replace(WEEKDAY_PREFIX, "");
+  const dateText = text
+    .replace(WEEKDAY_PREFIX, "")
+    .replace(POLISH_YEAR_SUFFIX, "");
   for (const form of DATE_FORMS) {
     if (form.partial) continue;
     const match = new RegExp(`^${form.pattern}$`, "iu").exec(dateText);
@@ -666,7 +696,11 @@ const CREDENTIAL =
   "(?:MD|M\\.D\\.|NP|RN|RPN|FRCPC|FRCSC|CCFP|PhD|Ph\\.D\\.|PharmD|RPh|MSW|RSW)";
 // Who wrote, signed or sent a document.
 const BY =
-  "(?:(?:[Rr]eferred|[Ss]igned|[Rr]eported|[Dd]ictated|[Tt]ranscribed) by|(?:[Rr]éféré|[Ss]igné|[Dd]icté)e? par)";
+  "(?:(?:[Rr]eferred|[Ss]igned|[Cc]o-signed|[Ee]lectronically signed|[Rr]eported|[Dd]ictated|[Tt]ranscribed|[Rr]ecorded|[Dd]ocumented|[Pp]repared|[Cc]hecked|[Aa]rranged|[Ss]upplied|[Rr]eviewed|[Ee]ntered|[Cc]ompleted|[Vv]erified|[Aa]uthored|[Ww]ritten|[Ss]een|[Ee]xamined) by" +
+  "|(?:[Rr]éféré|[Ss]igné|[Dd]icté|[Nn]oté|[Oo]rganisé|[Vv]érifié|[Pp]réparé|[Rr]édigé|[Pp]araphé|[Ss]aisi|[Rr]evu|[Cc]omplété|[Tt]ransmis|[Ff]ourni|[Vv]u)e? par" +
+  "|(?:[Ff]irmad|[Dd]ictad|[Rr]edactad|[Rr]egistrad|[Pp]reparad|[Rr]evisad|[Ee]laborad)[oa] por" +
+  "|(?:[Aa]ssinad|[Dd]itad|[Rr]edigid|[Rr]egistrad|[Pp]reparad|[Rr]evisad)[oa] por" +
+  "|(?:[Pp]odpisan[oy]|[Ss]porządzon[oy]|[Pp]rzygotowan[oy]|[Zz]atwierdzon[oy]) przez)";
 /** Labels as written, With Capitals and IN CAPITALS, longest first. */
 const anyCase = (labels: string[]) =>
   `(?:${[
@@ -686,7 +720,9 @@ const anyCase = (labels: string[]) =>
     .join("|")})`;
 // The labels a person's name follows. A dash needs a space before it, so
 // "Patient-centred" is no label.
-const NAME_LABEL = `${anyCase([
+// The dash after a label is an alternation, not a character class: the rules are folded,
+// and "[-–—]" would fold to the range "[--—]", which holds every letter ("Patient ABC").
+const NAME_LABELS = [
   "Patient name",
   "Patient",
   "Patiente",
@@ -703,11 +739,302 @@ const NAME_LABEL = `${anyCase([
   "Conjoint",
   "Conjointe",
   "Personne à contacter",
-])}(?:[ \\t]*:|[ \\t]+[-–—])`;
+  "Claimant",
+  "Client",
+  "Usager",
+  "Usagère",
+  "Paciente",
+  "Pacjent",
+  "Pacjentka",
+  "Nombre del paciente",
+  "Nome do paciente",
+  "Nombre",
+  "Nome",
+  "Imię i nazwisko",
+];
+const NAME_LABEL = `${anyCase(NAME_LABELS)}(?:[ \\t]*:|[ \\t]+(?:-|–|—))`;
+// A header laid out in columns, with no colon or dash: a label in capitals and a space
+// ("PATIENT AVERY SAMPLETON"), or any label and a gap of two spaces or a tab ("Patient
+// \tSampleton, Avery") (#252 review). "Re", "Pt" and "Name" alone are too common for it.
+const COLUMN_LABELS = NAME_LABELS.filter(
+  (label) =>
+    !["Re", "Pt", "Name", "Nombre", "Nome", "Contact", "Parent"].includes(
+      label,
+    ),
+);
+const COLUMN_LABEL = `(?:(?:${COLUMN_LABELS.map((label) =>
+  escapeRegExp(label.toUpperCase()),
+).join("|")})[ \\t]+|${anyCase(COLUMN_LABELS)}(?:[ ]{2,}|[ ]*\\t[ \\t]*))`;
+// A name in a column: its words joined by single spaces, so the next column ("    MRN …")
+// is not taken, and up to two surnames before a comma ("PRUEBA SANZ, LUCÍA").
+const COLUMN_NAME = `(?:(?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}(?:[ ]${LABEL_PART})?,[ ]${LABEL_PART}(?:[ ]${LABEL_PART})?(?:[ ]${UPPER}\\.?(?![\\p{L}]))?|${LABEL_PART}(?:[ ](?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}){0,3})`;
+/** Labels as written and with only their first word capitalised, as a sentence starts:
+ * "Ratownik medyczny Piotr Testowy", "Médico de familia …". */
+const withSentenceCase = (labels: string[]) =>
+  labels.flatMap((label) => [label, label[0].toUpperCase() + label.slice(1)]);
+// Status words a flowsheet writes after "Patient" in a column: "PATIENT  REFUSED
+// MEDICATION", "Patient\tDischarged home.", "PACIENTE  ESTABLE" are no names (#252 review).
+const STATUS_WORDS = new Set(
+  foldAll([
+    "stable",
+    "comfortable",
+    "refused",
+    "refuses",
+    "refusing",
+    "tolerated",
+    "tolerates",
+    "tolerating",
+    "discharged",
+    "improved",
+    "improving",
+    "alert",
+    "awake",
+    "asleep",
+    "oriented",
+    "ambulating",
+    "ambulatory",
+    "resting",
+    "sleeping",
+    "eating",
+    "afebrile",
+    "seen",
+    "assessed",
+    "transferred",
+    "admitted",
+    "declined",
+    "declines",
+    "agreed",
+    "agrees",
+    "consented",
+    "verbalized",
+    "verbalizes",
+    "reports",
+    "reported",
+    "states",
+    "stated",
+    "denies",
+    "denied",
+    "complains",
+    "feels",
+    "feeling",
+    "doing",
+    "ate",
+    "voided",
+    "calm",
+    "anxious",
+    "agitated",
+    "confused",
+    "cooperative",
+    "independent",
+    "mobile",
+    "sitting",
+    "lying",
+    "ready",
+    "unchanged",
+    "deteriorating",
+    "critical",
+    "fair",
+    "good",
+    "well",
+    "unwell",
+    "deceased",
+    "expired",
+    "left",
+    "returned",
+    "went",
+    "tired",
+    "weak",
+    "nauseous",
+    "drowsy",
+    "settled",
+    "confortable",
+    "refuse",
+    "refusé",
+    "tolère",
+    "toléré",
+    "sorti",
+    "sortie",
+    "amélioré",
+    "alerte",
+    "éveillé",
+    "éveillée",
+    "orienté",
+    "orientée",
+    "calme",
+    "conscient",
+    "consciente",
+    "collaborant",
+    "dort",
+    "repose",
+    "mange",
+    "estable",
+    "cómodo",
+    "cómoda",
+    "rechaza",
+    "rechazó",
+    "tolera",
+    "toleró",
+    "mejorado",
+    "mejorada",
+    "mejor",
+    "alerta",
+    "despierto",
+    "despierta",
+    "orientado",
+    "orientada",
+    "tranquilo",
+    "tranquila",
+    "colaborador",
+    "colaboradora",
+    "duerme",
+    "descansa",
+    "come",
+    "estável",
+    "confortável",
+    "recusa",
+    "recusou",
+    "tolerou",
+    "melhorado",
+    "melhorada",
+    "acordado",
+    "acordada",
+    "calmo",
+    "calma",
+    "colaborativo",
+    "dorme",
+    "stabilny",
+    "stabilna",
+    "stabilnie",
+    "komfortowo",
+    "odmawia",
+    "odmówił",
+    "odmówiła",
+    "toleruje",
+    "wypisany",
+    "wypisana",
+    "lepiej",
+    "przytomny",
+    "przytomna",
+    "zorientowany",
+    "zorientowana",
+    "spokojny",
+    "spokojna",
+    "śpi",
+    "odpoczywa",
+    "je",
+  ]).map((word) => word.toLowerCase()),
+);
+// Words of a section heading after such a label: "PATIENT INFORMATION" is no name.
+const HEADER_WORDS = new Set(
+  foldAll([
+    "information",
+    "informations",
+    "history",
+    "summary",
+    "details",
+    "detail",
+    "instructions",
+    "education",
+    "services",
+    "service",
+    "name",
+    "number",
+    "id",
+    "consent",
+    "label",
+    "record",
+    "chart",
+    "care",
+    "portal",
+    "list",
+    "copy",
+    "file",
+    "note",
+    "notes",
+    "report",
+    "profile",
+    "data",
+    "demographics",
+    "identification",
+    "identifiant",
+    "nom",
+    "prénom",
+    "número",
+    "numer",
+    "datos",
+    "dados",
+    "dane",
+    "historia",
+    "informacje",
+    "información",
+    "informação",
+    "résumé",
+    "sommaire",
+    "safety",
+    "satisfaction",
+    "survey",
+    "questionnaire",
+    "rights",
+    "copie",
+  ]).map((word) => word.toLowerCase()),
+);
 // Other clinicians' titles, in any case and longest first, so "Nurse
 // Practitioner:" is one title, not "Nurse" before a name (#80 review).
 const CLINICIAN_TITLE = anyCase([
+  "Charge nurse",
+  "Triage nurse",
+  "Night nurse",
+  "Staff nurse",
   "Nurse practitioner",
+  "Pharmacy technician",
+  "Technologist",
+  "Technician",
+  "Sonographer",
+  "Radiologist",
+  "Surgeon",
+  "Anesthesiologist",
+  "Paramedic",
+  "Respiratory therapist",
+  "Therapist",
+  "Care coordinator",
+  "Case manager",
+  "Support worker",
+  "Resident",
+  "Physio",
+  "Infirmière clinicienne",
+  "Infirmière auxiliaire",
+  "Radiologiste",
+  "Chirurgien",
+  "Chirurgienne",
+  "Technologue",
+  "Technicien",
+  "Technicienne",
+  "Manipulatrice",
+  "Manipulateur",
+  "Préposée",
+  "Préposé",
+  "Paramédic",
+  "Résident",
+  "Résidente",
+  "Enfermera",
+  "Enfermero",
+  "Enfermera de enlace",
+  "Farmacéutica",
+  "Farmacéutico",
+  "Fisioterapeuta",
+  "Trabajadora social",
+  "Trabajador social",
+  "Enfermeira",
+  "Enfermeiro",
+  "Farmacêutica",
+  "Farmacêutico",
+  "Assistente social",
+  "Pielęgniarka",
+  "Pielęgniarz",
+  "Farmaceuta",
+  "Fizjoterapeuta",
+  "Pracownik socjalny",
+  "Pracowniczka socjalna",
   "Registered nurse",
   "Nurse",
   "Dietitian",
@@ -765,11 +1092,25 @@ const FRENCH_STREET_TYPE = `(?:${[
 ]
   .map(either)
   .join("|")})`;
+// The town after a street address's comma: "77 Placeholder Crescent, Sampletown". Not a title or a
+// unit word.
+const TOWN_AFTER = `(?:,[ \\t]*(?!(?:Dr|Dre|Mr|Mrs|Ms|Mme|Mlle|Suite|Unit|Apt|App|Bureau|Local)\\b)${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}(?:,?[ \\t]+${PROVINCES}\\b)?)?`;
+// A unit written before the street: "Unit 6B, 217 Street Crescent", "Appartement 6B, 217 rue …".
+const UNIT_FIRST = `(?:(?:Unit|Apt\\.?|Apartment|Suite|Ste\\.?|Appartement|App\\.?|Bureau|Local|Unidad|Apto\\.?|Sala|#)[ \\t]*[\\w-]+,[ \\t]*)?`;
 const UNIT = `(?:,?[ \\t]*(?:Unit|Apt\\.?|Apartment|Suite|app\\.?|apt\\.?|appartement|bureau|unité|local|#)[ \\t]*[\\w-]+)?`;
 // In any case: a hospital's header is often in capitals (#80 review).
 const CLINIC_WORDS = anyCase([
+  "Community Health Centre",
+  "Community Health Center",
   "Family Health Team",
+  "Health Team",
   "Family Practice",
+  "Walk-in Clinic",
+  "Urgent Care Centre",
+  "Urgent Care",
+  "FHT",
+  "Institute",
+  "Foundation",
   "Medical Clinic",
   "Medical Centre",
   "Medical Center",
@@ -783,7 +1124,63 @@ const CLINIC_WORDS = anyCase([
   "Imaging",
   "Diagnostics",
   "Pharmacy",
+  "Public School",
+  "Elementary School",
+  "Secondary School",
+  "High School",
+  "Middle School",
+  "School",
+  "Academy",
+  "Daycare",
 ]);
+// Words that name a clinic or an agency with no clinic word, after "at", "to", "from", "with"
+// or "by": "Silver Acorn Neurology", "Blue Compass Health", "Harbourview Family Services".
+const ORG_WORDS = `(?:${[
+  "Health",
+  "Wellness",
+  "Neurology",
+  "Cardiology",
+  "Dermatology",
+  "Radiology",
+  "Physiotherapy",
+  "Physio",
+  "Rehabilitation",
+  "Rehab",
+  "Pediatrics",
+  "Paediatrics",
+  "Orthopaedics",
+  "Orthopedics",
+  "Ophthalmology",
+  "Optometry",
+  "Eye Care",
+  "Dentistry",
+  "Dental",
+  "Audiology",
+  "Counselling",
+  "Counseling",
+  "Psychology",
+  "Psychiatry",
+  "Oncology",
+  "Endocrinology",
+  "Gastroenterology",
+  "Urology",
+  "Nephrology",
+  "Respirology",
+  "Rheumatology",
+  "Fertility",
+  "Midwifery",
+  "Chiropractic",
+  "Podiatry",
+  "Home Care",
+  "Care",
+  "Services",
+  "Society",
+  "Association",
+  "Agency",
+  "Outreach",
+  "Associates",
+  "Partners",
+].join("|")})(?:[ \\t]+(?:Centre|Center|Clinic|Group|Services|Associates))?`;
 // Words that, alone before a clinic word, make a heading, not a name.
 const GENERIC_BEFORE_CLINIC = new Set([
   "diagnostic",
@@ -805,6 +1202,157 @@ const GENERIC_BEFORE_CLINIC = new Set([
   "breast",
   "cardiac",
   "vascular",
+  "health",
+  "public",
+  "mental",
+  "primary",
+  "home",
+  "oral",
+  "occupational",
+  "pediatric",
+  "paediatric",
+  "adult",
+  "geriatric",
+  "senior",
+  "seniors",
+  "youth",
+  "child",
+  "children's",
+  "women's",
+  "sports",
+  "social",
+  "support",
+  "care",
+  "services",
+  "wellness",
+  "dental",
+  "eye",
+  "sleep",
+  "pain",
+  "memory",
+  "cancer",
+  "diabetes",
+  "heart",
+  "stroke",
+  "emergency",
+  "outpatient",
+  "inpatient",
+  "addiction",
+  "addictions",
+  "palliative",
+  "neurology",
+  "cardiology",
+  "dermatology",
+  "radiology",
+  "imaging",
+  "physiotherapy",
+  "physio",
+  "rehabilitation",
+  "rehab",
+  "oncology",
+  "psychiatry",
+  "psychology",
+  "pediatrics",
+  "paediatrics",
+  "counselling",
+  "counseling",
+  "high",
+  "elementary",
+  "secondary",
+  "middle",
+  "nursing",
+  "sunday",
+  "summer",
+  // Articles and French clinic words, as the folded text has them: "La Santé
+  // publique" is not a clinic called "La".
+  "la",
+  "le",
+  "les",
+  "l'",
+  "un",
+  "une",
+  "des",
+  "du",
+  "de",
+  "a",
+  "an",
+  "sante",
+  "medical",
+  "medicale",
+  "imagerie",
+  "radiologie",
+  "dentaire",
+  "readaptation",
+  "physiotherapie",
+  "optometrie",
+  // Document words, folded: "Rapport Médical", "Informe Médico", "Laudo de Imagem" and
+  // "Karta Informacyjna" are headings, not clinics (#249 review).
+  "rapport",
+  "certificat",
+  "dossier",
+  "examen",
+  "bilan",
+  "suivi",
+  "compte",
+  "rendu",
+  "resume",
+  "formulaire",
+  "demande",
+  "ordonnance",
+  "consultation",
+  "attestation",
+  "note",
+  "lettre",
+  "avis",
+  "protocole",
+  "requete",
+  "prescription",
+  "evaluation",
+  "synthese",
+  "feuille",
+  "fiche",
+  "informe",
+  "certificado",
+  "historia",
+  "expediente",
+  "resumen",
+  "solicitud",
+  "receta",
+  "consulta",
+  "nota",
+  "carta",
+  "evaluacion",
+  "hoja",
+  "ficha",
+  "analisis",
+  "estudio",
+  "seguimiento",
+  "parte",
+  "relatorio",
+  "laudo",
+  "atestado",
+  "prontuario",
+  "resumo",
+  "pedido",
+  "receita",
+  "avaliacao",
+  "exame",
+  "encaminhamento",
+  "solicitacao",
+  "guia",
+  "raport",
+  "zaswiadczenie",
+  "skierowanie",
+  "karta",
+  "wypis",
+  "opis",
+  "wynik",
+  "wyniki",
+  "badanie",
+  "recepta",
+  "notatka",
+  "ocena",
+  "konsultacja",
 ]);
 // Profile-name words that are also ordinary words: removed only as part of
 // the whole name.
@@ -854,8 +1402,74 @@ const ORDINARY_WORDS = new Set(
 );
 // Words that follow a label or a family word but start no name: "Re:
 // Follow-up visit", "Patient: Seen today", "Contact: Mother …".
+// A treatment or a program ends a phrase that is not a person: "a therapist Cognitive
+// Behavioural Therapy". Folded, as the text the rules read is (#228 review).
+const TREATMENT_WORDS = new Set(
+  foldAll([
+    "therapy",
+    "therapies",
+    "thérapie",
+    "terapia",
+    "terapii",
+    "treatment",
+    "traitement",
+    "tratamiento",
+    "tratamento",
+    "session",
+    "sessions",
+    "assessment",
+    "évaluation",
+    "program",
+    "programme",
+    "programa",
+  ]),
+);
+// A place or a team after a person's name ends the name: "Maria Lopez Unit 4B".
+const PLACE_WORDS = new Set(
+  foldAll([
+    "clinic",
+    "clinique",
+    "clínica",
+    "service",
+    "services",
+    "unit",
+    "unité",
+    "team",
+    "équipe",
+    "group",
+    "groupe",
+    "grupo",
+    "centre",
+    "center",
+    "centro",
+  ]),
+);
 const NOT_NAMES = new Set(
   foldAll([
+    "superior",
+    "sanitario",
+    "especialista",
+    "residente",
+    "adjunto",
+    "adjunta",
+    "jefe",
+    "jefa",
+    "responsable",
+    "responsável",
+    "prowadzący",
+    "prowadząca",
+    "dyżurny",
+    "dyżurna",
+    "cpf",
+    "dni",
+    "nie",
+    "nif",
+    "pesel",
+    "rg",
+    "cns",
+    "nhc",
+    "tsi",
+    "cip",
     "follow-up",
     "followup",
     "seen",
@@ -1062,12 +1676,20 @@ interface Rule {
   /** Relational prose can also introduce a disease: flag that conflict. */
   reviewClinicalConflict?: true;
   upperPrefix?: true;
+  /** A value that reads as a whole date is a date, not this record number. */
+  skipDates?: true;
   /** A name after a family word: a relative, who may share the patient's
    * surname without being the patient. */
   kin?: true;
   /** A day and a month: not when the month is the lower-case word "may"
    * ("may 5 mg"). */
   notLowerCaseMay?: true;
+  /** "Mother: First Last": refused in a family-history line or section. */
+  relationLabel?: true;
+  /** A name in a header's column: refused for a section heading ("PATIENT INFORMATION"). */
+  columnLabel?: true;
+  /** A town in brackets: refused for a bracket note or a medical word. */
+  townInBrackets?: true;
 }
 
 const HEALTH_CARD_LABEL =
@@ -1077,6 +1699,434 @@ const HEALTH_CARD_LABEL =
 const HEALTH_CARD_VALUE =
   "(?:[A-Z]{4}[ -]?\\d{4}[ -]?\\d{4}|(?:\\d{4,5}[ -]?\\d{3,4}[ -]?\\d{3,4}|\\d{8,12})(?:[ -]?[A-Z]{2}(?![\\p{L}]))?)";
 
+// Plural family words, for relatives named together.
+const KIN_PLURAL_WORDS = anyCase([
+  "daughters",
+  "sons",
+  "sisters",
+  "brothers",
+  "children",
+  "parents",
+  "grandchildren",
+  "filles",
+  "fils",
+  "sœurs",
+  "frères",
+  "enfants",
+  "hijos",
+  "hijas",
+  "hermanos",
+  "hermanas",
+  "filhos",
+  "filhas",
+  "irmãos",
+  "irmãs",
+  "córki",
+  "synowie",
+  "dzieci",
+]);
+// "kids" in lower case only: "Kids Help Phone" is a service.
+const KIN_PLURAL = `(?:${KIN_PLURAL_WORDS}|kids)`;
+// Between names in a list: "Maribel and Odette", "Paul, Marc et Luc".
+const NAME_JOIN =
+  "(?:[ \\t]*,[ \\t]*(?:(?:and|et|y|e|i)[ \\t]+)?|[ \\t]+(?:and|et|y|e|i)[ \\t]+)";
+// Specialties and services a town in brackets can follow: "Cardiologie (Ville-Exemple)".
+const SPECIALTY_BEFORE_TOWN = anyCase([
+  "cardiologie",
+  "neurologie",
+  "pédiatrie",
+  "radiologie",
+  "imagerie",
+  "dermatologie",
+  "orthopédie",
+  "ophtalmologie",
+  "oncologie",
+  "gériatrie",
+  "psychiatrie",
+  "gynécologie",
+  "obstétrique",
+  "urologie",
+  "néphrologie",
+  "pneumologie",
+  "gastro-entérologie",
+  "endocrinologie",
+  "rhumatologie",
+  "physiothérapie",
+  "ergothérapie",
+  "médecine interne",
+  "médecine familiale",
+  "chirurgie",
+  "urgence",
+  "clinique",
+  "CLSC",
+  "GMF",
+  "cardiology",
+  "neurology",
+  "pediatrics",
+  "paediatrics",
+  "radiology",
+  "imaging",
+  "dermatology",
+  "orthopaedics",
+  "orthopedics",
+  "ophthalmology",
+  "oncology",
+  "geriatrics",
+  "psychiatry",
+  "gynecology",
+  "obstetrics",
+  "urology",
+  "nephrology",
+  "respirology",
+  "gastroenterology",
+  "endocrinology",
+  "rheumatology",
+  "physiotherapy",
+  "internal medicine",
+  "family medicine",
+  "surgery",
+  "emergency",
+  "clinic",
+  "cardiologue",
+  "neurologue",
+  "pédiatre",
+  "radiologiste",
+  "radiologue",
+  "dermatologue",
+  "orthopédiste",
+  "ophtalmologiste",
+  "ophtalmologue",
+  "oncologue",
+  "gériatre",
+  "psychiatre",
+  "gynécologue",
+  "obstétricien",
+  "obstétricienne",
+  "urologue",
+  "néphrologue",
+  "pneumologue",
+  "gastro-entérologue",
+  "endocrinologue",
+  "rhumatologue",
+  "physiatre",
+  "interniste",
+  "chirurgien",
+  "chirurgienne",
+  "omnipraticien",
+  "omnipraticienne",
+  "médecin de famille",
+  "médecin",
+  "infirmière praticienne",
+  "physiothérapeute",
+  "ergothérapeute",
+  "physiatrie",
+  "médecine du sport",
+  "cardiologist",
+  "neurologist",
+  "pediatrician",
+  "paediatrician",
+  "radiologist",
+  "dermatologist",
+  "orthopaedic surgeon",
+  "orthopedic surgeon",
+  "ophthalmologist",
+  "oncologist",
+  "geriatrician",
+  "psychiatrist",
+  "gynecologist",
+  "obstetrician",
+  "urologist",
+  "nephrologist",
+  "respirologist",
+  "gastroenterologist",
+  "endocrinologist",
+  "rheumatologist",
+  "physiatrist",
+  "internist",
+  "surgeon",
+  "family physician",
+  "nurse practitioner",
+]);
+// Notes written in brackets after a specialty: never a town.
+const BRACKET_NOTES = new Set(
+  foldAll([
+    "urgent",
+    "urgente",
+    "suivi",
+    "externe",
+    "interne",
+    "adulte",
+    "adultes",
+    "pédiatrique",
+    "enfant",
+    "enfants",
+    "nouveau",
+    "nouvelle",
+    "demande",
+    "priorité",
+    "priority",
+    "new",
+    "adult",
+    "pediatric",
+    "paediatric",
+    "outpatient",
+    "inpatient",
+    "routine",
+    "semi-urgent",
+    "virtual",
+    "virtuel",
+    "virtuelle",
+    "phone",
+    "téléphone",
+    "telephone",
+    "video",
+    "vidéo",
+    "pending",
+    "en attente",
+    "annulé",
+    "cancelled",
+    "canceled",
+    "externa",
+    "externo",
+    "interna",
+    "interno",
+    "urgente",
+    "consulta",
+    "seguimiento",
+    "control",
+    "nueva",
+    "nuevo",
+    "retorno",
+    "primera",
+    "primeira",
+    "revisión",
+    "revisão",
+    "telefónica",
+    "presencial",
+    "pilne",
+    "kontrola",
+    // Hospital units and specialties: "en Medicina Interna (Planta)" is not a town.
+    "medicina",
+    "cardiología",
+    "cardiologia",
+    "neurología",
+    "neurologia",
+    "pediatría",
+    "pediatria",
+    "urgencias",
+    "urgencia",
+    "cirugía",
+    "cirurgia",
+    "enfermería",
+    "enfermagem",
+    "consultorio",
+    "consultório",
+    "planta",
+    "piso",
+    "sala",
+    "andar",
+    "box",
+    "cama",
+    "unidad",
+    "unidade",
+    "servicio",
+    "serviço",
+    "oddział",
+    "poradnia",
+    "clínica",
+    "hospital",
+    "domu",
+    "dom",
+    "pomocy",
+    "społecznej",
+    "opieki",
+    "szpitalu",
+    "szpitala",
+    "przychodni",
+  ]).map((word) => word.toLowerCase()),
+);
+// Words of a family-history line, never a relative's name after "Mother:": "Mother: Breast
+// cancer at 52", "Father: Atrial Fibrillation". A list cannot hold every disease, so a word
+// with a medical ending ("Sclerosis", "Fibrillation", "Carcinoma") counts too (#228 review).
+const FAMILY_HISTORY_WORDS = new Set(
+  foldAll([
+    "Mother:",
+    "alive",
+    "deceased",
+    "unknown",
+    "healthy",
+    "well",
+    "none",
+    "adopted",
+    "living",
+    "died",
+    "passed",
+    "cancer",
+    "breast",
+    "colon",
+    "colorectal",
+    "prostate",
+    "ovarian",
+    "lung",
+    "skin",
+    "pancreatic",
+    "thyroid",
+    "heart",
+    "cardiac",
+    "coronary",
+    "artery",
+    "disease",
+    "diabetes",
+    "type",
+    "stroke",
+    "dementia",
+    "hypertension",
+    "high",
+    "kidney",
+    "renal",
+    "liver",
+    "asthma",
+    "arthritis",
+    "depression",
+    "anxiety",
+    "bipolar",
+    "epilepsy",
+    "glaucoma",
+    "osteoporosis",
+    "leukemia",
+    "lymphoma",
+    "melanoma",
+    "MI",
+    "CAD",
+    "CHF",
+    "COPD",
+    "HTN",
+    "DM",
+    "CKD",
+    "CVA",
+    "TIA",
+    "décédé",
+    "décédée",
+    "vivant",
+    "vivante",
+    "inconnu",
+    "diabète",
+    "fallecido",
+    "fallecida",
+    "falecido",
+    "falecida",
+    "zmarły",
+    "zmarła",
+    "sudden",
+    "death",
+    "multiple",
+    "atrial",
+    "attack",
+    "arrest",
+    "disorder",
+    "syndrome",
+    "seizure",
+    "seizures",
+    "suicide",
+    "overdose",
+    "alcohol",
+    "addiction",
+    "blood",
+    "pressure",
+    "cholesterol",
+    "sugar",
+    "early",
+    "late",
+    "onset",
+    "natural",
+    "causes",
+    "old",
+    "age",
+    "accident",
+    "aneurysm",
+    "embolism",
+    "eczema",
+    "lupus",
+    "gout",
+    "migraine",
+    "migraines",
+    "pulmonary",
+    "hepatic",
+    "macular",
+    "sickle",
+    "cell",
+    "cystic",
+    "celiac",
+    "hearing",
+    "loss",
+    "vision",
+    "blind",
+    "deaf",
+    "mental",
+    "cerebral",
+    "palsy",
+    "cleft",
+    "schizophrenia",
+    "autism",
+    "adhd",
+    "ms",
+    "als",
+    "bph",
+    "gerd",
+    "ibs",
+    "ibd",
+    "nil",
+    "n/a",
+    "aortic",
+    "valve",
+    "bowel",
+    "brain",
+    "bone",
+    "clot",
+    "clots",
+    "failure",
+    "embolism",
+    "alcoholism",
+    "illness",
+    "sickness",
+    "blindness",
+    "deafness",
+    "weakness",
+    "obesity",
+    "disability",
+  ]).map((word) => word.toLowerCase()),
+);
+const MEDICAL_ENDING =
+  /(?:osis|itis|emia|aemia|noma|coma|rcoma|pathy|ectomy|plasia|algia|ation|ition|ciency|philia|plegia|trophy)$/u;
+const FAMILY_HISTORY_HEADING =
+  /(?:family history|family hx|\bfhx\b|\bfh\b[ \t]*:|antecedents familiaux|histoire familiale|historia familiar|antecedentes familiares|historico familiar|wywiad rodzinny)/iu;
+/** In a family-history section: the nearest heading above, within the same block of lines
+ * (a blank line or a heading alone on its line, such as "Emergency contact:", ends it), or
+ * on the same line, is a family-history heading. */
+function inFamilyHistory(text: string, at: number): boolean {
+  const lines = text.slice(Math.max(0, at - 400), at).split("\n");
+  if (FAMILY_HISTORY_HEADING.test(lines[lines.length - 1])) return true;
+  for (let k = lines.length - 2; k >= 0; k--) {
+    const line = lines[k].trim();
+    if (line === "") return false;
+    if (FAMILY_HISTORY_HEADING.test(line)) return true;
+    if (/^[^:]{1,40}:$/u.test(line)) return false;
+  }
+  return false;
+}
+function familyHistoryLabel(text: string, at: number, name: string): boolean {
+  if (inFamilyHistory(text, at)) return true;
+  const words = name
+    .split(/[ \t]+/u)
+    .map((word) => word.toLowerCase().replace(/[.,;:]+$/u, ""));
+  return (
+    words.some(
+      (word) => FAMILY_HISTORY_WORDS.has(word) || MEDICAL_ENDING.test(word),
+    ) ||
+    // "Sudden Death" is two ordinary words; "Rose Baker" is a person.
+    words.every((word) => ORDINARY_WORDS.has(word))
+  );
+}
 const RULES: Rule[] = [
   {
     kind: "email",
@@ -1116,11 +2166,27 @@ const RULES: Rule[] = [
     group: 1,
     upperPrefix: true,
   },
+  // More record-number labels (policy, certificate, exam, visit, student, file; the French,
+  // Spanish, Portuguese and Polish words for them), then a code of four or more digits with
+  // letters, hyphens, slashes or dots: "Policy no. GRP-00731-554/02", "Examen n° AB-26-004517",
+  // "Prontuário: 1234.567-8", "dossier 1234 5678".
+  {
+    kind: "recordNumber",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Insurance policy|Policy|Certificate|Student ID|Student number|Exam|Examen|Visit|Clinic file|Claim|Reference|Référence patient|Référence|Usager|Numéro de police|Numéro scolaire|Numéro d['’]examen|Numéro d['’]usager|IPP|Identifiant patient IPP|NHC|Prontuário|Prontuario|Dossier|Nr księgi głównej|Nr księgi|Número de póliza|Número de apólice|Póliza|Polisa|Apólice|Pedido|N\\.?º de petición|Número de petición|historia clínica|historii choroby|Nr zlecenia|Numer zlecenia|numer prawa wykonywania zawodu|NPWZ|PWZ|Colegiada|Licencia|Licença|Licenca|CNH|CRM|COREN|CRO|CREFITO|Colegiado|Col\\.|Registro profissional)(?:-[A-Z]{2})?(?:[ \\t]+(?:number|no\\.?|nr\\.?|n°|nº|n\\.º|#|numéro|número|numer|de licencia|de licença))?[ \\t]*[:#]?[ \\t]*((?:[A-Z]{1,4}[ ](?=\\d{4}))?(?=(?:[A-Za-z/.-]*\\d){4})[A-Za-z0-9][A-Za-z0-9/.-]*(?:[ ]\\d{3,8})?)(?![ \\t]*(?:mg|mcg|µg|ug|g|kg|ml|l|dl|mmol|umol|µmol|meq|iu|u|%|mm|cm|m|bpm|mmhg|ng|pg|fl|\\/))`,
+      "giu",
+    ),
+    group: 1,
+    skipDates: true,
+  },
+  // A birth date after its cue. These cues are the real defence for the age: the 90-and-over
+  // net only covers ages of 90 and more, so an unread birth date of an 85-year-old becomes
+  // DATE 1, and every day gap counted from it then gives the exact age (#253).
   {
     kind: "dateOfBirth",
     pattern: new RegExp(
-      `(?:\\bDOB|\\bD\\.O\\.B\\.?|\\bDate of birth|\\bBirth ?date|\\bBorn(?:[ \\t]+on)?|(?<![\\p{L}\\d.])b\\.|\\bDate de naissance|\\bnaissance|\\bDDN|\\bN[ée]e?[ \\t]+(?:le|en)|` +
-        `\\bFecha de nacimiento|\\bNacid[oa](?:[ \\t]+el)?|\\bF\\.?[ \\t]?nac\\.?|\\bData de nascimento|\\bNascid[oa](?:[ \\t]+em)?|\\bNasc\\.|` +
+      `(?:\\bDOB(?:[ \\t]*\\/[ \\t]*(?:Age|Âge|Edad|Idade|Wiek))?|\\bD\\.O\\.B\\.?|\\bDate of birth(?:[ \\t]*\\((?:DOB|D\\.O\\.B\\.?)\\))?|\\bDate[ \\t]+(?:de[ \\t]+)?naiss\\.?|\\bF\\.?[ \\t]?de[ \\t]+nac\\.?|\\bF\\.?N\\.?[ \\t]*:|\\bD\\.?N\\.?[ \\t]*:|\\bur\\.[ \\t]+dnia|\\bN[ée]\\(e\\)[ \\t]+le|\\bData[ \\t]+urodz\\.?|\\bDt\\.?[ \\t]+nasc\\.?|\\bBirth[ \\t]*:|出生年月日|\\bBirth ?date|\\bBorn(?:[ \\t]+on)?|(?<![\\p{L}\\d.])b\\.|\\bDate de naissance|\\bnaissance|\\bDDN|\\bN[ée]e?[ \\t]+(?:le|en)|` +
+        `\\bFecha de nacimiento|\\bFecha[ \\t]+(?:de[ \\t]+)?nac\\.?|\\bFec\\.?[ \\t]?nac\\.?|\\bNacid[oa](?:[ \\t]+el)?|\\bF\\.?[ \\t]?nac\\.?|\\bData de nascimento|\\bData[ \\t]+(?:de[ \\t]+)?nasc\\.?|\\bNascid[oa](?:[ \\t]+em)?|\\bNasc\\.|` +
         `\\bData urodzenia|\\bur\\.|\\bUrodzon[ya](?:[ \\t]+dnia)?|出生日期|出生於|出生于|出生|生日)[ \\t]*:?[ \\t：]*(${DATE})`,
       "giu",
     ),
@@ -1150,12 +2216,44 @@ const RULES: Rule[] = [
     pattern:
       /(?:\+?1[ .-]?)?(?:\(\d{3}\)[ ]?|\b\d{3}[ .-]?)\d{3}[ .-]?\d{4}\b(?:[ \t]*(?:ext\.?|x|poste)[ \t]*\d{1,5}\b)?/gi,
   },
+  // A phone with a country code ("+34 612 345 678", "+48 601 234 567"), a Brazilian
+  // phone ("(11) 91234-5678"), or any phone after its label in es/pl/pt.
+  {
+    kind: "phone",
+    pattern:
+      /(?<![\d+])\+(?:[2-9]\d{0,2})[ .-]?\(?\d{1,3}\)?(?:[ .-]?\d{2,4}){2,4}(?!\d)|(?<![\d(])\(\d{2}\)[ ]?9?\d{4}-?\d{4}(?!\d)/g,
+  },
+  {
+    kind: "phone",
+    pattern:
+      /(?<![\p{L}])(?:Teléfono|Telefono|Telefone|Telefon|Tel|Tfno|Móvil|Movil|Celular|Cel|kom|tel\. kom)\.?[ \t]*[:#]?[ \t]*(\+?[\d(][\d ().-]{6,16}\d)(?!\d)/giu,
+    group: 1,
+  },
+  // A national identity number after its label: DNI/NIE "12345678Z", PESEL, CPF
+  // "123.456.789-09", RG, NIF; and a CPF by its shape.
+  {
+    kind: "sin",
+    pattern:
+      /(?<![\p{L}])(?:DNI|NIE|NIF|PESEL|CPF|RG|documento de identidad)[ \t]*(?:n[º°o.][ \t]*)?[:#]?[ \t]*([0-9XYZ][0-9 .-]{6,16}[0-9A-Z])(?![\p{L}\d])/gu,
+    group: 1,
+  },
+  {
+    kind: "sin",
+    pattern: /(?<![\d.])\d{3}\.\d{3}\.\d{3}-\d{2}(?![\d-])/g,
+  },
+  // A health card after its label: "tarjeta sanitaria SNSA…", "CNS 898 0012 3456 7890".
+  {
+    kind: "healthCard",
+    pattern:
+      /(?<![\p{L}])(?:[Tt]arjeta sanitaria(?: individual)?|TSI|CIP|CNS|[Cc]art[ãa]o (?:[Nn]acional de [Ss]a[úu]de|SUS|do SUS))[ \t]*(?:n[º°o.][ \t]*)?[:#]?[ \t]*((?=(?:[A-Z -]*\d){8})[A-Z0-9][A-Z0-9 -]{7,22}[A-Z0-9])(?![\p{L}\d])/gu,
+    group: 1,
+  },
   // A social insurance number: nine digits in threes (joined by a space, a
   // hyphen or, as French documents write it, a point), or after its label.
   {
     kind: "sin",
     pattern:
-      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber| [Nn]o\.?| #)?|[Nn]uméro d['’]assurance sociale)[ \t]*[:#]?[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/gu,
+      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber| [Nn]o\.?| #)?|[Nn]uméro d['’]assurance sociale)[ \t]*[:#]?[ \t]*(\d{3}[ .-]{0,2}\d{3}[ .-]{0,2}\d{3})\b/gu,
     group: 1,
   },
   // A sensitive field may describe a value as valid, invalid or mistyped.
@@ -1164,14 +2262,15 @@ const RULES: Rule[] = [
   {
     kind: "sin",
     pattern:
-      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber)?|[Nn]uméro d['’]assurance sociale)[ \t]+[\p{L}][\p{L}'’ -]{0,47}[ \t]*[:#]?[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/gu,
+      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber)?|[Nn]uméro d['’]assurance sociale)[ \t]+[\p{L}][\p{L}'’ -]{0,47}[ \t]*[:#]?[ \t]*(\d{3}[ .-]{0,2}\d{3}[ .-]{0,2}\d{3})\b/gu,
     group: 1,
   },
   // Known cost: any nine digits in equal threes match, so "Lot 123.456.789"
   // is removed too, as "Lot 123 456 789" always was.
   {
     kind: "sin",
-    pattern: /(?<![\d-])(?<!\d\.)\d{3}([ .-])\d{3}\1\d{3}(?![\d-])(?!\.\d)/g,
+    pattern:
+      /(?<![\d-])(?<!\d\.)(?<!\+\d{1,3}[ .-]?)(?<!(?:[Tt]el(?:éfono|efono|efone|efon)?|[Tt]fno|[Mm][óo]vil|[Cc]elular|[Cc]el|[Kk]om|[Pp]hone|[Cc]ell)\.?[ \t]*[:#]?[ \t]*)\d{3}([ .-])\d{3}\1\d{3}(?![\d-])(?!\.\d)(?![ \t]*(?:\/|[x×][ \t]*10))/gu,
   },
   // A web address: with its scheme or "www.", or a bare domain with a common
   // ending, and whatever follows it.
@@ -1180,11 +2279,12 @@ const RULES: Rule[] = [
     pattern:
       /\b(?:https?:\/\/|www\.)[^\s<>"'()[\]]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|ca|org|net|gov|edu|info|io|health|fr|uk|us)\b(?:\/[^\s<>"'()[\]]*)?/gi,
   },
-  // An age of 90 or over, which is identifying on its own.
+  // An age of 90 or over, which is identifying on its own: "93 years old", "93 ans",
+  // "93 años", "93 anos", "93 lata", "Edad: 93", "Wiek: 93".
   {
     kind: "age",
     pattern:
-      /\b(?:(?:9\d|1[01]\d)[ -](?:years?|yrs?|y)[ -]?old|(?:9\d|1[01]\d)[ \t]?(?:y\.?o\.?|yo|y\/o)|aged?[ \t]*:?[ \t]*(?:9\d|1[01]\d)|(?:âgée?[ \t]+de[ \t]+)?(?:9\d|1[01]\d)[ \t]+ans)(?![\p{L}\d])/giu,
+      /\b(?:(?:9\d|1[01]\d)[ -](?:years?|yrs?|y)[ -]?old|(?:9\d|1[01]\d)[ \t]?(?:y\.?o\.?|yo|y\/o)|(?:aged?|edad|idade|wiek)[ \t]*:?[ \t]*(?:9\d|1[01]\d)|(?:âgée?[ \t]+de[ \t]+)?(?:9\d|1[01]\d)[ \t]+(?:ans|años|anos|lat|lata))(?![\p{L}\d])/giu,
   },
   {
     kind: "postalCode",
@@ -1200,13 +2300,13 @@ const RULES: Rule[] = [
   {
     kind: "address",
     pattern:
-      /\b(?:Address|Mailing address|Home address|Adresse)[ \t]*:[ \t]*([^\n]+)/giu,
+      /(?<![\p{L}])(?:Address|Mailing address|Home address|Home|Adresse|Domicile|Direcci[oó]n|Domicilio|Endere[cç]o|Adres)[ \t]*(?:[:：]|[ \t](?:–|—|-))[ \t]*([^\n]+)/giu,
     group: 1,
   },
   {
     kind: "address",
     pattern: new RegExp(
-      `\\b\\d{1,6}(?:-\\d{1,6})?[ \\t]+(?:${NAME_WORD}\\.?[ \\t]+){1,4}${STREET_TYPE}\\b\\.?(?:[ \\t]+(?:East|West|North|South|E|W|N|S)\\b)?${UNIT}`,
+      `${UNIT_FIRST}\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?[ \\t]+(?:${NAME_WORD}\\.?[ \\t]+){1,4}${STREET_TYPE}\\b\\.?(?:[ \\t]+(?:East|West|North|South|E|W|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
       "gu",
     ),
   },
@@ -1214,9 +2314,65 @@ const RULES: Rule[] = [
     // 1234, rue Sherbrooke Est; 88, boul. René-Lévesque Ouest, app. 5
     kind: "address",
     pattern: new RegExp(
-      `\\b\\d{1,6}(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}`,
+      `${UNIT_FIRST}\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
       "gu",
     ),
+  },
+  // A town alone in brackets after a specialty or a service: "Cardiologie (Ville-Exemple)",
+  // "Pediatrics (Sampletown)". Not a note such as "(Urgent)" or "(Suivi)", an abbreviation
+  // such as "(ECG)", or a title.
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])${SPECIALTY_BEFORE_TOWN}[ \\t]*\\([ \\t]*)(?!(?:Dr|Dre|Mr|Mrs|Ms|Mme|Mlle|Pr|Prof)(?![\\p{L}]))(?:[LD]['’])?\\p{Lu}\\p{Ll}[\\p{L}'’]*(?:[ -]\\p{Lu}[\\p{L}'’]*|-(?:(?:sur|en|lès|les|de|du|des|la|le|aux|à)-)+\\p{Lu}[\\p{L}'’]*|-[dl]['’]\\p{Lu}[\\p{L}'’]*){0,4}(?=[ \\t]*\\))`,
+      "gu",
+    ),
+    townInBrackets: true,
+  },
+  // A town with its region in brackets after "de", "da", "do" or "z": "de Valdeprueba
+  // (Toledo)", "de Vila Teste (Campinas)".
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])(?:de|da|do|desde|en|em|no|na|z|ze)[ \\t]+)\\p{Lu}\\p{Ll}[\\p{L}'’]*(?:[ -]\\p{Lu}\\p{Ll}[\\p{L}'’]*){0,2}[ \\t]*\\(\\p{Lu}\\p{Ll}[\\p{L}'’]*(?:[ -]\\p{Lu}\\p{Ll}[\\p{L}'’]*){0,2}\\)`,
+      "gu",
+    ),
+    townInBrackets: true,
+  },
+  // A Polish town after a word that always means a place: "mieszka w Testowej Woli",
+  // "zam. Testowo", "z miejscowości Testowa Wola". A town after a bare "z" is left: "z"
+  // also means "with" ("z Piotrem").
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])(?:[Mm]ieszka(?:ł|ła|jący|jąca)?[ \\t]+w|[Zz]amieszkał[ay]?[ \\t]+w|[Zz]am\\.|[Zz][ \\t]+(?:miejscowości|miasta|gminy|wsi)|[Ww][ \\t]+(?:miejscowości|mieście|gminie|wsi))[ \\t]+)(?!(?:Ul|Al|Pl|Os|Ulica|Aleja|Plac|Osiedle|UL|AL|PL|OS)(?![\\p{L}]))\\p{Lu}\\p{Ll}+(?:[ -]\\p{Lu}\\p{Ll}+){0,2}`,
+      "gu",
+    ),
+    townInBrackets: true,
+  },
+  // A Polish street: "ul. Polna 3", "al. Testowa 45 m. 3", "os. Przykładowe 12/4". Not a
+  // citation ("Smith et al. Lancet 2019"): never after "et", and a year is no house number.
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?<![Ee][Tt][ \\t]?)(?:[Uu]l\\.|[Aa]l\\.|[Pp]l\\.|[Oo]s\\.|UL\\.|AL\\.|PL\\.|OS\\.|[Uu]lica|[Aa]leja|[Pp]lac|[Oo]siedle|ULICA|ALEJA|PLAC|OSIEDLE)[ \\t]*\\p{Lu}[\\p{L}.-]*(?:[ \\t]+\\p{Lu}[\\p{L}.-]*){0,3}[ \\t]+(?!(?:19|20)\\d{2}(?!\\d))\\d{1,4}[A-Za-z]?(?:\\/\\d{1,4}[A-Za-z]?)?(?:[ \\t]*m\\.[ \\t]*\\d{1,4})?(?![\\p{L}\\d])${TOWN_AFTER}`,
+      "gu",
+    ),
+  },
+  // A named residence: "Résidence Les Jardins du Parc", "Foyer Saint-Joseph", "Manoir des Pins".
+  {
+    kind: "address",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Résidence|Residence|Foyer|Manoir|Maison de retraite|Residencia|Residência)[ \\t]+(?:(?:de|du|des|la|le|les|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+(?:(?:de|du|des|la|le|les)[ \\t]+)?${NAME_WORD}){0,4}`,
+      "gu",
+    ),
+  },
+  // "home address 99 Fable Quay, Town": a number and a street without a label's colon.
+  {
+    kind: "address",
+    pattern:
+      /(?<![\p{L}])(?:home|mailing|current|residential) address[ \t]+(\d[^\n.;]{4,80})/giu,
+    group: 1,
   },
   {
     kind: "address",
@@ -1240,14 +2396,56 @@ const RULES: Rule[] = [
     // Clinique médicale Saint-Laurent; Centre hospitalier de Fictiveville
     kind: "clinic",
     pattern: new RegExp(
-      `(?<![\\p{L}])${anyCase(["Hôpital", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire"])}(?:[ \\t]+(?:de|du|des|la|le|l['’]|d['’]|médicale|universitaire|régionale?|générale?|familiale|${NAME_WORD})){1,6}`,
+      `(?<![\\p{L}])(?:\\p{Lu}\\p{L}*-)?${anyCase(["Hôpital", "Polyclinique", "Cliniques", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire", "Cabinet médical"])}(?:(?:[ \\t]+|(?<=[ldLD]['’])|[ \\t]*(?:\/|&|–)[ \\t]*)(?:(?:de|du|des|la|le|les|médicales?|universitaire|régionale?|générale?|familiale)(?![\\p{L}])|l['’]|d['’]|${NAME_WORD})){1,8}(?:[ \\t]*\\(${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}\\))?`,
+      "gu",
+    ),
+  },
+  {
+    // Clínica San Rafael; Centro de Saúde Vila Exemplo; Szpital Wojewódzki w Testowie; GMF du Parc
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase(["Clínica", "Centro de Salud", "Centro de Saúde", "Unidade Básica de Saúde", "Posto de Saúde", "Hospital", "UBS", "Przychodnia", "Przychodni", "Przychodnią", "Poradnia", "Poradni", "Szpital", "Szpitala", "Szpitalu", "Szpitalem", "Ośrodek Zdrowia", "Ośrodka Zdrowia", "Ośrodku Zdrowia", "Centrum Medyczne", "Centrum Medycznego", "Centrum Medycznym", "Laboratorium", "Laboratorio", "Laboratório", "GMF", "CISSS", "CIUSSS", "Centre médical", "Centre de réadaptation", "Groupe de médecine de famille", "Groupe de médecine familiale", "GMF-U", "GMF-R", "Super-clinique", "école primaire", "École primaire", "école secondaire", "École secondaire", "école", "Ecole", "collège", "Cégep", "cégep", "polyvalente", "CPE", "Centre de la petite enfance", "garderie", "escuela", "colegio", "escola", "Szkoła Podstawowa", "szkoła", "przedszkole"])}(?:[ \\t]+(?:(?:de|del|da|do|dos|das|du|des|la|le|les|w|we|nr)[ \\t]+)?(?:[lLdD]['’])?${NAME_WORD}|[ \\t]+nr[ \\t]*\\d{1,4}){1,5}`,
+      "gu",
+    ),
+  },
+  {
+    // A clinic or an agency named with no clinic word, after "at", "to", "from", "with" or "by":
+    // "seen at Silver Acorn Neurology", "a referral from Harbourview Family Services".
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])(?:at|to|from|with|by|At|To|From|With|By)[ \\t]+(?:the[ \\t]+)?)(?:${NAME_WORD}[ \\t]+){1,4}${ORG_WORDS}(?![\\p{L}])`,
+      "gu",
+    ),
+  },
+  {
+    // A letterhead's first words: "Exemple Santé", "Testbourg Physio Plus", "Boréal Imagerie".
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<=(?:^|\\n)[ \\t]*)(?:${NAME_WORD}[ \\t]+){1,3}(?:Santé|Médical|Médicale|Physio|Physiothérapie|Réadaptation|Imagerie|Radiologie|Dentaire|Optométrie)(?:[ \\t]+Plus)?(?![\\p{L}])`,
+      "gu",
+    ),
+  },
+  {
+    // Imagerie du Quartz; Neurologie du Gland-Argenté; Santé de la Boussole-Bleue
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Imagerie|Neurologie|Cardiologie|Santé|Physiothérapie|Physio|Radiologie|Dermatologie|Pédiatrie|Ophtalmologie|Optométrie|Dentisterie|Ergothérapie|Réadaptation|Psychologie|Orthopédie|Soins|Polyclinique)[ \\t]+(?:du|des|de la|de l['’]|d['’]|de)[ \\t]*${NAME_WORD}(?:[ \\t]+${NAME_WORD}){0,3}`,
+      "gu",
+    ),
+  },
+  {
+    // Centre de jour Saint-Michel; Centre jeunesse de Laval; Centre Les Érables;
+    // CENTRE DE PÉDIATRIE LES PETITS PAS (a header line in capitals)
+    kind: "clinic",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Centre|CENTRE)(?:[ \\t]+(?:(?:de|d['’]|du|des)[ \\t]*)?(?:la[ \\t]+|l['’])?\\p{Ll}[\\p{Ll}-]*(?:[ \\t]+\\p{Ll}[\\p{Ll}-]*)?)?(?:(?:[ \\t]+|(?<=[ldLD]['’]))(?:(?:de|du|des|la|le|les)[ \\t]+|[ldLD]['’])*${NAME_WORD}){1,6}`,
       "gu",
     ),
   },
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Dr|Dre|Doctor|Docteur|Docteure)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|(?:prof\\.[ \\t]*)?dr[ \\t]+hab\\.[ \\t]*n\\.[ \\t]*med|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|[Ll]ek\\.(?:[ \\t]*(?:med|dent)\\.)?|mgr[ \\t]+(?:farm|inż)|mgr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -1255,7 +2453,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:(?:Mr|Mrs|Ms|Miss|Mx|Prof|Mme|Mlle)\\.?|M\\.)[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:(?:Mr|Mrs|Ms|Miss|Mx|Prof|Pr|Mme|Mlle|Sra|Srta|Sr|Don|Doña|Doña|Pani|Pan(?![ \\t]+Am(?:erican)?(?![\\p{L}])))\\.?|M\\.)[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -1269,9 +2467,15 @@ const RULES: Rule[] = [
     group: 1,
   },
   {
+    kind: "name",
+    pattern: new RegExp(`(?<![\\p{L}])${COLUMN_LABEL}(${COLUMN_NAME})`, "gu"),
+    group: 1,
+    columnLabel: true,
+  },
+  {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:[Rr]eferring physician|[Pp]hysician|[Pp]rovider|[Oo]rdering provider|[Aa]ttending|[Ss]igned|[Ff]amily doctor|cc|CC|[Cc]opy to|[Mm]édecin traitant|${BY})[ \\t]*:[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CLINICIAN_NAME})`,
+      `(?<![\\p{L}])(?:[Rr]eferring physician|[Pp]hysician|[Pp]rovider|[Oo]rdering provider|[Aa]ttending|[Ss]igned|[Ff]amily doctor|cc|CC|c\\.c\\.|C\\.C\\.|[Cc]opie conforme|[Cc]opy to|[Mm]édecin traitant|${BY})[ \\t]*:[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CLINICIAN_NAME})`,
       "gu",
     ),
     group: 1,
@@ -1322,7 +2526,124 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:(?:${CLINICIAN_TITLE}|NP|RN|RPN|RM|IPS)[ \\t]*:|${CLINICIAN_TITLE}[ \\t]+)[ \\t]*(${CLINICIAN_NAME})`,
+      `(?<![\\p{L}])(?:(?:${CLINICIAN_TITLE}|NP|RN|RPN|RM|IPS)[ \\t]*:|${CLINICIAN_TITLE}[ \\t]*,?[ \\t]+)[ \\t]*(${CLINICIAN_NAME})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // A clinician named in passing by role, in lower case, with a full name: "her
+  // pharmacist, Jordan Example", "la pharmacienne Hélène Example". A single
+  // capitalized word after a lower-case role is too often a place or a service.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:nurse|pharmacist|physiotherapist|physio|social worker|technologist|technician|sonographer|radiologist|surgeon|paramedic|therapist|midwife|dietitian|resident|infirmière|infirmier|pharmacienne|pharmacien|physiothérapeute|radiologue|chirurgienne|chirurgien|technologue|technicienne|technicien|enfermera|enfermero|farmacéutica|farmacéutico|fisioterapeuta|enfermeira|enfermeiro|farmacêutica|farmacêutico|fisioterapeuta|pielęgniarka|pielęgniarz|farmaceuta|fizjoterapeuta)[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // A clinician named by role, with no title, in es/pt/pl: "la médica Inés Ficticia Peral",
+  // "a assistente social Carla Exemplo Lima", "Lekarz Jan Testowy". A full name of two or
+  // more words only; physicians are doctors. In Spanish and Portuguese the role follows an
+  // article or a determiner, since "médica" and "técnica" are also "medical" and "technique"
+  // ("Historia Médica Completa", "técnica Seldinger Modificada") (#262 review).
+  {
+    kind: "doctor",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
+        withSentenceCase([
+          "médico de familia",
+          "médica de familia",
+          "médico",
+          "médica",
+          "dentista",
+          "odontólogo",
+          "odontóloga",
+        ]),
+      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
+        withSentenceCase([
+          "trabajadora social",
+          "trabajador social",
+          "psicóloga",
+          "psicólogo",
+          "nutricionista",
+          "dietista",
+          "matrona",
+          "técnico de radiología",
+          "técnica de radiología",
+          "auxiliar de enfermería",
+          "auxiliar",
+          "terapeuta ocupacional",
+          "logopeda",
+          "podóloga",
+          "podólogo",
+          "optometrista",
+          "assistente social",
+          "técnica de enfermagem",
+          "técnico de enfermagem",
+          "auxiliar de enfermagem",
+          "fonoaudióloga",
+          "fonoaudiólogo",
+          "parteira",
+          "obstetriz",
+          "cuidadora",
+          "cuidador",
+          "agente comunitário de saúde",
+          "agente de saúde",
+        ]),
+      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  {
+    kind: "doctor",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase(
+        withSentenceCase([
+          "lekarz rodzinny",
+          "lekarz",
+          "lekarka",
+          "stomatolog",
+        ]),
+      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase(
+        withSentenceCase([
+          "psycholog",
+          "psycholożka",
+          "dietetyk",
+          "dietetyczka",
+          "położna",
+          "ratownik medyczny",
+          "ratowniczka medyczna",
+          "ratownik",
+          "terapeuta zajęciowy",
+          "terapeutka zajęciowa",
+          "terapeutka",
+          "opiekun medyczny",
+          "opiekunka medyczna",
+          "technik radiologii",
+          "technik",
+          "pracownik socjalny",
+          "pracowniczka socjalna",
+          "logopeda",
+        ]),
+      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -1469,17 +2790,112 @@ const RULES: Rule[] = [
         "孫子",
         "监护人",
         "監護人",
+        "friend",
+        "boyfriend",
+        "girlfriend",
+        "fiancé",
+        "fiancée",
+        "roommate",
+        "landlord",
+        "landlady",
+        "ami",
+        "amie",
+        "copain",
+        "copine",
+        "amigo",
+        "amiga",
+        "novio",
+        "novia",
+        "namorado",
+        "namorada",
+        "przyjaciel",
+        "przyjaciółka",
+        "córkę",
+        "córką",
+        "córki",
+        "syna",
+        "synem",
+        "mężem",
+        "męża",
+        "żoną",
+        "żonę",
+        "matką",
+        "matkę",
+        "ojcem",
+        "ojca",
+        "bratem",
+        "brata",
+        "siostrą",
+        "siostrę",
+        "wnuczką",
+        "wnuczkę",
+        "wnukiem",
+        "wnuka",
+        "opiekunem",
+        "opiekunką",
+        "朋友",
       ])}[ \\t]*,?[ \\t]+(${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
     kin: true,
   },
+  // Relatives named together after a plural: "her daughters Maribel and Odette", "ses fils
+  // Paul et Marc". The first name, then each name after it.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${KIN_PLURAL}[ \\t]*,?[ \\t]+(${CAPITALIZED_NAME})`,
+      "gu",
+    ),
+    group: 1,
+    kin: true,
+  },
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<=(?<![\\p{L}])${KIN_PLURAL}[ \\t]*,?[ \\t]+${CAPITALIZED_NAME}(?:${NAME_JOIN}${CAPITALIZED_NAME}){0,4}${NAME_JOIN})(${CAPITALIZED_NAME})`,
+      "gu",
+    ),
+    group: 1,
+    kin: true,
+  },
+  // A relation used as a label: "Mother: Rosalind Sampleton". Only a first and a last name
+  // that end the entry, and never a family-history line ("Mother: Breast cancer at 52").
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:Mother|Father|Mom|Mum|Dad|Spouse|Husband|Wife|Partner|Son|Daughter|Brother|Sister|Mère|Père|Conjoint|Conjointe|Fils|Fille|Madre|Padre|Hijo|Hija|Mãe|Pai|Filho|Filha|Matka|Ojciec|Syn|Córka)[ \\t]*:[ \\t]*(${NAME_PART}[ \\t]+${NAME_PART})(?=[ \\t]*(?:[.,;(]|\\n|$))`,
+      "gu",
+    ),
+    group: 1,
+    kin: true,
+    relationLabel: true,
+  },
+  // A patient after a referral verb: "Le remito a Rosa Ejemplar", "encaminho Rosa Exemplo",
+  // "kieruję Różę Przykładową".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:[Rr]emito a|[Dd]erivo a|[Ee]nv[íi]o a|[Pp]resento a|[Ee]ncaminho|[Ee]ncaminhamos|[Aa]presento|[Kk]ieruję|[Kk]ierujemy|[Pp]rzekazuję)[ \\t]+(?:(?:al|a la|o|a|el paciente|la paciente|o paciente|a paciente|pana|panią|pacjenta|pacjentkę)[ \\t]+)?(${CAPITALIZED_NAME})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // A full name right before an identity label: "Tomás Prueba Iglesias, DNI …".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
+      "gu",
+    ),
+    group: 1,
+  },
   // A closing, then the name on the next non-empty line.
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Sincerely|Yours truly|Regards|Best regards|Kind regards|Cordialement|Salutations distinguées),[ \\t]*\\n(?:[ \\t]*\\n)*[ \\t]*(?:(?:Dr|Dre)\\.?[ \\t]+)?(${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Sincerely|Yours truly|Regards|Best regards|Kind regards|Cordialement|Salutations distinguées|Atentamente|Saludos cordiales|Un saludo|Atenciosamente|Z poważaniem|Z wyrazami szacunku|Pozdrawiam),[ \\t]*\\n(?:[ \\t]*\\n)*[ \\t]*(?:(?:Dr|Dra|Dre|dr|Doutor|Doutora|lek\\.)\\.?[ \\t]+)?(${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -1488,7 +2904,7 @@ const RULES: Rule[] = [
     (form) => ({
       kind: "date" as const,
       pattern: new RegExp(
-        `${WEEKDAY_BEFORE}${form.pattern}${WEEKDAY_AFTER}`,
+        `${WEEKDAY_BEFORE}${form.pattern}${POLISH_YEAR_AFTER}${WEEKDAY_AFTER}`,
         "giu",
       ),
     }),
@@ -1524,12 +2940,92 @@ const RULES: Rule[] = [
   })),
 ];
 
+/**
+ * Where folding would change what a pattern means: a character inside a class that folds to
+ * a class operator ("-", "^", "]", "\\") or to more than one character ("œ" → "oe"), or a
+ * character outside a class that folds into regex syntax ("（" → "("). "[-–—]" folded to the
+ * range "[--—]", which holds every letter, so "Patient ABC" lost "BC" to a name (#252).
+ */
+export function foldHazardsIn(source: string): string[] {
+  const hazards: string[] = [];
+  let inClass = false;
+  // The last literal character inside the class, for a range ("[À-ÿ]").
+  let previous = "";
+  for (let at = 0; at < source.length; at++) {
+    const char = source[at];
+    if (char === "\\") {
+      // An escaped character the text's fold changes never matches: "\u00e9" (é)
+      // stays in the pattern while the text holds "e".
+      const escape =
+        /^(?:u\{([0-9a-fA-F]+)\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2}))/u.exec(
+          source.slice(at + 1),
+        );
+      if (escape) {
+        const escaped = String.fromCodePoint(
+          parseInt(escape[1] ?? escape[2] ?? escape[3], 16),
+        );
+        if (fold(escaped) !== escaped)
+          hazards.push(
+            `the escape at ${at} (${JSON.stringify(escaped)}) folds to ${JSON.stringify(fold(escaped))}`,
+          );
+        at += escape[0].length;
+        previous = escaped;
+      } else {
+        previous = source[at + 1] ?? "";
+        at++;
+      }
+      continue;
+    }
+    if (!inClass && char === "[") {
+      inClass = true;
+      previous = "";
+      continue;
+    }
+    if (inClass && char === "]") {
+      inClass = false;
+      continue;
+    }
+    // A range inside a class whose end folds changes its span: "[À-ÿ]" → "[A-y]".
+    if (inClass && char === "-" && previous && source[at + 1] !== "]") {
+      const next = source[at + 1] === "\\" ? "" : (source[at + 1] ?? "");
+      if (fold(previous) !== previous || (next && fold(next) !== next))
+        hazards.push(
+          `the range ${JSON.stringify(`${previous}-${next}`)} at ${at} has an end that folds`,
+        );
+    }
+    if (inClass) previous = char;
+    const folded = fold(char);
+    if (folded === char) continue;
+    if (
+      inClass
+        ? folded.length !== 1 || /[-^\]\\]/u.test(folded)
+        : /[\\^$.|?*+()[\]{}]/u.test(folded)
+    )
+      hazards.push(
+        `${JSON.stringify(char)} at ${at} folds to ${JSON.stringify(folded)}${inClass ? " inside a class" : ""}`,
+      );
+  }
+  return hazards;
+}
+/** Each rule, date form and date range whose meaning folding would change; the tests require
+ * none. */
+export const FOLD_HAZARDS: string[] = [];
+
 // The rules run on the matching copy, so their accented letters are folded
 // as the copy's are ("Hôpital" finds "Hopital", which is how the copy
 // spells it).
-for (const rule of RULES)
+for (const [index, rule] of RULES.entries()) {
+  for (const hazard of foldHazardsIn(rule.pattern.source))
+    FOLD_HAZARDS.push(
+      `rule ${index} (${rule.kind}, ${rule.pattern.source.slice(0, 60)}…): ${hazard}`,
+    );
   rule.pattern = new RegExp(fold(rule.pattern.source), rule.pattern.flags);
-for (const form of DATE_FORMS) form.pattern = fold(form.pattern);
+}
+for (const form of DATE_FORMS) {
+  for (const hazard of foldHazardsIn(form.pattern))
+    FOLD_HAZARDS.push(`date form ${form.id}: ${hazard}`);
+  form.pattern = fold(form.pattern);
+}
 
 const DAY_WITH_ORDINAL = "(\\d{1,2}(?:er|st|nd|rd|th)?)";
 const RANGE_JOINER = "[ ]*(?:-|to|through|au|et|and)[ ]*";
@@ -1555,8 +3051,11 @@ const RANGES = [
     monthFirst: true,
   },
 ];
-for (const range of RANGES)
+for (const [index, range] of RANGES.entries()) {
+  for (const hazard of foldHazardsIn(range.pattern.source))
+    FOLD_HAZARDS.push(`date range ${index}: ${hazard}`);
   range.pattern = new RegExp(fold(range.pattern.source), range.pattern.flags);
+}
 
 function findRanges(text: string): Finding[] {
   const found: Finding[] = [];
@@ -1621,6 +3120,13 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       // A label's value may run past the detail into trailing punctuation,
       // and a French clinic's name into connecting words.
       let trimmed = detail.replace(/[\s,;.]+$/u, "");
+      // Polish "2026 r.": the full stop belongs to the abbreviation.
+      if (
+        rule.kind === "date" &&
+        /\d[ \t]?r$/u.test(trimmed) &&
+        text.charAt(start + trimmed.length) === "."
+      )
+        trimmed += ".";
       // An unqualified Encounter followed by a valid whole date is a date
       // field. Explicit record labels and invalid date-shaped IDs retain
       // record-number protection.
@@ -1631,6 +3137,24 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
           const reading = readDateText(trimmed, options.dayFirst ?? true);
           return reading !== null && reading.kind !== "unclear";
         })()
+      )
+        continue;
+      // A value cut inside a longer token ("135-14" of "135-145 mmol/L"), an amount
+      // ("Claim 1250.00") or a lab reference range ("Reference: 135-145") is not a
+      // record number (#228 review).
+      // "HC 3390127": a letter prefix before the digits must really be capitals.
+      if (
+        rule.kind === "recordNumber" &&
+        /^[A-Za-z]{1,4} \d/u.test(trimmed) &&
+        !/^[A-Z]{1,4} \d/u.test(trimmed)
+      )
+        continue;
+      if (
+        rule.kind === "recordNumber" &&
+        (/[\p{L}\p{N}]/u.test(text.charAt(start + detail.length)) ||
+          /^\d{1,7}[.,]\d{2}$/u.test(trimmed) ||
+          (/^\d{1,4}(?:[.,]\d+)?[-–]\d{1,4}(?:[.,]\d+)?$/u.test(trimmed) &&
+            /^R[ée]f/iu.test(match[0].slice(0, offset).trim())))
       )
         continue;
       if (rule.kind === "clinic") {
@@ -1655,6 +3179,85 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
       )
         continue;
+      // A treatment after a role word is not a name ("a therapist Cognitive
+      // Behavioural Therapy"); a place or a team ends the name before it
+      // ("Charge nurse Maria Lopez Unit 4B") (#228 review).
+      if (rule.kind === "name" || rule.kind === "doctor") {
+        const words = [...trimmed.matchAll(/[^\s,]+/gu)];
+        const at = words.findIndex((word) => {
+          const lower = word[0].toLowerCase();
+          return TREATMENT_WORDS.has(lower) || PLACE_WORDS.has(lower);
+        });
+        if (at >= 0) {
+          if (
+            at === 0 ||
+            TREATMENT_WORDS.has(words[at][0].toLowerCase()) ||
+            words
+              .slice(0, at)
+              .every((word) => GENERIC_BEFORE_CLINIC.has(word[0].toLowerCase()))
+          )
+            continue;
+          trimmed = trimmed.slice(0, words[at].index).replace(/[\s,]+$/u, "");
+        }
+      }
+      if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
+        continue;
+      if (rule.columnLabel) {
+        const words = trimmed
+          .split(/[^\p{L}'’]+/u)
+          .filter(Boolean)
+          .map((word) => word.toLowerCase());
+        const first = words[0] ?? "";
+        if (
+          words.some((word) => HEADER_WORDS.has(word)) ||
+          // Not "SURNAME, Given": a first word that is a status or a
+          // not-a-name word ends it. Not ORDINARY_WORDS: those are first names
+          // that are also words ("PATIENT  MAY SAMPLETON").
+          (!trimmed.includes(",") &&
+            (STATUS_WORDS.has(first) || NOT_NAMES.has(first)))
+        )
+          continue;
+      }
+      if (
+        rule.townInBrackets &&
+        (BRACKET_NOTES.has(trimmed.toLowerCase()) ||
+          trimmed.split(/[^\p{L}'’]+/u).some((word) => {
+            const lower = word.toLowerCase();
+            return (
+              BRACKET_NOTES.has(lower) ||
+              FAMILY_HISTORY_WORDS.has(lower) ||
+              ORDINARY_WORDS.has(lower) ||
+              MEDICAL_ENDING.test(lower)
+            );
+          }))
+      )
+        continue;
+      // A bare "Nombre:" or "Nome:" is also French and Portuguese for "number":
+      // only a first and a last name after it ("Nombre : Deux comprimés").
+      if (
+        rule.kind === "name" &&
+        /^(?:Nombre|Nome|NOMBRE|NOME)[ \t]*[:\-–—][ \t]*$/u.test(
+          match[0].slice(0, offset),
+        ) &&
+        trimmed.split(/[ \t]+/).length < 2
+      )
+        continue;
+      if (
+        (rule.kind === "name" ||
+          rule.kind === "doctor" ||
+          rule.kind === "address") &&
+        isMedicalTerm(
+          text,
+          start,
+          start + trimmed.length,
+          rule.kind !== "address",
+        )
+      )
+        continue;
+      if (rule.skipDates) {
+        const reading = readDateText(trimmed, options.dayFirst ?? true);
+        if (reading !== null) continue;
+      }
       const end = start + trimmed.length;
       found.push({
         kind:
@@ -1673,7 +3276,7 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       // field. An unrelated nine-digit measurement never inherits it.
       if (rule.kind === "sin") {
         const control =
-          /^[ \t]*;[ \t]*(?:checksum[- ](?:in)?valid[ \t]+control|controle[ \t]+a[ \t]+somme[ \t]+(?:in)?valide)[ \t]*:[ \t]*(\d{3}[ .-]?\d{3}[ .-]?\d{3})\b/iu.exec(
+          /^[ \t]*;[ \t]*(?:checksum[- ](?:in)?valid[ \t]+control|controle[ \t]+a[ \t]+somme[ \t]+(?:in)?valide)[ \t]*:[ \t]*(\d{3}[ .-]{0,2}\d{3}[ .-]{0,2}\d{3})\b/iu.exec(
             text.slice(end),
           );
         if (control) {
@@ -1690,9 +3293,99 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
   return found;
 }
 
+/** A title or a role word right before `at`: the name rules decide what follows, not a town list. */
+const TITLE_BEFORE =
+  /(?:\b(?:Dr|Dre|Mr|Mrs|Ms|Miss|Mme|Mlle|M|Pr|Prof|Sr|Sra|Srta|Pan|Pani)\.?|\b(?:nurse|pharmacist|physiotherapist|technologist|sonographer|radiologist|surgeon|infirmière|infirmier|pharmacienne|pharmacien|technologue|radiologue|chirurgien|chirurgienne|enfermera|enfermero|farmacéutico|farmacéutica|enfermeiro|enfermeira|farmacêutico|farmacêutica))[ \t]+$/iu;
+const followsTitle = (text: string, at: number) =>
+  TITLE_BEFORE.test(text.slice(Math.max(0, at - 30), at));
+
+// A short birth cue that is also an everyday abbreviation: "DN:" (district nurse), "FN:"
+// (febrile neutropenia), "b." (the second item of a lettered list, "Plan B.").
+const SHORT_BIRTH_CUE =
+  /(?:(?<![\p{L}])(?:D\.?N\.?|F\.?N\.?)[ \t]*:|(?<![\p{L}\d.])[Bb]\.)[ \t：]*$/iu;
+/**
+ * A date after a short birth cue is a birth date only when it is at least a year before
+ * another date in the text (an adult's birth date is decades before a visit), or when it is
+ * the only date in the text. Otherwise it is an event date (#259 review). The cost, accepted:
+ * an unknown infant's birth date beside a visit days later is read as an event, so the gap
+ * gives the age in days; the patient's own birth date is still covered by knownBirthDates.
+ */
+function keepShortBirthCue(
+  finding: Finding,
+  dates: { finding: Finding; days: number[] }[],
+): boolean {
+  const own = dates.find((date) => date.finding === finding)?.days ?? [];
+  const others = dates.filter(
+    (date) =>
+      date.finding.end <= finding.start || date.finding.start >= finding.end,
+  );
+  // An unclear day and month ("12/03/2026") has both readings: years apart either way.
+  if (
+    others.some((date) =>
+      date.days.some((day) => own.some((birth) => day - birth >= 365)),
+    )
+  )
+    return true;
+  return others.length === 0;
+}
+
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
   found.push(...ruleFindings(text, options));
+  {
+    const short = found.filter(
+      (finding) =>
+        finding.kind === "dateOfBirth" &&
+        SHORT_BIRTH_CUE.test(
+          text.slice(Math.max(0, finding.start - 12), finding.start),
+        ),
+    );
+    if (short.length) {
+      const dates = found.flatMap((finding) => {
+        if (finding.kind !== "date" && finding.kind !== "dateOfBirth")
+          return [];
+        const days = readDate(
+          text.slice(finding.start, finding.end).replace(WEEKDAY_SUFFIX, ""),
+          options.dayFirst ?? true,
+        ).map((iso) => Math.round(Date.parse(`${iso}T00:00:00Z`) / 86_400_000));
+        return [{ finding, days }];
+      });
+      const dropped = new Set(
+        short.filter((finding) => !keepShortBirthCue(finding, dates)),
+      );
+      // The plain date found at the same place stays, as an event date.
+      if (dropped.size)
+        found.splice(
+          0,
+          found.length,
+          ...found.filter((finding) => !dropped.has(finding)),
+        );
+    }
+  }
+  // A town inside a clinic's name ("CLSC de Saint-Michel-des-Saints") is part of that name.
+  const clinics = found.filter((finding) => finding.kind === "clinic");
+  const inClinic = (span: { start: number; end: number }) =>
+    clinics.some(
+      (clinic) => clinic.start <= span.start && span.end <= clinic.end,
+    );
+  // Names of Canadian health facilities and of municipalities of two or more words.
+  for (const [kind, spans] of [
+    ["clinic", facilitySpans(text)],
+    ["address", municipalitySpans(text)],
+  ] as const)
+    for (const span of spans)
+      if (
+        !isMedicalTerm(text, span.start, span.end) &&
+        !(
+          kind === "address" &&
+          (followsTitle(text, span.start) || inClinic(span))
+        )
+      )
+        found.push({ kind, start: span.start, end: span.end });
+  // A town alone in brackets ("(Rouyn-Noranda)").
+  for (const span of bracketedMunicipalities(text))
+    if (!isMedicalTerm(text, span.start, span.end))
+      found.push({ kind: "address", start: span.start, end: span.end });
   // Each known name: whole wherever it stands (even across a line break),
   // in either order and surname first ("EXAMPLE, Avery"), and each of its
   // words, in any case, unless it is also an ordinary word.
@@ -1837,6 +3530,161 @@ const wordPattern = (word: string) =>
     ? new RegExp(escapeRegExp(word), "gu")
     : new RegExp(`(?<![\\p{L}])${escapeRegExp(word)}(?![\\p{L}])`, "giu");
 
+/**
+ * Public medical terms a name rule must never remove (the allow-list): an eponym's name word
+ * in one of its clinical phrases ("Guyon's canal", "Romberg test", "Bell's palsy", "maladie
+ * d'Addison"), and a drug name. Without it a word that looks like a name inside such a phrase
+ * would be taken out, and a later "Dr. Guyon" would take every "Guyon" with it.
+ */
+const GUARD_APOSTROPHE = /[’‘`´]/gu;
+const guardKey = (value: string) =>
+  fold(value).toLowerCase().replace(GUARD_APOSTROPHE, "'");
+const EPONYM_FORMS = new Map<string, string[]>();
+for (const entry of allowList.eponyms) {
+  // An eponym named for several people stands alone too: "Wolff-Parkinson-White".
+  const together =
+    entry.tokens.length > 1
+      ? [guardKey(entry.tokens.join("-")), guardKey(entry.tokens.join(" "))]
+      : [];
+  for (const token of entry.tokens) {
+    // The whole token ("De Quervain") and each of its words ("Wolff" of
+    // "Wolff-Parkinson-White") lead to the phrases it stands in.
+    const whole = guardKey(token);
+    for (const key of new Set([whole, ...whole.split(/[\s-]+/u)])) {
+      if (key.length < 3) continue;
+      const forms = EPONYM_FORMS.get(key) ?? [];
+      // A name of several words is also guarded as it stands alone
+      // ("Wolff-Parkinson-White", "De Quervain"), not only inside a phrase.
+      if (/[\s-]/u.test(whole)) forms.push(whole);
+      forms.push(...together);
+      for (const form of entry.forms) forms.push(guardKey(form));
+      EPONYM_FORMS.set(key, forms);
+    }
+  }
+}
+const DRUG_NAMES = new Set(allowList.drugs.map(guardKey));
+// Phrases that look like a name or an address ("Dr. Reddy's", "St. John's wort") but are not.
+const LOOKALIKES = allowList.lookalikes.map(guardKey);
+const GUARD_REACH = 60;
+// A drug name that is also a first name ("Ella", "Yasmin", "Diane", "Allegra") is spared only
+// where the words beside it read as a drug: a strength, a form or a frequency right after it, a
+// brand number ("Diane-35"), a drug verb right before it, or a place in a medication or allergy
+// list. A role, a relation or a title before it ("daughter Ella", "Nurse Yasmin") is not enough,
+// and neither is the same person named elsewhere in the text.
+// After the word: a strength, a brand number ("Diane-35") or a counted form ("2 drops", "one
+// tablet"). A frequency alone ("once", "twice a week", "daily") never makes the word a drug:
+// "Her daughter Ella twice a week drives her" (#228 review).
+const COUNT =
+  "(?:\\d+|one|two|three|half|un|une|deux|trois|uno|una|dos|tres|um|uma|duas|três|jedn[aą]|dwie)";
+const DRUG_STRENGTH_AFTER = new RegExp(
+  `^(?:${[
+    "-[ \\t]?\\d",
+    "[ \\t]*\\(?[ \\t]*\\d+(?:[.,]\\d+)?[ \\t]*(?:mg|mcg|µg|ug|g|ml|units?|iu|ui|%)(?![\\p{L}])",
+    `[ \\t]*,?[ \\t]+${COUNT}[ \\t]+(?:tablets?|capsules?|pills?|comprim[ée]s?|g[ée]lules?|c[áa]psulas?|comprimidos?|tabletk[aęi]|kapsułk[aęi]|drops?|puffs?|sprays?|patch(?:es)?|tabs?|caps?|injections?|gouttes?|gotas?|krople?|kropli)(?![\\p{L}])`,
+  ].join("|")})`,
+  "iu",
+);
+// A form word that is never an ordinary word, with no count: "Yasmin tablets".
+const DRUG_FORM_AFTER =
+  /^[ \t]*,?[ \t]+(?:tablets?|capsules?|pills?|comprim[ée]s?|g[ée]lules?|c[áa]psulas?|comprimidos?|tabletk[aęi]|kapsułk[aęi])(?![\p{L}])/iu;
+// Prescription abbreviations, in capitals only: "Yasmin PO", "Allegra PRN".
+const DRUG_ABBREVIATION_AFTER =
+  /^[ \t]*,?[ \t]+(?:BID|TID|QID|QHS|QAM|QPM|PRN|PO|OD|q\d+h)(?![\p{L}])/u;
+const DRUG_LIST_LABEL =
+  /(?<![\p{L}])(?:medications?|meds|current medications|rx|allerg(?:y|ies)|m[ée]dicaments?|medicamentos?|medicaci[óo]n|leki|alergi(?:e|a|as))[ \t]*:/giu;
+const DRUG_BEFORE =
+  /(?:\b(?:discontinued|switched (?:from|to)|changed (?:from|to)|allergic to|allergy to|intolerant (?:of|to)|reaction to|dose of|trial of|refill of|allergique (?:au|à la|à)|alérgic[oa] a|alergia a|dose (?:de|du))|\bm(?:g|cg) of)[ \t]*$/iu;
+const LIST_SEPARATOR = /[,;/+]|\b(?:and|or|et|ou|y|e|i)\b/iu;
+function startsWithDrug(chunk: string): boolean {
+  const words = guardKey(chunk)
+    .split(/[ \t]+/u)
+    .filter(Boolean);
+  return (
+    DRUG_NAMES.has(words[0] ?? "") ||
+    DRUG_NAMES.has(words.slice(0, 2).join(" "))
+  );
+}
+function readsAsDrug(
+  text: string,
+  start: number,
+  end: number,
+  afterPerson: boolean,
+): boolean {
+  // Only a short stretch on each side, on the same line: a page read as one
+  // very long line must not be copied for every place a name stands.
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  const before = text.slice(Math.max(lineStart, start - 160), start);
+  const lineEnd = text.indexOf("\n", end);
+  const after = text.slice(
+    end,
+    Math.min(lineEnd < 0 ? text.length : lineEnd, end + 40),
+  );
+  if (DRUG_STRENGTH_AFTER.test(after)) return true;
+  // Right after a role, a relation or a title, nothing weaker spares it.
+  if (afterPerson) return false;
+  if (
+    DRUG_FORM_AFTER.test(after) ||
+    DRUG_ABBREVIATION_AFTER.test(after) ||
+    DRUG_BEFORE.test(before)
+  )
+    return true;
+  // "Medications: Allegra, Yasmin, Ella": every item between the label and
+  // the word starts with a drug name.
+  let listStart = -1;
+  for (const label of before.matchAll(DRUG_LIST_LABEL))
+    listStart = label.index + label[0].length;
+  if (listStart < 0) return false;
+  return before
+    .slice(listStart)
+    .split(LIST_SEPARATOR)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .every(startsWithDrug);
+}
+// A title right before a word: "Dr. Holter" is a person even though "Holter" alone is on
+// the allow-list (#228 review).
+const TITLE_RIGHT_BEFORE =
+  /(?:(?<![\p{L}])(?:Dr|Dre|Mr|Mrs|Ms|Mx|Miss|Mme|Mlle|Prof|Pr|Sr|Sra|Srta|Nurse|Pani|Pan)\.?|(?<![\p{L}])M\.)[ \t]+$/u;
+/** `afterPerson`: a name rule found the word right after a role, a relation or a title. */
+function isMedicalTerm(
+  text: string,
+  start: number,
+  end: number,
+  afterPerson = false,
+): boolean {
+  const span = guardKey(text.slice(start, end));
+  const titled = TITLE_RIGHT_BEFORE.test(
+    text.slice(Math.max(0, start - 14), start),
+  );
+  if (DRUG_NAMES.has(span) && readsAsDrug(text, start, end, afterPerson))
+    return true;
+  const from = Math.max(0, start - GUARD_REACH);
+  const window = guardKey(text.slice(from, end + GUARD_REACH));
+  const spanStart = start - from;
+  const spanEnd = end - from;
+  for (const phrase of LOOKALIKES)
+    for (
+      let at = window.indexOf(phrase);
+      at >= 0;
+      at = window.indexOf(phrase, at + 1)
+    )
+      if (at < spanEnd && spanStart < at + phrase.length) return true;
+  for (const word of new Set([span, ...span.split(/[^\p{L}'-]+/u)])) {
+    const forms = EPONYM_FORMS.get(word);
+    if (!forms) continue;
+    for (const form of forms) {
+      if (titled && form === span) continue;
+      for (
+        let at = window.indexOf(form);
+        at >= 0;
+        at = window.indexOf(form, at + 1)
+      )
+        if (at < spanEnd && spanStart < at + form.length) return true;
+    }
+  }
+  return false;
+}
+
 /** A clinical role belongs to this occurrence, never to a surname globally.
  * Matching-copy accents have already been folded. Direct identity findings
  * still win; this prevents their alias sweep from consuming an eponym. */
@@ -1845,6 +3693,7 @@ function clinicalNameOccurrence(
   start: number,
   end: number,
 ): boolean {
+  if (isMedicalTerm(text, start, end)) return true;
   // Only the words next to the name matter, so only a short stretch on each
   // side is read: on a page read as one very long line the whole line would
   // be copied and scanned for every place a name stands.
@@ -2035,6 +3884,7 @@ export function deidentify(
     dayFirst,
     labels,
     notes,
+    otherLanguages: options.otherLanguages ?? [],
     cleaning: {
       replacedRuns: cleaned.replacedRuns,
       droppedCodePoints: cleaned.droppedCodePoints,
@@ -2047,13 +3897,20 @@ function nextPlaceholder(
   label: string,
   first: number,
   reserved: Set<string>,
+  /** The same kind's word in the other languages (#215): a number one of
+   * them already shows in the document is skipped too, so that a pasted
+   * answer can read that mark in any language. */
+  otherWords: readonly string[] = [],
 ): { number: number; replacement: string } {
   let number = first;
   // Check the complete candidate directly: custom labels can contain any
   // other marker, including an overlapping marker at the same position.
+  const written = (word: string, number: number) =>
+    source.includes(`[${word} ${number}]`) ||
+    source.includes(`[${word} ${number},`);
   while (
-    source.includes(`[${label} ${number}]`) ||
-    source.includes(`[${label} ${number},`) ||
+    written(label, number) ||
+    otherWords.some((word) => written(word, number)) ||
     reserved.has(`[${label} ${number}]`)
   )
     number++;
@@ -2076,6 +3933,7 @@ function build(
   settings: Omit<OnDevice, "removed" | "possibleNames" | "source">,
 ): Deidentified {
   const { dayFirst, labels, notes } = settings;
+  const others = settings.otherLanguages ?? [];
   // One placeholder per distinct detail of a kind (and per person, for
   // names), numbered in the order first seen.
   const numbers = new Map<string, number>();
@@ -2085,15 +3943,17 @@ function build(
       finding.replacement === undefined ? [] : [baseOf(finding.replacement)],
     ),
   );
-  /** The number for a detail: its own, once, then the same again. */
-  const numberFor = (counter: string, label: string, identity: string) => {
+  /** The number for a detail: its own, once, then the same again. `word`
+   * names the placeholder word (dates use `unclearDate`'s). */
+  const numberFor = (counter: string, word: RemovedKind, identity: string) => {
     let number = numbers.get(identity);
     if (number === undefined) {
       number = nextPlaceholder(
         source,
-        label,
+        labels[word],
         (counts.get(counter) ?? 0) + 1,
         reserved,
+        others.map((other) => other.labels[word]),
       ).number;
       counts.set(counter, number);
       numbers.set(identity, number);
@@ -2114,7 +3974,7 @@ function build(
       finding.group ??
       (kind === "doctor" ? words[words.length - 1] : words.join(" "))
     }`;
-    const number = numberFor(kind, labels[kind], identity);
+    const number = numberFor(kind, kind, identity);
     return noted(
       labels[kind],
       number,
@@ -2156,12 +4016,12 @@ function build(
   const earliestDay = earliest ? earliest[1] : 0;
   let earliestNumber = 0;
   calendar.forEach(([iso]) => {
-    const number = numberFor("date", dateWord, `date:${iso}`);
+    const number = numberFor("date", "unclearDate", `date:${iso}`);
     if (earliest && iso === earliest[0]) earliestNumber = number;
   });
   const datePlaceholder = (reading: DateReading) => {
     if (reading.kind === "full") {
-      const number = numberFor("date", dateWord, `date:${reading.iso}`);
+      const number = numberFor("date", "unclearDate", `date:${reading.iso}`);
       const days = reading.epochDay - earliestDay;
       return noted(
         dateWord,
@@ -2173,7 +4033,7 @@ function build(
     }
     return noted(
       dateWord,
-      numberFor("date", dateWord, `${reading.kind}:${reading.key}`),
+      numberFor("date", "unclearDate", `${reading.kind}:${reading.key}`),
     );
   };
 
@@ -2293,6 +4153,7 @@ export function removeMore(
     settings.labels.manual,
     manual.length + 1,
     new Set(removed.map((part) => baseOf(part.replacement))),
+    (settings.otherLanguages ?? []).map((other) => other.labels.manual),
   ).replacement;
   // Everything already decided stays as it was; only the new part is new.
   // A flagged word stays flagged unless the new part takes it.
@@ -2342,6 +4203,87 @@ export function parsePlaceholder(
 const PLACEHOLDER_SHAPE =
   /\[([^\][,\d\n][^\][,\n]*?) (\d+)(?:, ([^\][\n]+))?\]/gu;
 
+/** What one of this export's placeholders says (#215): its number and its
+ * note, read back from the words it was written with. Null when it is not
+ * one of these words' placeholders (a custom label, say): it is then put
+ * back only as written. */
+interface Mark {
+  number: number;
+  ageOver90?: true;
+  daysAfter?: { days: number; ref: number };
+}
+
+function readMark(
+  replacement: string,
+  word: string,
+  dateWord: string,
+  notes: PlaceholderNotes,
+): Mark | null {
+  const head = `[${word} `;
+  if (!replacement.startsWith(head) || !replacement.endsWith("]")) return null;
+  const inner = /^(\d+)(?:, ([^]+))?$/u.exec(
+    replacement.slice(head.length, -1),
+  );
+  if (!inner) return null;
+  const number = Number(inner[1]);
+  const note = inner[2];
+  if (note === undefined) return { number };
+  if (note === notes.ageOver90) return { number, ageOver90: true };
+  // A gap note: find its two numbers by writing it again. A language may
+  // group the digits of a long gap ("1,234", "1 234").
+  const values = new Set<number>();
+  for (const run of note.matchAll(/\d+(?:[,.   ]\d{3})*/gu)) {
+    values.add(Number(run[0].replace(/\D/gu, "")));
+    for (const digits of run[0].match(/\d+/gu) ?? [])
+      values.add(Number(digits));
+  }
+  for (const days of values)
+    for (const ref of values)
+      if (notes.daysAfter(days, dateWord, ref) === note)
+        return { number, daysAfter: { days, ref } };
+  return null;
+}
+
+/** One of this export's placeholders as each language writes it: the same
+ * kind, number and note, the word from one language and the note from any
+ * (an answer may translate one and not the other). The first language is
+ * the export's own. A word that is another kind's in some language is used
+ * only when it is the export's own word for this kind. */
+function spellings(
+  part: Removed,
+  languages: PlaceholderVocabulary[],
+  kindsOf: Map<string, Set<RemovedKind>>,
+): string[] {
+  const kind: RemovedKind = part.kind === "date" ? "unclearDate" : part.kind;
+  const [own] = languages;
+  const mark = readMark(
+    part.replacement,
+    own.labels[kind],
+    own.labels.unclearDate,
+    own.notes,
+  );
+  if (!mark) return [];
+  const noteIn = (language: PlaceholderVocabulary) =>
+    mark.ageOver90
+      ? language.notes.ageOver90
+      : mark.daysAfter
+        ? language.notes.daysAfter(
+            mark.daysAfter.days,
+            language.labels.unclearDate,
+            mark.daysAfter.ref,
+          )
+        : undefined;
+  const result = new Set<string>();
+  for (const language of languages) {
+    const word = language.labels[kind];
+    if ((kindsOf.get(word)?.size ?? 0) > 1 && word !== own.labels[kind])
+      continue;
+    for (const noteLanguage of languages)
+      result.add(noted(word, mark.number, noteIn(noteLanguage)));
+  }
+  return [...result];
+}
+
 /** One stretch of a pasted answer: as it was, put back, or placeholder-shaped
  * text that is not one of this export's. */
 export interface RestoredPart {
@@ -2362,12 +4304,21 @@ export interface RestoredPart {
  * spellings comes back as the first one. Ambiguous placeholders from older
  * snapshots (literal source markers or conflicting manual IDs) stay
  * unresolved, and are flagged.
+ *
+ * The answer may write a placeholder in another of the app's languages
+ * (#215): the AI translated it, or was asked to answer in another language.
+ * It is put back when it is the same mark, word, number and note, in one of
+ * `otherLanguages`: "[DATE 2, 14 jours après DATE 1]" for "[DATE 2, 14 days
+ * after DATE 1]". A word that means another kind in another language is
+ * read only in this export's own words, and a mark that any language's
+ * wording of it already shows in the document stays unresolved.
  */
 export function restoreChecked(
   answer: string,
   deidentified: Deidentified,
 ): { text: string; parts: RestoredPart[]; flagged: string[] } {
   const back = new Map<string, string>();
+  const firstPart = new Map<string, Removed>();
   const manualTokens = new Set(
     deidentified.onDevice.removed
       .filter((part) => part.kind === "manual")
@@ -2385,22 +4336,58 @@ export function restoreChecked(
       previous !== part.original
     )
       conflictingManual.add(part.replacement);
-    if (previous === undefined) back.set(part.replacement, part.original);
+    if (previous === undefined) {
+      back.set(part.replacement, part.original);
+      firstPart.set(part.replacement, part);
+    }
   }
-  const source = deidentified.onDevice.source;
+  const { source, labels, notes } = deidentified.onDevice;
+  const languages: PlaceholderVocabulary[] = [
+    { labels, notes },
+    ...(deidentified.onDevice.otherLanguages ?? []),
+  ];
+  // Each placeholder of this export as every language writes it (#215).
+  const spelled = new Map<string, string[]>();
+  if (languages.length > 1) {
+    const kindsOf = new Map<string, Set<RemovedKind>>();
+    for (const language of languages)
+      for (const kind of Object.keys(language.labels) as RemovedKind[]) {
+        const word = language.labels[kind];
+        kindsOf.set(word, (kindsOf.get(word) ?? new Set()).add(kind));
+      }
+    for (const [replacement, part] of firstPart)
+      spelled.set(replacement, spellings(part, languages, kindsOf));
+  }
   for (const part of deidentified.onDevice.removed) {
     // Older snapshots may reuse a literal marker from the source. An answer
     // cannot tell its occurrences apart: leave that marker unresolved rather
     // than insert a person's detail into literal text. New allocations avoid
-    // that ambiguity.
-    const base = baseOf(part.replacement);
+    // that ambiguity, in every language's wording of the mark.
+    const bases = [
+      part.replacement,
+      ...(spelled.get(part.replacement) ?? []),
+    ].map(baseOf);
     if (
       conflictingManual.has(part.replacement) ||
-      source.includes(base) ||
-      source.includes(base.slice(0, -1) + ",")
+      bases.some(
+        (base) =>
+          source.includes(base) || source.includes(base.slice(0, -1) + ","),
+      )
     )
       back.delete(part.replacement);
   }
+  // The other languages' spellings of what can be put back; null when two
+  // details would share one (flagged, never guessed).
+  const elsewhere = new Map<string, string | null>();
+  for (const [replacement, original] of back)
+    for (const spelling of spelled.get(replacement) ?? []) {
+      if (spelling === replacement) continue;
+      const seen = elsewhere.get(spelling);
+      const clash =
+        (seen !== undefined && seen !== original) ||
+        (firstPart.has(spelling) && back.get(spelling) !== original);
+      elsewhere.set(spelling, clash ? null : original);
+    }
   const parts: RestoredPart[] = [];
   const flagged: string[] = [];
   let at = 0;
@@ -2414,9 +4401,9 @@ export function restoreChecked(
   // A near miss is flagged too: this export's label words followed by a
   // number, in brackets or parentheses with any spacing and case, or bare in
   // capitals ("DATE 1" in a sentence). An answer often refers to a mark that
-  // way, and it must not pass as "all matched".
+  // way, and it must not pass as "all matched". Every language's words count.
   const labelWords = [
-    ...new Set(Object.values(deidentified.onDevice.labels)),
+    ...new Set(languages.flatMap((language) => Object.values(language.labels))),
   ].sort((x, y) => y.length - x.length);
   const caseless = (word: string) =>
     [...word]
@@ -2436,8 +4423,11 @@ export function restoreChecked(
   );
   for (const found of answer.matchAll(pattern)) {
     plain(found.index);
+    const translated = elsewhere.get(found[0]);
     if (found[1] !== undefined && found[1] !== "") {
       parts.push({ text: back.get(found[1]) ?? found[1], kind: "restored" });
+    } else if (typeof translated === "string") {
+      parts.push({ text: translated, kind: "restored" });
     } else {
       parts.push({ text: found[0], kind: "flagged" });
       flagged.push(found[0]);

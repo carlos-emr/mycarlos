@@ -777,6 +777,8 @@ export const MESSAGE_KEYS = [
   "ai.preferences.body",
   "ai.preferences.notInstalled",
   "ai.working",
+  "ai.summary.ready",
+  "ai.explain.ready",
   "ai.failed",
   "ai.error.memory",
   "ai.error.busy",
@@ -1831,6 +1833,8 @@ const FLUENT_IDS_BY_KEY = {
   "ai.preferences.body": "ai-preferences-body",
   "ai.preferences.notInstalled": "ai-preferences-notInstalled",
   "ai.working": "ai-working",
+  "ai.summary.ready": "ai-summary-ready",
+  "ai.explain.ready": "ai-explain-ready",
   "ai.failed": "ai-failed",
   "ai.error.memory": "ai-error-memory",
   "ai.error.busy": "ai-error-busy",
@@ -2897,6 +2901,8 @@ export interface MessageArgsByKey {
   "ai.preferences.body": undefined;
   "ai.preferences.notInstalled": undefined;
   "ai.working": undefined;
+  "ai.summary.ready": undefined;
+  "ai.explain.ready": undefined;
   "ai.failed": undefined;
   "ai.error.memory": undefined;
   "ai.error.busy": undefined;
