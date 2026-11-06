@@ -188,29 +188,33 @@ fn cpu_times() -> Option<CpuTimes> {
     }
 }
 
-/// How many of `cores` were busy between two samples.
-pub(crate) fn busy_cores(before: CpuTimes, after: CpuTimes, cores: usize) -> Option<f64> {
+/// The share of the computer's processor time that was busy between two samples (0 to 1).
+pub(crate) fn busy_share(before: CpuTimes, after: CpuTimes) -> Option<f64> {
     let total = after.total.checked_sub(before.total)?;
     let busy = after.busy.checked_sub(before.busy)?;
-    (total > 0).then(|| busy.min(total) as f64 / total as f64 * cores as f64)
+    (total > 0).then(|| busy.min(total) as f64 / total as f64)
 }
 
-/// How many cores the computer keeps busy now, over [`LOAD_SAMPLE`]. Between answers the
-/// model's own threads rest, so this is the rest of the computer's work.
-fn sample_busy_cores(cores: usize) -> Option<f64> {
+/// How busy the computer is now, over [`LOAD_SAMPLE`], as a share of all its processors (the
+/// counters are the whole computer's). Between answers the model's own threads rest, so this
+/// is the rest of the computer's work.
+fn sample_busy_share() -> Option<f64> {
     let before = cpu_times()?;
     std::thread::sleep(LOAD_SAMPLE);
-    busy_cores(before, cpu_times()?, cores)
+    busy_share(before, cpu_times()?)
 }
 
-/// The threads to write an answer on: all of `most` when the computer has that many cores
-/// free and half a core to spare, else [`BUSY_THREADS`]. An answer is written a token at a
-/// time, and each token waits for its slowest thread: on a busy computer, threads that have to
-/// share cores make it 2 to 4 times slower than fewer threads (measured 5 Nov 2026). Unknown
-/// load counts as quiet.
+/// The threads to write an answer on: all of `most` when, of the `cores` this process may use,
+/// that many and half a core more are free, else [`BUSY_THREADS`]. The computer's `busy` share
+/// is taken to hold on these cores too, so a process kept to some of the computer's cores
+/// compares like with like. An answer is written a token at a time, and each token waits for
+/// its slowest thread: on a busy computer, threads that have to share cores make it 2 to 4 times
+/// slower than fewer threads (measured 5 Nov 2026). Unknown load counts as quiet.
 pub(crate) fn generation_threads(most: u32, cores: usize, busy: Option<f64>) -> u32 {
     match busy {
-        Some(busy) if (cores as f64 - busy) < f64::from(most) + 0.5 => most.min(BUSY_THREADS),
+        Some(busy) if (1.0 - busy.clamp(0.0, 1.0)) * (cores as f64) < f64::from(most) + 0.5 => {
+            most.min(BUSY_THREADS)
+        }
         _ => most,
     }
 }
@@ -820,6 +824,21 @@ impl Runner {
         if !self.is_current(ticket) {
             return Err(RunnerError::Cancelled);
         }
+        // The computer's load, sampled before the process is held, so that a cancel, a stop or
+        // a lock never waits for it.
+        let forced = *self
+            .threads_override
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let chooses = matches!(tool, "summary" | "explain")
+            && forced.is_none()
+            && self
+                .sidecar
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .is_some_and(|running| running.generation_threads.is_some());
+        let busy = if chooses { sample_busy_share() } else { None };
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
         let Some(running) = slot.as_mut() else {
             return Err(RunnerError::NotRunning);
@@ -831,13 +850,9 @@ impl Runner {
             object.insert("tool".to_owned(), serde_json::json!(tool));
             // The threads to write this answer on, from the computer's load now.
             if let (Some(most), "summary" | "explain") = (running.generation_threads, tool) {
-                let forced = *self
-                    .threads_override
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
                 let threads = forced.unwrap_or_else(|| {
                     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-                    generation_threads(most, cores, sample_busy_cores(cores))
+                    generation_threads(most, cores, busy)
                 });
                 object.insert("threads".to_owned(), serde_json::json!(threads));
             }
@@ -1450,30 +1465,32 @@ mod tests {
     }
 
     #[test]
-    fn busy_cores_come_from_two_samples() {
+    fn the_busy_share_comes_from_two_samples() {
         let at = |busy, total| CpuTimes { busy, total };
-        assert_eq!(busy_cores(at(100, 1_000), at(400, 1_600), 6), Some(3.0));
-        assert_eq!(busy_cores(at(100, 1_000), at(100, 1_600), 4), Some(0.0));
+        assert_eq!(busy_share(at(100, 1_000), at(400, 1_600)), Some(0.5));
+        assert_eq!(busy_share(at(100, 1_000), at(100, 1_600)), Some(0.0));
         // Nothing elapsed, or a counter that went back: unknown.
-        assert_eq!(busy_cores(at(100, 1_000), at(100, 1_000), 4), None);
-        assert_eq!(busy_cores(at(400, 1_600), at(100, 1_000), 4), None);
+        assert_eq!(busy_share(at(100, 1_000), at(100, 1_000)), None);
+        assert_eq!(busy_share(at(400, 1_600), at(100, 1_000)), None);
         #[cfg(any(target_os = "linux", windows))]
-        assert!(sample_busy_cores(4).is_some_and(|busy| (0.0..=4.0).contains(&busy)));
+        assert!(sample_busy_share().is_some_and(|busy| (0.0..=1.0).contains(&busy)));
     }
 
     #[test]
     fn an_answer_is_written_on_fewer_threads_when_the_computer_is_busy() {
-        // Six cores, at most four threads: four while one and a half cores are left over.
+        // Six cores, at most four threads: four while a quarter of the computer is busy.
         assert_eq!(generation_threads(4, 6, None), 4);
-        assert_eq!(generation_threads(4, 6, Some(0.5)), 4);
-        assert_eq!(generation_threads(4, 6, Some(1.5)), 4);
-        assert_eq!(generation_threads(4, 6, Some(1.6)), 2);
-        assert_eq!(generation_threads(4, 6, Some(6.0)), 2);
-        // Four cores, at most three: busy as soon as half a core is taken.
-        assert_eq!(generation_threads(3, 4, Some(0.4)), 3);
-        assert_eq!(generation_threads(3, 4, Some(0.6)), 2);
-        // Never more than the most.
-        assert_eq!(generation_threads(1, 2, Some(1.9)), 1);
+        assert_eq!(generation_threads(4, 6, Some(0.1)), 4);
+        assert_eq!(generation_threads(4, 6, Some(0.25)), 4);
+        assert_eq!(generation_threads(4, 6, Some(0.26)), 2);
+        assert_eq!(generation_threads(4, 6, Some(1.0)), 2);
+        // Kept to four of the computer's cores, at most three: the same share counts on them.
+        assert_eq!(generation_threads(3, 4, Some(0.1)), 3);
+        assert_eq!(generation_threads(3, 4, Some(0.15)), 2);
+        // Never more than the most; a share out of range is taken at its bound.
+        assert_eq!(generation_threads(1, 2, Some(0.95)), 1);
+        assert_eq!(generation_threads(4, 6, Some(-1.0)), 4);
+        assert_eq!(generation_threads(4, 6, Some(7.0)), 2);
     }
 
     fn idle_config() -> RunnerConfig {

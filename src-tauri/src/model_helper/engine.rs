@@ -168,6 +168,10 @@ impl Engine {
         // The old context goes first: with the real model's weights, two at once would not fit
         // the helper's memory cap. Its kept prefixes go with it.
         self.prefixes.clear();
+        // Zeroed, then dropped: nothing of the last answer stays in the memory it frees.
+        if let Some(context) = self.context.as_mut() {
+            context.clear_kv_cache();
+        }
         self.context = None;
         let made = |threads| {
             self.model
@@ -179,9 +183,14 @@ impl Engine {
             self.threads = threads;
             return Ok(());
         }
-        // Back to the threads it had; with no context at all, the helper ends after answering.
+        // Back to the threads it had, and this answer is written on them; with no context at
+        // all, the request fails and the helper ends after answering.
         self.context = made(self.threads);
-        Err(failed("context"))
+        if self.context.is_some() {
+            Ok(())
+        } else {
+            Err(failed("context"))
+        }
     }
 
     /// Whether the engine still has its context (see [`Engine::use_threads`]).
