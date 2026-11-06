@@ -513,6 +513,16 @@ network or to the patient's other files (#218), on Windows and Linux computers w
 Macs come later (#211). The default model is Qwen3.5 4B (Q4_K_M), chosen on 5 November 2026 after the comparison of small
 open models on made-up documents.
 
+**Several models, and models not on the list (#276).** More than one model may be kept, and the
+patient picks the one in use. That choice is kept in `models-in-use.json`, beside the models folder
+and outside the vault. It holds public model hashes and sizes only. For a model the patient added
+that is not on myCarlos's list, it also holds the number it is shown by ("Your model 2") and what
+its trial start found. The file's own name is never stored: on disk it is named after its hash. A
+model not on the list runs only once the open vault approves it, at its first answer. The vault
+keeps that approval as the model's hash, encrypted with the rest (vault format 13). Nothing about
+any of this leaves the computer. Removing a model removes its file and its record outside the
+vault; an approval in the vault stays until 32 newer ones have pushed it out.
+
 **The answers.** Each is marked "Written by AI and may be wrong. Check with your doctor." Answers
 are saved in the vault, encrypted, with the document, the tool, the model and the date (#212). A newer
 answer for the same document, tool and language (and term) is shown in place of the older one,

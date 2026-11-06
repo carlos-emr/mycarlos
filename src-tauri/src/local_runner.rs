@@ -204,6 +204,9 @@ pub(crate) enum RunnerError {
     },
     /// The process could not be started, or gave no hello in time.
     Start(String),
+    /// The process ended before its hello with this exit code: the helper's says why
+    /// (`model_helper::exit`). One killed by a signal, or that gave no code, is `Start`.
+    Exited(i32),
     /// No model process is running (start it first).
     NotRunning,
     /// The vault locked, or the reader left the document, while it worked.
@@ -326,6 +329,33 @@ impl Process {
         }
     }
 
+    /// Its exit or abnormal-termination diagnostic, waiting at most `within`.
+    /// `None` means no readable terminal status within the bound.
+    fn exit_code_within(&mut self, within: Duration) -> Option<RunnerError> {
+        let deadline = Instant::now() + within;
+        loop {
+            let ended = match self {
+                Self::Plain(child) => child.try_wait().map(|status| {
+                    status.map(|s| {
+                        s.code().map_or_else(
+                            || RunnerError::Start(format!("abnormal termination: {s}")),
+                            RunnerError::Exited,
+                        )
+                    })
+                }),
+                #[cfg(windows)]
+                Self::Confined(helper) => {
+                    helper.try_wait().map(|code| code.map(RunnerError::Exited))
+                }
+            };
+            match ended {
+                Ok(Some(error)) => return Some(error),
+                Ok(None) if Instant::now() < deadline => std::thread::sleep(CANCEL_POLL / 5),
+                _ => return None,
+            }
+        }
+    }
+
     /// Stops the process and waits for it, so that nothing of it is left.
     fn stop(&mut self) {
         match self {
@@ -403,6 +433,8 @@ const HELLO: &str = crate::model_helper::CONTRACT;
 pub(crate) const PAGE_SEPARATOR: &str = "\n\n";
 /// How often a waiting request looks at its ticket.
 const CANCEL_POLL: Duration = Duration::from_millis(50);
+/// How long a process whose output closed before its hello is given to end, for its exit code.
+const EXIT_WAIT: Duration = Duration::from_secs(2);
 
 impl Runner {
     pub(crate) fn new(config: RunnerConfig) -> Self {
@@ -436,7 +468,15 @@ impl Runner {
         }
     }
 
-    fn is_current(&self, ticket: Ticket) -> bool {
+    /// The existing cancellation epoch, without ending another admitted operation.
+    pub(crate) fn claim(&self) -> Ticket {
+        Ticket {
+            runner: self as *const Self as usize,
+            generation: self.generation.load(Ordering::SeqCst),
+        }
+    }
+
+    pub(crate) fn is_current(&self, ticket: Ticket) -> bool {
         ticket.runner == self as *const Self as usize
             && self.generation.load(Ordering::SeqCst) == ticket.generation
     }
@@ -465,9 +505,26 @@ impl Runner {
         probe: &dyn MemoryProbe,
         prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
     ) -> Result<ModelInfo, RunnerError> {
-        let generation = self.generation.load(Ordering::SeqCst);
-        let wanted = || self.generation.load(Ordering::SeqCst) == generation;
+        let ticket = Ticket {
+            runner: self as *const Self as usize,
+            generation: self.generation.load(Ordering::SeqCst),
+        };
+        self.start_for(ticket, probe, prepare)
+    }
+
+    /// Starts only for the caller's existing claim, including cancellation before preparation.
+    /// Trials take their claim before the copy/verification, so Cancel or lock cannot be lost.
+    pub(crate) fn start_for(
+        &self,
+        ticket: Ticket,
+        probe: &dyn MemoryProbe,
+        prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
+    ) -> Result<ModelInfo, RunnerError> {
+        let wanted = || self.is_current(ticket);
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
+        if !wanted() {
+            return Err(RunnerError::Cancelled);
+        }
         if let Some(running) = slot.as_mut() {
             if running.process.running() {
                 return Ok(running.model.clone());
@@ -678,6 +735,16 @@ impl Runner {
         Ok((text, model))
     }
 
+    /// The trial request of a model the patient added (#276), under `ticket`: `Ok` when the
+    /// helper read its template around a FAKE request and wrote a token.
+    pub(crate) fn trial(&self, ticket: Ticket) -> Result<(), RunnerError> {
+        let (answer, _model) = self.ask(ticket, "trial", serde_json::json!({}))?;
+        match answer.text.as_deref() {
+            Some("ok") => Ok(()),
+            _ => Err(RunnerError::Protocol("trial not ok".to_owned())),
+        }
+    }
+
     /// Test builds only: asks the stub helper what its sandbox allows (`model_helper`).
     #[cfg(all(feature = "ai-helper-stub", any(target_os = "linux", windows)))]
     pub(crate) fn probe(&self, ticket: Ticket, what: &str) -> Result<String, RunnerError> {
@@ -785,7 +852,7 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
         let now = Instant::now();
         if now >= deadline {
             sidecar.stop();
-            return Err(RunnerError::Start("no hello in time".to_owned()));
+            return Err(RunnerError::Timeout);
         }
         match sidecar.lines.recv_timeout(CANCEL_POLL.min(deadline - now)) {
             Ok(Ok(line)) => break line,
@@ -799,8 +866,13 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
             }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => {
+                // Its output closed: it has ended, or is ending. Its exit code says why.
+                let code = sidecar.process.exit_code_within(EXIT_WAIT);
                 sidecar.stop();
-                return Err(RunnerError::Start("ended before its hello".to_owned()));
+                return Err(code.map_or_else(
+                    || RunnerError::Start("ended before its hello".to_owned()),
+                    |error| error,
+                ));
             }
         }
     };
@@ -1033,7 +1105,12 @@ fn exchange(
             Ok(Err(error)) => return Err(RunnerError::Protocol(format!("cannot read: {error}"))),
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => {
-                return Err(RunnerError::Protocol("ended without answering".to_owned()))
+                return Err(running
+                    .process
+                    .exit_code_within(EXIT_WAIT)
+                    .unwrap_or_else(|| {
+                        RunnerError::Protocol("ended without answering".to_owned())
+                    }));
             }
         }
     }
@@ -1570,6 +1647,17 @@ mod tests {
         }
 
         #[test]
+        fn a_model_that_ends_before_its_hello_gives_its_exit_code() {
+            // The helper's code says why (`model_helper::exit`): a trial start reads it.
+            let runner = Runner::new(config(&["--exit", "8"], GIB));
+            assert_eq!(
+                runner.start(&Fixed(Some(8 * GIB))),
+                Err(RunnerError::Exited(8))
+            );
+            assert!(!runner.is_running());
+        }
+
+        #[test]
         fn a_model_that_never_greets_is_stopped_after_the_start_timeout() {
             let mut config = config(&["--mute"], GIB);
             config.start_timeout = Duration::from_millis(500);
@@ -1577,7 +1665,7 @@ mod tests {
             let started_at = Instant::now();
             assert_eq!(
                 runner.start(&Fixed(Some(8 * GIB))),
-                Err(RunnerError::Start("no hello in time".to_owned()))
+                Err(RunnerError::Timeout)
             );
             assert!(started_at.elapsed() < Duration::from_secs(5));
             assert!(!runner.is_running());
@@ -1725,10 +1813,11 @@ mod tests {
             let mut limited = config(&["--allocate", "536870912"], GIB);
             limited.memory_limit_bytes = Some(256 * 1024 * 1024);
             let runner = Runner::new(limited);
-            assert_eq!(
+            // Python's MemoryError ends it with a code; an abort ends it with a signal.
+            assert!(matches!(
                 runner.start(&Fixed(Some(8 * GIB))),
-                Err(RunnerError::Start("ended before its hello".to_owned()))
-            );
+                Err(RunnerError::Exited(_) | RunnerError::Start(_))
+            ));
             assert!(!runner.is_running());
             // The same model with no limit starts.
             let free = Runner::new(config(&["--allocate", "536870912"], GIB));

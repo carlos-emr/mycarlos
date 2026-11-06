@@ -24,7 +24,9 @@
 //! The answers are bounded: a grammar shapes the summary as `{"sentences":[{"text","quote"}]}`
 //! with at most [`MAX_SENTENCES`] sentences of bounded length, and every answer stops after
 //! [`SUMMARY_TOKENS`] or [`EXPLAIN_TOKENS`]. The document's words never reach the model as
-//! control tokens. Nothing is written anywhere: llama.cpp's log is discarded, stderr goes
+//! control tokens according to the file's own token types. For unchecked vocabularies this
+//! is not a prompt-integrity guarantee; the bounded plain-text answer handling remains the
+//! defence (AI-04/AI-05). Nothing is written anywhere: llama.cpp's log is discarded, stderr goes
 //! nowhere, and there are no core dumps.
 //!
 //! A stub mode answers canned FAKE text after a delay, so that CI drives the real launcher,
@@ -95,6 +97,10 @@ pub(crate) mod exit {
     pub(crate) const UNSUPPORTED_PLATFORM: i32 = 6;
     /// The model could not be loaded.
     pub(crate) const NO_MODEL: i32 = 7;
+    /// The model has no chat template, or one llama.cpp's own code does not know (#276).
+    pub(crate) const NO_TEMPLATE: i32 = 8;
+    /// Its context could not be made, within the helper's memory limit (#276).
+    pub(crate) const NO_CONTEXT: i32 = 9;
     /// Arguments it does not know, the stub's among them where it is not built.
     pub(crate) const ARGUMENTS: i32 = 64;
 }
@@ -301,9 +307,27 @@ enum Request {
         context: String,
         lang: String,
     },
+    /// The trial start of a model the patient added (#276): its template around a FAKE request
+    /// and one token, under the answer-stage sandbox, then the parent stops it.
+    Trial { id: u64 },
     /// Test builds only: reports what the sandbox lets it do (see `stub`).
     #[cfg(feature = "ai-helper-stub")]
     Probe { id: u64, what: String },
+}
+
+/// What a trial start asks (#276): FAKE words, nothing of a patient's.
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+pub(crate) const TRIAL_REQUEST: &str = "FAKE trial request: answer with one word.";
+
+/// The exit code for why the model could not be made ready (`engine::Engine::load`'s word):
+/// its template, its context, or anything else about the file.
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+fn load_exit(why: &str) -> i32 {
+    match why {
+        "template" => exit::NO_TEMPLATE,
+        "context" => exit::NO_CONTEXT,
+        _ => exit::NO_MODEL,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -654,8 +678,9 @@ fn serve_model(settings: &Settings) -> i32 {
     if confine::before_load(&settings.model).is_err() {
         return exit::NO_SANDBOX;
     }
-    let Ok(mut engine) = engine::Engine::load(settings) else {
-        return exit::NO_MODEL;
+    let mut engine = match engine::Engine::load(settings) {
+        Ok(engine) => engine,
+        Err(why) => return load_exit(&why),
     };
     if confine::after_load(&settings.model).is_err() {
         return exit::NO_SANDBOX;
@@ -694,6 +719,14 @@ fn serve_model(settings: &Settings) -> i32 {
                 Ok(text) => serde_json::to_string(&TextAnswer {
                     id,
                     text,
+                    stats: Some(engine.stats()),
+                }),
+                Err(error) => serde_json::to_string(&ErrorAnswer { id, error }),
+            },
+            Ok(Request::Trial { id }) => match engine.trial() {
+                Ok(()) => serde_json::to_string(&TextAnswer {
+                    id,
+                    text: "ok".to_owned(),
                     stats: Some(engine.stats()),
                 }),
                 Err(error) => serde_json::to_string(&ErrorAnswer { id, error }),
@@ -767,6 +800,11 @@ mod stub {
                         term.chars().take(40).collect::<String>()
                     ),
                 }),
+                Request::Trial { id } => serde_json::to_string(&TextAnswer {
+                    id,
+                    text: "ok".to_owned(),
+                    stats: None,
+                }),
                 Request::Probe { id, what } => match what.as_str() {
                     "hang" => loop {
                         std::thread::sleep(std::time::Duration::from_secs(60));
@@ -810,6 +848,35 @@ mod tests {
             name: "FAKE model".to_owned(),
             sha256: "ab".repeat(32),
         }
+    }
+
+    #[test]
+    fn a_load_failure_says_why_in_its_exit_code_and_a_trial_is_a_request_of_its_own() {
+        assert_eq!(load_exit("template"), exit::NO_TEMPLATE);
+        assert_eq!(load_exit("context"), exit::NO_CONTEXT);
+        assert_eq!(load_exit("model"), exit::NO_MODEL);
+        assert_eq!(load_exit("backend"), exit::NO_MODEL);
+        let codes = [
+            exit::NO_SANDBOX,
+            exit::INPUT,
+            exit::OUTPUT,
+            exit::UNSUPPORTED_CPU,
+            exit::UNSUPPORTED_PLATFORM,
+            exit::NO_MODEL,
+            exit::NO_TEMPLATE,
+            exit::NO_CONTEXT,
+            exit::ARGUMENTS,
+        ];
+        let mut unique = codes.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), codes.len());
+        assert!(matches!(
+            serde_json::from_str::<Request>(r#"{"tool":"trial","id":4}"#),
+            Ok(Request::Trial { id: 4 })
+        ));
+        assert!(serde_json::from_str::<Request>(r#"{"tool":"trial","id":4,"text":"x"}"#).is_err());
+        assert!(!TRIAL_REQUEST.contains(SLOT));
     }
 
     #[test]

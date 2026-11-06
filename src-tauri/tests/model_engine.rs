@@ -119,9 +119,19 @@ impl Gguf {
     }
 }
 
+/// The tiny model's chat template: ChatML, which llama.cpp's own code knows.
+const CHATML: &str = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\\n' + \
+     message['content'] + '<|im_end|>' + '\\n'}}{% endfor %}{% if add_generation_prompt %}\
+     {{ '<|im_start|>assistant\\n' }}{% endif %}";
+
 /// A one-layer llama-architecture model, 64 wide, with a byte vocabulary: `"`, `a`, every
 /// other byte, then unknown, start and end. Weights are small pseudo-random numbers made here.
 fn tiny_model() -> Vec<u8> {
+    tiny_model_with(Some(CHATML))
+}
+
+/// [`tiny_model`] with `template` as its chat template, or none.
+fn tiny_model_with(template: Option<&str>) -> Vec<u8> {
     const EMBED: u64 = 64;
     const FEED: u64 = 128;
     const HEADS: u32 = 4;
@@ -152,12 +162,9 @@ fn tiny_model() -> Vec<u8> {
     gguf.u32("tokenizer.ggml.unknown_token_id", vocab as u32 - 3);
     gguf.u32("tokenizer.ggml.bos_token_id", vocab as u32 - 2);
     gguf.u32("tokenizer.ggml.eos_token_id", vocab as u32 - 1);
-    gguf.text(
-        "tokenizer.chat_template",
-        "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\\n' + \
-         message['content'] + '<|im_end|>' + '\\n'}}{% endfor %}{% if add_generation_prompt %}\
-         {{ '<|im_start|>assistant\\n' }}{% endif %}",
-    );
+    if let Some(template) = template {
+        gguf.text("tokenizer.chat_template", template);
+    }
     // A fixed-seed xorshift: small weights, the same on every run.
     let mut state: u32 = 0x1234_5678;
     let mut weight = move || {
@@ -284,7 +291,174 @@ fn a_model_file_that_is_not_a_model_ends_the_helper_before_it_greets() {
     let error = ModelRunner::start(executable(), &model)
         .err()
         .expect("refused");
-    assert!(error.contains("ended before its hello"), "{error}");
+    // The helper's exit code for a model it could not load (`model_helper::exit::NO_MODEL`).
+    assert_eq!(error, "Exited(7)");
+}
+
+#[test]
+fn a_trial_start_passes_a_model_whose_template_llama_cpp_knows() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = model_file(dir.path(), &tiny_model());
+    assert_eq!(ModelRunner::trial(executable(), &model), Ok(()));
+}
+
+#[test]
+fn a_model_with_no_template_or_an_unknown_one_is_refused_never_taken_as_chatml() {
+    let dir = tempfile::tempdir().unwrap();
+    // llama.cpp would quietly use ChatML for a null template: the helper never passes one.
+    let none = model_file(dir.path(), &tiny_model_with(None));
+    assert_eq!(
+        ModelRunner::trial(executable(), &none),
+        Err("Template".to_owned())
+    );
+    // An ordinary start refuses it too, before its hello (`model_helper::exit::NO_TEMPLATE`).
+    assert_eq!(
+        ModelRunner::start(executable(), &none).err().as_deref(),
+        Some("Exited(8)")
+    );
+    let unknown = model_file(
+        dir.path(),
+        &tiny_model_with(Some("{{ FAKE unknown template }}")),
+    );
+    assert_eq!(
+        ModelRunner::trial(executable(), &unknown),
+        Err("Template".to_owned())
+    );
+}
+
+/// Retained recipes reconstruct exact tiny fixtures; unexpected process failures stay visible.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LoaderCase {
+    name: String,
+    template: String,
+    expected: Option<String>,
+    cut: Option<usize>,
+    trim: Option<usize>,
+    offset: Option<usize>,
+    hex: Option<String>,
+}
+
+fn loader_corpus() -> Vec<(String, Vec<u8>, Option<String>)> {
+    let cases: Vec<LoaderCase> =
+        serde_json::from_str(include_str!("fixtures/gguf-loader/corpus.json")).unwrap();
+    cases
+        .into_iter()
+        .map(|case| {
+            let mut bytes = match case.template.as_str() {
+                "chatml" => tiny_model(),
+                "none" => tiny_model_with(None),
+                "unknown" => tiny_model_with(Some("{{ FAKE unknown template }}")),
+                other => panic!("unknown fixture template {other}"),
+            };
+            if let Some(cut) = case.cut {
+                bytes.truncate(cut);
+            }
+            if let Some(trim) = case.trim {
+                bytes.truncate(bytes.len() - trim);
+            }
+            if let (Some(offset), Some(hex)) = (case.offset, case.hex) {
+                assert!(hex.len().is_multiple_of(2));
+                for (index, pair) in hex.as_bytes().chunks_exact(2).enumerate() {
+                    bytes[offset + index] =
+                        u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
+                }
+            }
+            (case.name, bytes, case.expected)
+        })
+        .collect()
+}
+
+fn expected_loader_result(result: &Result<(), String>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(reason) => matches!(reason.as_str(), "Model" | "Template" | "Context"),
+    }
+}
+
+fn check_loader_case(
+    dir: &std::path::Path,
+    name: &str,
+    bytes: &[u8],
+    expected: Option<&str>,
+) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    let hash = format!("{:x}", Sha256::digest(bytes));
+    let path = dir.join(format!("{hash}.gguf"));
+    std::fs::write(&path, bytes).unwrap(); // Retain before parsing, including a parent interruption.
+    #[cfg(windows)]
+    assert!(mycarlos_tauri_poc_lib::model_folder_for_tests(dir));
+    let result = ModelRunner::trial_bounded(
+        executable(),
+        &path,
+        std::time::Duration::from_secs(5),
+        std::time::Duration::from_secs(5),
+    );
+    if !expected_loader_result(&result) {
+        std::fs::write(
+            path.with_extension("failure.txt"),
+            format!("{name}: {result:?}\n"),
+        )
+        .unwrap();
+        return Err(format!("loader failure {name}, input {hash}: {result:?}"));
+    }
+    if let Some(expected) = expected {
+        let actual = result.as_ref().err().map_or("ok", String::as_str);
+        if actual != expected {
+            return Err(format!("{name}, {hash}: expected {expected}, got {actual}"));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn retained_loader_corpus_has_only_success_or_documented_refusals() {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, bytes, expected) in loader_corpus() {
+        if let Err(error) = check_loader_case(dir.path(), &name, &bytes, expected.as_deref()) {
+            let retained = dir.keep();
+            panic!("{error}; exact inputs retained in {}", retained.display());
+        }
+    }
+}
+
+/// An explicit, bounded campaign; all exact inputs and unexpected results are retained.
+/// This is mutation validation, not coverage-guided fuzzing.
+#[test]
+#[ignore = "coordinated bounded mutation campaign; needs private MYCARLOS_FUZZ_OUTPUT"]
+fn loader_mutation_campaign() {
+    let output = std::path::PathBuf::from(
+        std::env::var_os("MYCARLOS_FUZZ_OUTPUT").expect("private retained output directory"),
+    );
+    std::fs::create_dir_all(&output).unwrap();
+    let count: usize = std::env::var("MYCARLOS_FUZZ_CASES")
+        .map_or(128, |value| value.parse().expect("case count"));
+    assert!((1..=4096).contains(&count));
+    let corpus = loader_corpus();
+    for (name, bytes, expected) in &corpus {
+        check_loader_case(&output, name, bytes, expected.as_deref())
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
+    let mut state = 0x2765_1106u32;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        state
+    };
+    for index in 0..count {
+        let (_, mut bytes, _) = corpus[index % corpus.len()].clone();
+        if index % 4 == 0 {
+            bytes.truncate(next() as usize % bytes.len());
+        } else {
+            for _ in 0..1 + next() % 8 {
+                let at = next() as usize % bytes.len();
+                bytes[at] = next() as u8;
+            }
+        }
+        check_loader_case(&output, &format!("mutation-{index}"), &bytes, None)
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
 }
 
 /// A real model from the environment over FAKE documents, for trying a model by hand:

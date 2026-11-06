@@ -36,6 +36,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
+mod approved_models;
 mod delivery;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
@@ -54,12 +55,13 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// keeps reading aids with their original; format 9 adds remote notice consent
 /// and push destinations (#192); format 10 adds the AI helper's answers (#72),
 /// objects of their own; format 11 caps the hidden answers apart from the
-/// shown ones (D13).
+/// shown ones (D13); format 13 keeps the patient's approvals of AI models
+/// myCarlos hasn't checked (#276; 12 is taken by another change).
 /// Formats 1–3 are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_AI_HIDDEN_CAP;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_APPROVED_MODELS;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -69,11 +71,14 @@ const MANIFEST_FORMAT_HISTORY: u32 = 3;
 /// most 32 per document, hidden ones included.
 const MANIFEST_FORMAT_AI_RESULTS: u32 = 10;
 /// The first format whose hidden AI answers have a cap of their own (D13):
-/// 32 shown and 96 hidden per document. The newest, so `VAULT_FORMAT` is this
-/// one. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
-/// taken at merge"): a renumber changes this line and the format's heading in
-/// VAULT_FORMAT.md, nothing else here.
+/// 32 shown and 96 hidden per document.
 const MANIFEST_FORMAT_AI_HIDDEN_CAP: u32 = 11;
+/// The first format that keeps the patient's approvals of AI models myCarlos
+/// hasn't checked (#276). The newest, so `VAULT_FORMAT` is this one. Its number
+/// is taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge"): a
+/// renumber changes this line and the format's heading in VAULT_FORMAT.md,
+/// nothing else here.
+const MANIFEST_FORMAT_APPROVED_MODELS: u32 = 13;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
@@ -608,6 +613,10 @@ struct Manifest {
         skip_serializing_if = "crate::document_notifications::RemoteNotices::is_empty"
     )]
     remote_notices: crate::document_notifications::RemoteNotices,
+    /// Format 13 (#276). The hashes of AI models myCarlos hasn't checked that the patient
+    /// approved in this vault (`approved_models`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    approved_models: Vec<String>,
 }
 
 /// Where the history's entries are, and what pins its chain: how many there
@@ -1330,6 +1339,7 @@ impl VaultStore {
                 portal_links: Vec::new(),
                 waiting_aids: Vec::new(),
                 remote_notices: Default::default(),
+                approved_models: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -4735,6 +4745,9 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             })
         })
     {
+        return Err(VaultError::Corrupt);
+    }
+    if !approved_models::valid(manifest) {
         return Err(VaultError::Corrupt);
     }
     // A waiting reading aid (format 8) shares the one delivery-ID space with filed deliveries.
@@ -9199,6 +9212,7 @@ mod tests {
             portal_links: Vec::new(),
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
+            approved_models: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -14919,6 +14933,7 @@ mod tests {
             portal_links: Vec::new(),
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
+            approved_models: Vec::new(),
         }
     }
 

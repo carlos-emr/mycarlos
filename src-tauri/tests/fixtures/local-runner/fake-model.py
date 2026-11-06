@@ -18,6 +18,11 @@ file or opens a connection. Modes, by argument:
   --quote-unread    adds a sentence quoting a page it did not read
   --read-fd         explains with the first bytes of descriptor 3
   --greet-after S   waits that long before greeting (for the lock-during-start test)
+  --exit N         exits with N before hello (expected refusal/abnormal-exit oracle)
+  --signal         SIGKILL before hello (crash oracle)
+  --trial-crash    SIGKILL at trial decode (crash oracle)
+  --trial-hang     never answers the trial (deadline oracle)
+  --trial-ready F  writes its PID to F at trial, then waits (cancel/lock test)
 """
 import json
 import sys
@@ -36,6 +41,12 @@ if "--spawn-child" in args:
     child = subprocess.Popen(["sleep", "600"])
     with open(args[args.index("--spawn-child") + 1], "w") as pid_file:
         pid_file.write(str(child.pid))
+if "--signal" in args:
+    import os
+    import signal
+    os.kill(os.getpid(), signal.SIGKILL)
+if "--exit" in args:
+    sys.exit(int(args[args.index("--exit") + 1]))
 if "--mute" in args:
     time.sleep(3600)
     sys.exit(0)
@@ -59,7 +70,19 @@ for line in sys.stdin:
         print(json.dumps({"id": request["id"], "error": "FAKE refusal " + "y" * 1000}),
               flush=True)
         continue
-    if request.get("tool") == "summary":
+    if request.get("tool") == "trial":
+        if "--trial-crash" in args:
+            import os
+            import signal
+            os.kill(os.getpid(), signal.SIGKILL)
+        if "--trial-ready" in args:
+            import os
+            with open(args[args.index("--trial-ready") + 1], "w") as marker:
+                marker.write(str(os.getpid()))
+        if "--trial-hang" in args or "--trial-ready" in args:
+            time.sleep(3600)
+        print(json.dumps({"id": request["id"], "text": "ok"}), flush=True)
+    elif request.get("tool") == "summary":
         pages = request.get("pages", [])
         read = pages if "--read-all" in args else pages[:1]
         text = "\n\n".join(page["text"] for page in read)

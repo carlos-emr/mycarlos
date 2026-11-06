@@ -6,6 +6,7 @@ use super::{
     read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
     ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
     CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    TRIAL_REQUEST,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -90,6 +91,10 @@ fn failed(what: &str) -> Failure {
     what.to_owned()
 }
 
+fn chat_message(role: &str, content: &str) -> Result<LlamaChatMessage, Failure> {
+    LlamaChatMessage::new(role.to_owned(), content.to_owned()).map_err(|_| failed("prompt"))
+}
+
 impl Engine {
     /// Loads the model the settings name, with its context. Runs inside the load sandbox.
     pub(super) fn load(settings: &Settings) -> Result<Self, Failure> {
@@ -111,9 +116,21 @@ impl Engine {
             LlamaModel::load_from_file(backend, &path, &params).map_err(|_| failed("model"))?;
         let model: &'static LlamaModel = Box::leak(Box::new(model));
         // Gemma 4's turns are written here; llama.cpp's built-in template code cannot apply its
-        // template. Every other model's own template is used.
+        // template. Every other model's own template is used: never a null one, which llama.cpp
+        // would quietly take as ChatML. A file with no template, or one llama.cpp's own code does
+        // not know (it runs no Jinja), is refused here, before any request (#276).
         let template = match settings.chat_format {
-            ChatFormat::Builtin => Some(model.chat_template(None).map_err(|_| failed("template"))?),
+            ChatFormat::Builtin => {
+                let template = model.chat_template(None).map_err(|_| failed("template"))?;
+                let pair = [
+                    chat_message("system", SYSTEM_PROMPT)?,
+                    chat_message("user", TRIAL_REQUEST)?,
+                ];
+                model
+                    .apply_chat_template(&template, &pair, true)
+                    .map_err(|_| failed("template"))?;
+                Some(template)
+            }
             ChatFormat::Gemma4 => None,
         };
         let threads = i32::try_from(settings.threads).map_err(|_| failed("threads"))?;
@@ -152,11 +169,10 @@ impl Engine {
     ) -> Result<(Vec<LlamaToken>, usize), Failure> {
         let templated = match self.chat_format {
             ChatFormat::Builtin => {
-                let message = |role: &str, content: &str| {
-                    LlamaChatMessage::new(role.to_owned(), content.to_owned())
-                        .map_err(|_| failed("prompt"))
-                };
-                let messages = [message("system", SYSTEM_PROMPT)?, message("user", user)?];
+                let messages = [
+                    chat_message("system", SYSTEM_PROMPT)?,
+                    chat_message("user", user)?,
+                ];
                 let template = self.template.as_ref().ok_or_else(|| failed("template"))?;
                 let templated = self
                     .model
@@ -421,6 +437,13 @@ impl Engine {
             self.generate(&tokens, prefix_len, SUMMARY_TOKENS, Some(&grammar))?;
         let sentences = read_summary(&written, capped).ok_or_else(|| failed("unreadable"))?;
         Ok((sentences, fit))
+    }
+
+    /// The trial start's request (#276): the template around a FAKE request, read, and one token
+    /// written, so the context and the first decode run under the answer-stage sandbox.
+    pub(super) fn trial(&mut self) -> Result<(), Failure> {
+        let (tokens, _) = self.prompt_tokens(TRIAL_REQUEST, &[])?;
+        self.generate(&tokens, 0, 1, None).map(|_| ())
     }
 
     /// What `term` means in `context`, in `lang`.

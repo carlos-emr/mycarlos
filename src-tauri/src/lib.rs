@@ -1229,6 +1229,9 @@ struct PendingPicks {
     /// document's save to take: gone once saved, at lock, and when the
     /// document is hidden.
     ai_answers: KeptAnswers,
+    /// A model file picked that is not on myCarlos's list (#276), kept for the patient's
+    /// confirm so it is not picked twice: gone at lock and after one use.
+    models: PickTable<std::path::PathBuf>,
 }
 
 /// What a preview ticket remembers about its text read.
@@ -1364,6 +1367,9 @@ const PICK_TTL: Duration = Duration::from_secs(120);
 // A backup to restore is chosen, then its passphrase or recovery key typed,
 // then what it replaces confirmed: long enough to read that warning.
 const RESTORE_PICK_TTL: Duration = Duration::from_secs(15 * 60);
+// A model file picked that is not on the list waits for the patient to read the confirm.
+const MODEL_PICK_TTL: Duration = Duration::from_secs(15 * 60);
+const _: () = assert!(MODEL_PICK_TTL.as_secs() <= LONGEST_PICK_TTL.as_secs());
 // What storing a pick prunes by: the longest any kind of pick may live. Each
 // kind's own limit is applied when the pick is used.
 const LONGEST_PICK_TTL: Duration = TEXT_TICKET_TTL;
@@ -1583,6 +1589,7 @@ impl PendingPicks {
         self.texts.clear();
         self.text_exports.clear();
         self.ai_answers.clear();
+        self.models.clear();
     }
 }
 
@@ -1715,17 +1722,38 @@ struct ModelIndexRequest {
     index: usize,
 }
 
+/// Which row a model command is about (#276): a model on the list by its `index`, or one you
+/// added that is not on the list by its `sha256`. Exactly one.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModelRequest {
+    #[serde(default)]
+    index: Option<usize>,
+    #[serde(default)]
+    sha256: Option<String>,
+}
+
+impl ModelRequest {
+    fn which(self) -> Result<local_model::Which, local_model::ModelError> {
+        match (self.index, self.sha256) {
+            (Some(index), None) => Ok(local_model::Which::Listed(index)),
+            (None, Some(sha256)) => Ok(local_model::Which::Yours(sha256)),
+            _ => Err(local_model::ModelError::NotOnList),
+        }
+    }
+}
+
 /// Makes an installed model the one in use (#276). The helper holding the old one ends first,
 /// as at a lock, so an answer being written stops; the choice is kept on this computer,
 /// outside the vault. Returns the status of the model now in use.
 #[tauri::command]
 async fn ai_model_use(
     models: State<'_, Arc<local_model::Store>>,
-    request: ModelIndexRequest,
+    request: ModelRequest,
 ) -> Result<local_model::ModelStatus, ModelFailure> {
     let models = Arc::clone(models.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        models.use_model(request.index)?;
+        models.use_model(&request.which()?)?;
         Ok(models.status(&local_model::Here))
     })
     .await
@@ -1757,6 +1785,9 @@ impl From<local_model::ModelError> for ModelFailure {
 struct ModelAddProgress {
     done: u64,
     total: u64,
+    /// Catalog row for a download; picked-file and unchecked operations stay global.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
 }
 
 /// The model add or download running now, and how far it is (#275). A row
@@ -1773,11 +1804,13 @@ struct ModelAddActive {
 #[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct ModelAddNow {
-    /// `download` for the default model's download and its check; `check`
-    /// for a picked file's.
+    /// `download` for a catalog model's download and its check; `check`
+    /// for a picked file's; `trial` for an explicit unchecked-model retry.
     kind: &'static str,
     done: u64,
     total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
 }
 
 impl ModelAddActive {
@@ -1821,6 +1854,7 @@ struct ModelAddReport<'a> {
     active: &'a ModelAddActive,
     kind: &'static str,
     reported: bool,
+    index: Option<usize>,
 }
 
 impl<'a> ModelAddReport<'a> {
@@ -1829,6 +1863,7 @@ impl<'a> ModelAddReport<'a> {
             active,
             kind,
             reported: false,
+            index: None,
         }
     }
     fn progress(&mut self, done: u64, total: u64) {
@@ -1837,6 +1872,7 @@ impl<'a> ModelAddReport<'a> {
             kind: self.kind,
             done,
             total,
+            index: self.index,
         }));
     }
 }
@@ -1860,7 +1896,7 @@ fn ai_model_add_active(active: State<'_, Arc<ModelAddActive>>) -> Option<ModelAd
 /// `status`), `cancelled`, or the refusal's code (`notListed`, `tooBig`,
 /// `incomplete`, `wrongHash`, `noDisk`, `unreadable`, `storage`,
 /// `unsupported` with `reason`, `busy`).
-#[derive(Serialize)]
+#[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ModelAddOutcome {
     outcome: &'static str,
@@ -1868,6 +1904,15 @@ struct ModelAddOutcome {
     status: Option<local_model::ModelStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<local_model::Unsupported>,
+    /// With `notListed`, where unchecked models run: the picked file, kept for
+    /// `ai_model_add_unchecked` once the patient confirms (#276).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pick_id: Option<Uuid>,
+    /// A model you added that is not on the list: its hash, and what its trial start found.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trial: Option<local_model::TrialState>,
 }
 
 impl ModelAddOutcome {
@@ -1875,8 +1920,8 @@ impl ModelAddOutcome {
         let failure = ModelFailure::from(error);
         Self {
             outcome: failure.code,
-            status: None,
             reason: failure.reason,
+            ..Self::default()
         }
     }
 }
@@ -1892,8 +1937,10 @@ async fn ai_model_add_picked(
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
     active: State<'_, Arc<ModelAddActive>>,
+    picks: State<'_, Arc<PendingPicks>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<ModelAddOutcome> {
+    let session = picks.session();
     use tauri::Emitter;
     let filter = locale
         .unwrap_or_default()
@@ -1912,8 +1959,7 @@ async fn ai_model_add_picked(
     .map_err(|_| PublicError::from(VaultError::Storage))?;
     let outcome = |outcome| ModelAddOutcome {
         outcome,
-        status: None,
-        reason: None,
+        ..ModelAddOutcome::default()
     };
     let Some(picked) = picked else {
         return Ok(outcome("cancelled"));
@@ -1923,37 +1969,235 @@ async fn ai_model_add_picked(
     };
     let models = Arc::clone(models.inner());
     let active = Arc::clone(active.inner());
+    let picks = Arc::clone(picks.inner());
     tauri::async_runtime::spawn_blocking(move || {
         active.run(
             "check",
             |report| {
-                // About every 8 MiB, and at the start and the end.
                 let mut shown = u64::MAX;
                 let result = models.add(&source, &local_model::Here, |done, total| {
                     let step = done / (8 * 1024 * 1024);
                     if done == 0 || done == total || step != shown {
                         shown = step;
                         report.progress(done, total);
-                        let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                        let _ = app.emit(
+                            "ai-model-add-progress",
+                            ModelAddProgress {
+                                done,
+                                total,
+                                index: None,
+                            },
+                        );
                     }
                 });
                 match result {
                     Ok(_) => ModelAddOutcome {
                         outcome: "added",
                         status: Some(models.status(&local_model::Here)),
-                        reason: None,
+                        ..ModelAddOutcome::default()
                     },
+                    Err(local_model::ModelError::NotOnList | local_model::ModelError::TooBig)
+                        if local_model::unchecked_supported() =>
+                    {
+                        ModelAddOutcome {
+                            // Large unlisted files also need the native second-click route.
+                            pick_id: Some(picks.models.store(session, source)),
+                            ..ModelAddOutcome::of(local_model::ModelError::NotOnList)
+                        }
+                    }
                     Err(error) => ModelAddOutcome::of(error),
                 }
             },
             |ended| {
-                // For a row that opened again meanwhile: how this run ended.
                 let _ = app.emit("ai-model-add-ended", ended);
             },
         )
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))
+}
+
+/// Adds the retained file only after the patient's second click. The report owns copy,
+/// trial, cleanup and completion together. Unchecked files are never selected automatically.
+#[tauri::command]
+async fn ai_model_add_unchecked(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+    active: State<'_, Arc<ModelAddActive>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ModelPickRequest,
+) -> CommandResult<ModelAddOutcome> {
+    use tauri::Emitter;
+    let session = picks.session();
+    let _open = ActivityHold::new(store.idle());
+    let models = Arc::clone(models.inner());
+    let active = Arc::clone(active.inner());
+    let picks = Arc::clone(picks.inner());
+    let ticket = model_runtime::app().trial_ticket();
+    tauri::async_runtime::spawn_blocking(move || {
+        active.run(
+            "check",
+            |report| {
+                // A Busy attempt must not consume the retained pick.
+                let Some(source) = picks
+                    .models
+                    .take_within(request.pick_id, session, MODEL_PICK_TTL)
+                    .filter(|_| session == picks.session())
+                else {
+                    return ModelAddOutcome::of(local_model::ModelError::Unreadable);
+                };
+                let picked_name = source
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default();
+                let mut shown = u64::MAX;
+                let result = models
+                    .add_unchecked(&source, picked_name, &local_model::Here, |done, total| {
+                        let step = done / (8 * 1024 * 1024);
+                        if done == 0 || done == total || step != shown {
+                            shown = step;
+                            report.progress(done, total);
+                            let _ = app.emit(
+                                "ai-model-add-progress",
+                                ModelAddProgress {
+                                    done,
+                                    total,
+                                    index: None,
+                                },
+                            );
+                        }
+                    })
+                    .and_then(|added| match added {
+                        local_model::Added::Listed(_) => Ok((None, None)),
+                        local_model::Added::Yours(yours) => {
+                            model_trial(&models, &yours.sha256, ticket)
+                                .map(|trial| (Some(yours.sha256), Some(trial)))
+                        }
+                    });
+                match result {
+                    Ok((sha256, trial)) => ModelAddOutcome {
+                        outcome: "added",
+                        status: Some(models.status(&local_model::Here)),
+                        sha256,
+                        trial,
+                        ..ModelAddOutcome::default()
+                    },
+                    Err(error) => ModelAddOutcome::of(error),
+                }
+            },
+            |ended| {
+                let _ = app.emit("ai-model-add-ended", ended);
+            },
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))
+}
+
+/// The trial start of the model you added whose hash is `sha256` (#276): the real helper start,
+/// its template around a FAKE request and one token. Refused as busy while an answer runs; the
+/// idle resident helper stops for it, and no answer starts until it ends.
+fn model_trial(
+    models: &local_model::Store,
+    sha256: &str,
+    ticket: local_runner::Ticket,
+) -> Result<local_model::TrialState, local_model::ModelError> {
+    let runtime = model_runtime::app();
+    // Never while an answer runs (refused as busy: "try again when it has finished").
+    let idle = || !runtime.answering();
+    models.trial(sha256, &local_model::SystemMemory, idle, |verified| {
+        runtime
+            .trial(&local_model::runtime_verified(verified), ticket)
+            .map(|()| local_model::TrialState::Passed)
+            .or_else(|error| match error {
+                model_runtime::TrialError::Refused(refusal) => {
+                    Ok(local_model::TrialState::from(refusal))
+                }
+                model_runtime::TrialError::Busy => Err(local_model::ModelError::Busy),
+                model_runtime::TrialError::Runner(local_runner::RunnerError::Cancelled) => {
+                    Err(local_model::ModelError::Cancelled)
+                }
+                model_runtime::TrialError::Runner(_) => Err(local_model::ModelError::TrialFailed),
+            })
+    })
+}
+
+/// Runs the trial start of a model you added again ("Try again", #276).
+#[tauri::command]
+async fn ai_model_trial(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+    active: State<'_, Arc<ModelAddActive>>,
+    request: ModelHashRequest,
+) -> Result<local_model::TrialState, ModelFailure> {
+    use tauri::Emitter;
+    let _open = ActivityHold::new(store.idle());
+    let models = Arc::clone(models.inner());
+    let active = Arc::clone(active.inner());
+    let ticket = model_runtime::app().trial_ticket();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        active.run(
+            "trial",
+            |report| {
+                report.progress(0, 0);
+                let _ = app.emit(
+                    "ai-model-add-progress",
+                    ModelAddProgress {
+                        done: 0,
+                        total: 0,
+                        index: None,
+                    },
+                );
+                match model_trial(&models, &request.sha256, ticket) {
+                    Ok(trial) => ModelAddOutcome {
+                        outcome: "added",
+                        trial: Some(trial),
+                        ..ModelAddOutcome::default()
+                    },
+                    Err(error) => ModelAddOutcome::of(error),
+                }
+            },
+            |ended| {
+                let _ = app.emit("ai-model-add-ended", ended);
+            },
+        )
+    })
+    .await
+    .map_err(|_| ModelFailure::from(local_model::ModelError::Storage))?;
+    outcome.trial.ok_or(ModelFailure {
+        code: outcome.outcome,
+        reason: outcome.reason,
+    })
+}
+
+/// Records, in the open vault, the patient's approval of the model you added whose hash is
+/// `sha256`, when they confirm its first answer (#276). Until then an answer from it is
+/// refused with `aiNeedsApproval`.
+#[tauri::command]
+async fn ai_model_approve(
+    store: State<'_, Arc<VaultStore>>,
+    request: ModelHashRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.approve_model(&request.sha256)
+    })
+    .await
+}
+
+/// The pick a confirm is for.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModelPickRequest {
+    pick_id: Uuid,
+}
+
+/// A model you added, by its hash.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModelHashRequest {
+    sha256: String,
 }
 
 /// Downloads a model (catalog entry `index`; the default, the first, without one) from its
@@ -1978,6 +2222,7 @@ async fn ai_model_download(
         active.run(
             "download",
             |report| {
+                report.index = Some(index);
                 let mut shown = u64::MAX;
                 let result = models.download(
                     index,
@@ -1988,8 +2233,14 @@ async fn ai_model_download(
                         if done == 0 || done == total || step != shown {
                             shown = step;
                             report.progress(done, total);
-                            let _ =
-                                app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                            let _ = app.emit(
+                                "ai-model-add-progress",
+                                ModelAddProgress {
+                                    done,
+                                    total,
+                                    index: Some(index),
+                                },
+                            );
                         }
                     },
                 );
@@ -1997,7 +2248,7 @@ async fn ai_model_download(
                     Ok(_) => ModelAddOutcome {
                         outcome: "added",
                         status: Some(models.status(&local_model::Here)),
-                        reason: None,
+                        ..ModelAddOutcome::default()
                     },
                     Err(error) => ModelAddOutcome::of(error),
                 }
@@ -2017,6 +2268,7 @@ async fn ai_model_download(
 #[tauri::command]
 fn ai_model_add_cancel(models: State<'_, Arc<local_model::Store>>) {
     models.cancel_add();
+    model_runtime::app().cancel_trial();
 }
 
 /// Deletes a model (catalog entry `index`; the one in use without one) and its half-copied
@@ -2025,11 +2277,12 @@ fn ai_model_add_cancel(models: State<'_, Arc<local_model::Store>>) {
 #[tauri::command]
 async fn ai_model_remove(
     models: State<'_, Arc<local_model::Store>>,
-    request: Option<ModelIndexRequest>,
+    request: Option<ModelRequest>,
 ) -> Result<local_model::ModelStatus, ModelFailure> {
     let models = Arc::clone(models.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        models.remove(request.map(|request| request.index))?;
+        let which = request.map(ModelRequest::which).transpose()?;
+        models.remove(which.as_ref())?;
         Ok(models.status(&local_model::Here))
     })
     .await
@@ -2069,7 +2322,13 @@ async fn ai_summarize(
     };
     let session = picks.session();
     let lang = request.lang.clone();
-    let result = run_ai(store.inner(), move |runtime| runtime.summarize(request)).await?;
+    let result = run_ai(
+        store.inner(),
+        picks.inner(),
+        session,
+        move |runtime, ticket, approved| runtime.summarize_approved(request, ticket, approved),
+    )
+    .await?;
     let kept_id = kept_for.map(|(record_id, text)| {
         picks.keep_ai_answer(
             session,
@@ -2115,7 +2374,13 @@ async fn ai_explain(
         request.context.clone(),
         request.lang.clone(),
     );
-    let result = run_ai(store.inner(), move |runtime| runtime.explain(request)).await?;
+    let result = run_ai(
+        store.inner(),
+        picks.inner(),
+        session,
+        move |runtime, ticket, approved| runtime.explain_approved(request, ticket, approved),
+    )
+    .await?;
     let kept_id = kept_for.map(|record_id| {
         picks.keep_ai_answer(
             session,
@@ -2164,10 +2429,19 @@ fn ai_cancel() {
 
 /// Runs `work` on the app's model runtime away from the IPC thread, only while the vault is
 /// unlocked, as activity for the idle lock when it starts and ends.
-async fn run_ai<T, F>(store: &Arc<VaultStore>, work: F) -> CommandResult<T>
+async fn run_ai<T, F>(
+    store: &Arc<VaultStore>,
+    picks: &Arc<PendingPicks>,
+    session: u64,
+    work: F,
+) -> CommandResult<T>
 where
     T: Send + 'static,
-    F: FnOnce(&'static model_runtime::ModelRuntime) -> Result<T, model_runtime::AiError>
+    F: FnOnce(
+            &'static model_runtime::ModelRuntime,
+            local_runner::Ticket,
+            &[String],
+        ) -> Result<T, model_runtime::AiError>
         + Send
         + 'static,
 {
@@ -2180,9 +2454,25 @@ where
     }
     let idle = Arc::clone(store.idle());
     idle.touch(Instant::now());
-    let result = tauri::async_runtime::spawn_blocking(move || work(model_runtime::app()))
-        .await
-        .map_err(|_| ai_error(AiError::Failed))?;
+    let runtime = model_runtime::app();
+    // Claim before reading approvals and checking the session. A later lock cancels this
+    // exact claim, including while the worker queues; approval data stays with this request.
+    let ticket = runtime.request_ticket();
+    let approved = store
+        .approved_models()
+        .map_err(|_| ai_error(AiError::Cancelled))?;
+    if picks.session() != session {
+        return Err(ai_error(AiError::Cancelled));
+    }
+    let picks = Arc::clone(picks);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        if picks.session() != session {
+            return Err(AiError::Cancelled);
+        }
+        work(runtime, ticket, &approved)
+    })
+    .await
+    .map_err(|_| ai_error(AiError::Failed))?;
     if !matches!(result, Err(AiError::Cancelled)) {
         idle.touch(Instant::now());
     }
@@ -2196,7 +2486,9 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
         AiError::Memory => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
-        AiError::Cancelled | AiError::Failed => "ai.failed",
+        // The panel asks for the approval on the code (`aiNeedsApproval`); its own words come
+        // with the renderer's part of #276.
+        AiError::Cancelled | AiError::Failed | AiError::NeedsApproval => "ai.failed",
     };
     PublicError {
         code: error.code(),
@@ -2417,12 +2709,14 @@ async fn vault_lock(
     pdf_view::cancel_views();
     pdf_view::cancel_text_reads();
     local_runner::on_lock();
+    model_runtime::forget_approvals();
     run_blocking(store.inner(), |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
         pdf_view::cancel_views();
         pdf_view::cancel_text_reads();
         local_runner::on_lock();
+        model_runtime::forget_approvals();
         Ok(())
     })
     .await
@@ -2447,6 +2741,7 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
         pdf_view::cancel_views();
         pdf_view::cancel_text_reads();
         local_runner::on_lock();
+        model_runtime::forget_approvals();
         picks.clear();
     }
     locked
@@ -4875,6 +5170,9 @@ pub fn run() {
             ai_models,
             ai_model_use,
             ai_model_add_picked,
+            ai_model_add_unchecked,
+            ai_model_trial,
+            ai_model_approve,
             ai_model_add_cancel,
             ai_model_add_active,
             ai_model_download,
@@ -6447,6 +6745,108 @@ mod tests {
     }
 
     #[test]
+    fn unchecked_model_request_has_exactly_one_identity_and_pick_is_session_bound() {
+        for value in [
+            serde_json::json!({}),
+            serde_json::json!({"index":0,"sha256":"ab".repeat(32)}),
+        ] {
+            assert!(serde_json::from_value::<ModelRequest>(value)
+                .unwrap()
+                .which()
+                .is_err());
+        }
+        assert!(matches!(
+            serde_json::from_value::<ModelRequest>(serde_json::json!({"index":0}))
+                .unwrap()
+                .which(),
+            Ok(local_model::Which::Listed(0))
+        ));
+        let picks = PendingPicks::default();
+        let session = picks.session();
+        let path = std::path::PathBuf::from("FAKE model.gguf");
+        let id = picks.models.store(session, path.clone());
+        let active = ModelAddActive::default();
+        active.run(
+            "download",
+            |report| {
+                report.progress(1, 2);
+                assert_eq!(
+                    active
+                        .run(
+                            "check",
+                            |_| {
+                                let _ = picks.models.take_within(id, session, MODEL_PICK_TTL);
+                                panic!("Busy may not consume a pick");
+                            },
+                            |_| panic!("Busy emits nothing")
+                        )
+                        .outcome,
+                    "busy"
+                );
+                ModelAddOutcome::of(local_model::ModelError::Cancelled)
+            },
+            |_| {},
+        );
+        assert_eq!(
+            picks.models.take_within(id, session, MODEL_PICK_TTL),
+            Some(path.clone())
+        );
+        assert!(picks
+            .models
+            .take_within(id, session, MODEL_PICK_TTL)
+            .is_none());
+        let expired = picks.models.store(session, path.clone());
+        picks.models.entries().get_mut(&expired).unwrap().0 = Instant::now() - MODEL_PICK_TTL;
+        assert!(picks
+            .models
+            .take_within(expired, session, MODEL_PICK_TTL)
+            .is_none());
+        let stale = picks.models.store(session, path);
+        picks.clear();
+        assert!(picks
+            .models
+            .take_within(stale, picks.session(), MODEL_PICK_TTL)
+            .is_none());
+    }
+
+    #[test]
+    fn progress_identity_is_optional_and_unchecked_trials_stay_global() {
+        let active = ModelAddActive::default();
+        let mut download = ModelAddReport::new(&active, "download");
+        download.index = Some(1);
+        download.progress(5, 10);
+        assert_eq!(
+            serde_json::to_value(active.get()).unwrap(),
+            serde_json::json!({"kind":"download","done":5,"total":10,"index":1})
+        );
+        assert_eq!(
+            serde_json::to_value(ModelAddProgress {
+                done: 5,
+                total: 10,
+                index: Some(1)
+            })
+            .unwrap(),
+            serde_json::json!({"done":5,"total":10,"index":1})
+        );
+        drop(download);
+        let mut trial = ModelAddReport::new(&active, "trial");
+        trial.progress(0, 0);
+        assert_eq!(
+            serde_json::to_value(active.get()).unwrap(),
+            serde_json::json!({"kind":"trial","done":0,"total":0})
+        );
+        assert_eq!(
+            serde_json::to_value(ModelAddProgress {
+                done: 0,
+                total: 0,
+                index: None
+            })
+            .unwrap(),
+            serde_json::json!({"done":0,"total":0})
+        );
+    }
+
+    #[test]
     fn a_model_add_report_clears_only_the_run_it_reported() {
         let active = Arc::new(ModelAddActive::default());
         let mut running = ModelAddReport::new(&active, "download");
@@ -6458,7 +6858,8 @@ mod tests {
             Some(ModelAddNow {
                 kind: "download",
                 done: 5,
-                total: 10
+                total: 10,
+                index: None,
             })
         );
         drop(running);
@@ -6541,6 +6942,7 @@ mod tests {
                         kind: "check",
                         done: 2,
                         total: 20,
+                        index: None,
                     })
                 );
                 ModelAddOutcome::of(local_model::ModelError::Cancelled)

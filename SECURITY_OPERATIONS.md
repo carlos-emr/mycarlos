@@ -209,6 +209,21 @@ on 29 October 2026 that the helper uses no cloud provider, so:
   =0.1.160 (#218). RustSec does not cover its C/C++ code, so ggml and llama.cpp advisories are
   watched by hand; the vendored revision is recorded in DEPENDENCY_REVIEW.md, and the crates in the
   SBOM.
+- **Models not on the list (#276).** A patient can add any `.gguf` file after a confirm. It runs
+  only in the sandboxed helper and only once their open vault has approved it. An advisory in
+  ggml's or llama.cpp's file loader is the case that matters most for these files: the release
+  note and the advisory tell patients to remove any model marked "Not checked by myCarlos" until
+  they have updated, and the fix ships as a runtime update. Support questions about such a model
+  ("it can't be used here") are answered from its trial start's reason: `model` (llama.cpp could
+  not load it, a split file among them), `template` (no chat template, or one llama.cpp's own code
+  does not know), `context` (too big for this computer). Support never asks for the file or for
+  any document. A cancelled trial records no new result; an unexpected helper failure is
+  `trialFailed`, rather than a model/template/context refusal, and can be retried.
+- **Loader validation gate (#276 B1 draft):** retained tiny-fixture corpus recipes and a bounded
+  mutation harness exercise the actual sandboxed trial path. Startup/decode crashes and hangs
+  are negative controls, never ordinary format refusals. This is not coverage-guided fuzzing;
+  that required loader-fuzz gate remains open until tooling and execution are verified. B1 is
+  a local native draft and the renderer flow remains pending.
 - **Licences:** each listed model's licence must allow the project to offer it to patients and
   allow this use. It is recorded in `LICENSE_NOTES.md` when the model is picked.
 - **Canary drill:** the [synthetic canary drill](#synthetic-canary-drill) also covers the helper.

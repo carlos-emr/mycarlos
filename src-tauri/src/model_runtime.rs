@@ -45,7 +45,32 @@ pub(crate) struct Verified {
     pub(crate) size_bytes: u64,
     /// How the helper puts the conversation to this model (from the model's list entry).
     pub(crate) chat_format: model_helper::ChatFormat,
+    /// On myCarlos's list. One the patient added that is not runs only once the open vault has
+    /// approved its hash (#276).
+    pub(crate) checked: bool,
 }
+
+/// What a trial start found wrong with a model the patient added (#276).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrialRefusal {
+    /// llama.cpp could not load it.
+    Model,
+    /// No chat template, or one llama.cpp's own code does not know.
+    Template,
+    /// Too big for this computer: its context within the helper's limit, or free memory.
+    Context,
+}
+
+/// Expected model refusals stay distinct from process/protocol/timeout failures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TrialError {
+    Refused(TrialRefusal),
+    Runner(RunnerError),
+    Busy,
+}
+
+/// The longest a trial start's one request may take: a short FAKE prompt and one token.
+const TRIAL_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Why no model can be had now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,6 +301,9 @@ pub(crate) enum AiError {
     Busy,
     /// The vault locked, or the reader left: nothing to show.
     Cancelled,
+    /// The model in use is one the patient added that myCarlos hasn't checked, and the open
+    /// vault hasn't approved it yet: the panel asks once (#276).
+    NeedsApproval,
     /// Anything else: the helper could not start, answer, or answer in time, or the request
     /// was not one the reader sends.
     Failed,
@@ -289,6 +317,7 @@ impl AiError {
             Self::Memory => "aiMemory",
             Self::Busy => "aiBusy",
             Self::Cancelled => "aiCancelled",
+            Self::NeedsApproval => "aiNeedsApproval",
             Self::Failed => "aiFailed",
         }
     }
@@ -347,6 +376,7 @@ pub(crate) fn check_explain(request: &ExplainRequest) -> Result<(), AiError> {
 /// The app's runner and where its model comes from.
 pub(crate) struct ModelRuntime {
     runner: Arc<Runner>,
+    trial_runner: Arc<Runner>,
     source: Box<dyn ModelSource>,
     probe: Box<dyn MemoryProbe>,
     /// Builds the helper's start from the verified model.
@@ -354,6 +384,54 @@ pub(crate) struct ModelRuntime {
     /// The model the last answer here came from: the vault keeps an answer
     /// only under the model that gave one (#212).
     answered: Mutex<Option<ModelInfo>>,
+    /// The identity and checked status of the verified resident helper, for per-request approval.
+    resident: Mutex<Option<(ModelInfo, bool)>>,
+    /// Requests being answered now, from their check to their answer: a trial start is
+    /// refused while any runs, so adding a model never ends an answer (#276).
+    activity: Mutex<Activity>,
+}
+
+#[derive(Default)]
+struct Activity {
+    answers: usize,
+    trial: bool,
+}
+
+/// Answers and a trial have mutually exclusive admission, including resident-helper reuse.
+struct Answering<'a>(&'a Mutex<Activity>);
+impl<'a> Answering<'a> {
+    fn new(activity: &'a Mutex<Activity>) -> Result<Self, AiError> {
+        let mut current = activity.lock().unwrap_or_else(PoisonError::into_inner);
+        if current.trial {
+            return Err(AiError::Busy);
+        }
+        current.answers += 1;
+        Ok(Self(activity))
+    }
+}
+impl Drop for Answering<'_> {
+    fn drop(&mut self) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .answers -= 1;
+    }
+}
+struct Trialing<'a>(&'a Mutex<Activity>);
+impl<'a> Trialing<'a> {
+    fn new(activity: &'a Mutex<Activity>) -> Result<Self, TrialError> {
+        let mut current = activity.lock().unwrap_or_else(PoisonError::into_inner);
+        if current.trial || current.answers > 0 {
+            return Err(TrialError::Busy);
+        }
+        current.trial = true;
+        Ok(Self(activity))
+    }
+}
+impl Drop for Trialing<'_> {
+    fn drop(&mut self) {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).trial = false;
+    }
 }
 
 impl ModelRuntime {
@@ -364,11 +442,61 @@ impl ModelRuntime {
     ) -> Self {
         Self {
             runner: Arc::new(Runner::new(idle_config())),
+            trial_runner: Arc::new(Runner::new(idle_config())),
             source,
             probe,
             launch,
             answered: Mutex::new(None),
+            resident: Mutex::new(None),
+            activity: Mutex::new(Activity::default()),
         }
+    }
+
+    /// Whether a request is being answered now (#276: a trial start waits for none).
+    pub(crate) fn answering(&self) -> bool {
+        self.activity
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .answers
+            > 0
+    }
+
+    /// A queued answer keeps its original cancellation claim through verification and start.
+    pub(crate) fn request_ticket(&self) -> local_runner::Ticket {
+        self.runner.ticket()
+    }
+
+    /// The trial start of `verified`, a model the patient added (#276): the app's own helper
+    /// start, through both sandbox stages, its template around a FAKE request and one token,
+    /// then it stops. The resident helper is stopped first and the caller holds the model
+    /// store's lock, so two models are never loaded at once. Nothing of a patient's is read.
+    pub(crate) fn trial(
+        &self,
+        verified: &Verified,
+        ticket: local_runner::Ticket,
+    ) -> Result<(), TrialError> {
+        if !self.trial_runner.is_current(ticket) {
+            return Err(TrialError::Runner(RunnerError::Cancelled));
+        }
+        let _trial = Trialing::new(&self.activity)?;
+        self.runner.cancel_all();
+        self.runner.stop();
+        let config = (self.launch)(verified).map_err(|_| {
+            TrialError::Runner(RunnerError::Start("trial launch unavailable".to_owned()))
+        })?;
+        run_trial(&self.trial_runner, ticket, config, &*self.probe)
+    }
+
+    /// Snapshot before queuing copy/verification; observing it never cancels an active trial.
+    pub(crate) fn trial_ticket(&self) -> local_runner::Ticket {
+        self.trial_runner.claim()
+    }
+
+    /// Stops only the trial. Cancelling a second file's add leaves an answer alone.
+    pub(crate) fn cancel_trial(&self) {
+        // The worker owns stop through its scope guard. A deferred stop thread could
+        // outlive this admission and stop a following trial instead.
+        self.trial_runner.cancel_all();
     }
 
     /// The model the last answer here came from, if one has: what an answer
@@ -391,7 +519,7 @@ impl ModelRuntime {
 
     /// Starts the helper if it is not running: the memory first, from the model's listed size,
     /// then the model verified again, then the start.
-    fn start(&self) -> Result<(), AiError> {
+    fn start(&self, ticket: local_runner::Ticket, approved: &[String]) -> Result<(), AiError> {
         let mut unavailable = None;
         let prepare = || {
             let size = self.source.installed_size().ok_or_else(|| {
@@ -419,25 +547,50 @@ impl ModelRuntime {
                 });
                 RunnerError::NotRunning
             })?;
+            if !verified.checked && !approved.contains(&verified.info.sha256) {
+                unavailable = Some(AiError::NeedsApproval);
+                return Err(RunnerError::NotRunning);
+            }
+            *self.resident.lock().unwrap_or_else(PoisonError::into_inner) =
+                Some((verified.info.clone(), verified.checked));
             (self.launch)(&verified).map_err(|error| {
                 unavailable = Some(error);
                 RunnerError::NotRunning
             })
         };
-        let started = self.runner.start_with(&*self.probe, prepare);
+        let started = self.runner.start_for(ticket, &*self.probe, prepare);
         match (started, unavailable) {
-            (Ok(_), _) => Ok(()),
+            (Ok(model), _) => {
+                let resident = self.resident.lock().unwrap_or_else(PoisonError::into_inner);
+                match resident.as_ref() {
+                    Some((identity, checked))
+                        if identity == &model && (*checked || approved.contains(&model.sha256)) =>
+                    {
+                        Ok(())
+                    }
+                    _ => Err(AiError::NeedsApproval),
+                }
+            }
             (Err(_), Some(error)) => Err(error),
             (Err(error), None) => Err(from_runner(&error)),
         }
     }
 
     /// A summary of the pages that fit, in the language asked.
+    #[cfg(test)]
     pub(crate) fn summarize(&self, request: SummarizeRequest) -> Result<SummaryResult, AiError> {
+        self.summarize_approved(request, self.request_ticket(), &[])
+    }
+
+    pub(crate) fn summarize_approved(
+        &self,
+        request: SummarizeRequest,
+        ticket: local_runner::Ticket,
+        approved: &[String],
+    ) -> Result<SummaryResult, AiError> {
+        let _answering = Answering::new(&self.activity)?;
         check_summary(&request)?;
-        // A newer request ends an older one still running.
-        let ticket = self.runner.ticket();
-        self.start()?;
+        self.start(ticket, approved)?;
         let summary = self
             .runner
             .summarize(
@@ -459,10 +612,15 @@ impl ModelRuntime {
     }
 
     /// What a term means in its sentence, in the language asked.
-    pub(crate) fn explain(&self, request: ExplainRequest) -> Result<ExplainResult, AiError> {
+    pub(crate) fn explain_approved(
+        &self,
+        request: ExplainRequest,
+        ticket: local_runner::Ticket,
+        approved: &[String],
+    ) -> Result<ExplainResult, AiError> {
+        let _answering = Answering::new(&self.activity)?;
         check_explain(&request)?;
-        let ticket = self.runner.ticket();
-        self.start()?;
+        self.start(ticket, approved)?;
         let (text, model) = self
             .runner
             .explain(ticket, request.term.trim(), &request.context, &request.lang)
@@ -473,13 +631,22 @@ impl ModelRuntime {
 
     /// Ends the run in flight, if any: its process stops; the next run starts it again.
     pub(crate) fn cancel(&self) {
+        self.cancel_trial();
         self.runner.cancel_all();
     }
 
     /// Stops the helper, for the model file to be added or removed.
     pub(crate) fn stop(&self) {
+        self.cancel_trial();
         self.runner.cancel_all();
         self.runner.stop();
+    }
+
+    /// At lock: the vault's approvals go with the vault (`local_runner::on_lock` stops the
+    /// helper).
+    pub(crate) fn forget_approvals(&self) {
+        self.cancel_trial();
+        // Approval lists are request-local; none can be restored into runtime state.
     }
 }
 
@@ -488,11 +655,47 @@ fn from_runner(error: &RunnerError) -> AiError {
         RunnerError::Budget { .. } => AiError::Memory,
         RunnerError::Cancelled => AiError::Cancelled,
         RunnerError::Start(_)
+        | RunnerError::Exited(_)
         | RunnerError::NotRunning
         | RunnerError::Timeout
         | RunnerError::Protocol(_)
         | RunnerError::Model(_) => AiError::Failed,
     }
+}
+
+/// Only the admitted trial worker stops this runner; cancellation just invalidates its claim.
+struct TrialStop<'a>(&'a Runner);
+impl Drop for TrialStop<'_> {
+    fn drop(&mut self) {
+        self.0.stop();
+    }
+}
+
+/// A bounded trial using its pre-copy claim, with cleanup before releasing admission.
+fn run_trial(
+    runner: &Runner,
+    ticket: local_runner::Ticket,
+    mut config: RunnerConfig,
+    probe: &dyn MemoryProbe,
+) -> Result<(), TrialError> {
+    let _stop = TrialStop(runner);
+    config.answer_timeout = config.answer_timeout.min(TRIAL_TIMEOUT);
+    let outcome = runner
+        .start_for(ticket, probe, move || Ok(config))
+        .and_then(|_| runner.trial(ticket));
+    outcome.map_err(trial_error)
+}
+
+fn trial_error(error: RunnerError) -> TrialError {
+    let refusal = match error {
+        RunnerError::Exited(model_helper::exit::NO_MODEL) => TrialRefusal::Model,
+        RunnerError::Exited(model_helper::exit::NO_TEMPLATE) => TrialRefusal::Template,
+        RunnerError::Exited(model_helper::exit::NO_CONTEXT) | RunnerError::Budget { .. } => {
+            TrialRefusal::Context
+        }
+        other => return TrialError::Runner(other),
+    };
+    TrialError::Refused(refusal)
 }
 
 /// Never started: `ModelRuntime` starts with what `launch` builds.
@@ -591,6 +794,11 @@ pub(crate) fn app() -> &'static ModelRuntime {
 fn installed(runtime: ModelRuntime) -> ModelRuntime {
     local_runner::install(runtime.runner());
     runtime
+}
+
+/// At lock: the app's runtime forgets the vault's approvals of unchecked models (#276).
+pub(crate) fn forget_approvals() {
+    app().forget_approvals();
 }
 
 /// Stops the app's model helper, if it runs: for `local_model` before it adds or removes the
@@ -905,6 +1113,7 @@ mod tests {
         size: Option<u64>,
         verified: Result<(), Unavailable>,
         asked: Arc<std::sync::atomic::AtomicUsize>,
+        checked: bool,
     }
 
     impl ModelSource for Fake {
@@ -923,6 +1132,7 @@ mod tests {
                 },
                 size_bytes: 1024,
                 chat_format: model_helper::ChatFormat::Builtin,
+                checked: self.checked,
             })
         }
     }
@@ -945,6 +1155,7 @@ mod tests {
                 size,
                 verified,
                 asked: Arc::clone(&asked),
+                checked: true,
             },
             asked,
         )
@@ -997,6 +1208,294 @@ mod tests {
     }
 
     #[test]
+    fn an_unchecked_model_starts_only_once_the_open_vault_approved_it() {
+        let request = || summary(vec![page(0, "FAKE text")], "en");
+        let (mut unchecked, asked) = fake(Some(GIB), Ok(()));
+        unchecked.checked = false;
+        let runtime = runtime(unchecked, Some(64 * GIB));
+        assert_eq!(runtime.summarize(request()), Err(AiError::NeedsApproval));
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // Another hash approved: still asks.
+        assert_eq!(
+            runtime.summarize_approved(request(), runtime.request_ticket(), &["cd".repeat(32)]),
+            Err(AiError::NeedsApproval)
+        );
+        // Approved: it goes on to the start (which this test's launch refuses).
+        assert_eq!(
+            runtime.summarize_approved(request(), runtime.request_ticket(), &["ab".repeat(32)]),
+            Err(AiError::Failed)
+        );
+        // The lock forgets the vault's approvals.
+        runtime.forget_approvals();
+        assert_eq!(runtime.summarize(request()), Err(AiError::NeedsApproval));
+        assert_eq!(AiError::NeedsApproval.code(), "aiNeedsApproval");
+    }
+
+    #[test]
+    fn a_request_counts_as_answering_only_while_it_runs() {
+        let (fake, _) = fake(Some(GIB), Ok(()));
+        let runtime = runtime(fake, Some(64 * GIB));
+        assert!(!runtime.answering());
+        {
+            let _one = Answering::new(&runtime.activity).unwrap();
+            assert!(runtime.answering());
+        }
+        assert!(!runtime.answering());
+        let _ = runtime.summarize(summary(vec![page(0, "FAKE text")], "en"));
+        assert!(!runtime.answering());
+    }
+
+    #[cfg(unix)]
+    fn fake_trial_config(args: &[&str]) -> RunnerConfig {
+        RunnerConfig {
+            command: std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+                .map(|dir| dir.join("python3"))
+                .find(|path| path.is_file())
+                .expect("existing python3"),
+            args: std::iter::once(std::ffi::OsString::from(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/local-runner/fake-model.py"
+            )))
+            .chain(args.iter().map(std::ffi::OsString::from))
+            .collect(),
+            needed_bytes: 0,
+            start_timeout: Duration::from_millis(300),
+            answer_timeout: Duration::from_millis(300),
+            memory_limit_bytes: None,
+            expected_model: None,
+            model_file: None,
+            sandboxed: false,
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn trial_oracle_rejects_start_and_decode_crashes_and_deadlines() {
+        for args in [
+            vec!["--signal"],
+            vec!["--exit", "0"],
+            vec!["--exit", "1"],
+            vec!["--mute"],
+            vec!["--trial-crash"],
+            vec!["--trial-hang"],
+        ] {
+            let runner = Runner::new(idle_config());
+            let start = std::time::Instant::now();
+            let result = run_trial(
+                &runner,
+                runner.claim(),
+                fake_trial_config(&args),
+                &Fixed(Some(u64::MAX)),
+            );
+            assert!(
+                matches!(result, Err(TrialError::Runner(_))),
+                "{args:?}: {result:?}"
+            );
+            if args.contains(&"--mute") || args.contains(&"--trial-hang") {
+                assert_eq!(result, Err(TrialError::Runner(RunnerError::Timeout)));
+            }
+            assert!(!runner.is_running());
+            assert!(start.elapsed() < Duration::from_secs(5));
+        }
+        let runner = Runner::new(idle_config());
+        assert_eq!(
+            run_trial(
+                &runner,
+                runner.claim(),
+                fake_trial_config(&[]),
+                &Fixed(Some(u64::MAX))
+            ),
+            Ok(())
+        );
+    }
+
+    #[cfg(unix)]
+    fn fake_waiting_trial(verified: &Verified) -> Result<RunnerConfig, AiError> {
+        let mut config = fake_trial_config(&[]);
+        config.start_timeout = Duration::from_secs(5);
+        config.answer_timeout = Duration::from_secs(30);
+        config.args.push("--trial-ready".into());
+        config.args.push(verified.path.as_os_str().to_owned());
+        Ok(config)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn add_cancel_and_vault_lock_stop_a_trial_and_cancel_its_preparation_claim() {
+        for locking in [false, true] {
+            let runtime = Arc::new(ModelRuntime::new(
+                Box::new(NoModel),
+                Box::new(Fixed(Some(u64::MAX))),
+                fake_waiting_trial,
+            ));
+            let dir = tempfile::tempdir().unwrap();
+            let marker = dir.path().join("ready");
+            let verified = Verified {
+                file: tempfile::tempfile().unwrap(),
+                path: marker.clone(),
+                info: ModelInfo {
+                    name: "FAKE".into(),
+                    sha256: "ab".repeat(32),
+                },
+                size_bytes: 0,
+                chat_format: model_helper::ChatFormat::Builtin,
+                checked: false,
+            };
+            let ticket = runtime.trial_ticket();
+            let worker = Arc::clone(&runtime);
+            let running = std::thread::spawn(move || worker.trial(&verified, ticket));
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let pid: i32 = loop {
+                if let Ok(Some(pid)) =
+                    std::fs::read_to_string(&marker).map(|value| value.parse().ok())
+                {
+                    break pid;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "fake trial never reached its request"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            };
+            assert_eq!(
+                runtime.summarize(summary(vec![page(0, "FAKE")], "en")),
+                Err(AiError::Busy)
+            );
+            if locking {
+                runtime.forget_approvals();
+            } else {
+                runtime.cancel_trial();
+            }
+            assert_eq!(
+                running.join().unwrap(),
+                Err(TrialError::Runner(RunnerError::Cancelled))
+            );
+            assert!(!runtime.trial_runner.is_running());
+            // SAFETY: signal 0 checks only existence; the fake child has been reaped.
+            assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+            assert!(!runtime.activity.lock().unwrap().trial);
+            // A claim captured before copy/verification must not restart after Cancel/lock.
+            let old = runtime.trial_ticket();
+            if locking {
+                runtime.forget_approvals();
+            } else {
+                runtime.cancel_trial();
+            }
+            let verified = Verified {
+                file: tempfile::tempfile().unwrap(),
+                path: marker,
+                info: ModelInfo {
+                    name: "FAKE".into(),
+                    sha256: "ab".repeat(32),
+                },
+                size_bytes: 0,
+                chat_format: model_helper::ChatFormat::Builtin,
+                checked: false,
+            };
+            assert_eq!(
+                runtime.trial(&verified, old),
+                Err(TrialError::Runner(RunnerError::Cancelled))
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_trial_refused_during_an_answer_leaves_the_resident_helper_running() {
+        let runtime = ModelRuntime::new(
+            Box::new(NoModel),
+            Box::new(Fixed(Some(u64::MAX))),
+            never_launch,
+        );
+        runtime
+            .runner
+            .start_with(&Fixed(Some(u64::MAX)), || Ok(fake_trial_config(&[])))
+            .unwrap();
+        let _answer = Answering::new(&runtime.activity).unwrap();
+        let verified = Verified {
+            file: tempfile::tempfile().unwrap(),
+            path: PathBuf::new(),
+            info: ModelInfo {
+                name: "FAKE".into(),
+                sha256: "ab".repeat(32),
+            },
+            size_bytes: 0,
+            chat_format: model_helper::ChatFormat::Builtin,
+            checked: false,
+        };
+        assert_eq!(
+            runtime.trial(&verified, runtime.trial_ticket()),
+            Err(TrialError::Busy)
+        );
+        runtime.cancel_trial();
+        assert!(
+            runtime.runner.is_running(),
+            "add Cancel must leave the answer's helper alone"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resident_unchecked_model_requires_this_requests_approval_and_original_claim() {
+        let runtime = ModelRuntime::new(
+            Box::new(NoModel),
+            Box::new(Fixed(Some(u64::MAX))),
+            never_launch,
+        );
+        let model = runtime
+            .runner
+            .start_with(&Fixed(Some(u64::MAX)), || Ok(fake_trial_config(&[])))
+            .unwrap();
+        *runtime.resident.lock().unwrap() = Some((model.clone(), false));
+        let request = || summary(vec![page(0, "FAKE test.")], "en");
+        assert!(runtime
+            .summarize_approved(request(), runtime.request_ticket(), &[model.sha256.clone()])
+            .is_ok());
+        assert_eq!(
+            runtime.summarize_approved(request(), runtime.request_ticket(), &[]),
+            Err(AiError::NeedsApproval)
+        );
+        assert_eq!(
+            runtime.summarize_approved(request(), runtime.request_ticket(), &["ab".repeat(32)]),
+            Err(AiError::NeedsApproval)
+        );
+        let queued = runtime.request_ticket();
+        // Exercise the same two hooks the native manual/idle lock paths call.
+        local_runner::install(runtime.runner());
+        local_runner::on_lock();
+        runtime.forget_approvals();
+        local_runner::uninstall();
+        assert_eq!(
+            runtime.summarize_approved(request(), queued, &[model.sha256]),
+            Err(AiError::Cancelled)
+        );
+    }
+
+    #[test]
+    fn only_documented_trial_exit_codes_are_expected_refusals() {
+        for (code, refusal) in [
+            (model_helper::exit::NO_MODEL, TrialRefusal::Model),
+            (model_helper::exit::NO_TEMPLATE, TrialRefusal::Template),
+            (model_helper::exit::NO_CONTEXT, TrialRefusal::Context),
+        ] {
+            assert_eq!(
+                trial_error(RunnerError::Exited(code)),
+                TrialError::Refused(refusal)
+            );
+        }
+        for error in [
+            RunnerError::Exited(1),
+            RunnerError::Exited(0),
+            RunnerError::Start("signal".to_owned()),
+            RunnerError::Timeout,
+            RunnerError::Cancelled,
+            RunnerError::Model("no".to_owned()),
+        ] {
+            assert_eq!(trial_error(error.clone()), TrialError::Runner(error));
+        }
+    }
+
+    #[test]
     fn a_refused_run_names_no_model_for_the_vault_to_keep_an_answer_under() {
         let (bad, _) = fake(Some(GIB), Err(Unavailable::Damaged));
         let runtime = runtime(bad, Some(64 * GIB));
@@ -1020,6 +1519,7 @@ mod tests {
             },
             size_bytes: 1024,
             chat_format: model_helper::ChatFormat::Builtin,
+            checked: true,
         };
         assert_eq!(helper_launch(&verified).err(), Some(AiError::Damaged));
     }
@@ -1208,6 +1708,7 @@ pub mod engine_testing {
                 },
                 size_bytes,
                 chat_format,
+                checked: true,
             };
             let config = launch_at(executable.to_owned(), &verified)
                 .map_err(|error| format!("{error:?}"))?;
@@ -1311,6 +1812,42 @@ pub mod engine_testing {
         pub fn stop(&self) {
             self.runner.stop();
         }
+    }
+
+    /// The trial start of the model at `path`, as for a model the patient added (#276): `Ok`,
+    /// or which part failed (`Model`, `Template`, `Context`).
+    pub fn trial(executable: &std::path::Path, path: &std::path::Path) -> Result<(), String> {
+        trial_bounded(executable, path, START_TIMEOUT, TRIAL_TIMEOUT)
+    }
+
+    /// Same real sandboxed trial with smaller, explicit harness deadlines.
+    pub fn trial_bounded(
+        executable: &std::path::Path,
+        path: &std::path::Path,
+        start_timeout: Duration,
+        answer_timeout: Duration,
+    ) -> Result<(), String> {
+        let (file, sha256, size_bytes) = handed_over(path)?;
+        let verified = Verified {
+            file,
+            path: path.to_owned(),
+            info: ModelInfo {
+                name: "FAKE test model".to_owned(),
+                sha256,
+            },
+            size_bytes,
+            chat_format: model_helper::ChatFormat::Builtin,
+            checked: false,
+        };
+        let mut config =
+            launch_at(executable.to_owned(), &verified).map_err(|error| format!("{error:?}"))?;
+        config.start_timeout = start_timeout.min(START_TIMEOUT);
+        config.answer_timeout = answer_timeout.min(TRIAL_TIMEOUT);
+        let runner = Runner::new(idle_config());
+        run_trial(&runner, runner.ticket(), config, &Plenty).map_err(|error| match error {
+            TrialError::Refused(refusal) => format!("{refusal:?}"),
+            other => format!("{other:?}"),
+        })
     }
 
     /// The file read once and hashed as it is read: the handle the helper gets (Linux: a sealed

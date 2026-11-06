@@ -1117,3 +1117,28 @@ A format 1–10 vault is upgraded to format 11 at its next writable unlock, in a
 commit of its own, with nothing else changed. An older myCarlos then refuses
 the vault as newer rather than reading a record with more than 32 answers as
 damaged. Header and object formats are unchanged.
+
+#### Format 13: approvals of AI models myCarlos hasn't checked (#276)
+
+Its number is provisional: 12 is taken by another open change (#161), and the
+one that merges second takes the next number then ("Format numbers are taken at
+merge").
+
+Format 13 adds one optional manifest field, `approvedModels`: the SHA-256 of
+each AI model, not on myCarlos's list, that the patient chose to use in this
+vault. A model the patient adds from a file is recorded outside the vault, in
+`models-in-use.json` beside the models folder, by its size and hash. It runs
+only once the open vault holds its hash here too. The patient is asked once,
+at its first answer. So a file swapped together with its record outside the
+vault, or a second vault of the same computer account, asks again.
+
+- Hashes only: 64 lowercase hexadecimal characters each, each once, at most
+  **32**. Past 32 the oldest goes. Approvals aren't the patient's documents, so
+  #71's "nothing is deleted" doesn't cover them.
+- An approval is written in a manifest commit of its own, with no history
+  entry: the history is the documents'.
+- A manifest before format 13 with any approval, or a format 13 one with a
+  malformed, repeated or 33rd hash, is corrupt.
+- A format 1–11 vault is upgraded to format 13 at its next writable unlock, in
+  a commit of its own, with nothing else changed. Header and object formats are
+  unchanged.

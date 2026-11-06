@@ -98,18 +98,202 @@ struct Choice {
     in_use: Option<String>,
     #[serde(default)]
     added_by_you: Vec<String>,
+    /// The files added that are not on the list (#276): numbers, sizes and hashes only.
+    #[serde(default)]
+    yours: Vec<Yours>,
+    /// The last "Your model N" given: a number is never given to another file.
+    #[serde(default)]
+    last_number: u32,
+}
+
+/// The smallest and largest `.gguf` that may be added when it is not on the list (#276), and
+/// how many such files at most.
+pub(crate) const YOURS_MIN_BYTES: u64 = 100 * 1000 * 1000;
+pub(crate) const YOURS_MAX_BYTES: u64 = 16 << 30;
+pub(crate) const YOURS_MAX: usize = 8;
+/// What every GGUF file starts with: the only bytes of an unchecked file native code reads.
+const GGUF_MAGIC: [u8; 4] = *b"GGUF";
+/// Where an unchecked file is copied; it is renamed after its hash once it is whole.
+const YOURS_PART: &str = "yours-adding.gguf.part";
+
+/// Whether this computer may run a model myCarlos has not checked (#276): only where the model
+/// helper has its load-stage sandbox, Linux (Landlock, seccomp, the sealed memfd) and Windows
+/// (the AppContainer). On any other system, macOS among them (#211), it is never offered.
+pub(crate) const fn unchecked_supported() -> bool {
+    cfg!(any(target_os = "linux", windows))
+}
+
+/// A model the patient added that is not on the list (#276): a file myCarlos has not checked,
+/// known by the size and SHA-256 recorded when it was added and shown as "Your model N". Its
+/// name on disk is made from that hash, never from the name the patient's file had.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Yours {
+    pub(crate) number: u32,
+    pub(crate) size_bytes: u64,
+    pub(crate) sha256: String,
+    /// What its trial start found; none until one has finished.
+    #[serde(default)]
+    pub(crate) trial: Option<TrialState>,
+}
+
+/// What the trial start of a model the patient added found (#276).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum TrialState {
+    Passed,
+    /// llama.cpp could not load it (not a model it knows, or a file split into parts).
+    Model,
+    /// No chat template, or one llama.cpp's own code does not know.
+    Template,
+    /// Too big for this computer.
+    Context,
+}
+
+impl From<crate::model_runtime::TrialRefusal> for TrialState {
+    fn from(refusal: crate::model_runtime::TrialRefusal) -> Self {
+        use crate::model_runtime::TrialRefusal;
+        match refusal {
+            TrialRefusal::Model => Self::Model,
+            TrialRefusal::Template => Self::Template,
+            TrialRefusal::Context => Self::Context,
+        }
+    }
+}
+
+impl Yours {
+    fn file_name(&self) -> String {
+        format!("yours-{}.gguf", &self.sha256[..16])
+    }
+
+    /// What answers it writes are attributed to.
+    fn label(&self) -> String {
+        format!("Your model {}", self.number)
+    }
+
+    /// One read back from the choice file is used only if it is something an add could have
+    /// written: a number, a size in range (from `min`) and a lowercase SHA-256.
+    fn valid(&self, min: u64) -> bool {
+        self.number > 0
+            && (min..=YOURS_MAX_BYTES).contains(&self.size_bytes)
+            && self.sha256.len() == 64
+            && self
+                .sha256
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    }
+}
+
+/// Whether a picked file's name is one part of a model split into several
+/// (`…-00001-of-00003.gguf`): llama.cpp would open its other parts by name, which the helper's
+/// sandbox never allows, so it is refused before anything is copied.
+fn split_name(name: &str) -> bool {
+    let stem = name.rsplit_once('.').filter(|(_, extension)| extension.eq_ignore_ascii_case("gguf"))
+        .map_or(name, |(stem, _)| stem);
+    let digits = |text: &str| text.len() == 5 && text.bytes().all(|byte| byte.is_ascii_digit());
+    stem.rsplit_once("-of-").is_some_and(|(start, total)| {
+        digits(total) && start.rsplit_once('-').is_some_and(|(prefix, part)| !prefix.is_empty() && digits(part))
+    })
+}
+
+/// A model the store can hold: one on the list, or one the patient added (#276).
+#[derive(Debug, Clone)]
+enum Entry {
+    Listed(usize, &'static Accepted),
+    Yours(Yours),
+}
+
+/// The same model: the same kind, file and hash.
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        self.checked() == other.checked()
+            && self.sha256() == other.sha256()
+            && self.file_name() == other.file_name()
+    }
+}
+
+impl Eq for Entry {}
+
+impl Entry {
+    fn file_name(&self) -> String {
+        match self {
+            Self::Listed(_, model) => model.file_name.to_owned(),
+            Self::Yours(yours) => yours.file_name(),
+        }
+    }
+
+    fn size_bytes(&self) -> u64 {
+        match self {
+            Self::Listed(_, model) => model.size_bytes,
+            Self::Yours(yours) => yours.size_bytes,
+        }
+    }
+
+    fn sha256(&self) -> &str {
+        match self {
+            Self::Listed(_, model) => model.sha256,
+            Self::Yours(yours) => &yours.sha256,
+        }
+    }
+
+    fn info(&self) -> ModelInfo {
+        match self {
+            Self::Listed(_, model) => info(model),
+            Self::Yours(yours) => ModelInfo {
+                name: yours.label(),
+                sha256: yours.sha256.clone(),
+            },
+        }
+    }
+
+    /// A model on the list was checked by myCarlos; one the patient added was not.
+    fn checked(&self) -> bool {
+        matches!(self, Self::Listed(..))
+    }
+
+    fn chat_format(&self) -> crate::model_helper::ChatFormat {
+        match self {
+            Self::Listed(_, model) => model.chat_format,
+            // Its own template, through llama.cpp's own code only (`model_helper::engine`).
+            Self::Yours(_) => crate::model_helper::ChatFormat::Builtin,
+        }
+    }
+}
+
+/// Which model a command is about: one on the list by its place, or one you added by its hash.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Which {
+    Listed(usize),
+    Yours(String),
+}
+
+/// What an add placed: a model on the list, or one that is not (#276).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Added {
+    Listed(ModelInfo),
+    Yours(Yours),
 }
 
 /// One row of the models list (#276).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ModelRow {
-    /// The model's place in the catalog, which Download, Use and Remove name.
-    pub(crate) index: usize,
-    pub(crate) model: Accepted,
+    /// A listed model's place in the catalog, which Download, Use and Remove name. None for a
+    /// model you added that is not on the list: its commands name its `sha256`.
+    pub(crate) index: Option<usize>,
+    /// The list entry; none for a model you added that is not on the list.
+    pub(crate) model: Option<Accepted>,
+    /// "Your model N", for a model you added that is not on the list.
+    pub(crate) number: Option<u32>,
+    pub(crate) sha256: String,
+    pub(crate) size_bytes: u64,
     pub(crate) state: RowState,
     /// Added from a file rather than downloaded.
     pub(crate) added_by_you: bool,
+    /// On myCarlos's list, so checked by myCarlos: false for any other file you added.
+    pub(crate) checked: bool,
+    /// What its trial start found (a model you added that is not on the list only).
+    pub(crate) trial: Option<TrialState>,
     /// The one that writes summaries and explanations.
     pub(crate) in_use: bool,
 }
@@ -122,6 +306,11 @@ pub(crate) enum RowState {
     Installed,
     /// A file is there but its size or hash is wrong: the row offers Remove.
     Damaged,
+    /// A model you added whose trial start has not finished: the row offers Try again.
+    NotTried,
+    /// A model you added that can't be used here (`trial` says why), or any model you added on
+    /// a system where unchecked models are never run: the row offers Remove.
+    Unusable,
 }
 
 fn info(model: &Accepted) -> ModelInfo {
@@ -189,6 +378,16 @@ pub(crate) enum ModelError {
     /// Not enough free memory to hold the model for a run now (checked
     /// before the sealed copy is made). The runner maps it to `aiMemory`.
     Memory,
+    /// Not a GGUF file (its first bytes), or smaller than any model (#276).
+    NotGguf,
+    /// One part of a model split into several (#276).
+    Split,
+    /// Already as many models added that are not on the list as allowed (#276).
+    TooMany,
+    /// A model you added whose trial start did not pass, or one never run on this system.
+    Unusable,
+    /// The trial helper failed unexpectedly; no usability result is recorded.
+    TrialFailed,
 }
 
 impl ModelError {
@@ -210,6 +409,11 @@ impl ModelError {
             Self::Memory => "memory",
             Self::Network => "network",
             Self::Unavailable => "unavailable",
+            Self::NotGguf => "notGguf",
+            Self::Split => "split",
+            Self::TooMany => "tooMany",
+            Self::Unusable => "unusable",
+            Self::TrialFailed => "trialFailed",
         }
     }
 }
@@ -376,26 +580,48 @@ pub(crate) struct VerifiedModel {
     pub(crate) info: ModelInfo,
     pub(crate) size_bytes: u64,
     pub(crate) chat_format: crate::model_helper::ChatFormat,
+    /// On myCarlos's list. A model you added that is not runs only once the open vault has
+    /// approved its hash (#276).
+    pub(crate) checked: bool,
 }
 
 impl Store {
-    /// The listed size of the model in use, when its file is there at that size, for the
-    /// runtime's memory check before anything is read.
+    /// The size of the model in use, when its file is there at that size, for the runtime's
+    /// memory check before anything is read.
     pub(crate) fn installed_size(&self) -> Option<u64> {
-        let (_, model) = self.in_use()?;
-        (self.present(model) == Some(true)).then_some(model.size_bytes)
+        let entry = self.in_use()?;
+        (self.present(&entry) == Some(true)).then(|| entry.size_bytes())
     }
 
     fn choice_path(&self) -> PathBuf {
         self.dir.with_file_name(CHOICE_FILE)
     }
 
-    /// The choice as saved; none, or one that can't be read, is no choice.
+    /// The choice as saved; none, or one that can't be read, is no choice. Of the models you
+    /// added, only well-formed records are kept, each hash once, at most [`YOURS_MAX`].
     fn choice(&self) -> Choice {
-        fs::read(self.choice_path())
+        let mut choice: Choice = fs::read(self.choice_path())
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let mut seen = Vec::new();
+        choice.yours.retain(|yours| {
+            let keep = yours.valid(self.yours_min_bytes)
+                && !seen.contains(&yours.sha256)
+                && !self.catalog.iter().any(|m| m.sha256 == yours.sha256);
+            seen.push(yours.sha256.clone());
+            keep
+        });
+        choice.yours.truncate(YOURS_MAX);
+        choice.last_number = choice.last_number.max(
+            choice
+                .yours
+                .iter()
+                .map(|yours| yours.number)
+                .max()
+                .unwrap_or(0),
+        );
+        choice
     }
 
     /// Saves the choice whole (written beside it, then renamed over it).
@@ -415,77 +641,202 @@ impl Store {
         Ok(())
     }
 
-    /// Whether `model`'s file is in the folder: `Some(true)` at its listed size, `Some(false)`
-    /// at another (damaged), `None` when it isn't there.
-    fn present(&self, model: &Accepted) -> Option<bool> {
-        let meta = fs::symlink_metadata(self.dir.join(model.file_name)).ok()?;
-        Some(meta.is_file() && meta.len() == model.size_bytes)
+    /// Whether `entry`'s file is in the folder: `Some(true)` at its size, `Some(false)` at
+    /// another (damaged), `None` when it isn't there.
+    fn present(&self, entry: &Entry) -> Option<bool> {
+        let meta = fs::symlink_metadata(self.dir.join(entry.file_name())).ok()?;
+        Some(meta.is_file() && meta.len() == entry.size_bytes())
+    }
+
+    fn listed_present(&self, index: usize, model: &'static Accepted) -> Option<bool> {
+        self.present(&Entry::Listed(index, model))
     }
 
     /// The model in use: the chosen one while its file is there, else the first in the list
-    /// whose file is (#276: the first installed becomes In use).
-    fn in_use(&self) -> Option<(usize, &'static Accepted)> {
-        let catalog = self.catalog;
-        let present = |model: &Accepted| self.present(model).is_some();
-        let chosen = self.choice().in_use;
-        catalog
-            .iter()
-            .enumerate()
-            .find(|(_, model)| chosen.as_deref() == Some(model.sha256) && present(model))
-            .or_else(|| catalog.iter().enumerate().find(|(_, model)| present(model)))
-    }
-
-    /// Every model the app offers, and any other accepted one that is on this computer, with
-    /// its state, whether it was added from a file, and whether it is the one in use.
-    pub(crate) fn models(&self) -> Vec<ModelRow> {
+    /// whose file is (#276: the first installed becomes In use). A model you added that is not
+    /// on the list is in use only when chosen, only after its trial start passed, and only on
+    /// a system where such models run: never by default.
+    fn in_use(&self) -> Option<Entry> {
         let choice = self.choice();
-        let in_use = self.in_use().map(|(index, _)| index);
+        if let Some(chosen) = choice.in_use.as_deref() {
+            let listed = self
+                .catalog
+                .iter()
+                .enumerate()
+                .find(|(_, model)| model.sha256 == chosen)
+                .map(|(index, model)| Entry::Listed(index, model));
+            let yours = || {
+                choice
+                    .yours
+                    .iter()
+                    .find(|yours| yours.sha256 == chosen)
+                    .filter(|yours| {
+                        unchecked_supported() && yours.trial == Some(TrialState::Passed)
+                    })
+                    .map(|yours| Entry::Yours(yours.clone()))
+            };
+            if let Some(entry) = listed.or_else(yours) {
+                if self.present(&entry).is_some() {
+                    return Some(entry);
+                }
+            }
+        }
         self.catalog
             .iter()
             .enumerate()
+            .find(|(index, model)| self.listed_present(*index, model).is_some())
+            .map(|(index, model)| Entry::Listed(index, model))
+    }
+
+    /// Every model the app offers, any other accepted one that is on this computer, and every
+    /// model you added that is not on the list, with its state, whether you added it, whether
+    /// myCarlos checked it, and whether it is the one in use.
+    pub(crate) fn models(&self) -> Vec<ModelRow> {
+        let choice = self.choice();
+        let in_use = self.in_use();
+        let damaged_in_use = |entry: &Entry| in_use.as_ref() == Some(entry) && self.damaged();
+        let mut rows: Vec<ModelRow> = self
+            .catalog
+            .iter()
+            .enumerate()
             .filter_map(|(index, model)| {
-                let present = self.present(model);
+                let entry = Entry::Listed(index, model);
+                let present = self.present(&entry);
                 if !model.listed && present.is_none() {
                     return None;
                 }
                 let state = match present {
                     None => RowState::NotDownloaded,
-                    Some(true) if !(in_use == Some(index) && self.damaged()) => RowState::Installed,
+                    Some(true) if !damaged_in_use(&entry) => RowState::Installed,
                     Some(_) => RowState::Damaged,
                 };
                 Some(ModelRow {
-                    index,
-                    model: *model,
+                    index: Some(index),
+                    model: Some(*model),
+                    number: None,
+                    sha256: model.sha256.to_owned(),
+                    size_bytes: model.size_bytes,
                     state,
                     added_by_you: present.is_some()
                         && choice.added_by_you.iter().any(|sha| sha == model.sha256),
-                    in_use: in_use == Some(index),
+                    checked: true,
+                    trial: None,
+                    in_use: in_use.as_ref() == Some(&entry),
                 })
             })
-            .collect()
+            .collect();
+        for yours in &choice.yours {
+            let entry = Entry::Yours(yours.clone());
+            // A record whose file has gone is not shown (the next save drops it).
+            let Some(sized) = self.present(&entry) else {
+                continue;
+            };
+            let state = if !sized || damaged_in_use(&entry) {
+                RowState::Damaged
+            } else if !unchecked_supported() {
+                RowState::Unusable
+            } else {
+                match yours.trial {
+                    None => RowState::NotTried,
+                    Some(TrialState::Passed) => RowState::Installed,
+                    Some(_) => RowState::Unusable,
+                }
+            };
+            rows.push(ModelRow {
+                index: None,
+                model: None,
+                number: Some(yours.number),
+                sha256: yours.sha256.clone(),
+                size_bytes: yours.size_bytes,
+                state,
+                added_by_you: true,
+                checked: false,
+                trial: yours.trial,
+                in_use: in_use.as_ref() == Some(&entry),
+            });
+        }
+        rows
     }
 
-    /// Makes catalog entry `index`, which must be installed, the model in use. The helper that
-    /// holds the old one ends first, as at a lock, so an answer it is writing stops; the next
-    /// run starts with the new one. Choosing the one in use already changes nothing.
-    pub(crate) fn use_model(&self, index: usize) -> Result<ModelInfo, ModelError> {
+    /// The entry `which` names, as recorded now.
+    fn entry(&self, which: &Which) -> Result<Entry, ModelError> {
+        match which {
+            Which::Listed(index) => self
+                .catalog
+                .get(*index)
+                .map(|model| Entry::Listed(*index, model))
+                .ok_or(ModelError::NotOnList),
+            Which::Yours(sha256) => self
+                .choice()
+                .yours
+                .into_iter()
+                .find(|yours| yours.sha256 == *sha256)
+                .map(Entry::Yours)
+                .ok_or(ModelError::NotInstalled),
+        }
+    }
+
+    /// Makes the model `which` names, which must be installed, the model in use. The helper
+    /// that holds the old one ends first, as at a lock, so an answer it is writing stops; the
+    /// next run starts with the new one. Choosing the one in use already changes nothing. A
+    /// model you added that is not on the list must have passed its trial start, on a system
+    /// where such models run.
+    pub(crate) fn use_model(&self, which: &Which) -> Result<ModelInfo, ModelError> {
         let _one_at_a_time = self.lock()?;
-        let model = self.catalog.get(index).ok_or(ModelError::NotOnList)?;
-        if self.present(model) != Some(true) {
+        let entry = self.entry(which)?;
+        if self.present(&entry) != Some(true) {
             return Err(ModelError::NotInstalled);
         }
-        if self.in_use().map(|(at, _)| at) == Some(index) {
-            return Ok(info(model));
+        if let Entry::Yours(yours) = &entry {
+            if !unchecked_supported() || yours.trial != Some(TrialState::Passed) {
+                return Err(ModelError::Unusable);
+            }
+        }
+        if self.in_use().as_ref() == Some(&entry) {
+            return Ok(entry.info());
         }
         if self.uses.load(Ordering::SeqCst) > 0 {
             return Err(ModelError::Busy);
         }
         self.run_before_replace();
         let mut choice = self.choice();
-        choice.in_use = Some(model.sha256.to_owned());
+        choice.in_use = Some(entry.sha256().to_owned());
         self.save_choice(&choice)?;
         self.set_damaged(false);
-        Ok(info(model))
+        Ok(entry.info())
+    }
+
+    /// The trial start of a model you added that is not on the list (#276): checked as for a
+    /// run, then handed to `run` (the runtime's trial: the real helper start, its template on
+    /// a FAKE request and one token). What it found is recorded. Refused as busy while
+    /// `may_start` says an answer runs. The store stays locked meanwhile, so no answer starts
+    /// and only one model is ever loaded; the runtime ends the idle resident helper first.
+    pub(crate) fn trial(
+        &self,
+        sha256: &str,
+        probe: &dyn MemoryProbe,
+        may_start: impl FnOnce() -> bool,
+        run: impl FnOnce(VerifiedModel) -> Result<TrialState, ModelError>,
+    ) -> Result<TrialState, ModelError> {
+        if !unchecked_supported() {
+            return Err(ModelError::Unusable);
+        }
+        let _no_add = self.add_lock()?;
+        let _one_at_a_time = self.lock()?;
+        // Asked with the store locked, so no answer starts after: `false` while one runs, so
+        // a trial never ends an answer. Nothing is recorded then.
+        if !may_start() {
+            return Err(ModelError::Busy);
+        }
+        let entry = self.entry(&Which::Yours(sha256.to_owned()))?;
+        let verified = self.verify(&entry, probe)?;
+        let found = run(verified)?;
+        let mut choice = self.choice();
+        if let Some(yours) = choice.yours.iter_mut().find(|y| y.sha256 == sha256) {
+            yours.trial = Some(found);
+        }
+        self.save_choice(&choice)?;
+        Ok(found)
     }
 }
 
@@ -513,13 +864,19 @@ impl crate::model_runtime::ModelSource for RuntimeSource {
             ModelError::Unsupported(_) => Unavailable::Unsupported,
             _ => Unavailable::Storage,
         })?;
-        Ok(crate::model_runtime::Verified {
-            file: model.file,
-            path: model.path,
-            info: model.info,
-            size_bytes: model.size_bytes,
-            chat_format: model.chat_format,
-        })
+        Ok(runtime_verified(model))
+    }
+}
+
+/// What the runtime starts the helper with, from a model that passed its check.
+pub(crate) fn runtime_verified(model: VerifiedModel) -> crate::model_runtime::Verified {
+    crate::model_runtime::Verified {
+        file: model.file,
+        path: model.path,
+        info: model.info,
+        size_bytes: model.size_bytes,
+        chat_format: model.chat_format,
+        checked: model.checked,
     }
 }
 
@@ -559,6 +916,8 @@ pub(crate) struct Store {
     uses: Arc<AtomicUsize>,
     /// Asked to stop the add in progress.
     cancel_add: AtomicBool,
+    /// The smallest file added that is not on the list: [`YOURS_MIN_BYTES`] (smaller in tests).
+    yours_min_bytes: u64,
 }
 
 /// The one place a file is removed here. The models folder holds a public
@@ -584,7 +943,15 @@ impl Store {
             before_replace: Mutex::new(None),
             uses: Arc::new(AtomicUsize::new(0)),
             cancel_add: AtomicBool::new(false),
+            yours_min_bytes: YOURS_MIN_BYTES,
         }
+    }
+
+    /// Tests only: FAKE files added that are not on the list may be this small.
+    #[cfg(test)]
+    fn with_yours_min(mut self, bytes: u64) -> Self {
+        self.yours_min_bytes = bytes;
+        self
     }
 
     #[cfg(windows)]
@@ -693,8 +1060,10 @@ impl Store {
         }
         match self.in_use() {
             None => ModelStatus::NotInstalled,
-            Some((_, model)) if self.present(model) == Some(true) && !self.damaged() => {
-                ModelStatus::Installed { model: info(model) }
+            Some(entry) if self.present(&entry) == Some(true) && !self.damaged() => {
+                ModelStatus::Installed {
+                    model: entry.info(),
+                }
             }
             Some(_) => ModelStatus::Damaged,
         }
@@ -758,7 +1127,16 @@ impl Store {
             return Err(ModelError::NotEnoughDisk);
         }
         let part = self.dir.join(&part_name);
-        let result = copy_checked(input, &part, model, &self.cancel_add, have, progress);
+        let result = copy_checked(
+            input,
+            &part,
+            model.size_bytes,
+            Some(model.sha256),
+            &self.cancel_add,
+            have,
+            progress,
+        )
+        .map(|_| ());
         if let Err(error) = result {
             // A download cut short (the connection lost, a read that failed)
             // keeps what it has, to resume: only when the source was a
@@ -777,8 +1155,10 @@ impl Store {
         // when the file arrives stays in use; with none, this one becomes it. The helper ends
         // only when the file it holds is the one replaced.
         let _placing = self.busy.lock().unwrap_or_else(|e| e.into_inner());
-        let in_use_before = self.in_use().map(|(_, used)| used);
-        let replacing_in_use = in_use_before.is_some_and(|used| used.file_name == model.file_name);
+        let in_use_before = self.in_use();
+        let replacing_in_use = in_use_before
+            .as_ref()
+            .is_some_and(|used| used.file_name() == model.file_name);
         if replacing_in_use {
             if self.uses.load(Ordering::SeqCst) > 0 {
                 let _ = remove_model_file(&part);
@@ -802,7 +1182,7 @@ impl Store {
         if want.is_none() {
             choice.added_by_you.push(sha.clone());
         }
-        choice.in_use = Some(in_use_before.map_or(sha, |used| used.sha256.to_owned()));
+        choice.in_use = Some(in_use_before.map_or(sha, |used| used.sha256().to_owned()));
         // A choice that can't be saved leaves the first installed model in use.
         let _ = self.save_choice(&choice);
         Ok(info(model))
@@ -903,38 +1283,188 @@ impl Store {
         })
     }
 
-    /// Deletes catalog entry `index`'s file and its `.part` (the model in use when `None`).
-    /// A missing file is not an error. Only removing the model in use ends the helper (which
-    /// holds no other); In use then moves to the first installed model left, or to none.
-    pub(crate) fn remove(&self, index: Option<usize>) -> Result<(), ModelError> {
+    /// Adds the picked file at `source` whatever model it is (#276), once the patient has
+    /// confirmed it although myCarlos hasn't checked it. A file the size of a model on the list
+    /// is still checked against the list, as by [`Store::add`], and refused when its hash isn't
+    /// that model's: a damaged or swapped copy is never taken as unchecked. Of any other file,
+    /// native code reads its first four bytes (`GGUF`) and nothing else before copying it; the
+    /// helper alone parses it, in its sandbox, at the trial start that follows. `picked_name` is
+    /// the file's name as the dialog gave it: only read to refuse one part of a split model.
+    /// Its name on disk is made from its hash; it is never in use until the patient chooses it.
+    pub(crate) fn add_unchecked(
+        &self,
+        source: &Path,
+        picked_name: &str,
+        hardware: &dyn Hardware,
+        mut progress: impl FnMut(u64, u64),
+    ) -> Result<Added, ModelError> {
+        let _one_add = self.add_lock()?;
+        // Reset inside the lock: only an add that is about to run is not cancelled.
+        self.cancel_add.store(false, Ordering::SeqCst);
+        let machine = hardware.machine();
+        if let Some(reason) = unsupported(&machine) {
+            return Err(ModelError::Unsupported(reason));
+        }
+        if !unchecked_supported() {
+            return Err(ModelError::Unsupported(Unsupported::Platform));
+        }
+        let mut input =
+            crate::vault::open_regular_read(source).map_err(|_| ModelError::Unreadable)?;
+        let size = input.metadata().map_err(|_| ModelError::Unreadable)?.len();
+        if self.catalog.iter().any(|model| model.size_bytes == size) {
+            return self
+                .add_stream(&mut input, size, None, 0, hardware, &mut progress)
+                .map(Added::Listed);
+        }
+        if split_name(picked_name) {
+            return Err(ModelError::Split);
+        }
+        if size > YOURS_MAX_BYTES {
+            return Err(ModelError::TooBig);
+        }
+        if size < self.yours_min_bytes {
+            return Err(ModelError::NotGguf);
+        }
+        let mut magic = [0u8; 4];
+        input
+            .read_exact(&mut magic)
+            .map_err(|_| ModelError::Unreadable)?;
+        if magic != GGUF_MAGIC {
+            return Err(ModelError::NotGguf);
+        }
+        // This computer's memory must hold it at all: what a run's check needs when the
+        // computer is otherwise idle (Linux: the sealed copy and the weights).
+        let needed = if cfg!(target_os = "linux") {
+            size.saturating_mul(2)
+        } else {
+            size
+        }
+        .saturating_add(1536 << 20);
+        if machine.ram_total_bytes.is_none_or(|ram| ram < needed) {
+            return Err(ModelError::Memory);
+        }
+        let mut choice = self.choice();
+        let known = choice
+            .yours
+            .iter()
+            .position(|yours| yours.size_bytes == size);
+        if known.is_none() && choice.yours.len() >= YOURS_MAX {
+            return Err(ModelError::TooMany);
+        }
+        self.prepare_dir()?;
+        self.clean_leftovers();
+        let free = hardware.free_disk_bytes(&self.dir);
+        if free.is_none_or(|free| {
+            free < size
+                .saturating_add(DISK_MARGIN_BYTES)
+                .max(MIN_FREE_DISK_BYTES)
+        }) {
+            return Err(ModelError::NotEnoughDisk);
+        }
+        let part = self.dir.join(YOURS_PART);
+        let mut whole = Read::chain(&magic[..], input);
+        let sha256 = match copy_checked(
+            &mut whole,
+            &part,
+            size,
+            None,
+            &self.cancel_add,
+            0,
+            &mut progress,
+        ) {
+            Ok(sha256) => sha256,
+            Err(error) => {
+                let _ = remove_model_file(&part);
+                return Err(error);
+            }
+        };
+        // The placing, under the store lock as for a listed model. The same file added again
+        // keeps its record, its number and its trial; its copy is dropped.
+        let _placing = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+        choice = self.choice();
+        if let Some(yours) = choice.yours.iter().find(|y| y.sha256 == sha256) {
+            let yours = yours.clone();
+            if self.present(&Entry::Yours(yours.clone())) == Some(true) {
+                let _ = remove_model_file(&part);
+                return Ok(Added::Yours(yours));
+            }
+        } else if choice.yours.len() >= YOURS_MAX {
+            let _ = remove_model_file(&part);
+            return Err(ModelError::TooMany);
+        }
+        let number = match choice.yours.iter().find(|y| y.sha256 == sha256) {
+            Some(yours) => yours.number,
+            None => match choice.last_number.checked_add(1) {
+                Some(number) => number,
+                None => {
+                    let _ = remove_model_file(&part);
+                    return Err(ModelError::TooMany);
+                }
+            },
+        };
+        let yours = Yours {
+            number,
+            size_bytes: size,
+            sha256,
+            trial: None,
+        };
+        let target = self.dir.join(yours.file_name());
+        if fs::rename(&part, &target).is_err() {
+            let _ = remove_model_file(&part);
+            return Err(ModelError::Storage);
+        }
+        sync_dir(&self.dir);
+        choice.yours.retain(|y| y.sha256 != yours.sha256);
+        choice.yours.push(yours.clone());
+        choice.last_number = choice.last_number.max(number);
+        // Its record is what every later check compares the file with: without it, the file
+        // is not kept.
+        if let Err(error) = self.save_choice(&choice) {
+            let _ = remove_model_file(&target);
+            return Err(error);
+        }
+        Ok(Added::Yours(yours))
+    }
+
+    /// Deletes the file of the model `which` names and its `.part` (the model in use when
+    /// `None`); for a model you added that is not on the list, its record too. A missing file is
+    /// not an error. Only removing the model in use ends the helper (which holds no other); In
+    /// use then moves to the first installed model on the list, or to none.
+    pub(crate) fn remove(&self, which: Option<&Which>) -> Result<(), ModelError> {
         // Not while an add copies: its `.part` is in this folder.
         let _no_add = self.add_lock()?;
         let _one_at_a_time = self.lock()?;
-        let in_use = self.in_use().map(|(at, _)| at);
-        let Some(index) = index.or(in_use) else {
-            self.clean_leftovers();
-            return Ok(());
+        let in_use = self.in_use();
+        let entry = match (which, &in_use) {
+            (Some(which), _) => self.entry(which)?,
+            (None, Some(entry)) => entry.clone(),
+            (None, None) => {
+                self.clean_leftovers();
+                return Ok(());
+            }
         };
-        let model = self.catalog.get(index).ok_or(ModelError::NotOnList)?;
-        let removing_in_use = in_use == Some(index);
+        let removing_in_use = in_use.as_ref() == Some(&entry);
         if removing_in_use {
             if self.uses.load(Ordering::SeqCst) > 0 {
                 return Err(ModelError::Busy);
             }
             self.run_before_replace();
         }
-        let part = self.dir.join(format!("{}{PART_SUFFIX}", model.file_name));
-        for path in [self.dir.join(model.file_name), part] {
+        let file_name = entry.file_name();
+        let part = self.dir.join(format!("{file_name}{PART_SUFFIX}"));
+        for path in [self.dir.join(&file_name), part] {
             match remove_model_file(path) {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(_) => return Err(ModelError::Storage),
             }
         }
+        let sha256 = entry.sha256().to_owned();
         let mut choice = self.choice();
         let before = choice.clone();
-        choice.added_by_you.retain(|added| added != model.sha256);
-        if choice.in_use.as_deref() == Some(model.sha256) {
+        choice.added_by_you.retain(|added| *added != sha256);
+        choice.yours.retain(|yours| yours.sha256 != sha256);
+        if choice.in_use.as_deref() == Some(sha256.as_str()) {
             choice.in_use = None;
         }
         if choice != before {
@@ -962,6 +1492,14 @@ impl Store {
         probe: &dyn MemoryProbe,
     ) -> Result<VerifiedModel, ModelError> {
         let _one_at_a_time = self.lock()?;
+        // The model in use only: the others stay on disk, unread.
+        let entry = self.in_use().ok_or(ModelError::NotInstalled)?;
+        self.verify(&entry, probe)
+    }
+
+    /// Checks `entry`'s file as [`Self::verified_model_with`] says; the caller holds the store
+    /// lock. A mismatch marks the model damaged when it is the one in use.
+    fn verify(&self, entry: &Entry, probe: &dyn MemoryProbe) -> Result<VerifiedModel, ModelError> {
         // Windows: the helper's read access to the folder is granted again
         // before each use (cheap, idempotent), so a failure shows here, as
         // "could not be saved", rather than as a silent failed run.
@@ -969,59 +1507,53 @@ impl Store {
         if self.dir.exists() {
             self.prepare_dir()?;
         }
-        // The model in use only: the others stay on disk, unread.
-        if let Some((_, model)) = self.in_use() {
-            let path = self.dir.join(model.file_name);
-            #[cfg(target_os = "linux")]
-            {
-                let needed = model
-                    .size_bytes
-                    .saturating_mul(2)
-                    .saturating_add(1536 << 20);
-                if probe.available_bytes().is_none_or(|free| free < needed) {
-                    return Err(ModelError::Memory);
-                }
+        let size_bytes = entry.size_bytes();
+        let path = self.dir.join(entry.file_name());
+        #[cfg(target_os = "linux")]
+        {
+            let needed = size_bytes.saturating_mul(2).saturating_add(1536 << 20);
+            if probe.available_bytes().is_none_or(|free| free < needed) {
+                return Err(ModelError::Memory);
             }
-            #[cfg(not(target_os = "linux"))]
-            let _ = probe;
-            let file = match open_for_use(&path) {
-                Ok(file) => file,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    return Err(ModelError::NotInstalled)
-                }
-                // Windows: another program holds the file open for writing
-                // (ERROR_SHARING_VIOLATION): in use, not damaged.
-                Err(e) if cfg!(windows) && e.raw_os_error() == Some(32) => {
-                    return Err(ModelError::Busy);
-                }
-                Err(_) => {
-                    self.set_damaged(true);
-                    return Err(ModelError::Damaged);
-                }
-            };
-            let sized = file.metadata().is_ok_and(|m| m.len() == model.size_bytes);
-            let verified = if sized {
-                hash_into_handle(file, model.size_bytes, model.sha256)
-            } else {
-                None
-            };
-            let Some(file) = verified else {
-                self.set_damaged(true);
-                return Err(ModelError::Damaged);
-            };
-            return Ok(VerifiedModel {
-                _use: UseGuard::new(&self.uses),
-                file,
-                path,
-                info: ModelInfo {
-                    name: model.name.to_owned(),
-                    sha256: model.sha256.to_owned(),
-                },
-                size_bytes: model.size_bytes,
-                chat_format: model.chat_format,
-            });
         }
-        Err(ModelError::NotInstalled)
+        #[cfg(not(target_os = "linux"))]
+        let _ = probe;
+        let damaged = || {
+            if self.in_use().as_ref() == Some(entry) {
+                self.set_damaged(true);
+            }
+            ModelError::Damaged
+        };
+        let file = match open_for_use(&path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(ModelError::NotInstalled)
+            }
+            // Windows: another program holds the file open for writing
+            // (ERROR_SHARING_VIOLATION): in use, not damaged.
+            Err(e) if cfg!(windows) && e.raw_os_error() == Some(32) => {
+                return Err(ModelError::Busy);
+            }
+            Err(_) => return Err(damaged()),
+        };
+        let sized = file.metadata().is_ok_and(|m| m.len() == size_bytes);
+        let verified = if sized {
+            hash_into_handle(file, size_bytes, entry.sha256())
+        } else {
+            None
+        };
+        let Some(file) = verified else {
+            return Err(damaged());
+        };
+        Ok(VerifiedModel {
+            _use: UseGuard::new(&self.uses),
+            file,
+            path,
+            info: entry.info(),
+            size_bytes,
+            chat_format: entry.chat_format(),
+            checked: entry.checked(),
+        })
     }
 }
 
@@ -1241,17 +1773,17 @@ fn windows_memory() -> Option<WindowsMemory> {
 fn copy_checked(
     input: &mut dyn Read,
     part: &Path,
-    model: &Accepted,
+    size_bytes: u64,
+    sha256: Option<&str>,
     cancel: &AtomicBool,
     have: u64,
     progress: &mut impl FnMut(u64, u64),
-) -> Result<(), ModelError> {
+) -> Result<String, ModelError> {
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; BUFFER_BYTES];
     let mut done = 0u64;
-    // Retained bytes count as downloaded while they are checked again. A server that
-    // restarts from zero passes have=0, so that real restart is still shown.
-    progress(have, model.size_bytes);
+    // Retained bytes stay visible while rechecked; a server restart passes have=0.
+    progress(have, size_bytes);
     let mut output = if have > 0 {
         // Resuming: hash what is already there, from its start, then append.
         let mut kept = OpenOptions::new()
@@ -1273,7 +1805,7 @@ fn copy_checked(
             }
             hasher.update(&buffer[..n]);
             done += n as u64;
-            progress(have, model.size_bytes);
+            progress(have, size_bytes);
         }
         kept.seek(SeekFrom::End(0))
             .map_err(|_| ModelError::Storage)?;
@@ -1289,7 +1821,7 @@ fn copy_checked(
         options.open(part).map_err(|_| ModelError::Storage)?
     };
     // One byte more than what is left is read, so a source that grew is seen.
-    let mut reader = Read::take(input, model.size_bytes - have + 1);
+    let mut reader = Read::take(input, size_bytes - have + 1);
     loop {
         if cancel.load(Ordering::SeqCst) {
             return Err(ModelError::Cancelled);
@@ -1305,22 +1837,24 @@ fn copy_checked(
             break;
         }
         done += n as u64;
-        if done > model.size_bytes {
+        if done > size_bytes {
             return Err(ModelError::Truncated);
         }
         hasher.update(&buffer[..n]);
         output
             .write_all(&buffer[..n])
             .map_err(|_| ModelError::Storage)?;
-        progress(done, model.size_bytes);
+        progress(done, size_bytes);
     }
-    if done != model.size_bytes {
+    if done != size_bytes {
         return Err(ModelError::Truncated);
     }
-    if hex(&hasher.finalize()) != model.sha256 {
+    let found = hex(&hasher.finalize());
+    if sha256.is_some_and(|wanted| found != wanted) {
         return Err(ModelError::WrongHash);
     }
-    output.sync_all().map_err(|_| ModelError::Storage)
+    output.sync_all().map_err(|_| ModelError::Storage)?;
+    Ok(found)
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -1456,8 +1990,382 @@ mod tests {
 
     fn row(store: &Store, index: usize) -> (RowState, bool, bool) {
         let rows = store.models();
-        let row = rows.iter().find(|row| row.index == index).unwrap();
+        let row = rows.iter().find(|row| row.index == Some(index)).unwrap();
         (row.state, row.added_by_you, row.in_use)
+    }
+
+    /// A FAKE file on no list: `GGUF`, then `size - 4` bytes made from `seed`. Nothing here is a
+    /// real model.
+    fn unlisted(size: usize, seed: u8) -> Vec<u8> {
+        let mut bytes: Vec<u8> = (0..size)
+            .map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed))
+            .collect();
+        bytes[..4].copy_from_slice(&GGUF_MAGIC);
+        bytes
+    }
+
+    const SMALL: u64 = 64 * 1024;
+
+    /// The two FAKE listed entries of [`two`], with FAKE unlisted files allowed from 64 KiB.
+    fn two_and_yours() -> (tempfile::TempDir, Vec<u8>, Store) {
+        let (temp, a, _b, store) = two(true);
+        (temp, a, store.with_yours_min(SMALL))
+    }
+
+    fn picked(temp: &tempfile::TempDir, name: &str, bytes: &[u8]) -> PathBuf {
+        let path = temp.path().join(name);
+        fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    fn add_yours(store: &Store, temp: &tempfile::TempDir, bytes: &[u8]) -> Yours {
+        let path = picked(temp, "FAKE mine.gguf", bytes);
+        match store
+            .add_unchecked(&path, "FAKE mine.gguf", &good(), |_, _| {})
+            .unwrap()
+        {
+            Added::Yours(yours) => yours,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn yours_row(store: &Store, sha256: &str) -> ModelRow {
+        store
+            .models()
+            .into_iter()
+            .find(|row| row.sha256 == sha256)
+            .unwrap()
+    }
+
+    fn which(yours: &Yours) -> Which {
+        Which::Yours(yours.sha256.clone())
+    }
+
+    #[test]
+    fn a_file_on_no_list_is_refused_without_the_confirm_and_added_with_it_under_its_hash() {
+        let (temp, _a, store) = two_and_yours();
+        let mine = unlisted(200 * 1024, 7);
+        let path = picked(&temp, "FAKE mine.gguf", &mine);
+        assert_eq!(
+            store.add(&path, &good(), |_, _| {}).unwrap_err(),
+            ModelError::NotOnList
+        );
+        assert!(folder_names(&store).is_empty());
+        let yours = add_yours(&store, &temp, &mine);
+        assert_eq!(yours.number, 1);
+        assert_eq!(yours.sha256, hex(&Sha256::digest(&mine)));
+        assert_eq!(yours.trial, None);
+        // Named by its hash on disk, never by the picked name; its record is outside the folder.
+        assert_eq!(
+            folder_names(&store),
+            [format!("yours-{}.gguf", &yours.sha256[..16])]
+        );
+        assert_eq!(fs::read(store.dir.join(yours.file_name())).unwrap(), mine);
+        let row = yours_row(&store, &yours.sha256);
+        assert_eq!(
+            (
+                row.index,
+                row.number,
+                row.state,
+                row.checked,
+                row.added_by_you,
+                row.in_use
+            ),
+            (None, Some(1), RowState::NotTried, false, true, false)
+        );
+        // Never in use by default: nothing on the list is installed, so nothing is in use.
+        assert_eq!(store.status(&good()), ModelStatus::NotInstalled);
+        // Another file is number 2; the same file again keeps its record.
+        let other = add_yours(&store, &temp, &unlisted(300 * 1024, 9));
+        assert_eq!(other.number, 2);
+        assert_eq!(add_yours(&store, &temp, &mine), yours);
+        assert_eq!(folder_names(&store).len(), 2);
+        // A number is never given again, even once its file is removed.
+        store.remove(Some(&which(&other))).unwrap();
+        assert_eq!(
+            add_yours(&store, &temp, &unlisted(400 * 1024, 11)).number,
+            3
+        );
+    }
+
+    #[test]
+    fn a_file_the_size_of_a_listed_model_is_checked_against_the_list_never_taken_as_unchecked() {
+        let (temp, a, store) = two_and_yours();
+        let mut changed = a.clone();
+        changed[100] ^= 1;
+        let path = picked(&temp, "FAKE copy.gguf", &changed);
+        assert_eq!(
+            store
+                .add_unchecked(&path, "FAKE copy.gguf", &good(), |_, _| {})
+                .unwrap_err(),
+            ModelError::WrongHash
+        );
+        assert!(folder_names(&store).is_empty());
+        // The right file is added as the listed model it is.
+        let path = picked(&temp, "FAKE copy.gguf", &a);
+        assert!(matches!(
+            store.add_unchecked(&path, "FAKE copy.gguf", &good(), |_, _| {}),
+            Ok(Added::Listed(_))
+        ));
+    }
+
+    #[test]
+    fn native_code_reads_only_the_magic_and_the_size_before_copying() {
+        let (temp, _a, store) = two_and_yours();
+        let refused = |name: &str, bytes: &[u8], hardware: &Fixed| {
+            let path = picked(&temp, name, bytes);
+            store
+                .add_unchecked(&path, name, hardware, |_, _| {})
+                .unwrap_err()
+        };
+        let mine = unlisted(200 * 1024, 3);
+        assert_eq!(
+            refused("FAKE-00001-of-00003.gguf", &mine, &good()),
+            ModelError::Split
+        );
+        assert_eq!(
+            refused("FAKE.gguf", &unlisted(SMALL as usize - 1, 3), &good()),
+            ModelError::NotGguf
+        );
+        let mut not_gguf = mine.clone();
+        not_gguf[..4].copy_from_slice(b"%PDF");
+        assert_eq!(
+            refused("FAKE.gguf", &not_gguf, &good()),
+            ModelError::NotGguf
+        );
+        let small_ram = Fixed(
+            Machine {
+                ram_total_bytes: Some(MIN_RAM_BYTES),
+                ..good().0
+            },
+            Some(100 << 30),
+        );
+        let big = temp.path().join("FAKE big.gguf");
+        let file = File::create(&big).unwrap();
+        file.set_len(YOURS_MAX_BYTES + 1).unwrap();
+        drop(file);
+        assert_eq!(
+            store
+                .add_unchecked(&big, "FAKE big.gguf", &good(), |_, _| {})
+                .unwrap_err(),
+            ModelError::TooBig
+        );
+        // 8 GiB (sparse): more than this computer's 7 GiB could ever hold for a run.
+        fs::remove_file(&big).unwrap();
+        let mut file = File::create(&big).unwrap();
+        file.write_all(&GGUF_MAGIC).unwrap();
+        file.set_len(8 << 30).unwrap();
+        drop(file);
+        assert_eq!(
+            store
+                .add_unchecked(&big, "FAKE big.gguf", &small_ram, |_, _| {})
+                .unwrap_err(),
+            ModelError::Memory
+        );
+        fs::remove_file(&big).unwrap();
+        let no_disk = Fixed(good().0, Some(1 << 20));
+        assert_eq!(
+            refused("FAKE.gguf", &mine, &no_disk),
+            ModelError::NotEnoughDisk
+        );
+        assert!(folder_names(&store).is_empty());
+        for n in 0..YOURS_MAX {
+            add_yours(&store, &temp, &unlisted(100 * 1024 + n * 4096, n as u8));
+        }
+        assert_eq!(
+            refused("FAKE.gguf", &unlisted(150 * 1024, 200), &good()),
+            ModelError::TooMany
+        );
+        assert!(split_name("model-00002-of-00010.gguf"));
+        assert!(split_name("model-00002-of-00010.GgUf"));
+        assert!(split_name("model-00002-of-00010"));
+        assert!(!split_name("-00002-of-00010.gguf"));
+        assert!(!split_name("model00002-of-00010.gguf"));
+        assert!(!split_name("model-of-00010.gguf"));
+        assert!(!split_name("model.gguf"));
+        assert!(!split_name("00001-of-00003"));
+    }
+
+    #[test]
+    fn a_model_you_added_is_used_only_once_its_trial_passed_and_then_checked_like_any() {
+        let (temp, a, store) = two_and_yours();
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        let mine = unlisted(200 * 1024, 5);
+        let yours = add_yours(&store, &temp, &mine);
+        assert_eq!(
+            store.use_model(&which(&yours)).unwrap_err(),
+            ModelError::Unusable
+        );
+        // While an answer runs: refused, and nothing run or recorded.
+        assert_eq!(
+            store
+                .trial(
+                    &yours.sha256,
+                    &Free(Some(100 << 30)),
+                    || false,
+                    |_| { panic!("no trial while an answer runs") }
+                )
+                .unwrap_err(),
+            ModelError::Busy
+        );
+        assert_eq!(yours_row(&store, &yours.sha256).trial, None);
+        // A trial that finds no template: it can't be used here.
+        let tried = store
+            .trial(
+                &yours.sha256,
+                &Free(Some(100 << 30)),
+                || true,
+                |verified| {
+                    assert!(!verified.checked);
+                    Ok(TrialState::Template)
+                },
+            )
+            .unwrap();
+        assert_eq!(tried, TrialState::Template);
+        let yours_status = yours_row(&store, &yours.sha256);
+        assert_eq!(
+            (yours_status.state, yours_status.trial),
+            (RowState::Unusable, Some(TrialState::Template))
+        );
+        assert_eq!(
+            store.use_model(&which(&yours)).unwrap_err(),
+            ModelError::Unusable
+        );
+        // Tried again and passed: it may be chosen, and then it is the one checked and read.
+        store
+            .trial(
+                &yours.sha256,
+                &Free(Some(100 << 30)),
+                || true,
+                |_| Ok(TrialState::Passed),
+            )
+            .unwrap();
+        assert_eq!(yours_row(&store, &yours.sha256).state, RowState::Installed);
+        let info = store.use_model(&which(&yours)).unwrap();
+        assert_eq!(info.name, "Your model 1");
+        assert_eq!(
+            store.status(&good()),
+            ModelStatus::Installed {
+                model: info.clone()
+            }
+        );
+        let mut verified = store.verified_model().unwrap();
+        assert!(!verified.checked);
+        assert_eq!(verified.info, info);
+        assert_eq!(
+            verified.chat_format,
+            crate::model_helper::ChatFormat::Builtin
+        );
+        let mut read = Vec::new();
+        verified.file.read_to_end(&mut read).unwrap();
+        assert_eq!(read, mine);
+        drop(verified);
+        // Changed after it was added: damaged, never used.
+        let mut changed = mine.clone();
+        changed[1000] ^= 1;
+        fs::write(store.dir.join(yours.file_name()), &changed).unwrap();
+        assert_eq!(store.verified_model().err().unwrap(), ModelError::Damaged);
+        assert_eq!(yours_row(&store, &yours.sha256).state, RowState::Damaged);
+        // Removed: its record goes too, and In use moves to the listed model.
+        store.remove(Some(&which(&yours))).unwrap();
+        assert!(store.models().iter().all(|row| row.sha256 != yours.sha256));
+        assert!(row(&store, 0).2);
+        assert!(store.choice().yours.is_empty());
+    }
+
+    #[test]
+    fn model_numbers_never_wrap_or_reuse_a_retained_records_number() {
+        let (temp, _a, store) = two_and_yours();
+        let yours = add_yours(&store, &temp, &unlisted(200 * 1024, 5));
+        let mut choice = store.choice();
+        choice.last_number = 0;
+        store.save_choice(&choice).unwrap();
+        let next = add_yours(&store, &temp, &unlisted(201 * 1024, 6));
+        assert_eq!(next.number, yours.number + 1);
+        let mut choice = store.choice();
+        choice.last_number = u32::MAX;
+        store.save_choice(&choice).unwrap();
+        let path = picked(&temp, "FAKE at limit.gguf", &unlisted(202 * 1024, 7));
+        assert_eq!(
+            store.add_unchecked(&path, "FAKE at limit.gguf", &good(), |_, _| {}),
+            Err(ModelError::TooMany)
+        );
+        assert!(!store.dir.join(YOURS_PART).exists());
+        assert_eq!(store.choice().yours.len(), 2);
+    }
+
+    #[test]
+    fn cancelled_or_unexpected_trials_do_not_record_a_success_or_format_refusal() {
+        let (temp, _a, store) = two_and_yours();
+        let yours = add_yours(&store, &temp, &unlisted(200 * 1024, 5));
+        for error in [ModelError::Cancelled, ModelError::TrialFailed] {
+            assert_eq!(
+                store.trial(
+                    &yours.sha256,
+                    &Free(Some(100 << 30)),
+                    || true,
+                    |_| Err(error)
+                ),
+                Err(error)
+            );
+            assert_eq!(yours_row(&store, &yours.sha256).trial, None);
+            assert_eq!(
+                store.use_model(&which(&yours)).unwrap_err(),
+                ModelError::Unusable
+            );
+        }
+    }
+
+    #[test]
+    fn a_trial_holds_the_store_so_no_answer_starts_and_no_add_runs_meanwhile() {
+        let (temp, a, store) = two_and_yours();
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        let yours = add_yours(&store, &temp, &unlisted(200 * 1024, 5));
+        let other = picked(&temp, "FAKE other.gguf", &unlisted(300 * 1024, 6));
+        store
+            .trial(
+                &yours.sha256,
+                &Free(Some(100 << 30)),
+                || true,
+                |_| {
+                    assert_eq!(store.verified_model().err().unwrap(), ModelError::Busy);
+                    assert_eq!(
+                        store
+                            .add_unchecked(&other, "FAKE other.gguf", &good(), |_, _| {})
+                            .unwrap_err(),
+                        ModelError::Busy
+                    );
+                    Ok(TrialState::Passed)
+                },
+            )
+            .unwrap();
+        assert!(store.verified_model().is_ok());
+    }
+
+    #[test]
+    fn a_record_of_yours_that_is_not_well_formed_is_ignored() {
+        let (temp, _a, store) = two_and_yours();
+        let yours = add_yours(&store, &temp, &unlisted(200 * 1024, 5));
+        let good_record = serde_json::to_value(&yours).unwrap();
+        let mut upper = good_record.clone();
+        upper["sha256"] = yours.sha256.to_uppercase().into();
+        let mut zero = good_record.clone();
+        zero["number"] = 0.into();
+        let mut huge = good_record.clone();
+        huge["sizeBytes"] = (YOURS_MAX_BYTES + 1).into();
+        for bad in [upper, zero, huge] {
+            let choice = serde_json::json!({ "yours": [bad] });
+            fs::write(store.choice_path(), serde_json::to_vec(&choice).unwrap()).unwrap();
+            assert!(store.models().iter().all(|row| row.checked), "{choice}");
+            assert_eq!(
+                store.use_model(&which(&yours)).unwrap_err(),
+                ModelError::NotInstalled
+            );
+        }
+        // A choice naming a model you added that never passed its trial is not used.
+        let choice = serde_json::json!({ "inUse": yours.sha256, "yours": [good_record] });
+        fs::write(store.choice_path(), serde_json::to_vec(&choice).unwrap()).unwrap();
+        assert_eq!(store.status(&good()), ModelStatus::NotInstalled);
     }
 
     #[test]
@@ -1496,9 +2404,9 @@ mod tests {
             counted.fetch_add(1, Ordering::SeqCst);
         }));
         // The one in use already: nothing ends.
-        store.use_model(0).unwrap();
+        store.use_model(&Which::Listed(0)).unwrap();
         assert_eq!(ended.load(Ordering::SeqCst), 0);
-        let b_info = store.use_model(1).unwrap();
+        let b_info = store.use_model(&Which::Listed(1)).unwrap();
         assert_eq!(ended.load(Ordering::SeqCst), 1);
         assert_eq!(
             store.status(&good()),
@@ -1512,13 +2420,22 @@ mod tests {
         let again = Store::new(store.dir.clone(), store.catalog);
         assert_eq!(row(&again, 1), (RowState::Installed, true, true));
         // Only installed models can be chosen.
-        assert_eq!(store.use_model(7).unwrap_err(), ModelError::NotOnList);
-        store.remove(Some(0)).unwrap();
-        assert_eq!(store.use_model(0).unwrap_err(), ModelError::NotInstalled);
+        assert_eq!(
+            store.use_model(&Which::Listed(7)).unwrap_err(),
+            ModelError::NotOnList
+        );
+        store.remove(Some(&Which::Listed(0))).unwrap();
+        assert_eq!(
+            store.use_model(&Which::Listed(0)).unwrap_err(),
+            ModelError::NotInstalled
+        );
         // Busy while a run holds the model.
         store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
         let _held = store.verified_model().unwrap();
-        assert_eq!(store.use_model(0).unwrap_err(), ModelError::Busy);
+        assert_eq!(
+            store.use_model(&Which::Listed(0)).unwrap_err(),
+            ModelError::Busy
+        );
     }
 
     #[test]
@@ -1551,7 +2468,10 @@ mod tests {
                     store.add(&picked_a, &good(), |_, _| {}).unwrap_err(),
                     ModelError::Busy
                 );
-                assert_eq!(store.remove(Some(0)).unwrap_err(), ModelError::Busy);
+                assert_eq!(
+                    store.remove(Some(&Which::Listed(0))).unwrap_err(),
+                    ModelError::Busy
+                );
             })
             .unwrap();
         assert!(checked);
@@ -1575,13 +2495,13 @@ mod tests {
             counted.fetch_add(1, Ordering::SeqCst);
         }));
         // Removing one not in use leaves the helper alone.
-        store.remove(Some(1)).unwrap();
+        store.remove(Some(&Which::Listed(1))).unwrap();
         assert_eq!(ended.load(Ordering::SeqCst), 0);
         assert_eq!(row(&store, 1), (RowState::NotDownloaded, false, false));
         assert_eq!(row(&store, 0), (RowState::Installed, true, true));
         // Back, then chosen, then removed: In use moves to A.
         store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
-        store.use_model(1).unwrap();
+        store.use_model(&Which::Listed(1)).unwrap();
         store.remove(None).unwrap();
         assert_eq!(row(&store, 0), (RowState::Installed, true, true));
         // The last one gone: none in use.
@@ -1608,7 +2528,7 @@ mod tests {
     #[test]
     fn a_model_that_is_not_listed_shows_only_once_it_is_on_this_computer() {
         let (temp, _a, b, store) = two(false);
-        assert!(store.models().iter().all(|row| row.index != 1));
+        assert!(store.models().iter().all(|row| row.index != Some(1)));
         store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
         assert_eq!(row(&store, 1), (RowState::Installed, true, true));
     }
