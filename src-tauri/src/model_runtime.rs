@@ -8,8 +8,8 @@
 //! their sizes, the term and its sentence, and the language.
 
 use crate::local_runner::{
-    self, check_budget, AnswerLimit, Budget, MemoryProbe, ModelInfo, Page, Runner, RunnerConfig,
-    RunnerError, Sentence, SummaryRequest,
+    self, check_budget, AnswerLimit, AnswerWatch, Budget, MemoryProbe, ModelInfo, Page, Runner,
+    RunnerConfig, RunnerError, Sentence, SummaryRequest,
 };
 use crate::model_helper;
 use crate::vault::{AiResultInput, AiTool};
@@ -443,11 +443,17 @@ impl ModelRuntime {
         }
     }
 
-    /// A summary of the pages that fit, in the language asked.
-    pub(crate) fn summarize(&self, request: SummarizeRequest) -> Result<SummaryResult, AiError> {
+    /// A summary of the pages that fit, in the language asked. `watch` is told the answer's
+    /// own time limit as it is asked.
+    pub(crate) fn summarize(
+        &self,
+        request: SummarizeRequest,
+        watch: AnswerWatch,
+    ) -> Result<SummaryResult, AiError> {
         check_summary(&request)?;
         // A newer request ends an older one still running.
         let ticket = self.runner.ticket();
+        self.runner.watch_answer(ticket, watch);
         self.start()?;
         let summary = self
             .runner
@@ -469,10 +475,16 @@ impl ModelRuntime {
         })
     }
 
-    /// What a term means in its sentence, in the language asked.
-    pub(crate) fn explain(&self, request: ExplainRequest) -> Result<ExplainResult, AiError> {
+    /// What a term means in its sentence, in the language asked. `watch` is told the answer's
+    /// own time limit as it is asked.
+    pub(crate) fn explain(
+        &self,
+        request: ExplainRequest,
+        watch: AnswerWatch,
+    ) -> Result<ExplainResult, AiError> {
         check_explain(&request)?;
         let ticket = self.runner.ticket();
+        self.runner.watch_answer(ticket, watch);
         self.start()?;
         let (text, model) = self
             .runner
@@ -982,19 +994,19 @@ mod tests {
         let request = || summary(vec![page(0, "FAKE text")], "en");
         let (none, _) = fake(None, Err(Unavailable::NotInstalled));
         assert_eq!(
-            runtime(none, Some(64 * GIB)).summarize(request()),
+            runtime(none, Some(64 * GIB)).summarize(request(), Box::new(|_| ())),
             Err(AiError::NotInstalled)
         );
         // Too little memory: the model is not even verified (no copy of it is made).
         let (small, asked) = fake(Some(4 * GIB), Ok(()));
         assert_eq!(
-            runtime(small, Some(GIB)).summarize(request()),
+            runtime(small, Some(GIB)).summarize(request(), Box::new(|_| ())),
             Err(AiError::Memory)
         );
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
         let (unknown, _) = fake(Some(GIB), Ok(()));
         assert_eq!(
-            runtime(unknown, None).summarize(request()),
+            runtime(unknown, None).summarize(request(), Box::new(|_| ())),
             Err(AiError::Memory)
         );
         for (reason, error) in [
@@ -1007,7 +1019,7 @@ mod tests {
         ] {
             let (bad, asked) = fake(Some(GIB), Err(reason));
             assert_eq!(
-                runtime(bad, Some(64 * GIB)).summarize(request()),
+                runtime(bad, Some(64 * GIB)).summarize(request(), Box::new(|_| ())),
                 Err(error)
             );
             assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -1015,7 +1027,7 @@ mod tests {
         // An invalid request is refused before any of it.
         let (never, asked) = fake(Some(GIB), Ok(()));
         assert_eq!(
-            runtime(never, Some(64 * GIB)).summarize(summary(vec![], "en")),
+            runtime(never, Some(64 * GIB)).summarize(summary(vec![], "en"), Box::new(|_| ())),
             Err(AiError::Failed)
         );
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
@@ -1027,7 +1039,7 @@ mod tests {
         let runtime = runtime(bad, Some(64 * GIB));
         assert_eq!(runtime.answered_model(), None);
         assert!(runtime
-            .summarize(summary(vec![page(0, "FAKE text")], "en"))
+            .summarize(summary(vec![page(0, "FAKE text")], "en"), Box::new(|_| ()))
             .is_err());
         assert_eq!(runtime.answered_model(), None);
     }

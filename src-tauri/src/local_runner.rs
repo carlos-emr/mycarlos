@@ -425,7 +425,13 @@ pub(crate) struct Runner {
     generation: AtomicU64,
     /// How the last answer was made, when the model said.
     last_stats: Mutex<Option<crate::model_helper::Stats>>,
+    /// Told the time limit of the answer asked under its ticket, as it is asked.
+    answer_watch: Mutex<Option<(Ticket, AnswerWatch)>>,
 }
+
+/// What is told an answer's own time limit as the answer is asked: the idle lock's hold on
+/// the answer, and the renderer's (D19).
+pub(crate) type AnswerWatch = Box<dyn FnOnce(Duration) + Send>;
 
 #[derive(Deserialize)]
 struct Hello {
@@ -466,7 +472,14 @@ impl Runner {
             status: Mutex::new(RunnerStatus::NotInstalled),
             generation: AtomicU64::new(0),
             last_stats: Mutex::new(None),
+            answer_watch: Mutex::new(None),
         }
+    }
+
+    /// Tells `watch` the time limit of the answer asked under `ticket`, as it is asked; never,
+    /// if none is (a failed start, a cancel first). Takes the place of an earlier watch.
+    pub(crate) fn watch_answer(&self, ticket: Ticket, watch: AnswerWatch) {
+        *self.answer_watch.lock().unwrap_or_else(|e| e.into_inner()) = Some((ticket, watch));
     }
 
     pub(crate) fn status(&self) -> RunnerStatus {
@@ -785,6 +798,20 @@ impl Runner {
             model: model.clone(),
         });
         let answer_timeout = running.answer_limit.for_request(size.0, size.1);
+        // Only this ticket's watch: a newer request's waits for its own answer.
+        let watch = {
+            let mut slot = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
+            match slot.take() {
+                Some((watched, watch)) if watched == ticket => Some(watch),
+                other => {
+                    *slot = other;
+                    None
+                }
+            }
+        };
+        if let Some(watch) = watch {
+            watch(answer_timeout);
+        }
         let mut outcome = exchange(
             running,
             || self.is_current(ticket),
@@ -1603,6 +1630,106 @@ mod tests {
             assert!(locked_at.elapsed() < Duration::from_secs(5));
             assert!(!runner.is_running());
             assert!(matches!(runner.status(), RunnerStatus::Installed { .. }));
+        }
+
+        #[test]
+        fn a_watch_is_told_its_own_answers_limit_once_as_it_is_asked() {
+            let limit = AnswerLimit {
+                fixed: Duration::from_secs(2),
+                per_prompt_token: Duration::from_millis(1),
+                per_answer_token: Duration::from_millis(1),
+                floor: Duration::from_secs(1),
+                ceiling: Duration::from_secs(60),
+            };
+            let runner = Runner::new(RunnerConfig {
+                answer_limit: limit,
+                ..config(&[], GIB)
+            });
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let text_bytes = request().pages.iter().map(|page| page.text.len()).sum();
+            let own = limit.for_request(
+                prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
+                SUMMARY_ANSWER_TOKENS,
+            );
+            let (told, heard) = mpsc::channel();
+            let ticket = runner.ticket();
+            runner.watch_answer(ticket, Box::new(move |limit| told.send(limit).unwrap()));
+            runner.summarize(ticket, &request()).unwrap();
+            assert_eq!(heard.try_recv(), Ok(own));
+            // Told once: the watch is used up.
+            runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Disconnected));
+
+            // A watch for an older request is not told a newer one's limit.
+            let (told, heard) = mpsc::channel();
+            let older = runner.ticket();
+            runner.watch_answer(older, Box::new(move |limit| told.send(limit).unwrap()));
+            runner
+                .explain(runner.ticket(), "tablet", "Take one tablet.", "en")
+                .unwrap();
+            assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Empty));
+            // Nor is a request cancelled before it was asked.
+            assert_eq!(
+                runner.summarize(older, &request()),
+                Err(RunnerError::Cancelled)
+            );
+            assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Empty));
+            runner.stop();
+        }
+
+        #[test]
+        fn lock_now_during_a_held_answer_stops_it_at_once_and_ends_the_hold() {
+            use crate::idle::{IdleDeadline, MARGIN};
+            use crate::model_runtime::AiError;
+            let runner = Arc::new(Runner::new(config(&["--slow", "30"], GIB)));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let armed_at = Instant::now();
+            let idle = Arc::new(IdleDeadline::new(armed_at));
+            idle.arm(armed_at);
+            let (told, asked) = mpsc::channel();
+            let answering = {
+                let (runner, idle) = (runner.clone(), idle.clone());
+                std::thread::spawn(move || {
+                    tauri::async_runtime::block_on(crate::held_for_answer(
+                        &idle,
+                        move |limit| told.send(limit).unwrap(),
+                        move |watch| {
+                            let ticket = runner.ticket();
+                            runner.watch_answer(ticket, watch);
+                            match runner.summarize(ticket, &request()) {
+                                Ok(_) => Ok(()),
+                                Err(RunnerError::Cancelled) => Err(AiError::Cancelled),
+                                Err(_) => Err(AiError::Failed),
+                            }
+                        },
+                    ))
+                })
+            };
+            // The answer is being written, under its limit (10 s here), and
+            // the idle lock waits for it.
+            assert_eq!(
+                asked.recv_timeout(Duration::from_secs(5)),
+                Ok(Duration::from_secs(10))
+            );
+            // Unheld, the delay would have run out a second past this.
+            let heard_at = Instant::now();
+            assert!(!idle
+                .is_due(heard_at + Duration::from_secs(15 * 60) + MARGIN + Duration::from_secs(1)));
+            // Lock now, as vault_lock does it: the model stops, and the vault
+            // locks, which ends every hold.
+            install(runner.clone());
+            let locked_at = Instant::now();
+            on_lock();
+            idle.disarm();
+            assert!(locked_at.elapsed() < Duration::from_millis(200));
+            uninstall();
+            assert_eq!(answering.join().unwrap(), Err(AiError::Cancelled));
+            assert!(locked_at.elapsed() < Duration::from_secs(5));
+            assert!(!runner.is_running());
+            // The next session's delay runs from its unlock.
+            let unlocked_at = Instant::now();
+            idle.arm(unlocked_at);
+            assert!(idle.is_due(unlocked_at + Duration::from_secs(15 * 60) + MARGIN));
         }
 
         #[test]
