@@ -290,6 +290,116 @@ describe("Add a model file", () => {
   });
 });
 
+describe("The progress bar (#275)", () => {
+  const TOTAL = 3_013_000_000;
+  const bar = () =>
+    screen.queryByRole("progressbar", { name: humanText("Model download") });
+  const tell = (done: number, total = TOTAL) =>
+    act(() => native.listener?.({ payload: { done, total } }));
+  async function startDownload(result: () => Promise<unknown>) {
+    answer({
+      ai_model_catalog: [{ ...fake, sizeBytes: TOTAL }],
+      ai_model_download: result,
+      ai_model_add_cancel: null,
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Download the default model"),
+      }),
+    );
+    await waitFor(() => expect(native.listener).not.toBeNull());
+  }
+
+  it("fills from the same byte counts as the text, with a name and its value in words", async () => {
+    await startDownload(() => new Promise(() => undefined));
+    // Nothing before the first count.
+    expect(bar()).toBeNull();
+    tell(0);
+    expect(bar()).toHaveAttribute("aria-valuenow", "0");
+    tell(1_240_000_000);
+    await screen.findByText(
+      humanText("Downloading and checking… 1,240 of 3,013 MB"),
+    );
+    expect(bar()).toHaveAttribute("aria-valuemin", "0");
+    expect(bar()).toHaveAttribute("aria-valuemax", "100");
+    expect(bar()).toHaveAttribute("aria-valuenow", "41");
+    expect(visibleText(bar()!.getAttribute("aria-valuetext") ?? "")).toBe(
+      "41%, 1,240 of 3,013 MB",
+    );
+    expect(screen.getByText("41%")).toBeVisible();
+    tell(TOTAL);
+    expect(bar()).toHaveAttribute("aria-valuenow", "100");
+    // Not a live region: the status text says the progress at its own pace.
+    expect(
+      bar()!.closest("[aria-live], [role=status], [role=alert]"),
+    ).toBeNull();
+    // Cancel sits beside it.
+    expect(
+      within(bar()!.parentElement!).getByRole("button", {
+        name: humanText("Cancel"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("starts a resumed download where it stopped", async () => {
+    await startDownload(() => new Promise(() => undefined));
+    // A resume's first count is what is already on disk.
+    tell(1_500_000_000);
+    expect(bar()).toHaveAttribute("aria-valuenow", "49");
+  });
+
+  it("shows for Add a model file's check too, and goes when it ends", async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_add_picked: () => new Promise((resolve) => (finish = resolve)),
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: humanText("Add a model file…"),
+      }),
+    );
+    await waitFor(() => expect(native.listener).not.toBeNull());
+    tell(1_000_000_000, 2_500_000_000);
+    expect(bar()).toHaveAttribute("aria-valuenow", "40");
+    expect(visibleText(bar()!.getAttribute("aria-valuetext") ?? "")).toBe(
+      "40%, 1,000 of 2,500 MB",
+    );
+    await act(async () => finish({ outcome: "added", status: installed }));
+    await screen.findByText(humanText("Model added"));
+    expect(bar()).toBeNull();
+  });
+
+  it.each([
+    ["cancelled", null],
+    [
+      "network",
+      "The download did not finish. Check your internet connection and try again.",
+    ],
+  ])(
+    "goes when the download ends %s, and the messages stay as they are",
+    async (outcome, text) => {
+      let finish: (value: unknown) => void = () => undefined;
+      await startDownload(() => new Promise((resolve) => (finish = resolve)));
+      tell(700_000_000);
+      expect(bar()).not.toBeNull();
+      await act(async () => finish({ outcome }));
+      expect(bar()).toBeNull();
+      if (text)
+        expect(
+          visibleText((await screen.findByRole("alert")).textContent ?? ""),
+        ).toBe(text);
+      else expect(screen.queryByRole("alert")).toBeNull();
+    },
+  );
+});
+
 describe("Remove the model", () => {
   it("asks first, then removes and reports the new status", async () => {
     answer({

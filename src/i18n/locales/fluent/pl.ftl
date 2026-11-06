@@ -1816,6 +1816,10 @@ ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $hos
 
 ai-model-downloading = Pobieranie i sprawdzanie… { $done } z { $total } MB
 
+ai-model-progressName = Pobieranie modelu
+
+ai-model-progressValue = { $percent }, { $done } z { $total } MB
+
 ai-model-refusedNetwork = Pobieranie nie zostało ukończone. Proszę sprawdzić połączenie z internetem i spróbować ponownie.
 
 ai-model-refusedUnavailable = Model jest teraz niedostępny pod swoim adresem. Proszę spróbować później albo dodać posiadany plik.

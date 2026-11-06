@@ -1612,6 +1612,10 @@ ai-model-downloadNote = 僅一次，且僅在您點擊時，從 { $host } 下載
 
 ai-model-downloading = 正在下載並檢查… { $done } / { $total } MB
 
+ai-model-progressName = 模型下載
+
+ai-model-progressValue = { $percent }，{ $done } / { $total } MB
+
 ai-model-refusedNetwork = 下載未完成。請檢查您的網路連線，然後再試一次。
 
 ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍後再試，或新增您已有的檔案。

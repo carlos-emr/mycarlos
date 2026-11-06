@@ -1782,6 +1782,10 @@ ai-model-downloadNote = Descarga un archivo ({ $size } MB), una sola vez, desde 
 
 ai-model-downloading = Descargando y comprobando… { $done } de { $total } MB
 
+ai-model-progressName = Descarga del modelo
+
+ai-model-progressValue = { $percent }, { $done } de { $total } MB
+
 ai-model-refusedNetwork = La descarga no terminó. Compruebe su conexión a internet e inténtelo de nuevo.
 
 ai-model-refusedUnavailable = El modelo no está disponible ahora en su dirección. Inténtelo más tarde o agregue un archivo que ya tenga.

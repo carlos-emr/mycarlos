@@ -1748,6 +1748,10 @@ ai-model-downloadNote = Downloads one file ({ $size } MB), once, from { $host },
 
 ai-model-downloading = Downloading and checking… { $done } of { $total } MB
 
+ai-model-progressName = Model download
+
+ai-model-progressValue = { $percent }, { $done } of { $total } MB
+
 ai-model-refusedNetwork = The download did not finish. Check your internet connection and try again.
 
 ai-model-refusedUnavailable = The model is not available at its address right now. Try again later, or add a file you already have.

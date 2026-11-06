@@ -150,6 +150,59 @@ test("downloads the default model with its progress, and the reader's Summary us
   await expectOnlyFakedCommands(page);
 });
 
+test("the download's progress bar fits the row, wide and at 320 px with 200% text (#275)", async ({
+  page,
+  context,
+}) => {
+  const row = await openPreferences(page);
+  await holdAi(page, AI_COMMANDS.download);
+  await rowButton(row, "ai.model.download").click();
+  // Half way, as the text says.
+  const bar = row.getByRole("progressbar", {
+    name: en("ai.model.progressName"),
+    exact: true,
+  });
+  await expect(bar).toHaveAttribute("aria-valuenow", "50");
+  await expect(bar).toHaveAttribute(
+    "aria-valuetext",
+    en("ai.model.progressValue", {
+      percent: "50%",
+      done: MB(TOTAL / 2),
+      total: MB(TOTAL),
+    }),
+  );
+  const fits = async () => {
+    const [box, rowBox] = [await bar.boundingBox(), await row.boundingBox()];
+    expect(box && rowBox).toBeTruthy();
+    expect(box!.width).toBeGreaterThan(40);
+    expect(box!.x).toBeGreaterThanOrEqual(rowBox!.x);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(
+      rowBox!.x + rowBox!.width + 0.5,
+    );
+    await expect(rowButton(row, "common.cancel")).toBeInViewport();
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+  };
+  await fits();
+  // A narrow window with the text at 200%: the line wraps, nothing scrolls
+  // sideways.
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Page.setFontSizes", { fontSizes: { standard: 32 } });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await bar.scrollIntoViewIfNeeded();
+  await fits();
+  // Gone once the download ends.
+  await releaseAi(page, AI_COMMANDS.download);
+  await expect(row.getByRole("status")).toHaveText(en("ai.model.added"));
+  await expect(bar).toHaveCount(0);
+  await expectOnlyFakedCommands(page);
+});
+
 test("cancelling a download leaves no model and says nothing went wrong", async ({
   page,
 }) => {

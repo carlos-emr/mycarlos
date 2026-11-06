@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useI18n } from "../i18n";
 import type { AcceptedModel, ModelAddOutcome, ModelStatus } from "../ai/types";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -15,6 +15,9 @@ function hostOf(address: string) {
   }
 }
 const mb = (bytes: number) => Math.round(bytes / MB).toLocaleString();
+/** How much of the file is in, as a whole percent (#275). */
+export const percentOf = (done: number, total: number) =>
+  total > 0 ? Math.min(100, Math.max(0, Math.floor((done / total) * 100))) : 0;
 
 /** The refusal text for an add that did not end `added` or `cancelled`. */
 function refusalKey(outcome: ModelAddOutcome) {
@@ -48,6 +51,59 @@ function unsupportedKey(reason: "ram" | "cpu" | "platform") {
     : reason === "cpu"
       ? "ai.model.unsupportedCpu"
       : "ai.model.unsupportedPlatform";
+}
+
+/** The bar under the status text while a model file comes in or is checked
+ * (#275), from the same byte counts, so a resumed download starts where it
+ * stopped. It is not a live region: the status text above says the progress,
+ * at its own pace. Cancel sits beside it. */
+function ModelProgress({
+  done,
+  total,
+  cancelRef,
+}: {
+  done: number;
+  total: number;
+  cancelRef: RefObject<HTMLButtonElement | null>;
+}) {
+  const { t, locale } = useI18n();
+  const percent = percentOf(done, total);
+  const percentText = new Intl.NumberFormat(locale, {
+    style: "percent",
+  }).format(percent / 100);
+  return (
+    <div className="native-ai-model-progress">
+      <div
+        className="native-ai-model-bar"
+        role="progressbar"
+        aria-label={t("ai.model.progressName")}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={t("ai.model.progressValue", {
+          percent: percentText,
+          done: mb(done),
+          total: mb(total),
+        })}
+      >
+        <div
+          className="native-ai-model-bar-fill"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <span className="native-ai-model-percent" aria-hidden="true">
+        {percentText}
+      </span>
+      <button
+        ref={cancelRef}
+        className="button"
+        type="button"
+        onClick={() => void invoke("ai_model_add_cancel")}
+      >
+        {t("common.cancel")}
+      </button>
+    </div>
+  );
 }
 
 /** Preferences > AI helper: getting the model onto this computer (#72). The
@@ -256,16 +312,6 @@ export function AiModelSetting({
             {t("ai.model.remove")}
           </button>
         )}
-        {adding && progress.total > 0 && (
-          <button
-            ref={cancelRef}
-            className="button"
-            type="button"
-            onClick={() => void invoke("ai_model_add_cancel")}
-          >
-            {t("common.cancel")}
-          </button>
-        )}
       </div>
       <p role="status" className="native-ai-model-status">
         {adding && progress.total > 0
@@ -277,6 +323,13 @@ export function AiModelSetting({
             ? t(message as "ai.model.added")
             : ""}
       </p>
+      {adding && progress.total > 0 && (
+        <ModelProgress
+          done={progress.done}
+          total={progress.total}
+          cancelRef={cancelRef}
+        />
+      )}
       {refusal && (
         <p role="alert" className="native-ai-model-refusal">
           {t(refusal as "ai.model.refusedStorage")}
