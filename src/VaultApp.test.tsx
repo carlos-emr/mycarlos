@@ -6584,8 +6584,11 @@ describe("durable vault UI", () => {
       try {
         const { bridge, started } = await askForSummary();
         await act(async () => vi.advanceTimersByTime(60_000));
+        // Said at 1 minute: held until 21, then the delay.
         await started(60 * 60 * 1000);
-        await act(async () => vi.advanceTimersByTime(25 * 60 * 1000 + 10_000));
+        await act(async () => vi.advanceTimersByTime(20 * 60 * 1000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
         expect(bridge.lock).toHaveBeenCalledOnce();
       } finally {
         vi.useRealTimers();
