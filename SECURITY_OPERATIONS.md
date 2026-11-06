@@ -79,7 +79,10 @@ audit deliberately retains upstream package identities, so the original warning 
 advisories remain visible. Linux remains an unsupported compatibility monitor pending security,
 device, and release review. See [the patch record](src-tauri/vendor/README.md).
 GitHub Actions are commit pinned and checkout does not persist credentials. These are inventory
-and pull-request controls, not release provenance.
+and pull-request controls, not release provenance. The Windows and Linux evaluation builds link
+llama.cpp objects restored from a cache that only runs on `main` write (pull requests only read
+it), keyed on the runner image, the Rust toolchain and the dependency files; a supported release
+must build them afresh.
 
 Before a supported release, this repository must protect its release pipeline and bind each
 signed platform artifact to its source revision, lockfiles, SBOM, build identity and provenance
@@ -152,9 +155,10 @@ was not active in the key list it pinned at linking (it does not yet learn of a 
 
 ## Evaluating authenticated linking (#55)
 
-The future link implementation is built only with explicit native Cargo feature
-`portal-linking`; default builds refuse its command before any write or network
-use. The portal and CARLOS off switches remain separately required. A browser
+Every build includes the link implementation; no Cargo feature selects it. On
+Android its command still refuses before any write or network use, until the
+platform verifier is integrated (below). The portal and CARLOS off switches
+remain separately required. A browser
 mock or a setting in the renderer never supplies production clinic pins.
 
 The typed portal address must be HTTPS with no user information, query or
@@ -175,11 +179,11 @@ shown to the patient and recorded in encrypted history; the vault keeps private
 seeds, pins and recipient binding encrypted. Do not send a receipt or claim a
 portal delivery was filed merely because a link request succeeded.
 
-## Gated Windows send/delete evaluation
+## Windows send/delete evaluation
 
-Build with `npm run tauri -- build --features portal-linking` only in the isolated
-synthetic evaluation. Default builds remain OFF. `scripts/test-native-delivery.ps1`
-provides focused Windows checks and an optional feature-enabled installer build.
+Every build includes send/delete; use it only in the isolated synthetic
+evaluation. `scripts/test-native-delivery.ps1` provides focused Windows checks
+and an optional installer build.
 
 The explicit Check for new documents action uses only the saved HTTPS portal
 base. Native code signs fixed mailbox/receipt and first-device approval routes;

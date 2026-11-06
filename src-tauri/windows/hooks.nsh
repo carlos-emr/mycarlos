@@ -10,7 +10,9 @@
   Pop $0
 !macroend
 
-; The helper's AppContainer profile, made the first time the helper runs, goes with myCarlos.
+; The helpers' AppContainer profiles, each made the first time its helper runs, go with myCarlos:
+; the PDF helper's and the AI helper's model process's (#72, src-tauri/src/model_helper.rs).
 !macro NSIS_HOOK_POSTUNINSTALL
   System::Call 'userenv::DeleteAppContainerProfile(w "mycarlos.pdfhelper") i .r0'
+  System::Call 'userenv::DeleteAppContainerProfile(w "mycarlos.modelhelper") i .r0'
 !macroend

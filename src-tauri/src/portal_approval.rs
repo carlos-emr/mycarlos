@@ -17,7 +17,6 @@ impl ApprovalState {
     pub fn terminal_failure(self) -> bool {
         matches!(self, Self::Refused | Self::Expired | Self::Cancelled)
     }
-    #[cfg(feature = "portal-linking")]
     pub fn code(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -46,7 +45,6 @@ pub enum ApprovalReason {
     CodeAttempts,
 }
 impl ApprovalReason {
-    #[cfg(feature = "portal-linking")]
     pub fn needs_clinic(self) -> bool {
         matches!(self, Self::StaffRequired | Self::NoAcceptedApprover)
     }
@@ -161,7 +159,6 @@ mod native {
         accepted_version: String,
         kid: String,
     }
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn create(link: &StoredLink, now: u64) -> Result<Attempt, VaultError> {
         let clinic = link.clinic.as_ref().ok_or(VaultError::Invalid)?;
         if now > 9_007_199_254_740_000 {
@@ -199,7 +196,6 @@ mod native {
     }
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
-    #[cfg(feature = "portal-linking")]
     struct Status {
         #[serde(deserialize_with = "uuid4")]
         request_id: Uuid,
@@ -211,13 +207,11 @@ mod native {
         #[serde(deserialize_with = "nullable_reason")]
         reason: Option<ApprovalReason>,
     }
-    #[cfg(feature = "portal-linking")]
     fn nullable_reason<'de, D: serde::Deserializer<'de>>(
         d: D,
     ) -> Result<Option<ApprovalReason>, D::Error> {
         Option::deserialize(d)
     }
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn parse_status(
         link: &StoredLink,
         attempt: &Attempt,
@@ -278,7 +272,6 @@ mod native {
         next.reason = reply.reason;
         Ok(next)
     }
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn publish(
         link: &StoredLink,
         attempt: &Attempt,
@@ -305,7 +298,6 @@ mod native {
     }
     /// The portal asked to be asked less often: said as such, with the wait it
     /// gave, never as a network failure or a state of the request (#131).
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn refuse_rate_limited(
         response: &crate::portal_client::ApiResponse,
     ) -> Result<(), VaultError> {
@@ -319,7 +311,6 @@ mod native {
     /// Sends the code the patient typed, once it has been checked against this
     /// clinic, for the clinic to compare (clinic code v1). Only the 6 digits
     /// the clinic made go to the portal, never the check digits.
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn send_code(
         link: &StoredLink,
         attempt: &Attempt,
@@ -341,7 +332,6 @@ mod native {
         read_code_reply(&response)
     }
     /// The route and exact body that send a code: `{"code_r":"482193"}`.
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn code_request(
         attempt: &Attempt,
         code_r: &str,
@@ -357,7 +347,6 @@ mod native {
     /// What the portal said to a sent code. Only `202 {"status":"submitted"}`
     /// means the clinic has it; the clinic's answer comes later, through the
     /// usual status checks.
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn read_code_reply(
         response: &crate::portal_client::ApiResponse,
     ) -> Result<(), VaultError> {
@@ -398,7 +387,6 @@ mod native {
     }
     /// The saved request's status, and the portal's clock when it replied
     /// (Unix seconds, display only), if it said.
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn refresh(
         link: &StoredLink,
         attempt: &Attempt,
@@ -422,7 +410,6 @@ mod native {
     /// A status reply as `refresh` reads it: the request's state (`None`: the
     /// portal does not have it) and the portal's clock from its `Date`
     /// header. Kept apart from the HTTP call so that it can be tested.
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn read_status(
         link: &StoredLink,
         attempt: &Attempt,
@@ -458,7 +445,6 @@ mod native {
     /// The portal says this device was removed from the patient's portal
     /// account: 403 with the code `device_removed` (#131). The status check
     /// and the document check (#128) read it the same way.
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn device_removed(response: &crate::portal_client::ApiResponse) -> bool {
         #[derive(Deserialize)]
         struct Refusal {
@@ -513,7 +499,6 @@ mod native {
     /// The clinic key id that signed this request's code challenge, checked
     /// against the link's pinned, active clinic keys as every challenge is.
     /// Refused when the clinic has not asked this request for a code.
-    #[cfg(feature = "portal-linking")]
     pub(crate) fn code_challenge_kid(
         link: &StoredLink,
         attempt: &Attempt,
@@ -683,7 +668,7 @@ mod native {
                 verify_acceptance(link, attempt, challenge, acceptance, true).is_ok()
             })
     }
-    #[cfg(all(test, feature = "portal-linking"))]
+    #[cfg(test)]
     mod tests {
         use super::*;
         use crate::portal_link::KeyStatus;
@@ -1134,9 +1119,7 @@ mod native {
     }
 }
 pub(crate) use native::request_expires_at;
-#[cfg(feature = "portal-linking")]
 pub(crate) use native::{code_challenge_kid, send_code};
-#[cfg(feature = "portal-linking")]
 pub(crate) use native::{create, device_removed, publish, refresh};
 
 /// How far a reply's `Date` may be from this device's clock and still be
@@ -1144,7 +1127,6 @@ pub(crate) use native::{create, device_removed, publish, refresh};
 /// signed requests only while its own clock is between 30 s behind and
 /// 90 s ahead of this device's, so a date further off than this is not the
 /// clock that judged the request: a stuck header, or another server's.
-#[cfg(feature = "portal-linking")]
 pub const PORTAL_CLOCK_BOUND_SECONDS: u64 = 300;
 
 /// The portal's clock from its reply, when it can stand for it: near this
@@ -1152,7 +1134,6 @@ pub const PORTAL_CLOCK_BOUND_SECONDS: u64 = 300;
 /// less than an hour (requests last ten minutes). Otherwise `None`, and
 /// this device's clock is used, as when the portal gave no date. Shared by
 /// the time left, the restart offer and the restart itself.
-#[cfg(feature = "portal-linking")]
 pub(crate) fn portal_clock(
     portal_now: Option<u64>,
     request_end: u64,
@@ -1169,7 +1150,6 @@ pub(crate) fn portal_clock(
 /// does not have is judged by this device's clock) and its date can stand
 /// for its clock (`portal_clock`). `None`: use this device's clock. One
 /// choice for the status check and the restart (#131).
-#[cfg(feature = "portal-linking")]
 pub(crate) fn deciding_portal_time(
     portal_now: Option<u64>,
     link: &StoredLink,
@@ -1212,7 +1192,7 @@ pub(crate) fn can_restart(link: &StoredLink, clock: u64) -> bool {
             .is_some_and(|a| a.state() != ApprovalState::Refused && request_ended(link, a, clock))
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(crate) use native::parse_status;
 pub(crate) use native::{approval_by_code, currently_approved, valid_saved};
 
@@ -1221,12 +1201,10 @@ pub(crate) use native::{approval_by_code, currently_approved, valid_saved};
 /// the request's code challenge, this device and this request. myCarlos
 /// checks them before anything is sent, so a code read from a look-alike
 /// portal, or for another device or request, is never sent.
-#[cfg(feature = "portal-linking")]
 const CODE_CHECK_LABEL: &str = "carlos-mycarlos-clinic-code-check-v1";
 
 /// The 3 check digits: the first 8 bytes of SHA-256 over the label and the
 /// four fields joined by LF, as a big-endian number, mod 1000, zero-padded.
-#[cfg(feature = "portal-linking")]
 pub(crate) fn code_check(
     clinic_kid: &str,
     device_key_id: &str,
@@ -1252,7 +1230,6 @@ pub(crate) fn code_check(
 
 /// The 9 digits of a code as typed, with spaces and dashes taken out.
 /// Anything else is refused before it is checked.
-#[cfg(feature = "portal-linking")]
 pub(crate) fn code_digits(typed: &str) -> Result<zeroize::Zeroizing<String>, VaultError> {
     if typed.len() > 64 {
         return Err(VaultError::Invalid);
@@ -1265,7 +1242,7 @@ pub(crate) fn code_digits(typed: &str) -> Result<zeroize::Zeroizing<String>, Vau
     Ok(digits)
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(crate) fn first_fixture() -> (serde_json::Value, crate::portal_link::StoredLink, Attempt) {
     use crate::portal_delivery as wire;
     use crate::portal_link::{ClinicKey, KeyStatus, LinkedClinic, PrivateKeys, StoredLink};
@@ -1325,7 +1302,7 @@ pub(crate) fn first_fixture() -> (serde_json::Value, crate::portal_link::StoredL
 /// The fixture's first-device challenge with a different expiry, signed
 /// again with the shared fixture's FAKE clinic key, read from the fixture
 /// at run time (#131).
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(crate) fn fixture_challenge_expiring_at(expires_at: u64) -> String {
     let (x, _, _) = first_fixture();
     let mut claims = x["flows"]["first"]["challenge"]["claims"].clone();
@@ -1336,7 +1313,7 @@ pub(crate) fn fixture_challenge_expiring_at(expires_at: u64) -> String {
 /// A first-device challenge for this link's saved request, issued and
 /// ending at the given times, signed with the fixture's FAKE clinic key (the
 /// link must carry the fixture's clinic, as test links do).
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(crate) fn signed_challenge(
     link: &crate::portal_link::StoredLink,
     attempt: &Attempt,
@@ -1364,7 +1341,7 @@ pub(crate) fn signed_challenge(
 
 /// The fixture's first-device challenge, changed by `change` and signed
 /// again with the fixture's FAKE clinic key (clinic code v1 tests).
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(crate) fn fixture_challenge_with(change: impl FnOnce(&mut serde_json::Value)) -> String {
     let (x, _, _) = first_fixture();
     let mut claims = x["flows"]["first"]["challenge"]["claims"].clone();
@@ -1374,7 +1351,7 @@ pub(crate) fn fixture_challenge_with(change: impl FnOnce(&mut serde_json::Value)
 
 /// The fixture's first-device acceptance of `challenge` (its hash put in),
 /// changed by `change` and signed again with the fixture's FAKE clinic key.
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 pub(crate) fn fixture_acceptance_with(
     challenge: &str,
     change: impl FnOnce(&mut serde_json::Value),
@@ -1386,7 +1363,7 @@ pub(crate) fn fixture_acceptance_with(
     sign_fixture_claims(&claims)
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 fn sign_fixture_claims(claims: &serde_json::Value) -> String {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
     use p256::ecdsa::{signature::Signer, Signature, SigningKey};
@@ -1412,10 +1389,7 @@ fn sign_fixture_claims(claims: &serde_json::Value) -> String {
     )
 }
 
-use crate::portal_link::StoredLink;
-#[cfg(feature = "portal-linking")]
-use crate::vault::VaultError;
-#[cfg(feature = "portal-linking")]
+use crate::{portal_link::StoredLink, vault::VaultError};
 pub(crate) trait ApprovalExchange {
     fn get(
         &self,
@@ -1446,12 +1420,10 @@ pub(crate) trait ApprovalExchange {
         None
     }
 }
-#[cfg(feature = "portal-linking")]
 #[derive(Default)]
 pub(crate) struct ApprovalHttp {
     portal_time: std::cell::Cell<Option<u64>>,
 }
-#[cfg(feature = "portal-linking")]
 impl ApprovalHttp {
     /// Keeps the portal's clock from a status reply that gave one; a reply
     /// without it leaves the last one known.
@@ -1461,7 +1433,6 @@ impl ApprovalHttp {
         }
     }
 }
-#[cfg(feature = "portal-linking")]
 impl ApprovalExchange for ApprovalHttp {
     fn get(
         &self,
