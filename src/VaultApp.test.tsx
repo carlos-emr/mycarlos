@@ -2437,9 +2437,7 @@ describe("durable vault UI", () => {
 
       // Intake runs in the background: Lock remains available while the
       // native reply containing this document name is still in flight.
-      await user.click(
-        screen.getByRole("button", { name: humanText("Unlocked · Lock now") }),
-      );
+      await user.click(windowLock());
       expect(
         await screen.findByLabelText(humanText("Passphrase")),
       ).toBeVisible();
@@ -4593,9 +4591,7 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await screen.findByText(humanText("FAKE_Results.pdf"));
-    await user.click(
-      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
-    );
+    await user.click(windowLock());
     await user.type(
       await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
@@ -10322,11 +10318,7 @@ describe("durable vault UI", () => {
     ).not.toBeInTheDocument();
     expect(document.body).not.toHaveHumanTextContent(previousBackup);
     expect(window.localStorage.getItem(guideKey)).toBeNull();
-    await user.click(
-      await screen.findByRole("button", {
-        name: humanText(/Unlocked · Lock now/),
-      }),
-    );
+    await user.click(await waitFor(() => windowLock()));
     await screen.findByLabelText(humanText("Passphrase"));
     await expectNothingKeptAfterUnlock();
   });
@@ -11088,9 +11080,7 @@ describe("Automatic arrival snapshot ownership", () => {
     await waitFor(() =>
       expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Unlocked · Lock now") }),
-    );
+    fireEvent.click(windowLock());
     await screen.findByLabelText(humanText("Passphrase"));
     act(() => window.dispatchEvent(new Event("focus")));
     await Promise.resolve();
