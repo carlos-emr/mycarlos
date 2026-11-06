@@ -354,7 +354,7 @@ h1, h2, p { margin: 0; }
 .storage { margin-top: auto; padding: 10px; color: var(--ink-soft); font-size: 0.875rem; }
 .storage-meter { height: 6px; margin: 6px 0 4px; overflow: hidden; border-radius: 999px; background: var(--canvas-2); }
 .storage-meter span { display: block; width: 18%; height: 100%; background: var(--teal); }
-.storage small { color: var(--ink-faint); font-size: 0.875rem; line-height: 1.35; }
+.storage small { display: block; margin-top: 4px; color: var(--ink-faint); font-size: 0.875rem; line-height: 1.35; }
 
 .library-main { min-width: 0; padding: 20px 22px 24px; }
 .breadcrumb { margin-bottom: 4px; padding: 3px 7px; font-size: 0.875rem; }
