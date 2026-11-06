@@ -1091,7 +1091,8 @@ fn quote_is_heading(text: &str, quote: &str) -> bool {
 /// Whether a short line reads as a heading, from its own shape and from the line with words
 /// after it (see [`quote_is_heading`]).
 fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
-    let indent = |text: &str| text.len() - text.trim_start().len();
+    // In characters, so that any kind of space counts as one (a no-break space is 2 bytes).
+    let indent = |text: &str| text.chars().take_while(|c| c.is_whitespace()).count();
     let line_indent = indent(line);
     let line = line.trim();
     if line.ends_with(['.', '!', '?']) {
@@ -1282,6 +1283,14 @@ mod tests {
             "  Social history\n  {}\n  Plan as discussed.",
             findings.join("\n  ")
         );
+        // Spaces of other kinds count as one each: a no-break or ideographic space under a
+        // plain one is no deeper.
+        let mixed = format!(
+            " {}\n\u{a0}Lives alone\n  Non-smoker\n\u{3000}Plan as discussed.",
+            findings[0]
+        );
+        assert!(!quote_is_heading(&mixed, findings[0]));
+        assert!(!quote_is_heading(&mixed, "Non-smoker"));
         for text in [&lines, &paragraphs, &indented] {
             for finding in findings {
                 assert!(quote_in(text, finding), "{finding}");
