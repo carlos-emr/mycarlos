@@ -6602,6 +6602,8 @@ describe("durable vault UI", () => {
         resolve: (written: ModelSummary) => void;
         reject: (failure: unknown) => void;
       };
+      // Every answer asked, oldest first.
+      const settles: (typeof settle)[] = [];
       let started: (limitMs: number) => void = () => undefined;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
@@ -6626,6 +6628,7 @@ describe("durable vault UI", () => {
           () =>
             new Promise<ModelSummary>((resolve, reject) => {
               settle = { resolve, reject };
+              settles.push(settle);
             }),
         ),
         onAiAnswerStarted: vi.fn((handler: (limitMs: number) => void) => {
@@ -6666,6 +6669,7 @@ describe("durable vault UI", () => {
       return {
         bridge,
         settle: () => settle,
+        settles,
         started: (limitMs: number) => act(async () => started(limitMs)),
       };
     }
@@ -6711,6 +6715,40 @@ describe("durable vault UI", () => {
         await act(async () => vi.advanceTimersByTime(20 * 60 * 1000));
         expect(bridge.lock).not.toHaveBeenCalled();
         await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps a newer answer's hold when an older answer's word comes late", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles, started } = await askForSummary();
+        // The panel closed and opened again: a newer summary is asked while
+        // the older one is still ending.
+        const summaryButton = () =>
+          within(
+            screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+          ).getByRole("button", { name: humanText("Summary") });
+        await act(async () => fireEvent.click(summaryButton()));
+        await act(async () => fireEvent.click(summaryButton()));
+        for (let flush = 0; flush < 10; flush += 1) {
+          if (vi.mocked(bridge.aiSummarize).mock.calls.length > 1) break;
+          await act(async () => undefined);
+        }
+        expect(bridge.aiSummarize).toHaveBeenCalledTimes(2);
+        // The older answer's limit of 5 minutes arrives now: it must not cut
+        // the newer one's hold short, which would lock at about 10 minutes.
+        await started(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(10 * 60 * 1000 + 30_000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        // Once the older one has ended, the newer one's own limit counts.
+        await act(async () => settles[0].reject({ code: "aiCancelled" }));
+        await started(7 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(11 * 60 * 1000 + 30_000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(60_000));
         expect(bridge.lock).toHaveBeenCalledOnce();
       } finally {
         vi.useRealTimers();

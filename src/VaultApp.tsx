@@ -591,8 +591,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     () =>
       bridge.onAiAnswerStarted?.((limitMs) => {
         if (answersOpenRef.current === 0 || !Number.isFinite(limitMs)) return;
-        answerHeldUntilRef.current =
+        const until =
           Date.now() + Math.min(Math.max(limitMs, 0), ANSWER_HOLD_MAX_MS);
+        // With one answer open, the limit is its own. With more (a newer one
+        // asked while an older one is still ending), the word may be the
+        // older one's, which must not shorten the newer one's hold.
+        answerHeldUntilRef.current =
+          answersOpenRef.current > 1
+            ? Math.max(answerHeldUntilRef.current, until)
+            : until;
       }),
     [bridge],
   );
