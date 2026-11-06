@@ -753,6 +753,10 @@ const COLUMN_LABEL = `(?:(?:${COLUMN_LABELS.map((label) =>
 // A name in a column: its words joined by single spaces, so the next column ("    MRN …")
 // is not taken, and up to two surnames before a comma ("PRUEBA SANZ, LUCÍA").
 const COLUMN_NAME = `(?:(?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}(?:[ ]${LABEL_PART})?,[ ]${LABEL_PART}(?:[ ]${LABEL_PART})?(?:[ ]${UPPER}\\.?(?![\\p{L}]))?|${LABEL_PART}(?:[ ](?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}){0,3})`;
+/** Labels as written and with only their first word capitalised, as a sentence starts:
+ * "Ratownik medyczny Piotr Testowy", "Médico de familia …". */
+const withSentenceCase = (labels: string[]) =>
+  labels.flatMap((label) => [label, label[0].toUpperCase() + label.slice(1)]);
 // Status words a flowsheet writes after "Patient" in a column: "PATIENT  REFUSED
 // MEDICATION", "Patient\tDischarged home.", "PACIENTE  ESTABLE" are no names (#252 review).
 const STATUS_WORDS = new Set(
@@ -1427,6 +1431,20 @@ const PLACE_WORDS = new Set(
 );
 const NOT_NAMES = new Set(
   foldAll([
+    "superior",
+    "sanitario",
+    "especialista",
+    "residente",
+    "adjunto",
+    "adjunta",
+    "jefe",
+    "jefa",
+    "responsable",
+    "responsável",
+    "prowadzący",
+    "prowadząca",
+    "dyżurny",
+    "dyżurna",
     "cpf",
     "dni",
     "nie",
@@ -2412,7 +2430,7 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|lek\\.(?:[ \\t]*med\\.)?)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|lek\\.(?:[ \\t]*(?:med|dent)\\.)?|mgr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -2505,6 +2523,89 @@ const RULES: Rule[] = [
     kind: "name",
     pattern: new RegExp(
       `(?<![\\p{L}])(?:nurse|pharmacist|physiotherapist|physio|social worker|technologist|technician|sonographer|radiologist|surgeon|paramedic|therapist|midwife|dietitian|resident|infirmière|infirmier|pharmacienne|pharmacien|physiothérapeute|radiologue|chirurgienne|chirurgien|technologue|technicienne|technicien|enfermera|enfermero|farmacéutica|farmacéutico|fisioterapeuta|enfermeira|enfermeiro|farmacêutica|farmacêutico|fisioterapeuta|pielęgniarka|pielęgniarz|farmaceuta|fizjoterapeuta)[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  // A clinician named by role, with no title, in es/pt/pl: "la médica Inés Ficticia Peral",
+  // "a assistente social Carla Exemplo Lima", "Lekarz Jan Testowy". A full name of two or
+  // more words only; physicians are doctors.
+  {
+    kind: "doctor",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase(
+        withSentenceCase([
+          "médico de familia",
+          "médica de familia",
+          "médico",
+          "médica",
+          "lekarz rodzinny",
+          "lekarz",
+          "lekarka",
+          "stomatolog",
+          "dentista",
+          "odontólogo",
+          "odontóloga",
+        ]),
+      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase(
+        withSentenceCase([
+          "trabajadora social",
+          "trabajador social",
+          "psicóloga",
+          "psicólogo",
+          "nutricionista",
+          "dietista",
+          "matrona",
+          "técnico de radiología",
+          "técnica de radiología",
+          "técnico",
+          "técnica",
+          "auxiliar de enfermería",
+          "auxiliar",
+          "terapeuta ocupacional",
+          "logopeda",
+          "podóloga",
+          "podólogo",
+          "optometrista",
+          "assistente social",
+          "técnica de enfermagem",
+          "técnico de enfermagem",
+          "auxiliar de enfermagem",
+          "fonoaudióloga",
+          "fonoaudiólogo",
+          "parteira",
+          "obstetriz",
+          "cuidadora",
+          "cuidador",
+          "agente comunitário de saúde",
+          "agente de saúde",
+          "psycholog",
+          "psycholożka",
+          "dietetyk",
+          "dietetyczka",
+          "położna",
+          "ratownik medyczny",
+          "ratowniczka medyczna",
+          "ratownik",
+          "terapeuta zajęciowy",
+          "terapeutka zajęciowa",
+          "terapeutka",
+          "opiekun medyczny",
+          "opiekunka medyczna",
+          "technik radiologii",
+          "technik",
+          "pracownik socjalny",
+          "pracowniczka socjalna",
+        ]),
+      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
