@@ -2282,7 +2282,7 @@ const RULES: Rule[] = [
   {
     kind: "address",
     pattern:
-      /(?<![\p{L}])(?:Address|Mailing address|Home address|Home|Adresse|Domicile|Direcci[oó]n|Domicilio|Endere[cç]o|Adres)[ \t]*(?:[:：]|[ \t][–—-])[ \t]*([^\n]+)/giu,
+      /(?<![\p{L}])(?:Address|Mailing address|Home address|Home|Adresse|Domicile|Direcci[oó]n|Domicilio|Endere[cç]o|Adres)[ \t]*(?:[:：]|[ \t](?:–|—|-))[ \t]*([^\n]+)/giu,
     group: 1,
   },
   {
@@ -2378,7 +2378,7 @@ const RULES: Rule[] = [
     // Clinique médicale Saint-Laurent; Centre hospitalier de Fictiveville
     kind: "clinic",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:\\p{Lu}\\p{L}*-)?${anyCase(["Hôpital", "Polyclinique", "Cliniques", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire", "Cabinet médical"])}(?:(?:[ \\t]+|(?<=[ldLD]['’])|[ \\t]*[/&–][ \\t]*)(?:(?:de|du|des|la|le|les|médicales?|universitaire|régionale?|générale?|familiale)(?![\\p{L}])|l['’]|d['’]|${NAME_WORD})){1,8}(?:[ \\t]*\\(${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}\\))?`,
+      `(?<![\\p{L}])(?:\\p{Lu}\\p{L}*-)?${anyCase(["Hôpital", "Polyclinique", "Cliniques", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire", "Cabinet médical"])}(?:(?:[ \\t]+|(?<=[ldLD]['’])|[ \\t]*(?:\/|&|–)[ \\t]*)(?:(?:de|du|des|la|le|les|médicales?|universitaire|régionale?|générale?|familiale)(?![\\p{L}])|l['’]|d['’]|${NAME_WORD})){1,8}(?:[ \\t]*\\(${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}\\))?`,
       "gu",
     ),
   },
@@ -2816,12 +2816,54 @@ const RULES: Rule[] = [
   })),
 ];
 
+/**
+ * Where folding would change what a pattern means: a character inside a class that folds to
+ * a class operator ("-", "^", "]", "\\") or to more than one character ("œ" → "oe"), or a
+ * character outside a class that folds into regex syntax ("（" → "("). "[-–—]" folded to the
+ * range "[--—]", which holds every letter, so "Patient ABC" lost "BC" to a name (#252).
+ */
+export function foldHazardsIn(source: string): string[] {
+  const hazards: string[] = [];
+  let inClass = false;
+  for (let at = 0; at < source.length; at++) {
+    const char = source[at];
+    if (char === "\\") {
+      at++;
+      continue;
+    }
+    if (!inClass && char === "[") inClass = true;
+    else if (inClass && char === "]") inClass = false;
+    const folded = fold(char);
+    if (folded === char) continue;
+    if (
+      inClass
+        ? folded.length !== 1 || /[-^\]\\]/u.test(folded)
+        : /[\\^$.|?*+()[\]{}]/u.test(folded)
+    )
+      hazards.push(
+        `${JSON.stringify(char)} at ${at} folds to ${JSON.stringify(folded)}${inClass ? " inside a class" : ""}`,
+      );
+  }
+  return hazards;
+}
+/** Each rule and date form whose meaning folding would change; the tests require none. */
+export const FOLD_HAZARDS: string[] = [];
+
 // The rules run on the matching copy, so their accented letters are folded
 // as the copy's are ("Hôpital" finds "Hopital", which is how the copy
 // spells it).
-for (const rule of RULES)
+for (const [index, rule] of RULES.entries()) {
+  for (const hazard of foldHazardsIn(rule.pattern.source))
+    FOLD_HAZARDS.push(
+      `rule ${index} (${rule.kind}, ${rule.pattern.source.slice(0, 60)}…): ${hazard}`,
+    );
   rule.pattern = new RegExp(fold(rule.pattern.source), rule.pattern.flags);
-for (const form of DATE_FORMS) form.pattern = fold(form.pattern);
+}
+for (const form of DATE_FORMS) {
+  for (const hazard of foldHazardsIn(form.pattern))
+    FOLD_HAZARDS.push(`date form ${form.id}: ${hazard}`);
+  form.pattern = fold(form.pattern);
+}
 
 const DAY_WITH_ORDINAL = "(\\d{1,2}(?:er|st|nd|rd|th)?)";
 const RANGE_JOINER = "[ ]*(?:-|to|through|au|et|and)[ ]*";
