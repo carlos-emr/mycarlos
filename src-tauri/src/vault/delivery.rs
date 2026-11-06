@@ -3631,9 +3631,9 @@ mod approval_recovery_tests {
                 if path.contains("accept=") {
                     Ok(older_portal_refusal())
                 } else if path == "/api/mycarlos/deliveries?limit=50" {
-                    Ok(page(&[first.clone()], Some("1"), "2"))
+                    Ok(page(std::slice::from_ref(&first), Some("1"), "2"))
                 } else if path.starts_with("/api/mycarlos/deliveries?") {
-                    Ok(page(&[second.clone()], None, "2"))
+                    Ok(page(std::slice::from_ref(&second), None, "2"))
                 } else {
                     Ok(reply(200, &sealed))
                 }
