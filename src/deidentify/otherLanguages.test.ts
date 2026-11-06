@@ -133,3 +133,47 @@ describe("look-alikes found in the #252 review", () => {
     expect(send("CNS 700 5009 1234 5678")).toBe("CNS [HEALTH CARD 1]");
   });
 });
+
+describe("a header laid out in columns, with no colon (#252 review)", () => {
+  it.each([
+    ["PATIENT AVERY SAMPLETON", "PATIENT [NAME 1]"],
+    ["PATIENT  SAMPLETON, AVERY", "PATIENT  [NAME 1]"],
+    ["Patient\tSampleton, Avery", "Patient\t[NAME 1]"],
+    [
+      "Patient    Avery Sampleton    MRN 12345678",
+      "Patient    [NAME 1]    MRN [RECORD NUMBER 1]",
+    ],
+    ["PACIENTE  PRUEBA SANZ, LUCÍA", "PACIENTE  [NAME 1]"],
+    ["PACJENT\tTESTOWY, TOMASZ", "PACJENT\t[NAME 1]"],
+    ["CLIENT JORDAN QUILLFEATHER", "CLIENT [NAME 1]"],
+    ["NOM  BASTARACHE, HÉLÈNE", "NOM  [NAME 1]"],
+  ])("%j", (text, expected) => {
+    expect(send(text)).toBe(expected);
+  });
+
+  it.each([
+    "PATIENT INFORMATION",
+    "PATIENT HISTORY",
+    "PATIENT EDUCATION SHEET",
+    "CLIENT SERVICES",
+    "PATIENT SAFETY REPORT",
+    "Patient Avery was calm.",
+    "Patient  education given.",
+  ])("leaves a heading or a sentence: %j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
+
+describe("short birth-date labels in es/pt", () => {
+  it.each([
+    "FECHA NAC.  14/03/1958\nVisita 12/03/2026",
+    "Fecha nac.: 14/03/1958. Visita 12/03/2026.",
+    "Fec. nac. 14/03/1958. Visita 12/03/2026.",
+    "Data nasc.: 14/03/1958. Consulta 12/03/2026.",
+    "DATA DE NASC. 14/03/1958. Consulta 12/03/2026.",
+  ])("%j", (text) => {
+    const out = send(text);
+    expect(out).toMatch(/\[DATE OF BIRTH 1\]/);
+    expect(out).not.toContain("1958");
+  });
+});

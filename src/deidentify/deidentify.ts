@@ -707,7 +707,7 @@ const anyCase = (labels: string[]) =>
 // "Patient-centred" is no label.
 // The dash after a label is an alternation, not a character class: the rules are folded,
 // and "[-–—]" would fold to the range "[--—]", which holds every letter ("Patient ABC").
-const NAME_LABEL = `${anyCase([
+const NAME_LABELS = [
   "Patient name",
   "Patient",
   "Patiente",
@@ -736,7 +736,77 @@ const NAME_LABEL = `${anyCase([
   "Nombre",
   "Nome",
   "Imię i nazwisko",
-])}(?:[ \\t]*:|[ \\t]+(?:-|–|—))`;
+];
+const NAME_LABEL = `${anyCase(NAME_LABELS)}(?:[ \\t]*:|[ \\t]+(?:-|–|—))`;
+// A header laid out in columns, with no colon or dash: a label in capitals and a space
+// ("PATIENT AVERY SAMPLETON"), or any label and a gap of two spaces or a tab ("Patient
+// \tSampleton, Avery") (#252 review). "Re", "Pt" and "Name" alone are too common for it.
+const COLUMN_LABELS = NAME_LABELS.filter(
+  (label) =>
+    !["Re", "Pt", "Name", "Nombre", "Nome", "Contact", "Parent"].includes(
+      label,
+    ),
+);
+const COLUMN_LABEL = `(?:(?:${COLUMN_LABELS.map((label) =>
+  escapeRegExp(label.toUpperCase()),
+).join("|")})[ \\t]+|${anyCase(COLUMN_LABELS)}(?:[ ]{2,}|[ ]*\\t[ \\t]*))`;
+// A name in a column: its words joined by single spaces, so the next column ("    MRN …")
+// is not taken, and up to two surnames before a comma ("PRUEBA SANZ, LUCÍA").
+const COLUMN_NAME = `(?:(?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}(?:[ ]${LABEL_PART})?,[ ]${LABEL_PART}(?:[ ]${LABEL_PART})?(?:[ ]${UPPER}\\.?(?![\\p{L}]))?|${LABEL_PART}(?:[ ](?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}){0,3})`;
+// Words of a section heading after such a label: "PATIENT INFORMATION" is no name.
+const HEADER_WORDS = new Set(
+  foldAll([
+    "information",
+    "informations",
+    "history",
+    "summary",
+    "details",
+    "detail",
+    "instructions",
+    "education",
+    "services",
+    "service",
+    "name",
+    "number",
+    "id",
+    "consent",
+    "label",
+    "record",
+    "chart",
+    "care",
+    "portal",
+    "list",
+    "copy",
+    "file",
+    "note",
+    "notes",
+    "report",
+    "profile",
+    "data",
+    "demographics",
+    "identification",
+    "identifiant",
+    "nom",
+    "prénom",
+    "número",
+    "numer",
+    "datos",
+    "dados",
+    "dane",
+    "historia",
+    "informacje",
+    "información",
+    "informação",
+    "résumé",
+    "sommaire",
+    "safety",
+    "satisfaction",
+    "survey",
+    "questionnaire",
+    "rights",
+    "copie",
+  ]).map((word) => word.toLowerCase()),
+);
 // Other clinicians' titles, in any case and longest first, so "Nurse
 // Practitioner:" is one title, not "Nurse" before a name (#80 review).
 const CLINICIAN_TITLE = anyCase([
@@ -1431,6 +1501,8 @@ interface Rule {
   notLowerCaseMay?: true;
   /** "Mother: First Last": refused in a family-history line or section. */
   relationLabel?: true;
+  /** A name in a header's column: refused for a section heading ("PATIENT INFORMATION"). */
+  columnLabel?: true;
   /** A town in brackets: refused for a bracket note or a medical word. */
   townInBrackets?: true;
 }
@@ -1918,7 +1990,7 @@ const RULES: Rule[] = [
     kind: "dateOfBirth",
     pattern: new RegExp(
       `(?:\\bDOB|\\bD\\.O\\.B\\.?|\\bDate of birth|\\bBirth ?date|\\bBorn(?:[ \\t]+on)?|(?<![\\p{L}\\d.])b\\.|\\bDate de naissance|\\bnaissance|\\bDDN|\\bN[ée]e?[ \\t]+(?:le|en)|` +
-        `\\bFecha de nacimiento|\\bNacid[oa](?:[ \\t]+el)?|\\bF\\.?[ \\t]?nac\\.?|\\bData de nascimento|\\bNascid[oa](?:[ \\t]+em)?|\\bNasc\\.|` +
+        `\\bFecha de nacimiento|\\bFecha[ \\t]+(?:de[ \\t]+)?nac\\.?|\\bFec\\.?[ \\t]?nac\\.?|\\bNacid[oa](?:[ \\t]+el)?|\\bF\\.?[ \\t]?nac\\.?|\\bData de nascimento|\\bData[ \\t]+(?:de[ \\t]+)?nasc\\.?|\\bNascid[oa](?:[ \\t]+em)?|\\bNasc\\.|` +
         `\\bData urodzenia|\\bur\\.|\\bUrodzon[ya](?:[ \\t]+dnia)?|出生日期|出生於|出生于|出生|生日)[ \\t]*:?[ \\t：]*(${DATE})`,
       "giu",
     ),
@@ -2176,6 +2248,12 @@ const RULES: Rule[] = [
       "gu",
     ),
     group: 1,
+  },
+  {
+    kind: "name",
+    pattern: new RegExp(`(?<![\\p{L}])${COLUMN_LABEL}(${COLUMN_NAME})`, "gu"),
+    group: 1,
+    columnLabel: true,
   },
   {
     kind: "doctor",
@@ -2717,6 +2795,13 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         }
       }
       if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
+        continue;
+      if (
+        rule.columnLabel &&
+        trimmed
+          .split(/[^\p{L}'’]+/u)
+          .some((word) => HEADER_WORDS.has(word.toLowerCase()))
+      )
         continue;
       if (
         rule.townInBrackets &&
