@@ -5,6 +5,7 @@ import {
   useI18n,
   t as translateNow,
   message,
+  joinText,
   UiError,
   type UiText,
   type MessageKey,
@@ -331,11 +332,18 @@ export function VaultLibrary({
     initialKey?: string;
     required: boolean;
     offered?: boolean;
+    detailsNotSaved?: boolean;
   } | null>(() =>
     !openingRecoverySetup
       ? null
       : openingRecoverySetup.vault === "created"
-        ? { initialKey: openingRecoverySetup.key, required: true }
+        ? {
+            initialKey: openingRecoverySetup.key,
+            required: true,
+            ...(openingRecoverySetup.detailsNotSaved && {
+              detailsNotSaved: true,
+            }),
+          }
         : { required: false, offered: true },
   );
   useEffect(() => {
@@ -2395,10 +2403,15 @@ export function VaultLibrary({
                   onUnfinishedRecoveryKey?.(null);
                   setDialogResult({ message, recordId: activeRecordId });
                 };
+                // Details typed at setup but not saved are said with it: the
+                // dialog hid the vault's own notice.
+                const said = recoverySetup.detailsNotSaved
+                  ? joinText(saved, message("personDetails.notSaved"))
+                  : saved;
                 // As the confirmation returned it: so that what this screen
                 // shows, and the next setup's record of the key it would
                 // replace, is the vault with this key.
-                void refresh(stored).then(() => tell(saved));
+                void refresh(stored).then(() => tell(said));
                 focusPageIfLost();
               }}
               onClose={(keyShown) => {

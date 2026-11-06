@@ -1004,20 +1004,26 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               }
               const recoveryKey = begun.key;
               setOpeningRecoverySetup(
-                recoveryKey ? { vault: "created", key: recoveryKey } : null,
+                recoveryKey
+                  ? {
+                      vault: "created",
+                      key: recoveryKey,
+                      detailsNotSaved: detailsFailed,
+                    }
+                  : null,
               );
               setConcealed(false);
               setStatus("unlocked");
-              // Details typed but not kept are said, key or not; otherwise,
-              // with a key to set up, its dialog says what happened instead.
-              if (detailsFailed)
+              // With a key to set up, its result says what happened, details
+              // not kept included: a notice written under the dialog would
+              // not be read out. Without one, the library says it now.
+              if (!recoveryKey)
                 setLibraryNotice({
-                  message: deferredText(() => t("personDetails.notSaved")),
-                  outcome: null,
-                });
-              else if (!recoveryKey)
-                setLibraryNotice({
-                  message: deferredText(() => t("notice.created")),
+                  message: deferredText(() =>
+                    detailsFailed
+                      ? t("personDetails.notSaved")
+                      : t("notice.created"),
+                  ),
                   outcome: null,
                 });
             },
