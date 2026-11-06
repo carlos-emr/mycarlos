@@ -772,6 +772,21 @@ const COLUMN_NAME = `(?:(?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}(?:[ ]${LABEL_P
  * "Ratownik medyczny Piotr Testowy", "Médico de familia …". */
 const withSentenceCase = (labels: string[]) =>
   labels.flatMap((label) => [label, label[0].toUpperCase() + label.slice(1)]);
+// A Spanish or Portuguese role before a name. After an article or a determiner the role may
+// be in any case ("La Médica Inés …"); after a bare preposition only in lower case, since
+// "Licencia por Médica Laboral Temporal" is a heading, not a doctor (#271 review).
+const ES_PT_ARTICLE = `(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)`;
+const ES_PT_PREPOSITION = `(?:[Pp]or|[Cc]on|[Pp]ara|[Cc]om|[Ss]in|[Ss]em)`;
+const esPtRole = (roles: string[]) =>
+  `(?:(?<=(?<![\\p{L}])${ES_PT_ARTICLE}[ \\t]+)${anyCase(withSentenceCase(roles))}|(?<=(?<![\\p{L}])${ES_PT_PREPOSITION}[ \\t]+)(?:${[
+    ...roles,
+  ]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join("|")}))`;
+// A Polish qualifier between a role and the name: "Pielęgniarka oddziałowa Maria Testowa",
+// "Lekarz prowadzący Jan Przykładny" (#271 review).
+const PL_ROLE_QUALIFIER = `(?:[ \\t]+(?:oddziałowa|oddziałowy|naczelna|naczelny|zabiegowa|zabiegowy|dyplomowana|dyplomowany|koordynująca|koordynujący|prowadząca|prowadzący))?`;
 // Status words a flowsheet writes after "Patient" in a column: "PATIENT  REFUSED
 // MEDICATION", "Patient\tDischarged home.", "PACIENTE  ESTABLE" are no names (#252 review).
 const STATUS_WORDS = new Set(
@@ -1446,6 +1461,21 @@ const PLACE_WORDS = new Set(
 );
 const NOT_NAMES = new Set(
   foldAll([
+    "kierujący",
+    "kierująca",
+    "oddziału",
+    "elektroradiologii",
+    "medycznej",
+    "medyczny",
+    "medyczna",
+    "oddziałowa",
+    "oddziałowy",
+    "naczelna",
+    "naczelny",
+    "zabiegowa",
+    "zabiegowy",
+    "dyplomowana",
+    "dyplomowany",
     "superior",
     "sanitario",
     "especialista",
@@ -2445,7 +2475,7 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|(?:prof\\.[ \\t]*)?dr[ \\t]+hab\\.[ \\t]*n\\.[ \\t]*med|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|[Ll]ek\\.(?:[ \\t]*(?:med|dent)\\.)?|mgr[ \\t]+(?:farm|inż)|mgr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|(?:prof\\.[ \\t]*)?dr[ \\t]+hab\\.[ \\t]*n\\.[ \\t]*med|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|[Ll]ek\\.[ \\t]*(?:med|dent)\\.|(?<!(?:[Jj]eden|[Nn]owy|[Tt]en|[Ii]nny|[Kk]ażdy|[Dd]rugi|[Kk]olejny|[Jj]akiś|[Dd]any|[Tt]amten)[ \\t]+)lek\\.|[Mm]gr[ \\t]+(?:farm|inż)|[Mm]gr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -2526,7 +2556,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:(?:${CLINICIAN_TITLE}|NP|RN|RPN|RM|IPS)[ \\t]*:|${CLINICIAN_TITLE}[ \\t]*,?[ \\t]+)[ \\t]*(${CLINICIAN_NAME})`,
+      `(?<![\\p{L}])(?:(?:${CLINICIAN_TITLE}|NP|RN|RPN|RM|IPS)[ \\t]*:|${CLINICIAN_TITLE}${PL_ROLE_QUALIFIER}[ \\t]*,?[ \\t]+)[ \\t]*(${CLINICIAN_NAME})`,
       "gu",
     ),
     group: 1,
@@ -2537,7 +2567,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:nurse|pharmacist|physiotherapist|physio|social worker|technologist|technician|sonographer|radiologist|surgeon|paramedic|therapist|midwife|dietitian|resident|infirmière|infirmier|pharmacienne|pharmacien|physiothérapeute|radiologue|chirurgienne|chirurgien|technologue|technicienne|technicien|enfermera|enfermero|farmacéutica|farmacéutico|fisioterapeuta|enfermeira|enfermeiro|farmacêutica|farmacêutico|fisioterapeuta|pielęgniarka|pielęgniarz|farmaceuta|fizjoterapeuta)[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      `(?<![\\p{L}])(?:nurse|pharmacist|physiotherapist|physio|social worker|technologist|technician|sonographer|radiologist|surgeon|paramedic|therapist|midwife|dietitian|resident|infirmière|infirmier|pharmacienne|pharmacien|physiothérapeute|radiologue|chirurgienne|chirurgien|technologue|technicienne|technicien|enfermera|enfermero|farmacéutica|farmacéutico|fisioterapeuta|enfermeira|enfermeiro|farmacêutica|farmacêutico|fisioterapeuta|pielęgniarka|pielęgniarz|farmaceuta|fizjoterapeuta)${PL_ROLE_QUALIFIER}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -2550,17 +2580,15 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
-        withSentenceCase([
-          "médico de familia",
-          "médica de familia",
-          "médico",
-          "médica",
-          "dentista",
-          "odontólogo",
-          "odontóloga",
-        ]),
-      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      `(?<![\\p{L}])${esPtRole([
+        "médico de familia",
+        "médica de familia",
+        "médico",
+        "médica",
+        "dentista",
+        "odontólogo",
+        "odontóloga",
+      ])}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -2568,38 +2596,36 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
-        withSentenceCase([
-          "trabajadora social",
-          "trabajador social",
-          "psicóloga",
-          "psicólogo",
-          "nutricionista",
-          "dietista",
-          "matrona",
-          "técnico de radiología",
-          "técnica de radiología",
-          "auxiliar de enfermería",
-          "auxiliar",
-          "terapeuta ocupacional",
-          "logopeda",
-          "podóloga",
-          "podólogo",
-          "optometrista",
-          "assistente social",
-          "técnica de enfermagem",
-          "técnico de enfermagem",
-          "auxiliar de enfermagem",
-          "fonoaudióloga",
-          "fonoaudiólogo",
-          "parteira",
-          "obstetriz",
-          "cuidadora",
-          "cuidador",
-          "agente comunitário de saúde",
-          "agente de saúde",
-        ]),
-      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      `(?<![\\p{L}])${esPtRole([
+        "trabajadora social",
+        "trabajador social",
+        "psicóloga",
+        "psicólogo",
+        "nutricionista",
+        "dietista",
+        "matrona",
+        "técnico de radiología",
+        "técnica de radiología",
+        "auxiliar de enfermería",
+        "auxiliar",
+        "terapeuta ocupacional",
+        "logopeda",
+        "podóloga",
+        "podólogo",
+        "optometrista",
+        "assistente social",
+        "técnica de enfermagem",
+        "técnico de enfermagem",
+        "auxiliar de enfermagem",
+        "fonoaudióloga",
+        "fonoaudiólogo",
+        "parteira",
+        "obstetriz",
+        "cuidadora",
+        "cuidador",
+        "agente comunitário de saúde",
+        "agente de saúde",
+      ])}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -2614,7 +2640,7 @@ const RULES: Rule[] = [
           "lekarka",
           "stomatolog",
         ]),
-      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      )}${PL_ROLE_QUALIFIER}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -2643,7 +2669,7 @@ const RULES: Rule[] = [
           "pracowniczka socjalna",
           "logopeda",
         ]),
-      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      )}${PL_ROLE_QUALIFIER}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
