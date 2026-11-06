@@ -504,6 +504,33 @@ describe("a header's subject beside a person field is no name (#264 review)", ()
   });
 });
 
+describe("words that are also names, and conditions in capitals", () => {
+  // A word on a refusal list that is also a name never refuses it: a wrong refusal leaks it.
+  it.each([
+    ["Paramedics brought Emma Walker to the emergency department.", "Walker"],
+    ["Paramedics brought Doris Day to the emergency department.", "Day"],
+    ["Discharge letter: WARD, Emma", "Emma"],
+    ["Discharge letter: RANA, Aisha", "Aisha"],
+    ["Paramedics brought Martin Head to the emergency department.", "Head"],
+    ["Les ambulanciers ont amené Paul Pain aux urgences.", "Pain"],
+  ])("removes the name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Discharge Summary: FRACTURE, Displaced",
+    "Consult Note: ANGINA, Unstable",
+    "Informe de alta: FRACTURA, Desplazada",
+    "Compte rendu : ANGINE, Instable",
+    "Wypis: UDAR, Niedokrwienny",
+    "Brought Walker And Wheelchair.",
+    "Referral: Right Hand",
+    "Wypis: Rana Pooperacyjna",
+  ])("leaves a condition or a thing: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+});
+
 describe("a first word that is also a name (Head, Son, Nie, Elle)", () => {
   // These words end a label's value ("Patient: Head CT"), but a title before them, or more
   // name-like words after them, make them a name.
@@ -521,6 +548,7 @@ describe("a first word that is also a name (Head, Son, Nie, Elle)", () => {
     ["Patiente : Elle Vasseur", "Vasseur"],
     ["PATIENT  ELLE MARTIN", "MARTIN"],
     ["Paramedics brought Elle Martin to the emergency department.", "Martin"],
+    ["Discharge letter: HEAD, Martin", "Martin"],
   ])("removes the name: %j", (text, part) => {
     expect(send(text)).not.toContain(part);
   });

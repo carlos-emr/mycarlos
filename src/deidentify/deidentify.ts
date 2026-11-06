@@ -679,7 +679,13 @@ const PARTICLE_ANY_CASE = `(?:${[...PARTICLES]
   .join("|")})`;
 // After a label, a word followed by a colon is the next label ("DOB:",
 // "Tel:"), not more of the name.
-const LABEL_PART = `${NAME_PART}(?![\\p{L}'’-]|[ \\t]*[:#])`;
+// An identity label in capitals is never a word of the name before it: "Pacjentka: WIERZBICKA,
+// Zuzanna    PESEL …", "Nombre: Lucía Prueba Sanz    DNI …". "NAM" is left out: it is a given
+// name too. Before a comma it is a surname in "SURNAME, Given" ("NIE, Wei"): a label is
+// followed by a colon or its value.
+const ID_LABEL_WORD =
+  "(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|MRN|HRN|IPP|RAMQ|OHIP|DOB)(?![\\p{L}'’-]|,)";
+const LABEL_PART = `(?!${ID_LABEL_WORD})${NAME_PART}(?![\\p{L}'’-]|[ \\t]*[:#])`;
 // Surname first, as lab, imaging and hospital headers have it (#80 review):
 // "Okafor, Margaret A.", "OKAFOR, MARGARET", "de la Cruz, Maria".
 const SURNAME_FIRST = `(?:${PARTICLE_ANY_CASE}[ \\t]+)*${LABEL_PART},[ \\t]+${LABEL_PART}(?:[ \\t]+${LABEL_PART})?(?:[ \\t]+${UPPER}\\.?(?![\\p{L}]))?`;
@@ -2241,6 +2247,159 @@ const CARE_VERB = anyCase(
 // (Mohammed, René, José, Margarida, Mário, Xiaoming), and a wrong refusal leaks a name.
 const UNCUED_NOT_NAME_WORDS = new Set(
   foldAll([
+    "unit",
+    "oddział",
+    "oddziału",
+    "oddziale",
+    "unité",
+    "unidad",
+    "unidade",
+    "medicina",
+    "médecine",
+    "atención",
+    "atenção",
+    "primaria",
+    "primária",
+    "zapalenie",
+    "zapalenia",
+    "pronto",
+    "ambulatório",
+    "ambulatorio",
+    "enfermaria",
+    "uti",
+    "uci",
+    "urgência",
+    "urgências",
+    "urgencia",
+    "urgencias",
+    // Conditions, for "FRACTURE, Displaced" and "UDAR, Niedokrwienny". Words that are also
+    // names are left out (Rana, Guz, Fall, Pain).
+    "fracture",
+    "angina",
+    "pneumonia",
+    "sepsis",
+    "infection",
+    "ulcer",
+    "abscess",
+    "anemia",
+    "anaemia",
+    "fever",
+    "syncope",
+    "delirium",
+    "infarction",
+    "thrombosis",
+    "hernia",
+    "tumour",
+    "tumor",
+    "lesion",
+    "wound",
+    "injury",
+    "sprain",
+    "dislocation",
+    "obstruction",
+    "haemorrhage",
+    "hemorrhage",
+    "effusion",
+    "edema",
+    "oedema",
+    "cough",
+    "dehydration",
+    "arrhythmia",
+    "fibrillation",
+    "contusion",
+    "laceration",
+    "angine",
+    "pneumonie",
+    "pneumopathie",
+    "ulcère",
+    "abcès",
+    "anémie",
+    "fièvre",
+    "chute",
+    "infarctus",
+    "embolie",
+    "thrombose",
+    "hernie",
+    "tumeur",
+    "lésion",
+    "plaie",
+    "brûlure",
+    "entorse",
+    "luxation",
+    "occlusion",
+    "hémorragie",
+    "épanchement",
+    "œdème",
+    "insuffisance",
+    "arythmie",
+    "fractura",
+    "neumonía",
+    "infección",
+    "úlcera",
+    "absceso",
+    "fiebre",
+    "caída",
+    "síncope",
+    "infarto",
+    "ictus",
+    "embolia",
+    "trombosis",
+    "lesión",
+    "herida",
+    "quemadura",
+    "esguince",
+    "luxación",
+    "obstrucción",
+    "hemorragia",
+    "derrame",
+    "insuficiencia",
+    "arritmia",
+    "fibrilación",
+    "contusión",
+    "fratura",
+    "sepse",
+    "infecção",
+    "abscesso",
+    "febre",
+    "queda",
+    "trombose",
+    "hérnia",
+    "lesão",
+    "ferida",
+    "queimadura",
+    "luxação",
+    "obstrução",
+    "insuficiência",
+    "fibrilação",
+    "contusão",
+    "złamanie",
+    "dławica",
+    "posocznica",
+    "sepsa",
+    "zakażenie",
+    "infekcja",
+    "wrzód",
+    "ropień",
+    "niedokrwistość",
+    "gorączka",
+    "upadek",
+    "omdlenie",
+    "zawał",
+    "udar",
+    "zakrzepica",
+    "przepuklina",
+    "nowotwór",
+    "oparzenie",
+    "skręcenie",
+    "zwichnięcie",
+    "niedrożność",
+    "krwotok",
+    "krwawienie",
+    "obrzęk",
+    "niewydolność",
+    "arytmia",
+    "migotanie",
+    "stłuczenie",
     "resolving",
     "resolved",
     "healing",
@@ -2380,9 +2539,6 @@ const UNCUED_NOT_NAME_WORDS = new Set(
     "back",
     "chest",
     "neck",
-    "head",
-    "foot",
-    "hand",
     "arm",
     "leg",
     "wrist",
@@ -2423,7 +2579,6 @@ const UNCUED_NOT_NAME_WORDS = new Set(
     "type",
     "follow",
     "up",
-    "day",
     "week",
     "month",
     "year",
@@ -2448,13 +2603,11 @@ const UNCUED_NOT_NAME_WORDS = new Set(
     "queda",
     "douleur",
     "dolor",
-    "dor",
     "ból",
     "niewydolność",
     "serca",
     "nerek",
     "cukrzyca",
-    "rana",
     "odleżyna",
     "upadek",
     "diabète",
@@ -2485,7 +2638,6 @@ const UNCUED_NOT_NAME_WORDS = new Set(
     "informes",
     "laudos",
     "wheelchair",
-    "walker",
     "in",
     "by",
     "into",
@@ -2511,6 +2663,11 @@ const UNCUED_NOT_NAME_WORDS = new Set(
     "na",
   ]).map((word) => word.toLowerCase()),
 );
+// Words on the lists that are also given names or surnames never refuse a name: a wrong
+// refusal leaks it ("Paramedics brought Emma Walker", "WARD, Emma", "Rana Khan, DNI …"). The
+// body, time and unit lists leave these out; the clinic and role lists need "Pain", "Summer" and
+// "Head".
+const ALSO_NAMES = new Set(["summer", "pain", "good", "head"]);
 // Words on NOT_NAMES that are also names. As a first word they still end a label's value
 // ("Patient: Head CT", "Pacjent: Nie zgłasza …"), but not after a person title ("Dr. Head",
 // "Mr. Son"), nor before more words that are all name-like ("HEAD, Martin", "Patient: Elle
@@ -2547,6 +2704,7 @@ function uncuedNotName(candidate: string): boolean {
     .filter(Boolean)
     .some((word) => {
       const lower = word.toLowerCase();
+      if (ALSO_NAMES.has(lower)) return false;
       return (
         UNCUED_NOT_NAME_WORDS.has(lower) ||
         FAMILY_HISTORY_WORDS.has(lower) ||
@@ -3337,14 +3495,28 @@ const RULES: Rule[] = [
     ),
     group: 1,
   },
-  // A full name right before an identity label: "Tomás Prueba Iglesias, DNI …".
+  // A full name right before an identity label: "Tomás Prueba Iglesias, DNI …". The label
+  // tells a person's line, not who the words before it are, so the run is refused for any
+  // non-name word, is never a document heading's subject ("Informe de alta: Neumonía Adquirida
+  // NHC …"), and never starts inside a capitalised run ("Oddział Chorób Wewnętrznych PESEL …").
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
+      `(?<![\\p{L}])(?<!(?:^|\\n)[ \\t]*${DOCUMENT_HEADING}[ \\t]*(?:—|–|-|:)[ \\t]*)(?<!\\p{Lu}[\\p{L}'’-]*[ \\t]+)(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
       "gu",
     ),
     group: 1,
+    uncued: true,
+  },
+  // The same, written "SURNAME, Given": "WIERZBICKA, Zuzanna    PESEL …".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(${UPPER}[\\p{Lu}'’-]+(?:[ ]${UPPER}[\\p{Lu}'’-]+){0,2},[ ]${LABEL_PART}(?:[ ]${LABEL_PART})?)(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
+      "gu",
+    ),
+    group: 1,
+    uncued: true,
   },
   // A closing, then the name on the next non-empty line.
   {
