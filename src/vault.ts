@@ -1,7 +1,16 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
-import type { ModelInfo, ModelStatus, ModelSummary } from "./ai/types";
-import type { DocumentPageText, DocumentText } from "./documentText";
+import type {
+  AiTool,
+  ModelExplanation,
+  ModelStatus,
+  ModelSummary,
+} from "./ai/types";
+import type {
+  DocumentPageText,
+  DocumentText,
+  SourceSpan,
+} from "./documentText";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -344,7 +353,8 @@ export interface AuditHistoryEntry {
     | "deviceApprovalRequestRestarted"
     | "deliveryFiled"
     | "deliveryReceiptSettled"
-    | "readingAidFiled";
+    | "readingAidFiled"
+    | "aiResultSaved";
   name: string | null;
   oldName: string | null;
   from: string[] | null;
@@ -354,6 +364,18 @@ export interface AuditHistoryEntry {
   how: string | null;
   place: string | null;
   previousSession: string | null;
+}
+
+/** An AI answer as the vault lists it: everything but its text. */
+export interface AiResultInfo {
+  id: string;
+  tool: AiTool;
+  lang: string;
+  term?: string;
+  modelName: string;
+  modelSha256: string;
+  createdAtMs: number;
+  size: number;
 }
 
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
@@ -545,13 +567,22 @@ export interface VaultBridge {
   aiModelStatus(): Promise<ModelStatus>;
   /** A plain-words summary of a document's pages, written by the model on
    * this computer. One run at a time; `aiCancel` stops it. */
-  aiSummarize(pages: DocumentPageText[], lang: string): Promise<ModelSummary>;
-  /** A term explained in plain words, with the sentence it is in. */
+  /** With `keep` (the document and the ticket of the text read the pages
+   * came from, unchanged), the answer is also kept natively for that
+   * document's save and comes with its `keptId` (#212). */
+  aiSummarize(
+    pages: DocumentPageText[],
+    lang: string,
+    keep?: { recordId: string; ticket: string },
+  ): Promise<ModelSummary>;
+  /** A term explained in plain words, with the sentence it is in. With
+   * `recordId`, kept natively for that document's save, as a summary is. */
   aiExplain(
     term: string,
     context: string,
     lang: string,
-  ): Promise<{ text: string; model: ModelInfo }>;
+    recordId?: string,
+  ): Promise<ModelExplanation>;
   /** Stops the model's answer in flight, if any. */
   aiCancel(): Promise<void>;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
@@ -587,6 +618,21 @@ export interface VaultBridge {
     ticket: string,
     text: string,
   ): Promise<TextSaveOutcome>;
+  /** Keeps an AI answer with its document, encrypted. A new answer to the
+   * same question (tool, language, term) is the one shown; the old one stays
+   * in the vault, hidden, never deleted (D3). */
+  /** The answer is the one the native side kept under `keptId` (#212):
+   * page code only names it, and gives a summary's source places, one per
+   * sentence. */
+  saveAiResult(
+    recordId: string,
+    keptId: string,
+    sources?: (SourceSpan | null)[],
+  ): Promise<AiResultInfo>;
+  /** The AI answers kept with a document, newest first. */
+  aiResults(recordId: string): Promise<AiResultInfo[]>;
+  /** One kept answer's text. */
+  readAiResult(recordId: string, resultId: string): Promise<string>;
   reset(confirmation: string): Promise<boolean>;
 }
 
@@ -1032,11 +1078,13 @@ export function createVaultBridge(): VaultBridge {
       return cancellation;
     },
     aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
-    aiSummarize: (pages, lang) =>
-      invoke<ModelSummary>("ai_summarize", { request: { pages, lang } }),
-    aiExplain: (term, context, lang) =>
-      invoke<{ text: string; model: ModelInfo }>("ai_explain", {
-        request: { term, context, lang },
+    aiSummarize: (pages, lang, keep) =>
+      invoke<ModelSummary>("ai_summarize", {
+        request: { pages, lang, ...keep },
+      }),
+    aiExplain: (term, context, lang, recordId) =>
+      invoke<ModelExplanation>("ai_explain", {
+        request: { term, context, lang, ...(recordId ? { recordId } : {}) },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
     documentText: (recordId, readId, password) =>
@@ -1058,6 +1106,16 @@ export function createVaultBridge(): VaultBridge {
       invoke<TextSaveOutcome>("vault_export_text_picked", {
         request: { pickId, recordId, ticket, text },
         locale: getLocale(),
+      }),
+    saveAiResult: (recordId, keptId, sources) =>
+      invoke<AiResultInfo>("vault_ai_result_save", {
+        request: { recordId, keptId, ...(sources ? { sources } : {}) },
+      }),
+    aiResults: (recordId) =>
+      invoke<AiResultInfo[]>("vault_ai_results", { request: { recordId } }),
+    readAiResult: (recordId, resultId) =>
+      invoke<string>("vault_ai_result_read", {
+        request: { recordId, resultId },
       }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
