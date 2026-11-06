@@ -349,6 +349,20 @@ pub(crate) struct Stats {
     pub(crate) prefix_len: u32,
     pub(crate) cache_hit: bool,
     pub(crate) snapshot_bytes: u64,
+    /// A hash of the token ids the answer was written in (FNV-1a over each id's bytes), so
+    /// that two answers can be compared exactly, token for token, without their words.
+    pub(crate) answer_hash: u64,
+}
+
+/// FNV-1a's starting value and step (64-bit).
+pub(crate) const ANSWER_HASH_START: u64 = 0xcbf2_9ce4_8422_2325;
+const ANSWER_HASH_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+/// `hash` with one more token id in it.
+pub(crate) fn answer_hash(hash: u64, token: i32) -> u64 {
+    token.to_le_bytes().iter().fold(hash, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(ANSWER_HASH_PRIME)
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1046,6 +1060,19 @@ mod tests {
                 },
             ])
         );
+    }
+
+    #[test]
+    fn an_answer_hash_tells_token_ids_and_their_order_apart() {
+        let of = |ids: &[i32]| {
+            ids.iter()
+                .fold(ANSWER_HASH_START, |hash, id| answer_hash(hash, *id))
+        };
+        assert_eq!(of(&[1, 2, 3]), of(&[1, 2, 3]));
+        assert_ne!(of(&[1, 2, 3]), of(&[3, 2, 1]));
+        assert_ne!(of(&[1, 2]), of(&[1, 2, 0]));
+        assert_ne!(of(&[256]), of(&[1]));
+        assert_eq!(of(&[]), ANSWER_HASH_START);
     }
 
     #[test]

@@ -233,11 +233,14 @@ fn the_real_engine_reads_an_instruction_prefix_once_and_puts_it_back_after() {
         prefix_len > 0 && !hit && bytes > 0,
         "{prefix_len} {hit} {bytes}"
     );
+    let cold_hash = runner.last_answer_hash().unwrap();
     // The same request on another document: put back.
     assert_eq!(
         summarize("en", "FAKE: another document, other words."),
         (prefix_len, true, bytes)
     );
+    // The tiny model writes the same whatever it reads: token for token, put back or not.
+    assert_eq!(runner.last_answer_hash(), Some(cold_hash));
     // Another language, or an explanation: another prefix, read.
     assert!(!summarize("fr", "FAKE: a blood test was done.").1);
     assert!(!explain("en").1);
@@ -367,21 +370,34 @@ fn a_real_model_answers_the_same_after_another_document_as_fresh() {
     let warm = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
     warm.summarize("en", &[(0, first)]).unwrap();
     let warm_summary = warm.summarize("en", &[(0, second)]).unwrap();
+    let warm_summary_hash = warm.last_answer_hash().unwrap();
     assert!(warm.last_prefix().unwrap().1, "the prefix was put back");
     let warm_explained = warm.explain("en", term, context).unwrap();
+    let warm_explained_hash = warm.last_answer_hash().unwrap();
     warm.explain("en", term, first).unwrap();
     let warm_again = warm.explain("en", term, context).unwrap();
+    let warm_again_hash = warm.last_answer_hash().unwrap();
     assert!(warm.last_prefix().unwrap().1, "the prefix was put back");
     warm.stop();
     let cold = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
     let cold_summary = cold.summarize("en", &[(0, second)]).unwrap();
+    let cold_summary_hash = cold.last_answer_hash().unwrap();
     assert!(
         !cold.last_prefix().unwrap().1,
         "a fresh helper reads the prefix"
     );
     let cold_explained = cold.explain("en", term, context).unwrap();
+    let cold_explained_hash = cold.last_answer_hash().unwrap();
     cold.stop();
     println!("summary: {warm_summary:?}\nexplain: {warm_explained:?}");
+    println!(
+        "token hashes: summary {warm_summary_hash:016x} / {cold_summary_hash:016x}, explain \
+         {warm_explained_hash:016x} / {cold_explained_hash:016x}"
+    );
+    // Token for token the same: what the model wrote, not only what was read from it.
+    assert_eq!(warm_summary_hash, cold_summary_hash);
+    assert_eq!(warm_explained_hash, cold_explained_hash);
+    assert_eq!(warm_again_hash, cold_explained_hash);
     assert_eq!(warm_summary, cold_summary);
     assert_eq!(warm_explained, cold_explained);
     assert_eq!(warm_again, cold_explained);

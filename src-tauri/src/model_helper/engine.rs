@@ -2,10 +2,10 @@
 //! one thing at a time, each from a fresh cache. Only the helper process runs this.
 
 use super::{
-    document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
+    answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
     read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, BATCH_TOKENS, CONTEXT_TOKENS,
-    EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
+    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -233,6 +233,7 @@ impl Engine {
         self.stats = Stats {
             prompt_tokens: tokens.len() as u32,
             prefix_len: prefix_len as u32,
+            answer_hash: ANSWER_HASH_START,
             ..Stats::default()
         };
         let mut grammar = match grammar {
@@ -267,6 +268,7 @@ impl Engine {
                 return Ok((String::from_utf8_lossy(&written).into_owned(), false));
             }
             self.stats.answer_tokens += 1;
+            self.stats.answer_hash = answer_hash(self.stats.answer_hash, token.0);
             if let Some(grammar) = grammar.as_mut() {
                 grammar.accept(token);
             }
