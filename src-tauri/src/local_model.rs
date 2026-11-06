@@ -403,7 +403,11 @@ impl Store {
         let path = self.choice_path();
         let part = path.with_extension("json.part");
         let bytes = serde_json::to_vec(choice).map_err(|_| ModelError::Storage)?;
-        fs::write(&part, bytes).map_err(|_| ModelError::Storage)?;
+        let mut file = File::create(&part).map_err(|_| ModelError::Storage)?;
+        file.write_all(&bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|_| ModelError::Storage)?;
+        drop(file);
         fs::rename(&part, &path).map_err(|_| ModelError::Storage)?;
         if let Some(parent) = path.parent() {
             sync_dir(parent);
@@ -542,8 +546,11 @@ pub(crate) struct Store {
     /// Set when a use-time check found the file wrong; cleared by remove or
     /// a successful add.
     damaged: Mutex<bool>,
-    /// One add, remove or use-check at a time.
+    /// One remove, switch, use-check or placing of an added file at a time.
     busy: Mutex<()>,
+    /// One add or download at a time. Its copy runs outside `busy`, so the model in use keeps
+    /// answering meanwhile; only the placing takes `busy`.
+    adding: Mutex<()>,
     /// Run, with the lock held, before the model file is replaced or removed:
     /// the app ends the helper that holds it. A new run cannot start meanwhile
     /// (its use-check finds the lock taken and answers busy).
@@ -573,6 +580,7 @@ impl Store {
             catalog,
             damaged: Mutex::new(false),
             busy: Mutex::new(()),
+            adding: Mutex::new(()),
             before_replace: Mutex::new(None),
             uses: Arc::new(AtomicUsize::new(0)),
             cancel_add: AtomicBool::new(false),
@@ -616,6 +624,16 @@ impl Store {
     /// download takes minutes: nothing waits behind it).
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, ModelError> {
         match self.busy.try_lock() {
+            Ok(guard) => Ok(guard),
+            Err(std::sync::TryLockError::Poisoned(e)) => Ok(e.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) => Err(ModelError::Busy),
+        }
+    }
+
+    /// The one-add lock (taken before `busy` whenever both are), or `Busy` while another add,
+    /// download or remove holds it.
+    fn add_lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, ModelError> {
+        match self.adding.try_lock() {
             Ok(guard) => Ok(guard),
             Err(std::sync::TryLockError::Poisoned(e)) => Ok(e.into_inner()),
             Err(std::sync::TryLockError::WouldBlock) => Err(ModelError::Busy),
@@ -690,14 +708,9 @@ impl Store {
         hardware: &dyn Hardware,
         mut progress: impl FnMut(u64, u64),
     ) -> Result<ModelInfo, ModelError> {
-        let _one_at_a_time = self.lock()?;
+        let _one_add = self.add_lock()?;
         // Reset inside the lock: only an add that is about to run is not cancelled.
         self.cancel_add.store(false, Ordering::SeqCst);
-
-        if self.uses.load(Ordering::SeqCst) > 0 {
-            return Err(ModelError::Busy);
-        }
-        self.run_before_replace();
         if let Some(reason) = unsupported(&hardware.machine()) {
             return Err(ModelError::Unsupported(reason));
         }
@@ -711,7 +724,8 @@ impl Store {
     /// download of a pinned address could feed the same): `size` is what the
     /// source says it holds, checked against the list before a byte is read;
     /// then the bytes are streamed through SHA-256 into a `.part` and the
-    /// file is kept only on a match. The caller holds the add lock.
+    /// file is kept only on a match. The caller holds the one-add lock; the store lock is taken
+    /// only to place the file, so the model in use answers during the copy.
     fn add_stream(
         &self,
         input: &mut dyn Read,
@@ -731,9 +745,6 @@ impl Store {
             .find(|m| m.size_bytes == size && want.is_none_or(|w| w.sha256 == m.sha256))
             .ok_or(ModelError::NotOnList)?;
         self.prepare_dir()?;
-        // The model in use before this one came (the first installed when none was chosen):
-        // it stays in use; with none, this one becomes it.
-        let in_use_before = self.in_use().map(|(_, model)| model.sha256);
         let part_name = format!("{}{PART_SUFFIX}", model.file_name);
         self.clean_leftovers_except((have > 0).then_some(part_name.as_str()));
         let free = hardware.free_disk_bytes(&self.dir);
@@ -762,20 +773,36 @@ impl Store {
             }
             return Err(error);
         }
+        // The placing waits for the store lock (a use-check takes seconds). The model in use
+        // when the file arrives stays in use; with none, this one becomes it. The helper ends
+        // only when the file it holds is the one replaced.
+        let _placing = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+        let in_use_before = self.in_use().map(|(_, used)| used);
+        let replacing_in_use = in_use_before.is_some_and(|used| used.file_name == model.file_name);
+        if replacing_in_use {
+            if self.uses.load(Ordering::SeqCst) > 0 {
+                let _ = remove_model_file(&part);
+                return Err(ModelError::Busy);
+            }
+            self.run_before_replace();
+        }
         let target = self.dir.join(model.file_name);
         if fs::rename(&part, &target).is_err() {
             let _ = remove_model_file(&part);
             return Err(ModelError::Storage);
         }
         sync_dir(&self.dir);
-        self.set_damaged(false);
+        // The damaged mark is the model in use's: only placing that one, or a first one, clears it.
+        if replacing_in_use || in_use_before.is_none() {
+            self.set_damaged(false);
+        }
         let mut choice = self.choice();
         let sha = model.sha256.to_owned();
         choice.added_by_you.retain(|added| *added != sha);
         if want.is_none() {
             choice.added_by_you.push(sha.clone());
         }
-        choice.in_use = Some(in_use_before.map_or(sha, str::to_owned));
+        choice.in_use = Some(in_use_before.map_or(sha, |used| used.sha256.to_owned()));
         // A choice that can't be saved leaves the first installed model in use.
         let _ = self.save_choice(&choice);
         Ok(info(model))
@@ -791,14 +818,9 @@ impl Store {
         hardware: &dyn Hardware,
         mut progress: impl FnMut(u64, u64),
     ) -> Result<ModelInfo, ModelError> {
-        let _one_at_a_time = self.lock()?;
+        let _one_add = self.add_lock()?;
         // Reset inside the lock: only an add that is about to run is not cancelled.
         self.cancel_add.store(false, Ordering::SeqCst);
-
-        if self.uses.load(Ordering::SeqCst) > 0 {
-            return Err(ModelError::Busy);
-        }
-        self.run_before_replace();
         if let Some(reason) = unsupported(&hardware.machine()) {
             return Err(ModelError::Unsupported(reason));
         }
@@ -871,6 +893,8 @@ impl Store {
     /// A missing file is not an error. Only removing the model in use ends the helper (which
     /// holds no other); In use then moves to the first installed model left, or to none.
     pub(crate) fn remove(&self, index: Option<usize>) -> Result<(), ModelError> {
+        // Not while an add copies: its `.part` is in this folder.
+        let _no_add = self.add_lock()?;
         let _one_at_a_time = self.lock()?;
         let in_use = self.in_use().map(|(at, _)| at);
         let Some(index) = index.or(in_use) else {
@@ -1479,6 +1503,49 @@ mod tests {
         store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
         let _held = store.verified_model().unwrap();
         assert_eq!(store.use_model(0).unwrap_err(), ModelError::Busy);
+    }
+
+    #[test]
+    fn adding_another_model_leaves_the_one_in_use_answering_during_the_copy() {
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        let ended = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&ended);
+        store.set_before_replace(Box::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        }));
+        let picked_a = source(&temp, &a);
+        let picked_b = temp.path().join("b-picked.gguf");
+        fs::write(&picked_b, &b).unwrap();
+        let mut checked = false;
+        store
+            .add(&picked_b, &good(), |done, total| {
+                if checked || done == 0 || done >= total {
+                    return;
+                }
+                checked = true;
+                // Mid-copy: A still verifies and is read whole; a second add or a remove waits
+                // for none and is refused.
+                let mut verified = store.verified_model().unwrap();
+                let mut read = Vec::new();
+                verified.file.read_to_end(&mut read).unwrap();
+                assert_eq!(read, a);
+                drop(verified);
+                assert_eq!(
+                    store.add(&picked_a, &good(), |_, _| {}).unwrap_err(),
+                    ModelError::Busy
+                );
+                assert_eq!(store.remove(Some(0)).unwrap_err(), ModelError::Busy);
+            })
+            .unwrap();
+        assert!(checked);
+        assert_eq!(ended.load(Ordering::SeqCst), 0);
+        assert_eq!(row(&store, 0), (RowState::Installed, true, true));
+        assert_eq!(row(&store, 1), (RowState::Installed, true, false));
+        // Adding the model in use again replaces the file its helper holds: that ends it.
+        store.add(&picked_a, &good(), |_, _| {}).unwrap();
+        assert_eq!(ended.load(Ordering::SeqCst), 1);
+        assert_eq!(row(&store, 0), (RowState::Installed, true, true));
     }
 
     #[test]
@@ -2160,10 +2227,19 @@ mod tests {
         }));
         store.remove(None).unwrap();
         assert_eq!(*seen.lock().unwrap(), [Some(ModelError::Busy)]);
-        // And once the add finishes (nothing installed): a download runs it too.
-        let net = Fake::serving(&bytes);
-        store.download(0, &net, &good(), |_, _| {}).unwrap();
-        assert_eq!(seen.lock().unwrap().len(), 2);
+        // A download into the empty folder ends nothing (no helper holds a model); one that
+        // replaces the model in use runs it, under the lock, at the placing.
+        store
+            .download(0, &Fake::serving(&bytes), &good(), |_, _| {})
+            .unwrap();
+        assert_eq!(seen.lock().unwrap().len(), 1);
+        store
+            .download(0, &Fake::serving(&bytes), &good(), |_, _| {})
+            .unwrap();
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [Some(ModelError::Busy), Some(ModelError::Busy)]
+        );
     }
 
     #[test]
