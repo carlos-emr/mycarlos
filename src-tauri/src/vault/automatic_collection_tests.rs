@@ -42,6 +42,16 @@ impl ApprovalExchange for NoApprovalRequests {
     ) -> Result<Attempt, VaultError> {
         panic!("a native-verified accepted link must not publish approval")
     }
+    fn submit_code(
+        &self,
+        _: &StoredLink,
+        _: &Attempt,
+        _: &str,
+        _: &str,
+        _: &dyn Fn() -> bool,
+    ) -> Result<(), VaultError> {
+        panic!("a native-verified accepted link must not send a clinic code")
+    }
 }
 
 pub(super) fn accepted_links() -> [StoredLink; 2] {
