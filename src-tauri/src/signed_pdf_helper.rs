@@ -397,7 +397,9 @@ pub enum Failure {
     Refused(Refusal),
     #[cfg_attr(desktop, allow(dead_code))]
     Unavailable,
+    #[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
     HelperFailed,
+    #[cfg_attr(mobile, allow(dead_code))]
     Cancelled,
     TooLarge,
 }

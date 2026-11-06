@@ -417,9 +417,9 @@ h1, h2, p { margin: 0; }
 }
 .chip:hover { background: var(--canvas); }
 .chip.selected { border-color: var(--teal-line); background: var(--teal-soft); color: var(--teal-dark); font-weight: 700; }
-.view-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
 .segment { display: inline-flex; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
-.segment button { display: grid; place-items: center; width: 38px; min-height: 35px; padding: 7px 10px; border: 0; background: transparent; color: var(--ink-soft); }
+.segment button { display: grid; place-items: center; width: auto; min-width: 38px; min-height: 35px; padding: 7px 10px; border: 0; background: transparent; color: var(--ink-soft); }
 .segment button + button { border-left: 1px solid var(--line); }
 .segment button.selected { background: var(--teal-soft); color: var(--teal-dark); }
 .status-line { min-height: 18px; margin: 0 2px 8px; color: var(--ink-soft); font-size: 0.875rem; }
@@ -455,13 +455,44 @@ h1, h2, p { margin: 0; }
 .native-reader-text { max-height: 30vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
 .native-reader-text summary { cursor: pointer; font-weight: 700; }
 .native-reader-text div { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-reader-ai-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.native-reader-text mark { background: var(--amber-soft); color: var(--ink); }
+.native-reader-ai { max-height: 40vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
+.native-reader-ai h3 { margin: 0 0 6px; font-size: 1rem; }
+.native-reader-ai p { max-width: 70ch; margin: 4px 0; }
+.native-reader-ai-explain { display: grid; gap: 6px; max-width: 420px; }
+.native-reader-ai-explain input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+.native-reader-ai-result ol { display: grid; gap: 6px; margin: 6px 0; padding-left: 1.4em; }
+.native-reader-ai .ai-label { color: var(--ink); font-weight: 700; }
+.native-reader-ai .ai-meta { color: var(--ink-soft); font-size: 0.875rem; }
 .native-reader-password { display: grid; gap: 8px; max-width: 420px; padding: 12px 20px; }
 .native-reader-password input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+/* The AI helper's preview (#72): the text with its removals marked. */
+.native-anonymize-notes { display: grid; gap: 6px; padding: 10px 20px; border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: 0.875rem; }
+.native-anonymize-notes p { margin: 0; }
+.native-anonymize-header { margin: 0; padding: 8px 20px; font-size: 0.875rem; color: var(--ink-soft); }
+.native-anonymize-fixed { display: block; margin-top: 4px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: var(--radius-sm); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-anonymize-text { flex: 1; min-height: 8em; overflow: auto; margin: 0 20px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--canvas-2); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9375rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-anonymize-text mark { padding: 0 2px; border-radius: 3px; background: var(--teal-soft); color: var(--ink); font-weight: 700; text-decoration: underline; text-decoration-style: dotted; }
+.native-anonymize-text mark.native-anonymize-flagged { background: transparent; border: 2px solid currentColor; font-weight: 700; text-decoration: underline wavy; }
+.native-anonymize-paste { display: grid; gap: 8px; padding: 10px 20px 16px; border-top: 1px solid var(--line); }
+.native-anonymize-paste h3 { margin: 0; font-size: 0.875rem; }
+.native-anonymize-paste p { margin: 0; color: var(--ink-soft); font-size: 0.875rem; }
+.native-anonymize-paste label { color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
+.native-anonymize-paste textarea { width: 100%; min-height: 6em; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+.native-anonymize-paste .native-anonymize-text { margin: 0; }
+.native-anonymize-possible { padding: 8px 20px 0; }
+.native-anonymize-possible h3 { margin: 0 0 6px; font-size: 0.875rem; }
+.native-anonymize-possible ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.native-anonymize-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; padding: 10px 20px; }
+.native-anonymize-tools label { display: grid; gap: 5px; flex: 1; min-width: 12em; color: var(--ink-soft); font-size: 0.875rem; font-weight: 700; }
+.native-anonymize-tools input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
+.native-anonymize .native-dialog-actions { justify-content: flex-end; padding: 10px 20px 16px; }
 
 .filelist { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .file-head, .file-row {
   display: grid;
-  grid-template-columns: 30px minmax(210px, 1fr) minmax(6.5rem, 11.875rem) 9.5rem 34px;
+  grid-template-columns: 30px minmax(210px, 1fr) minmax(6.5rem, 11.875rem) 9.5rem max(34px, calc(1.15rem + 12px));
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -574,13 +605,18 @@ h1, h2, p { margin: 0; }
 .hidden-settings-entry { max-width: 100%; }
 .hidden-entry-copy { min-width: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
 .hidden-entry-scope { display: block; color: var(--ink-soft); font-weight: 400; }
+/* What myCarlos keeps: Hidden above Audit history, in the right-hand column like other rows' controls. */
+.kept-entries { display: grid; align-content: start; justify-items: start; gap: 8px; }
+/* The setting list clips what runs past its edge, and narrow the buttons sit at the right edge:
+   draw the focus ring inside them, as Lock now does (#110). */
+.kept-entries .button:focus-visible { outline-offset: -3px; }
 .audit-history-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
 .audit-history-entry { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; }
 .audit-history-entry h2 { margin: 0; font-size: 1rem; }
 .audit-history-date { margin: 4px 0 10px; color: var(--ink-soft); }
 .audit-history-entry dl { display: grid; gap: 5px; margin: 0; }
 .audit-history-entry dl > div { display: grid; grid-template-columns: minmax(110px, 0.3fr) 1fr; gap: 10px; }
-.audit-history-entry dt { color: var(--ink-soft); }
+.audit-history-entry dt { color: var(--ink-soft); overflow-wrap: anywhere; }
 .audit-history-entry dd { margin: 0; overflow-wrap: anywhere; }
 .old-backups-guide {
   margin-top: 10px;
@@ -630,6 +666,10 @@ h1, h2, p { margin: 0; }
 
 .dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: var(--backdrop); }
 .record-dialog { width: min(520px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: 0 24px 70px var(--dialog-shadow); }
+/* A word wider than its line breaks there instead of running out of the dialog: at 320px with
+   200% text in Arial's widths (no Roboto or Segoe UI), "CRIPTOGRAFADO" or "odzyskiwania…" can be.
+   break-word, not anywhere, so whole words still decide how things wrap. */
+.record-dialog { overflow-wrap: break-word; }
 /* #68: the warning before the automatic lock, over any other dialog. Large
    text and a large Keep open; at 400% the dialog scrolls, as every one does. */
 .lock-warning-backdrop { z-index: 30; }
@@ -640,7 +680,7 @@ h1, h2, p { margin: 0; }
 .dialog-head { display: flex; align-items: flex-start; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
 .dialog-head > div { min-width: 0; }
 .dialog-head h2 { overflow: hidden; font-size: 1.125rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.dialog-close { flex: none; width: 34px; height: 34px; margin-left: auto; padding: 0; border: 0; border-radius: 8px; background: var(--canvas); color: var(--ink-soft); font-size: 1.5rem; line-height: 1; }
+.dialog-close { flex: none; width: auto; min-width: 34px; height: auto; min-height: 34px; margin-left: auto; padding: 0; border: 0; border-radius: 8px; background: var(--canvas); color: var(--ink-soft); font-size: 1.5rem; line-height: normal; }
 .dialog-close:hover { background: var(--canvas-2); color: var(--ink); }
 .document-preview { position: relative; display: grid; justify-items: center; gap: 10px; padding: 22px 20px 16px; background: var(--canvas); }
 .document-preview > .document-icon { position: absolute; justify-self: start; }
@@ -650,10 +690,15 @@ h1, h2, p { margin: 0; }
 .preview-paper i:first-child { width: 68%; height: 6px; background: var(--content-strong-line); }
 .preview-paper i:nth-child(4) { width: 82%; }
 .record-metadata { margin: 0; padding: 8px 20px; }
-.record-metadata div { display: flex; justify-content: space-between; gap: 20px; padding: 9px 0; border-bottom: 1px solid var(--metadata-line); font-size: 0.875rem; }
+/* The value takes the room beside its label and wraps there. Only when one of its words doesn't
+   fit beside the label does it go under it, still on the right (at 200% text on a phone,
+   "Mis documentos" or a date ran past the dialog's edge). Its basis is its longest word, so that
+   word decides the line; on a line of its own it may shrink below it, and a single word longer
+   than the row breaks. */
+.record-metadata div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 20px; padding: 9px 0; border-bottom: 1px solid var(--metadata-line); font-size: 0.875rem; }
 .record-metadata div:last-child { border-bottom: 0; }
 .record-metadata dt { color: var(--ink-soft); }
-.record-metadata dd { margin: 0; font-weight: 700; text-align: right; }
+.record-metadata dd { flex: 1 1 auto; width: min-content; min-width: 0; max-width: 100%; margin: 0; font-weight: 700; text-align: right; overflow-wrap: break-word; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px 18px; border-top: 1px solid var(--line); }
 
 .evaluation-details { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow-sm); }
@@ -691,7 +736,7 @@ h1, h2, p { margin: 0; }
   .mobile-section-picker select { flex: 1; min-width: 0; min-height: 38px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); }
   .app-body { grid-template-columns: 1fr; }
   .sidebar { display: none; }
-  .file-head, .file-row { grid-template-columns: 30px minmax(0, 1fr) 34px; }
+  .file-head, .file-row { grid-template-columns: 30px minmax(0, 1fr) max(34px, calc(1.15rem + 12px)); }
   .file-head .column, .file-row .column { display: none; }
   .trash-list .file-head, .trash-list .file-row { grid-template-columns: 24px minmax(0, 1fr) 4.5rem 3.75rem; }
   .trash-list .file-row .countdown, .native-hidden-list .file-row .hidden-date { display: block; overflow: visible; white-space: normal; line-height: 1.3; }
@@ -716,8 +761,9 @@ h1, h2, p { margin: 0; }
   .filter-chips { width: 100%; }
   .view-controls { margin-left: 0; }
   .status-line { margin-top: 2px; }
-  .file-head, .file-row { grid-template-columns: 24px minmax(0, 1fr) 28px; gap: 10px; padding: 10px 12px; }
+  .file-head, .file-row { grid-template-columns: 24px minmax(0, 1fr) max(28px, calc(1.15rem + 12px)); gap: 10px; padding: 10px 12px; }
   .file-row { min-height: 68px; }
+  .file-row .record-open { white-space: normal; overflow-wrap: anywhere; }
   .file-head { min-height: 48px; }
   .document-icon { width: 36px; height: 36px; }
   .bulkbar { display: grid; grid-template-columns: 1fr auto; }
@@ -733,9 +779,25 @@ h1, h2, p { margin: 0; }
   .evaluation-content section + section { border-top: 1px solid var(--line); border-left: 0; padding-left: 0; }
   .setting-row { flex-wrap: wrap; gap: 10px; }
   .setting-row > .button { margin-left: auto; }
+  /* Narrow, What myCarlos keeps' buttons go under its text, at the right, as a row's own button does. */
+  .kept-setting > .kept-entries { flex-basis: 100%; justify-items: end; }
   .metric-grid { grid-template-columns: 1fr; }
   .metric-grid article { min-height: 82px; }
-  .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  /* Two buttons to a row, half each. A button whose longest word doesn't fit
+     its half gets a row of its own. A 1fr 1fr grid let such a button push the
+     other one past the dialog's start edge, where it can't be scrolled to
+     (e.g. "Annuler" beside "Enregistrer" at 200% text). */
+  .dialog-actions { flex-wrap: wrap; justify-content: flex-start; }
+  /* max-width: 100% caps each button's smallest width at the row. */
+  .dialog-actions > * { flex: 1 1 calc(50% - 4px); max-width: 100%; }
+  /* A button's words are one anonymous flex item, never narrower than its longest word, so
+     overflow-wrap can't break that word inside the button. In a column the words take the
+     button's whole width, and a word wider than the row breaks (.record-dialog's overflow-wrap);
+     the longest word still sets the button's smallest width, so it still decides when a button
+     gets a row of its own. A button with an icon keeps its row, its words in a span that may
+     shrink. Without :has() the rule is dropped and the button is as before. */
+  .dialog-actions > .button:not(:has(> svg)) { flex-direction: column; align-items: stretch; text-align: center; }
+  .dialog-actions > .button > span { min-width: 0; }
 }
 
 @media (max-width: 24.375em) {
@@ -957,9 +1019,12 @@ h1, h2, p { margin: 0; }
 .recovery-key-about p { margin: 0; }
 .recovery-key-dialog .button, .recovery-key-dialog input { min-height: 44px; }
 .recovery-key-dialog .dialog-head h2:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.recovery-key-body { display: grid; gap: 12px; padding: 16px 20px; }
+/* One column the dialog's width: a wide field or button row must not stretch the dialog sideways
+   (the key check's field, 20 characters wide by default, did at 200% text on a phone). */
+.recovery-key-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px 20px; }
 .recovery-key-body p { margin: 0; overflow-wrap: anywhere; }
-.recovery-key-body label { display: grid; gap: 5px; font-weight: 700; }
+.recovery-key-body label { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; font-weight: 700; }
+.recovery-key-body label > input:not([type="radio"], [type="checkbox"]) { width: 100%; }
 .recovery-key-body input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: inherit; }
 .recovery-key-body [role="alert"] { color: var(--red); }
 .recovery-key-body fieldset { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
@@ -1064,8 +1129,9 @@ h1, h2, p { margin: 0; }
   .native-move-actions select { flex: 1; min-width: 130px; }
   .native-setting-form { display: grid; }
   .native-setting-form form, .native-danger-setting details { width: 100%; min-width: 0; }
-  .native-dialog-actions { grid-template-columns: 1fr; }
-  .native-dialog-actions label { width: 100%; }
+  /* minmax(0, 1fr): the Move to list's longest choice must not widen the dialog at 200% text. */
+  .native-dialog-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .native-dialog-actions label { width: 100%; grid-template-columns: minmax(0, 1fr); }
   .native-dialog-actions select { width: 100%; }
 }
 
@@ -1196,3 +1262,8 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
 .language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
 .language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+.native-ai-model-url code { overflow-wrap: anywhere; }
+.record-dialog.native-ai-notice { width: min(680px, 100%); }
+.native-ai-notice-body { display: grid; gap: 10px; padding: 12px 20px; }
+.native-ai-notice-body p, .native-ai-notice-body h3 { margin: 0; }
+.native-ai-notice-body h3 { font-size: 1rem; }
