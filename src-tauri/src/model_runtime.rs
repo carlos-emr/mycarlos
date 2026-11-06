@@ -1289,6 +1289,11 @@ pub mod engine_testing {
                 .map(|stats| (stats.prefix_len, stats.cache_hit, stats.snapshot_bytes))
         }
 
+        /// The hash of the token ids the last answer was written in (see `Stats::answer_hash`).
+        pub fn last_answer_hash(&self) -> Option<u64> {
+            self.runner.last_stats().map(|stats| stats.answer_hash)
+        }
+
         /// What `term` means in `context`, in `lang`.
         pub fn explain(&self, lang: &str, term: &str, context: &str) -> Result<String, String> {
             self.runner
