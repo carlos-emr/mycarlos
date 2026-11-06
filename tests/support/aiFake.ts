@@ -32,6 +32,8 @@ export const AI_COMMANDS = {
   addPicked: "ai_model_add_picked",
   download: "ai_model_download",
   addCancel: "ai_model_add_cancel",
+  // The copy running now, for a row that opens again while it runs (#275).
+  addActive: "ai_model_add_active",
   remove: "ai_model_remove",
   documentText: "vault_document_text",
   cancelText: "vault_document_text_cancel",
@@ -139,6 +141,9 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       const ours = new Set<string>(Object.values(setup.commands));
       // What the model is now: adding or removing it changes it.
       let model = structuredClone(setup.model);
+      // As native: the add or download running now (#275).
+      let activeCopy: { kind: string; done: number; total: number } | null =
+        null;
       const refusals: Record<string, string[]> = {};
       let kept: {
         recordId: unknown;
@@ -302,6 +307,8 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             return { outcome: "added", status: structuredClone(installed()) };
           case c.addCancel:
             return null;
+          case c.addActive:
+            return structuredClone(activeCopy);
           case c.remove:
             model = { state: "notInstalled" };
             return structuredClone(model);
@@ -564,6 +571,29 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           throw refusal(refused, "ai.failed");
         }
         return keptFor(command, args, answer(command, args));
+      };
+      // An add or download, as native runs it (#275): while it runs,
+      // ai_model_add_active gives it (half way, as the fake's progress
+      // stops there while held); when it ends, ai-model-add-ended says how.
+      const handle = internals.invoke;
+      internals.invoke = async (command: string, ...rest: unknown[]) => {
+        const c = setup.commands;
+        if (command !== c.addPicked && command !== c.download)
+          return handle(command, ...rest);
+        const total = setup.catalogEntry.sizeBytes;
+        activeCopy = {
+          kind: command === c.download ? "download" : "check",
+          done: Math.floor(total / 2),
+          total,
+        };
+        try {
+          const result = await handle(command, ...rest);
+          activeCopy = null;
+          emit("ai-model-add-ended", result);
+          return result;
+        } finally {
+          activeCopy = null;
+        }
       };
     },
     {

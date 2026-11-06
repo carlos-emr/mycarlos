@@ -9,6 +9,7 @@
     "allow-ai-model-status",
     "allow-ai-model-add-picked",
     "allow-ai-model-add-cancel",
+    "allow-ai-model-add-active",
     "allow-ai-model-download",
     "allow-ai-model-remove",
     "allow-ai-summarize",

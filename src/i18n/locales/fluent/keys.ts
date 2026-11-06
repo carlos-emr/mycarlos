@@ -911,6 +911,8 @@ export const MESSAGE_KEYS = [
   "ai.model.downloading",
   "ai.model.progressName",
   "ai.model.progressValue",
+  "ai.model.stillDownloading",
+  "ai.model.stillChecking",
   "ai.model.refusedNetwork",
   "ai.model.refusedUnavailable",
   "native.filter.models",
@@ -2027,6 +2029,8 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.downloading": "ai-model-downloading",
   "ai.model.progressName": "ai-model-progressName",
   "ai.model.progressValue": "ai-model-progressValue",
+  "ai.model.stillDownloading": "ai-model-stillDownloading",
+  "ai.model.stillChecking": "ai-model-stillChecking",
   "ai.model.refusedNetwork": "ai-model-refusedNetwork",
   "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
   "native.filter.models": "native-filter-models",
@@ -3051,6 +3055,8 @@ export interface MessageArgsByKey {
     percent: FluentArgument;
     total: FluentArgument;
   };
+  "ai.model.stillDownloading": undefined;
+  "ai.model.stillChecking": undefined;
   "ai.model.refusedNetwork": undefined;
   "ai.model.refusedUnavailable": undefined;
   "native.filter.models": undefined;

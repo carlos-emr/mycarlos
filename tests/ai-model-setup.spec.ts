@@ -203,6 +203,46 @@ test("the download's progress bar fits the row, wide and at 320 px with 200% tex
   await expectOnlyFakedCommands(page);
 });
 
+test("a download still running when the patient comes back shows its bar, not the button (#275)", async ({
+  page,
+}) => {
+  let row = await openPreferences(page);
+  await holdAi(page, AI_COMMANDS.download);
+  await rowButton(row, "ai.model.download").click();
+  await expect(row.getByRole("status")).toHaveText(
+    en("ai.model.downloading", { done: MB(TOTAL / 2), total: MB(TOTAL) }),
+  );
+  // Another page, then back: the row is new, and the download still runs.
+  await sidebar(page)
+    .getByRole("button", { name: en("security.title"), exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: en("security.title"), level: 1 }),
+  ).toBeVisible();
+  await sidebar(page)
+    .getByRole("button", { name: en("sidebar.preferences"), exact: true })
+    .click();
+  row = aiRow(page);
+  await expect(
+    row.getByRole("progressbar", {
+      name: en("ai.model.progressName"),
+      exact: true,
+    }),
+  ).toHaveAttribute("aria-valuenow", "50");
+  await expect(row.getByRole("status")).toHaveText(
+    en("ai.model.downloading", { done: MB(TOTAL / 2), total: MB(TOTAL) }),
+  );
+  await expect(rowButton(row, "common.cancel")).toBeVisible();
+  await expect(rowButton(row, "ai.model.download")).toBeDisabled();
+  await expect(row.getByRole("alert")).toHaveCount(0);
+  // It ends as it would have: the model is added.
+  await releaseAi(page, AI_COMMANDS.download);
+  await expect(row.getByRole("status")).toHaveText(en("ai.model.added"));
+  await expect(rowButton(row, "ai.model.remove")).toBeVisible();
+  expect(await aiCalls(page, AI_COMMANDS.download)).toHaveLength(1);
+  await expectOnlyFakedCommands(page);
+});
+
 test("cancelling a download leaves no model and says nothing went wrong", async ({
   page,
 }) => {

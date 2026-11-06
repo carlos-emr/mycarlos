@@ -15,6 +15,11 @@ function hostOf(address: string) {
   }
 }
 const mb = (bytes: number) => Math.round(bytes / MB).toLocaleString();
+/** A copy running natively (#275), as `ai_model_add_active` gives it:
+ * `download` is the default model's download and its check, `check` a picked
+ * file's check. */
+type ModelAddNow = { kind: "download" | "check"; done: number; total: number };
+
 /** How much of the file is in, as a whole percent (#275). */
 export const percentOf = (done: number, total: number) =>
   total > 0 ? Math.min(100, Math.max(0, Math.floor((done / total) * 100))) : 0;
@@ -189,28 +194,99 @@ export function AiModelSetting({
     after.current = null;
     if (focusIsFree()) target.focus();
   }, [status.state, adding, refusal, catalog]);
+  // A copy this row did not start may still run (#275): the patient went to
+  // another page while it ran, and came back. `own` is a copy this row
+  // started and waits for; `attached`, one it found running and shows.
+  const own = useRef(false);
+  const attached = useRef(false);
+  const [note, setNote] = useState<
+    "ai.model.stillDownloading" | "ai.model.stillChecking" | null
+  >(null);
+  const attach = (now: ModelAddNow) => {
+    attached.current = true;
+    setDownloading(now.kind === "download");
+    starter.current = now.kind === "download" ? "download" : "add";
+    after.current = "restart";
+    // Progress heard since is newer than what native said.
+    setProgress((current) =>
+      current && current.total > 0
+        ? current
+        : { done: now.done, total: now.total },
+    );
+  };
+  const finish = (result: ModelAddOutcome) => {
+    attached.current = false;
+    setNote(null);
+    setProgress(null);
+    if (result.outcome === "added") {
+      after.current = "installed";
+      onStatus(result.status);
+      setMessage("ai.model.added");
+    } else if (result.outcome !== "cancelled") {
+      setRefusal(refusalKey(result));
+    }
+  };
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+  useEffect(() => {
+    void invoke<ModelAddNow | null>("ai_model_add_active").then(
+      (now) => mounted.current && now && !own.current && attach(now),
+      () => undefined,
+    );
+    // How a copy it found running ends, as native says once it has.
+    const stop = listen<ModelAddOutcome>(
+      "ai-model-add-ended",
+      (event) =>
+        mounted.current &&
+        attached.current &&
+        !own.current &&
+        finishRef.current(event.payload),
+    ).catch(() => () => undefined);
+    return () => void stop.then((unlisten) => unlisten());
+    // Once, as the row opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const run = (command: "ai_model_add_picked" | "ai_model_download") => {
     setRefusal(null);
     setMessage(null);
+    setNote(null);
     setDownloading(command === "ai_model_download");
     starter.current = command === "ai_model_download" ? "download" : "add";
     cancelFocused.current = false;
     after.current = "restart";
+    own.current = true;
     // Busy from the click: the picker is open, and a second click is refused.
     setProgress({ done: 0, total: 0 });
     void invoke<ModelAddOutcome>(command)
-      .then((result) => {
+      .then(async (result) => {
         if (!mounted.current) return;
-        if (result.outcome === "added") {
-          after.current = "installed";
-          onStatus(result.status);
-          setMessage("ai.model.added");
-        } else if (result.outcome !== "cancelled") {
-          setRefusal(refusalKey(result));
+        own.current = false;
+        // Refused because a copy is still running: that copy and its bar,
+        // not "the AI helper is working".
+        if (result.outcome === "busy") {
+          const now = await invoke<ModelAddNow | null>(
+            "ai_model_add_active",
+          ).catch(() => null);
+          if (!mounted.current) return;
+          if (now) {
+            attach(now);
+            setNote(
+              now.kind === "download"
+                ? "ai.model.stillDownloading"
+                : "ai.model.stillChecking",
+            );
+            return;
+          }
         }
+        finish(result);
       })
-      .catch(() => mounted.current && setRefusal("ai.model.refusedStorage"))
-      .finally(() => mounted.current && setProgress(null));
+      .catch(() => {
+        if (!mounted.current) return;
+        own.current = false;
+        attached.current = false;
+        setProgress(null);
+        setRefusal("ai.model.refusedStorage");
+      });
   };
   const add = () => run("ai_model_add_picked");
   const download = () => run("ai_model_download");
@@ -329,6 +405,11 @@ export function AiModelSetting({
           total={progress.total}
           cancelRef={cancelRef}
         />
+      )}
+      {note && adding && (
+        <p role="alert" className="native-ai-model-note">
+          {t(note)}
+        </p>
       )}
       {refusal && (
         <p role="alert" className="native-ai-model-refusal">
