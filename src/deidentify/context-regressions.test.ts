@@ -4,13 +4,13 @@ import { deidentify, restore } from "./deidentify";
 // Synthetic regression examples. These exercise observed failure mechanisms;
 // they are not an independent holdout or evidence of general detector recall.
 const run = (source: string) =>
-  deidentify(source, { knownNames: [], dateShiftDays: -40, dayFirst: true });
+  deidentify(source, { knownNames: [], dayFirst: true });
 
 describe("identity roles and clinical occurrences", () => {
-  it("shifts an unqualified Encounter date through the date layer", () => {
+  it("numbers an unqualified Encounter date through the date layer", () => {
     const source = "Encounter: 2026-05-14\nDose 20 mg once daily.";
     const result = run(source);
-    expect(result.toSend).toBe("Encounter: 2026-04-04\nDose 20 mg once daily.");
+    expect(result.toSend).toBe("Encounter: [DATE 1]\nDose 20 mg once daily.");
     expect(result.onDevice.removed.map((part) => part.kind)).toEqual(["date"]);
     expect(restore(result.toSend, result)).toBe(source);
   });
@@ -37,7 +37,6 @@ describe("identity roles and clinical occurrences", () => {
     const result = deidentify("Encounter: 1992-07-23", {
       knownNames: [],
       knownBirthDates: ["1992-07-23"],
-      dateShiftDays: -40,
     });
     expect(result.onDevice.removed[0].kind).toBe("dateOfBirth");
     expect(result.toSend).not.toContain("1992-07-23");
@@ -125,7 +124,6 @@ describe("identity roles and clinical occurrences", () => {
     (source) => {
       const result = deidentify(source, {
         knownNames: ["Dorian Faye-Mercier"],
-        dateShiftDays: -40,
       });
       expect(
         result.onDevice.removed.some(

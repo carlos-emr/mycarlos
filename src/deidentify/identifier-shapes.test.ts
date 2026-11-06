@@ -4,8 +4,7 @@ import { deidentify, restore } from "./deidentify";
 // Identifier shapes the fresh24 scoring found left in place (Q11 memo, option 1):
 // a social insurance number whose groups are joined with points, as French
 // documents write it, and record-number labels in both languages. FAKE values.
-const out = (text: string) =>
-  deidentify(text, { knownNames: [], dateShiftDays: 0 });
+const out = (text: string) => deidentify(text, { knownNames: [] });
 const sent = (text: string) => out(text).toSend;
 
 describe("social insurance numbers with pointed groups", () => {
@@ -22,7 +21,7 @@ describe("social insurance numbers with pointed groups", () => {
     );
     expect(
       sent("Dose 0.5 mg; pH 7.35; version 1.2.3; TA 120/80; 2026.04.04."),
-    ).toBe("Dose 0.5 mg; pH 7.35; version 1.2.3; TA 120/80; 2026.04.04.");
+    ).toBe("Dose 0.5 mg; pH 7.35; version 1.2.3; TA 120/80; [DATE 1].");
     expect(
       sent("Mixed separators 046.454-286 stay out of the bare rule."),
     ).toBe("Mixed separators 046.454-286 stay out of the bare rule.");

@@ -2626,6 +2626,14 @@ export function VaultLibrary({
                         void bridge
                           .cancelDocumentText(readerReadId)
                           .catch(() => undefined),
+                      kept: {
+                        recordId: readerRecord.id,
+                        list: () => bridge.aiResults(readerRecord.id),
+                        read: (resultId) =>
+                          bridge.readAiResult(readerRecord.id, resultId),
+                        save: (keptId, sources) =>
+                          bridge.saveAiResult(readerRecord.id, keptId, sources),
+                      },
                       onOpenPreferences: () => {
                         setReaderRecordId(null);
                         setSection("preferences");
@@ -2641,8 +2649,8 @@ export function VaultLibrary({
             <AiHelperNotice
               action={aiNotice.before || aiNotice.then ? "continue" : "close"}
               onThisDevice={aiNotice.onThisDevice}
-              // Answers are not kept in the vault yet (#212).
-              answersKept={false}
+              // Answers are kept with the document, in the vault (#212).
+              answersKept
               onClose={() => {
                 setAiNoticeSeen((seen) =>
                   aiNotice.onThisDevice ? "device" : (seen ?? "share"),
