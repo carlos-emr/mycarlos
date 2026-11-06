@@ -2312,7 +2312,7 @@ const RULES: Rule[] = [
   {
     kind: "address",
     pattern: new RegExp(
-      `(?<=(?<![\\p{L}])(?:[Mm]ieszka(?:ł|ła|jący|jąca)?[ \\t]+w|[Zz]amieszkał[ay]?[ \\t]+w|[Zz]am\\.|[Zz][ \\t]+(?:miejscowości|miasta|gminy|wsi)|[Ww][ \\t]+(?:miejscowości|mieście|gminie|wsi))[ \\t]+)\\p{Lu}\\p{Ll}+(?:[ -]\\p{Lu}\\p{Ll}+){0,2}`,
+      `(?<=(?<![\\p{L}])(?:[Mm]ieszka(?:ł|ła|jący|jąca)?[ \\t]+w|[Zz]amieszkał[ay]?[ \\t]+w|[Zz]am\\.|[Zz][ \\t]+(?:miejscowości|miasta|gminy|wsi)|[Ww][ \\t]+(?:miejscowości|mieście|gminie|wsi))[ \\t]+)(?!(?:Ul|Al|Pl|Os|Ulica|Aleja|Plac|Osiedle)(?![\\p{L}]))\\p{Lu}\\p{Ll}+(?:[ -]\\p{Lu}\\p{Ll}+){0,2}`,
       "gu",
     ),
     townInBrackets: true,
@@ -2322,7 +2322,7 @@ const RULES: Rule[] = [
   {
     kind: "address",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?<![Ee][Tt][ \\t]?)(?:ul\\.|al\\.|pl\\.|os\\.|ulica|aleja|plac|osiedle)[ \\t]*\\p{Lu}[\\p{L}.-]*(?:[ \\t]+\\p{Lu}[\\p{L}.-]*){0,3}[ \\t]+(?!(?:19|20)\\d{2}(?!\\d))\\d{1,4}[A-Za-z]?(?:\\/\\d{1,4}[A-Za-z]?)?(?:[ \\t]*m\\.[ \\t]*\\d{1,4})?(?![\\p{L}\\d])${TOWN_AFTER}`,
+      `(?<![\\p{L}])(?<![Ee][Tt][ \\t]?)(?:[Uu]l\\.|[Aa]l\\.|[Pp]l\\.|[Oo]s\\.|[Uu]lica|[Aa]leja|[Pp]lac|[Oo]siedle)[ \\t]*\\p{Lu}[\\p{L}.-]*(?:[ \\t]+\\p{Lu}[\\p{L}.-]*){0,3}[ \\t]+(?!(?:19|20)\\d{2}(?!\\d))\\d{1,4}[A-Za-z]?(?:\\/\\d{1,4}[A-Za-z]?)?(?:[ \\t]*m\\.[ \\t]*\\d{1,4})?(?![\\p{L}\\d])${TOWN_AFTER}`,
       "gu",
     ),
   },
