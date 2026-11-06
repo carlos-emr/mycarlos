@@ -1,9 +1,29 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { humanText } from "../test/humanText";
 import type { VaultBridge, VaultSnapshot, FoundIdentity } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
+
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const people = [
   { id: "p1", displayName: "FAKE Mom", createdAtMs: 1 },
   { id: "p2", displayName: "FAKE Jamie Example", createdAtMs: 2 },
@@ -21,6 +41,7 @@ describe("shared PDF suggestions use explicit Move", () => {
     available: true,
   });
   const vault: VaultSnapshot = {
+    capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
     profiles: [
       ...people,
       { id: "shared", displayName: "Shared with me", createdAtMs: 3 },
@@ -40,29 +61,98 @@ describe("shared PDF suggestions use explicit Move", () => {
       platform: vi.fn().mockResolvedValue("windows"),
       isPhoto: vi.fn().mockResolvedValue(false),
       isLockedPdf: vi.fn().mockResolvedValue(false),
-      snapshot: vi.fn().mockResolvedValue(shown),
+      snapshot: vi.fn().mockImplementation(async () => captureSnapshot(shown)),
       moveToPerson: vi
         .fn()
         .mockResolvedValue({ moved: ["s1"], alreadyThere: [] }),
       ...extra,
     } as unknown as VaultBridge;
     const setNotice = vi.fn();
-    render(
+    const screenFor = (current: VaultSnapshot) => (
       <VaultLibrary
         bridge={bridge}
-        snapshot={shown}
+        snapshot={current}
         busy={false}
         notice=""
         setNotice={setNotice}
         run={async (operation) => operation()}
-        refresh={async () => shown}
+        refresh={async () => current}
         onLock={vi.fn().mockResolvedValue(undefined)}
         autoLockMinutes={5}
         onAutoLockMinutes={vi.fn()}
-      />,
+      />
     );
-    return { bridge, setNotice };
+    const view = render(screenFor(shown));
+    return {
+      bridge,
+      setNotice,
+      rerenderSnapshot: (current: VaultSnapshot) =>
+        view.rerender(screenFor(current)),
+    };
   }
+
+  it("uses current saved people for a cached document suggestion and its Move", async () => {
+    const shown = { ...vault, records: [vault.records[0]] };
+    const identity = vi.fn().mockResolvedValue({ name: "FAKE Jamie Example" });
+    const { bridge, rerenderSnapshot } = renderLibrary(
+      { sharedIdentity: identity },
+      shown,
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
+    const groupName = humanText(
+      "Suggested person for FAKE Referral letter.pdf",
+    );
+    expect(
+      within(await screen.findByRole("group", { name: groupName })).getByRole(
+        "button",
+        {
+          name: humanText(
+            "Move FAKE Referral letter.pdf to FAKE Jamie Example's records",
+          ),
+        },
+      ),
+    ).toBeEnabled();
+
+    // A refreshed profile's recorded full name supersedes its display label.
+    const unmatched = {
+      ...shown,
+      profiles: shown.profiles.map((person) =>
+        person.id === "p2"
+          ? { ...person, fullName: "FAKE Robin Sample" }
+          : person,
+      ),
+    };
+    rerenderSnapshot(unmatched);
+    expect(screen.queryByRole("group", { name: groupName })).toBeNull();
+    expect(bridge.moveToPerson).not.toHaveBeenCalled();
+
+    rerenderSnapshot({
+      ...unmatched,
+      profiles: unmatched.profiles.map((person) =>
+        person.id === "p1"
+          ? { ...person, fullName: "FAKE Jamie Example" }
+          : person,
+      ),
+    });
+    await userEvent.click(
+      within(await screen.findByRole("group", { name: groupName })).getByRole(
+        "button",
+        {
+          name: humanText(
+            "Move FAKE Referral letter.pdf to FAKE Mom's records",
+          ),
+        },
+      ),
+    );
+    expect(bridge.moveToPerson).toHaveBeenCalledExactlyOnceWith(
+      ["s1"],
+      "p1",
+      [],
+    );
+    expect(identity).toHaveBeenCalledExactlyOnceWith("s1");
+  });
 
   it("suggests the one person a shared document's name matches, and only moves on Move", async () => {
     const found: Record<string, FoundIdentity | null> = {
@@ -88,6 +178,71 @@ describe("shared PDF suggestions use explicit Move", () => {
       within(suggestion).getByRole("button", { name: /^Move / }),
     );
     expect(bridge.moveToPerson).toHaveBeenCalledWith(["s1"], "p2", []);
+  });
+
+  it("pauses queued identity reads in the reader and resumes them when it closes", async () => {
+    let finish: ((identity: FoundIdentity) => void) | undefined;
+    const identity = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<FoundIdentity>((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValue({ name: "FAKE Jamie Example" });
+    const complete = async () => {
+      const reply = finish;
+      finish = undefined;
+      if (reply) await act(async () => reply({ name: "FAKE Jamie Example" }));
+    };
+    const { bridge } = renderLibrary(
+      {
+        sharedIdentity: identity,
+        viewPage: vi.fn().mockResolvedValue({
+          pageCount: 1,
+          width: 1,
+          height: 1,
+          image:
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+          text: "FAKE reader text",
+        }),
+        cancelView: vi.fn().mockResolvedValue(undefined),
+      },
+      { ...vault, records: vault.records.slice(0, 2) },
+    );
+    try {
+      fireEvent.click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
+      await waitFor(() =>
+        expect(identity).toHaveBeenCalledExactlyOnceWith("s1"),
+      );
+      fireEvent.click(screen.getByText(humanText("FAKE Referral letter.pdf")));
+      await userEvent.click(screen.getByRole("button", { name: "Read" }));
+      const reader = await screen.findByRole("dialog", {
+        name: "FAKE Referral letter.pdf",
+      });
+      await within(reader).findByRole("img");
+      expect(bridge.viewPage).toHaveBeenCalledWith(
+        "s1",
+        0,
+        expect.any(Number),
+        undefined,
+      );
+      await complete();
+      expect(identity).toHaveBeenCalledExactlyOnceWith("s1");
+      await userEvent.click(
+        within(reader).getByRole("button", { name: "Close" }),
+      );
+      await screen.findByRole("group", {
+        name: humanText("Suggested person for FAKE Pharmacy receipt.pdf"),
+      });
+      expect(identity.mock.calls).toEqual([["s1"], ["s2"]]);
+      expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    } finally {
+      await complete();
+    }
   });
 
   it("hides a suggestion after Not this person, in the list and the details", async () => {

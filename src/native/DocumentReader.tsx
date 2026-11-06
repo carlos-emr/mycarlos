@@ -9,6 +9,9 @@ import { ClinicServiceDate } from "./ClinicServiceDate";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useModalFocus } from "../useModalFocus";
+import type { AiTool, SourceSpan } from "../ai/types";
+import { ReaderAiPanel, TERM_MAX, type ReaderAi } from "./ReaderAiPanel";
+import { ReadingAidView } from "./ReadingAidView";
 import {
   hasVaultErrorCode,
   vaultErrorMessage,
@@ -28,6 +31,37 @@ const CACHED_PAGES = 6;
 const CACHED_CHARACTERS = 48 * 1024 * 1024;
 /** A resize settles before the page is measured again. */
 const RESIZE_SETTLE_MS = 150;
+/** The most of a page's text given to the model around a term. */
+const CONTEXT_MAX = 400;
+
+/** Lower case, character by character, keeping the length: a character
+ * whose lower case is longer (İ) stays as it is, so offsets still hold. */
+function foldCase(text: string): string {
+  return Array.from(text, (char) => {
+    const lower = char.toLowerCase();
+    return lower.length === char.length ? lower : char;
+  }).join("");
+}
+
+/** The sentence of `text` that `term` is in (case aside), or "". */
+export function sentenceAround(text: string, term: string): string {
+  const at = foldCase(text).indexOf(foldCase(term));
+  if (!term || at < 0) return "";
+  const before = text.slice(0, at);
+  const start =
+    Math.max(
+      before.lastIndexOf(". "),
+      before.lastIndexOf("\n"),
+      before.lastIndexOf("? "),
+      before.lastIndexOf("! "),
+    ) + 1;
+  const after = text.slice(at + term.length).search(/[.!?](\s|$)|\n/);
+  const end = after < 0 ? text.length : at + term.length + after + 1;
+  return text.slice(start, end).trim().slice(0, CONTEXT_MAX);
+}
+
+/** Let a burst of zoom input settle before sharpening the visible page. */
+const ZOOM_SETTLE_MS = 120;
 
 /** Retains drawn pages within the reader's count and character budgets. */
 export function cacheDrawnPage(
@@ -51,31 +85,51 @@ export function cacheDrawnPage(
   }
 }
 
-/** Reads a stored document inside myCarlos, one page at a time. Each page is
- * drawn by the separate PDF helper, as a picture with its text beside it for
- * screen readers and copying: nothing in the document runs here, and nothing
- * is saved. A document locked with its own password asks for it; the
- * password is held only while the reader is open. */
-export function DocumentReader({
-  record,
-  viewPage,
-  cancelView,
-  onClose,
-}: {
+type DocumentReaderProps = {
   record: VaultRecord;
   viewPage: (
     page: number,
     width: number,
     password?: string,
   ) => Promise<ViewedPage>;
-  /** Stops a page still being drawn, when the reader closes. */
+  /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView?: () => void;
   onClose: () => void;
-}) {
+  /** The AI helper's actions (#72), where this computer can offer them. */
+  ai?: ReaderAi;
+  /** Opens on the clinic's reading aid, under its notice, when the record has one. The original is
+   * always one tap away, and the notice comes first every time the aid is shown. */
+  startWithAid?: boolean;
+};
+
+/** Reads a stored document inside myCarlos, one page at a time. Each page is
+ * drawn by the separate PDF helper, as a picture with its text beside it for
+ * screen readers and copying: nothing in the document runs here, and nothing
+ * is saved. A document locked with its own password asks for it; the
+ * password is held only while the reader is open. */
+export function DocumentReader(props: DocumentReaderProps) {
+  // A document change starts a new reading session, including its password/cache.
+  return <ReadingDocument key={props.record.id} {...props} />;
+}
+
+function ReadingDocument({
+  record,
+  viewPage,
+  cancelView,
+  onClose,
+  ai,
+  startWithAid = false,
+}: DocumentReaderProps) {
   useI18n();
+  const aid = record.readingAid;
+  const [view, setView] = useState<"aid" | "original">(
+    aid && startWithAid ? "aid" : "original",
+  );
+  const showingAid = view === "aid" && Boolean(aid);
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
   useModalFocus(true, dialogRef, onClose, closeRef);
   const [page, setPage] = useState(0);
   const [zoom, setZoom] = useState(1);
@@ -92,6 +146,10 @@ export function DocumentReader({
   const [asking, setAsking] = useState(false);
   const [wrongTries, setWrongTries] = useState(0);
   const [typed, setTyped] = useState("");
+  // A refused attempt remounts the field; keep keyboard retry in that field.
+  useEffect(() => {
+    if (asking && wrongTries > 0) passwordRef.current?.focus();
+  }, [asking, wrongTries]);
   // Pages already drawn at a width, so that going back is quick. Memory only.
   const drawn = useRef(new Map<string, ViewedPage>());
   // The latest way to ask for a page; a new function alone asks for nothing.
@@ -99,10 +157,43 @@ export function DocumentReader({
   viewPageRef.current = viewPage;
   const cancelViewRef = useRef(cancelView);
   cancelViewRef.current = cancelView;
-  // A page still being drawn when the reader closes is stopped.
-  useEffect(() => () => cancelViewRef.current?.(), []);
+  const pendingDraw = useRef<symbol | null>(null);
+  // Clear retained pages and stop native work before disposing this reading session.
+  useEffect(
+    () => () => {
+      pendingDraw.current = null;
+      drawn.current.clear();
+      cancelViewRef.current?.();
+    },
+    [],
+  );
+  // The AI helper: which panel is open, the words last selected in the page
+  // text (a term to explain), and a summary sentence's place being shown.
+  const [aiTool, setAiTool] = useState<AiTool | null>(null);
+  const [textOpen, setTextOpen] = useState(false);
+  const [highlight, setHighlight] = useState<SourceSpan | null>(null);
+  const textRef = useRef<HTMLDivElement | null>(null);
+  const markRef = useRef<HTMLElement | null>(null);
+  const selected = useRef("");
+  const offersAi = Boolean(ai);
+  useEffect(() => {
+    if (!offersAi) return;
+    const remember = () => {
+      const selection = document.getSelection();
+      if (
+        selection &&
+        !selection.isCollapsed &&
+        textRef.current?.contains(selection.anchorNode)
+      )
+        selected.current = selection.toString().trim().slice(0, TERM_MAX);
+    };
+    document.addEventListener("selectionchange", remember);
+    return () => document.removeEventListener("selectionchange", remember);
+  }, [offersAi]);
 
   useEffect(() => {
+    // The page area exists only while the original is shown; measure again when it comes back.
+    if (showingAid) return;
     // The width inside the page area's padding, so that a page fitted to it
     // does not scroll.
     const measure = () => {
@@ -124,8 +215,10 @@ export function DocumentReader({
     return () => {
       window.clearTimeout(settle);
       observer.disconnect();
+      // A stale width must not draw a page the moment the original returns.
+      setFitWidth(0);
     };
-  }, []);
+  }, [showingAid]);
 
   const remember = (key: string, result: ViewedPage) =>
     cacheDrawnPage(drawn.current, key, result);
@@ -137,7 +230,7 @@ export function DocumentReader({
   );
 
   useEffect(() => {
-    if (!fitWidth || asking) return;
+    if (showingAid || !fitWidth || asking) return;
     const key = `${page}:${pictureWidth}`;
     const known = drawn.current.get(key);
     if (known) {
@@ -148,32 +241,69 @@ export function DocumentReader({
       return;
     }
     let current = true;
+    let request: symbol | undefined;
     setLoading(true);
     setError("");
-    viewPageRef.current(page, pictureWidth, password).then(
-      (result) => {
-        if (!current) return;
-        remember(key, result);
-        setShown({ ...result, page });
-        setPageCount(result.pageCount);
-        setLoading(false);
-      },
-      (failure: unknown) => {
-        if (!current) return;
-        setLoading(false);
-        const wrong = hasVaultErrorCode(failure, "pdf_wrong_password");
-        if (wrong || hasVaultErrorCode(failure, "pdf_locked")) {
-          if (wrong) setWrongTries((count) => count + 1);
-          setAsking(true);
-          return;
-        }
-        setError(deferredText(() => vaultErrorMessage(failure)));
-      },
-    );
+    const draw = () => {
+      request = Symbol();
+      pendingDraw.current = request;
+      const settled = () => {
+        if (pendingDraw.current === request) pendingDraw.current = null;
+      };
+      viewPageRef.current(page, pictureWidth, password).then(
+        (result) => {
+          settled();
+          if (!current) return;
+          remember(key, result);
+          setShown({ ...result, page });
+          setPageCount(result.pageCount);
+          setLoading(false);
+        },
+        (failure: unknown) => {
+          settled();
+          if (!current) return;
+          setLoading(false);
+          const wrong = hasVaultErrorCode(failure, "pdf_wrong_password");
+          if (wrong || hasVaultErrorCode(failure, "pdf_locked")) {
+            if (wrong) setWrongTries((count) => count + 1);
+            setAsking(true);
+            return;
+          }
+          setError(deferredText(() => vaultErrorMessage(failure)));
+        },
+      );
+    };
+    // Opening/navigating/password attempts start immediately. A visible page
+    // scales with the controls while a burst of zooms settles to one new size.
+    const timer =
+      shown?.page === page
+        ? window.setTimeout(draw, ZOOM_SETTLE_MS)
+        : undefined;
+    if (timer === undefined) draw();
     return () => {
       current = false;
+      window.clearTimeout(timer);
+      if (request !== undefined && pendingDraw.current === request) {
+        pendingDraw.current = null;
+        cancelViewRef.current?.();
+      }
     };
-  }, [asking, fitWidth, page, password, pictureWidth]);
+  }, [asking, fitWidth, page, password, pictureWidth, showingAid]);
+
+  // Focus lands on the new view's start, so a screen reader hears the notice first: when the
+  // reader opens straight onto the aid, and after every switch.
+  const initialAid = useRef(showingAid);
+  const shownBefore = useRef(showingAid);
+  useEffect(() => {
+    if (initialAid.current && showingAid) {
+      document.getElementById("reading-aid-title")?.focus();
+      return;
+    }
+    if (shownBefore.current === showingAid) return;
+    shownBefore.current = showingAid;
+    if (showingAid) document.getElementById("reading-aid-title")?.focus();
+    else pageRef.current?.focus();
+  }, [showingAid]);
 
   const giveDocumentPassword = (event: FormEvent) => {
     event.preventDefault();
@@ -192,7 +322,55 @@ export function DocumentReader({
           total: pageCount,
         });
   // The picture shown is the page asked for, not one left from before.
-  const current = shown && shown.page === page && !asking && !error;
+  const zoomable = shown && shown.page === page && !asking;
+  // A failed sharpening attempt can still return to a cached size.
+  const current = zoomable && !error;
+  const pageText = current ? (shown.readableText ?? shown.text) : "";
+  // A summary sentence's place, on the page shown. Offsets are into the page
+  // text as read; the text shown here is trimmed, so they move with it.
+  const lead = pageText.length - pageText.trimStart().length;
+  const shownText = pageText.trim();
+  const marked =
+    highlight && current && highlight.page === shown.page
+      ? {
+          start: Math.max(
+            0,
+            Math.min(shownText.length, highlight.start - lead),
+          ),
+          end: Math.max(0, Math.min(shownText.length, highlight.end - lead)),
+        }
+      : null;
+  // Each "Show in document" brings the words into view and focus, even
+  // the same words again: the highlight is a new object each time.
+  useEffect(() => {
+    markRef.current?.scrollIntoView?.({ block: "center" });
+    markRef.current?.focus();
+  }, [highlight, current]);
+  // The page text and its highlight, and the AI helper, belong to the original view only; the
+  // clinician-approved aid is never shown beside or acted on by the helper.
+  const openAid = () => {
+    initialAid.current = false;
+    setAiTool(null);
+    setHighlight(null);
+    setTextOpen(false);
+    setView("aid");
+  };
+  const showSource = (span: SourceSpan) => {
+    // A kept answer's place on a page this document does not have is not
+    // shown: the page asked for could not be drawn.
+    if (pageCount !== null && span.page >= pageCount) return;
+    // Back to the original first, so the page turns where the words are.
+    setView("original");
+    setHighlight({ ...span });
+    setTextOpen(true);
+    setPage(span.page);
+  };
+  // Opening a tool may wait for the AI helper's notice; closing never does.
+  const toggleAi = (tool: AiTool) => {
+    if (aiTool === tool) setAiTool(null);
+    else if (ai?.beforeFirstUse) ai.beforeFirstUse(() => setAiTool(tool));
+    else setAiTool(tool);
+  };
   return (
     <div className="dialog-backdrop" role="presentation">
       <section
@@ -219,156 +397,243 @@ export function DocumentReader({
               </p>
             )}
           </div>
-          <button
-            ref={closeRef}
-            className="button"
-            type="button"
-            onClick={onClose}
-          >
-            {translateNow("photo.close")}
-          </button>
-        </header>
-        <div className="native-reader-controls">
-          <button
-            className="button"
-            type="button"
-            disabled={loading || page === 0}
-            onClick={() => setPage((current) => current - 1)}
-          >
-            {translateNow("interface.DocumentReader.previousPage")}
-          </button>
-          <span className="native-reader-where">{where}</span>
-          <button
-            className="button"
-            type="button"
-            disabled={loading || last === null || page >= last}
-            onClick={() => setPage((current) => current + 1)}
-          >
-            {translateNow("interface.DocumentReader.nextPage")}
-          </button>
-          <span className="native-reader-zoom">
+          <span className="native-reader-head-actions">
+            {aid && !showingAid && (
+              <button className="button" type="button" onClick={openAid}>
+                {translateNow("readingAid.open")}
+              </button>
+            )}
             <button
+              ref={closeRef}
               className="button"
               type="button"
-              disabled={loading || zoom <= ZOOM_MIN}
-              onClick={() =>
-                setZoom((current) => Math.max(ZOOM_MIN, current / ZOOM_STEP))
-              }
+              onClick={onClose}
             >
-              {translateNow("interface.DocumentReader.smaller")}
-            </button>
-            <span aria-live="polite">
-              {translateNow("interface.reader.zoom", {
-                percent: Math.round(zoom * 100),
-              })}
-            </span>
-            <button
-              className="button"
-              type="button"
-              disabled={loading || zoom >= ZOOM_MAX}
-              onClick={() =>
-                setZoom((current) => Math.min(ZOOM_MAX, current * ZOOM_STEP))
-              }
-            >
-              {translateNow("interface.DocumentReader.larger")}
-            </button>
-            <button
-              className="button"
-              type="button"
-              disabled={loading || zoom === 1}
-              onClick={() => setZoom(1)}
-            >
-              {translateNow("interface.DocumentReader.fitWidth")}
+              {translateNow("photo.close")}
             </button>
           </span>
-        </div>
-        <p
-          className={loading && !asking ? "native-dialog-status" : "sr-only"}
-          role="status"
-        >
-          {loading && !asking
-            ? translateNow("interface.reader.opening", { page: page + 1 })
-            : current
-              ? translateNow("interface.reader.where", {
-                  page: shown.page + 1,
-                  total: shown.pageCount,
-                })
-              : ""}
-        </p>
-        {asking && (
-          <form
-            className="native-reader-password"
-            onSubmit={giveDocumentPassword}
-          >
-            <p id="reader-password-help">
-              {translateNow(
-                "interface.DocumentReader.thisDocumentIsLockedWithItsOwn",
+        </header>
+        {showingAid && aid ? (
+          <ReadingAidView
+            aid={aid}
+            reviewedAtMs={aid.reviewedAtMs}
+            onOpenOriginal={() => {
+              initialAid.current = false;
+              setView("original");
+            }}
+          />
+        ) : (
+          <>
+            <div className="native-reader-controls">
+              <button
+                className="button"
+                type="button"
+                disabled={loading || page === 0}
+                onClick={() => {
+                  setHighlight(null);
+                  setTextOpen(false);
+                  setPage((current) => current - 1);
+                }}
+              >
+                {translateNow("interface.DocumentReader.previousPage")}
+              </button>
+              <span className="native-reader-where">{where}</span>
+              <button
+                className="button"
+                type="button"
+                disabled={loading || last === null || page >= last}
+                onClick={() => {
+                  setHighlight(null);
+                  setTextOpen(false);
+                  setPage((current) => current + 1);
+                }}
+              >
+                {translateNow("interface.DocumentReader.nextPage")}
+              </button>
+              <span className="native-reader-zoom">
+                <button
+                  className="button"
+                  type="button"
+                  disabled={!zoomable || zoom <= ZOOM_MIN}
+                  onClick={() =>
+                    setZoom((current) =>
+                      Math.max(ZOOM_MIN, current / ZOOM_STEP),
+                    )
+                  }
+                >
+                  {translateNow("interface.DocumentReader.smaller")}
+                </button>
+                <span aria-live="polite">
+                  {translateNow("interface.reader.zoom", {
+                    percent: Math.round(zoom * 100),
+                  })}
+                </span>
+                <button
+                  className="button"
+                  type="button"
+                  disabled={!zoomable || zoom >= ZOOM_MAX}
+                  onClick={() =>
+                    setZoom((current) =>
+                      Math.min(ZOOM_MAX, current * ZOOM_STEP),
+                    )
+                  }
+                >
+                  {translateNow("interface.DocumentReader.larger")}
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  disabled={!zoomable || zoom === 1}
+                  onClick={() => setZoom(1)}
+                >
+                  {translateNow("interface.DocumentReader.fitWidth")}
+                </button>
+              </span>
+              {ai && (
+                <span className="native-reader-ai-actions">
+                  <button
+                    className="button"
+                    type="button"
+                    aria-expanded={aiTool === "summary"}
+                    aria-controls={
+                      aiTool === "summary" ? "reader-ai-panel" : undefined
+                    }
+                    onClick={() => toggleAi("summary")}
+                  >
+                    {translateNow("ai.summary.button")}
+                  </button>
+                  <button
+                    className="button"
+                    type="button"
+                    aria-expanded={aiTool === "explain"}
+                    aria-controls={
+                      aiTool === "explain" ? "reader-ai-panel" : undefined
+                    }
+                    onClick={() => toggleAi("explain")}
+                  >
+                    {translateNow("ai.explain.title")}
+                  </button>
+                </span>
               )}
-            </p>
-            <label htmlFor="reader-password">
-              {translateNow("interface.DocumentReader.documentPassword")}
-            </label>
-            <input
-              id="reader-password"
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={typed}
-              aria-describedby={
-                wrongTries
-                  ? "reader-password-help reader-password-error"
-                  : "reader-password-help"
-              }
-              aria-invalid={wrongTries ? true : undefined}
-              onChange={(event) => setTyped(event.target.value)}
-            />
-            {wrongTries > 0 && (
-              <p id="reader-password-error" role="alert" key={wrongTries}>
-                {translateNow(
-                  "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
-                )}
-              </p>
-            )}
-            <button className="button primary" disabled={!typed}>
-              {translateNow("interface.DocumentReader.open")}
-            </button>
-          </form>
-        )}
-        {error && <p role="alert">{error}</p>}
-        {/* Focusable, so that a zoomed page can be moved with the arrow keys
-            where the webview does not focus scrolling areas itself. */}
-        <div
-          className="native-reader-page"
-          ref={pageRef}
-          tabIndex={0}
-          role="region"
-          aria-label={translateNow("interface.reader.page", {
-            page: current ? shown.page + 1 : page + 1,
-          })}
-        >
-          {current && (
-            <img
-              src={shown.image}
-              alt={translateNow("interface.reader.textFollows", {
-                page: shown.page + 1,
-                total: shown.pageCount,
-              })}
-              style={{ width: `${cssWidth}px` }}
-            />
-          )}
-        </div>
-        {current && (
-          <details className="native-reader-text">
-            <summary>
-              {translateNow("interface.DocumentReader.textOnThisPage")}
-            </summary>
-            <div>
-              {(shown.readableText ?? shown.text).trim() ||
-                translateNow(
-                  "interface.DocumentReader.noTextCouldBeReadOnThis",
-                )}
             </div>
-          </details>
+            <p
+              className={
+                loading && !asking ? "native-dialog-status" : "sr-only"
+              }
+              role="status"
+            >
+              {loading && !asking
+                ? translateNow("interface.reader.opening", { page: page + 1 })
+                : current
+                  ? translateNow("interface.reader.where", {
+                      page: shown.page + 1,
+                      total: shown.pageCount,
+                    })
+                  : ""}
+            </p>
+            {asking && (
+              <form
+                className="native-reader-password"
+                onSubmit={giveDocumentPassword}
+              >
+                <p id="reader-password-help">
+                  {translateNow(
+                    "interface.DocumentReader.thisDocumentIsLockedWithItsOwn",
+                  )}
+                </p>
+                <label htmlFor="reader-password">
+                  {translateNow("interface.DocumentReader.documentPassword")}
+                </label>
+                <input
+                  ref={passwordRef}
+                  id="reader-password"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={typed}
+                  aria-describedby={
+                    wrongTries
+                      ? "reader-password-help reader-password-error"
+                      : "reader-password-help"
+                  }
+                  aria-invalid={wrongTries ? true : undefined}
+                  onChange={(event) => setTyped(event.target.value)}
+                />
+                {wrongTries > 0 && (
+                  <p id="reader-password-error" role="alert" key={wrongTries}>
+                    {translateNow(
+                      "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+                    )}
+                  </p>
+                )}
+                <button className="button primary" disabled={!typed}>
+                  {translateNow("interface.DocumentReader.open")}
+                </button>
+              </form>
+            )}
+            {error && <p role="alert">{error}</p>}
+            {/* Focusable, so that a zoomed page can be moved with the arrow keys
+            where the webview does not focus scrolling areas itself. */}
+            <div
+              className="native-reader-page"
+              aria-busy={loading}
+              ref={pageRef}
+              tabIndex={0}
+              role="region"
+              aria-label={translateNow("interface.reader.page", {
+                page: current ? shown.page + 1 : page + 1,
+              })}
+            >
+              {current && (
+                <img
+                  src={shown.image}
+                  alt={translateNow("interface.reader.textFollows", {
+                    page: shown.page + 1,
+                    total: shown.pageCount,
+                  })}
+                  style={{ width: `${cssWidth}px` }}
+                />
+              )}
+            </div>
+            {current && (
+              <details
+                className="native-reader-text"
+                open={textOpen}
+                onToggle={(event) => setTextOpen(event.currentTarget.open)}
+              >
+                <summary>
+                  {translateNow("interface.DocumentReader.textOnThisPage")}
+                </summary>
+                <div ref={textRef}>
+                  {!shownText ? (
+                    translateNow(
+                      "interface.DocumentReader.noTextCouldBeReadOnThis",
+                    )
+                  ) : marked && marked.end > marked.start ? (
+                    <>
+                      {shownText.slice(0, marked.start)}
+                      <mark ref={markRef} tabIndex={-1}>
+                        {shownText.slice(marked.start, marked.end)}
+                      </mark>
+                      {shownText.slice(marked.end)}
+                    </>
+                  ) : (
+                    shownText
+                  )}
+                </div>
+              </details>
+            )}
+            {ai && aiTool && (
+              <ReaderAiPanel
+                key={aiTool}
+                ai={ai}
+                tool={aiTool}
+                initialTerm={aiTool === "explain" ? selected.current : ""}
+                contextFor={(term) => sentenceAround(pageText, term)}
+                onShowSource={showSource}
+              />
+            )}
+          </>
         )}
       </section>
     </div>
