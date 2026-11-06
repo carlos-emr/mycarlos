@@ -2742,20 +2742,18 @@ const RULES: Rule[] = [
   },
   // A clinician named by role, with no title, in es/pt/pl: "la médica Inés Ficticia Peral",
   // "a assistente social Carla Exemplo Lima", "Lekarz Jan Testowy". A full name of two or
-  // more words only; physicians are doctors.
+  // more words only; physicians are doctors. In Spanish and Portuguese the role follows an
+  // article or a determiner, since "médica" and "técnica" are also "medical" and "technique"
+  // ("Historia Médica Completa", "técnica Seldinger Modificada") (#262 review).
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])${anyCase(
+      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
         withSentenceCase([
           "médico de familia",
           "médica de familia",
           "médico",
           "médica",
-          "lekarz rodzinny",
-          "lekarz",
-          "lekarka",
-          "stomatolog",
           "dentista",
           "odontólogo",
           "odontóloga",
@@ -2768,7 +2766,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])${anyCase(
+      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
         withSentenceCase([
           "trabajadora social",
           "trabajador social",
@@ -2779,8 +2777,6 @@ const RULES: Rule[] = [
           "matrona",
           "técnico de radiología",
           "técnica de radiología",
-          "técnico",
-          "técnica",
           "auxiliar de enfermería",
           "auxiliar",
           "terapeuta ocupacional",
@@ -2800,6 +2796,32 @@ const RULES: Rule[] = [
           "cuidador",
           "agente comunitário de saúde",
           "agente de saúde",
+        ]),
+      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  {
+    kind: "doctor",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase(
+        withSentenceCase([
+          "lekarz rodzinny",
+          "lekarz",
+          "lekarka",
+          "stomatolog",
+        ]),
+      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+  },
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])${anyCase(
+        withSentenceCase([
           "psycholog",
           "psycholożka",
           "dietetyk",
@@ -2817,6 +2839,7 @@ const RULES: Rule[] = [
           "technik",
           "pracownik socjalny",
           "pracowniczka socjalna",
+          "logopeda",
         ]),
       )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",

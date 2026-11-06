@@ -323,6 +323,14 @@ describe("clinicians named by role, with no title, in es/pt/pl", () => {
     "La terapeuta Ocupacional Infantil vino.",
     "El técnico de Rayos X informó.",
     "La auxiliar Administrativa llamó.",
+    // "médica" and "técnica" are also "medical" and "technique" (#262 review).
+    "Historia Médica Completa Del Paciente",
+    "Licencia Médica Temporal Prolongada",
+    "Junta Médica Evaluadora Regional",
+    "Evaluación Médica Inicial Completa",
+    "Atestado Médico Ocupacional Padrão",
+    "Equipe Médica Plantonista Noturna",
+    "Se usó la técnica Seldinger Modificada.",
   ])("leaves a role and its qualifier: %s", (text) => {
     expect(send(text)).toBe(text);
   });
