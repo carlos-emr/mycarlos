@@ -681,9 +681,10 @@ const PARTICLE_ANY_CASE = `(?:${[...PARTICLES]
 // "Tel:"), not more of the name.
 // An identity label in capitals is never a word of the name before it: "Pacjentka: WIERZBICKA,
 // Zuzanna    PESEL …", "Nombre: Lucía Prueba Sanz    DNI …". "NAM" is left out: it is a given
-// name too.
+// name too. Before a comma it is a surname in "SURNAME, Given" ("NIE, Wei"): a label is
+// followed by a colon or its value.
 const ID_LABEL_WORD =
-  "(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|MRN|HRN|IPP|RAMQ|OHIP|DOB)(?![\\p{L}'’-])";
+  "(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|MRN|HRN|IPP|RAMQ|OHIP|DOB)(?![\\p{L}'’-]|,)";
 const LABEL_PART = `(?!${ID_LABEL_WORD})${NAME_PART}(?![\\p{L}'’-]|[ \\t]*[:#])`;
 // Surname first, as lab, imaging and hospital headers have it (#80 review):
 // "Okafor, Margaret A.", "OKAFOR, MARGARET", "de la Cruz, Maria".
@@ -1713,7 +1714,7 @@ interface Rule {
   /** Relational prose can also introduce a disease: flag that conflict. */
   reviewClinicalConflict?: true;
   upperPrefix?: true;
-  /** A value that reads as a whole date is a date, not this record number. */
+  /** A value that reads as a whole date stays with the date rules. */
   skipDates?: true;
   /** A name after a family word: a relative, who may share the patient's
    * surname without being the patient. */
@@ -2667,6 +2668,34 @@ const UNCUED_NOT_NAME_WORDS = new Set(
 // body, time and unit lists leave these out; the clinic and role lists need "Pain", "Summer" and
 // "Head".
 const ALSO_NAMES = new Set(["summer", "pain", "good", "head"]);
+// Words on NOT_NAMES that are also names. As a first word they still end a label's value
+// ("Patient: Head CT", "Pacjent: Nie zgłasza …"), but not after a person title ("Dr. Head",
+// "Mr. Son"), nor before more words that are all name-like ("HEAD, Martin", "Patient: Elle
+// Martin", "Patient: Nie Wei"). "Echo" and "Plan" stay out: far more often a test and a plan.
+const NAMES_ON_NOT_NAMES = new Set(["head", "son", "nie", "elle"]);
+function firstWordIsName(
+  text: string,
+  start: number,
+  candidate: string,
+): boolean {
+  const words = candidate.split(/[^\p{L}'’-]+/u).filter(Boolean);
+  if (!NAMES_ON_NOT_NAMES.has(words[0]?.toLowerCase() ?? "")) return false;
+  if (TITLE_RIGHT_BEFORE.test(text.slice(Math.max(0, start - 14), start)))
+    return true;
+  const rest = words.slice(1);
+  return (
+    rest.length > 0 &&
+    rest.every((word) => {
+      const lower = word.toLowerCase();
+      return (
+        !NOT_NAMES.has(lower) &&
+        !STATUS_WORDS.has(lower) &&
+        !HEADER_WORDS.has(lower) &&
+        !uncuedNotName(word)
+      );
+    })
+  );
+}
 /** An uncued name candidate is no name when any word is a clinical, document, heading, status,
  * generic, body or drug word, or has a medical ending. */
 function uncuedNotName(candidate: string): boolean {
@@ -2681,7 +2710,7 @@ function uncuedNotName(candidate: string): boolean {
         FAMILY_HISTORY_WORDS.has(lower) ||
         HEADER_WORDS.has(lower) ||
         STATUS_WORDS.has(lower) ||
-        NOT_NAMES.has(lower) ||
+        (NOT_NAMES.has(lower) && !NAMES_ON_NOT_NAMES.has(lower)) ||
         TREATMENT_WORDS.has(lower) ||
         PLACE_WORDS.has(lower) ||
         GENERIC_BEFORE_CLINIC.has(lower) ||
@@ -2780,18 +2809,21 @@ const RULES: Rule[] = [
     pattern:
       /(?:\+?1[ .-]?)?(?:\(\d{3}\)[ ]?|\b\d{3}[ .-]?)\d{3}[ .-]?\d{4}\b(?:[ \t]*(?:ext\.?|x|poste)[ \t]*\d{1,5}\b)?/gi,
   },
-  // A phone with a country code ("+34 612 345 678", "+48 601 234 567"), a Brazilian
-  // phone ("(11) 91234-5678"), or any phone after its label in es/pl/pt.
+  // A phone with a country code ("+34 612 345 678", "+48 601 234 567"), or a
+  // Brazilian phone ("(11) 91234-5678").
   {
     kind: "phone",
     pattern:
       /(?<![\d+])\+(?:[2-9]\d{0,2})[ .-]?\(?\d{1,3}\)?(?:[ .-]?\d{2,4}){2,4}(?!\d)|(?<![\d(])\(\d{2}\)[ ]?9?\d{4}-?\d{4}(?!\d)/g,
   },
+  // Telephone fields also identify local seven-digit numbers.
+  // A field value may begin on the next line, but never across an empty line.
   {
     kind: "phone",
     pattern:
-      /(?<![\p{L}])(?:Teléfono|Telefono|Telefone|Telefon|Tel|Tfno|Móvil|Movil|Celular|Cel|kom|tel\. kom)\.?[ \t]*[:#]?[ \t]*(\+?[\d(][\d ().-]{6,16}\d)(?!\d)/giu,
+      /(?<![\p{L}\p{N}])(?:Phone|Téléphone|Telephone|Tél|Fax|Teléfono|Telefono|Telefone|Telefon|Tel|Tfno|Móvil|Movil|Celular|Cel|kom|tel\. kom)\.?[ \t]*[:#]?[ \t]*(?:\r?\n[ \t]*)?(\+?[\d(][\d ().-]{5,16}\d)(?![\p{L}\p{N}/-])/giu,
     group: 1,
+    skipDates: true,
   },
   // A national identity number after its label: DNI/NIE "12345678Z", PESEL, CPF
   // "123.456.789-09", RG, NIF; and a CPF by its shape.
@@ -3702,6 +3734,100 @@ function findRanges(text: string): Finding[] {
   return found;
 }
 
+// A relative named in passing, in title-case text: "Daughter Present At Visit", "Brought Son
+// Home", "Patient: Son Visited Today". The run ends at a capitalised small word, words that
+// follow a relative are dropped from its end, and it is no name when its first word is one.
+// Name particles (De, La, Van …) stay. "Will" is a given name, so it is neither.
+const KIN_CUT_WORDS = new Set([
+  "at",
+  "of",
+  "by",
+  "up",
+  "to",
+  "in",
+  "on",
+  "with",
+  "for",
+  "from",
+  "is",
+  "was",
+  "and",
+  "du",
+  "des",
+  "au",
+  "aux",
+  "lors",
+  "avec",
+  "pour",
+  "par",
+  "en",
+  "et",
+  "por",
+  "con",
+  "para",
+  "com",
+  "em",
+  "na",
+  "przez",
+  "i",
+]);
+const KIN_FOLLOW_WORDS = new Set(
+  foldAll([
+    "present",
+    "aware",
+    "called",
+    "drove",
+    "supportive",
+    "updated",
+    "informed",
+    "notified",
+    "visiting",
+    "visited",
+    "arrived",
+    "lives",
+    "home",
+    "bedside",
+    "nearby",
+    "présent",
+    "présente",
+    "informé",
+    "informée",
+    "avisé",
+    "avisée",
+    "presente",
+    "informado",
+    "informada",
+    "avisado",
+    "avisada",
+    "obecny",
+    "obecna",
+    "poinformowany",
+    "poinformowana",
+  ]).map((word) => word.toLowerCase()),
+);
+function kinName(candidate: string): string {
+  const words = [...candidate.matchAll(/[^ \t]+/gu)];
+  const listWord = (word: string) => {
+    const lower = word.toLowerCase();
+    // Keep the same name exceptions as the surrounding refusal checks.
+    if (ALSO_NAMES.has(lower) || NAMES_ON_NOT_NAMES.has(lower)) return false;
+    return (
+      KIN_FOLLOW_WORDS.has(lower) ||
+      STATUS_WORDS.has(lower) ||
+      NOT_NAMES.has(lower) ||
+      HEADER_WORDS.has(lower)
+    );
+  };
+  let count = words.findIndex((word) => {
+    const lower = word[0].toLowerCase();
+    return KIN_CUT_WORDS.has(lower) && !PARTICLES.has(lower);
+  });
+  if (count < 0) count = words.length;
+  while (count > 0 && listWord(words[count - 1][0])) count--;
+  if (count === 0 || listWord(words[0][0])) return "";
+  const last = words[count - 1];
+  return candidate.slice(0, (last.index ?? 0) + last[0].length);
+}
 function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = [];
   for (const rule of RULES) {
@@ -3774,7 +3900,8 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (
         (rule.kind === "name" || rule.kind === "doctor") &&
-        NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
+        NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase()) &&
+        !firstWordIsName(text, start, trimmed)
       )
         continue;
       // A treatment after a role word is not a name ("a therapist Cognitive
@@ -3800,6 +3927,10 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
         continue;
+      if (rule.kin) {
+        trimmed = kinName(trimmed);
+        if (!trimmed) continue;
+      }
       if (rule.uncued && uncuedNotName(trimmed)) continue;
       if (rule.columnLabel) {
         const words = trimmed
@@ -3813,7 +3944,8 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
           // not-a-name word ends it. Not ORDINARY_WORDS: those are first names
           // that are also words ("PATIENT  MAY SAMPLETON").
           (!trimmed.includes(",") &&
-            (STATUS_WORDS.has(first) || NOT_NAMES.has(first)))
+            (STATUS_WORDS.has(first) ||
+              (NOT_NAMES.has(first) && !firstWordIsName(text, start, trimmed))))
         )
           continue;
       }
