@@ -1753,6 +1753,13 @@ export async function fakeSnapshot(page: Page) {
         snapshot: () => {
           recoveryKeySetAtMs: number | null;
           recoveryKeyLabel: string | null;
+          sharedProfileId?: string;
+          profiles: {
+            id: string;
+            displayName: string;
+            fullName?: string;
+            birthDate?: string;
+          }[];
           records: {
             id: string;
             displayName: string;

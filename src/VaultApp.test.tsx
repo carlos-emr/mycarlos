@@ -399,6 +399,54 @@ function renameBridge() {
   });
 }
 
+describe("the first person's details at setup (#234)", () => {
+  it("says when the details typed at setup could not be saved, and the vault is still ready", async () => {
+    const user = userEvent.setup();
+    const updateProfileDetails = vi
+      .fn()
+      .mockRejectedValue({ code: "storage", message: "FAKE: not saved" });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      updateProfileDetails,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    await user.type(
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
+      "FAKE Patient",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Full name, as on clinic documents")),
+      "FAKE Patient Example",
+    );
+    fireEvent.change(screen.getByLabelText(humanText("Date of birth")), {
+      target: { value: "1980-04-12" },
+    });
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Confirm passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(updateProfileDetails).toHaveBeenCalledOnce();
+    expect(bridge.create).toHaveBeenCalledOnce();
+  });
+});
+
 describe("durable vault UI", () => {
   it.each(["status", "snapshot"])(
     "locks native state and shows unlock when the current startup %s fails",
@@ -3552,6 +3600,79 @@ describe("durable vault UI", () => {
       ).toBeVisible();
     },
   );
+
+  it("says that details typed at setup were not saved once the recovery key dialog is done", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+      updateProfileDetails: vi
+        .fn()
+        .mockRejectedValue({ code: "storage", message: "FAKE: not saved" }),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+        ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    await user.type(
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
+      "FAKE Patient",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Full name, as on clinic documents")),
+      "FAKE Patient Example",
+    );
+    fireEvent.change(screen.getByLabelText(humanText("Date of birth")), {
+      target: { value: "1980-04-12" },
+    });
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Confirm passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: humanText("Your recovery key"),
+    });
+    expect(bridge.updateProfileDetails).toHaveBeenCalledOnce();
+    // Nothing is written under the dialog, where it would not be read out.
+    expect(
+      screen.queryByText(humanText(/weren't saved/)),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Next: check your recovery key"),
+      }),
+    );
+    await user.type(
+      within(dialog).getByLabelText(humanText("Your recovery key")),
+      RECOVERY_KEY,
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Check and save") }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    // The dialog's result says both: the key is saved, the details are not.
+    expect(
+      await screen.findByText(
+        humanText(
+          "Recovery key saved. Keep your kit somewhere safe. The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.",
+        ),
+      ),
+    ).toBeVisible();
+  });
 
   it("returns focus to the Security recovery setup button after Escape", async () => {
     const user = userEvent.setup();

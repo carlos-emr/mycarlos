@@ -949,5 +949,10 @@
   "interface.history.how.explain",
   "ai.summary.again",
   "ai.keepFailed",
-  "ai.keepFull"
+  "ai.keepFull",
+  "personDetails.setup",
+  "personDetails.later",
+  "personDetails.reminder",
+  "personDetails.notNow",
+  "personDetails.notSaved"
 ]

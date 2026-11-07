@@ -1242,6 +1242,16 @@ personDetails-futureDate = 出生日期不能是未来的日期。
 
 personDetails-help = 这些资料保存在此加密保险库中，用于提示分享的文档可能属于谁。这些资料不会验证文档的来源。
 
+personDetails-setup = 全名和出生日期
+
+personDetails-later = 稍后添加
+
+personDetails-reminder = 请添加 { $name } 的全名和出生日期。这些资料可帮助 myCarlos 判断文档属于谁。
+
+personDetails-notNow = 暂不
+
+personDetails-notSaved = 保险库已就绪，但全名和出生日期未能保存。请在“编辑资料”中添加。
+
 personDetails-invalidDate = 请按年、月、日输入有效的出生日期。
 
 personDetails-list = 个人资料
