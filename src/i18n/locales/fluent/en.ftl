@@ -1769,6 +1769,14 @@ native-filter-models = Model files
 
 ai-working = The AI helper is working…
 
+ai-workingLong = This can take several minutes for a long document.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Working for { $minutes } minute so far.
+    *[other] Working for { $minutes } minutes so far.
+    }
+
 ai-summary-ready = The summary is ready.
 
 ai-explain-ready = The explanation is ready.

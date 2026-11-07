@@ -783,6 +783,8 @@
   "ai.preferences.body",
   "ai.preferences.notInstalled",
   "ai.working",
+  "ai.workingLong",
+  "ai.workingFor",
   "ai.summary.ready",
   "ai.explain.ready",
   "ai.failed",
