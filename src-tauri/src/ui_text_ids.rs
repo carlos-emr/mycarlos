@@ -45,6 +45,7 @@ pub enum MessageId {
     AiPreferencesNotInstalled,
     AiPreferencesTitle,
     AiResultMeta,
+    AiSettingsSubtitle,
     AiSummaryAgain,
     AiSummaryButton,
     AiSummaryNoSource,
@@ -1000,6 +1001,7 @@ impl MessageId {
         Self::AiPreferencesNotInstalled,
         Self::AiPreferencesTitle,
         Self::AiResultMeta,
+        Self::AiSettingsSubtitle,
         Self::AiSummaryAgain,
         Self::AiSummaryButton,
         Self::AiSummaryNoSource,
@@ -1955,6 +1957,7 @@ impl MessageId {
             Self::AiPreferencesNotInstalled => "ai-preferences-notInstalled",
             Self::AiPreferencesTitle => "ai-preferences-title",
             Self::AiResultMeta => "ai-result-meta",
+            Self::AiSettingsSubtitle => "ai-settings-subtitle",
             Self::AiSummaryAgain => "ai-summary-again",
             Self::AiSummaryButton => "ai-summary-button",
             Self::AiSummaryNoSource => "ai-summary-noSource",
@@ -4470,6 +4473,7 @@ impl MessageId {
             "ai.summary.again" => Some(Self::AiSummaryAgain),
             "ai.keepFailed" => Some(Self::AiKeepFailed),
             "ai.keepFull" => Some(Self::AiKeepFull),
+            "ai.settings.subtitle" => Some(Self::AiSettingsSubtitle),
             _ => None,
         }
     }

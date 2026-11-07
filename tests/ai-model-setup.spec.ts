@@ -22,7 +22,8 @@ import {
   sidebar,
 } from "./support/vaultFake";
 
-// Getting the AI helper's model onto this computer (#72), in Preferences:
+// Getting the AI helper's model onto this computer (#72), on its own page,
+// Settings > AI helper (it was a row in Preferences):
 // Download the default model (progress, cancel, success, and its
 // refusals), Add a model file (checking, installed, refused, picker closed),
 // Remove, a damaged or unsupported model, and the reader's not-installed
@@ -52,21 +53,21 @@ test.beforeEach(({}, testInfo) => {
   );
 });
 
-async function openPreferences(page: Page, setup: FakeAiSetup = {}) {
+async function openAiSettings(page: Page, setup: FakeAiSetup = {}) {
   await fakeVaultWith(page, { start: "unlocked" });
   await fakeAiWith(page, setup);
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
   await sidebar(page)
-    .getByRole("button", { name: en("sidebar.preferences"), exact: true })
+    .getByRole("button", { name: en("ai.preferences.title"), exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: en("sidebar.preferences"), level: 1 }),
+    page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
   ).toBeVisible();
   return aiRow(page);
 }
 
-/** The AI helper's row in Preferences. */
+/** The AI helper's row on its page. */
 const aiRow = (page: Page) =>
   page.locator("section.setting-row").filter({
     has: page.getByRole("heading", { name: en("ai.preferences.title") }),
@@ -77,7 +78,7 @@ const rowButton = (row: Locator, key: Parameters<typeof translate>[1]) =>
 test("downloads the default model with its progress, and the reader's Summary uses it", async ({
   page,
 }) => {
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await expect(row).toContainText(
     en("ai.model.accepted", {
       name: FAKE_MODEL.name,
@@ -153,7 +154,7 @@ test("downloads the default model with its progress, and the reader's Summary us
 test("cancelling a download leaves no model and says nothing went wrong", async ({
   page,
 }) => {
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await holdAi(page, AI_COMMANDS.download);
   await rowButton(row, "ai.model.download").click();
   await expect.poll(() => aiHeld(page)).toEqual([AI_COMMANDS.download]);
@@ -181,7 +182,7 @@ for (const [outcome, key] of [
   test(`a download that ends ${outcome} says why, and offers the download again`, async ({
     page,
   }) => {
-    const row = await openPreferences(page);
+    const row = await openAiSettings(page);
     await answerAi(page, AI_COMMANDS.download, { outcome });
     await rowButton(row, "ai.model.download").click();
     await expect(row.getByRole("alert")).toHaveText(en(key));
@@ -195,7 +196,7 @@ for (const [outcome, key] of [
 test("adds a model file: the check's progress, then installed", async ({
   page,
 }) => {
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await holdAi(page, AI_COMMANDS.addPicked);
   await rowButton(row, "ai.model.add").click();
   await expect(row.getByRole("status")).toHaveText(
@@ -219,7 +220,7 @@ for (const [outcome, key] of [
   ["busy", "ai.model.refusedBusy"],
 ] as const)
   test(`an added file refused as ${outcome} says why`, async ({ page }) => {
-    const row = await openPreferences(page);
+    const row = await openAiSettings(page);
     await answerAi(page, AI_COMMANDS.addPicked, { outcome });
     await rowButton(row, "ai.model.add").click();
     await expect(row.getByRole("alert")).toHaveText(en(key));
@@ -230,7 +231,7 @@ for (const [outcome, key] of [
 test("closing the file picker changes nothing and says nothing", async ({
   page,
 }) => {
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await answerAi(page, AI_COMMANDS.addPicked, { outcome: "cancelled" });
   await rowButton(row, "ai.model.add").click();
   await expect(rowButton(row, "ai.model.add")).toBeEnabled();
@@ -242,7 +243,7 @@ test("closing the file picker changes nothing and says nothing", async ({
 test("Remove asks first, then the model is gone and can be downloaded again", async ({
   page,
 }) => {
-  const row = await openPreferences(page, { model: INSTALLED });
+  const row = await openAiSettings(page, { model: INSTALLED });
   await expect(row).toContainText(
     en("ai.model.installed", { name: FAKE_MODEL.name }),
   );
@@ -271,7 +272,7 @@ test("Remove asks first, then the model is gone and can be downloaded again", as
 test("a Remove refused while the helper works says so, and keeps the model", async ({
   page,
 }) => {
-  const row = await openPreferences(page, { model: INSTALLED });
+  const row = await openAiSettings(page, { model: INSTALLED });
   await refuseAi(page, AI_COMMANDS.remove, "busy");
   await rowButton(row, "ai.model.remove").click();
   await page
@@ -288,7 +289,7 @@ test("a Remove refused while the helper works says so, and keeps the model", asy
 test("a damaged model is said, with Remove and no Download", async ({
   page,
 }) => {
-  const row = await openPreferences(page, { model: { state: "damaged" } });
+  const row = await openAiSettings(page, { model: { state: "damaged" } });
   await expect(row).toContainText(en("ai.model.damaged"));
   await expect(rowButton(row, "ai.model.remove")).toBeVisible();
   await expect(rowButton(row, "ai.model.download")).toHaveCount(0);
@@ -304,7 +305,7 @@ for (const [reason, key] of [
   test(`a computer the model cannot run on (${reason}) is told why, with nothing to add`, async ({
     page,
   }) => {
-    const row = await openPreferences(page, {
+    const row = await openAiSettings(page, {
       model: { state: "unsupported", reason },
     });
     await expect(row).toContainText(en(key));

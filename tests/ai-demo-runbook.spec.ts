@@ -126,9 +126,9 @@ async function start(page: Page, setup: FakeAiSetup = {}) {
   await expect(myRecords(page)).toBeVisible();
 }
 
-async function preferences(page: Page) {
+async function aiSettings(page: Page) {
   await (
-    await named(page.locator("body"), "Preferences", "step 3 (sidebar)")
+    await named(page.locator("body"), "AI helper", "step 3 (sidebar)")
   ).click();
   return page.locator("section.setting-row").filter({
     has: page.getByRole("heading", { name: /AI helper/ }),
@@ -139,7 +139,7 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
   await start(page);
 
   // Step 3: Preferences → the AI helper row, Not installed.
-  const row = await preferences(page);
+  const row = await aiSettings(page);
   await says(row, "AI helper", "step 3");
   await says(row, "Not installed", "step 3");
   await says(
@@ -356,17 +356,13 @@ test("the runbook's 'If it stalls' messages match the app", async ({
   ] as const) {
     const shown = await context.newPage();
     await start(shown, { model });
-    await says(
-      await preferences(shown),
-      words,
-      `If it stalls (${model.state})`,
-    );
+    await says(await aiSettings(shown), words, `If it stalls (${model.state})`);
     await shown.close();
   }
 
   // Refused adds and downloads.
   await start(page);
-  const row = await preferences(page);
+  const row = await aiSettings(page);
   for (const [command, outcome, words] of [
     [
       AI_COMMANDS.addPicked,
@@ -445,5 +441,5 @@ test("the runbook's 'If it stalls' messages match the app", async ({
   await refuseAi(reader, AI_COMMANDS.summarize, "aiDamaged");
   await open.getByRole("button", { name: "Summary", exact: true }).click();
   await says(open, "The AI helper isn't on this computer yet", "If it stalls");
-  await named(open, "Open Preferences", "If it stalls");
+  await named(open, "Open AI helper settings", "If it stalls");
 });

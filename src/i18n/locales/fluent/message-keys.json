@@ -949,5 +949,6 @@
   "interface.history.how.explain",
   "ai.summary.again",
   "ai.keepFailed",
-  "ai.keepFull"
+  "ai.keepFull",
+  "ai.settings.subtitle"
 ]

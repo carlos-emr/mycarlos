@@ -82,15 +82,15 @@ async function openReader(page: Page) {
   return reader;
 }
 
-async function openPreferences(page: Page) {
+async function openAiSettings(page: Page) {
   // In the sidebar, or, in a narrow window, among the section tabs.
   await page
-    .getByRole("button", { name: en("sidebar.preferences"), exact: true })
+    .getByRole("button", { name: en("ai.preferences.title"), exact: true })
     .locator("visible=true")
     .first()
     .click();
   await expect(
-    page.getByRole("heading", { name: en("sidebar.preferences"), level: 1 }),
+    page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
   ).toBeVisible();
   return page.locator("section.setting-row").filter({
     has: page.getByRole("heading", { name: en("ai.preferences.title") }),
@@ -213,7 +213,7 @@ test("a run that could not finish is an alert, and no model leads on by keyboard
   await screenReaderSmoke(page, "the reader, no model to use", reader);
   await press(preferences);
   await expect(
-    page.getByRole("heading", { name: en("sidebar.preferences"), level: 1 }),
+    page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
   ).toBeVisible();
   await expectOnlyFakedCommands(page);
 });
@@ -222,7 +222,7 @@ test("Download by keyboard: the focus stays in the AI helper row through the pro
   page,
 }) => {
   await openLibrary(page);
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await screenReaderSmoke(page, "Preferences, no model");
 
   // Started, then cancelled.
@@ -257,7 +257,7 @@ test("a refused download is an alert, and the focus stays in the row", async ({
   page,
 }) => {
   await openLibrary(page);
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await answerAi(page, AI_COMMANDS.download, { outcome: "network" });
   await press(button(row, en("ai.model.download")));
   await expectAnnounced(page, en("ai.model.refusedNetwork"));
@@ -269,7 +269,7 @@ test("Remove by keyboard: the question takes the focus, Cancel gives it back, an
   page,
 }) => {
   await openLibrary(page, { model: INSTALLED });
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   const remove = button(row, en("ai.model.remove"));
   await press(remove);
   const question = page.getByRole("alertdialog");
@@ -290,12 +290,12 @@ test("the row's other states are named and pass axe: damaged, and a computer tha
   page,
 }) => {
   await openLibrary(page, { model: { state: "damaged" } });
-  await openPreferences(page);
+  await openAiSettings(page);
   await screenReaderSmoke(page, "Preferences, a damaged model");
   // A page of its own: the fakes are installed once per page.
   const other = await page.context().newPage();
   await openLibrary(other, { model: { state: "unsupported", reason: "ram" } });
-  await openPreferences(other);
+  await openAiSettings(other);
   await screenReaderSmoke(other, "Preferences, not enough memory");
 });
 
@@ -367,7 +367,7 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
           "https://huggingface.co/FAKE-organisation/FAKE-model-name-instruct-GGUF/resolve/FAKE-revision/FAKE-model-name-instruct-Q4_K_M.gguf",
       },
     ]);
-    const row = await openPreferences(second);
+    const row = await openAiSettings(second);
     // The address itself (the download note names its host too).
     await expect(
       row.locator("code", { hasText: "huggingface.co" }),
