@@ -1514,7 +1514,7 @@ portal-connecting = Connecting and requesting clinic approval…
 
 portal-errorBusy = Another clinic operation is running. Wait for it to finish, then try again.
 
-portal-linkedApprovalIssue = Device linked, but the approval request could not be confirmed. Its status in Security, under Clinic documents, says what to do next.
+portal-linkedApprovalIssue = Device linked. Its approval status in Security, under Clinic documents, says what to do next.
 
 portal-retryApproval = Retry saved approval request
 

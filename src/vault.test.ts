@@ -275,6 +275,7 @@ describe("native idle deadline bridge", () => {
   it("checks one device's approval in one read-only native call (#131)", async () => {
     const bridge = createVaultBridge();
     const result = {
+      capture: { epoch: "FAKE native epoch", sequence: 1 },
       link: { id: "FAKE link", deviceKeyId: "FAKE key" },
       expiresInMs: 120_000,
       issue: null,
