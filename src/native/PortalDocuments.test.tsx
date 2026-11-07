@@ -204,7 +204,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(noticeCalls(props.setNotice)).toContainEqual([
-        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked, but the approval request could not be confirmed. Its status in Security, under Clinic documents, says what to do next.",
+        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked. Its approval status in Security, under Clinic documents, says what to do next.",
       ]),
     );
     await userEvent
@@ -218,6 +218,85 @@ describe("native clinic document controls", () => {
     expect(bridge.linkPortal).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
   });
+
+  it.each([
+    [
+      "approval_refused",
+      "The clinic refused this device approval request. Contact your clinic for next steps.",
+      "portal.approvalRefused",
+    ],
+    [
+      "approval_contact_clinic",
+      "Clinic approval needs to be checked. Contact your clinic for next steps.",
+      "portal.approvalContact",
+    ],
+    [
+      "approval_expired",
+      "This approval request expired. Check for updates before starting a new request.",
+      "portal.approvalExpired",
+    ],
+    [
+      "approval_cancelled",
+      "This approval request was cancelled. Check for updates before starting a new request.",
+      "portal.approvalCancelled",
+    ],
+    [
+      "portal_link_incomplete",
+      "The portal request could not be completed. Check your connection and device clock, then try again.",
+      "portal.errorIncomplete",
+    ],
+    ["FAKE_unknown_approval", "FAKE approval outcome", null],
+  ] as const)(
+    "keeps the specific %s reason before matching saved-link guidance",
+    async (code, reason, reasonKey) => {
+      const initial = { ...snapshot, portalLinks: [] };
+      const savedLink: PortalLinkSummary = {
+        ...link,
+        approvalStatus:
+          code === "approval_expired"
+            ? "expired"
+            : code === "approval_cancelled"
+              ? "cancelled"
+              : code === "portal_link_incomplete" ||
+                  code === "FAKE_unknown_approval"
+                ? "pending"
+                : "refused",
+      };
+      const next = { ...snapshot, portalLinks: [savedLink] };
+      const { bridge, props, rerender } = fixture({ snapshot: initial });
+      vi.mocked(bridge.connectPortal!).mockResolvedValue({
+        link: savedLink,
+        approvalError: { code, message: "FAKE approval outcome" },
+      });
+      vi.mocked(props.refresh).mockImplementation(async () => {
+        rerender(<PortalDocuments {...props} snapshot={next} />);
+        return next;
+      });
+      const form = await fillConnectForm();
+      await act(async () => fireEvent.submit(form));
+      const guidance =
+        "Device linked. Its approval status in Security, under Clinic documents, says what to do next.";
+      await waitFor(() =>
+        expect(noticeCalls(props.setNotice)).toContainEqual([
+          `${reason} ${guidance}`,
+        ]),
+      );
+      expect(bridge.connectPortal).toHaveBeenCalledOnce();
+      expect(bridge.linkPortal).not.toHaveBeenCalled();
+      expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
+      try {
+        for (const locale of LOCALES) {
+          act(() => setLocaleOverride(locale));
+          const notice = vi.mocked(props.setNotice).mock.calls.at(-1)![0];
+          expect(resolveText(notice)).toBe(
+            `${reasonKey ? translate(locale, reasonKey) : reason} ${translate(locale, "portal.linkedApprovalIssue")}`,
+          );
+        }
+      } finally {
+        act(() => setLocaleOverride("en"));
+      }
+    },
+  );
 
   it("keeps initial link loss visibly incomplete without pretending that it can resume", async () => {
     const initial = { ...snapshot, portalLinks: [] };

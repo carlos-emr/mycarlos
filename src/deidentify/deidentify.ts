@@ -236,6 +236,8 @@ interface Finding {
   /** A relative named after a family word: never taken for a profile person
    * because a surname is shared. */
   kin?: true;
+  /** From a header line with no person cue: kept only as "SURNAME, Given". */
+  uncuedHeader?: true;
   /** Already decided (when more is removed later): kept as it was. */
   replacement?: string;
   /** The matching copy's text for this range (digits and letters folded),
@@ -677,7 +679,13 @@ const PARTICLE_ANY_CASE = `(?:${[...PARTICLES]
   .join("|")})`;
 // After a label, a word followed by a colon is the next label ("DOB:",
 // "Tel:"), not more of the name.
-const LABEL_PART = `${NAME_PART}(?![\\p{L}'’-]|[ \\t]*[:#])`;
+// An identity label in capitals is never a word of the name before it: "Pacjentka: WIERZBICKA,
+// Zuzanna    PESEL …", "Nombre: Lucía Prueba Sanz    DNI …". "NAM" is left out: it is a given
+// name too. Before a comma it is a surname in "SURNAME, Given" ("NIE, Wei"): a label is
+// followed by a colon or its value.
+const ID_LABEL_WORD =
+  "(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|MRN|HRN|IPP|RAMQ|OHIP|DOB)(?![\\p{L}'’-]|,)";
+const LABEL_PART = `(?!${ID_LABEL_WORD})${NAME_PART}(?![\\p{L}'’-]|[ \\t]*[:#])`;
 // Surname first, as lab, imaging and hospital headers have it (#80 review):
 // "Okafor, Margaret A.", "OKAFOR, MARGARET", "de la Cruz, Maria".
 const SURNAME_FIRST = `(?:${PARTICLE_ANY_CASE}[ \\t]+)*${LABEL_PART},[ \\t]+${LABEL_PART}(?:[ \\t]+${LABEL_PART})?(?:[ \\t]+${UPPER}\\.?(?![\\p{L}]))?`;
@@ -772,6 +780,21 @@ const COLUMN_NAME = `(?:(?:${PARTICLE_ANY_CASE}[ ])*${LABEL_PART}(?:[ ]${LABEL_P
  * "Ratownik medyczny Piotr Testowy", "Médico de familia …". */
 const withSentenceCase = (labels: string[]) =>
   labels.flatMap((label) => [label, label[0].toUpperCase() + label.slice(1)]);
+// A Spanish or Portuguese role before a name. After an article or a determiner the role may
+// be in any case ("La Médica Inés …"); after a bare preposition only in lower case, since
+// "Licencia por Médica Laboral Temporal" is a heading, not a doctor (#271 review).
+const ES_PT_ARTICLE = `(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)`;
+const ES_PT_PREPOSITION = `(?:[Pp]or|[Cc]on|[Pp]ara|[Cc]om|[Ss]in|[Ss]em)`;
+const esPtRole = (roles: string[]) =>
+  `(?:(?<=(?<![\\p{L}])${ES_PT_ARTICLE}[ \\t]+)${anyCase(withSentenceCase(roles))}|(?<=(?<![\\p{L}])${ES_PT_PREPOSITION}[ \\t]+)(?:${[
+    ...roles,
+  ]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join("|")}))`;
+// A Polish qualifier between a role and the name: "Pielęgniarka oddziałowa Maria Testowa",
+// "Lekarz prowadzący Jan Przykładny" (#271 review).
+const PL_ROLE_QUALIFIER = `(?:[ \\t]+(?:oddziałowa|oddziałowy|naczelna|naczelny|zabiegowa|zabiegowy|dyplomowana|dyplomowany|koordynująca|koordynujący|prowadząca|prowadzący))?`;
 // Status words a flowsheet writes after "Patient" in a column: "PATIENT  REFUSED
 // MEDICATION", "Patient\tDischarged home.", "PACIENTE  ESTABLE" are no names (#252 review).
 const STATUS_WORDS = new Set(
@@ -1446,6 +1469,21 @@ const PLACE_WORDS = new Set(
 );
 const NOT_NAMES = new Set(
   foldAll([
+    "kierujący",
+    "kierująca",
+    "oddziału",
+    "elektroradiologii",
+    "medycznej",
+    "medyczny",
+    "medyczna",
+    "oddziałowa",
+    "oddziałowy",
+    "naczelna",
+    "naczelny",
+    "zabiegowa",
+    "zabiegowy",
+    "dyplomowana",
+    "dyplomowany",
     "superior",
     "sanitario",
     "especialista",
@@ -1686,6 +1724,10 @@ interface Rule {
   notLowerCaseMay?: true;
   /** "Mother: First Last": refused in a family-history line or section. */
   relationLabel?: true;
+  /** A name with no person cue (a header line, a care verb): refused for any non-name word. */
+  uncued?: true;
+  /** A header line's name: kept only as "SURNAME, Given" (see find()). */
+  uncuedHeader?: true;
   /** A name in a header's column: refused for a section heading ("PATIENT INFORMATION"). */
   columnLabel?: true;
   /** A town in brackets: refused for a bracket note or a medical word. */
@@ -2127,6 +2169,557 @@ function familyHistoryLabel(text: string, at: number, name: string): boolean {
     words.every((word) => ORDINARY_WORDS.has(word))
   );
 }
+// A heading that ends in a document word, before the patient's name: "Discharge letter: Wren
+// Halloway", "Plan de soins pour …", "Karta informacyjna — …" (uncued names, design note 2).
+const DOCUMENT_HEADING = `(?:[\\p{L}'’-]+[ \\t]+){0,4}${anyCase(
+  withSentenceCase([
+    "note",
+    "notes",
+    "letter",
+    "summary",
+    "report",
+    "plan",
+    "care plan",
+    "review",
+    "referral",
+    "consultation",
+    "assessment",
+    "discharge",
+    "consult",
+    "lettre",
+    "compte rendu",
+    "rapport",
+    "résumé",
+    "sommaire",
+    "plan de soins",
+    "bilan",
+    "note de suivi",
+    "demande",
+    "informe",
+    "informe de alta",
+    "resumen",
+    "carta",
+    "plan de cuidados",
+    "nota",
+    "valoración",
+    "resumo",
+    "resumo de alta",
+    "relatório",
+    "plano de cuidados",
+    "nota de alta",
+    "avaliação",
+    "encaminhamento",
+    "karta informacyjna",
+    "plan opieki",
+    "wypis",
+    "skierowanie",
+    "notatka",
+    "epikryza",
+    "opinia",
+  ]),
+)}(?:[ \\t]+(?:de|du|des|d['’]|of|da|do|z)[ \\t]*[\\p{L}'’-]+)?`;
+// Care verbs that take a person, not a thing: "Paramedics brought …", "ont amené …",
+// "trajo a …". Not received, transferred, saw: they take a vaccine or a unit as often (#264).
+const CARE_VERB = anyCase(
+  withSentenceCase([
+    "brought",
+    "accompanied",
+    "asked to see",
+    "amené",
+    "amenée",
+    "ont amené",
+    "a amené",
+    "a accompagné",
+    "trajo a",
+    "trajeron a",
+    "acompañó a",
+    "trouxe",
+    "trouxeram",
+    "acompanhou",
+    "przywiózł",
+    "przywiozła",
+    "przywieźli",
+  ]),
+);
+// Words that are never part of an uncued name: a side, a body part, a wound, a time word, a
+// severity or a course ("Wypis: ZAWAŁ, Ostry", "Informe de alta: ICTUS, Isquémico",
+// "PNEUMONIA, Resolving"). Whole words, not endings: given names end like participles too
+// (Mohammed, René, José, Margarida, Mário, Xiaoming), and a wrong refusal leaks a name.
+const UNCUED_NOT_NAME_WORDS = new Set(
+  foldAll([
+    "unit",
+    "oddział",
+    "oddziału",
+    "oddziale",
+    "unité",
+    "unidad",
+    "unidade",
+    "medicina",
+    "médecine",
+    "atención",
+    "atenção",
+    "primaria",
+    "primária",
+    "zapalenie",
+    "zapalenia",
+    "pronto",
+    "ambulatório",
+    "ambulatorio",
+    "enfermaria",
+    "uti",
+    "uci",
+    "urgência",
+    "urgências",
+    "urgencia",
+    "urgencias",
+    // Conditions, for "FRACTURE, Displaced" and "UDAR, Niedokrwienny". Words that are also
+    // names are left out (Rana, Guz, Fall, Pain).
+    "fracture",
+    "angina",
+    "pneumonia",
+    "sepsis",
+    "infection",
+    "ulcer",
+    "abscess",
+    "anemia",
+    "anaemia",
+    "fever",
+    "syncope",
+    "delirium",
+    "infarction",
+    "thrombosis",
+    "hernia",
+    "tumour",
+    "tumor",
+    "lesion",
+    "wound",
+    "injury",
+    "sprain",
+    "dislocation",
+    "obstruction",
+    "haemorrhage",
+    "hemorrhage",
+    "effusion",
+    "edema",
+    "oedema",
+    "cough",
+    "dehydration",
+    "arrhythmia",
+    "fibrillation",
+    "contusion",
+    "laceration",
+    "angine",
+    "pneumonie",
+    "pneumopathie",
+    "ulcère",
+    "abcès",
+    "anémie",
+    "fièvre",
+    "chute",
+    "infarctus",
+    "embolie",
+    "thrombose",
+    "hernie",
+    "tumeur",
+    "lésion",
+    "plaie",
+    "brûlure",
+    "entorse",
+    "luxation",
+    "occlusion",
+    "hémorragie",
+    "épanchement",
+    "œdème",
+    "insuffisance",
+    "arythmie",
+    "fractura",
+    "neumonía",
+    "infección",
+    "úlcera",
+    "absceso",
+    "fiebre",
+    "caída",
+    "síncope",
+    "infarto",
+    "ictus",
+    "embolia",
+    "trombosis",
+    "lesión",
+    "herida",
+    "quemadura",
+    "esguince",
+    "luxación",
+    "obstrucción",
+    "hemorragia",
+    "derrame",
+    "insuficiencia",
+    "arritmia",
+    "fibrilación",
+    "contusión",
+    "fratura",
+    "sepse",
+    "infecção",
+    "abscesso",
+    "febre",
+    "queda",
+    "trombose",
+    "hérnia",
+    "lesão",
+    "ferida",
+    "queimadura",
+    "luxação",
+    "obstrução",
+    "insuficiência",
+    "fibrilação",
+    "contusão",
+    "złamanie",
+    "dławica",
+    "posocznica",
+    "sepsa",
+    "zakażenie",
+    "infekcja",
+    "wrzód",
+    "ropień",
+    "niedokrwistość",
+    "gorączka",
+    "upadek",
+    "omdlenie",
+    "zawał",
+    "udar",
+    "zakrzepica",
+    "przepuklina",
+    "nowotwór",
+    "oparzenie",
+    "skręcenie",
+    "zwichnięcie",
+    "niedrożność",
+    "krwotok",
+    "krwawienie",
+    "obrzęk",
+    "niewydolność",
+    "arytmia",
+    "migotanie",
+    "stłuczenie",
+    "resolving",
+    "resolved",
+    "healing",
+    "healed",
+    "improving",
+    "improved",
+    "worsening",
+    "worsened",
+    "recovering",
+    "recovered",
+    "ongoing",
+    "treated",
+    "untreated",
+    "complicated",
+    "uncomplicated",
+    "suspected",
+    "confirmed",
+    "community-acquired",
+    "acquired",
+    "résolue",
+    "résolu",
+    "guérie",
+    "guéri",
+    "consolidée",
+    "consolidé",
+    "stabilisée",
+    "stabilisé",
+    "traitée",
+    "traité",
+    "compliquée",
+    "compliqué",
+    "améliorée",
+    "amélioré",
+    "aggravée",
+    "aggravé",
+    "communautaire",
+    "suspectée",
+    "confirmée",
+    "resuelta",
+    "resuelto",
+    "resolvida",
+    "resolvido",
+    "curada",
+    "curado",
+    "estabilizada",
+    "estabilizado",
+    "tratada",
+    "tratado",
+    "complicada",
+    "complicado",
+    "mejorada",
+    "mejorado",
+    "melhorada",
+    "melhorado",
+    "consolidada",
+    "consolidado",
+    "controlada",
+    "controlado",
+    "adquirida",
+    "adquirido",
+    "comunitaria",
+    "comunitario",
+    "comunitária",
+    "comunitário",
+    "sospechada",
+    "confirmada",
+    "confirmado",
+    "wyleczony",
+    "wyleczona",
+    "wyleczone",
+    "zagojony",
+    "zagojona",
+    "leczony",
+    "leczona",
+    "powikłany",
+    "powikłana",
+    "pozaszpitalne",
+    "pozaszpitalny",
+    "pozaszpitalna",
+    "ustępujący",
+    "ustępująca",
+    "ustępujące",
+    "acute",
+    "chronic",
+    "severe",
+    "mild",
+    "moderate",
+    "recurrent",
+    "uncontrolled",
+    "unspecified",
+    "aigu",
+    "aiguë",
+    "chronique",
+    "sévère",
+    "léger",
+    "légère",
+    "modéré",
+    "modérée",
+    "agudo",
+    "aguda",
+    "crónico",
+    "crónica",
+    "crônico",
+    "crônica",
+    "grave",
+    "leve",
+    "moderado",
+    "moderada",
+    "severo",
+    "severa",
+    "recurrente",
+    "recorrente",
+    "isquémico",
+    "isquémica",
+    "isquêmico",
+    "isquêmica",
+    "hemorrágico",
+    "hemorrágica",
+    "ostry",
+    "ostra",
+    "ostre",
+    "przewlekły",
+    "przewlekła",
+    "przewlekłe",
+    "ciężki",
+    "ciężka",
+    "łagodny",
+    "łagodna",
+    "umiarkowany",
+    "umiarkowana",
+    "left",
+    "right",
+    "bilateral",
+    "knee",
+    "hip",
+    "shoulder",
+    "back",
+    "chest",
+    "neck",
+    "arm",
+    "leg",
+    "wrist",
+    "ankle",
+    "elbow",
+    "eye",
+    "ear",
+    "gauche",
+    "droite",
+    "genou",
+    "hanche",
+    "épaule",
+    "izquierda",
+    "izquierdo",
+    "derecha",
+    "derecho",
+    "rodilla",
+    "cadera",
+    "esquerda",
+    "esquerdo",
+    "direita",
+    "direito",
+    "joelho",
+    "quadril",
+    "lewa",
+    "lewe",
+    "lewy",
+    "prawa",
+    "prawe",
+    "prawy",
+    "kolano",
+    "biodro",
+    "bark",
+    "injury",
+    "wound",
+    "ulcer",
+    "pressure",
+    "type",
+    "follow",
+    "up",
+    "week",
+    "month",
+    "year",
+    "insuffisance",
+    "insuficiencia",
+    "insuficiência",
+    "cardiaque",
+    "cardíaca",
+    "cardíaco",
+    "rénale",
+    "hépatique",
+    "pulmonaire",
+    "respiratoire",
+    "respiratória",
+    "respiratorio",
+    "plaie",
+    "úlcera",
+    "ulcère",
+    "escarre",
+    "chute",
+    "caída",
+    "queda",
+    "douleur",
+    "dolor",
+    "ból",
+    "niewydolność",
+    "serca",
+    "nerek",
+    "cukrzyca",
+    "odleżyna",
+    "upadek",
+    "diabète",
+    "diabetes",
+    "home",
+    "medications",
+    "medication",
+    "meds",
+    "results",
+    "records",
+    "papers",
+    "documents",
+    "exams",
+    "exames",
+    "anteriores",
+    "previous",
+    "old",
+    "wyniki",
+    "badań",
+    "dokumentację",
+    "dokumentacja",
+    "leki",
+    "médicaments",
+    "résultats",
+    "medicamentos",
+    "resultados",
+    "estudios",
+    "informes",
+    "laudos",
+    "wheelchair",
+    "in",
+    "by",
+    "into",
+    "to",
+    "from",
+    "back",
+    "out",
+    "up",
+    "over",
+    "with",
+    "for",
+    "à",
+    "au",
+    "aux",
+    "en",
+    "por",
+    "para",
+    "com",
+    "em",
+    "ao",
+    "przez",
+    "do",
+    "na",
+  ]).map((word) => word.toLowerCase()),
+);
+// Words on the lists that are also given names or surnames never refuse a name: a wrong
+// refusal leaks it ("Paramedics brought Emma Walker", "WARD, Emma", "Rana Khan, DNI …"). The
+// body, time and unit lists leave these out; the clinic and role lists need "Pain", "Summer" and
+// "Head".
+const ALSO_NAMES = new Set(["summer", "pain", "good", "head"]);
+// Words on NOT_NAMES that are also names. As a first word they still end a label's value
+// ("Patient: Head CT", "Pacjent: Nie zgłasza …"), but not after a person title ("Dr. Head",
+// "Mr. Son"), nor before more words that are all name-like ("HEAD, Martin", "Patient: Elle
+// Martin", "Patient: Nie Wei"). "Echo" and "Plan" stay out: far more often a test and a plan.
+const NAMES_ON_NOT_NAMES = new Set(["head", "son", "nie", "elle"]);
+function firstWordIsName(
+  text: string,
+  start: number,
+  candidate: string,
+): boolean {
+  const words = candidate.split(/[^\p{L}'’-]+/u).filter(Boolean);
+  if (!NAMES_ON_NOT_NAMES.has(words[0]?.toLowerCase() ?? "")) return false;
+  if (TITLE_RIGHT_BEFORE.test(text.slice(Math.max(0, start - 14), start)))
+    return true;
+  const rest = words.slice(1);
+  return (
+    rest.length > 0 &&
+    rest.every((word) => {
+      const lower = word.toLowerCase();
+      return (
+        !NOT_NAMES.has(lower) &&
+        !STATUS_WORDS.has(lower) &&
+        !HEADER_WORDS.has(lower) &&
+        !uncuedNotName(word)
+      );
+    })
+  );
+}
+/** An uncued name candidate is no name when any word is a clinical, document, heading, status,
+ * generic, body or drug word, or has a medical ending. */
+function uncuedNotName(candidate: string): boolean {
+  return candidate
+    .split(/[^\p{L}'’]+/u)
+    .filter(Boolean)
+    .some((word) => {
+      const lower = word.toLowerCase();
+      if (ALSO_NAMES.has(lower)) return false;
+      return (
+        UNCUED_NOT_NAME_WORDS.has(lower) ||
+        FAMILY_HISTORY_WORDS.has(lower) ||
+        HEADER_WORDS.has(lower) ||
+        STATUS_WORDS.has(lower) ||
+        (NOT_NAMES.has(lower) && !NAMES_ON_NOT_NAMES.has(lower)) ||
+        TREATMENT_WORDS.has(lower) ||
+        PLACE_WORDS.has(lower) ||
+        GENERIC_BEFORE_CLINIC.has(lower) ||
+        DRUG_NAMES.has(lower) ||
+        MEDICAL_ENDING.test(lower) ||
+        new RegExp(`^${CLINIC_WORDS}$`, "u").test(word)
+      );
+    });
+}
 const RULES: Rule[] = [
   {
     kind: "email",
@@ -2445,7 +3038,7 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|(?:prof\\.[ \\t]*)?dr[ \\t]+hab\\.[ \\t]*n\\.[ \\t]*med|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|[Ll]ek\\.(?:[ \\t]*(?:med|dent)\\.)?|mgr[ \\t]+(?:farm|inż)|mgr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
+      `(?<![\\p{L}])(?:Dr|Dra|Dre|dr|Doctor|Doctora|Docteur|Docteure|Doutor|Doutora|(?:prof\\.[ \\t]*)?dr[ \\t]+hab\\.[ \\t]*n\\.[ \\t]*med|dr[ \\t]+n\\.[ \\t]*med|dr[ \\t]+hab|prof\\.[ \\t]*dr[ \\t]+hab|[Ll]ek\\.[ \\t]*(?:med|dent)\\.|(?<!(?:[Jj]eden|[Nn]owy|[Tt]en|[Ii]nny|[Kk]ażdy|[Dd]rugi|[Kk]olejny|[Jj]akiś|[Dd]any|[Tt]amten)[ \\t]+)lek\\.|[Mm]gr[ \\t]+(?:farm|inż)|[Mm]gr)\\.?[ \\t]+(${INITIALS}${CAPITALIZED_NAME})`,
       "gu",
     ),
     group: 1,
@@ -2526,7 +3119,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:(?:${CLINICIAN_TITLE}|NP|RN|RPN|RM|IPS)[ \\t]*:|${CLINICIAN_TITLE}[ \\t]*,?[ \\t]+)[ \\t]*(${CLINICIAN_NAME})`,
+      `(?<![\\p{L}])(?:(?:${CLINICIAN_TITLE}|NP|RN|RPN|RM|IPS)[ \\t]*:|${CLINICIAN_TITLE}${PL_ROLE_QUALIFIER}[ \\t]*,?[ \\t]+)[ \\t]*(${CLINICIAN_NAME})`,
       "gu",
     ),
     group: 1,
@@ -2537,7 +3130,7 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?:nurse|pharmacist|physiotherapist|physio|social worker|technologist|technician|sonographer|radiologist|surgeon|paramedic|therapist|midwife|dietitian|resident|infirmière|infirmier|pharmacienne|pharmacien|physiothérapeute|radiologue|chirurgienne|chirurgien|technologue|technicienne|technicien|enfermera|enfermero|farmacéutica|farmacéutico|fisioterapeuta|enfermeira|enfermeiro|farmacêutica|farmacêutico|fisioterapeuta|pielęgniarka|pielęgniarz|farmaceuta|fizjoterapeuta)[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      `(?<![\\p{L}])(?:nurse|pharmacist|physiotherapist|physio|social worker|technologist|technician|sonographer|radiologist|surgeon|paramedic|therapist|midwife|dietitian|resident|infirmière|infirmier|pharmacienne|pharmacien|physiothérapeute|radiologue|chirurgienne|chirurgien|technologue|technicienne|technicien|enfermera|enfermero|farmacéutica|farmacéutico|fisioterapeuta|enfermeira|enfermeiro|farmacêutica|farmacêutico|fisioterapeuta|pielęgniarka|pielęgniarz|farmaceuta|fizjoterapeuta)${PL_ROLE_QUALIFIER}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -2550,17 +3143,15 @@ const RULES: Rule[] = [
   {
     kind: "doctor",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
-        withSentenceCase([
-          "médico de familia",
-          "médica de familia",
-          "médico",
-          "médica",
-          "dentista",
-          "odontólogo",
-          "odontóloga",
-        ]),
-      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      `(?<![\\p{L}])${esPtRole([
+        "médico de familia",
+        "médica de familia",
+        "médico",
+        "médica",
+        "dentista",
+        "odontólogo",
+        "odontóloga",
+      ])}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -2568,38 +3159,36 @@ const RULES: Rule[] = [
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(?<=(?<![\\p{L}])(?:[Ee]l|[Ll]a|[Ll]os|[Ll]as|[Uu]n|[Uu]na|[Dd]el|[Aa]l|[Ss]u|[Ss]us|[Oo]|[Aa]|[Oo]s|[Aa]s|[Uu]m|[Uu]ma|[Dd]o|[Dd]a|[Dd]os|[Dd]as|[Pp]elo|[Pp]ela|[Aa]o|à|[Ss]eu|[Ss]ua)[ \\t]+)${anyCase(
-        withSentenceCase([
-          "trabajadora social",
-          "trabajador social",
-          "psicóloga",
-          "psicólogo",
-          "nutricionista",
-          "dietista",
-          "matrona",
-          "técnico de radiología",
-          "técnica de radiología",
-          "auxiliar de enfermería",
-          "auxiliar",
-          "terapeuta ocupacional",
-          "logopeda",
-          "podóloga",
-          "podólogo",
-          "optometrista",
-          "assistente social",
-          "técnica de enfermagem",
-          "técnico de enfermagem",
-          "auxiliar de enfermagem",
-          "fonoaudióloga",
-          "fonoaudiólogo",
-          "parteira",
-          "obstetriz",
-          "cuidadora",
-          "cuidador",
-          "agente comunitário de saúde",
-          "agente de saúde",
-        ]),
-      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      `(?<![\\p{L}])${esPtRole([
+        "trabajadora social",
+        "trabajador social",
+        "psicóloga",
+        "psicólogo",
+        "nutricionista",
+        "dietista",
+        "matrona",
+        "técnico de radiología",
+        "técnica de radiología",
+        "auxiliar de enfermería",
+        "auxiliar",
+        "terapeuta ocupacional",
+        "logopeda",
+        "podóloga",
+        "podólogo",
+        "optometrista",
+        "assistente social",
+        "técnica de enfermagem",
+        "técnico de enfermagem",
+        "auxiliar de enfermagem",
+        "fonoaudióloga",
+        "fonoaudiólogo",
+        "parteira",
+        "obstetriz",
+        "cuidadora",
+        "cuidador",
+        "agente comunitário de saúde",
+        "agente de saúde",
+      ])}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -2614,7 +3203,7 @@ const RULES: Rule[] = [
           "lekarka",
           "stomatolog",
         ]),
-      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      )}${PL_ROLE_QUALIFIER}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
@@ -2643,10 +3232,34 @@ const RULES: Rule[] = [
           "pracowniczka socjalna",
           "logopeda",
         ]),
-      )}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      )}${PL_ROLE_QUALIFIER}[ \\t]*,?[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
       "gu",
     ),
     group: 1,
+  },
+  // A patient named in a header line, after the document's title, as "SURNAME, Given":
+  // "Physiotherapy summary — HALLOWAY, Wren". The name ends the line or stops at a column gap.
+  // find() drops the other runs this matches: a header's subject is what the document is about.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<=(?:^|\\n)[ \\t]*${DOCUMENT_HEADING}(?:[ \\t]*(?:—|–|-|:)[ \\t]*|[ \\t]+(?:for|pour|concernant|concerning|regarding|para|dla|sobre|de)[ \\t]+))(${COLUMN_NAME})(?=[ \\t]*(?:[.,;]|\\n|$)|[ ]{2,}|\\t)`,
+      "gu",
+    ),
+    group: 1,
+    uncued: true,
+    uncuedHeader: true,
+  },
+  // A person after a care verb: "Paramedics brought Tobiah Farnsworth", "trajo a Lucas …".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      // Not after a Spanish clitic: "lo trajeron a Consultas Externas" is "to".
+      `(?<![\\p{L}])(?<![Ll](?:o|a|os|as|e|es)[ \\t]+)${CARE_VERB}[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+    uncued: true,
   },
   // A relative named in passing: "her husband, Jordan", "son conjoint, Jean".
   {
@@ -2882,14 +3495,28 @@ const RULES: Rule[] = [
     ),
     group: 1,
   },
-  // A full name right before an identity label: "Tomás Prueba Iglesias, DNI …".
+  // A full name right before an identity label: "Tomás Prueba Iglesias, DNI …". The label
+  // tells a person's line, not who the words before it are, so the run is refused for any
+  // non-name word, is never a document heading's subject ("Informe de alta: Neumonía Adquirida
+  // NHC …"), and never starts inside a capitalised run ("Oddział Chorób Wewnętrznych PESEL …").
   {
     kind: "name",
     pattern: new RegExp(
-      `(?<![\\p{L}])(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
+      `(?<![\\p{L}])(?<!(?:^|\\n)[ \\t]*${DOCUMENT_HEADING}[ \\t]*(?:—|–|-|:)[ \\t]*)(?<!\\p{Lu}[\\p{L}'’-]*[ \\t]+)(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
       "gu",
     ),
     group: 1,
+    uncued: true,
+  },
+  // The same, written "SURNAME, Given": "WIERZBICKA, Zuzanna    PESEL …".
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(${UPPER}[\\p{Lu}'’-]+(?:[ ]${UPPER}[\\p{Lu}'’-]+){0,2},[ ]${LABEL_PART}(?:[ ]${LABEL_PART})?)(?=,?[ \\t]+(?:DNI|NIE|NIF|PESEL|CPF|RG|NHC|CNS|Nr księgi|[Tt]arjeta sanitaria)(?![\\p{L}]))`,
+      "gu",
+    ),
+    group: 1,
+    uncued: true,
   },
   // A closing, then the name on the next non-empty line.
   {
@@ -3104,6 +3731,100 @@ function findRanges(text: string): Finding[] {
   return found;
 }
 
+// A relative named in passing, in title-case text: "Daughter Present At Visit", "Brought Son
+// Home", "Patient: Son Visited Today". The run ends at a capitalised small word, words that
+// follow a relative are dropped from its end, and it is no name when its first word is one.
+// Name particles (De, La, Van …) stay. "Will" is a given name, so it is neither.
+const KIN_CUT_WORDS = new Set([
+  "at",
+  "of",
+  "by",
+  "up",
+  "to",
+  "in",
+  "on",
+  "with",
+  "for",
+  "from",
+  "is",
+  "was",
+  "and",
+  "du",
+  "des",
+  "au",
+  "aux",
+  "lors",
+  "avec",
+  "pour",
+  "par",
+  "en",
+  "et",
+  "por",
+  "con",
+  "para",
+  "com",
+  "em",
+  "na",
+  "przez",
+  "i",
+]);
+const KIN_FOLLOW_WORDS = new Set(
+  foldAll([
+    "present",
+    "aware",
+    "called",
+    "drove",
+    "supportive",
+    "updated",
+    "informed",
+    "notified",
+    "visiting",
+    "visited",
+    "arrived",
+    "lives",
+    "home",
+    "bedside",
+    "nearby",
+    "présent",
+    "présente",
+    "informé",
+    "informée",
+    "avisé",
+    "avisée",
+    "presente",
+    "informado",
+    "informada",
+    "avisado",
+    "avisada",
+    "obecny",
+    "obecna",
+    "poinformowany",
+    "poinformowana",
+  ]).map((word) => word.toLowerCase()),
+);
+function kinName(candidate: string): string {
+  const words = [...candidate.matchAll(/[^ \t]+/gu)];
+  const listWord = (word: string) => {
+    const lower = word.toLowerCase();
+    // Keep the same name exceptions as the surrounding refusal checks.
+    if (ALSO_NAMES.has(lower) || NAMES_ON_NOT_NAMES.has(lower)) return false;
+    return (
+      KIN_FOLLOW_WORDS.has(lower) ||
+      STATUS_WORDS.has(lower) ||
+      NOT_NAMES.has(lower) ||
+      HEADER_WORDS.has(lower)
+    );
+  };
+  let count = words.findIndex((word) => {
+    const lower = word[0].toLowerCase();
+    return KIN_CUT_WORDS.has(lower) && !PARTICLES.has(lower);
+  });
+  if (count < 0) count = words.length;
+  while (count > 0 && listWord(words[count - 1][0])) count--;
+  if (count === 0 || listWord(words[0][0])) return "";
+  const last = words[count - 1];
+  return candidate.slice(0, (last.index ?? 0) + last[0].length);
+}
 function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = [];
   for (const rule of RULES) {
@@ -3176,7 +3897,8 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (
         (rule.kind === "name" || rule.kind === "doctor") &&
-        NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
+        NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase()) &&
+        !firstWordIsName(text, start, trimmed)
       )
         continue;
       // A treatment after a role word is not a name ("a therapist Cognitive
@@ -3202,6 +3924,11 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
       }
       if (rule.relationLabel && familyHistoryLabel(text, match.index, trimmed))
         continue;
+      if (rule.kin) {
+        trimmed = kinName(trimmed);
+        if (!trimmed) continue;
+      }
+      if (rule.uncued && uncuedNotName(trimmed)) continue;
       if (rule.columnLabel) {
         const words = trimmed
           .split(/[^\p{L}'’]+/u)
@@ -3214,7 +3941,8 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
           // not-a-name word ends it. Not ORDINARY_WORDS: those are first names
           // that are also words ("PATIENT  MAY SAMPLETON").
           (!trimmed.includes(",") &&
-            (STATUS_WORDS.has(first) || NOT_NAMES.has(first)))
+            (STATUS_WORDS.has(first) ||
+              (NOT_NAMES.has(first) && !firstWordIsName(text, start, trimmed))))
         )
           continue;
       }
@@ -3271,6 +3999,7 @@ function ruleFindings(text: string, options: DeidentifyOptions): Finding[] {
         start,
         end,
         ...(rule.kin ? { kin: true as const } : {}),
+        ...(rule.uncuedHeader ? { uncuedHeader: true as const } : {}),
       });
       // Only an immediately linked checksum control inherits a SIN/NAS
       // field. An unrelated nine-digit measurement never inherits it.
@@ -3329,6 +4058,12 @@ function keepShortBirthCue(
   return others.length === 0;
 }
 
+// "HALLOWAY, Wren": a surname in capitals, a comma and a given name. A header line's name with
+// no person cue counts only in this form. A person field near a "Given Surname" run tells a
+// person's document, not that the run is the person: "Referral Letter: Orthopaedic Surgery"
+// stands over "DOB: …" as often as a name does, on the next line or in a column (#264 review).
+const SURNAME_FIRST_IN_CAPITALS = /^\p{Lu}[\p{Lu}'’ -]+,[ \t]+\p{Lu}/u;
+
 function find(text: string, options: DeidentifyOptions): Finding[] {
   const found: Finding[] = findRanges(text);
   found.push(...ruleFindings(text, options));
@@ -3360,6 +4095,21 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
           found.length,
           ...found.filter((finding) => !dropped.has(finding)),
         );
+    }
+  }
+  {
+    const header = found.filter(
+      (finding) =>
+        finding.uncuedHeader &&
+        !SURNAME_FIRST_IN_CAPITALS.test(text.slice(finding.start, finding.end)),
+    );
+    if (header.length) {
+      const dropped = new Set(header);
+      found.splice(
+        0,
+        found.length,
+        ...found.filter((finding) => !dropped.has(finding)),
+      );
     }
   }
   // A town inside a clinic's name ("CLSC de Saint-Michel-des-Saints") is part of that name.

@@ -1386,7 +1386,7 @@ portal-connecting = 正在連線並申請診所核准…
 
 portal-errorBusy = 另一項診所作業正在進行。請等其完成後重試。
 
-portal-linkedApprovalIssue = 裝置已連結，但無法確認核准請求。請查看「安全性」的「診所文件」下的狀態，了解下一步操作。
+portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「診所文件」下的核准狀態，了解下一步操作。
 
 portal-retryApproval = 重試已儲存的核准請求
 

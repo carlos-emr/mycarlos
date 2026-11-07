@@ -1546,7 +1546,7 @@ portal-connecting = Conectando e solicitando a aprovação da clínica…
 
 portal-errorBusy = Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.
 
-portal-linkedApprovalIssue = Dispositivo vinculado, mas não foi possível confirmar a solicitação de aprovação. O status do dispositivo, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
+portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
 
 portal-retryApproval = Tentar novamente a solicitação de aprovação salva
 

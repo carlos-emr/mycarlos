@@ -171,6 +171,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const portalNoticeRef = useRef<{ session: number; message: UiText } | null>(
     null,
   );
+  const photoNoticeSessionRef = useRef<number | null>(null);
   // Per portal, when automatic approval checks may ask it again after it
   // asked to wait (#131): kept across the clinic view's remounts, and
   // forgotten when the session ends.
@@ -340,6 +341,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       portalPollRef.current = null;
       portalWaits.clear();
       portalNoticeRef.current = null;
+      photoNoticeSessionRef.current = null;
       setPortalBusy(false);
       appliedCaptureRef.current = null;
       setSnapshot(null);
@@ -662,6 +664,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   }, [autoLockMinutes, bridge, lockWhenIdle, status]);
 
   const libraryShown = status === "unlocked" && snapshot !== null && !concealed;
+  const libraryShownRef = useRef(libraryShown);
+  libraryShownRef.current = libraryShown;
   useEffect(() => {
     if (!libraryNotice) return;
     const { message, outcome } = libraryNotice;
@@ -737,7 +741,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       concealedRef.current
     )
       return;
-    if (transferHold.running) {
+    if (transferHold.running || photoNoticeSessionRef.current === startedIn) {
       portalNoticeRef.current = message
         ? { session: startedIn, message }
         : null;
@@ -745,6 +749,23 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     }
     if (message) addNotice(message);
     else setNotice("");
+  };
+  const flushPortalNotice = () => {
+    const held = portalNoticeRef.current;
+    if (
+      !held ||
+      transferHold.running ||
+      photoNoticeSessionRef.current === held.session
+    )
+      return;
+    portalNoticeRef.current = null;
+    if (
+      held.session === sessionRef.current &&
+      libraryShownRef.current &&
+      !lockingRef.current &&
+      !concealedRef.current
+    )
+      addNotice(held.message);
   };
 
   /** Runs a vault operation; `boxes` names what the patient typed for it,
@@ -843,17 +864,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         setBusy(false);
         const idle = transferHold.operationEnded();
         if (idle && lockHeldRef.current) requestLock(true);
-        else if (idle && portalNoticeRef.current) {
-          // The operation has reported: add the clinic result kept meanwhile.
-          const held = portalNoticeRef.current;
-          portalNoticeRef.current = null;
-          if (
-            held.session === sessionRef.current &&
-            !lockingRef.current &&
-            !concealedRef.current
-          )
-            addNotice(held.message);
-        }
+        else if (idle) flushPortalNotice();
       }
     }
   };
@@ -1057,6 +1068,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   };
   const setPortalNotice = (message: UiText) =>
     showPortalNotice(session, message);
+  const onPhotoNoticePending = (pending: boolean) => {
+    if (!inSession()) return;
+    if (pending) {
+      if (libraryShownRef.current) photoNoticeSessionRef.current = session;
+    } else if (photoNoticeSessionRef.current === session) {
+      photoNoticeSessionRef.current = null;
+      flushPortalNotice();
+    }
+  };
 
   // Waiting files go into Shared with me as soon as the vault is open (#61).
   // One that is not a PDF is not added and is named; anything else keeps them
@@ -1339,6 +1359,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         pollApproval={bridge.refreshDeviceApproval ? pollApproval : undefined}
         approvalWaits={portalWaits}
         setPortalNotice={setPortalNotice}
+        onPhotoNoticePending={onPhotoNoticePending}
         refresh={refresh}
         onLock={lockAsked}
         onRequestLock={requestLockAsked}

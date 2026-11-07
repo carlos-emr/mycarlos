@@ -1578,7 +1578,7 @@ portal-connecting = Łączenie i wysyłanie prośby o zatwierdzenie przez przych
 
 portal-errorBusy = Trwa inna operacja związana z przychodnią. Poczekaj, aż się zakończy, i spróbuj ponownie.
 
-portal-linkedApprovalIssue = Urządzenie zostało połączone, ale nie udało się potwierdzić prośby o zatwierdzenie. Stan urządzenia na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni, wskazuje, co zrobić dalej.
+portal-linkedApprovalIssue = Urządzenie zostało połączone. Stan jego zatwierdzenia na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni, wskazuje, co zrobić dalej.
 
 portal-retryApproval = Ponów zapisaną prośbę o zatwierdzenie
 
