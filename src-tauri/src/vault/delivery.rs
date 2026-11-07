@@ -4168,6 +4168,16 @@ mod approval_recovery_tests {
         ) -> Result<Attempt, VaultError> {
             panic!("automatic status polls must never POST")
         }
+        fn submit_code(
+            &self,
+            _: &StoredLink,
+            _: &Attempt,
+            _: &str,
+            _: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<(), VaultError> {
+            panic!("automatic status polls must never submit a clinic code")
+        }
     }
     fn history_poll_fixture(count: usize) -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
         let (temp, store, link, old) = setup(true);
