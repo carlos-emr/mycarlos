@@ -1598,6 +1598,8 @@ interface-history-empty = Brak zdarzeń w historii.
 
 interface-history-error-unverified = Nie udało się odczytać ani zweryfikować historii. Nie wyświetlono żadnych zdarzeń.
 
+interface-history-event-aiResultSaved = Zachowano odpowiedź AI
+
 interface-history-event-backupRestored = Przywrócono kopię zapasową
 
 interface-history-event-backupSaved = Zapisano zaszyfrowaną kopię zapasową
@@ -1671,6 +1673,10 @@ interface-history-how = Sposób
 interface-history-how-aidReplaced = Zastąpiono wcześniejszą pomoc w czytaniu
 
 interface-history-how-camera = Dodano za pomocą aparatu
+
+interface-history-how-summary = Podsumowanie prostymi słowami
+
+interface-history-how-explain = Wyjaśniono termin
 
 interface-history-how-damaged = Ukryto, ponieważ brakowało pliku
 
@@ -1817,6 +1823,10 @@ ai-model-refusedUnavailable = Model jest teraz niedostępny pod swoim adresem. P
 native-filter-models = Pliki modeli
 
 ai-working = Asystent AI pracuje…
+
+ai-summary-ready = Podsumowanie jest gotowe.
+
+ai-explain-ready = Wyjaśnienie jest gotowe.
 
 ai-failed = Asystent AI nie zdołał dokończyć. Można spróbować ponownie.
 
@@ -2029,3 +2039,9 @@ notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy se
 notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Sprawdzanie może trwać, gdy Windows blokuje powiadomienia. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie.
 notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Dokumenty z przychodni” i wybrać „Sprawdź nowe dokumenty”.
 notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za chwilę ponownie wybrać „Sprawdź nowe dokumenty”.
+
+ai-summary-again = Podsumuj ponownie
+
+ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.
+
+ai-keepFull = Ten dokument przechowuje już maksymalną liczbę odpowiedzi AI. Nowe odpowiedzi są wyświetlane, ale nie są zachowywane.

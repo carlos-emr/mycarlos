@@ -81,6 +81,21 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       .fn()
       .mockRejectedValue(new Error("FAKE: no model in this test")),
     aiCancel: vi.fn().mockResolvedValue(undefined),
+    // The answers kept with a document (#212): none yet.
+    aiResults: vi.fn().mockResolvedValue([]),
+    readAiResult: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no kept answer in this test")),
+    // Saved by the id the native side kept the answer under (#212).
+    saveAiResult: vi.fn(async () => ({
+      id: "FAKE-kept-1",
+      tool: "summary",
+      lang: "en",
+      modelName: "FAKE test model",
+      modelSha256: "test-only",
+      createdAtMs: 1,
+      size: 2,
+    })),
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
   render(
@@ -1208,10 +1223,12 @@ describe("the AI helper's notice before the reader's first Summary", () => {
         model: FAKE_MODEL,
         lastPage: 0,
         lastPageCut: false,
+        keptId: "FAKE-kept-1",
       })),
       aiExplain: vi.fn(async () => ({
         text: "FAKE explanation.",
         model: FAKE_MODEL,
+        keptId: "FAKE-kept-2",
       })),
     });
     fireEvent.click(
@@ -1246,10 +1263,10 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       name: humanText("About the AI helper"),
     });
     // The model runs on this computer: the notice says what it does here,
-    // and promises no kept answers (#212).
+    // and that its answers are kept in the vault (#212).
     expect(shown).toHaveTextContent("here on this device");
     expect(shown).toHaveTextContent("The AI on this device");
-    expect(shown).not.toHaveTextContent("saved in the vault, encrypted");
+    expect(shown).toHaveTextContent("saved in the vault, encrypted");
     // Its effects run after the status answer: wait for the focus to move.
     await waitFor(() =>
       expect(
@@ -1275,9 +1292,18 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       ),
     ).toBeVisible();
     expect(native.aiSummarize).toHaveBeenCalledTimes(1);
+    // Asked to keep it for this document, with its text read's ticket.
     expect(native.aiSummarize).toHaveBeenCalledWith(
       [{ index: 0, text: pageText }],
       "en",
+      { recordId: expect.any(String), ticket: expect.any(String) },
+    );
+    await waitFor(() =>
+      expect(native.saveAiResult).toHaveBeenCalledWith(
+        expect.any(String),
+        "FAKE-kept-1",
+        expect.any(Array),
+      ),
     );
 
     // Once a session: Explain opens at once.

@@ -7,6 +7,8 @@
     "allow-runtime-info",
     "allow-ai-model-catalog",
     "allow-ai-model-status",
+    "allow-ai-models",
+    "allow-ai-model-use",
     "allow-ai-model-add-picked",
     "allow-ai-model-add-cancel",
     "allow-ai-model-download",
@@ -72,6 +74,9 @@
     "allow-vault-is-photo",
     "allow-vault-view-photo",
     "allow-vault-hide-record",
+    "allow-vault-ai-result-save",
+    "allow-vault-ai-results",
+    "allow-vault-ai-result-read",
     "allow-vault-unhide-record",
     "allow-vault-hide-unavailable-records",
     "allow-vault-reset"

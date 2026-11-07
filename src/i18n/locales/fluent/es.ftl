@@ -1566,6 +1566,8 @@ interface-history-empty = No hay eventos en el historial.
 
 interface-history-error-unverified = No se pudo leer ni verificar el historial. No se muestra ningún evento.
 
+interface-history-event-aiResultSaved = Respuesta de la IA guardada
+
 interface-history-event-backupRestored = Copia de seguridad restaurada
 
 interface-history-event-backupSaved = Copia de seguridad cifrada guardada
@@ -1638,6 +1640,10 @@ interface-history-how = Cómo
 interface-history-how-aidReplaced = Sustituyó una ayuda de lectura anterior
 
 interface-history-how-camera = Añadido con la cámara
+
+interface-history-how-summary = Resumen en palabras sencillas
+
+interface-history-how-explain = Un término explicado
 
 interface-history-how-damaged = Ocultado porque faltaba el archivo
 
@@ -1783,6 +1789,10 @@ ai-model-refusedUnavailable = El modelo no está disponible ahora en su direcci�
 native-filter-models = Archivos de modelo
 
 ai-working = El asistente de IA está trabajando…
+
+ai-summary-ready = El resumen está listo.
+
+ai-explain-ready = La explicación está lista.
 
 ai-failed = El asistente de IA no pudo terminar. Intente de nuevo.
 
@@ -1993,3 +2003,9 @@ notifications-autoAllow = Buscar documentos de las clínicas automáticamente mi
 notifications-autoHelp = Con su permiso, myCarlos consulta los enlaces guardados y aprobados de las clínicas mientras esta aplicación está abierta y la bóveda está desbloqueada, con al menos dos minutos entre intentos. Las consultas pueden continuar si Windows bloquea los avisos. Bloquear la bóveda o cerrar la aplicación detiene las consultas posteriores.
 notifications-autoPaused = Se necesita una consulta manual para continuar las consultas automáticas. Abra Documentos de la clínica y elija Buscar documentos nuevos.
 notifications-checkBusy = Se está deteniendo una consulta de documentos. Vuelva a elegir Buscar documentos nuevos dentro de un momento.
+
+ai-summary-again = Resumir de nuevo
+
+ai-keepFailed = myCarlos no pudo guardar esta respuesta con el documento. Se sigue mostrando aquí.
+
+ai-keepFull = Este documento ya guarda el máximo de respuestas de la IA. Las respuestas nuevas se muestran, pero no se guardan.

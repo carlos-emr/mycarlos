@@ -1534,6 +1534,8 @@ interface-history-empty = There are no history events.
 
 interface-history-error-unverified = The history could not be read and verified. No events are shown.
 
+interface-history-event-aiResultSaved = AI answer kept
+
 interface-history-event-backupRestored = Backup restored
 
 interface-history-event-backupSaved = Encrypted backup saved
@@ -1605,6 +1607,10 @@ interface-history-how = How
 interface-history-how-aidReplaced = Replaced an earlier reading aid
 
 interface-history-how-camera = Added with the camera
+
+interface-history-how-summary = Summary in plain words
+
+interface-history-how-explain = A term explained
 
 interface-history-how-damaged = Hidden because its file was missing
 
@@ -1749,6 +1755,10 @@ ai-model-refusedUnavailable = The model is not available at its address right no
 native-filter-models = Model files
 
 ai-working = The AI helper is working…
+
+ai-summary-ready = The summary is ready.
+
+ai-explain-ready = The explanation is ready.
 
 ai-failed = The AI helper could not finish. Try again.
 
@@ -1959,3 +1969,9 @@ notifications-autoAllow = Check for clinic documents automatically while unlocke
 notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
 notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
+
+ai-summary-again = Summarize again
+
+ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
+
+ai-keepFull = This document already keeps the most AI answers it can. New answers are shown but not kept.

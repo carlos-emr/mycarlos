@@ -1406,6 +1406,8 @@ interface-history-empty = 沒有任何紀錄事件。
 
 interface-history-error-unverified = 無法讀取並驗證紀錄，因此不顯示任何事件。
 
+interface-history-event-aiResultSaved = AI 回答已保存
+
 interface-history-event-backupRestored = 備份已還原
 
 interface-history-event-backupSaved = 加密備份已儲存
@@ -1473,6 +1475,10 @@ interface-history-how = 方式
 interface-history-how-aidReplaced = 取代了先前的閱讀輔助
 
 interface-history-how-camera = 使用相機新增
+
+interface-history-how-summary = 淺白易懂的摘要
+
+interface-history-how-explain = 已解釋術語
 
 interface-history-how-damaged = 因檔案遺失而隱藏
 
@@ -1613,6 +1619,10 @@ ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍�
 native-filter-models = 模型檔案
 
 ai-working = AI 助理正在處理…
+
+ai-summary-ready = 摘要已產生。
+
+ai-explain-ready = 解釋已產生。
 
 ai-failed = AI 助理未能完成。請重試。
 
@@ -1820,3 +1830,9 @@ notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
 notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
+
+ai-summary-again = 重新產生摘要
+
+ai-keepFailed = myCarlos 無法將此回答與文件一起保存。此處仍會顯示該回答。
+
+ai-keepFull = 此文件保存的 AI 回答已達上限。新的回答會顯示，但不會保存。
