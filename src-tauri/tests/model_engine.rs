@@ -217,6 +217,7 @@ fn the_real_engine_reads_an_instruction_prefix_once_and_puts_it_back_after() {
     let dir = tempfile::tempdir().unwrap();
     let model = model_file(dir.path(), &tiny_model());
     let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    runner.override_threads(Some(1));
     let summarize = |lang: &str, text: &str| {
         runner.summarize(lang, &[(0, text)]).unwrap();
         runner.last_prefix().unwrap()
