@@ -188,7 +188,6 @@ export const MESSAGE_KEYS = [
   "interface.VaultLibrary.theyAreInNoOnesRecordsUntil",
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault",
   "interface.VaultLibrary.topLevel",
-  "interface.VaultLibrary.unlockedLockNow",
   "interface.VaultLibrary.working",
   "interface.camera.denied",
   "interface.count.documents",
@@ -293,6 +292,9 @@ export const MESSAGE_KEYS = [
   "library.folder.open",
   "library.folder.rename",
   "library.items",
+  "library.location.documents",
+  "library.location.summary",
+  "library.lock.unlocked",
   "library.noMatch.help",
   "library.noMatch.title",
   "library.rename",
@@ -1229,8 +1231,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault":
     "interface-VaultLibrary-thisPhotoIsAlreadyInTheVault",
   "interface.VaultLibrary.topLevel": "interface-VaultLibrary-topLevel",
-  "interface.VaultLibrary.unlockedLockNow":
-    "interface-VaultLibrary-unlockedLockNow",
   "interface.VaultLibrary.working": "interface-VaultLibrary-working",
   "interface.camera.denied": "interface-camera-denied",
   "interface.count.documents": "interface-count-documents",
@@ -1354,6 +1354,9 @@ const FLUENT_IDS_BY_KEY = {
   "library.folder.open": "library-folder-open",
   "library.folder.rename": "library-folder-rename",
   "library.items": "library-items",
+  "library.location.documents": "library-location-documents",
+  "library.location.summary": "library-location-summary",
+  "library.lock.unlocked": "library-lock-unlocked",
   "library.noMatch.help": "library-noMatch-help",
   "library.noMatch.title": "library-noMatch-title",
   "library.rename": "library-rename",
@@ -2305,7 +2308,6 @@ export interface MessageArgsByKey {
   "interface.VaultLibrary.theyAreInNoOnesRecordsUntil": undefined;
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault": undefined;
   "interface.VaultLibrary.topLevel": undefined;
-  "interface.VaultLibrary.unlockedLockNow": undefined;
   "interface.VaultLibrary.working": undefined;
   "interface.camera.denied": { help: FluentArgument };
   "interface.count.documents": { count: FluentArgument };
@@ -2443,6 +2445,16 @@ export interface MessageArgsByKey {
   "library.folder.open": { name: FluentArgument };
   "library.folder.rename": { name: FluentArgument };
   "library.items": { count: FluentArgument };
+  "library.location.documents": {
+    documents: FluentArgument;
+    place: FluentArgument;
+  };
+  "library.location.summary": {
+    documents: FluentArgument;
+    folders: FluentArgument;
+    place: FluentArgument;
+  };
+  "library.lock.unlocked": undefined;
   "library.noMatch.help": undefined;
   "library.noMatch.title": undefined;
   "library.rename": undefined;
