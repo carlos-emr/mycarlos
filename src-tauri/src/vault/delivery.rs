@@ -5248,7 +5248,7 @@ mod approval_recovery_tests {
                 assert_eq!((to.id, method), (link.id, "GET"));
                 fetched.lock().unwrap().push(path.to_owned());
                 if path.starts_with("/api/mycarlos/deliveries?") {
-                    Ok(listing(&[outer.clone()]))
+                    Ok(listing(std::slice::from_ref(&outer)))
                 } else {
                     assert_eq!(
                         path,
@@ -5451,7 +5451,7 @@ mod approval_recovery_tests {
                     Ok(if rechecked {
                         empty_page()
                     } else {
-                        listing(&[older_outer.clone()])
+                        listing(std::slice::from_ref(&older_outer))
                     })
                 } else if path.ends_with("/receipt") {
                     assert_eq!(
