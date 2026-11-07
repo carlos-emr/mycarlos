@@ -1579,7 +1579,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也會保
 
 portal-checkAgain = 若要再次檢查，請選擇「{ $button }」。
 
-portal-unlockCheckConsent = 每次解鎖保險庫時，myCarlos 都會聯絡每個已連結裝置所對應的診所入口網站，檢查核准狀態更新和新文件。
+portal-unlockCheckConsent = 每次解鎖後，如果診所已核准該裝置，或核准請求仍未結束，myCarlos 就會聯絡已連結的診所入口網站，檢查核准狀態更新和新文件。
 
 portal-unlockChecked = 解鎖後已檢查新的診所文件。
 

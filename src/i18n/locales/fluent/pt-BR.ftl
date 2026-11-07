@@ -1754,7 +1754,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também
 
 portal-checkAgain = Para verificar novamente, escolha { $button }.
 
-portal-unlockCheckConsent = Sempre que você desbloquear seu cofre, o myCarlos se conecta ao portal da clínica de cada dispositivo vinculado para verificar atualizações da aprovação e novos documentos.
+portal-unlockCheckConsent = Após cada desbloqueio, o myCarlos se conecta aos portais das clínicas vinculadas para verificar atualizações da aprovação e novos documentos quando a clínica já aprovou o dispositivo ou uma solicitação de aprovação ainda está em aberto.
 
 portal-unlockChecked = Verificação de novos documentos da clínica feita após desbloquear o cofre.
 

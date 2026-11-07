@@ -1754,7 +1754,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos conserve 
 
 portal-checkAgain = Pour vérifier de nouveau, choisissez { $button }.
 
-portal-unlockCheckConsent = Chaque fois que vous déverrouillez votre coffre-fort, myCarlos communique avec le portail de la clinique de chaque appareil associé pour vérifier les mises à jour de l’approbation et rechercher de nouveaux documents.
+portal-unlockCheckConsent = Après chaque déverrouillage, myCarlos communique avec les portails des cliniques associées pour vérifier les mises à jour de l’approbation et rechercher de nouveaux documents si la clinique a approuvé l’appareil ou si une demande d’approbation est encore en cours.
 
 portal-unlockChecked = Recherche de nouveaux documents de la clinique effectuée après le déverrouillage.
 

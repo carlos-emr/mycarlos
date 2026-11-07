@@ -224,7 +224,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // the native side admits one clinic operation at a time until that work
   // has returned: the check after the next unlock waits for it, rather than
   // being refused as busy.
-  const endedPortalWorkRef = useRef<Promise<unknown>>(Promise.resolve());
+  const endedPortalWorkRef = useRef<Promise<void>>(Promise.resolve());
   // The check for new clinic documents owed by the latest unlock (#128),
   // for its session. It waits for the library to give the unlock's own
   // message, and for the recovery key offer that unlock opened on to close.
@@ -424,7 +424,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         endedPortalWorkRef.current,
         portalJobRef.current?.promise,
         portalPollRef.current?.promise,
-      ]);
+      ]).then(() => undefined);
       portalJobRef.current = null;
       portalPollRef.current = null;
       setPortalWaits(new PortalWaits());

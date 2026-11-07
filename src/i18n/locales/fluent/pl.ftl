@@ -1789,7 +1789,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos przechowu
 
 portal-checkAgain = Aby sprawdzić ponownie, wybierz { $button }.
 
-portal-unlockCheckConsent = Przy każdym odblokowaniu sejfu myCarlos łączy się z portalem przychodni każdego połączonego urządzenia, aby sprawdzić zmiany w zatwierdzeniu i nowe dokumenty.
+portal-unlockCheckConsent = Po każdym odblokowaniu sejfu myCarlos łączy się z portalami połączonych przychodni, aby sprawdzić zmiany w zatwierdzeniu i nowe dokumenty, jeśli przychodnia zatwierdziła urządzenie lub prośba o zatwierdzenie nadal jest otwarta.
 
 portal-unlockChecked = Po odblokowaniu sejfu sprawdzono, czy są nowe dokumenty z przychodni.
 

@@ -459,8 +459,13 @@ where
             for (delivery_id, receipt) in &rechecked.not_filed {
                 result.refused += 1;
                 // Not filed because a newer-reviewed aid is held: the receipt only tells the portal
-                // to stop offering it, so a failed post is simply tried again on the next check.
-                let _ = post_receipt(&link, delivery_id, receipt);
+                // to stop offering it. Ordinary failed posts are tried on the next check;
+                // a removed device needs to be linked again.
+                if let Err(error @ VaultError::Portal(LinkError::DeviceRemoved)) =
+                    post_receipt(&link, delivery_id, receipt)
+                {
+                    return Err(error);
+                }
             }
             if rechecked.filed > 0 {
                 send_pending(&link)?;
@@ -490,6 +495,9 @@ where
                     &cancelled,
                 ) {
                     Ok(response) if response.status == 200 => response,
+                    Ok(response) if crate::portal_approval::device_removed(&response) => {
+                        return Err(VaultError::Portal(LinkError::DeviceRemoved));
+                    }
                     // Gone or unavailable: the next check asks again.
                     Ok(_) => continue,
                     Err(error) => {
@@ -504,7 +512,11 @@ where
                 match store.receive_aid(&outer, &response.body, &link, session) {
                     Ok(crate::vault::AidFiling::NotFiled(receipt)) => {
                         result.refused += 1;
-                        let _ = post_receipt(&link, &outer.delivery_id, &receipt);
+                        if let Err(error @ VaultError::Portal(LinkError::DeviceRemoved)) =
+                            post_receipt(&link, &outer.delivery_id, &receipt)
+                        {
+                            return Err(error);
+                        }
                     }
                     Ok(_) => send_pending(&link)?,
                     Err(VaultError::PickupRefused) => result.refused += 1,
@@ -527,7 +539,7 @@ where
             .find(|l| l.id == original.id)
             .ok_or(VaultError::NotFound)?;
         let pending = store.pending_receipts_checked(&current, session)?;
-        result.receipts_pending += pending.ready.len();
+        result.receipts_pending += pending.ready.len() + pending.ready_aids.len();
         if pending.damaged > 0 {
             add_issue_code(&mut result, &current, DAMAGED_CODE);
         }
