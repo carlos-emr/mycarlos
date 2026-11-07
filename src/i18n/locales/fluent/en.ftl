@@ -2039,9 +2039,15 @@ notifications-error = This setting could not be saved. Notices are off for this 
 notifications-unavailable = Document notices are unavailable. Open myCarlos normally to check your documents.
 notifications-helpAutomatic = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
 notifications-autoAllow = Check for clinic documents automatically while unlocked
+notifications-autoNeedsNotices = Allow document arrival notices first to turn this on.
 notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
 notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
+noticesStep-title = Notices from your clinic
+noticesStep-intro = Your clinic is linked. myCarlos can let you know when a new document arrives. Nothing is turned on unless you tick it.
+noticesStep-later = You can change these any time in { $settings }, under { $preferences }: { $notices }.
+noticesStep-done = Done
+noticesStep-notNow = Not now
 
 ai-summary-again = Summarize again
 

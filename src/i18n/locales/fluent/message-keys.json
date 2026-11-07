@@ -949,5 +949,11 @@
   "interface.history.how.explain",
   "ai.summary.again",
   "ai.keepFailed",
-  "ai.keepFull"
+  "ai.keepFull",
+  "noticesStep.title",
+  "noticesStep.intro",
+  "noticesStep.later",
+  "noticesStep.done",
+  "noticesStep.notNow",
+  "notifications.autoNeedsNotices"
 ]

@@ -951,6 +951,12 @@ export const MESSAGE_KEYS = [
   "ai.summary.again",
   "ai.keepFailed",
   "ai.keepFull",
+  "noticesStep.title",
+  "noticesStep.intro",
+  "noticesStep.later",
+  "noticesStep.done",
+  "noticesStep.notNow",
+  "notifications.autoNeedsNotices",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2099,6 +2105,12 @@ const FLUENT_IDS_BY_KEY = {
   "ai.summary.again": "ai-summary-again",
   "ai.keepFailed": "ai-keepFailed",
   "ai.keepFull": "ai-keepFull",
+  "noticesStep.title": "noticesStep-title",
+  "noticesStep.intro": "noticesStep-intro",
+  "noticesStep.later": "noticesStep-later",
+  "noticesStep.done": "noticesStep-done",
+  "noticesStep.notNow": "noticesStep-notNow",
+  "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3149,6 +3161,16 @@ export interface MessageArgsByKey {
   "ai.summary.again": undefined;
   "ai.keepFailed": undefined;
   "ai.keepFull": undefined;
+  "noticesStep.title": undefined;
+  "noticesStep.intro": undefined;
+  "noticesStep.later": {
+    notices: FluentArgument;
+    preferences: FluentArgument;
+    settings: FluentArgument;
+  };
+  "noticesStep.done": undefined;
+  "noticesStep.notNow": undefined;
+  "notifications.autoNeedsNotices": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];
