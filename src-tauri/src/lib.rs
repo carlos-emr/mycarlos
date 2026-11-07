@@ -2054,7 +2054,13 @@ async fn ai_summarize(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
     request: model_runtime::SummarizeRequest,
+    answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
+    // Capture the actual unlocked session before validation can yield.
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let session = picks.session();
     let kept_for = match (request.record_id, request.ticket) {
         (Some(record_id), Some(ticket)) => {
             let text = picks.peek_text(ticket, record_id)?;
@@ -2073,12 +2079,12 @@ async fn ai_summarize(
         (None, None) => None,
         _ => return Err(ai_error(model_runtime::AiError::Failed)),
     };
-    let session = picks.session();
     let lang = request.lang.clone();
     let result = run_ai(
         store.inner(),
-        announce_answer(app),
-        move |runtime, watch| runtime.summarize(request, watch),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch),
     )
     .await?;
     let kept_id = kept_for.map(|(record_id, text)| {
@@ -2116,12 +2122,22 @@ async fn ai_explain(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
     request: model_runtime::ExplainRequest,
+    answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
+    // Capture the actual unlocked session before validation can yield.
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let session = picks.session();
     let kept_for = request.record_id;
     if let Some(record_id) = kept_for {
-        run_blocking(store.inner(), move |store| readable_pdf(store, record_id)).await?;
+        // Validation may outlive its originating session. It must not count
+        // as unowned activity in whichever session is open when it returns.
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || readable_pdf(&store, record_id))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))??;
     }
-    let session = picks.session();
     let (term, context, lang) = (
         request.term.trim().to_owned(),
         request.context.clone(),
@@ -2129,8 +2145,9 @@ async fn ai_explain(
     );
     let result = run_ai(
         store.inner(),
-        announce_answer(app),
-        move |runtime, watch| runtime.explain(request, watch),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch| runtime.explain_for(ticket, request, watch),
     )
     .await?;
     let kept_id = kept_for.map(|record_id| {
@@ -2183,6 +2200,7 @@ fn ai_cancel() {
 /// unlocked, held as activity for the idle lock until it ends (`held_for_answer`).
 async fn run_ai<T, F>(
     store: &Arc<VaultStore>,
+    origin: idle::AnswerOrigin,
     announce: impl FnOnce(Duration) + Send + 'static,
     work: F,
 ) -> CommandResult<T>
@@ -2190,6 +2208,7 @@ where
     T: Send + 'static,
     F: FnOnce(
             &'static model_runtime::ModelRuntime,
+            local_runner::Ticket,
             local_runner::AnswerWatch,
         ) -> Result<T, model_runtime::AiError>
         + Send
@@ -2199,14 +2218,15 @@ where
     if !cfg!(desktop) {
         return Err(ai_error(AiError::NotInstalled));
     }
-    if !matches!(store.status(), Ok(VaultStatus::Unlocked)) {
-        return Err(ai_error(AiError::Cancelled));
-    }
-    held_for_answer(store.idle(), announce, move |watch| {
-        work(model_runtime::app(), watch)
-    })
-    .await
-    .map_err(ai_error)
+    let runtime = model_runtime::app();
+    let (hold, ticket) = store
+        .admit_answer(origin, model_runtime::ANSWER_LIMIT.ceiling, || {
+            runtime.reserve_answer()
+        })
+        .ok_or_else(|| ai_error(AiError::Cancelled))?;
+    held_for_answer(hold, announce, move |watch| work(runtime, ticket, watch))
+        .await
+        .map_err(ai_error)
 }
 
 /// The renderer's word that an answer was asked, with its own time limit: the renderer's
@@ -2216,14 +2236,24 @@ const AI_ANSWER_STARTED: &str = "ai-answer-started";
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AiAnswerStarted {
+    answer_id: Uuid,
     limit_ms: u64,
 }
 
-fn announce_answer(app: tauri::AppHandle) -> impl FnOnce(Duration) + Send + 'static {
+fn announce_answer(
+    app: tauri::AppHandle,
+    answer_id: Uuid,
+) -> impl FnOnce(Duration) + Send + 'static {
     move |limit| {
         use tauri::Emitter;
         let limit_ms = u64::try_from(limit.as_millis()).unwrap_or(u64::MAX);
-        let _ = app.emit(AI_ANSWER_STARTED, AiAnswerStarted { limit_ms });
+        let _ = app.emit(
+            AI_ANSWER_STARTED,
+            AiAnswerStarted {
+                answer_id,
+                limit_ms,
+            },
+        );
     }
 }
 
@@ -2233,23 +2263,20 @@ fn announce_answer(app: tauri::AppHandle) -> impl FnOnce(Duration) + Send + 'sta
 /// at most the longest answer limit; from then on, for at most that answer's own limit, which
 /// `announce` is told too. A lock still locks at once: it stops the answer and drops the hold.
 async fn held_for_answer<T: Send + 'static>(
-    idle: &Arc<IdleDeadline>,
+    hold: idle::AnswerHold,
     announce: impl FnOnce(Duration) + Send + 'static,
     work: impl FnOnce(local_runner::AnswerWatch) -> Result<T, model_runtime::AiError> + Send + 'static,
 ) -> Result<T, model_runtime::AiError> {
     use model_runtime::AiError;
-    idle.touch(Instant::now());
-    let hold = ActivityHold::capped(idle, model_runtime::ANSWER_LIMIT.ceiling);
-    let (held, id) = (Arc::clone(idle), hold.id);
-    let watch: local_runner::AnswerWatch = Box::new(move |limit| {
-        held.hold_restarted(id, Instant::now(), limit);
-        announce(limit);
-    });
+    if !hold.is_current() {
+        return Err(AiError::Cancelled);
+    }
+    let watch = hold.watch(announce);
     let result = tauri::async_runtime::spawn_blocking(move || work(watch))
         .await
         .map_err(|_| AiError::Failed)?;
-    if !matches!(result, Err(AiError::Cancelled)) {
-        idle.touch(Instant::now());
+    if !hold.finish(!matches!(result, Err(AiError::Cancelled))) {
+        return Err(AiError::Cancelled);
     }
     result
 }
@@ -6382,6 +6409,24 @@ mod tests {
         assert!(idle.is_due(idle_past(Instant::now())));
     }
 
+    fn held_test_answer<T: Send + 'static>(
+        idle: &Arc<IdleDeadline>,
+        announce: impl FnOnce(Duration) + Send + 'static,
+        work: impl FnOnce(local_runner::AnswerWatch) -> Result<T, model_runtime::AiError>
+            + Send
+            + 'static,
+    ) -> impl std::future::Future<Output = Result<T, model_runtime::AiError>> {
+        let origin = idle.answer_origin();
+        let idle = Arc::clone(idle);
+        async move {
+            let origin = origin.ok_or(model_runtime::AiError::Cancelled)?;
+            let (hold, ()) = idle
+                .admit_answer(origin, model_runtime::ANSWER_LIMIT.ceiling, || ())
+                .ok_or(model_runtime::AiError::Cancelled)?;
+            held_for_answer(hold, announce, work).await
+        }
+    }
+
     #[test]
     fn an_answer_holds_the_idle_lock_until_it_ends_never_past_its_own_limit() {
         let armed_at = Instant::now();
@@ -6390,7 +6435,7 @@ mod tests {
         let (told, heard) = std::sync::mpsc::channel();
         let inside = Arc::clone(&idle);
         let limit = Duration::from_secs(6 * 60);
-        let answered = tauri::async_runtime::block_on(held_for_answer(
+        let answered = tauri::async_runtime::block_on(held_test_answer(
             &idle,
             move |limit| told.send(limit).unwrap(),
             move |watch| {
@@ -6429,7 +6474,7 @@ mod tests {
             let armed_at = Instant::now();
             let idle = Arc::new(IdleDeadline::new(armed_at));
             idle.arm(armed_at);
-            let result = tauri::async_runtime::block_on(held_for_answer(
+            let result = tauri::async_runtime::block_on(held_test_answer(
                 &idle,
                 |_| (),
                 move |watch| {
@@ -6444,20 +6489,136 @@ mod tests {
         let armed_at = Instant::now();
         let idle = Arc::new(IdleDeadline::new(armed_at));
         idle.arm(armed_at);
-        let refused = tauri::async_runtime::block_on(held_for_answer(
+        let refused = tauri::async_runtime::block_on(held_test_answer(
             &idle,
             |_| panic!("no answer was asked"),
             |_watch| Err::<(), _>(AiError::NotInstalled),
         ));
         assert_eq!(refused, Err(AiError::NotInstalled));
         assert!(idle.is_due(idle_past(Instant::now())));
-        let panicked = tauri::async_runtime::block_on(held_for_answer(
+        let panicked = tauri::async_runtime::block_on(held_test_answer(
             &idle,
             |_| (),
             |_watch| -> Result<(), AiError> { panic!("FAKE helper failure") },
         ));
         assert_eq!(panicked, Err(AiError::Failed));
         assert!(idle.is_due(idle_past(Instant::now())));
+    }
+
+    #[test]
+    fn ownership_a_vault_origin_cannot_admit_after_reunlock() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let old = store.answer_origin().unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(store
+            .admit_answer(old, model_runtime::ANSWER_LIMIT.ceiling, || panic!(
+                "old command reserved a new ticket"
+            ))
+            .is_none());
+        let current = store.answer_origin().unwrap();
+        let (hold, reserved) = store
+            .admit_answer(current, model_runtime::ANSWER_LIMIT.ceiling, || 7)
+            .unwrap();
+        assert_eq!(reserved, 7);
+        assert!(hold.is_current());
+        assert!(hold.finish(true));
+    }
+
+    #[test]
+    fn ownership_a_delayed_old_admission_cannot_hold_a_new_session() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let inside = Arc::clone(&idle);
+        // The old command passed its unlocked check, then waited before admission.
+        let old = held_test_answer(
+            &idle,
+            |_| (),
+            move |_watch| {
+                assert!(
+                    inside.is_due(idle_past(Instant::now())),
+                    "old admission must not hold the new session"
+                );
+                Ok(())
+            },
+        );
+        idle.disarm();
+        idle.arm(start);
+        assert!(matches!(
+            tauri::async_runtime::block_on(old),
+            Err(model_runtime::AiError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn ownership_old_watch_and_completion_cannot_touch_a_new_session() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let inside = Arc::clone(&idle);
+        let announced = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let heard = Arc::clone(&announced);
+        let result = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            move |_| {
+                heard.store(true, Ordering::SeqCst);
+            },
+            move |watch| {
+                inside.disarm();
+                inside.arm(start);
+                std::thread::sleep(Duration::from_millis(2));
+                watch(model_runtime::ANSWER_LIMIT.ceiling);
+                assert!(
+                    inside.is_due(idle_past(start)),
+                    "old watch must not postpone the new session"
+                );
+                Ok(())
+            },
+        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
+        assert!(
+            !announced.load(Ordering::SeqCst),
+            "old watch must not announce into a new session"
+        );
+        assert!(
+            idle.is_due(idle_past(start)),
+            "old completion must not restart the new deadline"
+        );
+    }
+
+    #[test]
+    fn ownership_a_new_answer_retires_the_old_answer_but_not_a_picker() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let _picker = ActivityHold::new(&idle);
+        let inside = Arc::clone(&idle);
+        let result = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            |_| (),
+            move |old_watch| {
+                tauri::async_runtime::block_on(held_test_answer(
+                    &inside,
+                    |_| (),
+                    |_new_watch| Ok(()),
+                ))
+                .unwrap();
+                old_watch(model_runtime::ANSWER_LIMIT.ceiling);
+                assert!(
+                    !inside.is_due(idle_past(start + Duration::from_secs(10 * 60))),
+                    "the picker must remain held"
+                );
+                assert!(
+                    inside.is_due(idle_past(start + idle::GRACE + Duration::from_secs(1))),
+                    "the superseded answer must not extend the picker cap"
+                );
+                Ok(())
+            },
+        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
     }
 
     #[test]

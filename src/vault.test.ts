@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+const events = vi.hoisted(() => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => events);
 
 import { setLocaleOverride } from "./i18n";
 import { setDeviceLocale } from "./test/deviceLocale";
@@ -146,19 +148,29 @@ describe("native idle deadline bridge", () => {
       lastPage: 2,
       lastPageCut: false,
     });
-    await bridge.aiSummarize(pages, "fr");
+    await bridge.aiSummarize(pages, "fr", undefined, "summary-id");
     invoke.mockResolvedValue({
       text: "FAKE",
       model: { name: "FAKE", sha256: "test-only" },
     });
-    await bridge.aiExplain("potassium", "Potassium 5.4.", "pl");
+    await bridge.aiExplain(
+      "potassium",
+      "Potassium 5.4.",
+      "pl",
+      undefined,
+      "explain-id",
+    );
     invoke.mockResolvedValue(null);
     await bridge.aiCancel();
     expect(invoke.mock.calls).toEqual([
-      ["ai_summarize", { request: { pages, lang: "fr" } }],
+      [
+        "ai_summarize",
+        { answerId: "summary-id", request: { pages, lang: "fr" } },
+      ],
       [
         "ai_explain",
         {
+          answerId: "explain-id",
           request: { term: "potassium", context: "Potassium 5.4.", lang: "pl" },
         },
       ],
@@ -177,7 +189,12 @@ describe("native idle deadline bridge", () => {
       keptId: "kept-1",
     });
     await expect(
-      bridge.aiSummarize(pages, "fr", { recordId: "rec", ticket: "t-1" }),
+      bridge.aiSummarize(
+        pages,
+        "fr",
+        { recordId: "rec", ticket: "t-1" },
+        "summary-id",
+      ),
     ).resolves.toMatchObject({ keptId: "kept-1" });
     invoke.mockResolvedValueOnce({
       text: "FAKE",
@@ -185,16 +202,26 @@ describe("native idle deadline bridge", () => {
       keptId: "kept-2",
     });
     await expect(
-      bridge.aiExplain("potassium", "Potassium 5.4.", "pl", "rec"),
+      bridge.aiExplain(
+        "potassium",
+        "Potassium 5.4.",
+        "pl",
+        "rec",
+        "explain-id",
+      ),
     ).resolves.toMatchObject({ keptId: "kept-2" });
     expect(invoke.mock.calls).toEqual([
       [
         "ai_summarize",
-        { request: { pages, lang: "fr", recordId: "rec", ticket: "t-1" } },
+        {
+          answerId: "summary-id",
+          request: { pages, lang: "fr", recordId: "rec", ticket: "t-1" },
+        },
       ],
       [
         "ai_explain",
         {
+          answerId: "explain-id",
           request: {
             term: "potassium",
             context: "Potassium 5.4.",
@@ -204,6 +231,60 @@ describe("native idle deadline bridge", () => {
         },
       ],
     ]);
+  });
+
+  it("allocates a different answer UUID for callers without an explicit owner", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue(undefined);
+    const pages = [{ index: 0, text: "FAKE page" }];
+    await bridge.aiSummarize(pages, "en", {
+      recordId: "FAKE-record",
+      ticket: "FAKE-ticket",
+    });
+    await bridge.aiExplain("FAKE term", "FAKE sentence", "fr", "FAKE-record");
+    const [summary, explanation] = invoke.mock.calls;
+    expect(summary[0]).toBe("ai_summarize");
+    expect(explanation[0]).toBe("ai_explain");
+    expect(summary[1].answerId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(explanation[1].answerId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(summary[1].answerId).not.toBe(explanation[1].answerId);
+    expect(summary[1].request).toEqual({
+      pages,
+      lang: "en",
+      recordId: "FAKE-record",
+      ticket: "FAKE-ticket",
+    });
+    expect(explanation[1].request).toEqual({
+      term: "FAKE term",
+      context: "FAKE sentence",
+      lang: "fr",
+      recordId: "FAKE-record",
+    });
+  });
+
+  it("delivers the started answer's owner and limit and unlistens after registration", async () => {
+    events.listen.mockReset();
+    const unlisten = vi.fn();
+    events.listen.mockResolvedValue(unlisten);
+    const bridge = createVaultBridge();
+    const handler = vi.fn();
+    const stop = bridge.onAiAnswerStarted!(handler);
+    expect(events.listen).toHaveBeenCalledOnce();
+    expect(events.listen.mock.calls[0][0]).toBe("ai-answer-started");
+    const payload = {
+      answerId: "00000000-0000-4000-8000-000000000001",
+      limitMs: 420_000,
+    };
+    events.listen.mock.calls[0][1]({ payload });
+    expect(handler).toHaveBeenCalledExactlyOnceWith(payload);
+    // Closing before listen's promise settles must still release that listener.
+    stop();
+    await Promise.resolve();
+    expect(unlisten).toHaveBeenCalledOnce();
   });
 
   it("sends the shared-file commands the native side registers", async () => {

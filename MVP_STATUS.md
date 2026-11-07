@@ -121,7 +121,10 @@ privacy, accessibility, or clinical review.
       as activity. A picker counts for at most 15 minutes from when it opened. An AI answer being
       written counts until it ends, for at most its own limit (5 to 20 minutes) from when the model
       is asked it, and 20 minutes while the helper starts for it (D19); the renderer's deadline
-      waits the same way, and **Lock now** still stops it at once. A transfer counts
+      waits the same way, and **Lock now** still stops it at once. Answer activity and runner
+      tickets belong to the originating unlocked session and its current answer; late starts or
+      completions cannot extend a newer answer or session. Retiring an answer leaves picker holds
+      intact. A transfer counts
       for as long as it makes progress, however slowly, so a large one on a slow computer or
       connection is not cut off; one that stalls locks after the delay. An automatic or background
       lock that falls during a transfer hides the library and waits for the transfer to finish; its
