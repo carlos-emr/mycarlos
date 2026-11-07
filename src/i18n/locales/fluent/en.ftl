@@ -1512,7 +1512,7 @@ portal-connecting = Connecting and requesting clinic approval…
 
 portal-errorBusy = Another clinic operation is running. Wait for it to finish, then try again.
 
-portal-linkedApprovalIssue = Device linked, but the approval request could not be confirmed. Its status in Security, under Clinic documents, says what to do next.
+portal-linkedApprovalIssue = Device linked. Its approval status in Security, under Clinic documents, says what to do next.
 
 portal-retryApproval = Retry saved approval request
 
@@ -1717,7 +1717,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos also keep
 
 portal-checkAgain = To check again, choose { $button }.
 
-portal-unlockCheckConsent = Each time you unlock your vault, myCarlos contacts the clinic portal of each linked device to check for approval updates and new documents.
+portal-unlockCheckConsent = After each unlock, myCarlos contacts linked clinic portals to check for approval updates and new documents when the clinic has approved the device or an approval request is still open.
 
 portal-unlockChecked = Checked for new clinic documents after unlocking.
 

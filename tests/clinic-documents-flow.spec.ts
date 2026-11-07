@@ -116,6 +116,15 @@ test("links this device to a clinic and asks for approval in one action: a refus
     page.getByText(en("portal.errorCodeRejected"), { exact: true }),
   ).toHaveCount(0);
   await expect(awaiting(page)).toBeVisible();
+  // Require the fake-driven automatic read as well as its confirmed text.
+  await expect
+    .poll(() => fakeCalls(page, "vault_refresh_device_approval"), {
+      timeout: 15_000,
+    })
+    .toContainEqual({ linkId: FAKE_IDS.link });
+  await expect(
+    page.getByText(en("portal.awaitingClinic"), { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(en("portal.notRequested"), { exact: true }),
   ).toHaveCount(0);

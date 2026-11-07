@@ -1384,7 +1384,7 @@ portal-connecting = 正在连接并申请诊所批准…
 
 portal-errorBusy = 另一项诊所操作正在进行。请等其完成后重试。
 
-portal-linkedApprovalIssue = 设备已关联，但无法确认批准请求。请查看「安全」的「诊所文档」下的状态，了解下一步操作。
+portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「诊所文档」下的批准状态，了解下一步操作。
 
 portal-retryApproval = 重试已保存的批准请求
 
@@ -1577,7 +1577,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也会保
 
 portal-checkAgain = 若要再次检查，请选择「{ $button }」。
 
-portal-unlockCheckConsent = 每次解锁保险库时，myCarlos 都会联系每台已关联设备所对应的诊所门户网站，检查批准状态更新和新文档。
+portal-unlockCheckConsent = 每次解锁后，如果诊所已批准该设备，或批准请求仍未结束，myCarlos 就会联系已关联的诊所门户网站，检查批准状态更新和新文档。
 
 portal-unlockChecked = 解锁后已检查新的诊所文档。
 

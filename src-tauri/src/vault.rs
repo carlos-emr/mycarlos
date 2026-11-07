@@ -910,6 +910,7 @@ pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
     collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
+    approval_poll_progress: Mutex<HashMap<Uuid, delivery::ApprovalPollProgress>>,
     notifications: std::sync::OnceLock<Arc<crate::document_notification_runtime::Runtime>>,
     unlocked: Mutex<Option<UnlockedVault>>,
     snapshot_epoch: Uuid,
@@ -944,6 +945,7 @@ impl VaultStore {
             root,
             collection: crate::document_collection::Controller::new(Instant::now()),
             collection_resume: Mutex::new(None),
+            approval_poll_progress: Mutex::new(HashMap::new()),
             notifications: std::sync::OnceLock::new(),
             unlocked: Mutex::new(None),
             snapshot_epoch: Uuid::new_v4(),
@@ -981,7 +983,20 @@ impl VaultStore {
                 .unwrap_or_else(|p| p.into_inner()) = None;
         }
     }
+    fn approval_poll_progress(
+        &self,
+    ) -> MutexGuard<'_, HashMap<Uuid, delivery::ApprovalPollProgress>> {
+        self.approval_poll_progress
+            .lock()
+            .unwrap_or_else(|poisoned| {
+                let mut progress = poisoned.into_inner();
+                progress.clear();
+                self.approval_poll_progress.clear_poison();
+                progress
+            })
+    }
     fn invalidate_collection_cache(&self) {
+        self.approval_poll_progress().clear();
         self.collection.invalidate_cache();
         self.drop_idle_collection_cache();
     }

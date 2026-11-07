@@ -1576,7 +1576,7 @@ portal-connecting = Łączenie i wysyłanie prośby o zatwierdzenie przez przych
 
 portal-errorBusy = Trwa inna operacja związana z przychodnią. Poczekaj, aż się zakończy, i spróbuj ponownie.
 
-portal-linkedApprovalIssue = Urządzenie zostało połączone, ale nie udało się potwierdzić prośby o zatwierdzenie. Stan urządzenia na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni, wskazuje, co zrobić dalej.
+portal-linkedApprovalIssue = Urządzenie zostało połączone. Stan jego zatwierdzenia na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni, wskazuje, co zrobić dalej.
 
 portal-retryApproval = Ponów zapisaną prośbę o zatwierdzenie
 
@@ -1787,7 +1787,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos przechowu
 
 portal-checkAgain = Aby sprawdzić ponownie, wybierz { $button }.
 
-portal-unlockCheckConsent = Przy każdym odblokowaniu sejfu myCarlos łączy się z portalem przychodni każdego połączonego urządzenia, aby sprawdzić zmiany w zatwierdzeniu i nowe dokumenty.
+portal-unlockCheckConsent = Po każdym odblokowaniu sejfu myCarlos łączy się z portalami połączonych przychodni, aby sprawdzić zmiany w zatwierdzeniu i nowe dokumenty, jeśli przychodnia zatwierdziła urządzenie lub prośba o zatwierdzenie nadal jest otwarta.
 
 portal-unlockChecked = Po odblokowaniu sejfu sprawdzono, czy są nowe dokumenty z przychodni.
 

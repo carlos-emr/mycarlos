@@ -11012,6 +11012,216 @@ describe("clinic connection operations", () => {
     },
   );
 
+  it.each([
+    ["during save", "announce"],
+    ["before announcement", "announce"],
+    ["during save", "lock"],
+    ["before announcement", "lock"],
+    ["before announcement", "change document"],
+    ["before announcement", "rename"],
+    ["before announcement", "change person"],
+  ] as const)(
+    "settles photo and clinic results arriving %s before %s",
+    async (arrival, nextAction) => {
+      let current = clinicSnapshot;
+      const pending = pendingConnection();
+      let finishPhoto!: (outcome: ImportOutcome) => void;
+      const streamCanvas = document.createElement("canvas");
+      streamCanvas.width = 64;
+      streamCanvas.height = 48;
+      const paint = () => streamCanvas.getContext("2d")!.fillRect(0, 0, 64, 48);
+      paint();
+      const stream = streamCanvas.captureStream(15);
+      const painter = window.setInterval(paint, 40);
+      const camera = vi
+        .spyOn(navigator.mediaDevices, "getUserMedia")
+        .mockResolvedValue(stream);
+      window.localStorage.setItem("mycarlos.cameraExplained.v1", "1");
+      onTestFinished(() => {
+        vi.useRealTimers();
+        camera.mockRestore();
+        window.clearInterval(painter);
+        stream.getTracks().forEach((track) => track.stop());
+        window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+      });
+      const photo = {
+        ...clinicSnapshot.records[0],
+        id: "FAKE-photo-notice",
+        displayName: "FAKE_Camera.jpg",
+        mediaType: "application/octet-stream",
+      };
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        platform: vi.fn().mockResolvedValue("windows"),
+        snapshot: vi.fn(async () => captureSnapshot(current)),
+        unlock: vi.fn(async () => captureSnapshot(current)),
+        connectPortal: vi.fn().mockReturnValue(pending.promise),
+        checkDocuments: vi
+          .fn()
+          .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+        savePhoto: vi.fn().mockReturnValue(
+          new Promise<ImportOutcome>((resolve) => {
+            finishPhoto = resolve;
+          }),
+        ),
+        isPhoto: vi.fn(async (id) => id === photo.id),
+        renameRecord: vi.fn(async (id, name) => {
+          current = {
+            ...current,
+            records: current.records.map((record) =>
+              record.id === id ? { ...record, displayName: name } : record,
+            ),
+          };
+        }),
+      });
+      render(<VaultApp bridge={bridge} />);
+      const form = await openConnectForm();
+      await act(async () => fireEvent.submit(form));
+      await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+      const user = userEvent.setup();
+      await user.click(
+        screen.getAllByRole("button", { name: /^My records/ })[0],
+      );
+      await user.click(screen.getByRole("button", { name: "Take a photo" }));
+      const shutter = screen.getByRole("button", { name: "Take photo" });
+      await waitFor(() => expect(shutter).toBeEnabled());
+      fireEvent.click(shutter);
+      fireEvent.click(screen.getByRole("button", { name: "Use photo" }));
+      await waitFor(() => expect(bridge.savePhoto).toHaveBeenCalledOnce());
+
+      // Control the actual deferred announcement, after camera encoding has
+      // finished, without changing the native save or clinic promise order.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const finishClinic = async () => {
+        current = { ...current, portalLinks: [connectedLink] };
+        if (nextAction === "change person")
+          current = {
+            ...current,
+            profiles: [
+              ...current.profiles,
+              {
+                id: "FAKE-other-person",
+                displayName: "FAKE Second Patient",
+                createdAtMs: 2,
+              },
+            ],
+          };
+        await act(async () =>
+          pending.finish({ link: connectedLink, approvalError: null }),
+        );
+      };
+      if (arrival === "during save") await finishClinic();
+      current = { ...current, records: [...current.records, photo] };
+      await act(async () =>
+        finishPhoto({ imported: [photo.id], skippedDuplicates: [] }),
+      );
+      const details = screen.getByRole("dialog", { name: photo.displayName });
+      expect(details).toBeVisible();
+      if (arrival === "before announcement") await finishClinic();
+      const closeDetails = () =>
+        fireEvent.click(
+          within(details).getByRole("button", {
+            name: "Close document details",
+          }),
+        );
+      if (nextAction === "lock") {
+        closeDetails();
+        await act(async () =>
+          fireEvent.click(
+            screen.getAllByRole("button", { name: /Lock now/ })[0],
+          ),
+        );
+        expect(
+          screen.getByRole("heading", { name: "Unlock your vault" }),
+        ).toBeVisible();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+        });
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved|Device linked/),
+        ).not.toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+          target: { value: "FAKE photo notice passphrase" },
+        });
+        await act(async () =>
+          fireEvent.submit(
+            screen.getByRole("button", { name: "Unlock" }).closest("form")!,
+          ),
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+        });
+        expect(
+          screen.getByRole("heading", { name: "My records" }),
+        ).toBeVisible();
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved|Device linked/),
+        ).not.toBeInTheDocument();
+        expect(bridge.savePhoto).toHaveBeenCalledOnce();
+        return;
+      }
+      if (nextAction === "change document") {
+        closeDetails();
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", { name: "FAKE_Results.pdf" }),
+          ),
+        );
+      } else if (nextAction === "change person") {
+        closeDetails();
+        const otherPerson = () =>
+          within(
+            screen.getByRole("navigation", { name: "Record library" }),
+          ).getByRole("button", { name: /^FAKE Second Patient\b/ });
+        await act(async () => fireEvent.click(otherPerson()));
+        expect(otherPerson()).toHaveAttribute("aria-current", "page");
+      } else if (nextAction === "rename") {
+        await act(async () =>
+          fireEvent.click(
+            within(details).getByRole("button", { name: "Rename document" }),
+          ),
+        );
+        fireEvent.change(screen.getByRole("textbox", { name: "File name" }), {
+          target: { value: "FAKE_Renamed" },
+        });
+        await act(async () =>
+          fireEvent.click(screen.getByRole("button", { name: "Save name" })),
+        );
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+      });
+      const clinicNotice =
+        "Device linked. Its approval status is shown in Security, under Clinic documents.";
+      if (nextAction === "announce")
+        expect(within(details).getByRole("status")).toHaveHumanTextContent(
+          `FAKE_Camera.jpg was saved in myCarlos. ${clinicNotice}`,
+        );
+      else if (nextAction === "rename")
+        expect(
+          within(
+            screen.getByRole("dialog", { name: "FAKE_Renamed.jpg" }),
+          ).getByRole("status"),
+        ).toHaveHumanTextContent(
+          `Document renamed to FAKE_Renamed.jpg. ${clinicNotice}`,
+        );
+      else if (nextAction === "change document")
+        expect(
+          within(
+            screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+          ).getByRole("status"),
+        ).toHaveHumanTextContent(clinicNotice);
+      else
+        expect(screen.getByText(clinicNotice, { exact: true })).toBeVisible();
+      if (nextAction !== "announce")
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved/),
+        ).not.toBeInTheDocument();
+      expect(bridge.savePhoto).toHaveBeenCalledOnce();
+      expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    },
+  );
+
   it("forgets a held clinic result when the vault locks", async () => {
     let current = clinicSnapshot;
     const pending = pendingConnection();
@@ -11277,6 +11487,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     link: PortalLinkSummary,
     extra: Partial<PortalApprovalCheck> = {},
   ): PortalApprovalCheck => ({
+    capture: captureSnapshot(vaultWith(link)).capture,
     link,
     expiresInMs: null,
     issue: null,
@@ -11338,7 +11549,9 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     const bridge = clinicBridge({
       refreshDeviceApproval: vi
         .fn()
-        .mockResolvedValue(found(pending, { expiresInMs: 4 * 60_000 })),
+        .mockImplementation(async () =>
+          found(pending, { expiresInMs: 4 * 60_000 }),
+        ),
     });
     await openClinicView(bridge);
     const snapshots = vi.mocked(bridge.snapshot).mock.calls.length;
@@ -11392,7 +11605,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
             finishCheck = resolve;
           }),
         )
-        .mockResolvedValue(found(pending)),
+        .mockImplementation(async () => found(pending)),
     });
     await openClinicView(bridge);
     await pass(10_000);
@@ -11512,7 +11725,9 @@ describe("automatic clinic approval checks in the app (#131)", () => {
           ],
         })
         .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
-      refreshDeviceApproval: vi.fn().mockResolvedValue(found(pending)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(pending)),
     });
     fakeClock();
     await act(async () => {
@@ -11556,6 +11771,678 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
   });
 
+  const arrivalVault = (link: PortalLinkSummary): VaultSnapshot => ({
+    ...vaultWith(link),
+    sharedProfileId: "FAKE_NATIVE_CAPTURE_OWNER",
+    automaticDocumentChecksSupported: true,
+  });
+  const accepted: PortalLinkSummary = {
+    ...pending,
+    approvalStatus: "accepted",
+    clinicApproved: true,
+  };
+
+  it("keeps a newer polled device and unrelated records from an older whole capture", async () => {
+    let deliverWhole!: () => void;
+    const beforePoll = arrivalVault(pending);
+    const withArrival: VaultSnapshot = {
+      ...beforePoll,
+      records: [
+        ...beforePoll.records,
+        {
+          ...beforePoll.records[0],
+          id: "FAKE_PARALLEL_RECORD",
+          displayName: "FAKE_Parallel_Arrival.pdf",
+        },
+      ],
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(beforePoll)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(accepted)),
+    });
+    await openClinicView(bridge);
+    const beforeRead = vi.mocked(bridge.snapshot).mock.calls.length;
+    vi.mocked(bridge.snapshot).mockImplementationOnce(() => {
+      const captured = captureSnapshot(withArrival);
+      return new Promise<VaultSnapshot>((resolve) => {
+        deliverWhole = () => resolve(captured);
+      });
+    });
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(bridge.snapshot).toHaveBeenCalledTimes(beforeRead + 1);
+    await pass(10_000);
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "The clinic approved this device.",
+      ),
+    ).toBeVisible();
+    await act(async () => deliverWhole());
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "The clinic approved this device.",
+      ),
+    ).toBeVisible();
+    await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    expect(
+      screen.getByRole("button", { name: "FAKE_Parallel_Arrival.pdf" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+  });
+
+  it("keeps a newer whole device capture ahead of an older delivered poll and panel notice", async () => {
+    let deliverPoll!: () => void;
+    const refused: PortalLinkSummary = {
+      ...pending,
+      approvalStatus: "refused",
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi.fn().mockImplementationOnce(() => {
+        const captured = found(accepted, { expiresInMs: 240_000 });
+        return new Promise<PortalApprovalCheck>((resolve) => {
+          deliverPoll = () => resolve(captured);
+        });
+      }),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(refused)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(
+      screen.getByText(
+        "The clinic refused this device approval request. Contact your clinic for next steps.",
+      ),
+    ).toBeVisible();
+    await act(async () => deliverPoll());
+    expect(
+      screen.getByText(
+        "The clinic refused this device approval request. Contact your clinic for next steps.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("The clinic approved this device."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Time left for this request/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("retires a poll countdown when a newer whole capture changes the device", async () => {
+    const pickedUp: PortalLinkSummary = {
+      ...pending,
+      approvalStatus: "challenge_ready",
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () =>
+          found(pending, { expiresInMs: 240_000 }),
+        ),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(
+      screen.getByText(
+        humanText("Time left for this request: about 4 minutes."),
+      ),
+    ).toBeVisible();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(pickedUp)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(
+      screen.getByText(
+        "Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Time left for this request/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("refuses a poll capture from another native runtime before device or panel publication", async () => {
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi.fn().mockImplementation(async () => {
+        const result = found(accepted, { expiresInMs: 240_000 });
+        return {
+          ...result,
+          capture: {
+            ...result.capture,
+            epoch: "FAKE_DIFFERENT_NATIVE_RUNTIME",
+          },
+        };
+      }),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(
+      screen.getByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("The clinic approved this device."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Time left for this request/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps an ordinary poll timeout retryable without locking the current vault", async () => {
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi.fn().mockImplementation(async () =>
+        found(pending, {
+          issue: {
+            code: "portal_link_incomplete",
+            message: "FAKE whole-poll network budget expired.",
+          },
+        }),
+      ),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "myCarlos could not reach the clinic portal, so this request's status is not known yet.",
+      ),
+    ).toBeVisible();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Retry saved approval request" }),
+    ).toBeEnabled();
+  });
+
+  it("keeps the manual full document check available after automatic approval checks stop", async () => {
+    let current = vaultWith(pending);
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(pending)),
+      checkDocuments: vi.fn().mockImplementation(async () => {
+        current = vaultWith(accepted);
+        return { added: 0, refused: 0, receiptsPending: 0, issues: [] };
+      }),
+    });
+    await openClinicView(bridge);
+    // Actual user input keeps the vault open; polling itself never does.
+    // It does not restart the independent fifteen-minute polling window.
+    for (let step = 0; step < 3; step += 1) {
+      await pass(4 * 60_000);
+      await act(async () => fireEvent.keyDown(window, { key: "Shift" }));
+    }
+    await pass(3 * 60_000 + 1_000);
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        humanText(
+          "Automatic checks have stopped. To check again, choose Check for new documents.",
+        ),
+      ),
+    ).toBeVisible();
+    const checks = screen.getAllByRole("button", {
+      name: "Check for new documents",
+    });
+    await click(checks[checks.length - 1]);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "The clinic approved this device.",
+      ),
+    ).toBeVisible();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    expect(bridge.restartDeviceApproval).not.toHaveBeenCalled();
+  });
+
+  const pickedUp: PortalLinkSummary = {
+    ...pending,
+    approvalStatus: "challenge_ready",
+  };
+  const pickupText =
+    "Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.";
+  const deviceCard = () =>
+    within(document.getElementById(`portal-link-${pending.id}`)!);
+
+  it("drops an old rejected poll after a newer whole pickup capture", async () => {
+    let rejectOld!: () => void;
+    const oldError = "FAKE old poll failed after its newer whole capture.";
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi.fn().mockImplementationOnce(
+        () =>
+          new Promise<PortalApprovalCheck>((_, reject) => {
+            rejectOld = () =>
+              reject({ code: "FAKE_older_poll", message: oldError });
+          }),
+      ),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(pickedUp)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    await act(async () => rejectOld());
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    expect(screen.queryAllByText(oldError)).toHaveLength(0);
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("retires a genuine poll failure and its announcement on a subsequent whole capture", async () => {
+    const failure = "FAKE current poll failed before the later whole capture.";
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "FAKE_current_poll",
+          message: failure,
+        })
+        .mockImplementation(async () => found(pickedUp)),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(pickedUp)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    expect(screen.queryAllByText(failure)).toHaveLength(0);
+    await pass(1_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a current failure when an older whole capture only merges unrelated records", async () => {
+    let deliverOldWhole!: () => void;
+    let rejectCurrent!: () => void;
+    const failure = "FAKE current failure after the newest device capture.";
+    const beforePoll = arrivalVault(pending);
+    const withRecord: VaultSnapshot = {
+      ...beforePoll,
+      records: [
+        ...beforePoll.records,
+        {
+          ...beforePoll.records[0],
+          id: "FAKE_DURING_FAILURE",
+          displayName: "FAKE_Arrived_Before_Poll.pdf",
+        },
+      ],
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(beforePoll)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementationOnce(async () => found(pickedUp))
+        .mockImplementationOnce(
+          () =>
+            new Promise<PortalApprovalCheck>((_, reject) => {
+              rejectCurrent = () =>
+                reject({ code: "FAKE_current_poll", message: failure });
+            }),
+        ),
+    });
+    await openClinicView(bridge);
+    vi.mocked(bridge.snapshot).mockImplementationOnce(() => {
+      const captured = captureSnapshot(withRecord);
+      return new Promise<VaultSnapshot>((resolve) => {
+        deliverOldWhole = () => resolve(captured);
+      });
+    });
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await pass(10_000);
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    // This whole read predates the successful partial device capture, and
+    // cannot disown the next poll's genuine error merely by arriving late.
+    await act(async () => deliverOldWhole());
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    await act(async () => rejectCurrent());
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    expect(
+      screen.getByRole("button", { name: "FAKE_Arrived_Before_Poll.pdf" }),
+    ).toBeVisible();
+  });
+
+  it("keeps a genuine current poll failure when no newer whole capture supersedes it", async () => {
+    const failure = "FAKE genuine current poll failure.";
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi.fn().mockRejectedValue({
+        code: "FAKE_current_poll",
+        message: failure,
+      }),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    await pass(30_000);
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it.each(["locked", "cancelled"])(
+    "still locks for a genuine current %s poll rejection",
+    async (code) => {
+      const bridge = clinicBridge({
+        refreshDeviceApproval: vi.fn().mockRejectedValue({
+          code,
+          message: "FAKE actual native session ended.",
+        }),
+      });
+      await openClinicView(bridge);
+      await pass(10_000);
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible();
+    },
+  );
+
+  it.each(["result", "error"])(
+    "keeps immediate read-only recovery and focused-control cleanup for a current poll %s",
+    async (how) => {
+      let current = vaultWith(pending);
+      const bridge = clinicBridge({
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(current)),
+        refreshDeviceApproval: vi.fn().mockImplementation(async () => {
+          current = { ...vaultWith(pending), recovery: "writeFailed" };
+          if (how === "error")
+            throw {
+              code: "recovery_mode",
+              message: "FAKE immediate current recovery.",
+            };
+          return found(pending, { recovery: true });
+        }),
+      });
+      await openClinicView(bridge);
+      screen
+        .getByRole("button", { name: "Retry saved approval request" })
+        .focus();
+      const reads = vi.mocked(bridge.snapshot).mock.calls.length;
+      await pass(10_000);
+      expect(bridge.snapshot).toHaveBeenCalledTimes(reads + 1);
+      expect(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("heading", { name: "FAKE First Clinic", level: 3 }),
+      ).toHaveFocus();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["result", "error"])(
+    "rereads genuine recovery from a current poll %s after leaving the clinic view",
+    async (how) => {
+      let current = vaultWith(pending);
+      let finish!: () => void;
+      const bridge = clinicBridge({
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(current)),
+        refreshDeviceApproval: vi.fn().mockImplementationOnce(
+          () =>
+            new Promise<PortalApprovalCheck>((resolve, reject) => {
+              finish = () => {
+                current = { ...vaultWith(pending), recovery: "writeFailed" };
+                if (how === "error")
+                  reject({
+                    code: "recovery_mode",
+                    message: "FAKE current recovery after navigation.",
+                  });
+                else resolve(found(pending, { recovery: true }));
+              };
+            }),
+        ),
+      });
+      await openClinicView(bridge);
+      await pass(10_000);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+      await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+      const reads = vi.mocked(bridge.snapshot).mock.calls.length;
+      await act(async () => finish());
+      await pass(0);
+      expect(bridge.snapshot).toHaveBeenCalledTimes(reads + 1);
+      expect(
+        screen.getByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
+      ).toBeDisabled();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  const ownWaitActions = [
+    "connect",
+    "request",
+    "restart",
+    "header check",
+    "panel check",
+  ] as const;
+  type OwnWaitAction = (typeof ownWaitActions)[number];
+  async function holdOwnWait(action: OwnWaitAction) {
+    let current = vaultWith({ ...pending, approvalCanRestart: true });
+    if (action === "connect") current = { ...current, portalLinks: [] };
+    let complete!: () => void;
+    const rateLimit = {
+      code: "portal_rate_limited",
+      message: "FAKE portal asked this session to wait.",
+      retryAfterMs: 120_000,
+    };
+    const held = <T,>(value: T, reject = false) =>
+      new Promise<T>((resolve, fail) => {
+        complete = () => {
+          if (action === "connect") current = vaultWith(pending);
+          if (reject) fail(rateLimit);
+          else resolve(value);
+        };
+      });
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      unlock: vi.fn().mockImplementation(async () => {
+        // The native result can already be persisted while its IPC reply is
+        // still held. The new session has an awaiting device at that portal.
+        current = vaultWith(pending);
+        return captureSnapshot(current);
+      }),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(pending)),
+    });
+    vi.mocked(bridge.connectPortal!).mockImplementationOnce(() =>
+      held({ link: pending, approvalError: rateLimit }),
+    );
+    vi.mocked(bridge.requestDeviceApproval!).mockImplementationOnce(() =>
+      held(undefined, true),
+    );
+    vi.mocked(bridge.restartDeviceApproval!).mockImplementationOnce(() =>
+      held(undefined, true),
+    );
+    // Only the action under test holds a check. After the next unlock,
+    // an automatic document check must receive the bridge's ordinary reply.
+    if (action.endsWith("check")) {
+      vi.mocked(bridge.checkDocuments!).mockImplementationOnce(() =>
+        held({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: pending.id,
+              clinicName: pending.clinicName!,
+              code: "portal_rate_limited",
+            },
+          ],
+        }),
+      );
+    }
+    await openClinicView(bridge);
+    if (action === "connect") {
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Portal HTTPS address"), {
+          target: { value: pending.portalBase },
+        });
+        fireEvent.change(screen.getByLabelText("Linking code"), {
+          target: { value: "01234567-89ABCDEFGH" },
+        });
+        fireEvent.submit(
+          screen
+            .getByRole("button", { name: "Connect and request approval" })
+            .closest("form")!,
+        );
+      });
+      expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    } else if (action === "request" || action === "restart") {
+      await click(
+        screen.getByRole("button", {
+          name:
+            action === "request"
+              ? "Retry saved approval request"
+              : "Start a new approval request",
+        }),
+      );
+      expect(
+        action === "request"
+          ? bridge.requestDeviceApproval
+          : bridge.restartDeviceApproval,
+      ).toHaveBeenCalledOnce();
+    } else {
+      const checks = screen.getAllByRole("button", {
+        name: "Check for new documents",
+      });
+      await click(checks[action === "header check" ? 0 : checks.length - 1]);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    }
+    expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+    return {
+      bridge,
+      finish: () => act(async () => complete()),
+      waitMs: action.endsWith("check") ? 60_000 : rateLimit.retryAfterMs,
+    };
+  }
+
+  it.each(ownWaitActions)(
+    "keeps a late old %s wait out of the newly unlocked session",
+    async (action) => {
+      const { bridge, finish } = await holdOwnWait(action);
+      await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+      await pass(100);
+      expect(
+        screen.getByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+          target: { value: "FAKE detached wait passphrase" },
+        });
+      });
+      await click(screen.getByRole("button", { name: "Unlock" }));
+      await pass(100);
+      await click(screen.getByRole("button", { name: "Security" }));
+      // Deliver the old result/error only AFTER the new clinic view mounts.
+      await finish();
+      await pass(0);
+      await pass(9_999);
+      expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+      await pass(1);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledExactlyOnceWith(
+        pending.id,
+      );
+    },
+  );
+
+  it.each(
+    ownWaitActions.flatMap((action) =>
+      [false, true].map((failedLock) => ({ action, failedLock })),
+    ),
+  )(
+    "keeps the current $action wait for its session (failed lock: $failedLock)",
+    async ({ action, failedLock }) => {
+      const { bridge, finish, waitMs } = await holdOwnWait(action);
+      await finish();
+      await pass(0);
+      if (failedLock) {
+        vi.mocked(bridge.lock).mockRejectedValueOnce({
+          code: "storage",
+          message: "FAKE lock did not end this session.",
+        });
+        await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        // The native session stays open, with its content concealed, until
+        // a successful retry ends it and installs a new wait owner.
+        expect(screen.getByRole("alert")).toHaveHumanTextContent(
+          "the vault is still open",
+        );
+        expect(
+          screen.queryByRole("button", { name: "Security" }),
+        ).not.toBeInTheDocument();
+        await click(screen.getByRole("button", { name: "Try locking again" }));
+        await act(async () => {
+          fireEvent.change(
+            screen.getByLabelText("Passphrase", { exact: true }),
+            {
+              target: { value: "FAKE retried lock passphrase" },
+            },
+          );
+        });
+        await click(screen.getByRole("button", { name: "Unlock" }));
+        await pass(100);
+        await click(screen.getByRole("button", { name: "Security" }));
+        await pass(10_000);
+        expect(bridge.refreshDeviceApproval).toHaveBeenCalledExactlyOnceWith(
+          pending.id,
+        );
+        return;
+      }
+      await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+      await click(screen.getByRole("button", { name: "Security" }));
+      await pass(waitMs - 1);
+      expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+      await pass(1);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledExactlyOnceWith(
+        pending.id,
+      );
+    },
+  );
+
   it("does not offer automatic checks when this build cannot check", async () => {
     const bridge = clinicBridge({ refreshDeviceApproval: undefined });
     await openClinicView(bridge);
@@ -11587,7 +12474,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
             finishOld = resolve;
           }),
         )
-        .mockResolvedValue(found(pending)),
+        .mockImplementation(async () => found(pending)),
     });
     await openClinicView(bridge);
     await pass(10_000);
