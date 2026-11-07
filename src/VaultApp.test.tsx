@@ -6704,13 +6704,7 @@ describe("durable vault UI", () => {
         const { bridge, started } = await askForSummary();
         await started(5 * 60 * 1000);
         vi.mocked(bridge.lock).mockRejectedValueOnce({ code: "storage" });
-        await act(async () =>
-          fireEvent.click(
-            screen.getByRole("button", {
-              name: humanText("Unlocked · Lock now"),
-            }),
-          ),
-        );
+        await act(async () => fireEvent.click(windowLock()));
         await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
         expect(bridge.lock).toHaveBeenCalledOnce();
         await act(async () => vi.advanceTimersByTime(4 * 60 * 1000 + 10_000));
@@ -6725,13 +6719,7 @@ describe("durable vault UI", () => {
         vi.useFakeTimers();
         try {
           const { bridge, settles } = await askForSummary();
-          await act(async () =>
-            fireEvent.click(
-              screen.getByRole("button", {
-                name: humanText("Unlocked · Lock now"),
-              }),
-            ),
-          );
+          await act(async () => fireEvent.click(windowLock()));
           expect(bridge.lock).toHaveBeenCalledOnce();
           vi.mocked(bridge.unlock).mockImplementation(async () =>
             captureSnapshot(snapshotWithRecord),
@@ -6815,13 +6803,7 @@ describe("durable vault UI", () => {
       vi.useFakeTimers();
       try {
         const { bridge, settles, started } = await askForSummary();
-        await act(async () =>
-          fireEvent.click(
-            screen.getByRole("button", {
-              name: humanText("Unlocked · Lock now"),
-            }),
-          ),
-        );
+        await act(async () => fireEvent.click(windowLock()));
         vi.mocked(bridge.unlock).mockImplementation(async () =>
           captureSnapshot(snapshotWithRecord),
         );
@@ -6999,9 +6981,7 @@ describe("durable vault UI", () => {
         const { bridge, started } = await askForSummary();
         await started(15 * 60 * 1000);
         await act(async () => {
-          fireEvent.click(
-            screen.getByRole("button", { name: "Unlocked · Lock now" }),
-          );
+          fireEvent.click(windowLock());
         });
         expect(bridge.lock).toHaveBeenCalledOnce();
         expect(bridge.aiCancel).toHaveBeenCalled();
