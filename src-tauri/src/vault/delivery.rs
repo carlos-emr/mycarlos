@@ -1872,6 +1872,7 @@ use crate::portal_approval::{ApprovalExchange, ApprovalHttp};
 
 /// What a read-only status check of a linked device's approval found (#131).
 pub(crate) struct ApprovalCheck {
+    pub capture: SnapshotCapture,
     /// The device's saved state after the check, in the same session.
     pub link: portal_link::LinkSummary,
     /// For a request still open: the time the portal leaves it. Its end
@@ -1889,6 +1890,38 @@ pub(crate) struct ApprovalCheck {
     /// The vault went into read-only recovery during the check (a save that
     /// reached only one copy): the renderer must read the vault again.
     pub recovery: bool,
+}
+
+#[derive(Clone)]
+pub(super) struct ApprovalPollProgress {
+    session: u64,
+    current: Option<Uuid>,
+    history: Vec<Uuid>,
+    next: usize,
+    history_first: bool,
+}
+impl ApprovalPollProgress {
+    fn matches(&self, session: u64, link: &StoredLink) -> bool {
+        self.session == session
+            && self.current == link.approval.as_ref().map(|a| a.request_id)
+            && self.history
+                == link
+                    .approval_history
+                    .iter()
+                    .map(|a| a.request_id)
+                    .collect::<Vec<_>>()
+    }
+}
+#[derive(Clone, Copy)]
+enum ApprovalRead {
+    Current,
+    History(usize),
+}
+struct ApprovalReadOrder<'a> {
+    next: usize,
+    history_first: bool,
+    budgeted: bool,
+    completed_history: &'a mut dyn FnMut(usize) -> Result<(), VaultError>,
 }
 
 struct ApprovalReconciliation {
@@ -1957,16 +1990,113 @@ impl VaultStore {
         session: u64,
         http: &impl ApprovalExchange,
     ) -> Result<ApprovalCheck, VaultError> {
+        self.poll_staff_approval_using_boundary(link_id, session, http, || {})
+    }
+    fn poll_staff_approval_using_boundary(
+        &self,
+        link_id: Uuid,
+        session: u64,
+        http: &impl ApprovalExchange,
+        before_summary: impl FnOnce(),
+    ) -> Result<ApprovalCheck, VaultError> {
+        self.poll_staff_approval_using_controls(
+            link_id,
+            session,
+            http,
+            &Instant::now,
+            before_summary,
+        )
+    }
+    fn poll_staff_approval_using_controls(
+        &self,
+        link_id: Uuid,
+        session: u64,
+        http: &impl ApprovalExchange,
+        now: &dyn Fn() -> Instant,
+        before_summary: impl FnOnce(),
+    ) -> Result<ApprovalCheck, VaultError> {
         let _running = self.start_portal_work()?;
-        let find = || -> Result<StoredLink, VaultError> {
-            self.delivery_links(session)?
-                .into_iter()
-                .find(|l| l.id == link_id)
-                .ok_or(VaultError::NotFound)
+        let links = self.delivery_links(session)?;
+        let initial = links
+            .iter()
+            .find(|link| link.id == link_id)
+            .cloned()
+            .ok_or(VaultError::NotFound)?;
+        let plan = {
+            let mut progress = self.approval_poll_progress();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            // Runtime only, bounded by the current linked devices. A changed
+            // session or exact request inventory never inherits a cursor.
+            progress.retain(|id, entry| {
+                entry.session == session && links.iter().any(|link| link.id == *id)
+            });
+            let fresh = || ApprovalPollProgress {
+                session,
+                current: initial.approval.as_ref().map(|a| a.request_id),
+                history: initial
+                    .approval_history
+                    .iter()
+                    .map(|a| a.request_id)
+                    .collect(),
+                next: 0,
+                history_first: false,
+            };
+            let entry = progress.entry(link_id).or_insert_with(fresh);
+            if !entry.matches(session, &initial) {
+                *entry = fresh();
+            }
+            let plan = entry.clone();
+            // Advance priority even on ordinary budget exhaustion: history
+            // gets a full first slot, current gets one at least every2 turns.
+            entry.history_first = !entry.history_first;
+            plan
         };
-        // The first failure ends the check: a patient's own clinic action
-        // waits for it, and should not wait behind more time-outs.
-        let recovery = self.reconcile_approvals(&find()?, session, http, true)?;
+        // One monotonic network budget for the entire automatic check, not
+        // a fresh HTTP timeout for every retained request. Verification and
+        // durable-summary cleanup still follow their normal bounded paths.
+        let deadline = now() + Duration::from_secs(30);
+        let stop = || now() >= deadline;
+        let mut completed = |index| {
+            let mut progress = self.approval_poll_progress();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if let Some(entry) = progress.get_mut(&link_id) {
+                if entry.matches(session, &initial) {
+                    entry.next = (index + 1) % entry.history.len();
+                }
+            }
+            Ok(())
+        };
+        let recovery = self.reconcile_approvals_ordered(
+            &initial,
+            session,
+            http,
+            &stop,
+            true,
+            ApprovalReadOrder {
+                next: plan.next,
+                history_first: plan.history_first,
+                budgeted: true,
+                completed_history: &mut completed,
+            },
+        )?;
+        if !stop() {
+            // A fast completed scan already considered history; an ordinary
+            // first-failure result keeps the existing current-first retry
+            // rule. Only budget exhaustion owes history its full next turn.
+            let mut progress = self.approval_poll_progress();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if let Some(entry) = progress.get_mut(&link_id) {
+                if entry.matches(session, &initial) {
+                    entry.history_first = false;
+                }
+            }
+        }
         // Publish only the persisted state, read again in the same session.
         // Read directly: a save during this check that reached only one copy
         // has just put the vault into read-only recovery, which the caller
@@ -1974,8 +2104,14 @@ impl VaultStore {
         if self.portal_link_ticket() != session {
             return Err(VaultError::Cancelled);
         }
-        let (current, in_recovery) = {
+        before_summary();
+        let (current, in_recovery, capture) = {
             let guard = self.session();
+            // session() may itself invalidate a poisoned session. Check the
+            // original owner under this guard before cloning or capturing.
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
             let open = guard.as_ref().ok_or(VaultError::Locked)?;
             let current = open
                 .manifest
@@ -1984,7 +2120,11 @@ impl VaultStore {
                 .find(|l| l.id == link_id && l.clinic.is_some())
                 .cloned()
                 .ok_or(VaultError::NotFound)?;
-            (current, open.recovery.is_some())
+            (
+                current,
+                open.recovery.is_some(),
+                self.reserve_snapshot_capture()?,
+            )
         };
         let mut link = current.summary();
         let open = !link.clinic_approved
@@ -2017,6 +2157,7 @@ impl VaultStore {
             }
         }
         Ok(ApprovalCheck {
+            capture,
             link,
             expires_in_ms,
             issue: if recovery.missing {
@@ -2133,7 +2274,32 @@ impl VaultStore {
         stop: &dyn Fn() -> bool,
         stop_early: bool,
     ) -> Result<ApprovalReconciliation, VaultError> {
-        if stop() {
+        let mut completed = |_| Ok(());
+        self.reconcile_approvals_ordered(
+            link,
+            session,
+            http,
+            stop,
+            stop_early,
+            ApprovalReadOrder {
+                next: 0,
+                history_first: false,
+                budgeted: false,
+                completed_history: &mut completed,
+            },
+        )
+    }
+
+    fn reconcile_approvals_ordered(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        http: &impl ApprovalExchange,
+        stop: &dyn Fn() -> bool,
+        stop_early: bool,
+        order: ApprovalReadOrder<'_>,
+    ) -> Result<ApprovalReconciliation, VaultError> {
+        if self.portal_link_ticket() != session || (stop() && !order.budgeted) {
             return Err(VaultError::Cancelled);
         }
         if crate::portal_approval::currently_approved(link) {
@@ -2147,62 +2313,68 @@ impl VaultStore {
         let mut saved = link.clone();
         let mut missing = false;
         let mut deferred = None;
-        if let Some(attempt) = link.approval.as_ref().filter(|a| a.acceptance.is_none()) {
-            let reply = http.get(link, attempt, &cancelled);
+        let current = link
+            .approval
+            .as_ref()
+            .filter(|a| a.acceptance.is_none())
+            .map(|_| ApprovalRead::Current);
+        let len = link.approval_history.len();
+        let history = (0..len)
+            .map(|offset| (order.next + offset) % len)
+            .filter(|&i| link.approval_history[i].acceptance.is_none())
+            .map(ApprovalRead::History);
+        let mut reads = Vec::with_capacity(len + 1);
+        if !order.history_first {
+            reads.extend(current);
+        }
+        reads.extend(history);
+        if order.history_first {
+            reads.extend(current);
+        }
+        for read in reads {
+            // Only a poll's own network budget may yield partial progress.
+            // An actual ended session always refuses, even at the deadline.
             if cancelled() {
-                return Err(VaultError::Cancelled);
-            }
-            match reply {
-                Ok(Some(reply)) => {
-                    let mut next = saved.clone();
-                    next.approval = Some(reply);
-                    saved = self.save_approval_state(&saved, next, session, false)?;
+                if self.portal_link_ticket() != session || !order.budgeted {
+                    return Err(VaultError::Cancelled);
                 }
-                Ok(None) => missing = true,
-                // The portal asked to wait: nothing more is asked of it now,
-                // not even the older requests (#131).
-                Err(error @ VaultError::Portal(portal_link::LinkError::RateLimited(_))) => {
-                    return Ok(ApprovalReconciliation {
-                        saved,
-                        missing: false,
-                        deferred: Some(error),
-                    });
-                }
-                Err(error) if crate::portal_pickup::is_per_link_failure(&error) => {
-                    if stop_early {
-                        return Ok(ApprovalReconciliation {
-                            saved,
-                            missing: false,
-                            deferred: Some(error),
-                        });
-                    }
-                    deferred = Some(error)
-                }
-                Err(error) => return Err(error),
-            }
-            if crate::portal_approval::currently_approved(&saved) {
                 return Ok(ApprovalReconciliation {
                     saved,
-                    missing: false,
-                    deferred: None,
+                    missing,
+                    deferred: Some(VaultError::Portal(portal_link::LinkError::Network)),
                 });
             }
-        }
-        for (index, attempt) in link.approval_history.iter().enumerate() {
-            if attempt.acceptance.is_some() {
-                continue;
-            }
+            let attempt = match read {
+                ApprovalRead::Current => link.approval.as_ref().unwrap(),
+                ApprovalRead::History(i) => &link.approval_history[i],
+            };
             let reply = http.get(&saved, attempt, &cancelled);
             if cancelled() {
-                return Err(VaultError::Cancelled);
+                if self.portal_link_ticket() != session || !order.budgeted {
+                    return Err(VaultError::Cancelled);
+                }
+                return Ok(ApprovalReconciliation {
+                    saved,
+                    missing,
+                    deferred: Some(VaultError::Portal(portal_link::LinkError::Network)),
+                });
             }
             match reply {
-                Ok(Some(reply)) => {
-                    let mut next = saved.clone();
-                    next.approval_history[index] = reply;
-                    saved = self.save_approval_state(&saved, next, session, false)?;
+                Ok(reply) => {
+                    if let Some(reply) = reply {
+                        let mut next = saved.clone();
+                        match read {
+                            ApprovalRead::Current => next.approval = Some(reply),
+                            ApprovalRead::History(i) => next.approval_history[i] = reply,
+                        }
+                        saved = self.save_approval_state(&saved, next, session, false)?;
+                    } else if matches!(read, ApprovalRead::Current) {
+                        missing = true;
+                    }
+                    if let ApprovalRead::History(i) = read {
+                        (order.completed_history)(i)?;
+                    }
                 }
-                Ok(None) => {}
                 Err(error @ VaultError::Portal(portal_link::LinkError::RateLimited(_))) => {
                     return Ok(ApprovalReconciliation {
                         saved,
@@ -2224,8 +2396,6 @@ impl VaultStore {
                 }
                 Err(error) => return Err(error),
             }
-            // Once a verified current acceptance is durable, broken historical
-            // endpoints must not prevent this independently eligible link.
             if crate::portal_approval::currently_approved(&saved) {
                 return Ok(ApprovalReconciliation {
                     saved,
@@ -2923,6 +3093,92 @@ mod approval_recovery_tests {
             .unwrap();
         (temp, store, pair_link, record_id)
     }
+    /// A custody-only fixture with the contract's actual original bytes in
+    /// normal encrypted objects. The older pair helper rewrites metadata only;
+    /// receipt readback tests must keep bytes, digests and lengths coherent.
+    /// This verifies the package envelope at its reference clock, not a new
+    /// confined PDF-helper or installed-app delivery proof.
+    fn vault_with_readable_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+        let (temp, store, link, record_id) = vault_with_pair_original();
+        let pair = pair_fixture();
+        let outer: wire::Outer =
+            serde_json::from_value(pair["original_package"]["outer"].clone()).unwrap();
+        let sealed = wire::decode(pair["original_package"]["blob"].as_str().unwrap()).unwrap();
+        let opened = wire::open(&outer, &sealed, &link, &[], NOW_MS / 1000).unwrap();
+        let (mut record, vault_id, keys) = {
+            let guard = store.session();
+            let open = guard.as_ref().unwrap();
+            let record = open
+                .manifest
+                .records
+                .iter()
+                .find(|r| r.id == record_id)
+                .unwrap()
+                .clone();
+            (
+                record,
+                open.manifest.vault_id,
+                derive_keys(open.manifest.vault_id, &open.master_key).unwrap(),
+            )
+        };
+        assert_eq!(
+            record.delivery.as_ref().unwrap().manifest_compact,
+            opened.manifest_compact
+        );
+        let objects = store.root.join("objects");
+        record.object_name = format!("{}.mcobj", Uuid::new_v4());
+        let mut key = Zeroizing::new([0; 32]);
+        OsRng.fill_bytes(key.as_mut());
+        let encrypted = encrypt_object(
+            Box::new(io::Cursor::new(opened.pdf)),
+            &objects.join(&record.object_name),
+            ObjectContext {
+                vault_id,
+                record_id,
+                profile_id: record.profile_id,
+            },
+            &key,
+            &keys.fingerprint,
+        )
+        .unwrap();
+        record.plaintext_size = encrypted.plaintext_size;
+        record.fingerprint = BASE64.encode(encrypted.fingerprint);
+        record.wrapped_object_key =
+            wrap_secret(&keys.object_wrap, &key, record_id.as_bytes()).unwrap();
+        record.original_pdf = Some(
+            store
+                .stage_original_pdf(
+                    vault_id,
+                    &keys,
+                    &record,
+                    &objects.join(&record.object_name),
+                    &objects,
+                )
+                .unwrap(),
+        );
+        let original = record.original_pdf.as_ref().unwrap();
+        assert_eq!(original.sha256, opened.manifest.document.sha256);
+        assert_eq!(original.plaintext_size, opened.manifest.document.size);
+        store
+            .mutate_recorded(|m, _| {
+                *m.records.iter_mut().find(|r| r.id == record_id).unwrap() = record;
+                Ok(())
+            })
+            .unwrap();
+        let pending = store
+            .pending_receipts_checked(&link, store.portal_link_ticket())
+            .unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (1, 0, 0)
+        );
+        (temp, store, link, record_id)
+    }
+
     fn aid_vector(name: &str) -> (wire::Outer, Vec<u8>) {
         let pair = pair_fixture();
         let v = pair["packages"]["accept"]
@@ -3481,6 +3737,381 @@ mod approval_recovery_tests {
             "a status check must never send a request"
         );
         calls.iter().map(|(_, id, _)| *id).collect()
+    }
+
+    struct TimedPoll {
+        elapsed: std::cell::Cell<Duration>,
+        current: Uuid,
+        acceptance: Option<Uuid>,
+        current_time: Duration,
+        history_time: Duration,
+        calls: std::cell::RefCell<Vec<Uuid>>,
+        completed: std::cell::RefCell<Vec<Uuid>>,
+    }
+    impl TimedPoll {
+        fn new(current: Uuid, acceptance: Option<Uuid>, current_ms: u64, history_ms: u64) -> Self {
+            Self {
+                elapsed: std::cell::Cell::new(Duration::ZERO),
+                current,
+                acceptance,
+                current_time: Duration::from_millis(current_ms),
+                history_time: Duration::from_millis(history_ms),
+                calls: Default::default(),
+                completed: Default::default(),
+            }
+        }
+    }
+    impl ApprovalExchange for TimedPoll {
+        fn get(
+            &self,
+            link: &StoredLink,
+            attempt: &Attempt,
+            cancelled: &dyn Fn() -> bool,
+        ) -> Result<Option<Attempt>, VaultError> {
+            self.calls.borrow_mut().push(attempt.request_id);
+            let cost = if attempt.request_id == self.current {
+                self.current_time
+            } else {
+                self.history_time
+            };
+            let finish = self.elapsed.get() + cost;
+            while self.elapsed.get() < finish {
+                if cancelled() {
+                    return Err(VaultError::Cancelled);
+                }
+                self.elapsed
+                    .set((self.elapsed.get() + Duration::from_millis(50)).min(finish));
+            }
+            if cancelled() {
+                return Err(VaultError::Cancelled);
+            }
+            let result = Script::response(
+                if self.acceptance == Some(attempt.request_id) {
+                    Reply::Accepted
+                } else {
+                    Reply::Pending
+                },
+                link,
+                attempt,
+            );
+            if result.is_ok() {
+                self.completed.borrow_mut().push(attempt.request_id);
+            }
+            result
+        }
+        fn post(
+            &self,
+            _: &StoredLink,
+            _: &Attempt,
+            _: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<Attempt, VaultError> {
+            panic!("automatic status polls must never POST")
+        }
+    }
+    fn history_poll_fixture(count: usize) -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+        let (temp, store, link, old) = setup(true);
+        let now = crate::now_ms() / 1000;
+        let mut history: Vec<_> = (0..count)
+            .map(|i| portal_approval::create(&link, now - 900 - i as u64).unwrap())
+            .collect();
+        history[count - 1] = old.clone();
+        let mut current = link;
+        current.approval = Some(portal_approval::create(&current, now - 700).unwrap());
+        current.approval_history = history;
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = current.clone();
+                Ok(())
+            })
+            .unwrap();
+        (temp, store, current, old.request_id)
+    }
+    fn assert_poll_budget_fairness(current_ms: u64, history_ms: u64) {
+        let (_temp, store, link, acceptance) = history_poll_fixture(5);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let http = TimedPoll::new(current, Some(acceptance), current_ms, history_ms);
+        let origin = Instant::now();
+        let clock = || origin + http.elapsed.get();
+        let mut verified = false;
+        for turn in 0..40 {
+            let before = http.elapsed.get();
+            let first = http.calls.borrow().len();
+            let result = store
+                .poll_staff_approval_using_controls(
+                    link.id,
+                    store.portal_link_ticket(),
+                    &http,
+                    &clock,
+                    || {},
+                )
+                .unwrap();
+            assert!(
+                http.elapsed.get() - before <= Duration::from_secs(30),
+                "one poll must not consume a separate timeout for each retained request"
+            );
+            if turn % 2 == 0 {
+                assert_eq!(http.calls.borrow()[first], current);
+            } else {
+                assert_ne!(
+                    http.calls.borrow()[first],
+                    current,
+                    "a history turn must give the retained request its genuine first slot"
+                );
+            }
+            if result.link.clinic_approved {
+                verified = true;
+                break;
+            }
+            assert!(matches!(
+                result.issue,
+                Some(VaultError::Portal(portal_link::LinkError::Network))
+            ));
+            // The patient's manual work has admission again on return.
+            drop(store.start_portal_work().unwrap());
+        }
+        assert!(
+            verified,
+            "continued bounded polls must eventually verify the late retained acceptance"
+        );
+        assert!(http.completed.borrow().contains(&acceptance));
+        assert!(saved(&store).summary().clinic_approved);
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .any(|e| e.event == HistoryEvent::DeviceApprovalVerified));
+    }
+    #[test]
+    fn poll_budget_fairness_for_ten_second_successful_reads() {
+        assert_poll_budget_fairness(10_000, 10_000);
+    }
+    #[test]
+    fn poll_budget_fairness_gives_slow_history_a_full_turn() {
+        assert_poll_budget_fairness(10_000, 25_000);
+    }
+    #[test]
+    fn poll_budget_fairness_keeps_current_priority_near_its_full_timeout() {
+        assert_poll_budget_fairness(29_900, 25_000);
+    }
+
+    #[test]
+    fn poll_budget_fast_scan_still_reads_all_sixteen_requests_without_posting() {
+        let (_temp, store, link, _) = history_poll_fixture(15);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let http = TimedPoll::new(current, None, 100, 100);
+        let origin = Instant::now();
+        let result = store
+            .poll_staff_approval_using_controls(
+                link.id,
+                store.portal_link_ticket(),
+                &http,
+                &|| origin + http.elapsed.get(),
+                || {},
+            )
+            .unwrap();
+        assert!(result.issue.is_none());
+        assert_eq!(http.completed.borrow().len(), 16);
+        assert_eq!(http.calls.borrow()[0], current);
+        for attempt in &link.approval_history {
+            assert!(http.completed.borrow().contains(&attempt.request_id));
+        }
+        assert!(!result.link.clinic_approved);
+    }
+
+    #[test]
+    fn poll_budget_runtime_progress_resets_for_session_restart_and_inventory_changes() {
+        for reset in ["session", "restart", "inventory"] {
+            let (_temp, store, link, _) = history_poll_fixture(5);
+            let current = link.approval.as_ref().unwrap().request_id;
+            let http = TimedPoll::new(current, None, 10_000, 25_000);
+            let origin = Instant::now();
+            let clock = || origin + http.elapsed.get();
+            store
+                .poll_staff_approval_using_controls(
+                    link.id,
+                    store.portal_link_ticket(),
+                    &http,
+                    &clock,
+                    || {},
+                )
+                .unwrap();
+            match reset {
+                "session" => {
+                    store.lock();
+                    store.unlock(PASSWORD).unwrap();
+                }
+                "restart" => {
+                    let transport = Script::new(
+                        (0..6).map(|_| Reply::Pending).collect(),
+                        vec![Reply::Pending],
+                    );
+                    store
+                        .request_staff_approval_using(
+                            link.id,
+                            store.portal_link_ticket(),
+                            true,
+                            &transport,
+                        )
+                        .unwrap();
+                }
+                "inventory" => {
+                    store
+                        .mutate_recorded(|m, _| {
+                            m.portal_links[0].approval_history.swap(0, 1);
+                            Ok(())
+                        })
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let next = saved(&store).approval.unwrap().request_id;
+            let after = TimedPoll::new(next, None, 10_000, 25_000);
+            let origin = Instant::now();
+            store
+                .poll_staff_approval_using_controls(
+                    link.id,
+                    store.portal_link_ticket(),
+                    &after,
+                    &|| origin + after.elapsed.get(),
+                    || {},
+                )
+                .unwrap();
+            assert_eq!(
+                after.calls.borrow()[0],
+                next,
+                "{reset} starts with current priority"
+            );
+        }
+    }
+
+    #[test]
+    fn poll_budget_session_cancellation_wins_over_deadline_and_discards_old_progress() {
+        let (_temp, store, link, _) = history_poll_fixture(5);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let http = TimedPoll::new(current, None, 10_000, 25_000);
+        let origin = Instant::now();
+        let result = store.poll_staff_approval_using_controls(
+            link.id,
+            store.portal_link_ticket(),
+            &http,
+            &|| origin + http.elapsed.get(),
+            || {
+                store.lock();
+                store.unlock(PASSWORD).unwrap();
+            },
+        );
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        let fresh = TimedPoll::new(current, None, 10_000, 25_000);
+        let origin = Instant::now();
+        store
+            .poll_staff_approval_using_controls(
+                link.id,
+                store.portal_link_ticket(),
+                &fresh,
+                &|| origin + fresh.elapsed.get(),
+                || {},
+            )
+            .unwrap();
+        assert_eq!(fresh.calls.borrow()[0], current);
+    }
+
+    #[test]
+    fn poll_budget_manual_full_history_recovers_acceptance_beyond_automatic_slice() {
+        let (_temp, store, link, acceptance) = history_poll_fixture(15);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let automatic = TimedPoll::new(current, None, 10_000, 25_000);
+        let origin = Instant::now();
+        let result = store
+            .poll_staff_approval_using_controls(
+                link.id,
+                store.portal_link_ticket(),
+                &automatic,
+                &|| origin + automatic.elapsed.get(),
+                || {},
+            )
+            .unwrap();
+        assert!(!result.link.clinic_approved);
+        assert!(!automatic.completed.borrow().contains(&acceptance));
+        // The UI stops its automatic schedule after its unchanged window;
+        // its manual action still uses the complete native reconciliation.
+        let manual = TimedPoll::new(current, Some(acceptance), 0, 0);
+        let (updated, issue) = store
+            .refresh_staff_approval_for_check(&saved(&store), store.portal_link_ticket(), &manual)
+            .unwrap();
+        assert!(issue.is_none());
+        assert!(updated.summary().clinic_approved);
+        assert!(manual.completed.borrow().contains(&acceptance));
+        assert!(saved(&store).summary().clinic_approved);
+    }
+
+    #[test]
+    fn poll_final_summary_refuses_a_session_reopened_at_the_guard_boundary() {
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let sequence_at_boundary = std::cell::Cell::new(0);
+        let result = store.poll_staff_approval_using_boundary(
+            link.id,
+            session,
+            &Script::new(vec![Reply::Pending], vec![]),
+            || {
+                store.lock();
+                store.unlock(PASSWORD).unwrap();
+                store.session().as_mut().unwrap().manifest.portal_links[0].device_name =
+                    "FAKE reopened-session device".to_string();
+                sequence_at_boundary.set(store.snapshot_sequence.load(Ordering::Relaxed));
+            },
+        );
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        assert_eq!(
+            store.snapshot_sequence.load(Ordering::Relaxed),
+            sequence_at_boundary.get()
+        );
+        assert_eq!(
+            store.session().as_ref().unwrap().manifest.portal_links[0].device_name,
+            "FAKE reopened-session device"
+        );
+    }
+
+    #[test]
+    fn poll_final_summary_refuses_a_session_poisoned_at_the_guard_boundary() {
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let before = store.snapshot_sequence.load(Ordering::Relaxed);
+        let result = store.poll_staff_approval_using_boundary(
+            link.id,
+            session,
+            &Script::new(vec![Reply::Pending], vec![]),
+            || {
+                let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _guard = store.unlocked.lock().unwrap();
+                    panic!("FAKE final-read boundary poison");
+                }));
+                assert!(panic.is_err());
+            },
+        );
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        assert_eq!(store.snapshot_sequence.load(Ordering::Relaxed), before);
+        assert!(store.session().is_none());
+    }
+
+    #[test]
+    fn poll_final_summary_capture_orders_partial_and_whole_reads_without_touching_idle() {
+        let (_temp, store, link, _) = setup(true);
+        let before = store.snapshot().unwrap().capture;
+        let armed = Instant::now() - Duration::from_secs(1);
+        store.idle.arm(armed);
+        let due = armed + Duration::from_secs(15 * 60) + crate::idle::MARGIN;
+        assert!(store.idle.is_due(due));
+        let session = store.portal_link_ticket();
+        let check = store
+            .poll_staff_approval_using(link.id, session, &Script::new(vec![Reply::Pending], vec![]))
+            .unwrap();
+        let after = store.snapshot().unwrap().capture;
+        assert_eq!(before.epoch, check.capture.epoch);
+        assert_eq!(check.capture.epoch, after.epoch);
+        assert_eq!(check.capture.sequence, before.sequence + 1);
+        assert_eq!(after.sequence, check.capture.sequence + 1);
+        assert_eq!(check.link.id, link.id);
+        assert!(store.idle.is_due(due));
     }
 
     #[test]
@@ -4363,6 +4994,537 @@ mod approval_recovery_tests {
         assert!(crate::portal_pickup::worth_asking(&other));
     }
 
+    /// Production eligibility must keep a previously approved clinic eligible
+    /// after a newer request ends, and retry its stored receipt byte for byte.
+    /// The custody helper below rewrites fixture identifiers; this exercises
+    /// saved-custody admission and retry, not a new clinic-signature proof.
+    #[test]
+    fn production_check_retries_known_custody_with_archived_approval_after_restart() {
+        let (_temp, store, link, _) = setup(true);
+        let approved = store
+            .refresh_staff_approval_using(
+                &link,
+                store.portal_link_ticket(),
+                &Script::new(vec![Reply::Accepted], vec![]),
+            )
+            .unwrap();
+        let mut link = approved.clone();
+        link.approval_history.push(link.approval.take().unwrap());
+        let mut current = portal_approval::create(&link, crate::now_ms() / 1000).unwrap();
+        current.status = Some(State::Refused);
+        current.reason = Some(Reason::StaffRequired);
+        link.approval = Some(current);
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = link.clone();
+                Ok(())
+            })
+            .unwrap();
+        assert!(crate::portal_pickup::worth_asking(&link));
+        let record = add_unsent_delivery_for(&store, &link);
+        let receipt = store
+            .pending_receipts_checked(&link, store.portal_link_ticket())
+            .unwrap()
+            .ready[0]
+            .receipt
+            .clone();
+        let approvals = Script::new(vec![], vec![]);
+        let sent = Mutex::new(Vec::new());
+        let first = crate::portal_pickup::check_asking_using(
+            &store,
+            store.portal_link_ticket(),
+            &approvals,
+            |to, method, path, body, _, _, _| {
+                assert_eq!((to.id, method), (link.id, "POST"));
+                assert!(path.ends_with("/receipt"));
+                sent.lock().unwrap().push(body);
+                Err(portal_link::LinkError::Network)
+            },
+        )
+        .unwrap();
+        assert_eq!(first.receipts_pending, 1);
+        assert_eq!(first.issues.len(), 1);
+        let store = restart(store);
+        let second = crate::portal_pickup::check_asking_using(
+            &store,
+            store.portal_link_ticket(),
+            &approvals,
+            |to, method, path, body, _, _, _| {
+                assert_eq!(to.id, link.id);
+                if path.ends_with("/receipt") {
+                    assert_eq!(method, "POST");
+                    sent.lock().unwrap().push(body);
+                    Ok(picked_up())
+                } else {
+                    assert_eq!(method, "GET");
+                    assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                    Ok(empty_page())
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (second.added, second.refused, second.receipts_pending),
+            (0, 0, 0)
+        );
+        assert!(second.issues.is_empty());
+        assert!(approvals.calls.lock().unwrap().is_empty());
+        let sent = sent.into_inner().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[0], sent[1]);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&sent[1]).unwrap()["receipt"],
+            receipt
+        );
+        assert_eq!(
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .map(|r| r.id)
+                .collect::<Vec<_>>(),
+            vec![record]
+        );
+    }
+
+    #[test]
+    fn production_check_preserves_original_and_aid_receipts_on_device_removal() {
+        for aid in [false, true] {
+            for (code, expected) in [
+                ("device_removed", "portal_device_removed"),
+                ("forbidden", "portal_link_incomplete"),
+            ] {
+                let (_temp, store, mut link, record) = vault_with_readable_pair_original();
+                let (outer, sealed) = aid_vector("a reading aid for a filed original");
+                let session = store.portal_link_ticket();
+                assert!(matches!(
+                    store
+                        .receive_aid_at(&outer, &sealed, &link, session, NOW_MS)
+                        .unwrap(),
+                    AidFiling::Filed
+                ));
+                link.approval =
+                    Some(portal_approval::create(&link, crate::now_ms() / 1000).unwrap());
+                store
+                    .mutate_recorded(|m, _| {
+                        m.portal_links[0] = link.clone();
+                        Ok(())
+                    })
+                    .unwrap();
+                assert!(crate::portal_pickup::worth_asking(&link));
+                let pending = store.pending_receipts_checked(&link, session).unwrap();
+                assert_eq!(
+                    (
+                        pending.ready.len(),
+                        pending.ready_aids.len(),
+                        pending.damaged
+                    ),
+                    (1, 1, 0)
+                );
+                let (delivery, receipt) = if aid {
+                    store
+                        .settle_receipt(
+                            &link,
+                            &pending.ready[0],
+                            wire::ReceiptOutcome::PickedUp,
+                            session,
+                        )
+                        .unwrap();
+                    (
+                        pending.ready_aids[0].outer.delivery_id.clone(),
+                        pending.ready_aids[0].receipt.clone(),
+                    )
+                } else {
+                    store
+                        .settle_aid_receipt(
+                            &link,
+                            &pending.ready_aids[0],
+                            wire::ReceiptOutcome::PickedUp,
+                            session,
+                        )
+                        .unwrap();
+                    (
+                        pending.ready[0].outer.delivery_id.clone(),
+                        pending.ready[0].receipt.clone(),
+                    )
+                };
+                let sent = Mutex::new(Vec::new());
+                let approvals = Script::new(vec![Reply::Pending], vec![]);
+                let refused = crate::portal_pickup::check_asking_using(
+                    &store,
+                    session,
+                    &approvals,
+                    |to, method, path, body, _, _, _| {
+                        assert_eq!((to.id, method), (link.id, "POST"));
+                        assert_eq!(path, format!("/api/mycarlos/deliveries/{delivery}/receipt"));
+                        sent.lock().unwrap().push(body);
+                        Ok(refusal(code))
+                    },
+                )
+                .unwrap();
+                assert_eq!(issues(&refused), vec![(link.id, expected)]);
+                assert_eq!(refused.receipts_pending, 1);
+                assert!(approvals.calls.lock().unwrap().is_empty());
+                let store = restart(store);
+                let pending = store
+                    .pending_receipts_checked(&link, store.portal_link_ticket())
+                    .unwrap();
+                let kept = if aid {
+                    &pending.ready_aids[0].receipt
+                } else {
+                    &pending.ready[0].receipt
+                };
+                assert_eq!(kept, &receipt);
+                let retried = crate::portal_pickup::check_asking_using(
+                    &store,
+                    store.portal_link_ticket(),
+                    &approvals,
+                    |to, method, path, body, _, _, _| {
+                        assert_eq!(to.id, link.id);
+                        if method == "POST" {
+                            assert_eq!(
+                                path,
+                                format!("/api/mycarlos/deliveries/{delivery}/receipt")
+                            );
+                            sent.lock().unwrap().push(body);
+                            Ok(picked_up())
+                        } else {
+                            assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                            Ok(empty_page())
+                        }
+                    },
+                )
+                .unwrap();
+                assert_eq!(
+                    (retried.added, retried.refused, retried.receipts_pending),
+                    (0, 0, 0)
+                );
+                assert!(retried.issues.is_empty());
+                assert_eq!(approvals.calls.lock().unwrap().len(), 1);
+                let sent = sent.into_inner().unwrap();
+                assert_eq!(sent.len(), 2);
+                assert_eq!(sent[0], sent[1]);
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&sent[1]).unwrap()["receipt"],
+                    receipt
+                );
+                assert_eq!(store.snapshot().unwrap().records[0].id, record);
+                assert_eq!(
+                    stored_aid(&store, record).unwrap().outer.delivery_id,
+                    outer.delivery_id
+                );
+            }
+        }
+    }
+
+    fn check_reading_aid_download_refusal(status: u16, code: &str, expected: Option<&str>) {
+        let (_temp, store, mut link, record) = vault_with_readable_pair_original();
+        let session = store.portal_link_ticket();
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        store
+            .settle_receipt(
+                &link,
+                &pending.ready[0],
+                wire::ReceiptOutcome::PickedUp,
+                session,
+            )
+            .unwrap();
+        link.approval = Some(portal_approval::create(&link, crate::now_ms() / 1000).unwrap());
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = link.clone();
+                Ok(())
+            })
+            .unwrap();
+        let (outer, _) = aid_vector("a reading aid for a filed original");
+        let fetched = Mutex::new(Vec::new());
+        let approvals = Script::new(vec![Reply::Pending], vec![]);
+        let result = crate::portal_pickup::check_asking_using(
+            &store,
+            session,
+            &approvals,
+            |to, method, path, _, _, _, _| {
+                assert_eq!((to.id, method), (link.id, "GET"));
+                fetched.lock().unwrap().push(path.to_owned());
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    Ok(listing(std::slice::from_ref(&outer)))
+                } else {
+                    assert_eq!(
+                        path,
+                        format!("/api/mycarlos/deliveries/{}", outer.delivery_id)
+                    );
+                    Ok(reply(
+                        status,
+                        &serde_json::to_vec(&serde_json::json!({"code": code})).unwrap(),
+                    ))
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", outer.delivery_id),
+            ]
+        );
+        assert_eq!(
+            issues(&result),
+            expected
+                .map(|code| vec![(link.id, code)])
+                .unwrap_or_default()
+        );
+        assert_eq!(
+            (result.added, result.refused, result.receipts_pending),
+            (0, 0, 0)
+        );
+        assert_eq!(approvals.calls.lock().unwrap().len(), 1);
+        assert_eq!(store.snapshot().unwrap().records[0].id, record);
+        assert!(stored_aid(&store, record).is_none());
+    }
+    #[test]
+    fn production_check_reports_removed_reading_aid_download() {
+        check_reading_aid_download_refusal(403, "device_removed", Some("portal_device_removed"));
+    }
+    #[test]
+    fn production_check_keeps_other_reading_aid_download_refusals_unchanged() {
+        for (status, code) in [
+            (403, "forbidden"),
+            (404, "delivery_not_found"),
+            (500, "device_removed"),
+        ] {
+            check_reading_aid_download_refusal(status, code, None);
+        }
+    }
+
+    /// Re-sign and re-seal the public FAKE package at today's clock, through
+    /// the existing fixture producer. PDF bytes stay unchanged and readable.
+    fn current_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid, u64) {
+        let (temp, store, link, record) = vault_with_readable_pair_original();
+        let now = crate::now_ms() / 1000;
+        let pair = pair_fixture();
+        let mut packet = pair["original_package"].clone();
+        packet["receiver"] = pair["receiver"].clone();
+        packet["now"] = now.into();
+        let (outer, sealed, _, _) = wire::tests::mutated_packet(&packet, |claims| {
+            claims["created_at"] = (now - 60).into();
+            claims["expires_at"] = (now + 3600).into();
+        });
+        let opened = wire::open(&outer, &sealed, &link, &[], now).unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                let head = m.history.head.clone();
+                let record = m.records.iter_mut().find(|r| r.id == record).unwrap();
+                let original = record.original_pdf.as_ref().unwrap();
+                assert_eq!(wire::sha256(&opened.pdf), original.sha256);
+                assert_eq!(opened.pdf.len() as u64, original.plaintext_size);
+                let custody = record.delivery.as_mut().unwrap();
+                custody.outer = outer.clone();
+                custody.manifest = opened.manifest.clone();
+                custody.manifest_compact = opened.manifest_compact.clone();
+                custody.checked_at_ms = now * 1000;
+                custody.anchor_head = head.clone();
+                let anchor = link.keys.anchor(&wire::head_bytes(&head).unwrap()).unwrap();
+                custody.receipt = link.keys.sign(
+                    &serde_json::to_vec(&Receipt::new(&outer, &opened.manifest, anchor, now))
+                        .unwrap(),
+                );
+                custody.receipt_outcome = None;
+                Ok(())
+            })
+            .unwrap();
+        let pending = store
+            .pending_receipts_checked(&link, store.portal_link_ticket())
+            .unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (1, 0, 0)
+        );
+        (temp, store, link, record, now)
+    }
+
+    fn current_aid_packet(name: &str, now: u64, reviewed_at: u64) -> (wire::Outer, Vec<u8>) {
+        let pair = pair_fixture();
+        let mut packet = pair["packages"]["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == name)
+            .unwrap()
+            .clone();
+        packet["receiver"] = pair["receiver"].clone();
+        packet["now"] = now.into();
+        let (outer, sealed, _, _) = wire::tests::mutated_packet(&packet, |claims| {
+            claims["created_at"] = (now - 60).into();
+            claims["expires_at"] = (now + 3600).into();
+            claims["approval"]["reviewed_at"] = reviewed_at.into();
+        });
+        (outer, sealed)
+    }
+
+    fn check_not_filed_aid_receipt_refusal(rechecked: bool, code: &str, expected: Option<&str>) {
+        let (_temp, store, mut link, record, now) = current_pair_original();
+        let session = store.portal_link_ticket();
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        store
+            .settle_receipt(
+                &link,
+                &pending.ready[0],
+                wire::ReceiptOutcome::PickedUp,
+                session,
+            )
+            .unwrap();
+        let (held_outer, held_sealed) =
+            current_aid_packet("an aid the device filed but never confirmed", now, now - 10);
+        assert!(matches!(
+            store
+                .receive_aid(&held_outer, &held_sealed, &link, session)
+                .unwrap(),
+            AidFiling::Filed
+        ));
+        let held = stored_aid(&store, record).unwrap();
+        store
+            .settle_aid_receipt(&link, &held, wire::ReceiptOutcome::PickedUp, session)
+            .unwrap();
+        let held = stored_aid(&store, record).unwrap();
+        let (older_outer, older_sealed) =
+            current_aid_packet("a reading aid for a filed original", now, now - 20);
+        assert_ne!(older_outer.delivery_id, held_outer.delivery_id);
+        if rechecked {
+            // A verified aid waited before the original/newer review arrived.
+            // Keep actual encrypted objects and restore the same readable record.
+            let saved_record = store.session().as_ref().unwrap().manifest.records[0].clone();
+            store
+                .mutate_recorded(|m, _| {
+                    m.records.clear();
+                    Ok(())
+                })
+                .unwrap();
+            assert!(matches!(
+                store
+                    .receive_aid(&older_outer, &older_sealed, &link, session)
+                    .unwrap(),
+                AidFiling::Waiting
+            ));
+            store
+                .mutate_recorded(|m, _| {
+                    m.records.push(saved_record);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(waiting_aids(&store).len(), 1);
+        }
+        link.approval = Some(portal_approval::create(&link, now).unwrap());
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = link.clone();
+                Ok(())
+            })
+            .unwrap();
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (0, 0, 0)
+        );
+        let sent = Mutex::new(Vec::new());
+        let approvals = Script::new(vec![Reply::Pending], vec![]);
+        let result = crate::portal_pickup::check_asking_using(
+            &store,
+            session,
+            &approvals,
+            |to, method, path, body, _, _, _| {
+                assert_eq!(to.id, link.id);
+                sent.lock()
+                    .unwrap()
+                    .push((method.to_owned(), path.to_owned()));
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    assert_eq!(method, "GET");
+                    Ok(if rechecked {
+                        empty_page()
+                    } else {
+                        listing(std::slice::from_ref(&older_outer))
+                    })
+                } else if path.ends_with("/receipt") {
+                    assert_eq!(
+                        (method, path),
+                        (
+                            "POST",
+                            format!(
+                                "/api/mycarlos/deliveries/{}/receipt",
+                                older_outer.delivery_id
+                            )
+                            .as_str()
+                        )
+                    );
+                    let posted: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                    let receipt = posted["receipt"].as_str().unwrap();
+                    let (payload, _) = wire::split_compact(receipt, 4096).unwrap();
+                    let claims: wire::Receipt = serde_json::from_slice(&payload).unwrap();
+                    assert_eq!(claims.delivery_id, older_outer.delivery_id);
+                    Ok(refusal(code))
+                } else {
+                    assert!(!rechecked);
+                    assert_eq!(
+                        (method, path),
+                        (
+                            "GET",
+                            format!("/api/mycarlos/deliveries/{}", older_outer.delivery_id)
+                                .as_str()
+                        )
+                    );
+                    Ok(reply(200, &older_sealed))
+                }
+            },
+        )
+        .unwrap();
+        let sent = sent.into_inner().unwrap();
+        assert_eq!(sent.len(), if rechecked { 2 } else { 3 });
+        assert_eq!(sent.last().unwrap().0, "POST");
+        assert_eq!(
+            issues(&result),
+            expected.map(|c| vec![(link.id, c)]).unwrap_or_default()
+        );
+        assert_eq!(
+            (result.added, result.refused, result.receipts_pending),
+            (0, 1, 0)
+        );
+        assert_eq!(stored_aid(&store, record).unwrap().outer, held.outer);
+        assert_eq!(stored_aid(&store, record).unwrap().receipt, held.receipt);
+        assert!(waiting_aids(&store).is_empty());
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (0, 0, 0)
+        );
+    }
+    #[test]
+    fn production_best_effort_reports_removed_device_on_not_filed_aid_receipt() {
+        check_not_filed_aid_receipt_refusal(false, "device_removed", Some("portal_device_removed"));
+    }
+    #[test]
+    fn production_best_effort_reports_removed_device_on_rechecked_aid_receipt() {
+        check_not_filed_aid_receipt_refusal(true, "device_removed", Some("portal_device_removed"));
+    }
+    #[test]
+    fn production_best_effort_keeps_other_receipt_refusals_unchanged() {
+        for rechecked in [false, true] {
+            check_not_filed_aid_receipt_refusal(rechecked, "forbidden", None);
+        }
+    }
+
     // SOURCE ONLY: insert these two functions INSIDE the existing cfg(test)
     // vault::delivery::approval_recovery_tests module. They use its actual encrypted
     // saved-custody fixture helpers. As documented by add_unsent_delivery_for, the
@@ -5057,6 +6219,142 @@ mod approval_recovery_tests {
             assert_eq!(result.issues.len(), 1);
             assert_eq!(result.issues[0].link_id, link.id);
             assert_eq!(result.issues[0].code, "portal_link_incomplete");
+        }
+    }
+    /// What a portal from before reading aids (1705edb) answers a query key it does not know.
+    fn older_portal_refusal() -> crate::portal_client::ApiResponse {
+        reply(400, br#"{"code":"invalid_cursor"}"#)
+    }
+    fn page(
+        outers: &[wire::Outer],
+        next: Option<&str>,
+        through: &str,
+    ) -> crate::portal_client::ApiResponse {
+        reply(
+            200,
+            &serde_json::to_vec(&serde_json::json!({
+                "deliveries": outers,
+                "next_cursor": next,
+                "through": through,
+                "anchor_recorded": true,
+            }))
+            .unwrap(),
+        )
+    }
+    #[test]
+    fn a_portal_from_before_reading_aids_is_listed_again_without_the_kinds_for_the_whole_check() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, second, sealed, _) = fixture_package();
+        add_link(&store, &link);
+        let mut first = second.clone();
+        first.delivery_id = Uuid::new_v4().to_string();
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                assert_eq!(method, "GET", "nothing is filed, so no receipt is sent");
+                fetched.lock().unwrap().push(path.to_owned());
+                if path.contains("accept=") {
+                    Ok(older_portal_refusal())
+                } else if path == "/api/mycarlos/deliveries?limit=50" {
+                    Ok(page(std::slice::from_ref(&first), Some("1"), "2"))
+                } else if path.starts_with("/api/mycarlos/deliveries?") {
+                    Ok(page(std::slice::from_ref(&second), None, "2"))
+                } else {
+                    Ok(reply(200, &sealed))
+                }
+            },
+        )
+        .unwrap();
+        // Asked once with the kinds, then without them, and the next page without them too.
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                "/api/mycarlos/deliveries?limit=50".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", first.delivery_id),
+                "/api/mycarlos/deliveries?after=1&through=2&limit=50".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", second.delivery_id),
+            ]
+        );
+        // Both deliveries were downloaded and checked; the checked-in package is past its
+        // pickup window, so both are refused instead of filed. The listing itself is no issue.
+        assert_eq!((result.added, result.refused), (0, 2));
+        assert!(
+            result.issues.is_empty(),
+            "{:?}",
+            result.issues.iter().map(|i| &i.code).collect::<Vec<_>>()
+        );
+    }
+    #[test]
+    fn a_listing_refused_without_the_kinds_too_is_an_incomplete_check_as_before() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, _, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                fetched.lock().unwrap().push(path.to_owned());
+                Ok(older_portal_refusal())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                "/api/mycarlos/deliveries?limit=50".to_owned(),
+            ]
+        );
+        assert_eq!((result.added, result.refused), (0, 0));
+        assert_eq!(result.issues.len(), 1);
+        assert_eq!(result.issues[0].link_id, link.id);
+        assert_eq!(result.issues[0].code, "portal_link_incomplete");
+    }
+    #[test]
+    fn any_other_listing_refusal_is_not_asked_again_without_the_kinds() {
+        for refusal in [
+            reply(400, br#"{"code":"invalid_anchor"}"#),
+            reply(400, b"not json"),
+            reply(500, br#"{"code":"invalid_cursor"}"#),
+            reply(403, br#"{"code":"invalid_cursor"}"#),
+        ] {
+            let (_temp, store, _, _) = setup(false);
+            let (link, _, _, _) = fixture_package();
+            add_link(&store, &link);
+            let fetched = Mutex::new(Vec::new());
+            let result = crate::portal_pickup::check_using(
+                &store,
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![]),
+                |l, _, path, _, _, _, _| {
+                    if l.id != link.id {
+                        return Ok(empty_page());
+                    }
+                    fetched.lock().unwrap().push(path.to_owned());
+                    Ok(reply(refusal.status, &refusal.body))
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                fetched.into_inner().unwrap(),
+                vec!["/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned()],
+                "status {}",
+                refusal.status
+            );
+            assert_eq!(result.issues.len(), 1, "status {}", refusal.status);
+            assert_eq!(result.issues[0].link_id, link.id);
         }
     }
     #[test]

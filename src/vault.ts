@@ -152,6 +152,8 @@ export interface PortalLinkSummary {
 /** What a read-only status check of a linked device's approval found (#131).
  * It never sends, re-sends or starts a request. */
 export interface PortalApprovalCheck {
+  /** Native capture order for this partial device result. */
+  capture: SnapshotCapture;
   /** The device's saved state after the check. */
   link: PortalLinkSummary;
   /** For a request still open: the time the portal leaves it, by the

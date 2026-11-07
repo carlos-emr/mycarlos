@@ -1544,7 +1544,7 @@ portal-connecting = Conectando y solicitando la aprobación de la clínica…
 
 portal-errorBusy = Hay otra operación con la clínica en curso. Espere a que termine y vuelva a intentarlo.
 
-portal-linkedApprovalIssue = Dispositivo vinculado, pero no se pudo confirmar la solicitud de aprobación. El estado del dispositivo, en la página Seguridad, sección Documentos de la clínica, indica qué hacer a continuación.
+portal-linkedApprovalIssue = Dispositivo vinculado. Su estado de aprobación, en la página Seguridad, sección Documentos de la clínica, indica qué hacer a continuación.
 
 portal-retryApproval = Reintentar la solicitud de aprobación guardada
 
@@ -1752,7 +1752,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos también 
 
 portal-checkAgain = Para buscar de nuevo, elija { $button }.
 
-portal-unlockCheckConsent = Cada vez que desbloquee su bóveda, myCarlos se comunica con el portal de la clínica de cada dispositivo vinculado para consultar novedades sobre la aprobación y buscar documentos nuevos.
+portal-unlockCheckConsent = Después de cada desbloqueo, myCarlos se comunica con los portales de las clínicas vinculadas para consultar novedades sobre la aprobación y buscar documentos nuevos si la clínica ha aprobado el dispositivo o una solicitud de aprobación sigue abierta.
 
 portal-unlockChecked = Se buscaron documentos nuevos de la clínica tras desbloquear la bóveda.
 
