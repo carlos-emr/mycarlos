@@ -3093,6 +3093,92 @@ mod approval_recovery_tests {
             .unwrap();
         (temp, store, pair_link, record_id)
     }
+    /// A custody-only fixture with the contract's actual original bytes in
+    /// normal encrypted objects. The older pair helper rewrites metadata only;
+    /// receipt readback tests must keep bytes, digests and lengths coherent.
+    /// This verifies the package envelope at its reference clock, not a new
+    /// confined PDF-helper or installed-app delivery proof.
+    fn vault_with_readable_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+        let (temp, store, link, record_id) = vault_with_pair_original();
+        let pair = pair_fixture();
+        let outer: wire::Outer =
+            serde_json::from_value(pair["original_package"]["outer"].clone()).unwrap();
+        let sealed = wire::decode(pair["original_package"]["blob"].as_str().unwrap()).unwrap();
+        let opened = wire::open(&outer, &sealed, &link, &[], NOW_MS / 1000).unwrap();
+        let (mut record, vault_id, keys) = {
+            let guard = store.session();
+            let open = guard.as_ref().unwrap();
+            let record = open
+                .manifest
+                .records
+                .iter()
+                .find(|r| r.id == record_id)
+                .unwrap()
+                .clone();
+            (
+                record,
+                open.manifest.vault_id,
+                derive_keys(open.manifest.vault_id, &open.master_key).unwrap(),
+            )
+        };
+        assert_eq!(
+            record.delivery.as_ref().unwrap().manifest_compact,
+            opened.manifest_compact
+        );
+        let objects = store.root.join("objects");
+        record.object_name = format!("{}.mcobj", Uuid::new_v4());
+        let mut key = Zeroizing::new([0; 32]);
+        OsRng.fill_bytes(key.as_mut());
+        let encrypted = encrypt_object(
+            Box::new(io::Cursor::new(opened.pdf)),
+            &objects.join(&record.object_name),
+            ObjectContext {
+                vault_id,
+                record_id,
+                profile_id: record.profile_id,
+            },
+            &key,
+            &keys.fingerprint,
+        )
+        .unwrap();
+        record.plaintext_size = encrypted.plaintext_size;
+        record.fingerprint = BASE64.encode(encrypted.fingerprint);
+        record.wrapped_object_key =
+            wrap_secret(&keys.object_wrap, &key, record_id.as_bytes()).unwrap();
+        record.original_pdf = Some(
+            store
+                .stage_original_pdf(
+                    vault_id,
+                    &keys,
+                    &record,
+                    &objects.join(&record.object_name),
+                    &objects,
+                )
+                .unwrap(),
+        );
+        let original = record.original_pdf.as_ref().unwrap();
+        assert_eq!(original.sha256, opened.manifest.document.sha256);
+        assert_eq!(original.plaintext_size, opened.manifest.document.size);
+        store
+            .mutate_recorded(|m, _| {
+                *m.records.iter_mut().find(|r| r.id == record_id).unwrap() = record;
+                Ok(())
+            })
+            .unwrap();
+        let pending = store
+            .pending_receipts_checked(&link, store.portal_link_ticket())
+            .unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (1, 0, 0)
+        );
+        (temp, store, link, record_id)
+    }
+
     fn aid_vector(name: &str) -> (wire::Outer, Vec<u8>) {
         let pair = pair_fixture();
         let v = pair["packages"]["accept"]
@@ -5009,7 +5095,7 @@ mod approval_recovery_tests {
                 ("device_removed", "portal_device_removed"),
                 ("forbidden", "portal_link_incomplete"),
             ] {
-                let (_temp, store, mut link, record) = vault_with_pair_original();
+                let (_temp, store, mut link, record) = vault_with_readable_pair_original();
                 let (outer, sealed) = aid_vector("a reading aid for a filed original");
                 let session = store.portal_link_ticket();
                 assert!(matches!(
@@ -5129,6 +5215,86 @@ mod approval_recovery_tests {
                     outer.delivery_id
                 );
             }
+        }
+    }
+
+    fn check_reading_aid_download_refusal(status: u16, code: &str, expected: Option<&str>) {
+        let (_temp, store, mut link, record) = vault_with_readable_pair_original();
+        let session = store.portal_link_ticket();
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        store
+            .settle_receipt(
+                &link,
+                &pending.ready[0],
+                wire::ReceiptOutcome::PickedUp,
+                session,
+            )
+            .unwrap();
+        link.approval = Some(portal_approval::create(&link, crate::now_ms() / 1000).unwrap());
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = link.clone();
+                Ok(())
+            })
+            .unwrap();
+        let (outer, _) = aid_vector("a reading aid for a filed original");
+        let fetched = Mutex::new(Vec::new());
+        let approvals = Script::new(vec![Reply::Pending], vec![]);
+        let result = crate::portal_pickup::check_asking_using(
+            &store,
+            session,
+            &approvals,
+            |to, method, path, _, _, _, _| {
+                assert_eq!((to.id, method), (link.id, "GET"));
+                fetched.lock().unwrap().push(path.to_owned());
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    Ok(listing(&[outer.clone()]))
+                } else {
+                    assert_eq!(
+                        path,
+                        format!("/api/mycarlos/deliveries/{}", outer.delivery_id)
+                    );
+                    Ok(reply(
+                        status,
+                        &serde_json::to_vec(&serde_json::json!({"code": code})).unwrap(),
+                    ))
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", outer.delivery_id),
+            ]
+        );
+        assert_eq!(
+            issues(&result),
+            expected
+                .map(|code| vec![(link.id, code)])
+                .unwrap_or_default()
+        );
+        assert_eq!(
+            (result.added, result.refused, result.receipts_pending),
+            (0, 0, 0)
+        );
+        assert_eq!(approvals.calls.lock().unwrap().len(), 1);
+        assert_eq!(store.snapshot().unwrap().records[0].id, record);
+        assert!(stored_aid(&store, record).is_none());
+    }
+    #[test]
+    fn production_check_reports_removed_reading_aid_download() {
+        check_reading_aid_download_refusal(403, "device_removed", Some("portal_device_removed"));
+    }
+    #[test]
+    fn production_check_keeps_other_reading_aid_download_refusals_unchanged() {
+        for (status, code) in [
+            (403, "forbidden"),
+            (404, "delivery_not_found"),
+            (500, "device_removed"),
+        ] {
+            check_reading_aid_download_refusal(status, code, None);
         }
     }
 
