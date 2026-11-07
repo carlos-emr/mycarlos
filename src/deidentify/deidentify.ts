@@ -1714,7 +1714,7 @@ interface Rule {
   /** Relational prose can also introduce a disease: flag that conflict. */
   reviewClinicalConflict?: true;
   upperPrefix?: true;
-  /** A value that reads as a whole date is a date, not this record number. */
+  /** A value that reads as a whole date stays with the date rules. */
   skipDates?: true;
   /** A name after a family word: a relative, who may share the patient's
    * surname without being the patient. */
@@ -2809,18 +2809,21 @@ const RULES: Rule[] = [
     pattern:
       /(?:\+?1[ .-]?)?(?:\(\d{3}\)[ ]?|\b\d{3}[ .-]?)\d{3}[ .-]?\d{4}\b(?:[ \t]*(?:ext\.?|x|poste)[ \t]*\d{1,5}\b)?/gi,
   },
-  // A phone with a country code ("+34 612 345 678", "+48 601 234 567"), a Brazilian
-  // phone ("(11) 91234-5678"), or any phone after its label in es/pl/pt.
+  // A phone with a country code ("+34 612 345 678", "+48 601 234 567"), or a
+  // Brazilian phone ("(11) 91234-5678").
   {
     kind: "phone",
     pattern:
       /(?<![\d+])\+(?:[2-9]\d{0,2})[ .-]?\(?\d{1,3}\)?(?:[ .-]?\d{2,4}){2,4}(?!\d)|(?<![\d(])\(\d{2}\)[ ]?9?\d{4}-?\d{4}(?!\d)/g,
   },
+  // Telephone fields also identify local seven-digit numbers.
+  // A field value may begin on the next line, but never across an empty line.
   {
     kind: "phone",
     pattern:
-      /(?<![\p{L}])(?:Teléfono|Telefono|Telefone|Telefon|Tel|Tfno|Móvil|Movil|Celular|Cel|kom|tel\. kom)\.?[ \t]*[:#]?[ \t]*(\+?[\d(][\d ().-]{6,16}\d)(?!\d)/giu,
+      /(?<![\p{L}\p{N}])(?:Phone|Téléphone|Telephone|Tél|Fax|Teléfono|Telefono|Telefone|Telefon|Tel|Tfno|Móvil|Movil|Celular|Cel|kom|tel\. kom)\.?[ \t]*[:#]?[ \t]*(?:\r?\n[ \t]*)?(\+?[\d(][\d ().-]{5,16}\d)(?![\p{L}\p{N}/-])/giu,
     group: 1,
+    skipDates: true,
   },
   // A national identity number after its label: DNI/NIE "12345678Z", PESEL, CPF
   // "123.456.789-09", RG, NIF; and a CPF by its shape.
