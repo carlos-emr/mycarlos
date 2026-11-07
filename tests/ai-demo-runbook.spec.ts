@@ -181,7 +181,7 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
   await says(row, `Installed: ${MODEL}`, "step 3");
   await named(row, "Remove the model", "step 3");
 
-  // Step 5: Choose files to import → the three, Manual import — unverified.
+  // Step 5: Choose files to import → the three, Unverified, Manual import.
   await page
     .getByRole("button", { name: /My records/ })
     .locator("visible=true")
@@ -210,7 +210,12 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
     }
     await page.getByRole("button", { name, exact: true }).click();
     const details = page.getByRole("dialog", { name, exact: true });
-    if (first) await says(details, "Manual import — unverified", "step 5");
+    // Since #139 the details show the status and the source apart: "Unverified",
+    // then "Manual import".
+    if (first) {
+      await says(details, "Unverified", "step 5");
+      await says(details, "Manual import", "step 5");
+    }
     await (await named(details, "Read", "step 6")).click();
     const reader = page.getByRole("dialog", { name, exact: true });
     await expect(

@@ -205,8 +205,10 @@ test("Check for new documents brings a clinic's document into Shared with me, an
     exact: true,
   });
   await expect(arrived).toBeVisible();
+  // #139: Verified first, then where it came from.
+  await expect(arrived).toContainText(en("library.status.verified"));
   await expect(arrived).toContainText(
-    en("portal.sourceVerified", { clinic: FAKE_CLINIC }),
+    en("library.source.clinic", { clinic: FAKE_CLINIC }),
   );
 
   // Back in My records: a second check finds nothing new.

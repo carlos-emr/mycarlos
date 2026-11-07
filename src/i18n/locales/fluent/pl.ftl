@@ -1554,8 +1554,6 @@ portal-serviceDate = Data świadczenia: { $date }
 
 portal-serviceDateLabel = Data świadczenia
 
-portal-sourceVerified = Z { $clinic } · Zweryfikowano
-
 portal-title = Dokumenty z przychodni
 
 rename-help-profile = Zmienia to tylko wyświetlaną nazwę folderu. Foldery i dokumenty osoby pozostają na swoim miejscu.
@@ -1806,6 +1804,14 @@ portal-unlockRefused =
     [many] Nie udało się zweryfikować { $count } dokumentów z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.
     *[other] Nie udało się zweryfikować { $count } dokumentu z przychodni, więc nie zostały dodane. Skontaktuj się z przychodnią.
     }
+
+library-source-clinic = Z { $clinic }
+
+library-source-manualImport = Import ręczny
+
+library-status-unverified = Nie zweryfikowano
+
+library-status-verified = Zweryfikowano
 
 ai-summary-button = Podsumowanie
 
