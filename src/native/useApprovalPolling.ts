@@ -11,7 +11,7 @@ import type {
  * was under way, the vault was locking, or the session had ended). */
 export type ApprovalPoll =
   | { check: PortalApprovalCheck; current?: () => boolean }
-  | { error: unknown; current?: () => boolean }
+  | { error: unknown; current?: () => boolean; afterCapture?: SnapshotCapture }
   | null;
 
 /** Runs one quiet status check of a linked device's approval. */
@@ -40,7 +40,7 @@ export type LiveApproval =
      * local storage fault, read-only recovery…): said as it is, and this
      * request is not checked again automatically. */
     | { kind: "failed"; error: unknown }
-  ) & { capture?: SnapshotCapture };
+  ) & { capture?: SnapshotCapture; afterCapture?: SnapshotCapture };
 
 /** The first check comes this long after the view opens or a request is
  * saved; later ones back off. Only one check per request comes sooner: just
@@ -193,6 +193,7 @@ function found(
  * changed. */
 export interface CheckChange {
   capture?: SnapshotCapture;
+  afterCapture?: SnapshotCapture;
   before: { link: PortalLinkSummary; live?: LiveApproval };
   after: { link: PortalLinkSummary; live?: LiveApproval };
   /** The vault went read-only during the check: the app reads it again, and
@@ -234,9 +235,12 @@ export function useApprovalPolling({
   const live = Object.fromEntries(
     Object.entries(storedLive).filter(
       ([, entry]) =>
-        !entry.capture ||
-        (entry.capture.epoch === capture.epoch &&
-          entry.capture.sequence > capture.sequence),
+        (!entry.capture ||
+          (entry.capture.epoch === capture.epoch &&
+            entry.capture.sequence > capture.sequence)) &&
+        (!entry.afterCapture ||
+          (entry.afterCapture.epoch === capture.epoch &&
+            entry.afterCapture.sequence >= capture.sequence)),
     ),
   );
   const [stopped, setStopped] = useState(false);
@@ -253,6 +257,8 @@ export function useApprovalPolling({
   busyRef.current = busy;
   const pollRef = useRef(poll);
   pollRef.current = poll;
+  const captureRef = useRef(capture);
+  captureRef.current = capture;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const stepRef = useRef(0);
@@ -323,15 +329,28 @@ export function useApprovalPolling({
         if (!checked(link, liveRef.current[link.id])) continue;
         // Its portal asked to wait: the others are still checked.
         if (waitsRef.current.notBefore(link.portalBase) > steadyNow()) continue;
+        const startedAfter = captureRef.current;
         const outcome = await pollRef.current?.(link.id);
         // The view closed, the page was hidden, or the patient acted: this
         // reply is not this schedule's to show.
         if (cancelled) return;
         if (!outcome || outcome.current?.() === false) continue;
+        const afterCapture =
+          "error" in outcome
+            ? (outcome.afterCapture ?? startedAfter)
+            : undefined;
+        if (
+          afterCapture &&
+          (afterCapture.epoch !== captureRef.current.epoch ||
+            afterCapture.sequence < captureRef.current.sequence)
+        )
+          continue;
         const before = { link, live: liveRef.current[link.id] };
         const result = found(outcome, steadyNow());
         if (result.live && "check" in outcome)
           result.live = { ...result.live, capture: outcome.check.capture };
+        else if (result.live && afterCapture)
+          result.live = { ...result.live, afterCapture };
         if (
           result.live?.kind === "wait" ||
           (result.live?.kind === "refused" && result.retryAfterMs > 0)
@@ -345,6 +364,7 @@ export function useApprovalPolling({
         setLive(next);
         onChangeRef.current({
           capture: "check" in outcome ? outcome.check.capture : undefined,
+          afterCapture,
           before,
           after: { link: result.link ?? link, live: result.live },
           recovery:

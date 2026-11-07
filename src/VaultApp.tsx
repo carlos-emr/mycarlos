@@ -963,6 +963,27 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       return Promise.resolve(null);
     const current = () =>
       sessionRef.current === startedIn && !lockingRef.current;
+    const wholeAtStart = appliedCaptureRef.current;
+    const partialAtStart = approvalCapturesRef.current.get(linkId);
+    const errorAfterCapture =
+      partialAtStart?.owner === startedIn &&
+      partialAtStart.capture.epoch === wholeAtStart?.epoch &&
+      partialAtStart.capture.sequence > wholeAtStart.sequence
+        ? partialAtStart.capture
+        : wholeAtStart;
+    const ownsRejection = () =>
+      current() &&
+      appliedCaptureRef.current?.owner === startedIn &&
+      appliedCaptureRef.current.epoch === errorAfterCapture?.epoch &&
+      appliedCaptureRef.current.sequence <= errorAfterCapture.sequence &&
+      approvalCapturesRef.current.get(linkId) === partialAtStart;
+    const rereadRecovery = () => {
+      // Let the view record the outcome and the focused control first. The
+      // reread still runs if the view closed, for this session's library.
+      queueMicrotask(() => {
+        if (current()) void refresh().catch(() => undefined);
+      });
+    };
     const promise = bridge.refreshDeviceApproval(linkId).then(
       (result): ApprovalPoll => {
         if (!current()) return null;
@@ -999,7 +1020,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         });
         // A save during the check reached only one copy: the vault is now
         // read-only, and everything on screen must show it.
-        if (result.recovery) void refresh().catch(() => undefined);
+        if (result.recovery) rereadRecovery();
         return {
           check: result,
           // A whole read can arrive between parent publication and the
@@ -1018,8 +1039,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           requestLock(true);
           return null;
         }
-        if (isRecoveryModeError(error)) void refresh().catch(() => undefined);
-        return { error };
+        if (isRecoveryModeError(error)) rereadRecovery();
+        if (!ownsRejection()) return null;
+        return {
+          error,
+          current: ownsRejection,
+          // Rejections have no native partial capture. They follow the
+          // newest whole or device capture known when this poll began.
+          afterCapture: errorAfterCapture ?? undefined,
+        };
       },
     );
     const entry = { session: startedIn, promise };
