@@ -166,7 +166,7 @@ export function PortalDocuments({
   return (
     <section className="portal-documents" aria-labelledby="portal-title">
       <h2 id="portal-title">{t("portal.title")}</h2>
-      <p>{t("portal.intro")}</p>
+      <p className="section-intro">{t("portal.intro")}</p>
       <form className="native-inline-form" onSubmit={submit}>
         <label>
           {t("portal.address")}
