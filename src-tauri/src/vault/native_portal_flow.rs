@@ -34,7 +34,7 @@ fn check_tracing_receipts(
     crate::portal_pickup::check_using(
         store,
         session,
-        &crate::portal_approval::ApprovalHttp,
+        &crate::portal_approval::ApprovalHttp::default(),
         |link, method, suffix, body, anchor, max, cancelled| {
             let receipt_post = method == "POST" && suffix.ends_with("/receipt");
             if let Some(target) = drop_delivery_id {

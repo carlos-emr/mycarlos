@@ -1321,6 +1321,23 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             found.approvalCanRestart = false;
             return;
           }
+          // #137: the clinic view's read-only status check of one device. It
+          // finds what the fake knows: an open request is still waiting for
+          // the clinic, with the ten minutes a request lasts; it never sends
+          // or starts a request.
+          case "vault_refresh_device_approval": {
+            const found = snapshot.portalLinks?.find(
+              (candidate) => candidate.id === args.linkId,
+            );
+            if (!found) throw refuse("not_found", "native.error.18");
+            return {
+              capture: captured().capture,
+              link: copy(found),
+              expiresInMs: 10 * 60_000,
+              issue: null,
+              recovery: false,
+            };
+          }
           case "vault_check_documents":
             state.checks += 1;
             if (state.checks > 1)

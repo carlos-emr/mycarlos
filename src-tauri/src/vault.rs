@@ -273,6 +273,8 @@ pub enum VaultError {
     ApprovalRequestMissing,
     #[error("clinic approval needs review before another request")]
     ApprovalNeedsClinic,
+    #[error("the clinic portal still has the approval request open")]
+    ApprovalStillOpen,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("a document check is stopping; please try again")]
@@ -902,6 +904,7 @@ pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
     collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
+    approval_poll_progress: Mutex<HashMap<Uuid, delivery::ApprovalPollProgress>>,
     notifications: std::sync::OnceLock<Arc<crate::document_notification_runtime::Runtime>>,
     unlocked: Mutex<Option<UnlockedVault>>,
     snapshot_epoch: Uuid,
@@ -933,6 +936,7 @@ impl VaultStore {
             root,
             collection: crate::document_collection::Controller::new(Instant::now()),
             collection_resume: Mutex::new(None),
+            approval_poll_progress: Mutex::new(HashMap::new()),
             notifications: std::sync::OnceLock::new(),
             unlocked: Mutex::new(None),
             snapshot_epoch: Uuid::new_v4(),
@@ -969,7 +973,20 @@ impl VaultStore {
                 .unwrap_or_else(|p| p.into_inner()) = None;
         }
     }
+    fn approval_poll_progress(
+        &self,
+    ) -> MutexGuard<'_, HashMap<Uuid, delivery::ApprovalPollProgress>> {
+        self.approval_poll_progress
+            .lock()
+            .unwrap_or_else(|poisoned| {
+                let mut progress = poisoned.into_inner();
+                progress.clear();
+                self.approval_poll_progress.clear_poison();
+                progress
+            })
+    }
     fn invalidate_collection_cache(&self) {
+        self.approval_poll_progress().clear();
         self.collection.invalidate_cache();
         self.drop_idle_collection_cache();
     }
@@ -1130,7 +1147,7 @@ impl VaultStore {
             session,
             &control,
             &mut cache,
-            &crate::portal_approval::ApprovalHttp,
+            &crate::portal_approval::ApprovalHttp::default(),
             crate::portal_client::api,
         );
         // Manual preemption preserves progress. Consent/session invalidation
@@ -1878,8 +1895,19 @@ impl VaultStore {
                     },
                 )
             },
-            &crate::portal_approval::ApprovalHttp,
+            &crate::portal_approval::ApprovalHttp::default(),
         )
+    }
+
+    /// A read-only check of one linked device's approval status, for the
+    /// clinic view's automatic refresh (#131): it reads the portal and saves
+    /// the clinic's answer, and never sends or starts a request.
+    pub(crate) fn refresh_device_approval(
+        &self,
+        link_id: Uuid,
+        session: u64,
+    ) -> Result<delivery::ApprovalCheck, VaultError> {
+        self.poll_staff_approval(link_id, session)
     }
 
     fn link_portal_using(

@@ -17,11 +17,13 @@ import {
   isCancelledError,
   isLockedError,
   isMissingVaultError,
+  isRecoveryModeError,
   isRestoreUnfinished,
   vaultErrorMessage,
   vaultErrorNote,
   type ReceivedFile,
   type SnapshotCapture,
+  type PortalLinkSummary,
   type VaultBridge,
   type VaultSnapshot,
   type VaultStatus,
@@ -36,6 +38,11 @@ import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
 import { TransferHold } from "./native/transferHold";
+import {
+  PortalWaits,
+  type ApprovalPoll,
+  type PollApproval,
+} from "./native/useApprovalPolling";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import { CAMERA_PLATFORMS, isPhone } from "./native/photo";
 import {
@@ -166,6 +173,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     null,
   );
   const photoNoticeSessionRef = useRef<number | null>(null);
+  // Per portal, when automatic approval checks may ask it again after it
+  // asked to wait (#131): kept across the clinic view's remounts, and
+  // forgotten when the session ends.
+  const [portalWaits, setPortalWaits] = useState(() => new PortalWaits());
+  // The automatic approval status check under way, if any (#131).
+  const portalPollRef = useRef<{
+    session: number;
+    promise: Promise<ApprovalPoll>;
+  } | null>(null);
   const [concealed, setConcealed] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
   // An automatic or background lock owed while a transfer runs, or before the
@@ -210,7 +226,39 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const appliedCaptureRef = useRef<
     (SnapshotCapture & { owner: number }) | null
   >(null);
+  // A status poll captures one device, not the rest of the vault. Keep its
+  // order separately so an older whole read can still bring new records.
+  const approvalCapturesRef = useRef(
+    new Map<
+      string,
+      { owner: number; capture: SnapshotCapture; link: PortalLinkSummary }
+    >(),
+  );
+  const mergeApprovalCaptures = (next: VaultSnapshot, owner: number) => {
+    let changed = false;
+    const links = next.portalLinks?.map((link) => {
+      const partial = approvalCapturesRef.current.get(link.id);
+      if (
+        partial?.owner === owner &&
+        partial.capture.epoch === next.capture.epoch &&
+        partial.capture.sequence > next.capture.sequence
+      ) {
+        changed = true;
+        return partial.link;
+      }
+      return link;
+    });
+    for (const [id, partial] of approvalCapturesRef.current)
+      if (
+        partial.owner !== owner ||
+        partial.capture.epoch !== next.capture.epoch ||
+        partial.capture.sequence <= next.capture.sequence
+      )
+        approvalCapturesRef.current.delete(id);
+    return changed ? { ...next, portalLinks: links } : next;
+  };
   const installOpeningSnapshot = (next: VaultSnapshot) => {
+    approvalCapturesRef.current.clear();
     appliedCaptureRef.current = {
       ...next.capture,
       owner: sessionRef.current,
@@ -323,10 +371,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       await bridge.lock();
       sessionRef.current += 1;
       portalJobRef.current = null;
+      portalPollRef.current = null;
+      setPortalWaits(new PortalWaits());
       portalNoticeRef.current = null;
       photoNoticeSessionRef.current = null;
       setPortalBusy(false);
       appliedCaptureRef.current = null;
+      approvalCapturesRef.current.clear();
       setSnapshot(null);
       // A key shown but not set up ended with the session.
       setOpeningRecoverySetup(null);
@@ -866,6 +917,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       session: startedIn,
       promise: Promise.resolve()
         .then(async () => {
+          // An automatic status check under way finishes first: the native
+          // side admits one clinic operation at a time, and the patient's own
+          // action must not be refused because of a check they did not ask
+          // for. A check only reads from the portal (it saves the clinic's
+          // answer), and its HTTP has its own time limit.
+          const poll = portalPollRef.current;
+          if (poll?.session === startedIn) await poll.promise;
           if (sessionRef.current !== startedIn || lockingRef.current) return;
           await run(operation, undefined, true);
         })
@@ -879,6 +937,125 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     portalJobRef.current = job;
     setPortalBusy(true);
     return job.promise;
+  };
+
+  // The clinic view's automatic approval status check (#131). It is quiet:
+  // no "working" state and no message of its own (the view says what
+  // changed). It never waits behind other clinic work, or another check: it
+  // is skipped while one runs. The patient's own clinic action waits for a
+  // check under way instead (see `runPortal`). It belongs to this session: a
+  // reply after a lock, or in another session, is dropped. A check is not
+  // activity that keeps the vault open: it does not read the whole vault
+  // again (a snapshot counts as activity), but updates the one device it
+  // checked in the vault on screen. The one exception is read-only
+  // recovery during a check: then the vault is read again, once, so that
+  // the whole library shows it.
+  const pollApproval: PollApproval = (linkId) => {
+    const startedIn = portalSession;
+    if (
+      !bridge.refreshDeviceApproval ||
+      sessionRef.current !== startedIn ||
+      lockingRef.current ||
+      concealedRef.current ||
+      portalJobRef.current ||
+      portalPollRef.current
+    )
+      return Promise.resolve(null);
+    const current = () =>
+      sessionRef.current === startedIn && !lockingRef.current;
+    const wholeAtStart = appliedCaptureRef.current;
+    const partialAtStart = approvalCapturesRef.current.get(linkId);
+    const errorAfterCapture =
+      partialAtStart?.owner === startedIn &&
+      partialAtStart.capture.epoch === wholeAtStart?.epoch &&
+      partialAtStart.capture.sequence > wholeAtStart.sequence
+        ? partialAtStart.capture
+        : wholeAtStart;
+    const ownsRejection = () =>
+      current() &&
+      appliedCaptureRef.current?.owner === startedIn &&
+      appliedCaptureRef.current.epoch === errorAfterCapture?.epoch &&
+      appliedCaptureRef.current.sequence <= errorAfterCapture.sequence &&
+      approvalCapturesRef.current.get(linkId) === partialAtStart;
+    const rereadRecovery = () => {
+      // Let the view record the outcome and the focused control first. The
+      // reread still runs if the view closed, for this session's library.
+      queueMicrotask(() => {
+        if (current()) void refresh().catch(() => undefined);
+      });
+    };
+    const promise = bridge.refreshDeviceApproval(linkId).then(
+      (result): ApprovalPoll => {
+        if (!current()) return null;
+        const applied = appliedCaptureRef.current;
+        const previous = approvalCapturesRef.current.get(linkId);
+        if (
+          result.link.id !== linkId ||
+          applied?.owner !== startedIn ||
+          result.capture?.epoch !== applied.epoch ||
+          !(result.capture.sequence > applied.sequence) ||
+          (previous?.owner === startedIn &&
+            previous.capture.epoch === result.capture.epoch &&
+            previous.capture.sequence >= result.capture.sequence)
+        )
+          return null;
+        approvalCapturesRef.current.set(linkId, {
+          owner: startedIn,
+          capture: result.capture,
+          link: result.link,
+        });
+        setSnapshot((shown) => {
+          const links = shown?.portalLinks;
+          const before = links?.find((link) => link.id === result.link.id);
+          // Unchanged: the vault on screen stays the same object.
+          if (!shown || !links || !before) return shown;
+          if (JSON.stringify(before) === JSON.stringify(result.link))
+            return shown;
+          return {
+            ...shown,
+            portalLinks: links.map((link) =>
+              link.id === result.link.id ? result.link : link,
+            ),
+          };
+        });
+        // A save during the check reached only one copy: the vault is now
+        // read-only, and everything on screen must show it.
+        if (result.recovery) rereadRecovery();
+        return {
+          check: result,
+          // A whole read can arrive between parent publication and the
+          // polling hook's continuation. It also owns panel announcements.
+          current: () =>
+            current() &&
+            approvalCapturesRef.current.get(linkId)?.capture === result.capture,
+        };
+      },
+      (error): ApprovalPoll => {
+        if (!current()) return null;
+        // The native idle deadline locked the vault, or a lock cut the check
+        // off: lock here too, as for any clinic operation.
+        if (isLockedError(error) || isCancelledError(error)) {
+          lockReasonRef.current ??= "idle";
+          requestLock(true);
+          return null;
+        }
+        if (isRecoveryModeError(error)) rereadRecovery();
+        if (!ownsRejection()) return null;
+        return {
+          error,
+          current: ownsRejection,
+          // Rejections have no native partial capture. They follow the
+          // newest whole or device capture known when this poll began.
+          afterCapture: errorAfterCapture ?? undefined,
+        };
+      },
+    );
+    const entry = { session: startedIn, promise };
+    portalPollRef.current = entry;
+    void promise.finally(() => {
+      if (portalPollRef.current === entry) portalPollRef.current = null;
+    });
+    return promise;
   };
 
   // These are handed to the library, which unmounts on lock. A call that is
@@ -899,7 +1076,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       next.capture.sequence > applied.sequence
     ) {
       appliedCaptureRef.current = { ...next.capture, owner: session };
-      setSnapshot(next);
+      setSnapshot(mergeApprovalCaptures(next, session));
     }
     // A stale snapshot can still acknowledge a successful native key write.
     return next;
@@ -938,8 +1115,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         next.capture.sequence > applied.sequence
       ) {
         appliedCaptureRef.current = { ...next.capture, owner: startedIn };
+        const merged = mergeApprovalCaptures(next, startedIn);
         setSnapshot((previous) =>
-          previous?.sharedProfileId === owner ? next : previous,
+          previous?.sharedProfileId === owner ? merged : previous,
         );
       }
     } catch {
@@ -1265,6 +1443,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         run={run}
         portalBusy={portalBusy}
         runPortal={runPortal}
+        pollApproval={bridge.refreshDeviceApproval ? pollApproval : undefined}
+        approvalWaits={portalWaits}
         setPortalNotice={setPortalNotice}
         onPhotoNoticePending={onPhotoNoticePending}
         refresh={refresh}

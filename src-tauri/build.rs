@@ -119,6 +119,7 @@ fn main() {
             "vault_set_automatic_document_checks",
             "vault_request_device_approval",
             "vault_restart_device_approval",
+            "vault_refresh_device_approval",
             "vault_change_passphrase",
             "vault_recovery_key_begin",
             "vault_recovery_key_confirm",

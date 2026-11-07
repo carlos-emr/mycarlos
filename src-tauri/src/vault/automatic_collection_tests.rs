@@ -241,6 +241,8 @@ fn page(link: &StoredLink, ids: &[usize], next: Option<&str>) -> ApiResponse {
             }))
             .unwrap(),
         ),
+        date: None,
+        retry_after: None,
     }
 }
 
@@ -441,7 +443,7 @@ fn actual_picker_download_byte_deferral_retries_unattempted_boundary_packet() {
                     let mut a=outer(link,1);let mut b=outer(link,2);a.size=12*1024*1024;b.size=a.size;
                     Ok(ApiResponse{status:200,body:zeroize::Zeroizing::new(serde_json::to_vec(&serde_json::json!({
                         "deliveries":[a,b],"through":"100","next_cursor":null,"anchor_recorded":true,
-                    })).unwrap())})
+                    })).unwrap()),date:None,retry_after:None})
                 } else {
                     bytes.set(bytes.get()+cap);assert!(bytes.get()<=20*1024*1024);
                     attempted.borrow_mut().insert(path.to_owned());Err(LinkError::Network)
