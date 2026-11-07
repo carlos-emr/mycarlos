@@ -356,6 +356,78 @@ describe("a document's status before its source (#135)", () => {
         }
       });
 
+  for (const [width, text] of [
+    [1100, "16px"],
+    [1100, "32px"],
+    [360, "16px"],
+    [360, "32px"],
+    [320, "32px"],
+  ] as const)
+    for (const withAid of [false, true])
+      it(`keeps reader header actions before the source at ${width}px and ${text} text, ${withAid ? "with" : "without"} a reading aid, in every language`, async () => {
+        await page.viewport(width, 2400);
+        document.documentElement.style.fontSize = text;
+        useWideFont();
+        for (const locale of LOCALES) {
+          setLocaleOverride(locale);
+          const shownRecord: VaultRecord = {
+            ...VERIFIED,
+            ...(withAid
+              ? {
+                  readingAid: {
+                    deliveryId: "FAKE-header-aid",
+                    language: "en",
+                    reviewedAtMs: 1,
+                    notice: {
+                      version: "FAKE-v1",
+                      heading: "FAKE notice",
+                      body: "FAKE notice body",
+                    },
+                    overview: "FAKE reading aid",
+                    points: [],
+                  },
+                }
+              : {}),
+          };
+          const reader = renderReader(shownRecord);
+          const title = screen.getByRole("heading", {
+            name: shownRecord.displayName,
+          });
+          const close = screen.getByRole("button", {
+            name: translate(locale, "photo.close"),
+          });
+          const actions = close.parentElement!;
+          const trust = document.getElementById("reader-trust")!;
+          expectInView(actions);
+          expectInView(close);
+          if (withAid)
+            expectInView(
+              screen.getByRole("button", {
+                name: translate(locale, "readingAid.open"),
+              }),
+            );
+          const controls = actions.getBoundingClientRect();
+          const heading = title.getBoundingClientRect();
+          // The actual controls occupy the title area (a second row on a
+          // narrow screen), before the full-width status/source and date.
+          expect(controls.bottom).toBeLessThanOrEqual(
+            trust.getBoundingClientRect().top + 0.5,
+          );
+          if (width > 640) {
+            expect(Math.abs(controls.top - heading.top)).toBeLessThanOrEqual(
+              0.5,
+            );
+            expect(controls.left).toBeGreaterThanOrEqual(heading.right - 0.5);
+          } else {
+            expect(controls.top).toBeGreaterThanOrEqual(heading.bottom - 0.5);
+          }
+          const [, status, source] = expected(locale)[0];
+          expectWholeSource(trust, status, source);
+          expectInView(trust);
+          reader.unmount();
+        }
+      });
+
   for (const [width, text, fonts] of [
     [1100, "16px", FONTS],
     [360, "16px", FONTS],
