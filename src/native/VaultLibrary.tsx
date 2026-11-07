@@ -105,6 +105,10 @@ export function VaultLibrary({
   notice,
   setNotice,
   run,
+  portalBusy = false,
+  runPortal = run,
+  setPortalNotice = setNotice,
+  onPhotoNoticePending,
   refresh,
   onLock,
   onRequestLock,
@@ -131,6 +135,11 @@ export function VaultLibrary({
   setNotice: (value: UiText) => void;
   /** Runs a vault operation; `boxes` names what was typed for it. */
   run: (operation: () => Promise<void>, boxes?: BoxKey[]) => Promise<void>;
+  portalBusy?: boolean;
+  runPortal?: (operation: () => Promise<void>) => Promise<void>;
+  setPortalNotice?: (value: UiText) => void;
+  /** Clinic results wait until a saved photo's delayed result is settled. */
+  onPhotoNoticePending?: (pending: boolean) => void;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
   /** Shows the vault as it is now: `known` if a command just returned it,
@@ -315,7 +324,26 @@ export function VaultLibrary({
   const [dialogResult, setDialogResult] = useState<{
     message: UiText;
     recordId: string | null;
+    photoProfileId?: string;
   } | null>(null);
+  const photoNoticePendingRef = useRef(false);
+  const photoNoticeCallbackRef = useRef(onPhotoNoticePending);
+  photoNoticeCallbackRef.current = onPhotoNoticePending;
+  const releasePhotoNotice = () => {
+    if (!photoNoticePendingRef.current) return;
+    photoNoticePendingRef.current = false;
+    photoNoticeCallbackRef.current?.(false);
+  };
+  useEffect(
+    () => () => {
+      // An ended library cannot keep a clinic result reserved for its photo.
+      if (photoNoticePendingRef.current) {
+        photoNoticePendingRef.current = false;
+        photoNoticeCallbackRef.current?.(false);
+      }
+    },
+    [],
+  );
   // Bound to one record so a stale prompt can never apply to a different document.
   const [confirmation, setConfirmation] = useState<{
     action: "export";
@@ -796,14 +824,18 @@ export function VaultLibrary({
     // opened meanwhile are not where it belongs.
     if (
       notice ||
+      (dialogResult.photoProfileId !== undefined &&
+        dialogResult.photoProfileId !== profileId) ||
       (activeRecordId !== null && activeRecordId !== dialogResult.recordId)
     ) {
       setDialogResult(null);
+      releasePhotoNotice();
       return;
     }
     const timer = window.setTimeout(() => {
       setNoticeRef.current(dialogResult.message);
       setDialogResult(null);
+      releasePhotoNotice();
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [
@@ -812,6 +844,7 @@ export function VaultLibrary({
     confirmation,
     confirmHideDamaged,
     notice,
+    profileId,
     dialogResult,
     recoverySetup,
     renameTarget,
@@ -964,11 +997,18 @@ export function VaultLibrary({
       setActiveRecordId(saved.id);
       // Cleared now, so that the result is a change even when it repeats.
       setNotice("");
+      if (mountedRef.current) {
+        // Reserve synchronously, before run() ends. Clinic work may finish
+        // during the save or during the announcement's following delay.
+        photoNoticePendingRef.current = true;
+        photoNoticeCallbackRef.current?.(true);
+      }
       setDialogResult({
         message: message("interface.notice.photoSaved", {
           name: saved.displayName,
         }),
         recordId: saved.id,
+        photoProfileId: saved.profileId,
       });
     });
 
@@ -2018,11 +2058,12 @@ export function VaultLibrary({
                   compact
                   bridge={bridge}
                   snapshot={snapshot}
-                  busy={busy}
+                  busy={busy || portalBusy}
+                  working={portalBusy}
                   readOnly={readOnly}
-                  run={run}
+                  run={runPortal}
                   refresh={refresh}
-                  setNotice={setNotice}
+                  setNotice={setPortalNotice}
                 />
                 <label className="search">
                   <Icon name="search" />
@@ -2253,11 +2294,12 @@ export function VaultLibrary({
                   <PortalDocuments
                     bridge={bridge}
                     snapshot={snapshot}
-                    busy={busy}
+                    busy={busy || portalBusy}
+                    working={portalBusy}
                     readOnly={readOnly}
-                    run={run}
+                    run={runPortal}
                     refresh={refresh}
-                    setNotice={setNotice}
+                    setNotice={setPortalNotice}
                   />
                 }
                 busy={busy}

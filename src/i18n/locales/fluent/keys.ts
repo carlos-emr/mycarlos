@@ -759,6 +759,13 @@ export const MESSAGE_KEYS = [
   "interface.history.status",
   "interface.history.title",
   "interface.history.to",
+  "portal.connectConsent",
+  "portal.connected",
+  "portal.connecting",
+  "portal.errorBusy",
+  "portal.linkedApprovalIssue",
+  "portal.retryApproval",
+  "portal.working",
   "ai.summary.button",
   "ai.summary.title",
   "ai.explain.title",
@@ -1817,6 +1824,13 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.status": "interface-history-status",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
+  "portal.connectConsent": "portal-connectConsent",
+  "portal.connected": "portal-connected",
+  "portal.connecting": "portal-connecting",
+  "portal.errorBusy": "portal-errorBusy",
+  "portal.linkedApprovalIssue": "portal-linkedApprovalIssue",
+  "portal.retryApproval": "portal-retryApproval",
+  "portal.working": "portal-working",
   "ai.summary.button": "ai-summary-button",
   "ai.summary.title": "ai-summary-title",
   "ai.explain.title": "ai-explain-title",
@@ -2883,6 +2897,13 @@ export interface MessageArgsByKey {
   "interface.history.status": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
+  "portal.connectConsent": undefined;
+  "portal.connected": undefined;
+  "portal.connecting": undefined;
+  "portal.errorBusy": undefined;
+  "portal.linkedApprovalIssue": undefined;
+  "portal.retryApproval": undefined;
+  "portal.working": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;
   "ai.explain.title": undefined;

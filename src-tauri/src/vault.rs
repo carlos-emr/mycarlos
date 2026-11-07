@@ -910,6 +910,7 @@ pub struct VaultStore {
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
     portal_session: Arc<AtomicU64>,
+    /// Shared admission for linking, approval requests and document checks.
     portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
@@ -1862,6 +1863,7 @@ impl VaultStore {
         now_ms: u64,
         session: u64,
     ) -> Result<LinkSummary, VaultError> {
+        let _running = self.start_portal_work()?;
         self.link_portal_using(
             portal,
             code,
@@ -1869,6 +1871,33 @@ impl VaultStore {
             profile_id,
             (now_ms, session),
             |request, device, cancelled| crate::portal_client::link(request, device, cancelled),
+        )
+    }
+
+    pub fn connect_portal(
+        &self,
+        portal: &str,
+        code: &str,
+        device_name: &str,
+        profile_id: Option<Uuid>,
+        now_ms: u64,
+        session: u64,
+    ) -> Result<(LinkSummary, Option<VaultError>), VaultError> {
+        self.connect_portal_using(
+            session,
+            || {
+                self.link_portal_using(
+                    portal,
+                    code,
+                    device_name,
+                    profile_id,
+                    (now_ms, session),
+                    |request, device, cancelled| {
+                        crate::portal_client::link(request, device, cancelled)
+                    },
+                )
+            },
+            &crate::portal_approval::ApprovalHttp,
         )
     }
 
