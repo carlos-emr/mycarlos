@@ -23,7 +23,8 @@ export type LiveApproval =
   /** The portal has the request open. `expiresInMs` is the time it leaves
    * it, by the portal's own clock when it replied, at `at` (the page's own
    * steady clock). */
-  (| { kind: "waiting"; expiresInMs: number | null; at: number }
+  (
+    | { kind: "waiting"; expiresInMs: number | null; at: number }
     /** The portal could not be reached, or the check failed on this device:
      * the request's state is not known. Never shown as expired or refused. */
     | { kind: "unreachable" }
