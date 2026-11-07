@@ -507,6 +507,7 @@ fn idle_config() -> RunnerConfig {
         expected_model: None,
         model_file: None,
         sandboxed: true,
+        generation_threads: None,
     }
 }
 
@@ -532,9 +533,10 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
     } else {
         model_helper::ModelFile::Descriptor(model_helper::MODEL_FD)
     };
+    let threads = threads();
     let args = model_helper::arguments(&model_helper::Settings {
         chat_format: verified.chat_format,
-        threads: threads(),
+        threads,
         model,
         name: verified.info.name.clone(),
         sha256: verified.info.sha256.clone(),
@@ -549,6 +551,7 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
         expected_model: Some(verified.info.clone()),
         model_file: Some(Arc::new(file)),
         sandboxed: true,
+        generation_threads: Some(threads),
     })
 }
 
@@ -1074,6 +1077,7 @@ pub mod testing {
                 }),
                 model_file: None,
                 sandboxed: true,
+                generation_threads: None,
             };
             Self {
                 runner: Arc::new(Runner::new(config)),
@@ -1211,9 +1215,15 @@ pub mod engine_testing {
             };
             let config = launch_at(executable.to_owned(), &verified)
                 .map_err(|error| format!("{error:?}"))?;
-            let runner = Arc::new(Runner::new(config));
+            // The runner keeps no model file of its own: this one start hands the sealed copy
+            // over and lets it go once the helper has greeted, as the app does. So a test holds
+            // the model once, in the helper, not twice (Linux: a 3 GB memfd beside the weights).
+            let runner = Arc::new(Runner::new(RunnerConfig {
+                model_file: None,
+                ..config.clone()
+            }));
             runner
-                .start(&Plenty)
+                .start_with(&Plenty, move || Ok(config))
                 .map_err(|error| format!("{error:?}"))?;
             Ok(Self {
                 runner,
@@ -1265,16 +1275,48 @@ pub mod engine_testing {
                 || "no stats".to_owned(),
                 |s| {
                     format!(
-                        "prompt {} tokens {:.1} s, answer {} tokens {:.1} s{}, {} grammar scans",
+                        "prompt {} tokens {:.1} s on {} threads (prefix {} tokens, {}, {} bytes), \
+                         answer {} tokens {:.1} s{} on {} threads, {} grammar scans",
                         s.prompt_tokens,
                         s.prompt_ms as f64 / 1000.0,
+                        s.batch_threads,
+                        s.prefix_len,
+                        if s.cache_hit { "put back" } else { "read" },
+                        s.snapshot_bytes,
                         s.answer_tokens,
                         s.answer_ms as f64 / 1000.0,
                         if s.capped { " (capped)" } else { "" },
+                        s.threads,
                         s.grammar_scans
                     )
                 },
             )
+        }
+
+        /// The last answer's instruction prefix: its length in tokens, whether its state was put
+        /// back rather than read, and the size of that kept state.
+        pub fn last_prefix(&self) -> Option<(u32, bool, u64)> {
+            self.runner
+                .last_stats()
+                .map(|stats| (stats.prefix_len, stats.cache_hit, stats.snapshot_bytes))
+        }
+
+        /// The hash of the token ids the last answer was written in (see `Stats::answer_hash`).
+        pub fn last_answer_hash(&self) -> Option<u64> {
+            self.runner.last_stats().map(|stats| stats.answer_hash)
+        }
+
+        /// The threads the last answer was written on, and its prompt read on.
+        pub fn last_threads(&self) -> Option<(u32, u32)> {
+            self.runner
+                .last_stats()
+                .map(|stats| (stats.threads, stats.batch_threads))
+        }
+
+        /// Answers are written on `threads` threads from now on, whatever the computer's load;
+        /// `None` chooses from the load again.
+        pub fn override_threads(&self, threads: Option<u32>) {
+            self.runner.override_threads(threads);
         }
 
         /// What `term` means in `context`, in `lang`.

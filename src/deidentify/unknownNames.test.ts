@@ -309,3 +309,342 @@ describe("a relative after a label, next to a family history", () => {
     expect(send(text)).toBe(text);
   });
 });
+
+describe("a patient named with no cue: a header line or a care verb (#264)", () => {
+  // FAKE sentences written apart from the harness's shared sets, and the review's look-alikes.
+  it.each([
+    "Physiotherapy summary — HALLOWAY, Wren\nGait improved.",
+    "Discharge letter: QUENNELL, Odile\nAdmitted with pneumonia.",
+    "Discharge letter: O’BRIEN-HALE, Wren",
+    "Compte rendu : FENWICK, Basile",
+    "Plan de soins pour VELLACOURT, Margaux",
+    "Informe de alta — VALCÁRCEL PRUNEDA, Inés\nNHC: 4471829",
+    "Resumo de alta — VASCONCELOS BRITO, Tomé",
+    "Karta informacyjna — WIERZBICKA, Zuzanna",
+    "Paramedics brought Tobiah Farnsworth to the emergency department.",
+    "We were asked to see Wren Halloway on the ward.",
+    "Les ambulanciers ont amené Basile Fenwick aux urgences.",
+    "La ambulancia trajo a Lucas Ferrabosco a urgencias.",
+    "A ambulância trouxe Tomé Vasconcelos ao pronto-socorro.",
+    "Karetka przywiozła Zuzannę Wierzbicką na SOR.",
+  ])(
+    "removes the name, written SURNAME, Given in a header or after a person-taking verb: %j",
+    (text) => {
+      expect(send(text)).toMatch(/\[NAME 1\]/);
+    },
+  );
+
+  it.each([
+    "Discharge Summary: Congestive Heart Failure",
+    "Consultation Note: Cardiology",
+    "Referral Letter: Orthopaedic Surgery",
+    "Care Plan: Fall Prevention",
+    "Assessment: Stable Angina",
+    "Plan: Home Care",
+    "Review: Annual Physical",
+    "Discharge Summary - Emergency Department",
+    "Discharge: Home With Support",
+    "Progress Note — Night Shift",
+    "Nursing Note: Wound Care",
+    "Consult Note: Infectious Diseases",
+    "Report: Abdominal Ultrasound",
+    "Summary: Acute Kidney Injury",
+    "Referral: Physiotherapy",
+    "Bilan : Hypertension Artérielle",
+    "Lettre de sortie : Service de Cardiologie",
+    "Plan de soins : Prévention des Chutes",
+    "Compte rendu : Coloscopie Totale",
+    "Informe de alta: Neumonía Adquirida",
+    "Valoración: Riesgo de Caídas",
+    "Resumen: Paciente Estable",
+    "Resumo de alta: Pneumonia Comunitária",
+    "Encaminhamento: Ortopedia",
+    "Karta informacyjna: Oddział Chorób Wewnętrznych",
+    "Skierowanie: Poradnia Kardiologiczna",
+    "Wypis: Zapalenie Płuc",
+    "Patient Referred To Cardiology Clinic.",
+    "Received Influenza Vaccine today.",
+    "She received Tylenol Extra Strength.",
+    "Transferred To Intensive Care.",
+    "Brought In By Ambulance.",
+    "Accompanied By Daughter.",
+    "La ambulancia lo trasladó a Urgencias Generales.",
+    "Lo trajeron a Consultas Externas.",
+    "Recebemos Paciente Estável no setor.",
+    "Transferiu Unidade Coronariana hoje.",
+    "Przekazano Oddział Kardiologii.",
+    "Przyjęto Pacjenta Stabilnego.",
+    "Il a reçu Doliprane Codéine.",
+    "Adressé Centre Hospitalier Régional.",
+    "We saw Improvement Overall.",
+    "Care Plan: Diabetes Education",
+    "Progress Note — Day Three",
+    "Nota de evolución: Paciente Estable",
+    "Plan de soins : Prévention des Chutes",
+    "Plano de cuidados: Úlcera Venosa",
+    "Wypis: Oddział Chirurgii Ogólnej",
+    "Brought Home Medications.",
+    "Trouxe Exames Anteriores.",
+    "Przywiózł Wyniki Badań.",
+    "Care Plan: Fall Prevention\nChart reviewed.",
+  ])("leaves a title-case subject or a thing: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+
+  // The stated cost: an unknown person's header name written "Given Surname", even with a person
+  // field beside it, and a name after a verb that also takes things, stay. A patient known to
+  // the app is still removed.
+  it.each([
+    [
+      "Discharge letter: Wren Halloway\nAdmitted with pneumonia.",
+      "Wren Halloway",
+    ],
+    [
+      "Nous avons reçu Margaux Vellacourt en consultation.",
+      "Margaux Vellacourt",
+    ],
+    [
+      "CONSULTATION NOTE — Tobiah Farnsworth\nDOB: 1958-03-14\nSeen today for cough.",
+      "Tobiah Farnsworth",
+    ],
+    [
+      "DOB: 1958-03-14\nCONSULTATION NOTE — Tobiah Farnsworth",
+      "Tobiah Farnsworth",
+    ],
+    ["Discharge letter: Wren Halloway    MRN 4471829", "Wren Halloway"],
+    [
+      "Informe de alta — Inés Valcárcel Pruneda\nNHC: 4471829",
+      "Inés Valcárcel Pruneda",
+    ],
+    [
+      "Plan de soins pour Margaux Vellacourt\nNAM : VELM 4103 1412",
+      "Margaux Vellacourt",
+    ],
+    [
+      "Karta informacyjna — Zuzanna Wierzbicka\nPESEL: 58031412345",
+      "Zuzanna Wierzbicka",
+    ],
+  ])("keeps, by the stated trade: %j", (text, known) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+    expect(deidentify(text, { knownNames: [known] }).toSend).toMatch(
+      /\[NAME 1\]/,
+    );
+  });
+});
+
+describe("a header's subject beside a person field is no name (#264 review)", () => {
+  // A person field tells a person's document, not who the header's words are: the usual letter
+  // puts its subject over the patient's DOB, age or record number, or in a column beside it.
+  it.each([
+    "Referral Letter: Orthopaedic Surgery\nDOB: 1941-03-14",
+    "Care Plan: Fall Prevention\nAge: 81",
+    "Progress Note — Night Shift\nMRN: 448812",
+    "Consult Note: Infectious Diseases\nSex: F",
+    "Discharge Summary: HEART FAILURE, Acute\nDOB: 1941-03-14",
+    "Informe de alta: Neumonía Adquirida\nFecha de nacimiento: 14/03/1941",
+    "Resumo de alta: Pneumonia Comunitária\nData de nascimento: 14/03/1941",
+    "Karta informacyjna: Oddział Chorób Wewnętrznych\nPESEL: 41031412345",
+    "Lettre de consultation : Chirurgie Orthopédique\nDate de naissance : 02/06/1950",
+    "Compte rendu : Insuffisance Cardiaque\nÂge : 77 ans",
+    "Nota de evolución: Insuficiencia Renal\nEdad: 77",
+    "Relatório de alta: Fratura Femoral\nData de nascimento: 02/06/1950",
+    "Progress Note — Wound Review\nMRN: 552211",
+    "Medication Review: Blood Pressure\nSex: M",
+    "Referral Letter: Orthopaedic Surgery    DOB: 1941-03-14",
+    "Care Plan: Fall Prevention    Age: 81",
+    "Progress Note — Night Shift    MRN: 448812",
+    "Informe de alta: Neumonía Adquirida\tFecha de nacimiento: 14/03/1941",
+    "Lettre de consultation : Chirurgie Orthopédique    Né le 02/06/1950",
+    "Relatório de alta: Fratura Femoral    Idade: 77",
+    "Wypis: Zapalenie Płuc\nPacjent nie gorączkuje od dwóch dni.",
+    "Care Plan: Fall Prevention\nBorn in Toronto, she lives alone.",
+    "Consult Note: Infectious Diseases\nCNS: no focal deficit.",
+  ])("leaves the subject: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+
+  // A condition in capitals, a comma and a severity or a course looks like "SURNAME, Given".
+  it.each([
+    "Discharge Summary: COPD, Severe",
+    "Consult Note: ASTHMA, Uncontrolled",
+    "Care Plan: DEMENTIA, Moderate",
+    "Wypis: ZAWAŁ, Ostry",
+    "Informe de alta: ICTUS, Isquémico",
+    "Resumo de alta: ASMA, Grave",
+    "Compte rendu : INSUFFISANCE RÉNALE, Chronique",
+    "Discharge Summary: PNEUMONIA, Resolving",
+    "Referral Letter: FRACTURE, Healing",
+    "Discharge Summary: CELLULITIS, Improving",
+    "Referral: ULCER, Healed",
+    "Compte rendu : FRACTURE, Consolidée",
+    "Compte rendu : PNEUMOPATHIE, Communautaire",
+    "Informe de alta: NEUMONÍA, Resuelta",
+    "Informe de alta: NEUMONÍA, Adquirida",
+    "Resumo de alta: PNEUMONIA, Comunitária",
+    "Wypis: ZAPALENIE PŁUC, Pozaszpitalne",
+  ])("leaves a condition and its severity or course: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+
+  // Course words are refused whole, not by their ending: these given names end like one.
+  it.each([
+    "Discharge letter: KHAN, Mohammed",
+    "Discharge letter: HARGROVE, Mildred",
+    "Discharge letter: WANG, Xiaoming",
+    "Discharge letter: CHEN, Xiaoling",
+    "Compte rendu : DUBOIS, René",
+    "Compte rendu : FAVREAU, Désirée",
+    "Informe de alta — LÓPEZ, José",
+    "Resumo de alta — SILVA, Margarida",
+    "Resumo de alta — COSTA, Aparecida",
+    "Resumo de alta — PEREIRA, Mário",
+    "Wypis: NOWAK, Jadwiga",
+  ])("removes a given name that ends like a participle: %j", (text) => {
+    expect(send(text)).toMatch(/\[NAME 1\]/);
+  });
+});
+
+describe("words that are also names, and conditions in capitals", () => {
+  // A word on a refusal list that is also a name never refuses it: a wrong refusal leaks it.
+  it.each([
+    ["Paramedics brought Emma Walker to the emergency department.", "Walker"],
+    ["Paramedics brought Doris Day to the emergency department.", "Day"],
+    ["Discharge letter: WARD, Emma", "Emma"],
+    ["Discharge letter: RANA, Aisha", "Aisha"],
+    ["Paramedics brought Martin Head to the emergency department.", "Head"],
+    ["Les ambulanciers ont amené Paul Pain aux urgences.", "Pain"],
+  ])("removes the name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Discharge Summary: FRACTURE, Displaced",
+    "Consult Note: ANGINA, Unstable",
+    "Informe de alta: FRACTURA, Desplazada",
+    "Compte rendu : ANGINE, Instable",
+    "Wypis: UDAR, Niedokrwienny",
+    "Brought Walker And Wheelchair.",
+    "Referral: Right Hand",
+    "Wypis: Rana Pooperacyjna",
+  ])("leaves a condition or a thing: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+});
+
+describe("a first word that is also a name (Head, Son, Nie, Elle)", () => {
+  // These words end a label's value ("Patient: Head CT"), but a title before them, or more
+  // name-like words after them, make them a name.
+  it.each([
+    ["Dr. Head saw her.", "Head"],
+    ["Seen by Dr. Head today.", "Head"],
+    ["Mr. Son is stable.", "Son"],
+    ["Mme Elle Dubois a appelé.", "Dubois"],
+    ["Pani Nie Wei zgłosiła się.", "Wei"],
+    ["Physiotherapy summary — SON, Min-jun", "Min-jun"],
+    ["Patient: NIE, Wei", "Wei"],
+    ["Patient: Elle Martin", "Martin"],
+    ["Patient: Nie Wei", "Wei"],
+    ["Patient: Son Min-jun", "Min-jun"],
+    ["Patiente : Elle Vasseur", "Vasseur"],
+    ["PATIENT  ELLE MARTIN", "MARTIN"],
+    ["Paramedics brought Elle Martin to the emergency department.", "Martin"],
+    ["Discharge letter: HEAD, Martin", "Martin"],
+  ])("removes the name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Patient: Head CT normal.",
+    "PATIENT  HEAD CT",
+    "Patient: Stable",
+    "Pacjent: Nie zgłasza dolegliwości.",
+    "Pacjentka: Nie wymaga opieki.",
+    "Patiente : Elle dort mal.",
+    "Patiente : elle se plaint de douleurs.",
+    "Plan: Echo tomorrow.",
+    "Echo: normal LV function.",
+    "Referral: Head Injury",
+    "Head: normocephalic.",
+    "Patient: Son of the deceased",
+    "Dr. on call: see note.",
+    "Nurse: Plan reviewed with patient.",
+    "Report: ECHO, Normal",
+    "Care Plan: HEAD, Injury",
+    "Consult: HEAD, Neck",
+  ])("leaves a label value or a clinical phrase: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+});
+
+describe("a relative named in passing, in title-case text", () => {
+  it.each([
+    "Brought Son Home.",
+    "Brought Daughter Home.",
+    "Daughter Present At Visit.",
+    "Wife Aware Of Diagnosis.",
+    "Husband Called Clinic.",
+    "Son Drove Patient Home.",
+    "Spouse At Bedside.",
+    "Partner Supportive.",
+    "Father Unknown.",
+    "Fils Présent Lors De La Visite.",
+    "Fille Informée Du Plan.",
+    "Wife Declined Interpreter.",
+    "Mother Deceased.",
+    "Son Updated By Phone.",
+    "Patient: Son Visited Today.",
+    "Mother: Son Lives Nearby.",
+  ])("leaves the words after the relative: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+  });
+
+  it.each([
+    ["Her husband, Jordan, called.", "Jordan"],
+    ["Her daughter Maya Okafor visited.", "Maya"],
+    ["Son Theo Vance visited.", "Theo"],
+    ["Sa fille Camille appelle.", "Camille"],
+    ["Daughter Grace At Bedside.", "Grace"],
+    ["Brought By Son Marcus.", "Marcus"],
+    ["Wife Rose Present.", "Rose"],
+    ["Wife María De La Cruz called.", "Cruz"],
+    ["Son Will Smith called.", "Smith"],
+  ])("removes the relative's name: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+});
+
+describe("relative names retain the existing name exceptions", () => {
+  it.each([
+    ["Her daughter Elle Martin visited.", ["Elle", "Martin"]],
+    ["Her husband Son Min-jun called.", ["Son", "Min-jun"]],
+    ["Her sister Nie Wei called.", ["Nie", "Wei"]],
+    ["Her husband Martin Head called.", ["Martin", "Head"]],
+    ["Her daughter Summer Vale visited.", ["Summer", "Vale"]],
+    ["Her husband Paul Pain called.", ["Paul", "Pain"]],
+  ])("removes the full name in %j", (text, parts) => {
+    const result = send(text);
+    for (const part of parts) expect(result).not.toContain(part);
+  });
+});
+
+describe("relative surname particles remain inside the full name", () => {
+  it.each([
+    ["Her wife Camille Du Verne called.", "Her wife [NAME 1] called."],
+    ["Her wife Camille du Verne called.", "Her wife [NAME 1] called."],
+    ["Her husband Pascal Des Ormes called.", "Her husband [NAME 1] called."],
+    ["Her husband Pascal des Ormes called.", "Her husband [NAME 1] called."],
+    ["Her wife Camille DU Verne called.", "Her wife [NAME 1] called."],
+    ["Her husband Pascal DES Ormes called.", "Her husband [NAME 1] called."],
+    ["Her wife Camille Du Verne Present.", "Her wife [NAME 1] Present."],
+  ])("removes every word of the relative's name in %j", (text, expected) => {
+    expect(send(text)).toBe(expected);
+  });
+
+  it.each([
+    "Fille Informée Du Plan.",
+    "Fille Informée Des Résultats.",
+    "Fils Avisé Du Plan.",
+  ])("keeps the clinical phrase %j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});

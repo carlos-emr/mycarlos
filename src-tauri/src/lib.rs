@@ -28,6 +28,8 @@ mod local_model;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;
+// The model download runs on computers only (no AI helper on a phone).
+#[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
 mod model_runtime;
@@ -101,9 +103,12 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Manager, State, Url};
-use tauri_plugin_dialog::{
-    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
-};
+use tauri_plugin_dialog::DialogExt;
+// The plugin's message dialog is the confirmation off macOS (macOS has its own AppKit sheet).
+#[cfg(any(test, not(target_os = "macos")))]
+use tauri_plugin_dialog::MessageDialogResult;
+#[cfg(not(target_os = "macos"))]
+use tauri_plugin_dialog::{MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_fs::{FsExt, OpenOptions};
 use throttle::{Attempt, AttemptThrottle, Outcome};
 use uuid::Uuid;
@@ -1696,6 +1701,37 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
     models.status(&local_model::Here)
 }
 
+/// Every model the app offers, and any other accepted one on this computer, with its state,
+/// whether it was added from a file, and whether it is the one in use (#276).
+#[tauri::command]
+fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::ModelRow> {
+    models.models()
+}
+
+/// Which catalog entry a model command is about (`ai_models`' `index`).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModelIndexRequest {
+    index: usize,
+}
+
+/// Makes an installed model the one in use (#276). The helper holding the old one ends first,
+/// as at a lock, so an answer being written stops; the choice is kept on this computer,
+/// outside the vault. Returns the status of the model now in use.
+#[tauri::command]
+async fn ai_model_use(
+    models: State<'_, Arc<local_model::Store>>,
+    request: ModelIndexRequest,
+) -> Result<local_model::ModelStatus, ModelFailure> {
+    let models = Arc::clone(models.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        models.use_model(request.index)?;
+        Ok(models.status(&local_model::Here))
+    })
+    .await
+    .map_err(|_| local_model::ModelError::Storage)?
+}
+
 /// Why adding or removing a model was refused, as a word for the renderer.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1813,8 +1849,8 @@ async fn ai_model_add_picked(
     })
 }
 
-/// Downloads the default model (the catalog's first entry) from its pinned
-/// address, only because the patient clicked. Native code makes the request
+/// Downloads a model (catalog entry `index`; the default, the first, without one) from its
+/// pinned address, only because the patient clicked. Native code makes the request
 /// and nothing about the patient or a document is sent. The same checks as
 /// a picked file; the same progress event and `ai_model_add_cancel`. Returns
 /// the same outcomes, plus `network` and `unavailable`.
@@ -1823,7 +1859,9 @@ async fn ai_model_download(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
+    request: Option<ModelIndexRequest>,
 ) -> CommandResult<ModelAddOutcome> {
+    let index = request.map_or(0, |request| request.index);
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
     let models = Arc::clone(models.inner());
@@ -1831,7 +1869,7 @@ async fn ai_model_download(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mut shown = u64::MAX;
         worker.download(
-            0,
+            index,
             &model_download::Https,
             &local_model::Here,
             |done, total| {
@@ -1867,15 +1905,17 @@ fn ai_model_add_cancel(models: State<'_, Arc<local_model::Store>>) {
     models.cancel_add();
 }
 
-/// Deletes the model (and any half-copied file). The folder holds nothing of
-/// the patient's, so nothing else is kept.
+/// Deletes a model (catalog entry `index`; the one in use without one) and its half-copied
+/// file. The folder holds nothing of the patient's, so nothing else is kept. When it was the
+/// one in use, In use moves to another installed model, or to none.
 #[tauri::command]
 async fn ai_model_remove(
     models: State<'_, Arc<local_model::Store>>,
+    request: Option<ModelIndexRequest>,
 ) -> Result<local_model::ModelStatus, ModelFailure> {
     let models = Arc::clone(models.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        models.remove()?;
+        models.remove(request.map(|request| request.index))?;
         Ok(models.status(&local_model::Here))
     })
     .await
@@ -2643,6 +2683,7 @@ const MAIN_WINDOW: &str = "main";
 
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
+#[cfg(any(test, not(target_os = "macos")))]
 fn agreed_natively(answer: &MessageDialogResult, go_ahead: &str) -> bool {
     matches!(answer, MessageDialogResult::Custom(label) if label == go_ahead)
 }
@@ -4716,6 +4757,8 @@ pub fn run() {
             runtime_info,
             ai_model_catalog,
             ai_model_status,
+            ai_models,
+            ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,
             ai_model_download,

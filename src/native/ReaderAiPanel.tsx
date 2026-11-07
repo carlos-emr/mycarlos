@@ -64,6 +64,11 @@ export function ReaderAiPanel({
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
+  // The tool whose answer the model just wrote, to say so once (#253). A
+  // summary read back from the vault is not new: the panel is made again
+  // each time a tool opens, and coming back to Summary shows the kept one,
+  // which is not read out as "ready" again.
+  const [readyFor, setReadyFor] = useState<"summary" | "explain" | null>(null);
   const [term, setTerm] = useState(initialTerm);
   // Whether the summary shown is one the vault kept, and whether keeping
   // the latest answer failed (it is still shown).
@@ -202,6 +207,7 @@ export function ReaderAiPanel({
         if (!live.current) return;
         setFromKept(false);
         setSummary(result);
+        setReadyFor("summary");
         await keep(result);
       })
       .catch(stopped)
@@ -229,6 +235,7 @@ export function ReaderAiPanel({
       .then(async (result) => {
         if (!live.current) return;
         setExplained(result);
+        setReadyFor("explain");
         await keep(result);
       })
       .catch(stopped)
@@ -285,9 +292,9 @@ export function ReaderAiPanel({
       <p className={working ? "native-dialog-status" : "sr-only"} role="status">
         {working
           ? t("ai.working")
-          : !failed && tool === "summary" && summary
+          : !failed && readyFor === tool && tool === "summary" && summary
             ? t("ai.summary.ready")
-            : !failed && tool === "explain" && explained
+            : !failed && readyFor === tool && tool === "explain" && explained
               ? t("ai.explain.ready")
               : ""}
       </p>
