@@ -1331,6 +1331,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             );
             if (!found) throw refuse("not_found", "native.error.18");
             return {
+              capture: captured().capture,
               link: copy(found),
               expiresInMs: 10 * 60_000,
               issue: null,

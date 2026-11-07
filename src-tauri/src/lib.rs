@@ -2549,6 +2549,7 @@ struct PortalConnectResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DeviceApprovalCheck {
+    capture: vault::SnapshotCapture,
     link: portal_link::LinkSummary,
     expires_in_ms: Option<u64>,
     issue: Option<PublicError>,
@@ -2612,6 +2613,7 @@ async fn vault_refresh_device_approval(
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
         .map(|check| DeviceApprovalCheck {
+            capture: check.capture,
             link: check.link,
             expires_in_ms: check.expires_in_ms,
             issue: check.issue.map(approval_check_issue),

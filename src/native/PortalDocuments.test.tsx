@@ -232,7 +232,7 @@ describe("native clinic document controls", () => {
     ],
     [
       "approval_expired",
-      "This approval request expired. Check for updates before starting a new request.",
+      "This approval request expired. To ask again for this device, go to Security, under Clinic documents.",
       "portal.approvalExpired",
     ],
     [
@@ -875,11 +875,18 @@ describe("automatic approval status checks (#131)", () => {
     ...snapshot,
     portalLinks: [shown],
   });
+  let approvalCaptureSequence = snapshot.capture.sequence;
   const reply = (
     shown: PortalLinkSummary,
     extra: Partial<PortalApprovalCheck> = {},
   ): ApprovalPoll => ({
-    check: { link: shown, expiresInMs: null, issue: null, ...extra },
+    check: {
+      capture: { ...snapshot.capture, sequence: ++approvalCaptureSequence },
+      link: shown,
+      expiresInMs: null,
+      issue: null,
+      ...extra,
+    },
   });
   const AWAITING =
     "Your clinic has the approval request. Waiting for clinic staff to approve this device.";

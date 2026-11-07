@@ -1872,6 +1872,7 @@ use crate::portal_approval::{ApprovalExchange, ApprovalHttp};
 
 /// What a read-only status check of a linked device's approval found (#131).
 pub(crate) struct ApprovalCheck {
+    pub capture: SnapshotCapture,
     /// The device's saved state after the check, in the same session.
     pub link: portal_link::LinkSummary,
     /// For a request still open: the time the portal leaves it. Its end
@@ -1889,6 +1890,38 @@ pub(crate) struct ApprovalCheck {
     /// The vault went into read-only recovery during the check (a save that
     /// reached only one copy): the renderer must read the vault again.
     pub recovery: bool,
+}
+
+#[derive(Clone)]
+pub(super) struct ApprovalPollProgress {
+    session: u64,
+    current: Option<Uuid>,
+    history: Vec<Uuid>,
+    next: usize,
+    history_first: bool,
+}
+impl ApprovalPollProgress {
+    fn matches(&self, session: u64, link: &StoredLink) -> bool {
+        self.session == session
+            && self.current == link.approval.as_ref().map(|a| a.request_id)
+            && self.history
+                == link
+                    .approval_history
+                    .iter()
+                    .map(|a| a.request_id)
+                    .collect::<Vec<_>>()
+    }
+}
+#[derive(Clone, Copy)]
+enum ApprovalRead {
+    Current,
+    History(usize),
+}
+struct ApprovalReadOrder<'a> {
+    next: usize,
+    history_first: bool,
+    budgeted: bool,
+    completed_history: &'a mut dyn FnMut(usize) -> Result<(), VaultError>,
 }
 
 struct ApprovalReconciliation {
@@ -1957,16 +1990,113 @@ impl VaultStore {
         session: u64,
         http: &impl ApprovalExchange,
     ) -> Result<ApprovalCheck, VaultError> {
+        self.poll_staff_approval_using_boundary(link_id, session, http, || {})
+    }
+    fn poll_staff_approval_using_boundary(
+        &self,
+        link_id: Uuid,
+        session: u64,
+        http: &impl ApprovalExchange,
+        before_summary: impl FnOnce(),
+    ) -> Result<ApprovalCheck, VaultError> {
+        self.poll_staff_approval_using_controls(
+            link_id,
+            session,
+            http,
+            &Instant::now,
+            before_summary,
+        )
+    }
+    fn poll_staff_approval_using_controls(
+        &self,
+        link_id: Uuid,
+        session: u64,
+        http: &impl ApprovalExchange,
+        now: &dyn Fn() -> Instant,
+        before_summary: impl FnOnce(),
+    ) -> Result<ApprovalCheck, VaultError> {
         let _running = self.start_portal_work()?;
-        let find = || -> Result<StoredLink, VaultError> {
-            self.delivery_links(session)?
-                .into_iter()
-                .find(|l| l.id == link_id)
-                .ok_or(VaultError::NotFound)
+        let links = self.delivery_links(session)?;
+        let initial = links
+            .iter()
+            .find(|link| link.id == link_id)
+            .cloned()
+            .ok_or(VaultError::NotFound)?;
+        let plan = {
+            let mut progress = self.approval_poll_progress();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            // Runtime only, bounded by the current linked devices. A changed
+            // session or exact request inventory never inherits a cursor.
+            progress.retain(|id, entry| {
+                entry.session == session && links.iter().any(|link| link.id == *id)
+            });
+            let fresh = || ApprovalPollProgress {
+                session,
+                current: initial.approval.as_ref().map(|a| a.request_id),
+                history: initial
+                    .approval_history
+                    .iter()
+                    .map(|a| a.request_id)
+                    .collect(),
+                next: 0,
+                history_first: false,
+            };
+            let entry = progress.entry(link_id).or_insert_with(fresh);
+            if !entry.matches(session, &initial) {
+                *entry = fresh();
+            }
+            let plan = entry.clone();
+            // Advance priority even on ordinary budget exhaustion: history
+            // gets a full first slot, current gets one at least every2 turns.
+            entry.history_first = !entry.history_first;
+            plan
         };
-        // The first failure ends the check: a patient's own clinic action
-        // waits for it, and should not wait behind more time-outs.
-        let recovery = self.reconcile_approvals(&find()?, session, http, true)?;
+        // One monotonic network budget for the entire automatic check, not
+        // a fresh HTTP timeout for every retained request. Verification and
+        // durable-summary cleanup still follow their normal bounded paths.
+        let deadline = now() + Duration::from_secs(30);
+        let stop = || now() >= deadline;
+        let mut completed = |index| {
+            let mut progress = self.approval_poll_progress();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if let Some(entry) = progress.get_mut(&link_id) {
+                if entry.matches(session, &initial) {
+                    entry.next = (index + 1) % entry.history.len();
+                }
+            }
+            Ok(())
+        };
+        let recovery = self.reconcile_approvals_ordered(
+            &initial,
+            session,
+            http,
+            &stop,
+            true,
+            ApprovalReadOrder {
+                next: plan.next,
+                history_first: plan.history_first,
+                budgeted: true,
+                completed_history: &mut completed,
+            },
+        )?;
+        if !stop() {
+            // A fast completed scan already considered history; an ordinary
+            // first-failure result keeps the existing current-first retry
+            // rule. Only budget exhaustion owes history its full next turn.
+            let mut progress = self.approval_poll_progress();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if let Some(entry) = progress.get_mut(&link_id) {
+                if entry.matches(session, &initial) {
+                    entry.history_first = false;
+                }
+            }
+        }
         // Publish only the persisted state, read again in the same session.
         // Read directly: a save during this check that reached only one copy
         // has just put the vault into read-only recovery, which the caller
@@ -1974,8 +2104,14 @@ impl VaultStore {
         if self.portal_link_ticket() != session {
             return Err(VaultError::Cancelled);
         }
-        let (current, in_recovery) = {
+        before_summary();
+        let (current, in_recovery, capture) = {
             let guard = self.session();
+            // session() may itself invalidate a poisoned session. Check the
+            // original owner under this guard before cloning or capturing.
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
             let open = guard.as_ref().ok_or(VaultError::Locked)?;
             let current = open
                 .manifest
@@ -1984,7 +2120,11 @@ impl VaultStore {
                 .find(|l| l.id == link_id && l.clinic.is_some())
                 .cloned()
                 .ok_or(VaultError::NotFound)?;
-            (current, open.recovery.is_some())
+            (
+                current,
+                open.recovery.is_some(),
+                self.reserve_snapshot_capture()?,
+            )
         };
         let mut link = current.summary();
         let open = !link.clinic_approved
@@ -2017,6 +2157,7 @@ impl VaultStore {
             }
         }
         Ok(ApprovalCheck {
+            capture,
             link,
             expires_in_ms,
             issue: if recovery.missing {
@@ -2133,7 +2274,32 @@ impl VaultStore {
         stop: &dyn Fn() -> bool,
         stop_early: bool,
     ) -> Result<ApprovalReconciliation, VaultError> {
-        if stop() {
+        let mut completed = |_| Ok(());
+        self.reconcile_approvals_ordered(
+            link,
+            session,
+            http,
+            stop,
+            stop_early,
+            ApprovalReadOrder {
+                next: 0,
+                history_first: false,
+                budgeted: false,
+                completed_history: &mut completed,
+            },
+        )
+    }
+
+    fn reconcile_approvals_ordered(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        http: &impl ApprovalExchange,
+        stop: &dyn Fn() -> bool,
+        stop_early: bool,
+        order: ApprovalReadOrder<'_>,
+    ) -> Result<ApprovalReconciliation, VaultError> {
+        if self.portal_link_ticket() != session || (stop() && !order.budgeted) {
             return Err(VaultError::Cancelled);
         }
         if crate::portal_approval::currently_approved(link) {
@@ -2147,62 +2313,68 @@ impl VaultStore {
         let mut saved = link.clone();
         let mut missing = false;
         let mut deferred = None;
-        if let Some(attempt) = link.approval.as_ref().filter(|a| a.acceptance.is_none()) {
-            let reply = http.get(link, attempt, &cancelled);
+        let current = link
+            .approval
+            .as_ref()
+            .filter(|a| a.acceptance.is_none())
+            .map(|_| ApprovalRead::Current);
+        let len = link.approval_history.len();
+        let history = (0..len)
+            .map(|offset| (order.next + offset) % len)
+            .filter(|&i| link.approval_history[i].acceptance.is_none())
+            .map(ApprovalRead::History);
+        let mut reads = Vec::with_capacity(len + 1);
+        if !order.history_first {
+            reads.extend(current);
+        }
+        reads.extend(history);
+        if order.history_first {
+            reads.extend(current);
+        }
+        for read in reads {
+            // Only a poll's own network budget may yield partial progress.
+            // An actual ended session always refuses, even at the deadline.
             if cancelled() {
-                return Err(VaultError::Cancelled);
-            }
-            match reply {
-                Ok(Some(reply)) => {
-                    let mut next = saved.clone();
-                    next.approval = Some(reply);
-                    saved = self.save_approval_state(&saved, next, session, false)?;
+                if self.portal_link_ticket() != session || !order.budgeted {
+                    return Err(VaultError::Cancelled);
                 }
-                Ok(None) => missing = true,
-                // The portal asked to wait: nothing more is asked of it now,
-                // not even the older requests (#131).
-                Err(error @ VaultError::Portal(portal_link::LinkError::RateLimited(_))) => {
-                    return Ok(ApprovalReconciliation {
-                        saved,
-                        missing: false,
-                        deferred: Some(error),
-                    });
-                }
-                Err(error) if crate::portal_pickup::is_per_link_failure(&error) => {
-                    if stop_early {
-                        return Ok(ApprovalReconciliation {
-                            saved,
-                            missing: false,
-                            deferred: Some(error),
-                        });
-                    }
-                    deferred = Some(error)
-                }
-                Err(error) => return Err(error),
-            }
-            if crate::portal_approval::currently_approved(&saved) {
                 return Ok(ApprovalReconciliation {
                     saved,
-                    missing: false,
-                    deferred: None,
+                    missing,
+                    deferred: Some(VaultError::Portal(portal_link::LinkError::Network)),
                 });
             }
-        }
-        for (index, attempt) in link.approval_history.iter().enumerate() {
-            if attempt.acceptance.is_some() {
-                continue;
-            }
+            let attempt = match read {
+                ApprovalRead::Current => link.approval.as_ref().unwrap(),
+                ApprovalRead::History(i) => &link.approval_history[i],
+            };
             let reply = http.get(&saved, attempt, &cancelled);
             if cancelled() {
-                return Err(VaultError::Cancelled);
+                if self.portal_link_ticket() != session || !order.budgeted {
+                    return Err(VaultError::Cancelled);
+                }
+                return Ok(ApprovalReconciliation {
+                    saved,
+                    missing,
+                    deferred: Some(VaultError::Portal(portal_link::LinkError::Network)),
+                });
             }
             match reply {
-                Ok(Some(reply)) => {
-                    let mut next = saved.clone();
-                    next.approval_history[index] = reply;
-                    saved = self.save_approval_state(&saved, next, session, false)?;
+                Ok(reply) => {
+                    if let Some(reply) = reply {
+                        let mut next = saved.clone();
+                        match read {
+                            ApprovalRead::Current => next.approval = Some(reply),
+                            ApprovalRead::History(i) => next.approval_history[i] = reply,
+                        }
+                        saved = self.save_approval_state(&saved, next, session, false)?;
+                    } else if matches!(read, ApprovalRead::Current) {
+                        missing = true;
+                    }
+                    if let ApprovalRead::History(i) = read {
+                        (order.completed_history)(i)?;
+                    }
                 }
-                Ok(None) => {}
                 Err(error @ VaultError::Portal(portal_link::LinkError::RateLimited(_))) => {
                     return Ok(ApprovalReconciliation {
                         saved,
@@ -2224,8 +2396,6 @@ impl VaultStore {
                 }
                 Err(error) => return Err(error),
             }
-            // Once a verified current acceptance is durable, broken historical
-            // endpoints must not prevent this independently eligible link.
             if crate::portal_approval::currently_approved(&saved) {
                 return Ok(ApprovalReconciliation {
                     saved,
@@ -3481,6 +3651,381 @@ mod approval_recovery_tests {
             "a status check must never send a request"
         );
         calls.iter().map(|(_, id, _)| *id).collect()
+    }
+
+    struct TimedPoll {
+        elapsed: std::cell::Cell<Duration>,
+        current: Uuid,
+        acceptance: Option<Uuid>,
+        current_time: Duration,
+        history_time: Duration,
+        calls: std::cell::RefCell<Vec<Uuid>>,
+        completed: std::cell::RefCell<Vec<Uuid>>,
+    }
+    impl TimedPoll {
+        fn new(current: Uuid, acceptance: Option<Uuid>, current_ms: u64, history_ms: u64) -> Self {
+            Self {
+                elapsed: std::cell::Cell::new(Duration::ZERO),
+                current,
+                acceptance,
+                current_time: Duration::from_millis(current_ms),
+                history_time: Duration::from_millis(history_ms),
+                calls: Default::default(),
+                completed: Default::default(),
+            }
+        }
+    }
+    impl ApprovalExchange for TimedPoll {
+        fn get(
+            &self,
+            link: &StoredLink,
+            attempt: &Attempt,
+            cancelled: &dyn Fn() -> bool,
+        ) -> Result<Option<Attempt>, VaultError> {
+            self.calls.borrow_mut().push(attempt.request_id);
+            let cost = if attempt.request_id == self.current {
+                self.current_time
+            } else {
+                self.history_time
+            };
+            let finish = self.elapsed.get() + cost;
+            while self.elapsed.get() < finish {
+                if cancelled() {
+                    return Err(VaultError::Cancelled);
+                }
+                self.elapsed
+                    .set((self.elapsed.get() + Duration::from_millis(50)).min(finish));
+            }
+            if cancelled() {
+                return Err(VaultError::Cancelled);
+            }
+            let result = Script::response(
+                if self.acceptance == Some(attempt.request_id) {
+                    Reply::Accepted
+                } else {
+                    Reply::Pending
+                },
+                link,
+                attempt,
+            );
+            if result.is_ok() {
+                self.completed.borrow_mut().push(attempt.request_id);
+            }
+            result
+        }
+        fn post(
+            &self,
+            _: &StoredLink,
+            _: &Attempt,
+            _: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<Attempt, VaultError> {
+            panic!("automatic status polls must never POST")
+        }
+    }
+    fn history_poll_fixture(count: usize) -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+        let (temp, store, link, old) = setup(true);
+        let now = crate::now_ms() / 1000;
+        let mut history: Vec<_> = (0..count)
+            .map(|i| portal_approval::create(&link, now - 900 - i as u64).unwrap())
+            .collect();
+        history[count - 1] = old.clone();
+        let mut current = link;
+        current.approval = Some(portal_approval::create(&current, now - 700).unwrap());
+        current.approval_history = history;
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = current.clone();
+                Ok(())
+            })
+            .unwrap();
+        (temp, store, current, old.request_id)
+    }
+    fn assert_poll_budget_fairness(current_ms: u64, history_ms: u64) {
+        let (_temp, store, link, acceptance) = history_poll_fixture(5);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let http = TimedPoll::new(current, Some(acceptance), current_ms, history_ms);
+        let origin = Instant::now();
+        let clock = || origin + http.elapsed.get();
+        let mut verified = false;
+        for turn in 0..40 {
+            let before = http.elapsed.get();
+            let first = http.calls.borrow().len();
+            let result = store
+                .poll_staff_approval_using_controls(
+                    link.id,
+                    store.portal_link_ticket(),
+                    &http,
+                    &clock,
+                    || {},
+                )
+                .unwrap();
+            assert!(
+                http.elapsed.get() - before <= Duration::from_secs(30),
+                "one poll must not consume a separate timeout for each retained request"
+            );
+            if turn % 2 == 0 {
+                assert_eq!(http.calls.borrow()[first], current);
+            } else {
+                assert_ne!(
+                    http.calls.borrow()[first],
+                    current,
+                    "a history turn must give the retained request its genuine first slot"
+                );
+            }
+            if result.link.clinic_approved {
+                verified = true;
+                break;
+            }
+            assert!(matches!(
+                result.issue,
+                Some(VaultError::Portal(portal_link::LinkError::Network))
+            ));
+            // The patient's manual work has admission again on return.
+            drop(store.start_portal_work().unwrap());
+        }
+        assert!(
+            verified,
+            "continued bounded polls must eventually verify the late retained acceptance"
+        );
+        assert!(http.completed.borrow().contains(&acceptance));
+        assert!(saved(&store).summary().clinic_approved);
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .any(|e| e.event == HistoryEvent::DeviceApprovalVerified));
+    }
+    #[test]
+    fn poll_budget_fairness_for_ten_second_successful_reads() {
+        assert_poll_budget_fairness(10_000, 10_000);
+    }
+    #[test]
+    fn poll_budget_fairness_gives_slow_history_a_full_turn() {
+        assert_poll_budget_fairness(10_000, 25_000);
+    }
+    #[test]
+    fn poll_budget_fairness_keeps_current_priority_near_its_full_timeout() {
+        assert_poll_budget_fairness(29_900, 25_000);
+    }
+
+    #[test]
+    fn poll_budget_fast_scan_still_reads_all_sixteen_requests_without_posting() {
+        let (_temp, store, link, _) = history_poll_fixture(15);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let http = TimedPoll::new(current, None, 100, 100);
+        let origin = Instant::now();
+        let result = store
+            .poll_staff_approval_using_controls(
+                link.id,
+                store.portal_link_ticket(),
+                &http,
+                &|| origin + http.elapsed.get(),
+                || {},
+            )
+            .unwrap();
+        assert!(result.issue.is_none());
+        assert_eq!(http.completed.borrow().len(), 16);
+        assert_eq!(http.calls.borrow()[0], current);
+        for attempt in &link.approval_history {
+            assert!(http.completed.borrow().contains(&attempt.request_id));
+        }
+        assert!(!result.link.clinic_approved);
+    }
+
+    #[test]
+    fn poll_budget_runtime_progress_resets_for_session_restart_and_inventory_changes() {
+        for reset in ["session", "restart", "inventory"] {
+            let (_temp, store, link, _) = history_poll_fixture(5);
+            let current = link.approval.as_ref().unwrap().request_id;
+            let http = TimedPoll::new(current, None, 10_000, 25_000);
+            let origin = Instant::now();
+            let clock = || origin + http.elapsed.get();
+            store
+                .poll_staff_approval_using_controls(
+                    link.id,
+                    store.portal_link_ticket(),
+                    &http,
+                    &clock,
+                    || {},
+                )
+                .unwrap();
+            match reset {
+                "session" => {
+                    store.lock();
+                    store.unlock(PASSWORD).unwrap();
+                }
+                "restart" => {
+                    let transport = Script::new(
+                        (0..6).map(|_| Reply::Pending).collect(),
+                        vec![Reply::Pending],
+                    );
+                    store
+                        .request_staff_approval_using(
+                            link.id,
+                            store.portal_link_ticket(),
+                            true,
+                            &transport,
+                        )
+                        .unwrap();
+                }
+                "inventory" => {
+                    store
+                        .mutate_recorded(|m, _| {
+                            m.portal_links[0].approval_history.swap(0, 1);
+                            Ok(())
+                        })
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let next = saved(&store).approval.unwrap().request_id;
+            let after = TimedPoll::new(next, None, 10_000, 25_000);
+            let origin = Instant::now();
+            store
+                .poll_staff_approval_using_controls(
+                    link.id,
+                    store.portal_link_ticket(),
+                    &after,
+                    &|| origin + after.elapsed.get(),
+                    || {},
+                )
+                .unwrap();
+            assert_eq!(
+                after.calls.borrow()[0],
+                next,
+                "{reset} starts with current priority"
+            );
+        }
+    }
+
+    #[test]
+    fn poll_budget_session_cancellation_wins_over_deadline_and_discards_old_progress() {
+        let (_temp, store, link, _) = history_poll_fixture(5);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let http = TimedPoll::new(current, None, 10_000, 25_000);
+        let origin = Instant::now();
+        let result = store.poll_staff_approval_using_controls(
+            link.id,
+            store.portal_link_ticket(),
+            &http,
+            &|| origin + http.elapsed.get(),
+            || {
+                store.lock();
+                store.unlock(PASSWORD).unwrap();
+            },
+        );
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        let fresh = TimedPoll::new(current, None, 10_000, 25_000);
+        let origin = Instant::now();
+        store
+            .poll_staff_approval_using_controls(
+                link.id,
+                store.portal_link_ticket(),
+                &fresh,
+                &|| origin + fresh.elapsed.get(),
+                || {},
+            )
+            .unwrap();
+        assert_eq!(fresh.calls.borrow()[0], current);
+    }
+
+    #[test]
+    fn poll_budget_manual_full_history_recovers_acceptance_beyond_automatic_slice() {
+        let (_temp, store, link, acceptance) = history_poll_fixture(15);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let automatic = TimedPoll::new(current, None, 10_000, 25_000);
+        let origin = Instant::now();
+        let result = store
+            .poll_staff_approval_using_controls(
+                link.id,
+                store.portal_link_ticket(),
+                &automatic,
+                &|| origin + automatic.elapsed.get(),
+                || {},
+            )
+            .unwrap();
+        assert!(!result.link.clinic_approved);
+        assert!(!automatic.completed.borrow().contains(&acceptance));
+        // The UI stops its automatic schedule after its unchanged window;
+        // its manual action still uses the complete native reconciliation.
+        let manual = TimedPoll::new(current, Some(acceptance), 0, 0);
+        let (updated, issue) = store
+            .refresh_staff_approval_for_check(&saved(&store), store.portal_link_ticket(), &manual)
+            .unwrap();
+        assert!(issue.is_none());
+        assert!(updated.summary().clinic_approved);
+        assert!(manual.completed.borrow().contains(&acceptance));
+        assert!(saved(&store).summary().clinic_approved);
+    }
+
+    #[test]
+    fn poll_final_summary_refuses_a_session_reopened_at_the_guard_boundary() {
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let sequence_at_boundary = std::cell::Cell::new(0);
+        let result = store.poll_staff_approval_using_boundary(
+            link.id,
+            session,
+            &Script::new(vec![Reply::Pending], vec![]),
+            || {
+                store.lock();
+                store.unlock(PASSWORD).unwrap();
+                store.session().as_mut().unwrap().manifest.portal_links[0].device_name =
+                    "FAKE reopened-session device".to_string();
+                sequence_at_boundary.set(store.snapshot_sequence.load(Ordering::Relaxed));
+            },
+        );
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        assert_eq!(
+            store.snapshot_sequence.load(Ordering::Relaxed),
+            sequence_at_boundary.get()
+        );
+        assert_eq!(
+            store.session().as_ref().unwrap().manifest.portal_links[0].device_name,
+            "FAKE reopened-session device"
+        );
+    }
+
+    #[test]
+    fn poll_final_summary_refuses_a_session_poisoned_at_the_guard_boundary() {
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let before = store.snapshot_sequence.load(Ordering::Relaxed);
+        let result = store.poll_staff_approval_using_boundary(
+            link.id,
+            session,
+            &Script::new(vec![Reply::Pending], vec![]),
+            || {
+                let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _guard = store.unlocked.lock().unwrap();
+                    panic!("FAKE final-read boundary poison");
+                }));
+                assert!(panic.is_err());
+            },
+        );
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        assert_eq!(store.snapshot_sequence.load(Ordering::Relaxed), before);
+        assert!(store.session().is_none());
+    }
+
+    #[test]
+    fn poll_final_summary_capture_orders_partial_and_whole_reads_without_touching_idle() {
+        let (_temp, store, link, _) = setup(true);
+        let before = store.snapshot().unwrap().capture;
+        let armed = Instant::now() - Duration::from_secs(1);
+        store.idle.arm(armed);
+        let due = armed + Duration::from_secs(15 * 60) + crate::idle::MARGIN;
+        assert!(store.idle.is_due(due));
+        let session = store.portal_link_ticket();
+        let check = store
+            .poll_staff_approval_using(link.id, session, &Script::new(vec![Reply::Pending], vec![]))
+            .unwrap();
+        let after = store.snapshot().unwrap().capture;
+        assert_eq!(before.epoch, check.capture.epoch);
+        assert_eq!(check.capture.epoch, after.epoch);
+        assert_eq!(check.capture.sequence, before.sequence + 1);
+        assert_eq!(after.sequence, check.capture.sequence + 1);
+        assert_eq!(check.link.id, link.id);
+        assert!(store.idle.is_due(due));
     }
 
     #[test]

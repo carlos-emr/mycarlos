@@ -9,7 +9,12 @@ import {
   type UiText,
 } from "../i18n";
 import { hasVaultErrorCode, vaultErrorMessage } from "../vault";
-import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
+import type {
+  VaultBridge,
+  VaultSnapshot,
+  PortalLinkSummary,
+  SnapshotCapture,
+} from "../vault";
 import {
   isAwaitingApproval,
   isRateLimited,
@@ -111,10 +116,22 @@ export function PortalDocuments({
   const [statusText, setStatusText] = useTextState();
   const [statusHeardOnly, setStatusHeardOnly] = useState(false);
   const statusLine = { text: statusText, heardOnly: statusHeardOnly };
+  const statusCaptureRef = useRef<SnapshotCapture | null>(null);
   const setStatusLine = (next: { text: UiText; heardOnly?: boolean }) => {
     setStatusText(next.text);
     setStatusHeardOnly(Boolean(next.heardOnly));
   };
+  useEffect(() => {
+    const partial = statusCaptureRef.current;
+    if (
+      partial &&
+      (partial.epoch !== snapshot.capture.epoch ||
+        partial.sequence <= snapshot.capture.sequence)
+    ) {
+      statusCaptureRef.current = null;
+      if (statusHeardOnly) setStatusLine({ text: "" });
+    }
+  }, [snapshot.capture.epoch, snapshot.capture.sequence, statusHeardOnly]);
   const [connecting, setConnecting] = useState(false);
   const [focusLink, setFocusLink] = useState<string | null>(null);
   const submitting = useRef(false);
@@ -177,7 +194,7 @@ export function PortalDocuments({
   // Said once, when an automatic check changes what a card says (#131). A
   // check that finds nothing new says nothing; nor does the first check
   // confirming that the portal has a request the card already calls saved.
-  const said = ({ before, after, recovery }: CheckChange) => {
+  const said = ({ before, after, recovery, capture }: CheckChange) => {
     const focused = document.activeElement;
     if (
       focused &&
@@ -199,6 +216,7 @@ export function PortalDocuments({
     )
       return;
     const several = links.length > 1;
+    statusCaptureRef.current = capture ?? null;
     setStatusLine({
       text: deferredText(() =>
         several
@@ -229,6 +247,7 @@ export function PortalDocuments({
   });
   const polling = useApprovalPolling({
     links,
+    capture: snapshot.capture,
     poll,
     waits,
     enabled: available && !compact && !readOnly,
