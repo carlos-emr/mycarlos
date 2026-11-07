@@ -27,6 +27,7 @@
     "allow-vault-snapshot",
     "allow-vault-history",
     "allow-vault-portal-link",
+    "allow-vault-portal-connect",
     "allow-vault-check-documents",
     "allow-vault-notification-status",
     "allow-vault-set-notifications",

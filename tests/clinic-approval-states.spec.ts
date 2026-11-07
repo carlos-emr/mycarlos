@@ -40,8 +40,10 @@ async function openClinicDocuments(page: Page) {
     page.getByRole("heading", { name: en("portal.title"), exact: true }),
   ).toBeVisible();
   return {
+    // These links already sent a request, so the ordinary one is offered
+    // as retrying the saved request (#136).
     request: page.getByRole("button", {
-      name: en("portal.requestApproval"),
+      name: en("portal.retryApproval"),
       exact: true,
     }),
     restart: page.getByRole("button", {

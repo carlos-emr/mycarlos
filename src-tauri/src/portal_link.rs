@@ -34,6 +34,7 @@ pub enum LinkError {
     ClinicKeysMissing,
     #[cfg_attr(target_os = "android", allow(dead_code))]
     DeviceExists,
+    Busy,
     Cancelled,
 }
 
