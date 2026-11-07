@@ -5298,6 +5298,233 @@ mod approval_recovery_tests {
         }
     }
 
+    /// Re-sign and re-seal the public FAKE package at today's clock, through
+    /// the existing fixture producer. PDF bytes stay unchanged and readable.
+    fn current_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid, u64) {
+        let (temp, store, link, record) = vault_with_readable_pair_original();
+        let now = crate::now_ms() / 1000;
+        let pair = pair_fixture();
+        let mut packet = pair["original_package"].clone();
+        packet["receiver"] = pair["receiver"].clone();
+        packet["now"] = now.into();
+        let (outer, sealed, _, _) = wire::tests::mutated_packet(&packet, |claims| {
+            claims["created_at"] = (now - 60).into();
+            claims["expires_at"] = (now + 3600).into();
+        });
+        let opened = wire::open(&outer, &sealed, &link, &[], now).unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                let head = m.history.head.clone();
+                let record = m.records.iter_mut().find(|r| r.id == record).unwrap();
+                let original = record.original_pdf.as_ref().unwrap();
+                assert_eq!(wire::sha256(&opened.pdf), original.sha256);
+                assert_eq!(opened.pdf.len() as u64, original.plaintext_size);
+                let custody = record.delivery.as_mut().unwrap();
+                custody.outer = outer.clone();
+                custody.manifest = opened.manifest.clone();
+                custody.manifest_compact = opened.manifest_compact.clone();
+                custody.checked_at_ms = now * 1000;
+                custody.anchor_head = head.clone();
+                let anchor = link.keys.anchor(&wire::head_bytes(&head).unwrap()).unwrap();
+                custody.receipt = link.keys.sign(
+                    &serde_json::to_vec(&Receipt::new(&outer, &opened.manifest, anchor, now))
+                        .unwrap(),
+                );
+                custody.receipt_outcome = None;
+                Ok(())
+            })
+            .unwrap();
+        let pending = store
+            .pending_receipts_checked(&link, store.portal_link_ticket())
+            .unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (1, 0, 0)
+        );
+        (temp, store, link, record, now)
+    }
+
+    fn current_aid_packet(name: &str, now: u64, reviewed_at: u64) -> (wire::Outer, Vec<u8>) {
+        let pair = pair_fixture();
+        let mut packet = pair["packages"]["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == name)
+            .unwrap()
+            .clone();
+        packet["receiver"] = pair["receiver"].clone();
+        packet["now"] = now.into();
+        let (outer, sealed, _, _) = wire::tests::mutated_packet(&packet, |claims| {
+            claims["created_at"] = (now - 60).into();
+            claims["expires_at"] = (now + 3600).into();
+            claims["approval"]["reviewed_at"] = reviewed_at.into();
+        });
+        (outer, sealed)
+    }
+
+    fn check_not_filed_aid_receipt_refusal(rechecked: bool, code: &str, expected: Option<&str>) {
+        let (_temp, store, mut link, record, now) = current_pair_original();
+        let session = store.portal_link_ticket();
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        store
+            .settle_receipt(
+                &link,
+                &pending.ready[0],
+                wire::ReceiptOutcome::PickedUp,
+                session,
+            )
+            .unwrap();
+        let (held_outer, held_sealed) =
+            current_aid_packet("an aid the device filed but never confirmed", now, now - 10);
+        assert!(matches!(
+            store
+                .receive_aid(&held_outer, &held_sealed, &link, session)
+                .unwrap(),
+            AidFiling::Filed
+        ));
+        let held = stored_aid(&store, record).unwrap();
+        store
+            .settle_aid_receipt(&link, &held, wire::ReceiptOutcome::PickedUp, session)
+            .unwrap();
+        let held = stored_aid(&store, record).unwrap();
+        let (older_outer, older_sealed) =
+            current_aid_packet("a reading aid for a filed original", now, now - 20);
+        assert_ne!(older_outer.delivery_id, held_outer.delivery_id);
+        if rechecked {
+            // A verified aid waited before the original/newer review arrived.
+            // Keep actual encrypted objects and restore the same readable record.
+            let saved_record = store.session().as_ref().unwrap().manifest.records[0].clone();
+            store
+                .mutate_recorded(|m, _| {
+                    m.records.clear();
+                    Ok(())
+                })
+                .unwrap();
+            assert!(matches!(
+                store
+                    .receive_aid(&older_outer, &older_sealed, &link, session)
+                    .unwrap(),
+                AidFiling::Waiting
+            ));
+            store
+                .mutate_recorded(|m, _| {
+                    m.records.push(saved_record);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(waiting_aids(&store).len(), 1);
+        }
+        link.approval = Some(portal_approval::create(&link, now).unwrap());
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = link.clone();
+                Ok(())
+            })
+            .unwrap();
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (0, 0, 0)
+        );
+        let sent = Mutex::new(Vec::new());
+        let approvals = Script::new(vec![Reply::Pending], vec![]);
+        let result = crate::portal_pickup::check_asking_using(
+            &store,
+            session,
+            &approvals,
+            |to, method, path, body, _, _, _| {
+                assert_eq!(to.id, link.id);
+                sent.lock()
+                    .unwrap()
+                    .push((method.to_owned(), path.to_owned()));
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    assert_eq!(method, "GET");
+                    Ok(if rechecked {
+                        empty_page()
+                    } else {
+                        listing(&[older_outer.clone()])
+                    })
+                } else if path.ends_with("/receipt") {
+                    assert_eq!(
+                        (method, path),
+                        (
+                            "POST",
+                            format!(
+                                "/api/mycarlos/deliveries/{}/receipt",
+                                older_outer.delivery_id
+                            )
+                            .as_str()
+                        )
+                    );
+                    let posted: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                    let receipt = posted["receipt"].as_str().unwrap();
+                    let (payload, _) = wire::split_compact(receipt, 4096).unwrap();
+                    let claims: wire::Receipt = serde_json::from_slice(&payload).unwrap();
+                    assert_eq!(claims.delivery_id, older_outer.delivery_id);
+                    Ok(refusal(code))
+                } else {
+                    assert!(!rechecked);
+                    assert_eq!(
+                        (method, path),
+                        (
+                            "GET",
+                            format!("/api/mycarlos/deliveries/{}", older_outer.delivery_id)
+                                .as_str()
+                        )
+                    );
+                    Ok(reply(200, &older_sealed))
+                }
+            },
+        )
+        .unwrap();
+        let sent = sent.into_inner().unwrap();
+        assert_eq!(sent.len(), if rechecked { 2 } else { 3 });
+        assert_eq!(sent.last().unwrap().0, "POST");
+        assert_eq!(
+            issues(&result),
+            expected.map(|c| vec![(link.id, c)]).unwrap_or_default()
+        );
+        assert_eq!(
+            (result.added, result.refused, result.receipts_pending),
+            (0, 1, 0)
+        );
+        assert_eq!(stored_aid(&store, record).unwrap().outer, held.outer);
+        assert_eq!(stored_aid(&store, record).unwrap().receipt, held.receipt);
+        assert!(waiting_aids(&store).is_empty());
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (0, 0, 0)
+        );
+    }
+    #[test]
+    fn production_best_effort_reports_removed_device_on_not_filed_aid_receipt() {
+        check_not_filed_aid_receipt_refusal(false, "device_removed", Some("portal_device_removed"));
+    }
+    #[test]
+    fn production_best_effort_reports_removed_device_on_rechecked_aid_receipt() {
+        check_not_filed_aid_receipt_refusal(true, "device_removed", Some("portal_device_removed"));
+    }
+    #[test]
+    fn production_best_effort_keeps_other_receipt_refusals_unchanged() {
+        for rechecked in [false, true] {
+            check_not_filed_aid_receipt_refusal(rechecked, "forbidden", None);
+        }
+    }
+
     // SOURCE ONLY: insert these two functions INSIDE the existing cfg(test)
     // vault::delivery::approval_recovery_tests module. They use its actual encrypted
     // saved-custody fixture helpers. As documented by add_unsent_delivery_for, the
