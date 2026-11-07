@@ -6475,14 +6475,17 @@ describe("durable vault UI", () => {
     // Opens FAKE_Results.pdf in the reader and asks for its summary, on fake
     // timers. The answer waits until the test settles it; `started` is what
     // native says once the model is asked it.
-    async function askForSummary() {
+    async function askForSummary(synchronousLimit?: number) {
       let settle!: {
         resolve: (written: ModelSummary) => void;
         reject: (failure: unknown) => void;
       };
       // Every answer asked, oldest first.
       const settles: (typeof settle)[] = [];
-      let started: (limitMs: number) => void = () => undefined;
+      let started: (answer: {
+        answerId: string;
+        limitMs: number;
+      }) => void = () => undefined;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
         snapshot: vi
@@ -6502,17 +6505,22 @@ describe("durable vault UI", () => {
         aiModelStatus: vi
           .fn()
           .mockResolvedValue({ state: "installed", model: FAKE_MODEL }),
-        aiSummarize: vi.fn(
-          () =>
-            new Promise<ModelSummary>((resolve, reject) => {
-              settle = { resolve, reject };
-              settles.push(settle);
-            }),
-        ),
-        onAiAnswerStarted: vi.fn((handler: (limitMs: number) => void) => {
-          started = handler;
-          return () => undefined;
+        aiSummarize: vi.fn((_pages, _lang, _keep, answerId) => {
+          if (synchronousLimit !== undefined)
+            started({ answerId: answerId!, limitMs: synchronousLimit });
+          return new Promise<ModelSummary>((resolve, reject) => {
+            settle = { resolve, reject };
+            settles.push(settle);
+          });
         }),
+        onAiAnswerStarted: vi.fn(
+          (
+            handler: (answer: { answerId: string; limitMs: number }) => void,
+          ) => {
+            started = handler;
+            return () => undefined;
+          },
+        ),
       });
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
@@ -6548,9 +6556,47 @@ describe("durable vault UI", () => {
         bridge,
         settle: () => settle,
         settles,
-        started: (limitMs: number) => act(async () => started(limitMs)),
+        started: (limitMs: number, index = settles.length - 1) =>
+          act(async () => {
+            const answerId = vi.mocked(bridge.aiSummarize).mock.calls[index][3];
+            expect(answerId).toMatch(/^[0-9a-f-]{36}$/);
+            started({ answerId: answerId!, limitMs });
+          }),
       };
     }
+
+    it("ownership: the token exists before a synchronous started event", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge } = await askForSummary(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(10 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ownership: a failed manual lock keeps the current answer's session", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, started } = await askForSummary();
+        await started(5 * 60 * 1000);
+        vi.mocked(bridge.lock).mockRejectedValueOnce({ code: "storage" });
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", {
+              name: humanText("Unlocked · Lock now"),
+            }),
+          ),
+        );
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
 
     for (const ending of ["pending", "resolve", "reject"] as const) {
       it(`ownership: an old answer ${ending} cannot postpone the next session`, async () => {
@@ -6612,7 +6658,7 @@ describe("durable vault UI", () => {
         expect(bridge.aiSummarize).toHaveBeenCalledTimes(2);
         await started(5 * 60 * 1000);
         await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
-        await started(20 * 60 * 1000);
+        await started(20 * 60 * 1000, 0);
         await act(async () => settles[0].reject({ code: "aiCancelled" }));
         await act(async () => vi.advanceTimersByTime(6 * 60 * 1000 + 10_000));
         expect(bridge.lock).toHaveBeenCalledOnce();
@@ -6690,7 +6736,7 @@ describe("durable vault UI", () => {
         expect(settles).toHaveLength(2);
         await started(5 * 60 * 1000);
         await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
-        await started(20 * 60 * 1000);
+        await started(20 * 60 * 1000, 0);
         await act(async () => settles[0].reject({ code: "aiCancelled" }));
         await act(async () => vi.advanceTimersByTime(6 * 60 * 1000 + 10_000));
         expect(bridge.lock).toHaveBeenCalledTimes(2);
@@ -6765,7 +6811,7 @@ describe("durable vault UI", () => {
         expect(bridge.aiSummarize).toHaveBeenCalledTimes(2);
         // The older answer's limit of 5 minutes arrives now: it must not cut
         // the newer one's hold short, which would lock at about 10 minutes.
-        await started(5 * 60 * 1000);
+        await started(5 * 60 * 1000, 0);
         await act(async () => vi.advanceTimersByTime(10 * 60 * 1000 + 30_000));
         expect(bridge.lock).not.toHaveBeenCalled();
         // Once the older one has ended, the newer one's own limit counts.

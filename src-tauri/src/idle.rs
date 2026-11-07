@@ -14,7 +14,7 @@
 
 use std::{
     ops::Add,
-    sync::{Mutex, MutexGuard, PoisonError},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -61,6 +61,68 @@ pub struct IdleDeadline(Mutex<State>);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HoldId(u64);
 
+/// The unlocked session an answer was requested in. It is captured before any
+/// asynchronous validation and checked again when the answer is admitted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct AnswerOrigin(u64);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AnswerId {
+    origin: AnswerOrigin,
+    hold: HoldId,
+}
+
+/// Owns exactly one admitted answer's activity, including early return/panic.
+pub(crate) struct AnswerHold {
+    idle: Arc<IdleDeadline>,
+    id: AnswerId,
+}
+
+impl AnswerHold {
+    pub(crate) fn is_current(&self) -> bool {
+        self.idle.state().owns_answer(self.id)
+    }
+
+    /// Checking ownership, restarting the hold, and announcing the matching
+    /// request form one short mutation. A lock cannot split them.
+    pub(crate) fn watch(
+        &self,
+        announce: impl FnOnce(Duration) + Send + 'static,
+    ) -> crate::local_runner::AnswerWatch {
+        let (idle, id) = (Arc::clone(&self.idle), self.id);
+        Box::new(move |cap| {
+            let now = Now::from(Instant::now());
+            let mut state = idle.state();
+            if !state.owns_answer(id) {
+                return;
+            }
+            state.restart_hold(id.hold, now, cap);
+            announce(cap);
+        })
+    }
+
+    pub(crate) fn finish(&self, touch: bool) -> bool {
+        let now = Now::from(Instant::now());
+        let mut state = self.idle.state();
+        if !state.owns_answer(self.id) {
+            return false;
+        }
+        state.end_hold(self.id.hold, now);
+        state.answer = None;
+        if touch {
+            state.mono.touch(now.mono);
+            state.wall.touch(now.wall);
+        }
+        true
+    }
+}
+
+impl Drop for AnswerHold {
+    fn drop(&mut self) {
+        self.finish(false);
+    }
+}
+
 /// A stretch that counts as activity while it lasts, for at most its cap: a
 /// picker the app opened, or an AI answer being written.
 struct Hold {
@@ -76,6 +138,7 @@ struct State {
     /// The holds open now, each counted from its own start up to its own cap.
     holds: Vec<Hold>,
     next_hold: u64,
+    answer: Option<AnswerId>,
     openings: usize,
     /// Counts locked sessions, so an opening from an earlier session ending
     /// late cannot release the current one's.
@@ -98,6 +161,7 @@ impl IdleDeadline {
             delay: DEFAULT_DELAY,
             holds: Vec::new(),
             next_hold: 0,
+            answer: None,
             openings: 0,
             session: 0,
             mono: Times::new(now.mono),
@@ -128,6 +192,7 @@ impl IdleDeadline {
         // ended: its end, when it comes, finds nothing to release.
         state.openings = 0;
         state.holds.clear();
+        state.answer = None;
         state.session += 1;
     }
 
@@ -188,29 +253,58 @@ impl IdleDeadline {
     /// the answer is asked and its own limit is known. What it held until now
     /// counts as activity, up to its earlier cap. A hold that has ended, or
     /// was dropped by a lock, is left alone.
+    #[cfg(test)]
     pub fn hold_restarted(&self, id: HoldId, now: impl Into<Now>, cap: Duration) {
         let now = now.into();
         let mut state = self.state();
-        let Some(index) = state.holds.iter().position(|hold| hold.id == id.0) else {
-            return;
-        };
-        let (mono, wall) = state.holds[index].held_until(now);
-        state.mono.touch(mono);
-        state.wall.touch(wall);
-        state.holds[index].since = now;
-        state.holds[index].cap = cap;
+        state.restart_hold(id, now, cap);
     }
 
-    /// Ends the hold: the time it held counts as activity, up to its cap.
+    /// Ends only this hold; an earlier session's id cannot release a newer one.
     pub fn hold_ended(&self, id: HoldId, now: impl Into<Now>) {
-        let now = now.into();
+        self.state().end_hold(id, now.into());
+    }
+
+    pub(crate) fn answer_origin(&self) -> Option<AnswerOrigin> {
+        let state = self.state();
+        state.armed.then_some(AnswerOrigin(state.session))
+    }
+
+    /// Called under VaultStore's session guard. Reserve the runner ticket in
+    /// this same critical section, before any worker can be scheduled.
+    pub(crate) fn admit_answer<T>(
+        self: &Arc<Self>,
+        origin: AnswerOrigin,
+        cap: Duration,
+        reserve: impl FnOnce() -> T,
+    ) -> Option<(AnswerHold, T)> {
+        let now = Now::from(Instant::now());
         let mut state = self.state();
-        let Some(index) = state.holds.iter().position(|hold| hold.id == id.0) else {
-            return;
-        };
-        let (mono, wall) = state.holds.swap_remove(index).held_until(now);
-        state.mono.touch(mono);
-        state.wall.touch(wall);
+        if !state.armed || origin.0 != state.session {
+            return None;
+        }
+        if let Some(previous) = state.answer.take() {
+            state.end_hold(previous.hold, now);
+        }
+        let hold = HoldId(state.next_hold);
+        state.next_hold += 1;
+        state.holds.push(Hold {
+            id: hold.0,
+            since: now,
+            cap,
+        });
+        let id = AnswerId { origin, hold };
+        state.answer = Some(id);
+        state.mono.touch(now.mono);
+        state.wall.touch(now.wall);
+        let ticket = reserve();
+        Some((
+            AnswerHold {
+                idle: Arc::clone(self),
+                id,
+            },
+            ticket,
+        ))
     }
 
     pub fn is_due(&self, now: impl Into<Now>) -> bool {
@@ -225,6 +319,32 @@ impl IdleDeadline {
             && state.openings == 0
             && (state.mono.is_due(now.mono, mono, state.delay)
                 || state.wall.is_due(now.wall, wall, state.delay))
+    }
+}
+
+impl State {
+    fn owns_answer(&self, id: AnswerId) -> bool {
+        self.armed && self.session == id.origin.0 && self.answer == Some(id)
+    }
+
+    fn end_hold(&mut self, id: HoldId, now: Now) {
+        let Some(index) = self.holds.iter().position(|hold| hold.id == id.0) else {
+            return;
+        };
+        let (mono, wall) = self.holds.swap_remove(index).held_until(now);
+        self.mono.touch(mono);
+        self.wall.touch(wall);
+    }
+
+    fn restart_hold(&mut self, id: HoldId, now: Now, cap: Duration) {
+        let Some(index) = self.holds.iter().position(|hold| hold.id == id.0) else {
+            return;
+        };
+        let (mono, wall) = self.holds[index].held_until(now);
+        self.mono.touch(mono);
+        self.wall.touch(wall);
+        self.holds[index].since = now;
+        self.holds[index].cap = cap;
     }
 }
 

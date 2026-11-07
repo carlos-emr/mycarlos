@@ -594,7 +594,10 @@ impl Runner {
     /// Tells `watch` the time limit of the answer asked under `ticket`, as it is asked; never,
     /// if none is (a failed start, a cancel first). Takes the place of an earlier watch.
     pub(crate) fn watch_answer(&self, ticket: Ticket, watch: AnswerWatch) {
-        *self.answer_watch.lock().unwrap_or_else(|e| e.into_inner()) = Some((ticket, watch));
+        let mut slot = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
+        if self.is_current(ticket) {
+            *slot = Some((ticket, watch));
+        }
     }
 
     /// Answers are written on `threads` threads from now on, whatever the computer's load;
@@ -622,13 +625,14 @@ impl Runner {
     /// takes one when it asks for a document, and the old document's request
     /// is cancelled by it.
     pub(crate) fn ticket(&self) -> Ticket {
+        let _watch = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
         Ticket {
             runner: self as *const Self as usize,
             generation: self.generation.fetch_add(1, Ordering::SeqCst) + 1,
         }
     }
 
-    fn is_current(&self, ticket: Ticket) -> bool {
+    pub(crate) fn is_current(&self, ticket: Ticket) -> bool {
         ticket.runner == self as *const Self as usize
             && self.generation.load(Ordering::SeqCst) == ticket.generation
     }
@@ -636,6 +640,7 @@ impl Runner {
     /// Ends every request in flight on this runner: when the vault locks,
     /// and when the reader closes the panel.
     pub(crate) fn cancel_all(&self) {
+        let _watch = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
         self.generation.fetch_add(1, Ordering::SeqCst);
     }
 
@@ -657,9 +662,29 @@ impl Runner {
         probe: &dyn MemoryProbe,
         prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
     ) -> Result<ModelInfo, RunnerError> {
-        let generation = self.generation.load(Ordering::SeqCst);
-        let wanted = || self.generation.load(Ordering::SeqCst) == generation;
+        self.start_for(
+            Ticket {
+                runner: self as *const Self as usize,
+                generation: self.generation.load(Ordering::SeqCst),
+            },
+            probe,
+            prepare,
+        )
+    }
+
+    /// An answer's ticket is reserved at admission, never when its worker resumes.
+    pub(crate) fn start_for(
+        &self,
+        ticket: Ticket,
+        probe: &dyn MemoryProbe,
+        prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
+    ) -> Result<ModelInfo, RunnerError> {
+        let wanted = || self.is_current(ticket);
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
+        // Before inspecting or changing the resident helper, status or config.
+        if !wanted() {
+            return Err(RunnerError::Cancelled);
+        }
         if let Some(running) = slot.as_mut() {
             if running.process.running() {
                 return Ok(running.model.clone());
@@ -1826,6 +1851,76 @@ mod tests {
         }
 
         #[test]
+        fn ownership_an_admitted_old_worker_cannot_change_a_new_answers_helper() {
+            // Pause A after admission, before start, then admit B either in
+            // the same session or after locking and unlocking. Resume A only
+            // after B has a resident helper, stats and its own waiting watch.
+            for next_session in [false, true] {
+                let runner = Arc::new(Runner::new(config(&[], GIB)));
+                let idle = Arc::new(crate::idle::IdleDeadline::new(Instant::now()));
+                idle.arm(Instant::now());
+                let origin = idle.answer_origin().unwrap();
+                let (old_hold, old_ticket) = idle
+                    .admit_answer(origin, Duration::from_secs(1200), || runner.ticket())
+                    .unwrap();
+                let (release, resume) = mpsc::channel();
+                let worker = Arc::clone(&runner);
+                let old = std::thread::spawn(move || {
+                    resume.recv_timeout(Duration::from_secs(10)).unwrap();
+                    let announced = old_hold.watch(|_| panic!("old answer announced"));
+                    worker.watch_answer(old_ticket, announced);
+                    let start = worker.start_for(old_ticket, &Fixed(Some(8 * GIB)), || {
+                        panic!("old worker prepared a model")
+                    });
+                    assert_eq!(start, Err(RunnerError::Cancelled));
+                    assert_eq!(
+                        worker.summarize(old_ticket, &request()),
+                        Err(RunnerError::Cancelled)
+                    );
+                    assert!(!old_hold.finish(true));
+                });
+                if next_session {
+                    runner.cancel_all();
+                    idle.disarm();
+                    idle.arm(Instant::now());
+                }
+                let origin = idle.answer_origin().unwrap();
+                let (new_hold, new_ticket) = idle
+                    .admit_answer(origin, Duration::from_secs(300), || runner.ticket())
+                    .unwrap();
+                runner
+                    .start_for(new_ticket, &Fixed(Some(8 * GIB)), || {
+                        Ok(runner.config.clone())
+                    })
+                    .unwrap();
+                runner.summarize(new_ticket, &request()).unwrap();
+                let (told, heard) = mpsc::channel();
+                runner.watch_answer(new_ticket, Box::new(move |limit| told.send(limit).unwrap()));
+                let state = || {
+                    let slot = runner.sidecar.lock().unwrap();
+                    let running = slot.as_ref().unwrap();
+                    let Process::Plain(child) = &running.process;
+                    (
+                        child.id(),
+                        running.next_id,
+                        runner.status(),
+                        serde_json::to_value(runner.last_stats()).unwrap(),
+                    )
+                };
+                let before = state();
+                release.send(()).unwrap();
+                old.join().unwrap();
+                assert_eq!(state(), before, "new session: {next_session}");
+                assert!(new_hold.is_current());
+                assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Empty));
+                runner.summarize(new_ticket, &request()).unwrap();
+                assert!(heard.try_recv().is_ok(), "B retained its watch");
+                assert!(new_hold.finish(true));
+                runner.stop();
+            }
+        }
+
+        #[test]
         fn a_ticket_cancelled_while_sampling_leaves_the_newer_requests_helper_alone() {
             use std::sync::atomic::AtomicUsize;
             use std::sync::mpsc;
@@ -2007,11 +2102,16 @@ mod tests {
             let answering = {
                 let (runner, idle) = (runner.clone(), idle.clone());
                 std::thread::spawn(move || {
+                    let origin = idle.answer_origin().unwrap();
+                    let (hold, ticket) = idle
+                        .admit_answer(origin, crate::model_runtime::ANSWER_LIMIT.ceiling, || {
+                            runner.ticket()
+                        })
+                        .unwrap();
                     tauri::async_runtime::block_on(crate::held_for_answer(
-                        &idle,
+                        hold,
                         move |limit| told.send(limit).unwrap(),
                         move |watch| {
-                            let ticket = runner.ticket();
                             runner.watch_answer(ticket, watch);
                             match runner.summarize(ticket, &request()) {
                                 Ok(_) => Ok(()),

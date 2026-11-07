@@ -402,7 +402,7 @@ impl ModelRuntime {
 
     /// Starts the helper if it is not running: the memory first, from the model's listed size,
     /// then the model verified again, then the start.
-    fn start(&self) -> Result<(), AiError> {
+    fn start(&self, ticket: crate::local_runner::Ticket) -> Result<(), AiError> {
         let mut unavailable = None;
         let prepare = || {
             let size = self.source.installed_size().ok_or_else(|| {
@@ -435,7 +435,7 @@ impl ModelRuntime {
                 RunnerError::NotRunning
             })
         };
-        let started = self.runner.start_with(&*self.probe, prepare);
+        let started = self.runner.start_for(ticket, &*self.probe, prepare);
         match (started, unavailable) {
             (Ok(_), _) => Ok(()),
             (Err(_), Some(error)) => Err(error),
@@ -445,16 +445,28 @@ impl ModelRuntime {
 
     /// A summary of the pages that fit, in the language asked. `watch` is told the answer's
     /// own time limit as it is asked.
+    #[cfg(test)]
     pub(crate) fn summarize(
         &self,
         request: SummarizeRequest,
         watch: AnswerWatch,
     ) -> Result<SummaryResult, AiError> {
+        self.summarize_for(self.reserve_answer(), request, watch)
+    }
+
+    pub(crate) fn reserve_answer(&self) -> crate::local_runner::Ticket {
+        self.runner.ticket()
+    }
+
+    pub(crate) fn summarize_for(
+        &self,
+        ticket: crate::local_runner::Ticket,
+        request: SummarizeRequest,
+        watch: AnswerWatch,
+    ) -> Result<SummaryResult, AiError> {
         check_summary(&request)?;
-        // A newer request ends an older one still running.
-        let ticket = self.runner.ticket();
         self.runner.watch_answer(ticket, watch);
-        self.start()?;
+        self.start(ticket)?;
         let summary = self
             .runner
             .summarize(
@@ -477,15 +489,15 @@ impl ModelRuntime {
 
     /// What a term means in its sentence, in the language asked. `watch` is told the answer's
     /// own time limit as it is asked.
-    pub(crate) fn explain(
+    pub(crate) fn explain_for(
         &self,
+        ticket: crate::local_runner::Ticket,
         request: ExplainRequest,
         watch: AnswerWatch,
     ) -> Result<ExplainResult, AiError> {
         check_explain(&request)?;
-        let ticket = self.runner.ticket();
         self.runner.watch_answer(ticket, watch);
-        self.start()?;
+        self.start(ticket)?;
         let (text, model) = self
             .runner
             .explain(ticket, request.term.trim(), &request.context, &request.lang)
