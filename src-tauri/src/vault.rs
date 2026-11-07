@@ -1,5 +1,5 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
-use crate::idle::IdleDeadline;
+use crate::idle::{AnswerHold, AnswerOrigin, IdleDeadline};
 use crate::portal_link::{self, LinkSummary, StoredLink};
 use crate::ui_text_ids::MessageId;
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -1208,6 +1208,25 @@ impl VaultStore {
     /// The session's idle deadline, which the app's native timer checks.
     pub fn idle(&self) -> &Arc<IdleDeadline> {
         &self.idle
+    }
+
+    /// Capture before asynchronous command validation. Lock ordering remains
+    /// session then idle, the same as opening and locking a vault.
+    pub(crate) fn answer_origin(&self) -> Option<AnswerOrigin> {
+        let guard = self.session();
+        guard.as_ref()?;
+        self.idle.answer_origin()
+    }
+
+    pub(crate) fn admit_answer<T>(
+        &self,
+        origin: AnswerOrigin,
+        cap: Duration,
+        reserve: impl FnOnce() -> T,
+    ) -> Option<(AnswerHold, T)> {
+        let guard = self.session();
+        guard.as_ref()?;
+        self.idle.admit_answer(origin, cap, reserve)
     }
 
     /// Takes the session mutex. A panic while it was held may have left the

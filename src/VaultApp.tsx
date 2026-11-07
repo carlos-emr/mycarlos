@@ -105,6 +105,14 @@ const PICKER_SETTLED_EVENT = "mycarlos:picker-settled";
 // Time in a picker counts as activity for at most this long, the longest
 // auto-lock delay, so a picker left open cannot keep the vault unlocked.
 const PICKER_GRACE_MS = 15 * 60 * 1000;
+// Dispatched on the document when an AI answer this app asked for settles.
+const ANSWER_SETTLED_EVENT = "mycarlos:answer-settled";
+type AnswerActivity = { id: string; epoch: number; heldUntil: number };
+// An AI answer being written counts as activity until it ends (D19), for at
+// most its own limit, which native says once the answer is asked
+// (`onAiAnswerStarted`). Until then, while the helper may be starting, for
+// at most the longest limit (native `ANSWER_LIMIT.ceiling`).
+const ANSWER_HOLD_MAX_MS = 20 * 60 * 1000;
 // User input is reported to the native idle deadline at most this often, so the
 // last report is less than 10 seconds before the last input. The native
 // deadline fires the delay plus 15 seconds after the last report, so at least
@@ -142,7 +150,33 @@ export default function VaultApp({ bridge = defaultBridge }: VaultAppProps) {
 
 function NativeVault({ bridge }: { bridge: VaultBridge }) {
   useI18n();
-  const [status, setStatus] = useState<VaultStatus | "loading">("loading");
+  const [status, setStatusState] = useState<VaultStatus | "loading">("loading");
+  const statusRef = useRef(status);
+  const answerEpochRef = useRef(0);
+  const answerRef = useRef<AnswerActivity | null>(null);
+  // Rotate synchronously on successful session transitions, including a lock
+  // observed natively. A failed lock leaves the current session intact.
+  const setStatus = useCallback(
+    (
+      next:
+        | VaultStatus
+        | "loading"
+        | ((current: VaultStatus | "loading") => VaultStatus | "loading"),
+    ) => {
+      const previous = statusRef.current;
+      const value = typeof next === "function" ? next(previous) : next;
+      if (
+        previous !== value &&
+        (previous === "unlocked" || value === "unlocked")
+      ) {
+        answerEpochRef.current += 1;
+        answerRef.current = null;
+      }
+      statusRef.current = value;
+      setStatusState(value);
+    },
+    [],
+  );
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [notice, setNotice, noticeValue] = useTextState();
   // Files shared from another app, waiting. Asked for at start, whenever the
@@ -601,6 +635,51 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       }
     }
   }, []);
+  // Only the current answer in this unlocked session can hold its deadline.
+  // Establish ownership before invoking the bridge: its started event can be
+  // delivered synchronously by an implementation of the bridge.
+  const answering = useCallback(
+    async <T,>(start: (answerId: string) => Promise<T>): Promise<T> => {
+      const answer: AnswerActivity = {
+        id: crypto.randomUUID(),
+        epoch: answerEpochRef.current,
+        heldUntil: Date.now() + ANSWER_HOLD_MAX_MS,
+      };
+      answerRef.current = answer;
+      try {
+        return await start(answer.id);
+      } finally {
+        if (
+          answerRef.current === answer &&
+          answer.epoch === answerEpochRef.current &&
+          statusRef.current === "unlocked"
+        ) {
+          document.dispatchEvent(
+            new CustomEvent(ANSWER_SETTLED_EVENT, { detail: answer }),
+          );
+          if (answerRef.current === answer) answerRef.current = null;
+        }
+      }
+    },
+    [],
+  );
+  useEffect(
+    () =>
+      bridge.onAiAnswerStarted?.(({ answerId, limitMs }) => {
+        const answer = answerRef.current;
+        if (
+          !answer ||
+          answer.id !== answerId ||
+          answer.epoch !== answerEpochRef.current ||
+          statusRef.current !== "unlocked" ||
+          !Number.isFinite(limitMs)
+        )
+          return;
+        answer.heldUntil =
+          Date.now() + Math.min(Math.max(limitMs, 0), ANSWER_HOLD_MAX_MS);
+      }),
+    [bridge],
+  );
   const trackedBridge = useMemo<VaultBridge>(() => {
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
       // `run` locks once the operation has reported the transfer's outcome.
@@ -647,8 +726,16 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
       exportToPicked: (pickId, recordId) =>
         transfer(() => bridge.exportToPicked(pickId, recordId)),
+      aiSummarize: (pages, lang, keep) =>
+        answering((answerId) =>
+          bridge.aiSummarize(pages, lang, keep, answerId),
+        ),
+      aiExplain: (term, context, lang, recordId) =>
+        answering((answerId) =>
+          bridge.aiExplain(term, context, lang, recordId, answerId),
+        ),
     };
-  }, [bridge, track, transferHold]);
+  }, [answering, bridge, track, transferHold]);
 
   useEffect(() => {
     if (status !== "unlocked") return;
@@ -671,12 +758,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     };
     const inPickerGrace = () =>
       Date.now() - pickerOpenedAtRef.current < PICKER_GRACE_MS;
+    const inAnswerHold = () => {
+      const answer = answerRef.current;
+      return (
+        answer !== null &&
+        answer.epoch === answerEpochRef.current &&
+        Date.now() < answer.heldUntil
+      );
+    };
     const check = () => {
       if (sessionRef.current !== session) return;
       if (!delaySent) sendDelay();
       // Time spent in a picker the app opened is not idle time: the user is
       // choosing files for this vault. The deadline restarts once it closes.
-      if (pickersOpenRef.current > 0 && inPickerGrace())
+      // Nor is the time an AI answer takes to write, up to its limit (D19).
+      if ((pickersOpenRef.current > 0 && inPickerGrace()) || inAnswerHold())
         deadline = Date.now() + delayMs;
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
@@ -719,6 +815,18 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       if (!concealedRef.current && inPickerGrace())
         deadline = Date.now() + delayMs;
     };
+    // The same for an AI answer that ended within its limit.
+    const onAnswerSettled = (event: Event) => {
+      const answer = (event as CustomEvent<AnswerActivity>).detail;
+      if (
+        sessionRef.current === session &&
+        answer &&
+        answerRef.current === answer &&
+        !concealedRef.current &&
+        inAnswerHold()
+      )
+        deadline = Date.now() + delayMs;
+    };
     // Keep open in the warning: as use, and told to the native deadline at
     // once, whenever it was last told.
     keepOpenRef.current = () => {
@@ -747,6 +855,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       window.addEventListener(event, postpone, { passive: true });
     }
     document.addEventListener(PICKER_SETTLED_EVENT, onPickerSettled);
+    document.addEventListener(ANSWER_SETTLED_EVENT, onAnswerSettled);
     document.addEventListener("visibilitychange", onVisibility);
     onVisibility();
     return () => {
@@ -757,6 +866,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         window.removeEventListener(event, postpone);
       }
       document.removeEventListener(PICKER_SETTLED_EVENT, onPickerSettled);
+      document.removeEventListener(ANSWER_SETTLED_EVENT, onAnswerSettled);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [autoLockMinutes, bridge, lockWhenIdle, status]);
