@@ -99,7 +99,15 @@ async function openAiSettings(page: Page) {
 }
 
 const button = (scope: Locator, name: string) =>
-  scope.getByRole("button", { name, exact: true });
+  scope.getByRole("button", {
+    name:
+      name === en("ai.model.download")
+        ? new RegExp(`^${en("ai.models.download")} `)
+        : name === en("ai.model.remove")
+          ? new RegExp(`^${en("ai.models.remove")} `)
+          : name,
+    exact: true,
+  });
 
 /** Presses Enter on a control, as a keyboard user does. */
 async function press(control: Locator) {
@@ -246,9 +254,9 @@ test("Download by keyboard: the focus stays in the AI helper row through the pro
   await expectFocusIn(row, "the row while it downloads");
   await releaseAi(page, AI_COMMANDS.download);
   await expectAnnounced(page, en("ai.model.added"));
-  await expect(row).toContainText(
-    en("ai.model.installed", { name: FAKE_MODEL.name }),
-  );
+  await expect(
+    row.getByRole("radio", { name: FAKE_MODEL.name, exact: true }),
+  ).toBeChecked();
   await expectFocusIn(row, "the row once the model is added");
   await screenReaderSmoke(page, "AI helper settings, a model added");
   await expectOnlyFakedCommands(page);
@@ -355,9 +363,8 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
     ).send("Page.setFontSizes", {
       fontSizes: { standard: 32 },
     });
-    await openLibrary(second);
-    await answerAi(second, AI_COMMANDS.catalog, [
-      {
+    await openLibrary(second, {
+      catalog: {
         name: FAKE_MODEL.name,
         fileName: "FAKE-model-name-instruct-Q4_K_M.gguf",
         sizeBytes: TOTAL,
@@ -367,7 +374,7 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
         sourceUrl:
           "https://huggingface.co/FAKE-organisation/FAKE-model-name-instruct-GGUF/resolve/FAKE-revision/FAKE-model-name-instruct-Q4_K_M.gguf",
       },
-    ]);
+    });
     const row = await openAiSettings(second);
     // The address itself (the download note names its host too).
     await expect(

@@ -287,6 +287,7 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         // Preferences on a computer asks whether an AI model is installed (#72).
         if (command === "ai_model_status") return { state: "notInstalled" };
         if (command === "ai_model_catalog") return [];
+        if (command === "ai_models") return [];
         // No add or download running when the row opens (#275).
         if (command === "ai_model_add_active") return null;
         // The setup checklist asks which rules a passphrase meets (#76).

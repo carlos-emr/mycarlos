@@ -169,7 +169,7 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
 
   // Step 3: Download the default model → progress with Cancel → Model added.
   await holdAi(page, AI_COMMANDS.download);
-  await (await named(row, "Download the default model", "step 3")).click();
+  await (await named(row, `Download ${MODEL}`, "step 3")).click();
   await reads(
     row.getByRole("status"),
     /Downloading and checking… [\d,]+ of 3,013 MB/,
@@ -178,8 +178,10 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
   await named(row, "Cancel", "step 3 (downloading)");
   await releaseAi(page, AI_COMMANDS.download);
   await says(row, "Model added", "step 3");
-  await says(row, `Installed: ${MODEL}`, "step 3");
-  await named(row, "Remove the model", "step 3");
+  await expect(
+    row.getByRole("radio", { name: MODEL, exact: true }),
+  ).toBeChecked();
+  await named(row, `Remove ${MODEL}`, "step 3");
 
   // Step 5: Choose files to import → the three, Unverified, Manual import.
   await page
@@ -381,7 +383,7 @@ test("the runbook's 'If it stalls' messages match the app", async ({
     [
       AI_COMMANDS.addPicked,
       "notListed",
-      "This is not a file myCarlos accepts. Choose the model file listed above.",
+      "This is not a file myCarlos accepts. Choose one of the model files listed above.",
     ],
     [
       AI_COMMANDS.addPicked,
@@ -408,7 +410,7 @@ test("the runbook's 'If it stalls' messages match the app", async ({
     await answerAi(page, command, { outcome });
     const label =
       command === AI_COMMANDS.download
-        ? "Download the default model"
+        ? `Download ${MODEL}`
         : "Add a model file…";
     await page.getByRole("button", { name: label, exact: true }).click();
     await says(row.getByRole("alert"), words, `If it stalls (${outcome})`);

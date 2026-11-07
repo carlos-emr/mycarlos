@@ -1741,6 +1741,37 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
     models.status(&local_model::Here)
 }
 
+/// Every model the app offers, and any other accepted one on this computer, with its state,
+/// whether it was added from a file, and whether it is the one in use (#276).
+#[tauri::command]
+fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::ModelRow> {
+    models.models()
+}
+
+/// Which catalog entry a model command is about (`ai_models`' `index`).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModelIndexRequest {
+    index: usize,
+}
+
+/// Makes an installed model the one in use (#276). The helper holding the old one ends first,
+/// as at a lock, so an answer being written stops; the choice is kept on this computer,
+/// outside the vault. Returns the status of the model now in use.
+#[tauri::command]
+async fn ai_model_use(
+    models: State<'_, Arc<local_model::Store>>,
+    request: ModelIndexRequest,
+) -> Result<local_model::ModelStatus, ModelFailure> {
+    let models = Arc::clone(models.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        models.use_model(request.index)?;
+        Ok(models.status(&local_model::Here))
+    })
+    .await
+    .map_err(|_| local_model::ModelError::Storage)?
+}
+
 /// Why adding or removing a model was refused, as a word for the renderer.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1766,6 +1797,8 @@ impl From<local_model::ModelError> for ModelFailure {
 struct ModelAddProgress {
     done: u64,
     total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
 }
 
 /// The model add or download running now, and how far it is (#275). A row
@@ -1782,11 +1815,13 @@ struct ModelAddActive {
 #[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct ModelAddNow {
-    /// `download` for the default model's download and its check; `check`
+    /// `download` for a catalogue model's download and its check; `check`
     /// for a picked file's.
     kind: &'static str,
     done: u64,
     total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
 }
 
 impl ModelAddActive {
@@ -1829,6 +1864,7 @@ impl ModelAddActive {
 struct ModelAddReport<'a> {
     active: &'a ModelAddActive,
     kind: &'static str,
+    index: Option<usize>,
     reported: bool,
 }
 
@@ -1837,6 +1873,7 @@ impl<'a> ModelAddReport<'a> {
         Self {
             active,
             kind,
+            index: None,
             reported: false,
         }
     }
@@ -1846,6 +1883,7 @@ impl<'a> ModelAddReport<'a> {
             kind: self.kind,
             done,
             total,
+            index: self.index,
         }));
     }
 }
@@ -1943,7 +1981,14 @@ async fn ai_model_add_picked(
                     if done == 0 || done == total || step != shown {
                         shown = step;
                         report.progress(done, total);
-                        let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                        let _ = app.emit(
+                            "ai-model-add-progress",
+                            ModelAddProgress {
+                                done,
+                                total,
+                                index: None,
+                            },
+                        );
                     }
                 });
                 match result {
@@ -1965,7 +2010,7 @@ async fn ai_model_add_picked(
     .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
-/// Downloads the default model (the catalog's first entry) from its pinned
+/// Downloads a catalogue model (the first without an index) from its pinned
 /// address, only because the patient clicked. Native code makes the request
 /// and nothing about the patient or a document is sent. The same checks as
 /// a picked file; the same progress event and `ai_model_add_cancel`. Returns
@@ -1976,7 +2021,9 @@ async fn ai_model_download(
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
     active: State<'_, Arc<ModelAddActive>>,
+    request: Option<ModelIndexRequest>,
 ) -> CommandResult<ModelAddOutcome> {
+    let index = request.map_or(0, |request| request.index);
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
     let models = Arc::clone(models.inner());
@@ -1985,9 +2032,10 @@ async fn ai_model_download(
         active.run(
             "download",
             |report| {
+                report.index = Some(index);
                 let mut shown = u64::MAX;
                 let result = models.download(
-                    0,
+                    index,
                     &model_download::Https,
                     &local_model::Here,
                     |done, total| {
@@ -1995,8 +2043,14 @@ async fn ai_model_download(
                         if done == 0 || done == total || step != shown {
                             shown = step;
                             report.progress(done, total);
-                            let _ =
-                                app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+                            let _ = app.emit(
+                                "ai-model-add-progress",
+                                ModelAddProgress {
+                                    done,
+                                    total,
+                                    index: Some(index),
+                                },
+                            );
                         }
                     },
                 );
@@ -2026,15 +2080,16 @@ fn ai_model_add_cancel(models: State<'_, Arc<local_model::Store>>) {
     models.cancel_add();
 }
 
-/// Deletes the model (and any half-copied file). The folder holds nothing of
-/// the patient's, so nothing else is kept.
+/// Deletes the indexed model (the one in use without an index) and its part.
+/// Removing the one in use selects another installed catalogue model, or none.
 #[tauri::command]
 async fn ai_model_remove(
     models: State<'_, Arc<local_model::Store>>,
+    request: Option<ModelIndexRequest>,
 ) -> Result<local_model::ModelStatus, ModelFailure> {
     let models = Arc::clone(models.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        models.remove()?;
+        models.remove(request.map(|request| request.index))?;
         Ok(models.status(&local_model::Here))
     })
     .await
@@ -5126,6 +5181,8 @@ pub fn run() {
             runtime_info,
             ai_model_catalog,
             ai_model_status,
+            ai_models,
+            ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,
             ai_model_add_active,
@@ -6983,12 +7040,69 @@ mod tests {
             active.get(),
             Some(ModelAddNow {
                 kind: "download",
+                index: None,
                 done: 5,
                 total: 10
             })
         );
         drop(running);
         assert_eq!(active.get(), None);
+    }
+
+    #[test]
+    fn model_selection_accepts_only_an_index_without_paths_or_unknown_fields() {
+        let chosen: ModelIndexRequest =
+            serde_json::from_value(serde_json::json!({"index": 1})).unwrap();
+        assert_eq!(chosen.index, 1);
+        for value in [
+            serde_json::json!({"index": -1}),
+            serde_json::json!({"index": 0.5}),
+            serde_json::json!({"index": "1"}),
+            serde_json::json!({"path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "sha256": "arbitrary"}),
+        ] {
+            assert!(serde_json::from_value::<ModelIndexRequest>(value).is_err());
+        }
+    }
+
+    #[test]
+    fn model_add_metadata_keeps_the_download_row_but_picker_checks_stay_global() {
+        let active = ModelAddActive::default();
+        let mut report = ModelAddReport::new(&active, "download");
+        report.index = Some(1);
+        report.progress(5, 10);
+        let snapshot = active.get().unwrap();
+        assert_eq!(snapshot.index, Some(1));
+        let encoded = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(encoded["index"], 1);
+        assert_eq!(encoded["done"], 5);
+        drop(ModelAddReport::new(&active, "check"));
+        assert_eq!(active.get(), Some(snapshot));
+        drop(report);
+        assert_eq!(active.get(), None);
+
+        let mut picked = ModelAddReport::new(&active, "check");
+        picked.progress(2, 20);
+        let check = serde_json::to_value(active.get().unwrap()).unwrap();
+        assert!(check.get("index").is_none());
+        let legacy = serde_json::to_value(ModelAddProgress {
+            done: 2,
+            total: 20,
+            index: None,
+        })
+        .unwrap();
+        assert_eq!(legacy, serde_json::json!({"done": 2, "total": 20}));
+        let indexed = serde_json::to_value(ModelAddProgress {
+            done: 5,
+            total: 10,
+            index: Some(1),
+        })
+        .unwrap();
+        assert_eq!(
+            indexed,
+            serde_json::json!({"done": 5, "total": 10, "index": 1})
+        );
     }
 
     #[test]
@@ -7065,6 +7179,7 @@ mod tests {
                     active.get(),
                     Some(ModelAddNow {
                         kind: "check",
+                        index: None,
                         done: 2,
                         total: 20,
                     })

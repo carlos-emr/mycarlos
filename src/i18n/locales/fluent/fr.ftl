@@ -1859,7 +1859,7 @@ ai-explain-submit = Expliquer
 
 ai-preferences-title = Assistant IA
 
-ai-preferences-body = Explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà ; il reste sur cet ordinateur.
+ai-preferences-body = Explique vos documents en termes simples avec un modèle d’IA qui fonctionne sur cet ordinateur. Téléchargez un des modèles ci-dessous ou ajoutez un fichier correspondant que vous possédez déjà. Les modèles restent sur cet ordinateur.
 
 ai-preferences-notInstalled = Non installé
 
@@ -1893,7 +1893,7 @@ ai-model-unsupportedCpu = Le processeur de cet ordinateur n’est pas pris en ch
 
 ai-model-unsupportedPlatform = L’assistant IA n’est pas encore disponible sur ce type d’ordinateur.
 
-ai-model-refusedList = Ce fichier n’est pas accepté par myCarlos. Choisissez le fichier de modèle indiqué ci-dessus.
+ai-model-refusedList = Ce fichier n’est pas accepté par myCarlos. Choisissez un des fichiers de modèle indiqués ci-dessus.
 
 ai-model-refusedHash = Ce n’est pas le fichier attendu. Téléchargez-le de nouveau et ajoutez la nouvelle copie.
 
@@ -2161,3 +2161,37 @@ ai-summary-again = Résumer à nouveau
 ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.
 
 ai-keepFull = Ce document conserve déjà le nombre maximal de réponses de l’IA. Les nouvelles réponses s’affichent, mais ne sont pas conservées.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modèles sur cet ordinateur
+
+ai-models-group = Modèle utilisé
+
+ai-models-inUse = Utilisé
+
+ai-models-installed = Installé
+
+ai-models-addedByYou = Ajouté par vous
+
+ai-models-notDownloaded = Non téléchargé
+
+ai-models-downloading = Téléchargement en cours
+
+ai-models-download = Télécharger
+
+ai-models-remove = Supprimer
+
+ai-models-help = Le modèle marqué Utilisé rédige les résumés et les explications. Choisir un autre modèle arrête la réponse en cours de rédaction.
+
+ai-models-loading = Lecture de la liste des modèles…
+
+ai-models-loadFailed = La liste des modèles n’a pas pu être lue. Réessayez.
+
+ai-models-retry = Relire la liste des modèles
+
+ai-models-starting = Démarrage du téléchargement…
+
+ai-models-picking = Choisissez un fichier de modèle à ajouter.
+
+ai-models-changed = Le modèle utilisé a été changé

@@ -1375,3 +1375,17 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 /* The model's buttons (#72): apart, and wrapped onto their own lines at
    large text (#253). */
 .native-ai-model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Device model catalog (#276A): controls stay with their named row at enlarged text. */
+.native-ai-model { min-width: 0; }
+.native-ai-model > h3 { margin: 14px 0 6px; font-size: 1rem; }
+.native-ai-model-list { display: grid; gap: 12px; margin: 12px 0; min-width: 0; }
+.native-ai-model-entry { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.native-ai-model-entry > p { margin-top: 6px; }
+.native-ai-model-row-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-width: 0; }
+.native-ai-model-choice { display: flex; align-items: flex-start; gap: 8px; min-width: 0; flex: 1 1 16rem; }
+.native-ai-model-choice input { flex: 0 0 auto; margin: 4px 0 0; }
+.native-ai-model-row-head .native-ai-model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.native-ai-model-entry .native-ai-model-progress { width: 100%; }
+.native-ai-model-entry [aria-disabled="true"] { cursor: default; }
+.native-ai-model-entry .button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
