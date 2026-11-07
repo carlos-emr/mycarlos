@@ -12297,20 +12297,24 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     vi.mocked(bridge.restartDeviceApproval!).mockImplementationOnce(() =>
       held(undefined, true),
     );
-    vi.mocked(bridge.checkDocuments!).mockImplementationOnce(() =>
-      held({
-        added: 0,
-        refused: 0,
-        receiptsPending: 0,
-        issues: [
-          {
-            linkId: pending.id,
-            clinicName: pending.clinicName!,
-            code: "portal_rate_limited",
-          },
-        ],
-      }),
-    );
+    // Only the action under test holds a check. After the next unlock,
+    // an automatic document check must receive the bridge's ordinary reply.
+    if (action.endsWith("check")) {
+      vi.mocked(bridge.checkDocuments!).mockImplementationOnce(() =>
+        held({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: pending.id,
+              clinicName: pending.clinicName!,
+              code: "portal_rate_limited",
+            },
+          ],
+        }),
+      );
+    }
     await openClinicView(bridge);
     if (action === "connect") {
       await act(async () => {

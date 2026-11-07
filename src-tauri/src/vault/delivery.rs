@@ -4908,6 +4908,230 @@ mod approval_recovery_tests {
         assert!(crate::portal_pickup::worth_asking(&other));
     }
 
+    /// Production eligibility must keep a previously approved clinic eligible
+    /// after a newer request ends, and retry its stored receipt byte for byte.
+    /// The custody helper below rewrites fixture identifiers; this exercises
+    /// saved-custody admission and retry, not a new clinic-signature proof.
+    #[test]
+    fn production_check_retries_known_custody_with_archived_approval_after_restart() {
+        let (_temp, store, link, _) = setup(true);
+        let approved = store
+            .refresh_staff_approval_using(
+                &link,
+                store.portal_link_ticket(),
+                &Script::new(vec![Reply::Accepted], vec![]),
+            )
+            .unwrap();
+        let mut link = approved.clone();
+        link.approval_history.push(link.approval.take().unwrap());
+        let mut current = portal_approval::create(&link, crate::now_ms() / 1000).unwrap();
+        current.status = Some(State::Refused);
+        current.reason = Some(Reason::StaffRequired);
+        link.approval = Some(current);
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = link.clone();
+                Ok(())
+            })
+            .unwrap();
+        assert!(crate::portal_pickup::worth_asking(&link));
+        let record = add_unsent_delivery_for(&store, &link);
+        let receipt = store
+            .pending_receipts_checked(&link, store.portal_link_ticket())
+            .unwrap()
+            .ready[0]
+            .receipt
+            .clone();
+        let approvals = Script::new(vec![], vec![]);
+        let sent = Mutex::new(Vec::new());
+        let first = crate::portal_pickup::check_asking_using(
+            &store,
+            store.portal_link_ticket(),
+            &approvals,
+            |to, method, path, body, _, _, _| {
+                assert_eq!((to.id, method), (link.id, "POST"));
+                assert!(path.ends_with("/receipt"));
+                sent.lock().unwrap().push(body);
+                Err(portal_link::LinkError::Network)
+            },
+        )
+        .unwrap();
+        assert_eq!(first.receipts_pending, 1);
+        assert_eq!(first.issues.len(), 1);
+        let store = restart(store);
+        let second = crate::portal_pickup::check_asking_using(
+            &store,
+            store.portal_link_ticket(),
+            &approvals,
+            |to, method, path, body, _, _, _| {
+                assert_eq!(to.id, link.id);
+                if path.ends_with("/receipt") {
+                    assert_eq!(method, "POST");
+                    sent.lock().unwrap().push(body);
+                    Ok(picked_up())
+                } else {
+                    assert_eq!(method, "GET");
+                    assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                    Ok(empty_page())
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (second.added, second.refused, second.receipts_pending),
+            (0, 0, 0)
+        );
+        assert!(second.issues.is_empty());
+        assert!(approvals.calls.lock().unwrap().is_empty());
+        let sent = sent.into_inner().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[0], sent[1]);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&sent[1]).unwrap()["receipt"],
+            receipt
+        );
+        assert_eq!(
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .map(|r| r.id)
+                .collect::<Vec<_>>(),
+            vec![record]
+        );
+    }
+
+    #[test]
+    fn production_check_preserves_original_and_aid_receipts_on_device_removal() {
+        for aid in [false, true] {
+            for (code, expected) in [
+                ("device_removed", "portal_device_removed"),
+                ("forbidden", "portal_link_incomplete"),
+            ] {
+                let (_temp, store, mut link, record) = vault_with_pair_original();
+                let (outer, sealed) = aid_vector("a reading aid for a filed original");
+                let session = store.portal_link_ticket();
+                assert!(matches!(
+                    store
+                        .receive_aid_at(&outer, &sealed, &link, session, NOW_MS)
+                        .unwrap(),
+                    AidFiling::Filed
+                ));
+                link.approval =
+                    Some(portal_approval::create(&link, crate::now_ms() / 1000).unwrap());
+                store
+                    .mutate_recorded(|m, _| {
+                        m.portal_links[0] = link.clone();
+                        Ok(())
+                    })
+                    .unwrap();
+                assert!(crate::portal_pickup::worth_asking(&link));
+                let pending = store.pending_receipts_checked(&link, session).unwrap();
+                assert_eq!(
+                    (
+                        pending.ready.len(),
+                        pending.ready_aids.len(),
+                        pending.damaged
+                    ),
+                    (1, 1, 0)
+                );
+                let (delivery, receipt) = if aid {
+                    store
+                        .settle_receipt(
+                            &link,
+                            &pending.ready[0],
+                            wire::ReceiptOutcome::PickedUp,
+                            session,
+                        )
+                        .unwrap();
+                    (
+                        pending.ready_aids[0].outer.delivery_id.clone(),
+                        pending.ready_aids[0].receipt.clone(),
+                    )
+                } else {
+                    store
+                        .settle_aid_receipt(
+                            &link,
+                            &pending.ready_aids[0],
+                            wire::ReceiptOutcome::PickedUp,
+                            session,
+                        )
+                        .unwrap();
+                    (
+                        pending.ready[0].outer.delivery_id.clone(),
+                        pending.ready[0].receipt.clone(),
+                    )
+                };
+                let sent = Mutex::new(Vec::new());
+                let approvals = Script::new(vec![Reply::Pending], vec![]);
+                let refused = crate::portal_pickup::check_asking_using(
+                    &store,
+                    session,
+                    &approvals,
+                    |to, method, path, body, _, _, _| {
+                        assert_eq!((to.id, method), (link.id, "POST"));
+                        assert_eq!(path, format!("/api/mycarlos/deliveries/{delivery}/receipt"));
+                        sent.lock().unwrap().push(body);
+                        Ok(refusal(code))
+                    },
+                )
+                .unwrap();
+                assert_eq!(issues(&refused), vec![(link.id, expected)]);
+                assert_eq!(refused.receipts_pending, 1);
+                assert!(approvals.calls.lock().unwrap().is_empty());
+                let store = restart(store);
+                let pending = store
+                    .pending_receipts_checked(&link, store.portal_link_ticket())
+                    .unwrap();
+                let kept = if aid {
+                    &pending.ready_aids[0].receipt
+                } else {
+                    &pending.ready[0].receipt
+                };
+                assert_eq!(kept, &receipt);
+                let retried = crate::portal_pickup::check_asking_using(
+                    &store,
+                    store.portal_link_ticket(),
+                    &approvals,
+                    |to, method, path, body, _, _, _| {
+                        assert_eq!(to.id, link.id);
+                        if method == "POST" {
+                            assert_eq!(
+                                path,
+                                format!("/api/mycarlos/deliveries/{delivery}/receipt")
+                            );
+                            sent.lock().unwrap().push(body);
+                            Ok(picked_up())
+                        } else {
+                            assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                            Ok(empty_page())
+                        }
+                    },
+                )
+                .unwrap();
+                assert_eq!(
+                    (retried.added, retried.refused, retried.receipts_pending),
+                    (0, 0, 0)
+                );
+                assert!(retried.issues.is_empty());
+                assert_eq!(approvals.calls.lock().unwrap().len(), 1);
+                let sent = sent.into_inner().unwrap();
+                assert_eq!(sent.len(), 2);
+                assert_eq!(sent[0], sent[1]);
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&sent[1]).unwrap()["receipt"],
+                    receipt
+                );
+                assert_eq!(store.snapshot().unwrap().records[0].id, record);
+                assert_eq!(
+                    stored_aid(&store, record).unwrap().outer.delivery_id,
+                    outer.delivery_id
+                );
+            }
+        }
+    }
+
     // SOURCE ONLY: insert these two functions INSIDE the existing cfg(test)
     // vault::delivery::approval_recovery_tests module. They use its actual encrypted
     // saved-custody fixture helpers. As documented by add_unsent_delivery_for, the
