@@ -6048,6 +6048,106 @@ mod tests {
     }
 
     #[test]
+    fn ownership_a_delayed_old_admission_cannot_hold_a_new_session() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let inside = Arc::clone(&idle);
+        // The old command passed its unlocked check, then waited before admission.
+        let old = held_for_answer(
+            &idle,
+            |_| (),
+            move |_watch| {
+                assert!(
+                    inside.is_due(idle_past(Instant::now())),
+                    "old admission must not hold the new session"
+                );
+                Ok(())
+            },
+        );
+        idle.disarm();
+        idle.arm(start);
+        assert!(matches!(
+            tauri::async_runtime::block_on(old),
+            Err(model_runtime::AiError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn ownership_old_watch_and_completion_cannot_touch_a_new_session() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let inside = Arc::clone(&idle);
+        let announced = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let heard = Arc::clone(&announced);
+        let result = tauri::async_runtime::block_on(held_for_answer(
+            &idle,
+            move |_| {
+                heard.store(true, Ordering::SeqCst);
+            },
+            move |watch| {
+                inside.disarm();
+                inside.arm(start);
+                std::thread::sleep(Duration::from_millis(2));
+                watch(model_runtime::ANSWER_LIMIT.ceiling);
+                assert!(
+                    inside.is_due(idle_past(start)),
+                    "old watch must not postpone the new session"
+                );
+                Ok(())
+            },
+        ));
+        assert!(matches!(
+            result,
+            Ok(()) | Err(model_runtime::AiError::Cancelled)
+        ));
+        assert!(
+            !announced.load(Ordering::SeqCst),
+            "old watch must not announce into a new session"
+        );
+        assert!(
+            idle.is_due(idle_past(start)),
+            "old completion must not restart the new deadline"
+        );
+    }
+
+    #[test]
+    fn ownership_a_new_answer_retires_the_old_answer_but_not_a_picker() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let _picker = ActivityHold::new(&idle);
+        let inside = Arc::clone(&idle);
+        let result = tauri::async_runtime::block_on(held_for_answer(
+            &idle,
+            |_| (),
+            move |old_watch| {
+                tauri::async_runtime::block_on(held_for_answer(
+                    &inside,
+                    |_| (),
+                    |_new_watch| Ok(()),
+                ))
+                .unwrap();
+                old_watch(model_runtime::ANSWER_LIMIT.ceiling);
+                assert!(
+                    !inside.is_due(idle_past(start + Duration::from_secs(10 * 60))),
+                    "the picker must remain held"
+                );
+                assert!(
+                    inside.is_due(idle_past(start + idle::GRACE + Duration::from_secs(1))),
+                    "the superseded answer must not extend the picker cap"
+                );
+                Ok(())
+            },
+        ));
+        assert!(matches!(
+            result,
+            Ok(()) | Err(model_runtime::AiError::Cancelled)
+        ));
+    }
+
+    #[test]
     fn an_answer_holds_the_idle_lock_until_it_ends_never_past_its_own_limit() {
         let armed_at = Instant::now();
         let idle = Arc::new(IdleDeadline::new(armed_at));

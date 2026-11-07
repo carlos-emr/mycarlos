@@ -6552,6 +6552,153 @@ describe("durable vault UI", () => {
       };
     }
 
+    for (const ending of ["pending", "resolve", "reject"] as const) {
+      it(`ownership: an old answer ${ending} cannot postpone the next session`, async () => {
+        vi.useFakeTimers();
+        try {
+          const { bridge, settles } = await askForSummary();
+          await act(async () =>
+            fireEvent.click(
+              screen.getByRole("button", {
+                name: humanText("Unlocked · Lock now"),
+              }),
+            ),
+          );
+          expect(bridge.lock).toHaveBeenCalledOnce();
+          vi.mocked(bridge.unlock).mockImplementation(async () =>
+            captureSnapshot(snapshotWithRecord),
+          );
+          await act(async () => {
+            fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
+              target: { value: "river-azimuth-cobalt-sparrow-934" },
+            });
+            fireEvent.click(
+              screen.getByRole("button", { name: humanText("Unlock") }),
+            );
+          });
+          expect(
+            screen.getByRole("heading", { name: humanText("My records") }),
+          ).toBeVisible();
+          await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+          if (ending !== "pending")
+            await act(async () => {
+              if (ending === "resolve") settles[0].resolve(summary);
+              else settles[0].reject({ code: "aiCancelled" });
+            });
+          await act(async () => vi.advanceTimersByTime(60_000 + 10_000));
+          expect(bridge.lock).toHaveBeenCalledTimes(2);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    }
+
+    it("ownership: a superseded answer's late start and end cannot extend the current answer", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles, started } = await askForSummary();
+        const summaryButton = () =>
+          within(
+            screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+          ).getByRole("button", { name: humanText("Summary") });
+        await act(async () => fireEvent.click(summaryButton()));
+        await act(async () => fireEvent.click(summaryButton()));
+        for (
+          let flush = 0;
+          flush < 10 && vi.mocked(bridge.aiSummarize).mock.calls.length < 2;
+          flush += 1
+        )
+          await act(async () => undefined);
+        expect(bridge.aiSummarize).toHaveBeenCalledTimes(2);
+        await started(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+        await started(20 * 60 * 1000);
+        await act(async () => settles[0].reject({ code: "aiCancelled" }));
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ownership: old delivery cannot retain work after the current answer ends", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles } = await askForSummary();
+        const button = () =>
+          within(
+            screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+          ).getByRole("button", { name: humanText("Summary") });
+        await act(async () => fireEvent.click(button()));
+        await act(async () => fireEvent.click(button()));
+        for (let i = 0; i < 10 && settles.length < 2; i += 1)
+          await act(async () => undefined);
+        expect(settles).toHaveLength(2);
+        await act(async () => vi.advanceTimersByTime(60_000));
+        await act(async () => settles[1].resolve(summary));
+        await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ownership: old started and settled deliveries cannot extend an answer in a new session", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles, started } = await askForSummary();
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", {
+              name: humanText("Unlocked · Lock now"),
+            }),
+          ),
+        );
+        vi.mocked(bridge.unlock).mockImplementation(async () =>
+          captureSnapshot(snapshotWithRecord),
+        );
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
+            target: { value: "river-azimuth-cobalt-sparrow-934" },
+          });
+          fireEvent.click(
+            screen.getByRole("button", { name: humanText("Unlock") }),
+          );
+        });
+        await act(async () =>
+          fireEvent.click(screen.getByText(humanText("FAKE_Results.pdf"))),
+        );
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", { name: humanText("Read") }),
+          ),
+        );
+        const reader = screen.getByRole("dialog", {
+          name: humanText("FAKE_Results.pdf"),
+        });
+        await act(async () =>
+          fireEvent.click(
+            within(reader).getByRole("button", { name: humanText("Summary") }),
+          ),
+        );
+        const go = screen.queryByRole("button", {
+          name: humanText("Continue"),
+        });
+        if (go) await act(async () => fireEvent.click(go));
+        for (let i = 0; i < 10 && settles.length < 2; i += 1)
+          await act(async () => undefined);
+        expect(settles).toHaveLength(2);
+        await started(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+        await started(20 * 60 * 1000);
+        await act(async () => settles[0].reject({ code: "aiCancelled" }));
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("does not lock until the answer's own limit and the delay have passed", async () => {
       vi.useFakeTimers();
       try {
