@@ -421,6 +421,12 @@ async function walkTheVault(large: LargeText) {
     page.getByRole("heading", { name: "Preferences" }),
   ).toBeVisible();
   await expectNoViolations(page, "Preferences", large.cutOff);
+  await openSection(page, "ai", "AI helper");
+  await expect(
+    page.getByRole("heading", { name: "AI helper", level: 1 }),
+  ).toBeVisible();
+  await expect(page.getByText("Not installed", { exact: true })).toBeVisible();
+  await expectNoViolations(page, "AI helper, the model's row", large.cutOff);
   await expectOnlyMockedCommands(page);
 }
 

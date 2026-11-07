@@ -1,9 +1,12 @@
 import {
   useI18n,
   t as translateNow,
-  tPlain,
+  getLocale,
+  translatePlain,
   useTextState,
   deferredText,
+  LOCALES,
+  type Locale,
   type MessageKey,
 } from "../i18n";
 import {
@@ -30,10 +33,12 @@ import {
   restoreChecked,
   type Deidentified,
   type PlaceholderLabels,
-  type PlaceholderNotes,
+  type PlaceholderVocabulary,
   type RemovedKind,
   type RestoredPart,
 } from "../deidentify/deidentify";
+import { detectDocumentLanguage } from "../deidentify/documentLanguage";
+import { cleanText } from "../deidentify/textCleaning";
 
 /** The kinds a removal can have, for the labels. */
 const KINDS: (RemovedKind | "date")[] = [
@@ -60,28 +65,49 @@ const kindKey = (kind: RemovedKind | "date"): MessageKey =>
     ? "interface.AnonymizePreview.movedDate"
     : (`interface.AnonymizePreview.kind.${kind}` as MessageKey);
 
-/** The placeholder words in the app's language ("[NOM 1]"). */
-function placeholderLabels(): PlaceholderLabels {
+/** The placeholder words ("[NOM 1]") and the notes after a placeholder's
+ * number, in one language. They are stored and sent as data, so they are
+ * formatted with no bidi isolation. */
+function placeholderWords(locale: Locale): PlaceholderVocabulary {
   const labels = {} as PlaceholderLabels;
   for (const kind of KINDS)
     if (kind !== "date")
-      labels[kind] = translateNow(
+      labels[kind] = translatePlain(
+        locale,
         `interface.AnonymizePreview.placeholder.${kind}` as MessageKey,
       );
-  return labels;
+  return {
+    labels,
+    notes: {
+      daysAfter: (days, label, number) =>
+        translatePlain(locale, "interface.AnonymizePreview.note.daysAfter", {
+          days,
+          label,
+          number,
+        }),
+      ageOver90: translatePlain(
+        locale,
+        "interface.AnonymizePreview.note.ageOver90",
+      ),
+    },
+  };
 }
 
-/** The notes after a placeholder's number, in the app's language. They are
- * stored and sent as data, so they are formatted with no bidi isolation. */
-function placeholderNotes(): PlaceholderNotes {
+/** The placeholders follow the document's language, which may not be the
+ * app's (#215): an English app exporting a French letter writes "[NOM 1]".
+ * When the text does not say clearly, the app's language is used. The
+ * other languages' words come along, for numbering and for the paste-back. */
+function placeholderLanguages(text: string): {
+  labels: PlaceholderLabels;
+  notes: PlaceholderVocabulary["notes"];
+  otherLanguages: PlaceholderVocabulary[];
+} {
+  const { locale } = detectDocumentLanguage(cleanText(text).text, getLocale());
   return {
-    daysAfter: (days, label, number) =>
-      tPlain("interface.AnonymizePreview.note.daysAfter", {
-        days,
-        label,
-        number,
-      }),
-    ageOver90: tPlain("interface.AnonymizePreview.note.ageOver90"),
+    ...placeholderWords(locale),
+    otherLanguages: LOCALES.filter((other) => other !== locale).map(
+      placeholderWords,
+    ),
   };
 }
 
@@ -184,8 +210,7 @@ export function AnonymizePreview({
           knownBirthDates,
           knownClinics: [...clinicNames, ...known.clinicNames],
           knownDoctors: known.doctorNames,
-          labels: placeholderLabels(),
-          notes: placeholderNotes(),
+          ...placeholderLanguages(read.joined),
         });
         setText(read);
         setTicket(read.ticket);

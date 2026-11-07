@@ -1,5 +1,5 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
-use crate::idle::IdleDeadline;
+use crate::idle::{AnswerHold, AnswerOrigin, IdleDeadline};
 use crate::portal_link::{self, LinkSummary, StoredLink};
 use crate::ui_text_ids::MessageId;
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -46,29 +46,34 @@ mod native_portal_flow;
 mod original_pdf;
 
 use ai_results::StoredAiResult;
-pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput};
+pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
 
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
 /// size class; format 3 adds the history; format 4 adds profile identity details;
 /// formats 5–7 add portal links and delivery and approval evidence; format 8
 /// keeps reading aids with their original; format 9 adds remote notice consent
 /// and push destinations (#192); format 10 adds the AI helper's answers (#72),
-/// objects of their own.
+/// objects of their own; format 11 caps the hidden answers apart from the
+/// shown ones (D13).
 /// Formats 1–3 are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_AI_RESULTS;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_AI_HIDDEN_CAP;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
 /// The first format that can hold a history.
 const MANIFEST_FORMAT_HISTORY: u32 = 3;
-/// The first format that can hold the AI helper's answers (#72 part D), and
-/// the newest, so `VAULT_FORMAT` is this one. Its number is taken at merge
-/// (VAULT_FORMAT.md, "Format numbers are taken at merge"): a renumber changes
-/// this line and the format's heading in VAULT_FORMAT.md, nothing else here.
+/// The first format that can hold the AI helper's answers (#72 part D): at
+/// most 32 per document, hidden ones included.
 const MANIFEST_FORMAT_AI_RESULTS: u32 = 10;
+/// The first format whose hidden AI answers have a cap of their own (D13):
+/// 32 shown and 96 hidden per document. The newest, so `VAULT_FORMAT` is this
+/// one. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
+/// taken at merge"): a renumber changes this line and the format's heading in
+/// VAULT_FORMAT.md, nothing else here.
+const MANIFEST_FORMAT_AI_HIDDEN_CAP: u32 = 11;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
@@ -268,6 +273,8 @@ pub enum VaultError {
     ApprovalRequestMissing,
     #[error("clinic approval needs review before another request")]
     ApprovalNeedsClinic,
+    #[error("the clinic portal still has the approval request open")]
+    ApprovalStillOpen,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("a document check is stopping; please try again")]
@@ -897,6 +904,7 @@ pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
     collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
+    approval_poll_progress: Mutex<HashMap<Uuid, delivery::ApprovalPollProgress>>,
     notifications: std::sync::OnceLock<Arc<crate::document_notification_runtime::Runtime>>,
     unlocked: Mutex<Option<UnlockedVault>>,
     snapshot_epoch: Uuid,
@@ -905,6 +913,7 @@ pub struct VaultStore {
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
     portal_session: Arc<AtomicU64>,
+    /// Shared admission for linking, approval requests and document checks.
     portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
@@ -927,6 +936,7 @@ impl VaultStore {
             root,
             collection: crate::document_collection::Controller::new(Instant::now()),
             collection_resume: Mutex::new(None),
+            approval_poll_progress: Mutex::new(HashMap::new()),
             notifications: std::sync::OnceLock::new(),
             unlocked: Mutex::new(None),
             snapshot_epoch: Uuid::new_v4(),
@@ -963,7 +973,20 @@ impl VaultStore {
                 .unwrap_or_else(|p| p.into_inner()) = None;
         }
     }
+    fn approval_poll_progress(
+        &self,
+    ) -> MutexGuard<'_, HashMap<Uuid, delivery::ApprovalPollProgress>> {
+        self.approval_poll_progress
+            .lock()
+            .unwrap_or_else(|poisoned| {
+                let mut progress = poisoned.into_inner();
+                progress.clear();
+                self.approval_poll_progress.clear_poison();
+                progress
+            })
+    }
     fn invalidate_collection_cache(&self) {
+        self.approval_poll_progress().clear();
         self.collection.invalidate_cache();
         self.drop_idle_collection_cache();
     }
@@ -1124,7 +1147,7 @@ impl VaultStore {
             session,
             &control,
             &mut cache,
-            &crate::portal_approval::ApprovalHttp,
+            &crate::portal_approval::ApprovalHttp::default(),
             crate::portal_client::api,
         );
         // Manual preemption preserves progress. Consent/session invalidation
@@ -1185,6 +1208,25 @@ impl VaultStore {
     /// The session's idle deadline, which the app's native timer checks.
     pub fn idle(&self) -> &Arc<IdleDeadline> {
         &self.idle
+    }
+
+    /// Capture before asynchronous command validation. Lock ordering remains
+    /// session then idle, the same as opening and locking a vault.
+    pub(crate) fn answer_origin(&self) -> Option<AnswerOrigin> {
+        let guard = self.session();
+        guard.as_ref()?;
+        self.idle.answer_origin()
+    }
+
+    pub(crate) fn admit_answer<T>(
+        &self,
+        origin: AnswerOrigin,
+        cap: Duration,
+        reserve: impl FnOnce() -> T,
+    ) -> Option<(AnswerHold, T)> {
+        let guard = self.session();
+        guard.as_ref()?;
+        self.idle.admit_answer(origin, cap, reserve)
     }
 
     /// Takes the session mutex. A panic while it was held may have left the
@@ -1838,6 +1880,7 @@ impl VaultStore {
         now_ms: u64,
         session: u64,
     ) -> Result<LinkSummary, VaultError> {
+        let _running = self.start_portal_work()?;
         self.link_portal_using(
             portal,
             code,
@@ -1846,6 +1889,44 @@ impl VaultStore {
             (now_ms, session),
             |request, device, cancelled| crate::portal_client::link(request, device, cancelled),
         )
+    }
+
+    pub fn connect_portal(
+        &self,
+        portal: &str,
+        code: &str,
+        device_name: &str,
+        profile_id: Option<Uuid>,
+        now_ms: u64,
+        session: u64,
+    ) -> Result<(LinkSummary, Option<VaultError>), VaultError> {
+        self.connect_portal_using(
+            session,
+            || {
+                self.link_portal_using(
+                    portal,
+                    code,
+                    device_name,
+                    profile_id,
+                    (now_ms, session),
+                    |request, device, cancelled| {
+                        crate::portal_client::link(request, device, cancelled)
+                    },
+                )
+            },
+            &crate::portal_approval::ApprovalHttp::default(),
+        )
+    }
+
+    /// A read-only check of one linked device's approval status, for the
+    /// clinic view's automatic refresh (#131): it reads the portal and saves
+    /// the clinic's answer, and never sends or starts a request.
+    pub(crate) fn refresh_device_approval(
+        &self,
+        link_id: Uuid,
+        session: u64,
+    ) -> Result<delivery::ApprovalCheck, VaultError> {
+        self.poll_staff_approval(link_id, session)
     }
 
     fn link_portal_using(
@@ -16748,6 +16829,8 @@ mod tests {
             // helper's answers (#72): remote notices, format 9.
             MANIFEST_FORMAT_AI_RESULTS - 2,
             MANIFEST_FORMAT_AI_RESULTS - 1,
+            // The AI helper's answers under one cap, format 10.
+            MANIFEST_FORMAT_AI_RESULTS,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =

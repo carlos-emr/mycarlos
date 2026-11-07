@@ -1280,7 +1280,7 @@ portal-approvalCancelled = 此核准請求已取消。請先檢查最新狀態�
 
 portal-approvalContact = 需要確認診所的核准狀態。請聯絡診所了解後續步驟。
 
-portal-approvalExpired = 此核准請求已過期。請先檢查最新狀態，再提出新的請求。
+portal-approvalExpired = 此核准請求已過期。若要為此裝置再次申請，請前往「安全性」中的「診所文件」。
 
 portal-approvalMissing = 入口網站上找不到您已儲存的核准請求。請重新傳送已儲存的請求。
 
@@ -1336,11 +1336,11 @@ portal-errorUnavailable = 此裝置尚不能使用入口網站連結功能。
 
 portal-fingerprint = 完整裝置指紋
 
-portal-incomplete = 連結未完成。請先在入口網站的「Linked devices」（已連結的裝置）頁面查看，再重試。
+portal-incomplete = 此已儲存的嘗試未完成。重新連線前，請在入口網站查看已連結的裝置（「Linked devices」頁面），或聯絡診所。此 App 無法繼續這次嘗試。
 
 portal-intro = 請使用病患入口網站上顯示的網址和連結碼來連結 myCarlos。
 
-portal-link = 連結診所
+portal-link = 連線並申請核准
 
 portal-matchPerson = 依文件上的資料比對
 
@@ -1362,8 +1362,6 @@ portal-serviceDate = 服務日期：{ $date }
 
 portal-serviceDateLabel = 服務日期
 
-portal-sourceVerified = 來自 { $clinic } · 已驗證
-
 portal-title = 診所文件
 
 rename-help-profile = 這只會變更顯示的資料夾名稱。此人的資料夾和文件仍會留在原處。
@@ -1378,6 +1376,51 @@ rename-profile-saved = 資料夾名稱已變更為「{ $name }」。
 
 rename-title-profile = 重新命名此人的資料夾
 
+portal-connectConsent = 此操作會連線此裝置並傳送核准請求。診所必須先核准此裝置，裝置才能接收文件。
+
+portal-connected = 裝置已連結。可在「安全性」的「診所文件」下查看其核准狀態。
+
+portal-connecting = 正在連線並申請診所核准…
+
+portal-errorBusy = 另一項診所作業正在進行。請等其完成後重試。
+
+portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「診所文件」下的核准狀態，了解下一步操作。
+
+portal-retryApproval = 重試已儲存的核准請求
+
+portal-working = 正在處理診所作業…
+
+portal-approvalExpiredCard = 此核准請求已過期。若要為同一裝置再次申請，請選擇「提出新的核准請求」。您的文件和此裝置的連結保持不變。
+
+portal-approvalPickedUp = 診所的病歷系統已接收此請求。正在等待診所人員核准此裝置。
+
+portal-approvalReplyInvalid = 無法驗證診所入口網站對此請求的回覆，因此未採用。請聯絡診所。
+
+portal-approvalStillOpen = 此核准請求在診所入口網站上仍未結束。請等它結束後再提出新的請求。
+
+portal-approvalTimeLeft = 此請求剩餘時間：約 { $count } 分鐘。
+
+portal-approvalTimeOver = 此請求的時間已用完。
+
+portal-approvalTimeOverRestart = 此請求的時間已用完。如果診所尚未核准此裝置，請選擇「{ $button }」。
+
+portal-approvalTimeUp = 此請求的時間已用完。正在向診所查詢…
+
+portal-approvalUnanswered = myCarlos 無法從診所入口網站取得此請求的狀態。
+
+portal-approvalUnreachable = myCarlos 無法連線至診所入口網站，因此目前還不知道此請求的狀態。
+
+portal-approvalWait = 診所入口網站要求 myCarlos 降低檢查頻率。
+
+portal-autoChecking = 此頁面開啟期間，myCarlos 會自動檢查診所的回覆。
+
+portal-autoCheckStopped = 自動檢查已停止。若要再次檢查，請選擇「{ $button }」。
+
+portal-awaitingClinic = 診所已收到核准請求。正在等待診所人員核准此裝置。
+
+portal-deviceRemoved = 此裝置已從您的診所入口網站帳戶中移除。若要再次使用，請使用病患入口網站提供的新連結碼重新連線。
+
+portal-errorRateLimited = 診所入口網站要求 myCarlos 稍候再試。
 hidden-backToSecurity = 返回「安全性」
 
 interface-history-appVersion = myCarlos 版本
@@ -1532,6 +1575,28 @@ interface-history-to = 目標
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也會保存操作紀錄：保險庫何時開啟；密語或復原金鑰何時設定或變更；備份何時儲存或還原；各病患檔案何時新增，以及各資料夾何時建立、重新命名或移動；每份文件何時新增、重新命名、移動、隱藏、還原或儲存在 myCarlos 外部，以及儲存位置。這些紀錄會和其他內容一起加密。您可以在此查看這些紀錄；myCarlos 絕不會變更或移除它們。
 
+portal-checkAgain = 若要再次檢查，請選擇「{ $button }」。
+
+portal-unlockCheckConsent = 每次解鎖後，如果診所已核准該裝置，或核准請求仍未結束，myCarlos 就會聯絡已連結的診所入口網站，檢查核准狀態更新和新文件。
+
+portal-unlockChecked = 解鎖後已檢查新的診所文件。
+
+portal-unlockCheckIncomplete = myCarlos 無法在解鎖後完成新診所文件的檢查。
+
+portal-unlockCheckNotRun = 由於另一項診所作業正在進行，myCarlos 在解鎖後未檢查新的診所文件。
+
+portal-unlockCheckWaiting = 由於診所入口網站要求稍候，myCarlos 在解鎖後未檢查新的診所文件。
+
+portal-unlockRefused = { $count } 份診所文件無法驗證，因此未新增。請聯絡診所。
+
+library-source-clinic = 來自 { $clinic }
+
+library-source-manualImport = 手動匯入
+
+library-status-unverified = 未驗證
+
+library-status-verified = 已驗證
+
 ai-summary-button = 摘要
 
 ai-summary-title = 淺白易懂的摘要
@@ -1621,6 +1686,10 @@ ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍�
 native-filter-models = 模型檔案
 
 ai-working = AI 助理正在處理…
+
+ai-summary-ready = 摘要已產生。
+
+ai-explain-ready = 解釋已產生。
 
 ai-failed = AI 助理未能完成。請重試。
 

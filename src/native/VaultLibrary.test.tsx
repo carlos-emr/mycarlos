@@ -90,9 +90,13 @@ function renderLibrary(
     readAiResult: vi
       .fn()
       .mockRejectedValue(new Error("FAKE: no kept answer in this test")),
-    saveAiResult: vi.fn(async (_recordId: string, input: object) => ({
-      ...input,
+    // Saved by the id the native side kept the answer under (#212).
+    saveAiResult: vi.fn(async () => ({
       id: "FAKE-kept-1",
+      tool: "summary",
+      lang: "en",
+      modelName: "FAKE test model",
+      modelSha256: "test-only",
       createdAtMs: 1,
       size: 2,
     })),
@@ -1268,10 +1272,12 @@ describe("the AI helper's notice before the reader's first Summary", () => {
         model: FAKE_MODEL,
         lastPage: 0,
         lastPageCut: false,
+        keptId: "FAKE-kept-1",
       })),
       aiExplain: vi.fn(async () => ({
         text: "FAKE explanation.",
         model: FAKE_MODEL,
+        keptId: "FAKE-kept-2",
       })),
     });
     fireEvent.click(
@@ -1335,9 +1341,18 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       ),
     ).toBeVisible();
     expect(native.aiSummarize).toHaveBeenCalledTimes(1);
+    // Asked to keep it for this document, with its text read's ticket.
     expect(native.aiSummarize).toHaveBeenCalledWith(
       [{ index: 0, text: pageText }],
       "en",
+      { recordId: expect.any(String), ticket: expect.any(String) },
+    );
+    await waitFor(() =>
+      expect(native.saveAiResult).toHaveBeenCalledWith(
+        expect.any(String),
+        "FAKE-kept-1",
+        expect.any(Array),
+      ),
     );
 
     // Once a session: Explain opens at once.

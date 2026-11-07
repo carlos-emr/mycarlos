@@ -1440,7 +1440,7 @@ portal-approvalCancelled = Esta solicitação de aprovação foi cancelada. Veri
 
 portal-approvalContact = A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.
 
-portal-approvalExpired = Esta solicitação de aprovação expirou. Verifique atualizações antes de iniciar outra solicitação.
+portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Documentos da clínica.
 
 portal-approvalMissing = Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.
 
@@ -1496,11 +1496,11 @@ portal-errorUnavailable = A vinculação com o portal ainda não está disponív
 
 portal-fingerprint = Impressão digital completa do dispositivo
 
-portal-incomplete = Vinculação incompleta. Confira os dispositivos vinculados no portal antes de tentar novamente.
+portal-incomplete = Esta tentativa salva está incompleta. Confira os dispositivos vinculados no portal ou entre em contato com sua clínica antes de conectar novamente. Este aplicativo não pode retomar esta tentativa.
 
 portal-intro = Vincule o myCarlos usando o endereço e o código exibidos no portal do paciente.
 
-portal-link = Vincular à clínica
+portal-link = Conectar e solicitar aprovação
 
 portal-matchPerson = Usar os dados do documento
 
@@ -1522,8 +1522,6 @@ portal-serviceDate = Data do atendimento: { $date }
 
 portal-serviceDateLabel = Data do atendimento
 
-portal-sourceVerified = De { $clinic } · Verificado
-
 portal-title = Documentos da clínica
 
 rename-help-profile = Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.
@@ -1538,6 +1536,56 @@ rename-profile-saved = O nome da pasta foi alterado para { $name }.
 
 rename-title-profile = Renomear a pasta da pessoa
 
+portal-connectConsent = Esta ação vincula este dispositivo e envia uma solicitação de aprovação. Sua clínica precisa aprovar o dispositivo antes que ele possa receber documentos.
+
+portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Documentos da clínica.
+
+portal-connecting = Conectando e solicitando a aprovação da clínica…
+
+portal-errorBusy = Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.
+
+portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
+
+portal-retryApproval = Tentar novamente a solicitação de aprovação salva
+
+portal-working = Operação com a clínica em andamento…
+
+portal-approvalExpiredCard = Esta solicitação de aprovação expirou. Para pedir de novo para este mesmo dispositivo, escolha Iniciar outra solicitação de aprovação. Seus documentos e a conexão deste dispositivo continuam como estão.
+
+portal-approvalPickedUp = O sistema de prontuários da sua clínica recebeu esta solicitação. Aguardando a equipe da clínica aprovar este dispositivo.
+
+portal-approvalReplyInvalid = Não foi possível verificar a resposta do portal da clínica sobre esta solicitação, então ela não foi usada. Entre em contato com sua clínica.
+
+portal-approvalStillOpen = Esta solicitação de aprovação ainda está aberta no portal da clínica. Aguarde até que ela termine antes de iniciar outra.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Tempo restante para esta solicitação: cerca de { $count } minuto.
+    [many] Tempo restante para esta solicitação: cerca de { $count } de minutos.
+    *[other] Tempo restante para esta solicitação: cerca de { $count } minutos.
+    }
+
+portal-approvalTimeOver = O tempo desta solicitação acabou.
+
+portal-approvalTimeOverRestart = O tempo desta solicitação acabou. Se a sua clínica não aprovou este dispositivo, escolha { $button }.
+
+portal-approvalTimeUp = O tempo desta solicitação acabou. Verificando com sua clínica…
+
+portal-approvalUnanswered = O myCarlos não conseguiu obter o status desta solicitação no portal da clínica.
+
+portal-approvalUnreachable = O myCarlos não conseguiu acessar o portal da clínica, então o status desta solicitação ainda não é conhecido.
+
+portal-approvalWait = O portal da clínica pediu ao myCarlos que verifique com menos frequência.
+
+portal-autoChecking = Enquanto esta página estiver aberta, o myCarlos verifica automaticamente se a sua clínica respondeu.
+
+portal-autoCheckStopped = As verificações automáticas pararam. Para verificar novamente, escolha { $button }.
+
+portal-awaitingClinic = Sua clínica recebeu a solicitação de aprovação. Aguardando a equipe da clínica aprovar este dispositivo.
+
+portal-deviceRemoved = Este dispositivo foi removido da sua conta do portal da clínica. Para usá-lo novamente, vincule-o de novo com um novo código de vinculação do portal do paciente.
+
+portal-errorRateLimited = O portal da clínica pediu ao myCarlos que aguarde antes de tentar novamente.
 hidden-backToSecurity = Voltar para Segurança
 
 interface-history-appVersion = Versão do myCarlos
@@ -1702,6 +1750,33 @@ interface-history-to = Para
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também guarda um histórico: quando o cofre foi aberto; quando a frase secreta ou a chave de recuperação foi configurada ou alterada e quando uma cópia de segurança foi salva ou restaurada; quando cada perfil de paciente foi adicionado e cada pasta foi criada, renomeada ou movida; e quando cada documento foi adicionado, renomeado, movido, ocultado, restaurado ou salvo fora do myCarlos e onde. Ele fica criptografado junto com todo o resto. Você pode consultá-lo aqui; o myCarlos nunca o altera nem o remove.
 
+portal-checkAgain = Para verificar novamente, escolha { $button }.
+
+portal-unlockCheckConsent = Após cada desbloqueio, o myCarlos se conecta aos portais das clínicas vinculadas para verificar atualizações da aprovação e novos documentos quando a clínica já aprovou o dispositivo ou uma solicitação de aprovação ainda está em aberto.
+
+portal-unlockChecked = Verificação de novos documentos da clínica feita após desbloquear o cofre.
+
+portal-unlockCheckIncomplete = O myCarlos não conseguiu concluir a verificação de novos documentos da clínica após desbloquear o cofre.
+
+portal-unlockCheckNotRun = O myCarlos não verificou novos documentos da clínica após desbloquear o cofre, porque outra operação com a clínica estava em andamento.
+
+portal-unlockCheckWaiting = O myCarlos não verificou novos documentos da clínica após desbloquear o cofre, porque o portal da clínica pediu para aguardar.
+
+portal-unlockRefused =
+    { $count ->
+    [one] Não foi possível verificar { $count } documento da clínica, então ele não foi adicionado. Entre em contato com sua clínica.
+    [many] Não foi possível verificar { $count } de documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.
+    *[other] Não foi possível verificar { $count } documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.
+    }
+
+library-source-clinic = De { $clinic }
+
+library-source-manualImport = Importação manual
+
+library-status-unverified = Não verificado
+
+library-status-verified = Verificado
+
 ai-summary-button = Resumo
 
 ai-summary-title = Resumo em palavras simples
@@ -1791,6 +1866,10 @@ ai-model-refusedUnavailable = O modelo não está disponível no endereço agora
 native-filter-models = Arquivos de modelo
 
 ai-working = O assistente de IA está trabalhando…
+
+ai-summary-ready = O resumo está pronto.
+
+ai-explain-ready = A explicação está pronta.
 
 ai-failed = O assistente de IA não conseguiu terminar. Tente de novo.
 

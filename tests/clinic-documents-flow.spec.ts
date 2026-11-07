@@ -28,6 +28,15 @@ const en = (
   params?: Parameters<typeof translate>[2],
 ) => translate("en", key, params);
 
+/** A request awaiting the clinic: "saved" at first, and "the clinic has it"
+ * once the clinic view's automatic check (#137) has confirmed it. */
+const awaiting = (page: Page) =>
+  page.getByText(
+    new RegExp(
+      `^(${escapeRegExp(en("portal.awaiting"))}|${escapeRegExp(en("portal.awaitingClinic"))})$`,
+    ),
+  );
+
 test.beforeEach(({}, testInfo) => {
   test.skip(
     testInfo.project.name === "phone",
@@ -45,7 +54,7 @@ const openMyRecords = (page: Page) =>
     })
     .click();
 
-test("links this device to a clinic: a refused code is not kept, then the link, the approval request and the device code", async ({
+test("links this device to a clinic and asks for approval in one action: a refused code is not kept, then the link awaiting the clinic, and the device code", async ({
   page,
   context,
 }) => {
@@ -76,7 +85,8 @@ test("links this device to a clinic: a refused code is not kept, then the link, 
   const deviceName = await device.inputValue();
 
   // The portal refuses the code: said, and the one-use code is not kept.
-  await scriptFake(page, "vault_portal_link", {
+  // One native call links the device and asks for approval (#136).
+  await scriptFake(page, "vault_portal_connect", {
     reject: refusal("portal_link_code_rejected", "portal.errorCodeRejected"),
   });
   await address.fill(PORTAL);
@@ -91,8 +101,8 @@ test("links this device to a clinic: a refused code is not kept, then the link, 
     page.getByRole("heading", { name: FAKE_CLINIC, exact: true }),
   ).toHaveCount(0);
 
-  // A new code links it: the clinic is shown with this device's code, not
-  // yet approved.
+  // A new code links it and asks the clinic to approve it: the clinic is
+  // shown with this device's code, awaiting the clinic.
   await code.fill("FAKE-CODE-2");
   await link.click();
   const clinic = page.getByRole("heading", {
@@ -105,13 +115,23 @@ test("links this device to a clinic: a refused code is not kept, then the link, 
   await expect(
     page.getByText(en("portal.errorCodeRejected"), { exact: true }),
   ).toHaveCount(0);
+  await expect(awaiting(page)).toBeVisible();
+  // Require the fake-driven automatic read as well as its confirmed text.
+  await expect
+    .poll(() => fakeCalls(page, "vault_refresh_device_approval"), {
+      timeout: 15_000,
+    })
+    .toContainEqual({ linkId: FAKE_IDS.link });
+  await expect(
+    page.getByText(en("portal.awaitingClinic"), { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(en("portal.notRequested"), { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByLabel(en("portal.deviceCode"), { exact: true }),
   ).toHaveValue(FAKE_DEVICE_CODE);
-  expect(await fakeCalls(page, "vault_portal_link")).toEqual([
+  expect(await fakeCalls(page, "vault_portal_connect")).toEqual([
     {
       request: {
         portalBase: PORTAL,
@@ -130,19 +150,9 @@ test("links this device to a clinic: a refused code is not kept, then the link, 
     },
   ]);
 
-  // Asking the clinic to approve this device.
-  await page
-    .getByRole("button", { name: en("portal.requestApproval"), exact: true })
-    .click();
-  await expect(
-    page.getByText(en("portal.awaiting"), { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(en("portal.notRequested"), { exact: true }),
-  ).toHaveCount(0);
-  expect(await fakeCalls(page, "vault_request_device_approval")).toEqual([
-    { linkId: FAKE_IDS.link },
-  ]);
+  // No separate link or approval call: the one action did both.
+  expect(await fakeCalls(page, "vault_portal_link")).toEqual([]);
+  expect(await fakeCalls(page, "vault_request_device_approval")).toEqual([]);
 
   // The device code, copied for the clinic's staff.
   await page
@@ -195,8 +205,10 @@ test("Check for new documents brings a clinic's document into Shared with me, an
     exact: true,
   });
   await expect(arrived).toBeVisible();
+  // #139: Verified first, then where it came from.
+  await expect(arrived).toContainText(en("library.status.verified"));
   await expect(arrived).toContainText(
-    en("portal.sourceVerified", { clinic: FAKE_CLINIC }),
+    en("library.source.clinic", { clinic: FAKE_CLINIC }),
   );
 
   // Back in My records: a second check finds nothing new.
