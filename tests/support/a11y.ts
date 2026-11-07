@@ -121,6 +121,9 @@ export async function fakeVault(
               return { state: "notInstalled" };
             case "ai_model_catalog":
               return [];
+            // No add or download running when the row opens (#275).
+            case "ai_model_add_active":
+              return null;
             case "vault_status":
               return status;
             case "vault_notification_status":

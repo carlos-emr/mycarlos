@@ -1857,6 +1857,14 @@ ai-model-downloadNote = Baixa um arquivo ({ $size } MB), uma única vez, de { $h
 
 ai-model-downloading = Baixando e verificando… { $done } de { $total } MB
 
+ai-model-progressName = Download do modelo
+
+ai-model-progressValue = { $percent }, { $done } de { $total } MB
+
+ai-model-stillDownloading = O modelo ainda está sendo baixado.
+
+ai-model-stillChecking = O arquivo do modelo ainda está sendo verificado.
+
 ai-model-refusedNetwork = O download não foi concluído. Verifique sua conexão com a internet e tente novamente.
 
 ai-model-refusedUnavailable = O modelo não está disponível no endereço agora. Tente novamente mais tarde ou adicione um arquivo que já tenha.

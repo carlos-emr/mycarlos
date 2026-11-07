@@ -1857,6 +1857,14 @@ ai-model-downloadNote = Télécharge un fichier ({ $size } Mo), une seule fois, 
 
 ai-model-downloading = Téléchargement et vérification… { $done } sur { $total } Mo
 
+ai-model-progressName = Téléchargement du modèle
+
+ai-model-progressValue = { $percent }, { $done } sur { $total } Mo
+
+ai-model-stillDownloading = Le modèle est encore en cours de téléchargement.
+
+ai-model-stillChecking = Le fichier du modèle est encore en cours de vérification.
+
 ai-model-refusedNetwork = Le téléchargement n’a pas abouti. Vérifiez votre connexion Internet et réessayez.
 
 ai-model-refusedUnavailable = Le modèle n’est pas disponible à son adresse pour le moment. Réessayez plus tard ou ajoutez un fichier que vous avez déjà.

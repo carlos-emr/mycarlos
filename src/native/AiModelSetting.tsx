@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useI18n } from "../i18n";
 import type { AcceptedModel, ModelAddOutcome, ModelStatus } from "../ai/types";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -15,6 +15,14 @@ function hostOf(address: string) {
   }
 }
 const mb = (bytes: number) => Math.round(bytes / MB).toLocaleString();
+/** A copy running natively (#275), as `ai_model_add_active` gives it:
+ * `download` is the default model's download and its check, `check` a picked
+ * file's check. */
+type ModelAddNow = { kind: "download" | "check"; done: number; total: number };
+
+/** How much of the file is in, as a whole percent (#275). */
+export const percentOf = (done: number, total: number) =>
+  total > 0 ? Math.min(100, Math.max(0, Math.floor((done / total) * 100))) : 0;
 
 /** The refusal text for an add that did not end `added` or `cancelled`. */
 function refusalKey(outcome: ModelAddOutcome) {
@@ -48,6 +56,59 @@ function unsupportedKey(reason: "ram" | "cpu" | "platform") {
     : reason === "cpu"
       ? "ai.model.unsupportedCpu"
       : "ai.model.unsupportedPlatform";
+}
+
+/** The bar under the status text while a model file comes in or is checked
+ * (#275), from the same byte counts, so a resumed download starts where it
+ * stopped. It is not a live region: the status text above says the progress,
+ * at its own pace. Cancel sits beside it. */
+function ModelProgress({
+  done,
+  total,
+  cancelRef,
+}: {
+  done: number;
+  total: number;
+  cancelRef: RefObject<HTMLButtonElement | null>;
+}) {
+  const { t, locale } = useI18n();
+  const percent = percentOf(done, total);
+  const percentText = new Intl.NumberFormat(locale, {
+    style: "percent",
+  }).format(percent / 100);
+  return (
+    <div className="native-ai-model-progress">
+      <div
+        className="native-ai-model-bar"
+        role="progressbar"
+        aria-label={t("ai.model.progressName")}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={t("ai.model.progressValue", {
+          percent: percentText,
+          done: mb(done),
+          total: mb(total),
+        })}
+      >
+        <div
+          className="native-ai-model-bar-fill"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      <span className="native-ai-model-percent" aria-hidden="true">
+        {percentText}
+      </span>
+      <button
+        ref={cancelRef}
+        className="button"
+        type="button"
+        onClick={() => void invoke("ai_model_add_cancel")}
+      >
+        {t("common.cancel")}
+      </button>
+    </div>
+  );
 }
 
 /** Preferences > AI helper: getting the model onto this computer (#72). The
@@ -133,32 +194,144 @@ export function AiModelSetting({
     after.current = null;
     if (focusIsFree()) target.focus();
   }, [status.state, adding, refusal, catalog]);
+  // A copy this row did not start may still run (#275): the patient went to
+  // another page while it ran, and came back. `own` is a copy this row
+  // started and waits for through its command response.
+  const own = useRef(false);
+  const endedWhileOwn = useRef<ModelAddOutcome | null>(null);
+  // Events and actions supersede an older native snapshot, even when the
+  // snapshot was requested before a completion arrived.
+  const activityRevision = useRef(0);
+  const onStatusRef = useRef(onStatus);
+  onStatusRef.current = onStatus;
+  const [note, setNote] = useState<
+    "ai.model.stillDownloading" | "ai.model.stillChecking" | null
+  >(null);
+  const attach = (now: ModelAddNow) => {
+    setDownloading(now.kind === "download");
+    starter.current = now.kind === "download" ? "download" : "add";
+    after.current = "restart";
+    // Progress heard since is newer than what native said.
+    setProgress((current) =>
+      current && current.total > 0
+        ? current
+        : { done: now.done, total: now.total },
+    );
+  };
+  const finish = (result: ModelAddOutcome) => {
+    activityRevision.current += 1;
+    setNote(null);
+    setProgress(null);
+    if (result.outcome === "added") {
+      after.current = "installed";
+      onStatus(result.status);
+      setMessage("ai.model.added");
+    } else if (result.outcome !== "cancelled") {
+      setRefusal(refusalKey(result));
+    }
+  };
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+  useEffect(() => {
+    let live = true;
+    // Subscribe before reading the snapshot: completion can happen while
+    // registration or the query is pending. It must never resurrect a bar.
+    const stop = listen<ModelAddOutcome>("ai-model-add-ended", (event) => {
+      if (!live || !mounted.current) return;
+      activityRevision.current += 1;
+      if (own.current) endedWhileOwn.current = event.payload;
+      else finishRef.current(event.payload);
+    });
+    void stop
+      .then(async () => {
+        if (!live || !mounted.current || own.current) return;
+        const revision = activityRevision.current;
+        const current = () =>
+          live &&
+          mounted.current &&
+          !own.current &&
+          revision === activityRevision.current;
+        const now = await invoke<ModelAddNow | null>("ai_model_add_active");
+        if (!current()) return;
+        if (now) attach(now);
+        else {
+          // A copy could have ended before subscription was ready. Refresh
+          // the installed state as well, without starting another download.
+          const next = await invoke<ModelStatus>("ai_model_status");
+          if (current() && next) onStatusRef.current(next);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+      void stop.then((unlisten) => unlisten()).catch(() => undefined);
+    };
+    // Once, as the row opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const run = (command: "ai_model_add_picked" | "ai_model_download") => {
+    activityRevision.current += 1;
+    endedWhileOwn.current = null;
     setRefusal(null);
     setMessage(null);
+    setNote(null);
     setDownloading(command === "ai_model_download");
     starter.current = command === "ai_model_download" ? "download" : "add";
     cancelFocused.current = false;
     after.current = "restart";
+    own.current = true;
     // Busy from the click: the picker is open, and a second click is refused.
     setProgress({ done: 0, total: 0 });
     void invoke<ModelAddOutcome>(command)
-      .then((result) => {
+      .then(async (result) => {
         if (!mounted.current) return;
-        if (result.outcome === "added") {
-          after.current = "installed";
-          onStatus(result.status);
-          setMessage("ai.model.added");
-        } else if (result.outcome !== "cancelled") {
-          setRefusal(refusalKey(result));
+        own.current = false;
+        // Refused because a copy is still running: that copy and its bar,
+        // not "the AI helper is working".
+        if (result.outcome === "busy") {
+          // The other copy may have finished before this refused command
+          // returned. Its completion is newer than the refusal.
+          if (endedWhileOwn.current) {
+            finish(endedWhileOwn.current);
+            return;
+          }
+          const revision = activityRevision.current;
+          const now = await invoke<ModelAddNow | null>(
+            "ai_model_add_active",
+          ).catch(() => null);
+          if (!mounted.current) return;
+          if (revision !== activityRevision.current) return;
+          if (now) {
+            attach(now);
+            setNote(
+              now.kind === "download"
+                ? "ai.model.stillDownloading"
+                : "ai.model.stillChecking",
+            );
+            return;
+          }
         }
+        // An earlier download can finish while this command's picker is
+        // open. Cancelling that picker or refusing its file does not undo
+        // the model that was installed in the meantime.
+        if (
+          result.outcome !== "added" &&
+          endedWhileOwn.current?.outcome === "added"
+        )
+          onStatus(endedWhileOwn.current.status);
+        finish(result);
       })
-      .catch(() => mounted.current && setRefusal("ai.model.refusedStorage"))
-      .finally(() => mounted.current && setProgress(null));
+      .catch(() => {
+        if (!mounted.current) return;
+        own.current = false;
+        setProgress(null);
+        setRefusal("ai.model.refusedStorage");
+      });
   };
   const add = () => run("ai_model_add_picked");
   const download = () => run("ai_model_download");
   const remove = () => {
+    activityRevision.current += 1;
     setConfirming(false);
     setRefusal(null);
     setMessage(null);
@@ -256,16 +429,6 @@ export function AiModelSetting({
             {t("ai.model.remove")}
           </button>
         )}
-        {adding && progress.total > 0 && (
-          <button
-            ref={cancelRef}
-            className="button"
-            type="button"
-            onClick={() => void invoke("ai_model_add_cancel")}
-          >
-            {t("common.cancel")}
-          </button>
-        )}
       </div>
       <p role="status" className="native-ai-model-status">
         {adding && progress.total > 0
@@ -277,6 +440,18 @@ export function AiModelSetting({
             ? t(message as "ai.model.added")
             : ""}
       </p>
+      {adding && progress.total > 0 && (
+        <ModelProgress
+          done={progress.done}
+          total={progress.total}
+          cancelRef={cancelRef}
+        />
+      )}
+      {note && adding && (
+        <p role="alert" className="native-ai-model-note">
+          {t(note)}
+        </p>
+      )}
       {refusal && (
         <p role="alert" className="native-ai-model-refusal">
           {t(refusal as "ai.model.refusedStorage")}
