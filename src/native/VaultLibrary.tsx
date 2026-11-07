@@ -317,6 +317,11 @@ export function VaultLibrary({
   };
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Security's profile dialogs (Ben, 29 Oct): drawn in this host, beside the
+  // other dialogs, and the page behind them is inert.
+  const [profileDialogHost, setProfileDialogHost] =
+    useState<HTMLElement | null>(null);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
   // shown: it is fetched for the photo view and dropped when that closes.
   const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
@@ -805,7 +810,8 @@ export function VaultLibrary({
         cameraOpen ||
         confirmation ||
         confirmHideDamaged ||
-        recoverySetup,
+        recoverySetup ||
+        profileDialogOpen,
     ),
     `${section}:${profileId}:${currentFolderId ?? ""}`,
   );
@@ -824,6 +830,7 @@ export function VaultLibrary({
       confirmation ||
       confirmHideDamaged ||
       recoverySetup ||
+      profileDialogOpen ||
       busy
     )
       return;
@@ -853,6 +860,7 @@ export function VaultLibrary({
     notice,
     profileId,
     dialogResult,
+    profileDialogOpen,
     recoverySetup,
     renameTarget,
     cameraOpen,
@@ -1316,11 +1324,15 @@ export function VaultLibrary({
         : bridge.createProfile(name));
       created = true;
       await refresh();
-      setNotice(
-        deferredText(() =>
+      // Said once the Add profile dialog has closed and the status line is
+      // live again (see dialogResult above): set now, it is never read out.
+      setNotice("");
+      setDialogResult({
+        message: deferredText(() =>
           translateNow("interface.notice.personAdded", { name }),
         ),
-      );
+        recordId: null,
+      });
     }, ["box.profileName"]);
     return created;
   };
@@ -1350,11 +1362,14 @@ export function VaultLibrary({
       await bridge.updateProfileDetails!(id, details);
       saved = true;
       await refresh();
-      setNotice(
-        message("personDetails.saved", {
+      // After the Edit details dialog closes, as Add profile's.
+      setNotice("");
+      setDialogResult({
+        message: message("personDetails.saved", {
           name: people.find((p) => p.id === id)?.displayName ?? "",
         }),
-      );
+        recordId: null,
+      });
     });
     return saved;
   };
@@ -1536,6 +1551,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1565,6 +1581,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1603,6 +1620,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -2320,6 +2338,8 @@ export function VaultLibrary({
                 onLock={lockAndConceal}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
+                dialogHost={profileDialogHost}
+                onDialogChange={setProfileDialogOpen}
                 hiddenCount={hiddenRecords.length}
                 focusHiddenEntry={returnFocusToHidden}
                 focusAuditEntry={returnFocusToHistory}
@@ -2721,6 +2741,7 @@ export function VaultLibrary({
               </p>
             </ConfirmDialog>
           )}
+          <div ref={setProfileDialogHost} />
         </section>
       </div>
     </div>

@@ -57,7 +57,11 @@ const snapshot: VaultSnapshot = {
   recovery: null,
 };
 
-function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
+function renderLibrary(
+  shown: VaultSnapshot = snapshot,
+  sharedNew = 0,
+  bridgeExtras: Record<string, unknown> = {},
+) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
@@ -96,12 +100,13 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       createdAtMs: 1,
       size: 2,
     })),
+    ...bridgeExtras,
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
-  render(
+  const library = (current: VaultSnapshot) => (
     <VaultLibrary
       bridge={bridge}
-      snapshot={shown}
+      snapshot={current}
       busy={false}
       notice=""
       setNotice={setNotice}
@@ -111,9 +116,14 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       autoLockMinutes={5}
       onAutoLockMinutes={vi.fn()}
       sharedNew={sharedNew}
-    />,
+    />
   );
-  return { bridge, setNotice };
+  const view = render(library(shown));
+  return {
+    bridge,
+    setNotice,
+    rerenderSnapshot: (next: VaultSnapshot) => view.rerender(library(next)),
+  };
 }
 
 function dragFolder(from: Element, to: Element) {
@@ -1110,6 +1120,139 @@ describe("Audit history keeps Security's Hidden location", () => {
       ).not.toBeInTheDocument();
     },
   );
+});
+
+describe("VaultLibrary person dialogs (Ben, 29 Oct)", () => {
+  // A status line reads out only text that changes while it is on the page,
+  // and a dialog makes the page behind it inert: each result is given once
+  // the dialog has closed.
+  function watchNotices(setNotice: ReturnType<typeof vi.fn>) {
+    const said: { text: string; dialogOpen: boolean }[] = [];
+    setNotice.mockImplementation((notice) => {
+      const text = humanValue(resolveText(notice));
+      if (text)
+        said.push({ text, dialogOpen: screen.queryByRole("dialog") !== null });
+    });
+    return said;
+  }
+
+  for (const dismissal of ["Cancel", "Escape"] as const) {
+    it(`dismisses Edit details after a read-only recovery transition by ${dismissal}`, async () => {
+      const shown: VaultSnapshot = {
+        ...snapshot,
+        profiles: [
+          {
+            ...snapshot.profiles[0],
+            fullName: "FAKE Avery Example",
+            birthDate: "1980-01-02",
+          },
+        ],
+      };
+      const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
+      const { rerenderSnapshot } = renderLibrary(shown, 0, {
+        updateProfileDetails,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      const opener = screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Avery"),
+      });
+      opener.focus();
+      fireEvent.click(opener);
+      const dialog = screen.getByRole("dialog", {
+        name: humanText("Edit details"),
+      });
+      expect(opener.closest("[inert]")).not.toBeNull();
+      const line = opener.parentElement!.querySelector("span")!;
+      const name = within(dialog).getByLabelText(
+        humanText("Full name, as on clinic documents"),
+      );
+      fireEvent.change(name, { target: { value: "FAKE retained draft" } });
+      rerenderSnapshot({ ...shown, recovery: "writeFailed" });
+      expect(name).toHaveValue("FAKE retained draft");
+      expect(name).toBeDisabled();
+      expect(
+        within(dialog).getByRole("button", { name: humanText("Save details") }),
+      ).toBeDisabled();
+      fireEvent.submit(dialog.querySelector("form")!);
+      expect(updateProfileDetails).not.toHaveBeenCalled();
+      const cancel = within(dialog).getByRole("button", {
+        name: humanText("Cancel"),
+      });
+      expect(cancel).toBeEnabled();
+      if (dismissal === "Cancel") fireEvent.click(cancel);
+      else fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(opener.closest("[inert]")).toBeNull();
+      expect(opener).toBeDisabled();
+      expect(line).toHaveFocus();
+      expect(updateProfileDetails).not.toHaveBeenCalled();
+    });
+  }
+
+  it("says a person's details were saved once the Edit details dialog has closed", async () => {
+    const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
+    const { setNotice } = renderLibrary(
+      {
+        ...snapshot,
+        profiles: [
+          {
+            id: "profile-1",
+            displayName: "FAKE Avery",
+            createdAtMs: 1,
+            fullName: "FAKE-EXAMPLE, Avery",
+            birthDate: "1980-01-02",
+          },
+        ],
+      },
+      0,
+      { updateProfileDetails },
+    );
+    const said = watchNotices(setNotice as ReturnType<typeof vi.fn>);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Avery"),
+      }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Edit details"),
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Save details") }),
+    );
+    await vi.waitFor(() => expect(updateProfileDetails).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(said).toEqual([
+        { text: "Details for FAKE Avery saved.", dialogOpen: false },
+      ]),
+    );
+  });
+
+  it("says a profile was added once the Add profile dialog has closed", async () => {
+    const createProfile = vi.fn().mockResolvedValue("profile-2");
+    const { setNotice } = renderLibrary(snapshot, 0, { createProfile });
+    const said = watchNotices(setNotice as ReturnType<typeof vi.fn>);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
+    fireEvent.change(
+      within(dialog).getByLabelText(humanText("New profile name")),
+      { target: { value: "FAKE Riley" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
+    await vi.waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(said).toEqual([
+        { text: "FAKE Riley was added.", dialogOpen: false },
+      ]),
+    );
+  });
 });
 
 describe("reading aid button in document details", () => {

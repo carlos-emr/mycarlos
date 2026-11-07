@@ -2402,15 +2402,21 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: humanText("Security") }),
     );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
     await user.type(
-      screen.getByLabelText(humanText("New profile name")),
+      within(dialog).getByLabelText(humanText("New profile name")),
       " shared WITH me ",
     );
-    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+    expect(within(dialog).getByRole("alert")).toHaveHumanTextContent(
       "Shared with me is where shared files go. Choose another name.",
     );
     expect(
-      screen.getByRole("button", { name: humanText("Add profile") }),
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
     ).toBeDisabled();
     expect(bridge.createProfile).not.toHaveBeenCalled();
   });
@@ -9051,7 +9057,10 @@ describe("durable vault UI", () => {
     expect(check).toHaveBeenCalledOnce();
   });
 
-  it("keeps the next profile name typed while an earlier profile is being saved", async () => {
+  it("keeps the Add profile dialog and its fields while a profile is being saved, and opens it empty for the next", async () => {
+    // With Add profile in a dialog (#165), nothing can be typed for a next
+    // profile while one is saved: the dialog holds the fields until the save
+    // ends, and opens empty for the next.
     const user = userEvent.setup();
     const vault = structuredClone(emptySnapshot);
     let finishSave!: () => void;
@@ -9076,26 +9085,31 @@ describe("durable vault UI", () => {
       createProfile,
       updateProfileDetails: vi.fn().mockResolvedValue(undefined),
     });
+    const fullNameLabel = humanText(translate("en", "personDetails.fullName"));
+    const openAdd = async () => {
+      await user.click(
+        screen.getByRole("button", { name: humanText("Add profile") }),
+      );
+      return screen.getByRole("dialog", { name: humanText("Add profile") });
+    };
     try {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: humanText("Security") }),
       );
-      const name = screen.getByLabelText(humanText("New profile name"));
-      const fullNameLabel = humanText(
-        translate("en", "personDetails.fullName"),
-      );
+      const dialog = await openAdd();
+      const name = within(dialog).getByLabelText(humanText("New profile name"));
       await user.type(name, "FAKE First");
       await user.type(
-        screen.getByLabelText(fullNameLabel),
+        within(dialog).getByLabelText(fullNameLabel),
         "FAKE First Person",
       );
       await user.click(
-        screen.getByRole("checkbox", {
+        within(dialog).getByRole("checkbox", {
           name: humanText(translate("en", "personDetails.birthDateUnknown")),
         }),
       );
-      const add = screen.getByRole("button", {
+      const add = within(dialog).getByRole("button", {
         name: humanText("Add profile"),
       });
       await user.click(add);
@@ -9104,10 +9118,11 @@ describe("durable vault UI", () => {
           fullName: "FAKE First Person",
         }),
       );
+      // While it saves: the same dialog, its fields kept and held.
+      expect(dialog).toBeInTheDocument();
       expect(add).toBeDisabled();
-      expect(name).toBeEnabled();
-      await user.clear(name);
-      await user.type(name, "FAKE Second");
+      expect(name).toBeDisabled();
+      expect(name).toHaveValue("FAKE First");
 
       await act(async () => finishSave());
       await screen.findByText(
@@ -9117,21 +9132,21 @@ describe("durable vault UI", () => {
           }),
         ),
       );
-      // Details belong to the saved first profile and are cleared. Its late
-      // success must leave the independently edited next display name alone.
-      await waitFor(() =>
-        expect(screen.getByLabelText(fullNameLabel)).toHaveValue(""),
-      );
-      expect(screen.getByLabelText(humanText("New profile name"))).toHaveValue(
-        "FAKE Second",
-      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const next = await openAdd();
+      expect(
+        within(next).getByLabelText(humanText("New profile name")),
+      ).toHaveValue("");
+      expect(within(next).getByLabelText(fullNameLabel)).toHaveValue("");
       expect(createProfile).toHaveBeenCalledOnce();
     } finally {
       await act(async () => finishSave());
     }
   });
 
-  it("keeps an existing person draft while adding another profile refreshes the list", async () => {
+  it("keeps a person's unsaved details while their Edit details dialog is open: Add profile can't start then", async () => {
+    // With both in dialogs (#165), adding another profile can't refresh the
+    // list under an Edit details draft: the page behind the dialog is inert.
     const user = userEvent.setup();
     const vault = structuredClone(emptySnapshot);
     vault.profiles[0].displayName = "FAKE Existing";
@@ -9139,17 +9154,7 @@ describe("durable vault UI", () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi.fn(async () => captureSnapshot(vault)),
-      createProfile: vi.fn(
-        async (displayName: string, details?: PersonDetails) => {
-          vault.profiles.push({
-            id: "profile-2",
-            displayName,
-            createdAtMs: 2,
-            ...details,
-          });
-          return "profile-2";
-        },
-      ),
+      createProfile: vi.fn().mockResolvedValue("profile-2"),
       updateProfileDetails: vi.fn(
         async (id: string, details: PersonDetails) => {
           Object.assign(
@@ -9163,58 +9168,34 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: humanText("Security") }),
     );
+    const opener = screen.getByRole("button", {
+      name: humanText("Add profile"),
+    });
     await user.click(
       screen.getByRole("button", {
         name: humanText("Edit details for FAKE Existing"),
       }),
     );
-    const existing = () =>
-      screen.getByRole("form", {
-        name: humanText("Details for FAKE Existing"),
-      });
-    const fullName = humanText(translate("en", "personDetails.fullName"));
-    await user.clear(within(existing()).getByLabelText(fullName));
-    await user.type(
-      within(existing()).getByLabelText(fullName),
-      "FAKE Unsaved Person",
-    );
-
-    const create = screen
-      .getByLabelText(humanText("New profile name"))
-      .closest("form")!;
-    await user.type(
-      within(create).getByLabelText(humanText("New profile name")),
-      "FAKE Added",
-    );
-    await user.type(
-      within(create).getByLabelText(fullName),
-      "FAKE Added Person",
-    );
-    await user.click(
-      within(create).getByRole("checkbox", {
-        name: humanText(translate("en", "personDetails.birthDateUnknown")),
-      }),
-    );
-    await user.click(
-      within(create).getByRole("button", { name: humanText("Add profile") }),
-    );
-    await screen.findByText(humanText("FAKE Added was added."));
-    // The added person proves the list refreshed. Re-querying the current
-    // form prevents a detached old draft from satisfying these checks.
-    expect(
-      screen.getByRole("button", {
-        name: humanText("Edit details for FAKE Added"),
-      }),
-    ).toBeVisible();
-    expect(within(existing()).getByLabelText(fullName)).toHaveValue(
-      "FAKE Unsaved Person",
-    );
-    expect(bridge.createProfile).toHaveBeenCalledExactlyOnceWith("FAKE Added", {
-      fullName: "FAKE Added Person",
+    const existing = screen.getByRole("form", {
+      name: humanText("Details for FAKE Existing"),
     });
-    expect(bridge.updateProfileDetails).not.toHaveBeenCalled();
+    const fullName = humanText(translate("en", "personDetails.fullName"));
+    await user.clear(within(existing).getByLabelText(fullName));
+    await user.type(
+      within(existing).getByLabelText(fullName),
+      "FAKE Unsaved Person",
+    );
+    // Add profile is behind the dialog, out of reach.
+    expect(opener.closest("[inert]")).not.toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: humanText("Add profile") }),
+    ).toBeNull();
+    expect(within(existing).getByLabelText(fullName)).toHaveValue(
+      "FAKE Unsaved Person",
+    );
+    expect(bridge.createProfile).not.toHaveBeenCalled();
     await user.click(
-      within(existing()).getByRole("button", {
+      within(existing).getByRole("button", {
         name: humanText("Save details"),
       }),
     );
@@ -9244,24 +9225,34 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Security") }),
     );
 
-    const name = screen.getByLabelText(humanText("New profile name"));
-    await user.type(name, "Jamie's parent");
+    // Add profile opens a dialog (Ben, 29 Oct).
     await user.click(
       screen.getByRole("button", { name: humanText("Add profile") }),
     );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
+    const name = within(dialog).getByLabelText(humanText("New profile name"));
+    await user.type(name, "Jamie's parent");
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
     await waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
     expect(name).toHaveValue("Jamie's parent");
-    // The refusal names the box to check (#69).
+    // The refusal names the box to check (#69), inside the dialog, which
+    // stays open: the page behind it is inert.
     expect(
-      await screen.findByText(
+      await within(dialog).findByText(
         humanText("Check the profile name, then try again."),
       ),
     ).toBeVisible();
 
     await user.click(
-      screen.getByRole("button", { name: humanText("Add profile") }),
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
     );
-    await waitFor(() => expect(name).toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 
   it("clears unfinished passphrase fields when leaving Security", async () => {
