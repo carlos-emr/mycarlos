@@ -792,6 +792,17 @@ export const MESSAGE_KEYS = [
   "library.source.manualImport",
   "library.status.unverified",
   "library.status.verified",
+  "portal.approvedByCode",
+  "portal.codeFormat",
+  "portal.codeHint",
+  "portal.codeLabel",
+  "portal.codeLocked",
+  "portal.codeMismatch",
+  "portal.codeNeeded",
+  "portal.codeNotOpen",
+  "portal.codeRefused",
+  "portal.codeSubmit",
+  "portal.codeSubmitted",
   "ai.summary.button",
   "ai.summary.title",
   "ai.explain.title",
@@ -1881,6 +1892,17 @@ const FLUENT_IDS_BY_KEY = {
   "library.source.manualImport": "library-source-manualImport",
   "library.status.unverified": "library-status-unverified",
   "library.status.verified": "library-status-verified",
+  "portal.approvedByCode": "portal-approvedByCode",
+  "portal.codeFormat": "portal-codeFormat",
+  "portal.codeHint": "portal-codeHint",
+  "portal.codeLabel": "portal-codeLabel",
+  "portal.codeLocked": "portal-codeLocked",
+  "portal.codeMismatch": "portal-codeMismatch",
+  "portal.codeNeeded": "portal-codeNeeded",
+  "portal.codeNotOpen": "portal-codeNotOpen",
+  "portal.codeRefused": "portal-codeRefused",
+  "portal.codeSubmit": "portal-codeSubmit",
+  "portal.codeSubmitted": "portal-codeSubmitted",
   "ai.summary.button": "ai-summary-button",
   "ai.summary.title": "ai-summary-title",
   "ai.explain.title": "ai-explain-title",
@@ -2978,6 +3000,17 @@ export interface MessageArgsByKey {
   "library.source.manualImport": undefined;
   "library.status.unverified": undefined;
   "library.status.verified": undefined;
+  "portal.approvedByCode": undefined;
+  "portal.codeFormat": undefined;
+  "portal.codeHint": undefined;
+  "portal.codeLabel": undefined;
+  "portal.codeLocked": undefined;
+  "portal.codeMismatch": undefined;
+  "portal.codeNeeded": undefined;
+  "portal.codeNotOpen": undefined;
+  "portal.codeRefused": undefined;
+  "portal.codeSubmit": undefined;
+  "portal.codeSubmitted": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;
   "ai.explain.title": undefined;
