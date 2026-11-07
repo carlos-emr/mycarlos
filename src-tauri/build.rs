@@ -112,6 +112,7 @@ fn main() {
             "vault_snapshot",
             "vault_history",
             "vault_portal_link",
+            "vault_portal_connect",
             "vault_check_documents",
             "vault_notification_status",
             "vault_set_notifications",
