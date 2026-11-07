@@ -1280,7 +1280,7 @@ portal-approvalCancelled = 此批准请求已取消。请先检查最新状态�
 
 portal-approvalContact = 需要核实诊所的批准状态。请联系诊所了解后续步骤。
 
-portal-approvalExpired = 此批准请求已过期。请先检查最新状态，再发起新的请求。
+portal-approvalExpired = 此批准请求已过期。若要为此设备再次申请，请前往「安全」中的「诊所文档」。
 
 portal-approvalMissing = 门户网站上找不到您已保存的批准请求。请重新发送已保存的请求。
 
@@ -1336,11 +1336,11 @@ portal-errorUnavailable = 此设备尚不能使用门户网站关联功能。
 
 portal-fingerprint = 完整设备指纹
 
-portal-incomplete = 关联未完成。请先在门户网站的「Linked devices」（已关联的设备）页面查看，再重试。
+portal-incomplete = 此已保存的尝试未完成。重新连接前，请在门户网站查看已关联的设备（「Linked devices」页面），或联系诊所。此应用无法继续这次尝试。
 
 portal-intro = 请使用患者门户网站上显示的网址和关联码来关联 myCarlos。
 
-portal-link = 关联诊所
+portal-link = 连接并申请批准
 
 portal-matchPerson = 依文档上的资料匹配
 
@@ -1362,8 +1362,6 @@ portal-serviceDate = 服务日期：{ $date }
 
 portal-serviceDateLabel = 服务日期
 
-portal-sourceVerified = 来自 { $clinic } · 已验证
-
 portal-title = 诊所文档
 
 rename-help-profile = 这只会变更显示的文件夹名称。此人的文件夹和文档仍会留在原处。
@@ -1378,6 +1376,51 @@ rename-profile-saved = 文件夹名称已变更为「{ $name }」。
 
 rename-title-profile = 重命名此人的文件夹
 
+portal-connectConsent = 此操作会连接此设备并发送批准请求。诊所必须先批准此设备，设备才能接收文档。
+
+portal-connected = 设备已关联。可在「安全」的「诊所文档」下查看其批准状态。
+
+portal-connecting = 正在连接并申请诊所批准…
+
+portal-errorBusy = 另一项诊所操作正在进行。请等其完成后重试。
+
+portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「诊所文档」下的批准状态，了解下一步操作。
+
+portal-retryApproval = 重试已保存的批准请求
+
+portal-working = 正在处理诊所操作…
+
+portal-approvalExpiredCard = 此批准请求已过期。若要为同一设备再次申请，请选择「发起新的批准请求」。您的文档和此设备的关联保持不变。
+
+portal-approvalPickedUp = 诊所的病历系统已接收此请求。正在等待诊所工作人员批准此设备。
+
+portal-approvalReplyInvalid = 无法验证诊所门户网站对此请求的答复，因此未采用。请联系诊所。
+
+portal-approvalStillOpen = 此批准请求在诊所门户网站上仍未结束。请等它结束后再发起新的请求。
+
+portal-approvalTimeLeft = 此请求剩余时间：约 { $count } 分钟。
+
+portal-approvalTimeOver = 此请求的时间已用完。
+
+portal-approvalTimeOverRestart = 此请求的时间已用完。如果诊所尚未批准此设备，请选择「{ $button }」。
+
+portal-approvalTimeUp = 此请求的时间已用完。正在向诊所查询…
+
+portal-approvalUnanswered = myCarlos 无法从诊所门户网站获取此请求的状态。
+
+portal-approvalUnreachable = myCarlos 无法连接诊所门户网站，因此目前还不知道此请求的状态。
+
+portal-approvalWait = 诊所门户网站要求 myCarlos 降低检查频率。
+
+portal-autoChecking = 此页面打开期间，myCarlos 会自动检查诊所的答复。
+
+portal-autoCheckStopped = 自动检查已停止。若要再次检查，请选择「{ $button }」。
+
+portal-awaitingClinic = 诊所已收到批准请求。正在等待诊所工作人员批准此设备。
+
+portal-deviceRemoved = 此设备已从您的诊所门户网站账户中移除。若要再次使用，请使用患者门户网站提供的新关联码重新连接。
+
+portal-errorRateLimited = 诊所门户网站要求 myCarlos 稍候再试。
 hidden-backToSecurity = 返回「安全」
 
 interface-history-appVersion = myCarlos 版本
@@ -1531,6 +1574,28 @@ interface-history-title = 操作记录
 interface-history-to = 目标
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也会保存操作记录：保险库何时打开；密码短语或恢复密钥何时设置或变更；备份何时保存或还原；各患者档案何时添加，以及各文件夹何时创建、重命名或移动；每份文档何时添加、重命名、移动、隐藏、还原或保存在 myCarlos 外部，以及保存位置。这些记录会和其他内容一起加密。您可以在此查看这些记录；myCarlos 绝不会变更或移除它们。
+
+portal-checkAgain = 若要再次检查，请选择「{ $button }」。
+
+portal-unlockCheckConsent = 每次解锁后，如果诊所已批准该设备，或批准请求仍未结束，myCarlos 就会联系已关联的诊所门户网站，检查批准状态更新和新文档。
+
+portal-unlockChecked = 解锁后已检查新的诊所文档。
+
+portal-unlockCheckIncomplete = myCarlos 无法在解锁后完成新诊所文档的检查。
+
+portal-unlockCheckNotRun = 由于另一项诊所操作正在进行，myCarlos 在解锁后未检查新的诊所文档。
+
+portal-unlockCheckWaiting = 由于诊所门户网站要求稍候，myCarlos 在解锁后未检查新的诊所文档。
+
+portal-unlockRefused = { $count } 份诊所文档无法验证，因此未添加。请联系诊所。
+
+library-source-clinic = 来自 { $clinic }
+
+library-source-manualImport = 手动导入
+
+library-status-unverified = 未验证
+
+library-status-verified = 已验证
 
 ai-summary-button = 摘要
 

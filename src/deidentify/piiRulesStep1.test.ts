@@ -126,3 +126,123 @@ describe("clinics, agencies and schools named without a clinic word", () => {
     expect(send(text)).toBe(text);
   });
 });
+
+describe("a town alone in brackets after a specialty", () => {
+  it.each([
+    ["Référée en cardiologie (Ville-Exemple) pour suivi.", "Ville-Exemple"],
+    ["Consultation : Neurologie (Saint-Exemple-sur-Mer)", "Saint-Exemple"],
+    ["Seen in Pediatrics (Sampletown) last week.", "Sampletown"],
+    ["Dre Odile Ferrand, néphrologue (Ville-Exemple)", "Ville-Exemple"],
+    ["Vu par la pédiatre (L'Exempleville) hier.", "Exempleville"],
+    ["Interniste (Val-d'Exemple)", "Exemple"],
+    ["Cardiologue ( Sainte-Anne-des-Exemples )", "Exemples"],
+    ["Rapport de radiologie (Îles-de-la-Exemple)", "Exemple"],
+  ])("%s", (text, town) => {
+    const out = send(text);
+    expect(out).toMatch(/\([ \t]*\[ADDRESS 1\][ \t]*\)/);
+    expect(out).not.toContain(town);
+  });
+
+  it.each([
+    "Cardiologie (Urgent)",
+    "Neurologie (Suivi) dans 3 mois.",
+    "Cardiology (ECG) normal.",
+    "Radiologie (Consultation)",
+    "Imagerie (Externe)",
+    "Cardiology (Holter) booked.",
+    "Cardiologue (Urgent)",
+    "Pédiatre (Externe)",
+  ])("leaves a note in brackets: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
+
+describe("town and facility names from the lists (#239 review)", () => {
+  it.each([
+    "Lives in the west end with her son.",
+    "She walks along the north shore daily.",
+    "We met at the north shore beach.",
+    "She sat on the white rock by the lake.",
+  ])("leaves an everyday phrase in lower case: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it.each([
+    ["She moved to White Rock last year.", "White Rock", "ADDRESS"],
+    ["She moved to white rock last year.", "white rock", "ADDRESS"],
+    ["Her family is from port hope originally.", "port hope", "ADDRESS"],
+    ["Port hope is where she grew up.", "Port hope", "ADDRESS"],
+    ["spirit river farm", "spirit river", "ADDRESS"],
+    ["Born in Saint-Jean-sur-Richelieu.", "Richelieu", "ADDRESS"],
+    ["Referred to Aberdeen Health & Community Services.", "Aberdeen", "CLINIC"],
+    [
+      "Followed at the Alzheimer Society of Cornwall & District.",
+      "Cornwall",
+      "CLINIC",
+    ],
+  ])("removes %s", (text, part, kind) => {
+    const out = send(text);
+    expect(out).toContain(`[${kind} 1]`);
+    expect(out).not.toContain(part);
+  });
+});
+
+describe("French clinic names, compound places and letterheads (FAKE shapes)", () => {
+  it.each([
+    "Suivi au CLSC des Trois-Exemples.",
+    "Suivi au CLSC les Exemples-Nord.",
+    "Suivi au CLSC des Trois-Exemples / Cap-de-la-Testbourg.",
+    "Suivi au CLSC Saint-Exemple (Sud-Ouest).",
+    "Suivi au CLSC de la Vallée-de-la-Exemple.",
+    "Suivi au CLSC Exempleville–Testbourg.",
+  ])("removes the CLSC whole: %s", (text) => {
+    expect(send(text)).toBe("Suivi au [CLINIC 1].");
+  });
+
+  it.each([
+    ["Polyclinique Saint-Exemple\nRapport de consultation", "Saint-Exemple"],
+    ["Groupe de médecine de famille Les Cèdres-Exemples\nNote", "Cèdres"],
+    ["GMF-U Saint-Exemple\nNote de visite", "Saint-Exemple"],
+    ["Médi-Clinique Exemple\nNote de visite", "Médi"],
+    ["Les Cliniques Médicales Exemple inc.\nNote", "Exemple"],
+    ["Cabinet médical Exemple & Associés\nNote", "Associés"],
+    ["Exemple Santé — Clinique de physiothérapie\nÉvaluation", "Exemple"],
+  ])("removes a letterhead's clinic: %j", (text, part) => {
+    const out = send(text);
+    expect(out).toMatch(/\[CLINIC 1\]/);
+    expect(out).not.toContain(part);
+  });
+});
+
+describe("Polish dates written with r. (roku)", () => {
+  it.each([
+    ["Wizyta 5 marca 2026 r.", "Wizyta [DATE 1]"],
+    [
+      "Badanie z dnia 1 czerwca 2026 r. wykazało poprawę.",
+      "Badanie z dnia [DATE 1] wykazało poprawę.",
+    ],
+    [
+      "Data wizyty: 14 lutego 2026 r. Kontrola 3 kwietnia 2026 r.",
+      "Data wizyty: [DATE 1] Kontrola [DATE 2, 48 days after DATE 1]",
+    ],
+  ])("%s", (text, expected) => {
+    expect(send(text)).toBe(expected);
+  });
+});
+
+describe("document headings on their own line are not clinics (#249 review)", () => {
+  it.each([
+    "Rapport Médical\nPatient vu ce jour.",
+    "Certificat Médical\nApte au travail.",
+    "Dossier Médical\nAntécédents : aucun.",
+    "Rapport Imagerie\nPoumons clairs.",
+    "Bilan Santé\nAucune anomalie.",
+  ])("%j", (text) => {
+    expect(send(text)).toBe(text);
+  });
+
+  it("still removes a letterhead clinic", () => {
+    const out = send("Lavoie Santé\nRapport Médical");
+    expect(out).toBe("[CLINIC 1]\nRapport Médical");
+  });
+});

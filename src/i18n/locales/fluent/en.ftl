@@ -1408,7 +1408,7 @@ portal-approvalCancelled = This approval request was cancelled. Check for update
 
 portal-approvalContact = Clinic approval needs to be checked. Contact your clinic for next steps.
 
-portal-approvalExpired = This approval request expired. Check for updates before starting a new request.
+portal-approvalExpired = This approval request expired. To ask again for this device, go to Security, under Clinic documents.
 
 portal-approvalMissing = Your saved approval request was not found on the portal. Send the saved request again.
 
@@ -1464,11 +1464,11 @@ portal-errorUnavailable = Portal linking is not available on this device yet.
 
 portal-fingerprint = Full device fingerprint
 
-portal-incomplete = Link incomplete. Check Linked devices in the portal before trying again.
+portal-incomplete = This saved attempt is incomplete. Check linked devices in the portal or contact your clinic before connecting again. This app cannot resume this attempt.
 
 portal-intro = Link myCarlos using the address and code shown in your patient portal.
 
-portal-link = Link to clinic
+portal-link = Connect and request approval
 
 portal-matchPerson = Match the document details
 
@@ -1490,8 +1490,6 @@ portal-serviceDate = Service date: { $date }
 
 portal-serviceDateLabel = Service date
 
-portal-sourceVerified = From { $clinic } · Verified
-
 portal-title = Clinic documents
 
 rename-help-profile = This changes only the displayed folder name. The person's folders and documents stay where they are.
@@ -1506,6 +1504,55 @@ rename-profile-saved = Folder name changed to { $name }.
 
 rename-title-profile = Rename person's folder
 
+portal-connectConsent = This connects this device and sends an approval request. Your clinic must approve the device before it can receive documents.
+
+portal-connected = Device linked. Its approval status is shown in Security, under Clinic documents.
+
+portal-connecting = Connecting and requesting clinic approval…
+
+portal-errorBusy = Another clinic operation is running. Wait for it to finish, then try again.
+
+portal-linkedApprovalIssue = Device linked. Its approval status in Security, under Clinic documents, says what to do next.
+
+portal-retryApproval = Retry saved approval request
+
+portal-working = Clinic operation in progress…
+
+portal-approvalExpiredCard = This approval request expired. To ask again for this same device, choose Start a new approval request. Your documents and this device's link stay as they are.
+
+portal-approvalPickedUp = Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.
+
+portal-approvalReplyInvalid = The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.
+
+portal-approvalStillOpen = This approval request is still open on the clinic portal. Wait until it ends before starting a new one.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Time left for this request: about { $count } minute.
+    *[other] Time left for this request: about { $count } minutes.
+    }
+
+portal-approvalTimeOver = The time for this request has run out.
+
+portal-approvalTimeOverRestart = The time for this request has run out. If your clinic has not approved this device, choose { $button }.
+
+portal-approvalTimeUp = The time for this request has run out. Checking with your clinic…
+
+portal-approvalUnanswered = myCarlos could not get this request's status from the clinic portal.
+
+portal-approvalUnreachable = myCarlos could not reach the clinic portal, so this request's status is not known yet.
+
+portal-approvalWait = The clinic portal asked myCarlos to check less often.
+
+portal-autoChecking = While this page is open, myCarlos checks for your clinic's answer automatically.
+
+portal-autoCheckStopped = Automatic checks have stopped. To check again, choose { $button }.
+
+portal-awaitingClinic = Your clinic has the approval request. Waiting for clinic staff to approve this device.
+
+portal-deviceRemoved = This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.
+
+portal-errorRateLimited = The clinic portal asked myCarlos to wait before trying again.
 hidden-backToSecurity = Back to Security
 
 interface-history-appVersion = myCarlos version
@@ -1667,6 +1714,32 @@ interface-history-title = Audit history
 interface-history-to = To
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where. It is encrypted with everything else. You can read it here; myCarlos never changes or removes it.
+
+portal-checkAgain = To check again, choose { $button }.
+
+portal-unlockCheckConsent = After each unlock, myCarlos contacts linked clinic portals to check for approval updates and new documents when the clinic has approved the device or an approval request is still open.
+
+portal-unlockChecked = Checked for new clinic documents after unlocking.
+
+portal-unlockCheckIncomplete = myCarlos could not finish checking for new clinic documents after unlocking.
+
+portal-unlockCheckNotRun = myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running.
+
+portal-unlockCheckWaiting = myCarlos did not check for new clinic documents after unlocking, because the clinic portal asked it to wait.
+
+portal-unlockRefused =
+    { $count ->
+    [one] { $count } clinic document could not be verified, so it was not added. Contact your clinic.
+    *[other] { $count } clinic documents could not be verified, so they were not added. Contact your clinic.
+    }
+
+library-source-clinic = From { $clinic }
+
+library-source-manualImport = Manual import
+
+library-status-unverified = Unverified
+
+library-status-verified = Verified
 
 ai-summary-button = Summary
 

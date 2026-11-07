@@ -1273,6 +1273,22 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             links.push(made);
             return copy(made);
           }
+          // #136: links this device and asks the clinic to approve it in one
+          // native call. Not modelled yet: an approval request that fails
+          // after the link was made (native answers the new link with
+          // `approvalError` beside it).
+          case "vault_portal_connect": {
+            const links = (snapshot.portalLinks ??= []);
+            const made = {
+              ...link(links.length + 1, request.portalBase ?? "", false),
+              deviceName: request.deviceName ?? "",
+              profileId: request.profileId ?? null,
+              approvalRequested: true,
+              approvalStatus: "pending",
+            };
+            links.push(made);
+            return { link: copy(made), approvalError: null };
+          }
           case "vault_request_device_approval": {
             const found = snapshot.portalLinks?.find(
               (candidate) => candidate.id === args.linkId,
@@ -1304,6 +1320,23 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             found.approvalReason = null;
             found.approvalCanRestart = false;
             return;
+          }
+          // #137: the clinic view's read-only status check of one device. It
+          // finds what the fake knows: an open request is still waiting for
+          // the clinic, with the ten minutes a request lasts; it never sends
+          // or starts a request.
+          case "vault_refresh_device_approval": {
+            const found = snapshot.portalLinks?.find(
+              (candidate) => candidate.id === args.linkId,
+            );
+            if (!found) throw refuse("not_found", "native.error.18");
+            return {
+              capture: captured().capture,
+              link: copy(found),
+              expiresInMs: 10 * 60_000,
+              issue: null,
+              recovery: false,
+            };
           }
           case "vault_check_documents":
             state.checks += 1;

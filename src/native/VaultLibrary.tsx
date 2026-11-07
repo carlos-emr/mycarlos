@@ -39,6 +39,7 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { PortalDocuments } from "./PortalDocuments";
+import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
@@ -105,6 +106,12 @@ export function VaultLibrary({
   notice,
   setNotice,
   run,
+  portalBusy = false,
+  runPortal = run,
+  pollApproval,
+  approvalWaits,
+  setPortalNotice = setNotice,
+  onPhotoNoticePending,
   refresh,
   onLock,
   onRequestLock,
@@ -112,6 +119,7 @@ export function VaultLibrary({
   onAutoLockMinutes,
   openingRecoverySetup = null,
   onOpeningRecoverySetupShown,
+  onOfferClosed,
   onUnfinishedRecoveryKey,
   canPrint = false,
   keyboardHints = true,
@@ -131,6 +139,15 @@ export function VaultLibrary({
   setNotice: (value: UiText) => void;
   /** Runs a vault operation; `boxes` names what was typed for it. */
   run: (operation: () => Promise<void>, boxes?: BoxKey[]) => Promise<void>;
+  portalBusy?: boolean;
+  runPortal?: (operation: () => Promise<void>) => Promise<void>;
+  /** The clinic view's automatic approval status check (#131). */
+  pollApproval?: PollApproval;
+  /** The session's per-portal waits for those checks (#131). */
+  approvalWaits?: PortalWaits;
+  setPortalNotice?: (value: UiText) => void;
+  /** Clinic results wait until a saved photo's delayed result is settled. */
+  onPhotoNoticePending?: (pending: boolean) => void;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
   /** Shows the vault as it is now: `known` if a command just returned it,
@@ -144,6 +161,8 @@ export function VaultLibrary({
    * new vault's key, to set up first, or the offer of one at unlock. */
   openingRecoverySetup?: OpeningRecoverySetup | null;
   onOpeningRecoverySetupShown?: () => void;
+  /** The recovery key offer the library opened on at unlock has closed. */
+  onOfferClosed?: () => void;
   /** Whether a recovery key setup has shown a key and not ended: a lock then
    * ends it, and the patient is told after the next unlock. */
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
@@ -315,7 +334,26 @@ export function VaultLibrary({
   const [dialogResult, setDialogResult] = useState<{
     message: UiText;
     recordId: string | null;
+    photoProfileId?: string;
   } | null>(null);
+  const photoNoticePendingRef = useRef(false);
+  const photoNoticeCallbackRef = useRef(onPhotoNoticePending);
+  photoNoticeCallbackRef.current = onPhotoNoticePending;
+  const releasePhotoNotice = () => {
+    if (!photoNoticePendingRef.current) return;
+    photoNoticePendingRef.current = false;
+    photoNoticeCallbackRef.current?.(false);
+  };
+  useEffect(
+    () => () => {
+      // An ended library cannot keep a clinic result reserved for its photo.
+      if (photoNoticePendingRef.current) {
+        photoNoticePendingRef.current = false;
+        photoNoticeCallbackRef.current?.(false);
+      }
+    },
+    [],
+  );
   // Bound to one record so a stale prompt can never apply to a different document.
   const [confirmation, setConfirmation] = useState<{
     action: "export";
@@ -776,6 +814,17 @@ export function VaultLibrary({
   );
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
+  // The recovery key offer the library opened on has closed: the app is
+  // told once that dialog's message is on the line, or was dropped for a
+  // newer one, so that what it says next comes after it (#128).
+  const offerClosingRef = useRef(false);
+  const onOfferClosedRef = useRef(onOfferClosed);
+  onOfferClosedRef.current = onOfferClosed;
+  const offerSettled = () => {
+    if (!offerClosingRef.current) return;
+    offerClosingRef.current = false;
+    onOfferClosedRef.current?.();
+  };
   useEffect(() => {
     // Any dialog open, such as a confirmation opened straight away, hides the
     // status line too: wait until it closes.
@@ -796,14 +845,20 @@ export function VaultLibrary({
     // opened meanwhile are not where it belongs.
     if (
       notice ||
+      (dialogResult.photoProfileId !== undefined &&
+        dialogResult.photoProfileId !== profileId) ||
       (activeRecordId !== null && activeRecordId !== dialogResult.recordId)
     ) {
       setDialogResult(null);
+      releasePhotoNotice();
+      offerSettled();
       return;
     }
     const timer = window.setTimeout(() => {
       setNoticeRef.current(dialogResult.message);
       setDialogResult(null);
+      releasePhotoNotice();
+      offerSettled();
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [
@@ -812,6 +867,7 @@ export function VaultLibrary({
     confirmation,
     confirmHideDamaged,
     notice,
+    profileId,
     dialogResult,
     recoverySetup,
     renameTarget,
@@ -964,11 +1020,18 @@ export function VaultLibrary({
       setActiveRecordId(saved.id);
       // Cleared now, so that the result is a change even when it repeats.
       setNotice("");
+      if (mountedRef.current) {
+        // Reserve synchronously, before run() ends. Clinic work may finish
+        // during the save or during the announcement's following delay.
+        photoNoticePendingRef.current = true;
+        photoNoticeCallbackRef.current?.(true);
+      }
       setDialogResult({
         message: message("interface.notice.photoSaved", {
           name: saved.displayName,
         }),
         recordId: saved.id,
+        photoProfileId: saved.profileId,
       });
     });
 
@@ -2018,11 +2081,13 @@ export function VaultLibrary({
                   compact
                   bridge={bridge}
                   snapshot={snapshot}
-                  busy={busy}
+                  busy={busy || portalBusy}
+                  working={portalBusy}
                   readOnly={readOnly}
-                  run={run}
+                  run={runPortal}
+                  waits={approvalWaits}
                   refresh={refresh}
-                  setNotice={setNotice}
+                  setNotice={setPortalNotice}
                 />
                 <label className="search">
                   <Icon name="search" />
@@ -2253,11 +2318,14 @@ export function VaultLibrary({
                   <PortalDocuments
                     bridge={bridge}
                     snapshot={snapshot}
-                    busy={busy}
+                    busy={busy || portalBusy}
+                    working={portalBusy}
                     readOnly={readOnly}
-                    run={run}
+                    run={runPortal}
+                    poll={pollApproval}
+                    waits={approvalWaits}
                     refresh={refresh}
-                    setNotice={setNotice}
+                    setNotice={setPortalNotice}
                   />
                 }
                 busy={busy}
@@ -2330,6 +2398,7 @@ export function VaultLibrary({
                   : message(
                       "interface.VaultLibrary.recoveryKeySavedKeepYourKitSomewhere",
                     );
+                if (recoverySetup.offered) offerClosingRef.current = true;
                 setRecoverySetup(null);
                 setNotice("");
                 // The setup is finished once the patient is told so. Until
@@ -2349,6 +2418,7 @@ export function VaultLibrary({
               onClose={(keyShown) => {
                 onUnfinishedRecoveryKey?.(null);
                 const offered = recoverySetup.offered;
+                if (offered) offerClosingRef.current = true;
                 setRecoverySetup(null);
                 // An offer that was left before any key was shown: the
                 // unlock's own result, which waited for the dialog.

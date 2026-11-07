@@ -675,7 +675,6 @@ export const MESSAGE_KEYS = [
   "portal.routing",
   "portal.serviceDate",
   "portal.serviceDateLabel",
-  "portal.sourceVerified",
   "portal.title",
   "rename.help.profile",
   "rename.label.profile",
@@ -759,6 +758,40 @@ export const MESSAGE_KEYS = [
   "interface.history.status",
   "interface.history.title",
   "interface.history.to",
+  "portal.connectConsent",
+  "portal.connected",
+  "portal.connecting",
+  "portal.errorBusy",
+  "portal.linkedApprovalIssue",
+  "portal.retryApproval",
+  "portal.working",
+  "portal.approvalExpiredCard",
+  "portal.approvalPickedUp",
+  "portal.approvalReplyInvalid",
+  "portal.approvalStillOpen",
+  "portal.approvalTimeLeft",
+  "portal.approvalTimeOver",
+  "portal.approvalTimeOverRestart",
+  "portal.approvalTimeUp",
+  "portal.approvalUnanswered",
+  "portal.approvalUnreachable",
+  "portal.approvalWait",
+  "portal.autoChecking",
+  "portal.autoCheckStopped",
+  "portal.awaitingClinic",
+  "portal.deviceRemoved",
+  "portal.errorRateLimited",
+  "portal.checkAgain",
+  "portal.unlockCheckConsent",
+  "portal.unlockChecked",
+  "portal.unlockCheckIncomplete",
+  "portal.unlockCheckNotRun",
+  "portal.unlockCheckWaiting",
+  "portal.unlockRefused",
+  "library.source.clinic",
+  "library.source.manualImport",
+  "library.status.unverified",
+  "library.status.verified",
   "ai.summary.button",
   "ai.summary.title",
   "ai.explain.title",
@@ -1711,7 +1744,6 @@ const FLUENT_IDS_BY_KEY = {
   "portal.routing": "portal-routing",
   "portal.serviceDate": "portal-serviceDate",
   "portal.serviceDateLabel": "portal-serviceDateLabel",
-  "portal.sourceVerified": "portal-sourceVerified",
   "portal.title": "portal-title",
   "rename.help.profile": "rename-help-profile",
   "rename.label.profile": "rename-label-profile",
@@ -1821,6 +1853,40 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.status": "interface-history-status",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
+  "portal.connectConsent": "portal-connectConsent",
+  "portal.connected": "portal-connected",
+  "portal.connecting": "portal-connecting",
+  "portal.errorBusy": "portal-errorBusy",
+  "portal.linkedApprovalIssue": "portal-linkedApprovalIssue",
+  "portal.retryApproval": "portal-retryApproval",
+  "portal.working": "portal-working",
+  "portal.approvalExpiredCard": "portal-approvalExpiredCard",
+  "portal.approvalPickedUp": "portal-approvalPickedUp",
+  "portal.approvalReplyInvalid": "portal-approvalReplyInvalid",
+  "portal.approvalStillOpen": "portal-approvalStillOpen",
+  "portal.approvalTimeLeft": "portal-approvalTimeLeft",
+  "portal.approvalTimeOver": "portal-approvalTimeOver",
+  "portal.approvalTimeOverRestart": "portal-approvalTimeOverRestart",
+  "portal.approvalTimeUp": "portal-approvalTimeUp",
+  "portal.approvalUnanswered": "portal-approvalUnanswered",
+  "portal.approvalUnreachable": "portal-approvalUnreachable",
+  "portal.approvalWait": "portal-approvalWait",
+  "portal.autoChecking": "portal-autoChecking",
+  "portal.autoCheckStopped": "portal-autoCheckStopped",
+  "portal.awaitingClinic": "portal-awaitingClinic",
+  "portal.deviceRemoved": "portal-deviceRemoved",
+  "portal.errorRateLimited": "portal-errorRateLimited",
+  "portal.checkAgain": "portal-checkAgain",
+  "portal.unlockCheckConsent": "portal-unlockCheckConsent",
+  "portal.unlockChecked": "portal-unlockChecked",
+  "portal.unlockCheckIncomplete": "portal-unlockCheckIncomplete",
+  "portal.unlockCheckNotRun": "portal-unlockCheckNotRun",
+  "portal.unlockCheckWaiting": "portal-unlockCheckWaiting",
+  "portal.unlockRefused": "portal-unlockRefused",
+  "library.source.clinic": "library-source-clinic",
+  "library.source.manualImport": "library-source-manualImport",
+  "library.status.unverified": "library-status-unverified",
+  "library.status.verified": "library-status-verified",
   "ai.summary.button": "ai-summary-button",
   "ai.summary.title": "ai-summary-title",
   "ai.explain.title": "ai-explain-title",
@@ -2804,7 +2870,6 @@ export interface MessageArgsByKey {
   "portal.routing": undefined;
   "portal.serviceDate": { date: FluentArgument };
   "portal.serviceDateLabel": undefined;
-  "portal.sourceVerified": { clinic: FluentArgument };
   "portal.title": undefined;
   "rename.help.profile": undefined;
   "rename.label.profile": undefined;
@@ -2891,6 +2956,40 @@ export interface MessageArgsByKey {
   "interface.history.status": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
+  "portal.connectConsent": undefined;
+  "portal.connected": undefined;
+  "portal.connecting": undefined;
+  "portal.errorBusy": undefined;
+  "portal.linkedApprovalIssue": undefined;
+  "portal.retryApproval": undefined;
+  "portal.working": undefined;
+  "portal.approvalExpiredCard": undefined;
+  "portal.approvalPickedUp": undefined;
+  "portal.approvalReplyInvalid": undefined;
+  "portal.approvalStillOpen": undefined;
+  "portal.approvalTimeLeft": { count: FluentArgument };
+  "portal.approvalTimeOver": undefined;
+  "portal.approvalTimeOverRestart": { button: FluentArgument };
+  "portal.approvalTimeUp": undefined;
+  "portal.approvalUnanswered": undefined;
+  "portal.approvalUnreachable": undefined;
+  "portal.approvalWait": undefined;
+  "portal.autoChecking": undefined;
+  "portal.autoCheckStopped": { button: FluentArgument };
+  "portal.awaitingClinic": undefined;
+  "portal.deviceRemoved": undefined;
+  "portal.errorRateLimited": undefined;
+  "portal.checkAgain": { button: FluentArgument };
+  "portal.unlockCheckConsent": undefined;
+  "portal.unlockChecked": undefined;
+  "portal.unlockCheckIncomplete": undefined;
+  "portal.unlockCheckNotRun": undefined;
+  "portal.unlockCheckWaiting": undefined;
+  "portal.unlockRefused": { count: FluentArgument };
+  "library.source.clinic": { clinic: FluentArgument };
+  "library.source.manualImport": undefined;
+  "library.status.unverified": undefined;
+  "library.status.verified": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;
   "ai.explain.title": undefined;

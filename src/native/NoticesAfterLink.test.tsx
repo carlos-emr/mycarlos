@@ -90,7 +90,10 @@ function linkForm(
 ) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
-    linkPortal,
+    connectPortal: vi.fn(async (...args) => ({
+      link: await linkPortal(...args),
+      approvalError: null,
+    })),
     checkDocuments: vi
       .fn()
       .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
@@ -132,7 +135,9 @@ async function submitLink() {
     screen.getByLabelText(humanText("Linking code")),
     "FAKE-CODE",
   );
-  await user.click(screen.getByRole("button", { name: /Link to clinic/ }));
+  await user.click(
+    screen.getByRole("button", { name: "Connect and request approval" }),
+  );
   return user;
 }
 
@@ -331,15 +336,10 @@ describe("Notices after the first clinic link", () => {
     linkForm([], [link]);
     const user = await submitLink();
     await screen.findByRole("dialog");
-    // The clinic chain's panel gives each linked clinic a focusable heading.
-    const heading = document.createElement("h3");
-    heading.id = `portal-link-title-${link.id}`;
-    heading.tabIndex = -1;
-    heading.textContent = "FAKE Clinic";
-    document.body.append(heading);
+    const heading = screen.getByRole("heading", { name: "FAKE Clinic" });
+    expect(heading).toHaveAttribute("id", `portal-link-title-${link.id}`);
     await user.click(screen.getByRole("button", { name: "Not now" }));
     await waitFor(() => expect(document.activeElement).toBe(heading));
-    heading.remove();
   });
 
   it("is not offered for a second clinic, nor when the link fails", async () => {

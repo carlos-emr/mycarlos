@@ -28,6 +28,8 @@ mod local_model;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;
+// The model download runs on computers only (no AI helper on a phone).
+#[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
 mod model_runtime;
@@ -101,9 +103,12 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{Manager, State, Url};
-use tauri_plugin_dialog::{
-    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
-};
+use tauri_plugin_dialog::DialogExt;
+// The plugin's message dialog is the confirmation off macOS (macOS has its own AppKit sheet).
+#[cfg(any(test, not(target_os = "macos")))]
+use tauri_plugin_dialog::MessageDialogResult;
+#[cfg(not(target_os = "macos"))]
+use tauri_plugin_dialog::{MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_fs::{FsExt, OpenOptions};
 use throttle::{Attempt, AttemptThrottle, Outcome};
 use uuid::Uuid;
@@ -330,6 +335,10 @@ impl From<VaultError> for PublicText {
                 code: "pickup_refused",
                 message_key: "portal.errorRefused",
             },
+            VaultError::ApprovalStillOpen => Self {
+                code: "approval_still_open",
+                message_key: "portal.approvalStillOpen",
+            },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
                 match reason {
@@ -361,11 +370,24 @@ impl From<VaultError> for PublicText {
                         code: "portal_link_device_exists",
                         message_key: "portal.errorExists",
                     },
+                    LinkError::Busy => Self {
+                        code: "portal_busy",
+                        message_key: "portal.errorBusy",
+                    },
+                    LinkError::RateLimited(_) => Self {
+                        code: "portal_rate_limited",
+                        message_key: "portal.errorRateLimited",
+                    },
                     LinkError::Cancelled => Self {
                         code: "cancelled",
                         message_key: "portal.errorCancelled",
                     },
-                    LinkError::Network | LinkError::InvalidResponse => Self {
+                    // Refusals keep the wording they had for every operation but
+                    // the status check (#131, `approval_check_issue`).
+                    LinkError::Network
+                    | LinkError::InvalidResponse
+                    | LinkError::DeviceRemoved
+                    | LinkError::HttpRefused(_, _) => Self {
                         code: "portal_link_incomplete",
                         message_key: "portal.errorIncomplete",
                     },
@@ -551,13 +573,20 @@ impl From<VaultError> for PublicError {
             VaultError::DamagedDocument(id) => Some(id),
             _ => None,
         };
+        // How long the clinic portal asked to wait, if it said (#131).
+        let retry_after_ms = match error {
+            VaultError::Portal(portal_link::LinkError::RateLimited(Some(seconds))) => {
+                Some(seconds.saturating_mul(1000))
+            }
+            _ => None,
+        };
         let PublicText { code, message_key } = PublicText::from(error);
         Self {
             code,
             message_key,
             record_id,
             note_key: None,
-            retry_after_ms: None,
+            retry_after_ms,
         }
     }
 }
@@ -1681,11 +1710,12 @@ fn runtime_info() -> RuntimeInfo {
     current_runtime_info()
 }
 
-/// The models the app accepts, for the row to show: name, size, licence,
-/// notices, and where to get the file (text only; nothing is opened).
+/// The models the row shows: name, size, licence, notices, and where to get
+/// the file (text only; nothing is opened). Only the listed entries: a backup
+/// that is not listed is still accepted by "Add a model file…".
 #[tauri::command]
-fn ai_model_catalog() -> &'static [local_model::Accepted] {
-    local_model::CATALOG
+fn ai_model_catalog() -> Vec<local_model::Accepted> {
+    local_model::listed(local_model::CATALOG)
 }
 
 /// Whether the AI helper (#72) has a model on this computer, and if not,
@@ -1693,6 +1723,37 @@ fn ai_model_catalog() -> &'static [local_model::Accepted] {
 #[tauri::command]
 fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::ModelStatus {
     models.status(&local_model::Here)
+}
+
+/// Every model the app offers, and any other accepted one on this computer, with its state,
+/// whether it was added from a file, and whether it is the one in use (#276).
+#[tauri::command]
+fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::ModelRow> {
+    models.models()
+}
+
+/// Which catalog entry a model command is about (`ai_models`' `index`).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModelIndexRequest {
+    index: usize,
+}
+
+/// Makes an installed model the one in use (#276). The helper holding the old one ends first,
+/// as at a lock, so an answer being written stops; the choice is kept on this computer,
+/// outside the vault. Returns the status of the model now in use.
+#[tauri::command]
+async fn ai_model_use(
+    models: State<'_, Arc<local_model::Store>>,
+    request: ModelIndexRequest,
+) -> Result<local_model::ModelStatus, ModelFailure> {
+    let models = Arc::clone(models.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        models.use_model(request.index)?;
+        Ok(models.status(&local_model::Here))
+    })
+    .await
+    .map_err(|_| local_model::ModelError::Storage)?
 }
 
 /// Why adding or removing a model was refused, as a word for the renderer.
@@ -1790,8 +1851,6 @@ async fn ai_model_add_picked(
     let worker = Arc::clone(&models);
     let result = tauri::async_runtime::spawn_blocking(move || {
         // About every 8 MiB, and at the start and the end.
-        // The helper holds the model: it stops before the file is replaced.
-        model_runtime::stop();
         let mut shown = u64::MAX;
         worker.add(&source, &local_model::Here, |done, total| {
             let step = done / (8 * 1024 * 1024);
@@ -1814,8 +1873,8 @@ async fn ai_model_add_picked(
     })
 }
 
-/// Downloads the default model (the catalog's first entry) from its pinned
-/// address, only because the patient clicked. Native code makes the request
+/// Downloads a model (catalog entry `index`; the default, the first, without one) from its
+/// pinned address, only because the patient clicked. Native code makes the request
 /// and nothing about the patient or a document is sent. The same checks as
 /// a picked file; the same progress event and `ai_model_add_cancel`. Returns
 /// the same outcomes, plus `network` and `unavailable`.
@@ -1824,16 +1883,17 @@ async fn ai_model_download(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
+    request: Option<ModelIndexRequest>,
 ) -> CommandResult<ModelAddOutcome> {
+    let index = request.map_or(0, |request| request.index);
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
     let models = Arc::clone(models.inner());
     let worker = Arc::clone(&models);
     let result = tauri::async_runtime::spawn_blocking(move || {
-        model_runtime::stop();
         let mut shown = u64::MAX;
         worker.download(
-            0,
+            index,
             &model_download::Https,
             &local_model::Here,
             |done, total| {
@@ -1869,16 +1929,17 @@ fn ai_model_add_cancel(models: State<'_, Arc<local_model::Store>>) {
     models.cancel_add();
 }
 
-/// Deletes the model (and any half-copied file). The folder holds nothing of
-/// the patient's, so nothing else is kept.
+/// Deletes a model (catalog entry `index`; the one in use without one) and its half-copied
+/// file. The folder holds nothing of the patient's, so nothing else is kept. When it was the
+/// one in use, In use moves to another installed model, or to none.
 #[tauri::command]
 async fn ai_model_remove(
     models: State<'_, Arc<local_model::Store>>,
+    request: Option<ModelIndexRequest>,
 ) -> Result<local_model::ModelStatus, ModelFailure> {
     let models = Arc::clone(models.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        model_runtime::stop();
-        models.remove()?;
+        models.remove(request.map(|request| request.index))?;
         Ok(models.status(&local_model::Here))
     })
     .await
@@ -2449,6 +2510,119 @@ async fn vault_portal_link(
 }
 
 #[tauri::command]
+async fn vault_portal_connect(
+    store: State<'_, Arc<VaultStore>>,
+    request: PortalLinkRequest,
+) -> CommandResult<PortalConnectResult> {
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        store.connect_portal(
+            &request.portal_base,
+            &request.code,
+            &request.device_name,
+            request.profile_id,
+            now_ms(),
+            session,
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map(|(link, error)| PortalConnectResult {
+        link,
+        approval_error: error.map(PublicError::from),
+    })
+    .map_err(Into::into)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PortalConnectResult {
+    link: portal_link::LinkSummary,
+    approval_error: Option<PublicError>,
+}
+
+/// What a status check of a linked device's approval found (#131).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceApprovalCheck {
+    capture: vault::SnapshotCapture,
+    link: portal_link::LinkSummary,
+    expires_in_ms: Option<u64>,
+    issue: Option<PublicError>,
+    /// The vault went into read-only recovery during the check.
+    recovery: bool,
+}
+
+/// Why a status check could not finish, as the clinic view is told. Only
+/// here are these told apart from a connection failure (every other clinic
+/// operation keeps `portal_link_incomplete` for all of them): a reply that
+/// did not parse or verify, and a device removed from the portal account,
+/// are said and not asked again; another refusal is said plainly and
+/// retried, like a connection failure.
+fn approval_check_issue(error: VaultError) -> PublicError {
+    use portal_link::LinkError;
+    let (code, message_key) = match &error {
+        VaultError::Portal(LinkError::InvalidResponse) => {
+            ("approval_reply_invalid", "portal.approvalReplyInvalid")
+        }
+        VaultError::Portal(LinkError::DeviceRemoved) => {
+            ("portal_device_removed", "portal.deviceRemoved")
+        }
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => {
+            ("portal_refused", "portal.approvalUnanswered")
+        }
+        _ => return PublicError::from(error),
+    };
+    // A refusal may say how long to wait (maintenance sends Retry-After).
+    let retry_after_ms = match error {
+        VaultError::Portal(LinkError::HttpRefused(_, Some(seconds))) => {
+            Some(seconds.saturating_mul(1000))
+        }
+        _ => None,
+    };
+    PublicError {
+        code,
+        message_key,
+        record_id: None,
+        note_key: None,
+        retry_after_ms,
+    }
+}
+
+/// A read-only status check of one linked device's approval, for the clinic
+/// view's automatic refresh (#131). It never sends or starts a request. Like
+/// the other clinic commands it is not activity: a check, however often it
+/// runs, never keeps an unattended vault open.
+#[tauri::command]
+async fn vault_refresh_device_approval(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<DeviceApprovalCheck> {
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    // Captured before queuing: a check queued in an older session must not
+    // read or save anything in a newer one.
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.refresh_device_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map(|check| DeviceApprovalCheck {
+            capture: check.capture,
+            link: check.link,
+            expires_in_ms: check.expires_in_ms,
+            issue: check.issue.map(approval_check_issue),
+            recovery: check.recovery,
+        })
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 async fn vault_request_device_approval(
     store: State<'_, Arc<VaultStore>>,
     link_id: Uuid,
@@ -2646,6 +2820,7 @@ const MAIN_WINDOW: &str = "main";
 
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
+#[cfg(any(test, not(target_os = "macos")))]
 fn agreed_natively(answer: &MessageDialogResult, go_ahead: &str) -> bool {
     matches!(answer, MessageDialogResult::Custom(label) if label == go_ahead)
 }
@@ -4681,6 +4856,9 @@ pub fn run() {
                 local_model::CATALOG,
             ));
             models.clean_leftovers();
+            // The helper holds the model file: it is ended, under the store's lock, before the
+            // file is replaced or removed (a new run is refused meanwhile).
+            models.set_before_replace(Box::new(model_runtime::stop));
             // Windows: an existing folder gets the helper's read access too.
             #[cfg(windows)]
             if models.dir().exists() {
@@ -4716,6 +4894,8 @@ pub fn run() {
             runtime_info,
             ai_model_catalog,
             ai_model_status,
+            ai_models,
+            ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,
             ai_model_download,
@@ -4734,12 +4914,14 @@ pub fn run() {
             vault_snapshot,
             vault_history,
             vault_portal_link,
+            vault_portal_connect,
             vault_check_documents,
             vault_notification_status,
             vault_set_notifications,
             vault_set_automatic_document_checks,
             vault_request_device_approval,
             vault_restart_device_approval,
+            vault_refresh_device_approval,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
@@ -5125,6 +5307,65 @@ mod tests {
             "",
         ] {
             assert!(!is_plain_date(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_clinic_portal_asking_to_wait_says_how_long_and_is_not_a_connection_failure() {
+        use portal_link::LinkError;
+        let waited = PublicError::from(VaultError::Portal(LinkError::RateLimited(Some(30))));
+        assert_eq!(waited.code, "portal_rate_limited");
+        assert_eq!(waited.retry_after_ms, Some(30_000));
+        let value = serde_json::to_value(&waited).unwrap();
+        assert_eq!(value["retryAfterMs"], 30_000);
+        let unsaid = PublicError::from(VaultError::Portal(LinkError::RateLimited(None)));
+        assert_eq!(unsaid.code, "portal_rate_limited");
+        assert!(serde_json::to_value(&unsaid).unwrap()["retryAfterMs"].is_null());
+        for other in [
+            LinkError::Network,
+            LinkError::InvalidResponse,
+            LinkError::Busy,
+        ] {
+            let error = PublicError::from(VaultError::Portal(other));
+            assert_ne!(error.code, "portal_rate_limited");
+            assert_eq!(error.retry_after_ms, None);
+        }
+    }
+
+    #[test]
+    fn a_status_check_tells_a_reply_that_did_not_verify_apart_from_no_connection() {
+        use portal_link::LinkError;
+        let invalid = approval_check_issue(VaultError::Portal(LinkError::InvalidResponse));
+        assert_eq!(invalid.code, "approval_reply_invalid");
+        assert_eq!(invalid.message_key, "portal.approvalReplyInvalid");
+        assert!(public_error_text(&invalid).contains("Contact your clinic"));
+        let offline = approval_check_issue(VaultError::Portal(LinkError::Network));
+        assert_eq!(offline.code, "portal_link_incomplete");
+        let waiting = approval_check_issue(VaultError::Portal(LinkError::RateLimited(Some(9))));
+        assert_eq!(
+            (waiting.code, waiting.retry_after_ms),
+            ("portal_rate_limited", Some(9_000))
+        );
+        assert_eq!(
+            approval_check_issue(VaultError::Portal(LinkError::DeviceRemoved)).code,
+            "portal_device_removed"
+        );
+        let maintenance =
+            approval_check_issue(VaultError::Portal(LinkError::HttpRefused(503, Some(300))));
+        assert_eq!(
+            (maintenance.code, maintenance.retry_after_ms),
+            ("portal_refused", Some(300_000))
+        );
+        // Every other clinic operation keeps its existing code.
+        for kept in [
+            LinkError::InvalidResponse,
+            LinkError::DeviceRemoved,
+            LinkError::HttpRefused(404, None),
+        ] {
+            assert_eq!(
+                PublicError::from(VaultError::Portal(kept)).code,
+                "portal_link_incomplete"
+            );
         }
     }
 

@@ -703,6 +703,59 @@ describe("the reader's AI helper", () => {
     );
   });
 
+  it("says an answer is ready once: not for one read back from the vault, nor again on coming back to it", async () => {
+    const model = fakeLocalModel();
+    // A summary the vault kept earlier, in English.
+    const { kept } = fakeKept(
+      [
+        {
+          input: { tool: "summary", lang: "en" },
+          content: JSON.stringify({
+            tool: "summary",
+            sentences: [
+              {
+                text: "FAKE: kept earlier.",
+                quote: "FAKE text on page 2",
+                source: null,
+              },
+            ],
+            model: { name: "FAKE older model", sha256: "cd".repeat(32) },
+            lang: "en",
+            createdAt: Date.UTC(2026, 9, 1),
+            partial: false,
+            lastPage: 2,
+            pagesMissing: false,
+          }),
+        },
+      ],
+      model,
+    );
+    renderReader(model, { kept });
+    await firstPage();
+    const user = userEvent.setup();
+    const summaryTool = screen.getByRole("button", { name: "Summary" });
+    const summaryStatus = () =>
+      within(
+        screen.getByRole("region", { name: "Summary in plain words" }),
+      ).getByRole("status");
+    await user.click(summaryTool);
+    expect(await screen.findByText("FAKE: kept earlier.")).toBeVisible();
+    // Read back, not new: nothing is read out.
+    expect(summaryStatus()).toBeEmptyDOMElement();
+    // To Explain and back: still the kept summary, still nothing new.
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    await user.click(summaryTool);
+    expect(await screen.findByText("FAKE: kept earlier.")).toBeVisible();
+    expect(summaryStatus()).toBeEmptyDOMElement();
+    expect(model.calls).toHaveLength(0);
+    // A new answer is said.
+    await user.click(screen.getByRole("button", { name: "Summarize again" }));
+    await waitFor(() =>
+      expect(summaryStatus()).toHaveTextContent("The summary is ready."),
+    );
+    expect(model.calls).toHaveLength(1);
+  });
+
   it("does not say an earlier explanation is ready when the next one fails", async () => {
     const model = fakeLocalModel();
     const explained = model.explain;
