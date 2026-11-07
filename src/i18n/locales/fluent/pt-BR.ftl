@@ -1752,6 +1752,25 @@ interface-history-to = Para
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também guarda um histórico: quando o cofre foi aberto; quando a frase secreta ou a chave de recuperação foi configurada ou alterada e quando uma cópia de segurança foi salva ou restaurada; quando cada perfil de paciente foi adicionado e cada pasta foi criada, renomeada ou movida; e quando cada documento foi adicionado, renomeado, movido, ocultado, restaurado ou salvo fora do myCarlos e onde. Ele fica criptografado junto com todo o resto. Você pode consultá-lo aqui; o myCarlos nunca o altera nem o remove.
 
+portal-checkAgain = Para verificar novamente, escolha { $button }.
+
+portal-unlockCheckConsent = Após cada desbloqueio, o myCarlos se conecta aos portais das clínicas vinculadas para verificar atualizações da aprovação e novos documentos quando a clínica já aprovou o dispositivo ou uma solicitação de aprovação ainda está em aberto.
+
+portal-unlockChecked = Verificação de novos documentos da clínica feita após desbloquear o cofre.
+
+portal-unlockCheckIncomplete = O myCarlos não conseguiu concluir a verificação de novos documentos da clínica após desbloquear o cofre.
+
+portal-unlockCheckNotRun = O myCarlos não verificou novos documentos da clínica após desbloquear o cofre, porque outra operação com a clínica estava em andamento.
+
+portal-unlockCheckWaiting = O myCarlos não verificou novos documentos da clínica após desbloquear o cofre, porque o portal da clínica pediu para aguardar.
+
+portal-unlockRefused =
+    { $count ->
+    [one] Não foi possível verificar { $count } documento da clínica, então ele não foi adicionado. Entre em contato com sua clínica.
+    [many] Não foi possível verificar { $count } de documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.
+    *[other] Não foi possível verificar { $count } documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.
+    }
+
 ai-summary-button = Resumo
 
 ai-summary-title = Resumo em palavras simples

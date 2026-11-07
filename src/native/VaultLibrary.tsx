@@ -119,6 +119,7 @@ export function VaultLibrary({
   onAutoLockMinutes,
   openingRecoverySetup = null,
   onOpeningRecoverySetupShown,
+  onOfferClosed,
   onUnfinishedRecoveryKey,
   canPrint = false,
   keyboardHints = true,
@@ -160,6 +161,8 @@ export function VaultLibrary({
    * new vault's key, to set up first, or the offer of one at unlock. */
   openingRecoverySetup?: OpeningRecoverySetup | null;
   onOpeningRecoverySetupShown?: () => void;
+  /** The recovery key offer the library opened on at unlock has closed. */
+  onOfferClosed?: () => void;
   /** Whether a recovery key setup has shown a key and not ended: a lock then
    * ends it, and the patient is told after the next unlock. */
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
@@ -811,6 +814,17 @@ export function VaultLibrary({
   );
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
+  // The recovery key offer the library opened on has closed: the app is
+  // told once that dialog's message is on the line, or was dropped for a
+  // newer one, so that what it says next comes after it (#128).
+  const offerClosingRef = useRef(false);
+  const onOfferClosedRef = useRef(onOfferClosed);
+  onOfferClosedRef.current = onOfferClosed;
+  const offerSettled = () => {
+    if (!offerClosingRef.current) return;
+    offerClosingRef.current = false;
+    onOfferClosedRef.current?.();
+  };
   useEffect(() => {
     // Any dialog open, such as a confirmation opened straight away, hides the
     // status line too: wait until it closes.
@@ -837,12 +851,14 @@ export function VaultLibrary({
     ) {
       setDialogResult(null);
       releasePhotoNotice();
+      offerSettled();
       return;
     }
     const timer = window.setTimeout(() => {
       setNoticeRef.current(dialogResult.message);
       setDialogResult(null);
       releasePhotoNotice();
+      offerSettled();
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [
@@ -2382,6 +2398,7 @@ export function VaultLibrary({
                   : message(
                       "interface.VaultLibrary.recoveryKeySavedKeepYourKitSomewhere",
                     );
+                if (recoverySetup.offered) offerClosingRef.current = true;
                 setRecoverySetup(null);
                 setNotice("");
                 // The setup is finished once the patient is told so. Until
@@ -2401,6 +2418,7 @@ export function VaultLibrary({
               onClose={(keyShown) => {
                 onUnfinishedRecoveryKey?.(null);
                 const offered = recoverySetup.offered;
+                if (offered) offerClosingRef.current = true;
                 setRecoverySetup(null);
                 // An offer that was left before any key was shown: the
                 // unlock's own result, which waited for the dialog.
