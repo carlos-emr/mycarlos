@@ -4169,7 +4169,7 @@ mod historical_identifier_export_tests {
                 truncated: false,
                 pages_missing: false,
                 last_index: Some(0),
-                pages_digest: pages_digest([(0, "FAKE Zorvana")]),
+                pages_digest: pages_digest([(0, "Zorvana")]),
             },
         );
         let pick_id = picks.store_text_export(
@@ -4186,8 +4186,12 @@ mod historical_identifier_export_tests {
             record_id: record,
             ticket,
             pick_id,
-            text: "FAKE Zorvana".to_owned(),
+            text: "Zorvana".to_owned(),
         };
+        // The current label alone must not reject the unique former token.
+        let current_only = vec!["FAKE Neralis".to_owned()];
+        assert!(text_recheck::identifier_hits("Zorvana", &current_only, &[]).is_empty());
+        assert!(!text_recheck::identifier_hits("Neralis", &current_only, &[]).is_empty());
         let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
             app.state(),
             app.state(),
@@ -4196,7 +4200,8 @@ mod historical_identifier_export_tests {
         ))
         .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
         assert!(!outcome.saved);
-        assert!(!outcome.hits.is_empty());
+        assert_eq!(outcome.hits.len(), 1);
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 7));
         assert!(!destination.exists());
 
         // Only this disposable synthetic vault is damaged. The audit view may
