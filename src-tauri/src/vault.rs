@@ -1712,6 +1712,10 @@ impl VaultStore {
     pub fn history_view(&self) -> Result<HistoryView, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        self.history_view_in_session(unlocked)
+    }
+
+    fn history_view_in_session(&self, unlocked: &UnlockedVault) -> Result<HistoryView, VaultError> {
         let cancelled = || self.cancel_io.load(Ordering::Acquire);
         if cancelled() {
             return Err(VaultError::Cancelled);
@@ -2984,13 +2988,19 @@ impl VaultStore {
     /// AI helper's native re-check (#72 part B, AI-02): every profile's
     /// display and full name and birth date, and the patient's name and
     /// birth date, the provider and the clinic from the document's delivery
-    /// manifest, if it has one. Nothing is stored or logged.
+    /// manifest, if it has one. Nothing is stored or logged. An incomplete
+    /// history refuses this privacy check: checked fragments cannot establish
+    /// all former folder names. The audit view may still show those fragments.
     pub fn known_identifiers(&self, record_id: Uuid) -> Result<KnownIdentifiers, VaultError> {
-        // A person's former folder names ("FAKE Person" renamed "Mom"): older documents still
-        // carry them. The history is read before the session is taken, since history_view
-        // takes it too. A damaged history still gives the entries that check out; an error
-        // (locked, cancelled, storage) is the caller's, not an empty list.
-        let view = self.history_view()?;
+        // History and current identifiers must describe the same session and
+        // manifest. Keep this guard through both reads without taking it twice.
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let view = self.history_view_in_session(unlocked)?;
+        if !view.complete {
+            return Err(VaultError::Corrupt);
+        }
+        run_at_test_boundary("known-identifiers-history");
         let former_names: Vec<String> = view
             .entries
             .into_iter()
@@ -3001,8 +3011,6 @@ impl VaultStore {
             })
             .filter_map(|entry| entry.old_name)
             .collect();
-        let guard = self.session();
-        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let manifest = &unlocked.manifest;
         let shared = shared_profile_id(manifest.vault_id);
         let mut known = KnownIdentifiers::default();
@@ -8885,6 +8893,132 @@ mod tests {
             Err(VaultError::Cancelled)
         ));
         store.cancel_io.store(false, Ordering::Release);
+        assert!(store.known_identifiers(record).is_ok());
+    }
+
+    #[test]
+    fn known_identifiers_keep_a_consistent_snapshot_during_a_person_rename() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store.rename_profile(profile, "FAKE Zorvana", 3).unwrap();
+        let store = Arc::new(store);
+        let worker_store = Arc::clone(&store);
+        let (worker_tx, worker_rx) = std::sync::mpsc::sync_channel(1);
+        AT_TEST_BOUNDARY.with(|slot| {
+            *slot.borrow_mut() = Some((
+                "known-identifiers-history",
+                Box::new(move || {
+                    let (blocked_tx, blocked_rx) = std::sync::mpsc::sync_channel(1);
+                    let worker_store = Arc::clone(&worker_store);
+                    let worker = std::thread::spawn(move || {
+                        // The reader still owns the same guard after history
+                        // verification, before it collects current names.
+                        blocked_tx
+                            .send(matches!(
+                                worker_store.unlocked.try_lock(),
+                                Err(std::sync::TryLockError::WouldBlock)
+                            ))
+                            .unwrap();
+                        worker_store.rename_profile(profile, "FAKE Neralis", 4)
+                    });
+                    assert!(blocked_rx.recv_timeout(Duration::from_secs(5)).unwrap());
+                    worker_tx.send(worker).unwrap();
+                }),
+            ));
+        });
+        let before = store.known_identifiers(record).unwrap();
+        worker_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .join()
+            .unwrap()
+            .unwrap();
+        let after = store.known_identifiers(record).unwrap();
+        for known in [before, after] {
+            assert!(known.names.contains(&"FAKE Zorvana".to_owned()));
+            assert!(!crate::text_recheck::identifier_hits(
+                "FAKE Zorvana",
+                &known.names,
+                &known.birth_dates
+            )
+            .is_empty());
+        }
+    }
+
+    #[test]
+    fn known_identifiers_refuse_a_history_gap_even_with_checked_names_on_both_sides() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        {
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            let entries = (0..400)
+                .map(|index| {
+                    let mut entry = HistoryEntry::new(HistoryEvent::FolderRenamed, index + 3);
+                    entry.how = Some("personFolder".to_owned());
+                    entry.old_name = Some(format!("FAKE Zorvana{index}"));
+                    entry.name = Some(format!("FAKE {}", "x".repeat(220)));
+                    entry
+                })
+                .collect();
+            assert!(record_in_session(&store.root, unlocked, entries));
+        }
+        let all = store.history_view().unwrap().entries;
+        let segments = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .history
+            .segments
+            .clone();
+        let middle = &segments[1];
+        let first = middle.first_seq as usize;
+        let end = first + middle.entry_count as usize;
+        let name_in = |entries: &[HistoryEntry]| {
+            entries
+                .iter()
+                .find_map(|entry| entry.old_name.clone())
+                .unwrap()
+        };
+        let names = [
+            name_in(&all[..first]),
+            name_in(&all[first..end]),
+            name_in(&all[end..]),
+        ];
+        let known = store.known_identifiers(record).unwrap();
+        for name in &names {
+            assert!(
+                !crate::text_recheck::identifier_hits(name, &known.names, &known.birth_dates)
+                    .is_empty()
+            );
+        }
+        let path = store.root.join("objects").join(&middle.object_name);
+        let original = damage_segment(&store.root, middle);
+        for missing in [false, true] {
+            if missing {
+                fs::remove_file(&path).unwrap();
+            }
+            let partial = store.history_view().unwrap();
+            assert!(!partial.complete);
+            assert!(partial
+                .entries
+                .iter()
+                .any(|entry| entry.old_name.as_ref() == Some(&names[0])));
+            assert!(partial
+                .later
+                .iter()
+                .any(|entry| entry.old_name.as_ref() == Some(&names[2])));
+            assert!(!partial
+                .entries
+                .iter()
+                .chain(&partial.later)
+                .any(|entry| entry.old_name.as_ref() == Some(&names[1])));
+            assert!(matches!(
+                store.known_identifiers(record),
+                Err(VaultError::Corrupt)
+            ));
+        }
+        fs::write(path, original).unwrap();
         assert!(store.known_identifiers(record).is_ok());
     }
 
