@@ -8936,12 +8936,10 @@ mod tests {
         let after = store.known_identifiers(record).unwrap();
         for known in [before, after] {
             assert!(known.names.contains(&"FAKE Zorvana".to_owned()));
-            assert!(!crate::text_recheck::identifier_hits(
-                "FAKE Zorvana",
-                &known.names,
-                &known.birth_dates
-            )
-            .is_empty());
+            let hits =
+                crate::text_recheck::identifier_hits("Zorvana", &known.names, &known.birth_dates);
+            assert_eq!(hits.len(), 1);
+            assert_eq!((hits[0].start, hits[0].end), (0, 7));
         }
     }
 
@@ -8987,9 +8985,14 @@ mod tests {
         ];
         let known = store.known_identifiers(record).unwrap();
         for name in &names {
-            assert!(
-                !crate::text_recheck::identifier_hits(name, &known.names, &known.birth_dates)
-                    .is_empty()
+            assert!(known.names.contains(name));
+            let token = name.strip_prefix("FAKE ").unwrap();
+            let hits =
+                crate::text_recheck::identifier_hits(token, &known.names, &known.birth_dates);
+            assert_eq!(hits.len(), 1);
+            assert_eq!(
+                (hits[0].start, hits[0].end),
+                (0, token.encode_utf16().count() as u32)
             );
         }
         let path = store.root.join("objects").join(&middle.object_name);
