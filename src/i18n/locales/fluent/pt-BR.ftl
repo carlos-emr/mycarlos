@@ -2079,6 +2079,18 @@ notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos sa
 notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
 notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
 
+background-title = Execução em segundo plano
+background-keepRunning = Manter o myCarlos em segundo plano depois que eu fechar a janela dele
+background-keepRunningHelp = Ao fechar a janela, o myCarlos pode continuar em segundo plano com um ícone na área de notificação (na barra de menus, no Mac). O cofre é bloqueado quando a janela fecha e continua bloqueado até você abrir o myCarlos e desbloqueá-lo. Escolha Sair no ícone para fechar o myCarlos por completo.
+background-startAtLogin = Iniciar o myCarlos quando eu entrar neste computador
+background-startAtLoginHelp = O myCarlos inicia quando você entra neste computador. Com a opção acima ativada, ele inicia discretamente em segundo plano, com o cofre bloqueado. Com ela desativada, a janela dele abre.
+background-paused = Enquanto o cofre está bloqueado, o myCarlos não consegue verificar novos documentos da clínica. Desbloqueie-o para verificar.
+background-unavailable = Um ícone em segundo plano não está disponível neste computador. O myCarlos fecha por completo quando você fecha a janela dele.
+background-error = Não foi possível alterar esta configuração. Ela continua como estava.
+native-tray-open = Abrir o myCarlos
+native-tray-quit = Sair do myCarlos
+native-tray-tooltip = myCarlos — cofre bloqueado
+
 ai-summary-again = Resumir de novo
 
 ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.

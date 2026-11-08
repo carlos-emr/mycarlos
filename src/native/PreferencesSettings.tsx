@@ -4,6 +4,7 @@ import { AppearanceSetting } from "./AppearanceSetting";
 import { useI18n } from "../i18n";
 import type { ModelStatus } from "../ai/types";
 import { NotificationSetting } from "./NotificationSetting";
+import { BackgroundSetting } from "./BackgroundSetting";
 import { AiModelSetting } from "./AiModelSetting";
 
 /** Settings > Preferences: how myCarlos looks on this computer. Nothing here
@@ -31,6 +32,7 @@ export function PreferencesSettings({
         <LanguageSetting />
         <AppearanceSetting />
         <NotificationSetting />
+        <BackgroundSetting />
         {native ? (
           <TextSizeSetting zoom={native.zoom} mac={native.mac} />
         ) : (

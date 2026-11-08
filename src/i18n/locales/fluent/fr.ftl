@@ -2079,6 +2079,18 @@ notifications-autoHelp = Avec votre accord, myCarlos vérifie les liens enregist
 notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Documents de la clinique et choisissez Rechercher de nouveaux documents.
 notifications-checkBusy = Une vérification de documents est en cours d’arrêt. Choisissez à nouveau Rechercher de nouveaux documents dans un instant.
 
+background-title = Exécution en arrière-plan
+background-keepRunning = Laisser myCarlos s’exécuter en arrière-plan après la fermeture de sa fenêtre
+background-keepRunningHelp = Lorsque vous fermez la fenêtre, myCarlos peut rester en arrière-plan avec une icône dans la zone de notification (la barre des menus sur un Mac). Votre coffre se verrouille à la fermeture de la fenêtre et reste verrouillé jusqu’à ce que vous ouvriez myCarlos et le déverrouilliez. Choisissez Quitter dans l’icône pour fermer complètement myCarlos.
+background-startAtLogin = Démarrer myCarlos à l’ouverture de ma session sur cet ordinateur
+background-startAtLoginHelp = myCarlos démarre lorsque vous ouvrez votre session sur cet ordinateur. Si le choix ci-dessus est activé, il démarre discrètement en arrière-plan, coffre verrouillé. S’il est désactivé, sa fenêtre s’ouvre.
+background-paused = Tant que votre coffre est verrouillé, myCarlos ne peut pas vérifier les nouveaux documents de la clinique. Déverrouillez-le pour vérifier.
+background-unavailable = Une icône d’arrière-plan n’est pas disponible sur cet ordinateur. myCarlos se ferme complètement lorsque vous fermez sa fenêtre.
+background-error = Ce réglage n’a pas pu être modifié. Il reste tel qu’il était.
+native-tray-open = Ouvrir myCarlos
+native-tray-quit = Quitter myCarlos
+native-tray-tooltip = myCarlos — coffre verrouillé
+
 ai-summary-again = Résumer à nouveau
 
 ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.

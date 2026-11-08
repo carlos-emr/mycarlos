@@ -6,6 +6,7 @@ use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+mod desktop_background;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection;
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -2394,6 +2395,102 @@ async fn vault_unlock(
     .await?;
     after_open(store.inner());
     run_blocking(store.inner(), VaultStore::snapshot).await
+}
+
+/// Everything that holds the vault's contents lets go: what `vault_lock` does, for the places that
+/// lock without a command (closing the window to the tray, Quit from the tray).
+fn lock_vault_now(store: &VaultStore, picks: &PendingPicks) {
+    picks.clear();
+    pdf_view::cancel_views();
+    pdf_view::cancel_text_reads();
+    local_runner::on_lock();
+    store.lock();
+    // Again once locked: a request that came in meanwhile stops too.
+    pdf_view::cancel_views();
+    pdf_view::cancel_text_reads();
+    local_runner::on_lock();
+}
+
+/// The Preferences "Running in the background" choices. On a phone there is no such mode.
+#[cfg(desktop)]
+fn background_state(
+    app: &tauri::AppHandle,
+) -> CommandResult<Arc<desktop_background::desktop::Background>> {
+    app.try_state::<Arc<desktop_background::desktop::Background>>()
+        .map(|state| Arc::clone(state.inner()))
+        .ok_or_else(|| PublicError::from(VaultError::Storage))
+}
+
+#[tauri::command]
+async fn background_status(
+    app: tauri::AppHandle,
+    locale: Option<UiLocale>,
+) -> CommandResult<desktop_background::Status> {
+    #[cfg(desktop)]
+    {
+        let background = background_state(&app)?;
+        if let Some(locale) = locale {
+            background.report_locale(locale);
+        }
+        Ok(background.status())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, locale);
+        Ok(desktop_background::Status::unsupported())
+    }
+}
+
+#[tauri::command]
+async fn background_set_keep_running(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> CommandResult<desktop_background::Status> {
+    #[cfg(desktop)]
+    {
+        let background = background_state(&app)?;
+        tauri::async_runtime::spawn_blocking(move || background.set_keep_running(enabled))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(|_| PublicError::from(VaultError::Storage))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, enabled);
+        Err(PublicError::from(VaultError::Storage))
+    }
+}
+
+#[tauri::command]
+async fn background_set_start_at_login(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> CommandResult<desktop_background::Status> {
+    #[cfg(desktop)]
+    {
+        let background = background_state(&app)?;
+        tauri::async_runtime::spawn_blocking(move || background.set_start_at_login(enabled))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(|_| PublicError::from(VaultError::Storage))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, enabled);
+        Err(PublicError::from(VaultError::Storage))
+    }
+}
+
+/// The interface's language, so the tray icon's menu and tooltip are worded in it.
+#[tauri::command]
+async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> CommandResult<()> {
+    #[cfg(desktop)]
+    {
+        background_state(&app)?.report_locale(locale);
+    }
+    #[cfg(not(desktop))]
+    let _ = (app, locale);
+    Ok(())
 }
 
 /// After the vault opens: remote-notice work owed from before (a revocation, a check a push
@@ -4983,10 +5080,34 @@ pub fn run() {
                     std::thread::sleep(IDLE_CHECK_INTERVAL);
                     lock_if_idle(&store, &picks, Instant::now());
                 })?;
+            // The background mode (M2): the tray icon, the quiet start and the lock on close.
+            #[cfg(desktop)]
+            {
+                let lock_store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
+                let lock_picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+                desktop_background::desktop::install(
+                    app,
+                    app.path()
+                        .app_local_data_dir()?
+                        .join("vault-home")
+                        .join("background-v1.json"),
+                    Arc::new(move || lock_vault_now(&lock_store, &lock_picks)),
+                );
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            #[cfg(desktop)]
+            desktop_background::desktop::on_window_event(window, event);
+            #[cfg(not(desktop))]
+            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            background_status,
+            background_set_keep_running,
+            background_set_start_at_login,
+            background_report_locale,
             ai_model_catalog,
             ai_model_status,
             ai_models,

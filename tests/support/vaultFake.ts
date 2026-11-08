@@ -178,8 +178,11 @@ export interface FakeVaultSetup {
   newRecoveryKey?: string;
   /** Adds FAKE Locked.pdf, locked with FAKE_DOCUMENT_PASSWORD. */
   lockedPdf?: boolean;
-  /** FAKE Letter.pdf also holds a clinic reading aid (vault format 10). */
+  /** FAKE Letter.pdf also holds a clinic reading aid (vault format 8). */
   readingAid?: boolean;
+  /** A computer that can keep myCarlos running in the background (the tray icon), or one whose
+   * icon cannot be made. Default: no such mode. */
+  background?: "available" | "noIcon";
   /** Clinic linking is built in: with no clinic linked yet, or with one
    * linked and approved, unless `approval` says the request did not end in
    * approval. */
@@ -338,6 +341,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         previousSession: string | null;
       };
       type State = {
+        /** The background mode's two choices, both off until chosen. */
+        background: { keepRunning: boolean; startAtLogin: boolean };
         captureEpoch: string;
         captureSequence: number;
         status: string;
@@ -634,6 +639,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           pendingKey: null,
           documentPasswords,
           checks: 0,
+          background: { keepRunning: false, startAtLogin: false },
           snapshot,
           calls: [],
           unexpected: [],
@@ -909,6 +915,27 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return [];
           case "vault_status":
             return state.status;
+          // The background mode (tray icon, start at login): the native side is faked, so what is
+          // asserted is what the screen asks and shows.
+          case "background_status":
+            return {
+              supported: setup.background != null,
+              keepRunning: state.background.keepRunning,
+              startAtLogin: state.background.startAtLogin,
+              trayReady: state.background.keepRunning,
+              pausedWhileLocked:
+                setup.background != null && state.background.keepRunning,
+            };
+          case "background_set_keep_running":
+            if (setup.background === "noIcon" && args.enabled)
+              throw new Error("FAKE: the tray icon could not be made");
+            state.background.keepRunning = Boolean(args.enabled);
+            return answer("background_status", {});
+          case "background_set_start_at_login":
+            state.background.startAtLogin = Boolean(args.enabled);
+            return answer("background_status", {});
+          case "background_report_locale":
+            return null;
           case "vault_notification_status":
             return {
               supported: false,
@@ -1674,6 +1701,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       newKeyLabel: FAKE_NEW_KEY_LABEL,
       lockedPdf: setup.lockedPdf ?? false,
       readingAid: setup.readingAid ?? false,
+      background: setup.background ?? null,
       documentPassword: FAKE_DOCUMENT_PASSWORD,
       lockedOriginal: lockedOriginalName("{name}.pdf"),
       pageText: PAGE_TEXT,

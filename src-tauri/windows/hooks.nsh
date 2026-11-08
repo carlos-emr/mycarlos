@@ -15,4 +15,6 @@
 !macro NSIS_HOOK_POSTUNINSTALL
   System::Call 'userenv::DeleteAppContainerProfile(w "mycarlos.pdfhelper") i .r0'
   System::Call 'userenv::DeleteAppContainerProfile(w "mycarlos.modelhelper") i .r0'
+  ; "Start myCarlos when I sign in" (desktop_background.rs) is a per-user Run value; it goes too.
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "myCarlos"
 !macroend
