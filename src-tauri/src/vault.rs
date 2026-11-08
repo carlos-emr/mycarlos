@@ -8787,12 +8787,29 @@ mod tests {
         store
             .update_folder(folder, None, "FAKE Old results")
             .unwrap();
+        // Former names come from the encrypted history after reopening too.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
         let known = store.known_identifiers(record).unwrap();
         for name in ["FAKE Person", "FAKE Mom", "FAKE Mother"] {
             assert!(known.names.contains(&name.to_owned()), "{name}");
         }
         // A plain folder's old name is no person's name.
         assert!(!known.names.contains(&"FAKE Results".to_owned()));
+    }
+
+    #[test]
+    fn known_identifiers_propagate_history_cancellation() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        // A cancelled history read must not become a successful, incomplete
+        // identifier list that could let a former name pass the native check.
+        store.cancel_io.store(true, Ordering::Release);
+        assert!(matches!(
+            store.known_identifiers(record),
+            Err(VaultError::Cancelled)
+        ));
+        store.cancel_io.store(false, Ordering::Release);
+        assert!(store.known_identifiers(record).is_ok());
     }
 
     fn original_pdf_fixture() -> (tempfile::TempDir, VaultStore, Uuid, Vec<u8>) {
