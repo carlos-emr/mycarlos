@@ -4133,6 +4133,88 @@ async fn vault_export_text_picked(
     })
 }
 
+#[cfg(test)]
+mod historical_identifier_export_tests {
+    use super::*;
+
+    #[test]
+    fn native_text_export_refuses_a_former_name_and_unverifiable_history_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                pages_digest: pages_digest([(0, "FAKE Zorvana")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let request = || TextExportPickedRequest {
+            record_id: record,
+            ticket,
+            pick_id,
+            text: "FAKE Zorvana".to_owned(),
+        };
+        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
+        assert!(!outcome.saved);
+        assert!(!outcome.hits.is_empty());
+        assert!(!destination.exists());
+
+        // Only this disposable synthetic vault is damaged. The audit view may
+        // retain checked fragments; a privacy check must not certify the gap.
+        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .is_err());
+        assert!(!destination.exists());
+    }
+}
+
 /// Moves files to another person, into the folders chosen. A file the
 /// person already has stays where it is and is named in the outcome.
 #[tauri::command]
