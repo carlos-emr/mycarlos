@@ -8953,7 +8953,14 @@ mod tests {
                 .map(|index| {
                     let mut entry = HistoryEntry::new(HistoryEvent::FolderRenamed, index + 3);
                     entry.how = Some("personFolder".to_owned());
-                    entry.old_name = Some(format!("FAKE Zorvana{index}"));
+                    // All 400 distinct suffixes are alphabetic, so the whole
+                    // identifier remains a matchable name word.
+                    let suffix = format!(
+                        "{}{}",
+                        char::from(b'a' + (index / 26) as u8),
+                        char::from(b'a' + (index % 26) as u8)
+                    );
+                    entry.old_name = Some(format!("FAKE Zorvana{suffix}"));
                     entry.name = Some(format!("FAKE {}", "x".repeat(220)));
                     entry
                 })
