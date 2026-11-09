@@ -1913,6 +1913,8 @@ ai-error-memory = Brakuje teraz wolnej pamięci dla asystenta AI. Można zamkną
 
 ai-error-busy = Model asystenta AI jest właśnie dodawany lub usuwany. Można spróbować ponownie, gdy to się skończy.
 
+ai-error-storage = Nie udało się odczytać modelu asystenta AI z tego komputera. Można spróbować ponownie. Jeśli to się powtarza, można usunąć model w Preferencjach i dodać go ponownie.
+
 ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stron, więc w tym podsumowaniu może czegoś brakować.
 
 ai-summary-noSource = Nie znaleziono źródła

@@ -2193,6 +2193,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
         AiError::Memory => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
+        AiError::Storage => "ai.error.storage",
         AiError::Cancelled | AiError::Failed => "ai.failed",
     };
     PublicError {
@@ -5801,6 +5802,7 @@ mod tests {
             (AiError::Damaged, "aiDamaged", "isn't on this computer"),
             (AiError::Memory, "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
+            (AiError::Storage, "aiStorage", "could not be read"),
             (AiError::Cancelled, "aiCancelled", "could not finish"),
             (AiError::Failed, "aiFailed", "could not finish"),
         ] {

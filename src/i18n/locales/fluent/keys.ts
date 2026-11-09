@@ -815,6 +815,7 @@ export const MESSAGE_KEYS = [
   "ai.failed",
   "ai.error.memory",
   "ai.error.busy",
+  "ai.error.storage",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
   "aiHelper.notice.title",
@@ -1911,6 +1912,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.failed": "ai-failed",
   "ai.error.memory": "ai-error-memory",
   "ai.error.busy": "ai-error-busy",
+  "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
   "aiHelper.notice.title": "aiHelper-notice-title",
@@ -3019,6 +3021,7 @@ export interface MessageArgsByKey {
   "ai.failed": undefined;
   "ai.error.memory": undefined;
   "ai.error.busy": undefined;
+  "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
   "aiHelper.notice.title": undefined;
