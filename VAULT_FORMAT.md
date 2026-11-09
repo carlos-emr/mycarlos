@@ -1117,3 +1117,13 @@ A format 1–10 vault is upgraded to format 11 at its next writable unlock, in a
 commit of its own, with nothing else changed. An older myCarlos then refuses
 the vault as newer rather than reading a record with more than 32 answers as
 damaged. Header and object formats are unchanged.
+
+## Provisional format 14: previous full names
+
+This branch understands manifest formats 1–11 and 14 only. Reserved 12 and 13 are explicitly unsupported, including recovery/fallback selection: they are never interpreted as known semantics. Format 14 is a Root-reserved working assignment; compatibility review and reservation/current-main reconciliation are required before publication or migration approval. Header, object and backup container formats do not change.
+
+A non-Shared encrypted profile may contain `previousFullNames`, a nonempty ordered array of at most 16 distinct trimmed names. Each uses the existing 120-Unicode-scalar name/control validation. Absence is the canonical empty state; null, wrong types, empty stored arrays, duplicates and noncanonical stored names are refused. The field is forbidden in older declared formats and on Shared. Writable legacy unlock uses the existing redundant standalone manifest upgrade; read-only recovery does not migrate. Older builds must refuse format 14 rather than read/drop this field.
+
+The details request omits the list to preserve it; explicit `[]` clears it. Names are validated, trimmed and exact duplicates removed on writes; excessive or invalid input is rejected without eviction. Save updates details and list atomically, with the existing identifier-free details-changed event. There is no native automatic retention. Edit details visibly suggests the original full name after a distinct nonempty change; the patient can remove that suggestion for the draft. Cancel discards all changes.
+
+Removing an entry removes only this current field as a known-name source. Other current profiles, authenticated former folder labels, delivery identifiers, documents, prior manifests and backups may still contain it; restoring a backup may restore the list. This is not secure erasure.

@@ -9609,7 +9609,7 @@ describe("durable vault UI", () => {
     await screen.findByText(humanText("Details for FAKE Existing saved."));
     expect(bridge.updateProfileDetails).toHaveBeenCalledExactlyOnceWith(
       "profile-1",
-      { fullName: "FAKE Unsaved Person" },
+      { fullName: "FAKE Unsaved Person", previousFullNames: [] },
     );
   });
 

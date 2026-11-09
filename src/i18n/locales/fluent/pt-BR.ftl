@@ -2090,3 +2090,10 @@ ai-summary-again = Resumir de novo
 ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.
 
 ai-keepFull = Este documento já guarda o máximo de respostas da IA. As respostas novas são mostradas, mas não são guardadas.
+
+personDetails-previousTitle = Nomes completos anteriores
+personDetails-previousHelp = Até 16 nomes completos anteriores ajudam a encontrar dados de identificação. Um nome alterado é sugerido aqui; remova-o antes de salvar se não quiser guardá-lo. A remoção afeta apenas esta entrada; outros registros e backups podem mantê-lo.
+personDetails-previousEntry = Nome completo anterior { $number }
+personDetails-previousRemove = Remover nome completo anterior { $number }
+personDetails-previousAdd = Adicionar nome completo anterior
+personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.

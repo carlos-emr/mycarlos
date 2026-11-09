@@ -1398,6 +1398,7 @@ impl VaultStore {
                     created_at_ms: now,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 });
             }
             next.history = prepared.state;

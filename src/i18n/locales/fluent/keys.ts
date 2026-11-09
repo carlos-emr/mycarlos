@@ -957,6 +957,12 @@ export const MESSAGE_KEYS = [
   "noticesStep.done",
   "noticesStep.notNow",
   "notifications.autoNeedsNotices",
+  "personDetails.previousTitle",
+  "personDetails.previousHelp",
+  "personDetails.previousEntry",
+  "personDetails.previousRemove",
+  "personDetails.previousAdd",
+  "personDetails.previousInvalid",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2111,6 +2117,12 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
   "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
+  "personDetails.previousTitle": "personDetails-previousTitle",
+  "personDetails.previousHelp": "personDetails-previousHelp",
+  "personDetails.previousEntry": "personDetails-previousEntry",
+  "personDetails.previousRemove": "personDetails-previousRemove",
+  "personDetails.previousAdd": "personDetails-previousAdd",
+  "personDetails.previousInvalid": "personDetails-previousInvalid",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3171,6 +3183,12 @@ export interface MessageArgsByKey {
   "noticesStep.done": undefined;
   "noticesStep.notNow": undefined;
   "notifications.autoNeedsNotices": undefined;
+  "personDetails.previousTitle": undefined;
+  "personDetails.previousHelp": undefined;
+  "personDetails.previousEntry": { number: FluentArgument };
+  "personDetails.previousRemove": { number: FluentArgument };
+  "personDetails.previousAdd": undefined;
+  "personDetails.previousInvalid": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

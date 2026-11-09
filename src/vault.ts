@@ -21,11 +21,13 @@ export interface PatientProfile {
   createdAtMs: number;
   fullName?: string;
   birthDate?: string;
+  previousFullNames?: string[];
 }
 
 export interface PersonDetails {
   fullName?: string;
   birthDate?: string;
+  previousFullNames?: string[];
 }
 export interface FoundIdentity {
   name: string;

@@ -2128,3 +2128,10 @@ ai-summary-again = Podsumuj ponownie
 ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.
 
 ai-keepFull = Ten dokument przechowuje już maksymalną liczbę odpowiedzi AI. Nowe odpowiedzi są wyświetlane, ale nie są zachowywane.
+
+personDetails-previousTitle = Poprzednie pełne imiona i nazwiska
+personDetails-previousHelp = Do 16 poprzednich pełnych imion i nazwisk pomaga wykrywać dane identyfikujące. Zmienione dane są tu proponowane; usuń je przed zapisaniem, jeśli nie chcesz ich zachować. Usunięcie dotyczy tylko tej listy; inne dokumenty i kopie zapasowe mogą je zachować.
+personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
+personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
+personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
+personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.

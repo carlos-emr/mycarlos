@@ -1323,3 +1323,7 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 /* The model's buttons (#72): apart, and wrapped onto their own lines at
    large text (#253). */
 .native-ai-model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.previous-full-names, .previous-full-names > div { display: grid; gap: 8px; min-width: 0; }
+.previous-full-names input { width: 100%; min-width: 0; box-sizing: border-box; }
+.previous-full-names button { white-space: normal; min-height: 44px; }

@@ -955,5 +955,11 @@
   "noticesStep.later",
   "noticesStep.done",
   "noticesStep.notNow",
-  "notifications.autoNeedsNotices"
+  "notifications.autoNeedsNotices",
+  "personDetails.previousTitle",
+  "personDetails.previousHelp",
+  "personDetails.previousEntry",
+  "personDetails.previousRemove",
+  "personDetails.previousAdd",
+  "personDetails.previousInvalid"
 ]

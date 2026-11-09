@@ -1907,3 +1907,10 @@ ai-summary-again = 重新生成摘要
 ai-keepFailed = myCarlos 无法将此回答与文档一起保存。此处仍会显示该回答。
 
 ai-keepFull = 此文档保存的 AI 回答已达上限。新的回答会显示，但不会保存。
+
+personDetails-previousTitle = 曾用全名
+personDetails-previousHelp = 最多可保存16个曾用全名，以帮助查找身份信息。更改姓名时，原姓名会在此处建议保留；如不想保留，请在保存前移除。移除仅影响此列表条目，其他记录和备份仍可能保留该姓名。
+personDetails-previousEntry = 曾用全名 { $number }
+personDetails-previousRemove = 移除曾用全名 { $number }
+personDetails-previousAdd = 添加曾用全名
+personDetails-previousInvalid = 最多输入16个不同的非空姓名，每个不超过120个字符，且不含控制字符。

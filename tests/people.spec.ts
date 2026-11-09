@@ -122,7 +122,7 @@ test("a person is added with their details in Security, their details are edited
   ).toEqual({
     request: {
       profileId: fakeUuid(202),
-      details: { fullName: CHILD_FULL_NAME },
+      details: { fullName: CHILD_FULL_NAME, previousFullNames: [] },
       today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     },
   });
