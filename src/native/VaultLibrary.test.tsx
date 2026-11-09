@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { page } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
-import type { VaultBridge, VaultSnapshot } from "../vault";
+import type { PortalLinkSummary, VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 import type { ModelStatus } from "../ai/types";
 import { FAKE_MODEL, fakeDocumentText } from "../test/fakeLocalModel";
@@ -62,6 +62,7 @@ function renderLibrary(
   sharedNew = 0,
   bridgeExtras: Record<string, unknown> = {},
   computer = true,
+  activity: { busy?: boolean; portalBusy?: boolean } = {},
 ) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
@@ -108,7 +109,8 @@ function renderLibrary(
     <VaultLibrary
       bridge={bridge}
       snapshot={current}
-      busy={false}
+      busy={activity.busy ?? false}
+      portalBusy={activity.portalBusy ?? false}
       notice=""
       setNotice={setNotice}
       run={async (operation) => operation()}
@@ -1108,6 +1110,198 @@ describe("Settings > AI helper (#72)", () => {
     renderLibrary(snapshot, 0, {}, false);
     expect(
       screen.queryByRole("button", { name: humanText("AI helper") }),
+    ).toBeNull();
+  });
+});
+
+describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
+  // A clinic this vault is linked to (FAKE), so the library shows its
+  // compact Check for new documents.
+  const link: PortalLinkSummary = {
+    id: "fake-link",
+    portalBase: "https://portal.example.test/patient",
+    deviceName: "myCarlos on Windows",
+    profileId: null,
+    clinicName: "FAKE Clinic",
+    fingerprints: [],
+    incomplete: false,
+    deviceKeyId: "fake-device",
+    deviceFingerprint: "11".repeat(32),
+    approvalRequested: true,
+    clinicApproved: true,
+  };
+  // The clinic-approval chain (#136 → #142) links with connectPortal; the
+  // panel, and its compact Check, are offered only with it.
+  const portal = {
+    connectPortal: vi.fn(),
+    checkDocuments: vi
+      .fn()
+      .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+  };
+  const linked: VaultSnapshot = {
+    ...snapshot,
+    portalLinkingEnabled: true,
+    portalLinks: [link],
+    sharedProfileId: "shared",
+    profiles: [
+      ...snapshot.profiles,
+      { id: "profile-2", displayName: "FAKE Blake", createdAtMs: 2 },
+      { id: "shared", displayName: "Shared with me", createdAtMs: 3 },
+    ],
+  };
+  const box = (element: Element) => element.getBoundingClientRect();
+
+  it("sits to the right of the search box, and under it on a narrow window", async () => {
+    renderLibrary(linked, 0, portal);
+    openFolder(/^Shared with me/);
+    const search = screen.getByRole("searchbox").closest("label")!;
+    const check = screen.getByRole("button", {
+      name: humanText("Check for new documents"),
+    });
+    // After the search box in reading and Tab order, in the same row.
+    expect(
+      search.compareDocumentPosition(check) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(check.parentElement).toBe(search.parentElement);
+    try {
+      await page.viewport(1100, 760);
+      expect(box(check).left).toBeGreaterThanOrEqual(box(search).right);
+      expect(box(check).top).toBeLessThan(box(search).bottom);
+      // Narrow (a phone, or large text): the box keeps its width and the
+      // button goes under it.
+      await page.viewport(360, 800);
+      expect(box(check).top).toBeGreaterThanOrEqual(box(search).bottom);
+    } finally {
+      await page.viewport(1100, 760);
+    }
+  });
+
+  it("leaves the search box the whole row when there is no clinic link", () => {
+    renderLibrary({ ...snapshot, portalLinkingEnabled: true }, 0, portal);
+    const search = screen.getByRole("searchbox").closest("label")!;
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeNull();
+    expect(box(search).width).toBeCloseTo(box(search.parentElement!).width, 0);
+  });
+  it("only offers Check in actual Shared with me through folder and settings transitions", () => {
+    renderLibrary(linked, 0, portal);
+    const absent = () =>
+      expect(
+        screen.queryByRole("button", {
+          name: humanText("Check for new documents"),
+        }),
+      ).toBeNull();
+    absent();
+    openFolder(/^FAKE Letters/);
+    absent();
+    openFolder(/^Shared with me/);
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeEnabled();
+    search("Search Shared with me", "FAKE");
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeVisible();
+    openFolder(/^FAKE Blake/);
+    absent();
+    openFolder(/^Shared with me/);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    absent();
+    expect(
+      screen.getByRole("heading", { name: "Clinic documents" }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
+    absent();
+    openFolder(/^Shared with me/);
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeEnabled();
+    expect(portal.checkDocuments).not.toHaveBeenCalled();
+  });
+
+  it("does not treat an ordinary folder named Shared with me as the reserved view", () => {
+    renderLibrary(
+      {
+        ...linked,
+        folders: [
+          ...linked.folders,
+          {
+            id: "decoy",
+            profileId: "profile-1",
+            parentId: null,
+            name: "Shared with me",
+            createdAtMs: 4,
+          },
+        ],
+      },
+      0,
+      portal,
+    );
+    openFolder(/^Shared with me \(FAKE Avery\)/);
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeNull();
+  });
+
+  it.each(["busy", "portalBusy"] as const)(
+    "retains the %s check disable contract inside Shared with me",
+    (key) => {
+      renderLibrary(linked, 0, portal, true, { [key]: true });
+      openFolder(/^Shared with me/);
+      const name =
+        key === "portalBusy"
+          ? "Clinic operation in progress…"
+          : "Check for new documents";
+      expect(
+        screen.getByRole("button", { name: humanText(name) }),
+      ).toBeDisabled();
+    },
+  );
+
+  it("keeps a started check's result announcement after leaving Shared with me", async () => {
+    let finish: (value: {
+      added: number;
+      refused: number;
+      receiptsPending: number;
+    }) => void = () => undefined;
+    const checkDocuments = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { setNotice } = renderLibrary(linked, 0, {
+      ...portal,
+      checkDocuments,
+    });
+    openFolder(/^Shared with me/);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    );
+    expect(checkDocuments).toHaveBeenCalledExactlyOnceWith();
+    openFolder(/^FAKE Letters/);
+    finish({ added: 2, refused: 0, receiptsPending: 0 });
+    await waitFor(() => expect(setNotice).toHaveBeenCalled());
+    expect(visibleText(resolveText(setNotice.mock.calls.at(-1)![0]))).toContain(
+      "New documents saved: 2.",
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
     ).toBeNull();
   });
 });
