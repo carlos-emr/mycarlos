@@ -377,7 +377,8 @@ describe("Add a model file", () => {
     });
     download.focus();
     await userEvent.keyboard("{Enter}");
-    expect(download).toHaveFocus();
+    // A disabled Download yields keyboard focus to the immediately available Cancel.
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
     await waitFor(() => expect(native.listener).not.toBeNull());
     act(() =>
       native.listener?.({ payload: { done: 1_000_000, total: 2_500_000_000 } }),
@@ -449,7 +450,7 @@ describe("The progress bar (#275)", () => {
     expect(visibleText(bar()!.getAttribute("aria-valuetext") ?? "")).toBe(
       "41%, 1,240 of 3,013 MB",
     );
-    expect(screen.getByText("41%")).toBeVisible();
+    expect(screen.getByText(humanText("41%, 1,240 of 3,013 MB"))).toBeVisible();
     tell(TOTAL);
     expect(bar()).toHaveAttribute("aria-valuenow", "100");
     // Not a live region: the status text says the progress at its own pace.
@@ -462,6 +463,34 @@ describe("The progress bar (#275)", () => {
         name: humanText("Cancel"),
       }),
     ).toBeVisible();
+  });
+
+  it("disables the busy download and labels the final byte phase without starting another copy", async () => {
+    await startDownload(() => new Promise(() => undefined));
+    const downloading = screen.getByRole("button", {
+      name: humanText("Downloading FAKE model"),
+    });
+    expect(downloading).toBeDisabled();
+    tell(1_500_000_000);
+    await userEvent.click(downloading);
+    expect(
+      native.invoke.mock.calls.filter(
+        ([command]) => command === "ai_model_download",
+      ),
+    ).toHaveLength(1);
+    tell(TOTAL);
+    expect(
+      screen.getByRole("button", { name: humanText("Installing FAKE model") }),
+    ).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Downloading and checking",
+    );
+    const counts = screen.getByText(humanText("100%, 3,013 of 3,013 MB"));
+    expect(counts).toBeVisible();
+    expect(counts).toHaveAttribute("aria-hidden", "true");
+    expect(
+      bar()!.compareDocumentPosition(counts) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("starts a resumed download where it stopped", async () => {
@@ -1334,6 +1363,9 @@ describe("Device model catalog (#276A)", () => {
     });
     render(<AiModelSetting status={installed} onStatus={vi.fn()} />);
     await screen.findByRole("progressbar");
+    expect(
+      screen.getByRole("button", { name: "Downloading FAKE Gemma" }),
+    ).toBeDisabled();
     expect(
       within(region(second.name)).getByRole("progressbar"),
     ).toHaveAttribute("aria-valuenow", "50");

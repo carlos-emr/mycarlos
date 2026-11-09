@@ -1860,6 +1860,7 @@ ai-models-addedByYou = 由你添加
 ai-models-notDownloaded = 尚未下载
 
 ai-models-downloading = 正在下载
+ai-models-installing = 正在安装
 
 ai-models-download = 下载
 

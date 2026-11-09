@@ -2033,6 +2033,7 @@ ai-models-addedByYou = Añadido por ti
 ai-models-notDownloaded = Sin descargar
 
 ai-models-downloading = Descargando
+ai-models-installing = Instalando
 
 ai-models-download = Descargar
 

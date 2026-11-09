@@ -936,5 +936,6 @@
   "ai.models.retry",
   "ai.models.starting",
   "ai.models.picking",
-  "ai.models.changed"
+  "ai.models.changed",
+  "ai.models.installing"
 ]
