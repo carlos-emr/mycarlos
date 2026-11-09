@@ -1785,9 +1785,9 @@ ai-explain-title = Expliquer un terme
 
 ai-notInstalled-title = L’assistant IA n’est pas encore sur cet ordinateur
 
-ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Dans Préférences, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
+ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Dans Paramètres, sous Assistant IA, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
 
-ai-notInstalled-openPreferences = Ouvrir les Préférences
+ai-notInstalled-openPreferences = Ouvrir les paramètres de l’assistant IA
 
 aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.
 
@@ -1810,6 +1810,8 @@ ai-preferences-title = Assistant IA
 ai-preferences-body = Explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà ; il reste sur cet ordinateur.
 
 ai-preferences-notInstalled = Non installé
+
+ai-settings-subtitle = Le fonctionnement de l’assistant IA sur cet ordinateur
 
 ai-model-add = Ajouter un fichier de modèle…
 

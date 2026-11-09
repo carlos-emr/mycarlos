@@ -957,6 +957,7 @@ export const MESSAGE_KEYS = [
   "noticesStep.done",
   "noticesStep.notNow",
   "notifications.autoNeedsNotices",
+  "ai.settings.subtitle",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2111,6 +2112,7 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
   "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
+  "ai.settings.subtitle": "ai-settings-subtitle",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3171,6 +3173,7 @@ export interface MessageArgsByKey {
   "noticesStep.done": undefined;
   "noticesStep.notNow": undefined;
   "notifications.autoNeedsNotices": undefined;
+  "ai.settings.subtitle": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -955,5 +955,6 @@
   "noticesStep.later",
   "noticesStep.done",
   "noticesStep.notNow",
-  "notifications.autoNeedsNotices"
+  "notifications.autoNeedsNotices",
+  "ai.settings.subtitle"
 ]
