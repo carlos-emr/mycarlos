@@ -106,7 +106,12 @@ test("downloads the default model with its progress, and the reader's Summary us
     en("ai.model.downloading", { done: MB(TOTAL / 2), total: MB(TOTAL) }),
   );
   await expect(rowButton(row, "common.cancel")).toBeVisible();
-  await expect(rowButton(row, "ai.model.download")).toBeDisabled();
+  await expect(
+    row.getByRole("button", {
+      name: `${en("ai.models.downloading")} ${FAKE_MODEL.name}`,
+      exact: true,
+    }),
+  ).toBeDisabled();
   await expect(rowButton(row, "ai.model.add")).toBeDisabled();
 
   await releaseAi(page, AI_COMMANDS.download);
@@ -242,7 +247,12 @@ test("a download still running when the patient comes back shows its bar, not th
     en("ai.model.downloading", { done: MB(TOTAL / 2), total: MB(TOTAL) }),
   );
   await expect(rowButton(row, "common.cancel")).toBeVisible();
-  await expect(rowButton(row, "ai.model.download")).toBeDisabled();
+  await expect(
+    row.getByRole("button", {
+      name: `${en("ai.models.downloading")} ${FAKE_MODEL.name}`,
+      exact: true,
+    }),
+  ).toBeDisabled();
   await expect(row.getByRole("alert")).toHaveCount(0);
   // It ends as it would have: the model is added.
   await releaseAi(page, AI_COMMANDS.download);
