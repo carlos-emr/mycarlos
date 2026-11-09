@@ -942,10 +942,6 @@ export const MESSAGE_KEYS = [
   "ai.model.download",
   "ai.model.downloadNote",
   "ai.model.downloading",
-  "ai.model.progressName",
-  "ai.model.progressValue",
-  "ai.model.stillDownloading",
-  "ai.model.stillChecking",
   "ai.model.refusedNetwork",
   "ai.model.refusedUnavailable",
   "native.filter.models",
@@ -962,6 +958,10 @@ export const MESSAGE_KEYS = [
   "noticesStep.notNow",
   "notifications.autoNeedsNotices",
   "ai.settings.subtitle",
+  "ai.model.progressName",
+  "ai.model.progressValue",
+  "ai.model.stillDownloading",
+  "ai.model.stillChecking",
   "ai.models.title",
   "ai.models.group",
   "ai.models.inUse",
@@ -2117,10 +2117,6 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.download": "ai-model-download",
   "ai.model.downloadNote": "ai-model-downloadNote",
   "ai.model.downloading": "ai-model-downloading",
-  "ai.model.progressName": "ai-model-progressName",
-  "ai.model.progressValue": "ai-model-progressValue",
-  "ai.model.stillDownloading": "ai-model-stillDownloading",
-  "ai.model.stillChecking": "ai-model-stillChecking",
   "ai.model.refusedNetwork": "ai-model-refusedNetwork",
   "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
   "native.filter.models": "native-filter-models",
@@ -2138,6 +2134,10 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.notNow": "noticesStep-notNow",
   "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
   "ai.settings.subtitle": "ai-settings-subtitle",
+  "ai.model.progressName": "ai-model-progressName",
+  "ai.model.progressValue": "ai-model-progressValue",
+  "ai.model.stillDownloading": "ai-model-stillDownloading",
+  "ai.model.stillChecking": "ai-model-stillChecking",
   "ai.models.title": "ai-models-title",
   "ai.models.group": "ai-models-group",
   "ai.models.inUse": "ai-models-inUse",
@@ -3196,14 +3196,6 @@ export interface MessageArgsByKey {
   "ai.model.download": undefined;
   "ai.model.downloadNote": { host: FluentArgument; size: FluentArgument };
   "ai.model.downloading": { done: FluentArgument; total: FluentArgument };
-  "ai.model.progressName": undefined;
-  "ai.model.progressValue": {
-    done: FluentArgument;
-    percent: FluentArgument;
-    total: FluentArgument;
-  };
-  "ai.model.stillDownloading": undefined;
-  "ai.model.stillChecking": undefined;
   "ai.model.refusedNetwork": undefined;
   "ai.model.refusedUnavailable": undefined;
   "native.filter.models": undefined;
@@ -3224,6 +3216,14 @@ export interface MessageArgsByKey {
   "noticesStep.notNow": undefined;
   "notifications.autoNeedsNotices": undefined;
   "ai.settings.subtitle": undefined;
+  "ai.model.progressName": undefined;
+  "ai.model.progressValue": {
+    done: FluentArgument;
+    percent: FluentArgument;
+    total: FluentArgument;
+  };
+  "ai.model.stillDownloading": undefined;
+  "ai.model.stillChecking": undefined;
   "ai.models.title": undefined;
   "ai.models.group": undefined;
   "ai.models.inUse": undefined;
