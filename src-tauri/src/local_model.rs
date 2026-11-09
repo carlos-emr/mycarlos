@@ -851,13 +851,27 @@ impl Store {
         }) {
             return Err(ModelError::NotEnoughDisk);
         }
+        // Publish the accepted download before waiting for the connection or its headers.
+        // A row reopened meanwhile can attach, and a Busy second call never reaches here.
+        progress(have, model.size_bytes);
         let cancelled = || self.cancel_add.load(Ordering::SeqCst);
-        let mut opened = opener
-            .open(model, have, &cancelled)
-            .map_err(|error| match error {
-                OpenerError::Denied | OpenerError::Gone => ModelError::Unavailable,
-                OpenerError::Network | OpenerError::BadRedirect => ModelError::Network,
-            })?;
+        let cancelled_error = || {
+            let _ = remove_model_file(&part);
+            ModelError::Cancelled
+        };
+        if cancelled() {
+            return Err(cancelled_error());
+        }
+        let mut opened = opener.open(model, have, &cancelled).map_err(|error| {
+            if cancelled() {
+                cancelled_error()
+            } else {
+                match error {
+                    OpenerError::Denied | OpenerError::Gone => ModelError::Unavailable,
+                    OpenerError::Network | OpenerError::BadRedirect => ModelError::Network,
+                }
+            }
+        })?;
         if opened.start != have {
             // The server sent the file from its start (or from somewhere
             // else): start the `.part` again from nothing.
@@ -1235,7 +1249,9 @@ fn copy_checked(
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; BUFFER_BYTES];
     let mut done = 0u64;
-    progress(0, model.size_bytes);
+    // Retained bytes count as downloaded while they are checked again. A server that
+    // restarts from zero passes have=0, so that real restart is still shown.
+    progress(have, model.size_bytes);
     let mut output = if have > 0 {
         // Resuming: hash what is already there, from its start, then append.
         let mut kept = OpenOptions::new()
@@ -1257,7 +1273,7 @@ fn copy_checked(
             }
             hasher.update(&buffer[..n]);
             done += n as u64;
-            progress(done, model.size_bytes);
+            progress(have, model.size_bytes);
         }
         kept.seek(SeekFrom::End(0))
             .map_err(|_| ModelError::Storage)?;
@@ -1933,6 +1949,7 @@ mod tests {
         asked: std::cell::RefCell<Vec<u64>>,
         /// The next body ends after this many bytes, as a lost connection does.
         cut_once: std::cell::Cell<Option<usize>>,
+        body_reads: Arc<AtomicUsize>,
     }
     impl Fake {
         fn serving(bytes: &[u8]) -> Self {
@@ -1944,7 +1961,18 @@ mod tests {
                 ranges: true,
                 asked: std::cell::RefCell::new(Vec::new()),
                 cut_once: std::cell::Cell::new(None),
+                body_reads: Arc::new(AtomicUsize::new(0)),
             }
+        }
+    }
+    struct FakeBody {
+        bytes: std::io::Cursor<Vec<u8>>,
+        reads: Arc<AtomicUsize>,
+    }
+    impl Read for FakeBody {
+        fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            self.bytes.read(into)
         }
     }
     impl Opener for Fake {
@@ -1967,9 +1995,80 @@ mod tests {
             Ok(Opened {
                 size: self.announce,
                 start,
-                reader: Box::new(std::io::Cursor::new(body)),
+                reader: Box::new(FakeBody {
+                    bytes: std::io::Cursor::new(body),
+                    reads: Arc::clone(&self.body_reads),
+                }),
             })
         }
+    }
+
+    #[test]
+    fn a_download_reports_its_retained_bytes_while_connecting_and_busy_calls_leave_it_alone() {
+        struct Waiting {
+            opened: std::sync::mpsc::Sender<()>,
+            release: std::sync::mpsc::Receiver<()>,
+        }
+        impl Opener for Waiting {
+            fn open<'a>(
+                &self,
+                _: &Accepted,
+                _: u64,
+                cancelled: &'a dyn Fn() -> bool,
+            ) -> Result<Opened<'a>, OpenerError> {
+                self.opened.send(()).unwrap();
+                self.release
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .unwrap();
+                assert!(cancelled(), "Cancel is available while waiting for headers");
+                Err(OpenerError::Network)
+            }
+        }
+
+        let (_temp, bytes, store) = setup(3 << 20);
+        store.prepare_dir().unwrap();
+        let retained = 1 << 20;
+        fs::write(store.dir.join("fake.gguf.part"), &bytes[..retained]).unwrap();
+        let store = Arc::new(store);
+        let progress = Arc::new(Mutex::new(Vec::new()));
+        let (opened, wait_opened) = std::sync::mpsc::channel();
+        let (release, wait_release) = std::sync::mpsc::channel();
+        let downloading = {
+            let worker = Arc::clone(&store);
+            let counts = Arc::clone(&progress);
+            std::thread::spawn(move || {
+                worker.download(
+                    0,
+                    &Waiting {
+                        opened,
+                        release: wait_release,
+                    },
+                    &good(),
+                    |done, total| counts.lock().unwrap().push((done, total)),
+                )
+            })
+        };
+        wait_opened
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        // The command's report is already visible before the opener can return a body.
+        assert_eq!(*progress.lock().unwrap(), [(retained as u64, 3 << 20)]);
+        assert_eq!(
+            store
+                .download(0, &Fake::serving(&bytes), &good(), |_, _| {
+                    panic!("a Busy call must not replace the active report")
+                })
+                .unwrap_err(),
+            ModelError::Busy
+        );
+        assert_eq!(*progress.lock().unwrap(), [(retained as u64, 3 << 20)]);
+        store.cancel_add();
+        release.send(()).unwrap();
+        assert_eq!(
+            downloading.join().unwrap().unwrap_err(),
+            ModelError::Cancelled
+        );
+        assert!(folder_names(&store).is_empty());
     }
 
     #[test]
@@ -2007,12 +2106,15 @@ mod tests {
         // The server announces another length: refused before a byte is read.
         let mut net = Fake::serving(&bytes);
         net.announce = Some(2 << 20);
+        let mut progress = Vec::new();
         assert_eq!(
             store
-                .download(0, &net, &good(), |_, _| panic!("read"))
+                .download(0, &net, &good(), |done, total| progress.push((done, total)))
                 .unwrap_err(),
             ModelError::Network
         );
+        assert_eq!(progress, [(0, 1 << 20)]);
+        assert_eq!(net.body_reads.load(Ordering::SeqCst), 0);
         // Silent about the length. Too long: refused, cleaned. Cut short: refused,
         // and what arrived is kept to resume.
         let mut net = Fake::serving(&[bytes.as_slice(), b"x"].concat());
@@ -2114,18 +2216,23 @@ mod tests {
         let (_temp, bytes, store) = setup(4 << 20);
         let store = Arc::new(store);
         let net = Fake::serving(&bytes);
-        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
+        assert_eq!(cut_short(&store, &net, 2 << 20), ModelError::Network);
         // What it had is kept, short of the whole.
         let kept = fs::metadata(store.dir.join("fake.gguf.part"))
             .unwrap()
             .len();
         assert!(kept > 0 && kept < 4 << 20, "{kept}");
-        let mut last = (0, 0);
+        let mut progress = Vec::new();
         store
-            .download(0, &net, &good(), |d, t| last = (d, t))
+            .download(0, &net, &good(), |d, t| progress.push((d, t)))
             .unwrap();
         assert_eq!(*net.asked.borrow(), [0, kept]);
-        assert_eq!(last, (4 << 20, 4 << 20));
+        assert_eq!(progress.first(), Some(&(kept, 4 << 20)));
+        assert_eq!(progress.last(), Some(&(4 << 20, 4 << 20)));
+        assert!(progress
+            .iter()
+            .all(|&(done, total)| done >= kept && total == 4 << 20));
+        assert!(progress.windows(2).all(|pair| pair[0].0 <= pair[1].0));
         assert_eq!(folder_names(&store), ["fake.gguf"]);
         let mut verified = store.verified_model_with(&Free(Some(100 << 30))).unwrap();
         let mut read = Vec::new();
@@ -2163,7 +2270,14 @@ mod tests {
         let mut net = Fake::serving(&bytes);
         net.ranges = false;
         assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
-        store.download(0, &net, &good(), |_, _| {}).unwrap();
+        let mut progress = Vec::new();
+        store
+            .download(0, &net, &good(), |done, _| progress.push(done))
+            .unwrap();
+        // Start with the retained position, then show the server's genuine restart.
+        assert_eq!(progress[0], 1 << 20);
+        assert_eq!(progress[1], 0);
+        assert_eq!(progress.last(), Some(&(3 << 20)));
         assert_eq!(folder_names(&store), ["fake.gguf"]);
         store.verified_model_with(&Free(Some(100 << 30))).unwrap();
     }

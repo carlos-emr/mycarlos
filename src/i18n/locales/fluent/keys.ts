@@ -942,6 +942,10 @@ export const MESSAGE_KEYS = [
   "ai.model.download",
   "ai.model.downloadNote",
   "ai.model.downloading",
+  "ai.model.progressName",
+  "ai.model.progressValue",
+  "ai.model.stillDownloading",
+  "ai.model.stillChecking",
   "ai.model.refusedNetwork",
   "ai.model.refusedUnavailable",
   "native.filter.models",
@@ -958,6 +962,23 @@ export const MESSAGE_KEYS = [
   "noticesStep.notNow",
   "notifications.autoNeedsNotices",
   "ai.settings.subtitle",
+  "ai.models.title",
+  "ai.models.group",
+  "ai.models.inUse",
+  "ai.models.installed",
+  "ai.models.addedByYou",
+  "ai.models.notDownloaded",
+  "ai.models.downloading",
+  "ai.models.download",
+  "ai.models.remove",
+  "ai.models.help",
+  "ai.models.loading",
+  "ai.models.loadFailed",
+  "ai.models.retry",
+  "ai.models.starting",
+  "ai.models.picking",
+  "ai.models.changed",
+  "ai.models.installing",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2096,6 +2117,10 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.download": "ai-model-download",
   "ai.model.downloadNote": "ai-model-downloadNote",
   "ai.model.downloading": "ai-model-downloading",
+  "ai.model.progressName": "ai-model-progressName",
+  "ai.model.progressValue": "ai-model-progressValue",
+  "ai.model.stillDownloading": "ai-model-stillDownloading",
+  "ai.model.stillChecking": "ai-model-stillChecking",
   "ai.model.refusedNetwork": "ai-model-refusedNetwork",
   "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
   "native.filter.models": "native-filter-models",
@@ -2113,6 +2138,23 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.notNow": "noticesStep-notNow",
   "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
   "ai.settings.subtitle": "ai-settings-subtitle",
+  "ai.models.title": "ai-models-title",
+  "ai.models.group": "ai-models-group",
+  "ai.models.inUse": "ai-models-inUse",
+  "ai.models.installed": "ai-models-installed",
+  "ai.models.addedByYou": "ai-models-addedByYou",
+  "ai.models.notDownloaded": "ai-models-notDownloaded",
+  "ai.models.downloading": "ai-models-downloading",
+  "ai.models.download": "ai-models-download",
+  "ai.models.remove": "ai-models-remove",
+  "ai.models.help": "ai-models-help",
+  "ai.models.loading": "ai-models-loading",
+  "ai.models.loadFailed": "ai-models-loadFailed",
+  "ai.models.retry": "ai-models-retry",
+  "ai.models.starting": "ai-models-starting",
+  "ai.models.picking": "ai-models-picking",
+  "ai.models.changed": "ai-models-changed",
+  "ai.models.installing": "ai-models-installing",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3154,6 +3196,14 @@ export interface MessageArgsByKey {
   "ai.model.download": undefined;
   "ai.model.downloadNote": { host: FluentArgument; size: FluentArgument };
   "ai.model.downloading": { done: FluentArgument; total: FluentArgument };
+  "ai.model.progressName": undefined;
+  "ai.model.progressValue": {
+    done: FluentArgument;
+    percent: FluentArgument;
+    total: FluentArgument;
+  };
+  "ai.model.stillDownloading": undefined;
+  "ai.model.stillChecking": undefined;
   "ai.model.refusedNetwork": undefined;
   "ai.model.refusedUnavailable": undefined;
   "native.filter.models": undefined;
@@ -3174,6 +3224,23 @@ export interface MessageArgsByKey {
   "noticesStep.notNow": undefined;
   "notifications.autoNeedsNotices": undefined;
   "ai.settings.subtitle": undefined;
+  "ai.models.title": undefined;
+  "ai.models.group": undefined;
+  "ai.models.inUse": undefined;
+  "ai.models.installed": undefined;
+  "ai.models.addedByYou": undefined;
+  "ai.models.notDownloaded": undefined;
+  "ai.models.downloading": undefined;
+  "ai.models.download": undefined;
+  "ai.models.remove": undefined;
+  "ai.models.help": undefined;
+  "ai.models.loading": undefined;
+  "ai.models.loadFailed": undefined;
+  "ai.models.retry": undefined;
+  "ai.models.starting": undefined;
+  "ai.models.picking": undefined;
+  "ai.models.changed": undefined;
+  "ai.models.installing": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

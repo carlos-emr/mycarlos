@@ -1627,7 +1627,7 @@ ai-explain-submit = 解释
 
 ai-preferences-title = AI 助手
 
-ai-preferences-body = 使用在此电脑上运行的 AI 模型，以通俗易懂的文字解释您的文档。您可以下载模型，或添加您已有的模型文件；模型保存在此电脑上。
+ai-preferences-body = 使用在这台电脑上运行的 AI 模型，以通俗的语言解释你的文档。下载下列某个模型，或添加你已有的对应文件。模型保留在这台电脑上。
 
 ai-preferences-notInstalled = 未安装
 
@@ -1661,7 +1661,7 @@ ai-model-unsupportedCpu = 此电脑的处理器不支持 AI 助手。
 
 ai-model-unsupportedPlatform = 此类电脑暂不支持 AI 助手。
 
-ai-model-refusedList = myCarlos 不接受此文件。请选择上方列出的模型文件。
+ai-model-refusedList = myCarlos 不接受此文件。请选择上方列出的某个模型文件。
 
 ai-model-refusedHash = 这不是预期的文件。请重新下载，然后添加新的副本。
 
@@ -1678,6 +1678,14 @@ ai-model-download = 下载默认模型
 ai-model-downloadNote = 仅一次，且仅在您点击时，从 { $host } 下载一个文件（{ $size } MB）。不会发送任何关于您或您的文档的信息。下载网站会看到您的互联网地址，就像任何下载一样。
 
 ai-model-downloading = 正在下载并检查… { $done } / { $total } MB
+
+ai-model-progressName = 模型下载
+
+ai-model-progressValue = { $percent }，{ $done } / { $total } MB
+
+ai-model-stillDownloading = 模型仍在下载。
+
+ai-model-stillChecking = 仍在检查模型文件。
 
 ai-model-refusedNetwork = 下载未完成。请检查您的网络连接，然后重试。
 
@@ -1909,3 +1917,38 @@ ai-summary-again = 重新生成摘要
 ai-keepFailed = myCarlos 无法将此回答与文档一起保存。此处仍会显示该回答。
 
 ai-keepFull = 此文档保存的 AI 回答已达上限。新的回答会显示，但不会保存。
+
+# Catalog model list (#276A).
+
+ai-models-title = 这台电脑上的模型
+
+ai-models-group = 正在使用的模型
+
+ai-models-inUse = 正在使用
+
+ai-models-installed = 已安装
+
+ai-models-addedByYou = 由你添加
+
+ai-models-notDownloaded = 尚未下载
+
+ai-models-downloading = 正在下载
+ai-models-installing = 正在安装
+
+ai-models-download = 下载
+
+ai-models-remove = 移除
+
+ai-models-help = 标为“正在使用”的模型用于生成摘要和解释。选择其他模型会停止正在生成的回答。
+
+ai-models-loading = 正在读取模型列表…
+
+ai-models-loadFailed = 无法读取模型列表。请重试。
+
+ai-models-retry = 重新读取模型列表
+
+ai-models-starting = 正在开始下载…
+
+ai-models-picking = 请选择要添加的模型文件。
+
+ai-models-changed = 已更改正在使用的模型

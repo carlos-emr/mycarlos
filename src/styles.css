@@ -1315,6 +1315,20 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 /* The model's address and Copy address: apart, the address wrapping (#253). */
 .native-ai-model-url { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .native-ai-model-url code { overflow-wrap: anywhere; min-width: 0; }
+/* Model progress: full-width bar, then byte counts/percent and Cancel below it.
+   Counts wrap at enlarged text. Forced colours retain Highlight on Canvas. */
+.native-ai-model-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; margin: 4px 0 0; }
+.native-ai-model-bar { grid-column: 1 / -1; min-width: 0; height: 12px; box-sizing: border-box; border: 1px solid var(--teal-line); border-radius: 999px; background: var(--teal-soft); overflow: hidden; }
+.native-ai-model-bar-fill { height: 100%; background: var(--teal); }
+.native-ai-model-percent { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+@media (max-width: 40em) {
+  .native-ai-model-progress { grid-template-columns: minmax(0, 1fr); }
+  .native-ai-model-progress > .button { justify-self: start; }
+}
+@media (forced-colors: active) {
+  .native-ai-model-bar { border-color: CanvasText; background: Canvas; }
+  .native-ai-model-bar-fill { background: Highlight; forced-color-adjust: none; }
+}
 .record-dialog.native-ai-notice { width: min(680px, 100%); }
 .native-ai-notice-body { display: grid; gap: 10px; padding: 12px 20px; }
 .native-ai-notice-body p, .native-ai-notice-body h3 { margin: 0; }
@@ -1323,3 +1337,16 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 /* The model's buttons (#72): apart, and wrapped onto their own lines at
    large text (#253). */
 .native-ai-model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Device model catalog (#276A): controls stay with their named row at enlarged text. */
+.native-ai-model { min-width: 0; }
+.native-ai-model > h3 { margin: 14px 0 6px; font-size: 1rem; }
+.native-ai-model-list { display: grid; gap: 12px; margin: 12px 0; min-width: 0; }
+.native-ai-model-entry { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.native-ai-model-entry > p { margin-top: 6px; }
+.native-ai-model-row-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-width: 0; }
+.native-ai-model-choice { display: flex; align-items: flex-start; gap: 8px; min-width: 0; flex: 1 1 16rem; }
+.native-ai-model-choice input { flex: 0 0 auto; margin: 4px 0 0; }
+.native-ai-model-row-head .native-ai-model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.native-ai-model-entry .native-ai-model-progress { width: 100%; }
+.native-ai-model-entry [aria-disabled="true"] { cursor: default; }
+.native-ai-model-entry .button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
