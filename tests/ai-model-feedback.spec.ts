@@ -9,7 +9,7 @@ import {
   holdAi,
 } from "./support/aiFake";
 import { catalogRows, FAKE_CATALOG } from "./support/modelCatalogFake";
-import { fakeVaultWith, myRecords, sidebar } from "./support/vaultFake";
+import { fakeVaultWith, myRecords } from "./support/vaultFake";
 import { expectOnlyFakedCommands } from "./support/a11y";
 
 const stage = process.env.FEEDBACK_STAGE ?? "after";
@@ -78,8 +78,10 @@ for (const mode of [
         },
       );
       await expect.poll(() => aiHeld(page)).toEqual([AI_COMMANDS.download]);
-      await sidebar(page)
+      await page
         .getByRole("button", { name: "AI helper", exact: true })
+        .locator("visible=true")
+        .first()
         .click();
       const row = page.getByRole("region", {
         name: FAKE_CATALOG[1].name,

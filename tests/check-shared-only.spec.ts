@@ -8,6 +8,7 @@ import {
   sidebar,
 } from "./support/vaultFake";
 import { expectOnlyFakedCommands } from "./support/a11y";
+import { translate } from "./support/fluent";
 const stage = process.env.CHECK_STAGE ?? "after";
 for (const view of ["ordinary", "shared"] as const) {
   test(`Check scope: ${view} folder`, async ({ page, baseURL }) => {
@@ -33,11 +34,22 @@ for (const view of ["ordinary", "shared"] as const) {
       exact: true,
     });
     if (stage === "after") await expect(check).toHaveCount(0);
-    await sidebar(page)
-      .getByRole("button", {
-        name: view === "shared" ? /^Shared with me/ : /^FAKE Letters/,
-      })
-      .click();
+    const openLetters = async () => {
+      await sidebar(page)
+        .getByRole("button", { name: /^My records/ })
+        .click();
+      await page
+        .getByRole("button", {
+          name: translate("en", "library.folder.open", { name: "FAKE Letters" }),
+          exact: true,
+        })
+        .click();
+    };
+    if (view === "shared")
+      await sidebar(page)
+        .getByRole("button", { name: /^Shared with me/ })
+        .click();
+    else await openLetters();
     const expected = stage === "before" || view === "shared";
     if (expected) await expect(check).toBeEnabled();
     else await expect(check).toHaveCount(0);
@@ -86,19 +98,21 @@ for (const view of ["ordinary", "shared"] as const) {
       await expect(check).toBeEnabled();
       await search.fill("FAKE");
       await expect(check).toBeVisible();
-      await sidebar(page)
-        .getByRole("button", { name: /^FAKE Letters/ })
-        .click();
+      await openLetters();
       await expect(check).toHaveCount(0);
-      await sidebar(page)
+      await page
         .getByRole("button", { name: "Security", exact: true })
+        .locator("visible=true")
+        .first()
         .click();
       await expect(
         page.getByRole("heading", { name: "Clinic documents", exact: true }),
       ).toBeVisible();
       await expect(check).toHaveCount(0);
-      await sidebar(page)
+      await page
         .getByRole("button", { name: "Preferences", exact: true })
+        .locator("visible=true")
+        .first()
         .click();
       await expect(check).toHaveCount(0);
       expect(await fakeCalls(page, "vault_check_documents")).toEqual([]);
