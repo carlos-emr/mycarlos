@@ -1263,6 +1263,10 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .native-ai-model-bar { grid-column: 1 / -1; min-width: 0; height: 12px; box-sizing: border-box; border: 1px solid var(--teal-line); border-radius: 999px; background: var(--teal-soft); overflow: hidden; }
 .native-ai-model-bar-fill { height: 100%; background: var(--teal); }
 .native-ai-model-percent { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+@media (max-width: 40em) {
+  .native-ai-model-progress { grid-template-columns: minmax(0, 1fr); }
+  .native-ai-model-progress > .button { justify-self: start; }
+}
 @media (forced-colors: active) {
   .native-ai-model-bar { border-color: CanvasText; background: Canvas; }
   .native-ai-model-bar-fill { background: Highlight; forced-color-adjust: none; }
