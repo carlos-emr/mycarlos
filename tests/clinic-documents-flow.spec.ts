@@ -208,9 +208,13 @@ test("Check for new documents brings a clinic's document into Shared with me, an
     en("portal.sourceVerified", { clinic: FAKE_CLINIC }),
   );
 
-  // Back in My records: a second check finds nothing new.
+  // My records has no Check; return to Shared with me for a second check.
   await openMyRecords(page);
   await expect(myRecords(page)).toBeVisible();
+  await expect(check).toHaveCount(0);
+  await sidebar(page)
+    .getByRole("button", { name: shared, exact: true })
+    .click();
   await check.click();
   await expect(
     page.getByText(en("portal.result", { added: 0, refused: 0 }), {

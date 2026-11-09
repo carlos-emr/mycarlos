@@ -1161,16 +1161,12 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
     openFolder(/^FAKE Blake/);
     absent();
     openFolder(/^Shared with me/);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Security", exact: true }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
     absent();
     expect(
-      screen.getByRole("heading", { name: "Clinic documents", exact: true }),
+      screen.getByRole("heading", { name: "Clinic documents" }),
     ).toBeVisible();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Preferences", exact: true }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
     absent();
     openFolder(/^Shared with me/);
     expect(

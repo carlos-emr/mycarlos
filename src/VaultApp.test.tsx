@@ -9035,7 +9035,6 @@ describe("durable vault UI", () => {
     await user.click(
       screen.getByRole("button", {
         name: humanText(translate("fr", "security.title")),
-        exact: true,
       }),
     );
     const clinic = screen.getByRole("region", {
