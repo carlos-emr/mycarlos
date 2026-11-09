@@ -6501,10 +6501,7 @@ mod tests {
                 Ok(())
             },
         ));
-        assert!(matches!(
-            result,
-            Ok(()) | Err(model_runtime::AiError::Cancelled)
-        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
         assert!(
             !announced.load(Ordering::SeqCst),
             "old watch must not announce into a new session"
@@ -6544,10 +6541,7 @@ mod tests {
                 Ok(())
             },
         ));
-        assert!(matches!(
-            result,
-            Ok(()) | Err(model_runtime::AiError::Cancelled)
-        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
     }
 
     #[test]
@@ -6997,6 +6991,23 @@ mod tests {
         );
         drop(running);
         assert_eq!(active.get(), None);
+    }
+
+    #[test]
+    fn model_selection_accepts_only_an_index_without_paths_or_unknown_fields() {
+        let chosen: ModelIndexRequest =
+            serde_json::from_value(serde_json::json!({"index": 1})).unwrap();
+        assert_eq!(chosen.index, 1);
+        for value in [
+            serde_json::json!({"index": -1}),
+            serde_json::json!({"index": 0.5}),
+            serde_json::json!({"index": "1"}),
+            serde_json::json!({"path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "sha256": "arbitrary"}),
+        ] {
+            assert!(serde_json::from_value::<ModelIndexRequest>(value).is_err());
+        }
     }
 
     #[test]

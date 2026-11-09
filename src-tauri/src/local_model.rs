@@ -555,6 +555,9 @@ pub(crate) struct Store {
     /// the app ends the helper that holds it. A new run cannot start meanwhile
     /// (its use-check finds the lock taken and answers busy).
     before_replace: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// Per-instance unit-test barrier at the cancellable placement boundary.
+    #[cfg(test)]
+    after_placement_lock: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Runs holding the model now (see [`VerifiedModel`]).
     uses: Arc<AtomicUsize>,
     /// Asked to stop the add in progress.
@@ -582,6 +585,8 @@ impl Store {
             busy: Mutex::new(()),
             adding: Mutex::new(()),
             before_replace: Mutex::new(None),
+            #[cfg(test)]
+            after_placement_lock: Mutex::new(None),
             uses: Arc::new(AtomicUsize::new(0)),
             cancel_add: AtomicBool::new(false),
         }
@@ -777,6 +782,16 @@ impl Store {
         // when the file arrives stays in use; with none, this one becomes it. The helper ends
         // only when the file it holds is the one replaced.
         let _placing = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+        #[cfg(test)]
+        if let Some(hook) = self.after_placement_lock.lock().unwrap().as_ref() {
+            hook();
+        }
+        // Cancel can arrive while verification holds the placement lock. It still
+        // wins before the staged file replaces anything or the choice changes.
+        if self.cancel_add.load(Ordering::SeqCst) {
+            let _ = remove_model_file(&part);
+            return Err(ModelError::Cancelled);
+        }
         let in_use_before = self.in_use().map(|(_, used)| used);
         let replacing_in_use = in_use_before.is_some_and(|used| used.file_name == model.file_name);
         if replacing_in_use {
@@ -1458,6 +1473,160 @@ mod tests {
         let rows = store.models();
         let row = rows.iter().find(|row| row.index == index).unwrap();
         (row.state, row.added_by_you, row.in_use)
+    }
+
+    #[test]
+    fn catalog_changes_cancel_only_the_answer_owned_by_the_model_in_use() {
+        use crate::local_runner::{AnswerLimit, Runner, RunnerConfig, RunnerError, SummaryRequest};
+        use std::time::Duration;
+
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        let runner = Arc::new(Runner::new(RunnerConfig {
+            command: temp.path().join("NEVER-EXECUTED-FAKE-HELPER"),
+            args: vec![],
+            needed_bytes: 1,
+            start_timeout: Duration::from_secs(1),
+            answer_limit: AnswerLimit::fixed(Duration::from_secs(1)),
+            memory_limit_bytes: None,
+            expected_model: None,
+            model_file: None,
+            sandboxed: false,
+        }));
+        let stopping = Arc::clone(&runner);
+        store.set_before_replace(Box::new(move || {
+            stopping.cancel_all();
+            stopping.stop();
+        }));
+        let old = runner.ticket();
+        store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
+        assert!(
+            runner.is_current(old),
+            "adding an inactive file keeps the answer"
+        );
+        store.remove(Some(1)).unwrap();
+        assert!(
+            runner.is_current(old),
+            "removing an inactive file keeps the answer"
+        );
+        store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
+        store.use_model(0).unwrap();
+        assert!(
+            runner.is_current(old),
+            "reselecting In use keeps the answer"
+        );
+        store.use_model(1).unwrap();
+        assert!(
+            !runner.is_current(old),
+            "switching cancels the previous answer"
+        );
+        let request = SummaryRequest {
+            lang: "en".into(),
+            pages: vec![],
+            max_sentences: 1,
+        };
+        assert!(matches!(
+            runner.summarize(old, &request),
+            Err(RunnerError::Cancelled)
+        ));
+        let next = runner.ticket();
+        store.remove(Some(0)).unwrap();
+        assert!(
+            runner.is_current(next),
+            "old-file removal cannot cancel the new answer"
+        );
+        assert!(!runner.is_running());
+        assert_eq!(runner.last_stats(), None);
+        store.remove(Some(1)).unwrap();
+        assert!(
+            !runner.is_current(next),
+            "removing In use cancels its answer"
+        );
+        assert!(matches!(
+            runner.summarize(next, &request),
+            Err(RunnerError::Cancelled)
+        ));
+        assert_eq!(store.status(&good()), ModelStatus::NotInstalled);
+    }
+
+    #[test]
+    fn the_chosen_catalog_file_is_reverified_without_falling_back_to_another_model() {
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
+        store.use_model(1).unwrap();
+        let mut changed = b;
+        changed[0] ^= 1;
+        fs::write(store.dir.join("b.gguf"), changed).unwrap();
+        assert_eq!(store.verified_model().err(), Some(ModelError::Damaged));
+        assert_eq!(store.status(&good()), ModelStatus::Damaged);
+        assert_eq!(row(&store, 1), (RowState::Damaged, true, true));
+        assert_eq!(row(&store, 0), (RowState::Installed, true, false));
+        assert!(store.installed_size().is_some());
+        store.use_model(0).unwrap();
+        let mut verified = store.verified_model().unwrap();
+        let mut bytes = vec![];
+        verified.file.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, a);
+        assert_eq!(verified.info.sha256, store.catalog[0].sha256);
+    }
+
+    #[test]
+    fn cancel_after_the_placement_lock_leaves_no_model_or_choice_change() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        let choice_before = fs::read(store.choice_path()).unwrap();
+        let picked_b = temp.path().join("picked-b.gguf");
+        fs::write(&picked_b, &b).unwrap();
+        let stopped = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&stopped);
+        store.set_before_replace(Box::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        }));
+        let (placed, at_placement) = mpsc::channel();
+        let (release, wait_release) = mpsc::channel();
+        let wait_release = Mutex::new(wait_release);
+        *store.after_placement_lock.lock().unwrap() = Some(Box::new(move || {
+            // Copy, hash, sync and lock acquisition are complete. Pause before
+            // the cancellation check; a pre-lock-only check cannot pass this test.
+            placed.send(()).unwrap();
+            wait_release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap();
+        }));
+        let store = Arc::new(store);
+        let (copied, at_copy_end) = mpsc::channel();
+        let busy = store.busy.lock().unwrap();
+        let adding = {
+            let worker = Arc::clone(&store);
+            std::thread::spawn(move || {
+                let mut reported = false;
+                worker.add(&picked_b, &good(), |done, total| {
+                    if done == total && !reported {
+                        reported = true;
+                        copied.send(()).unwrap();
+                    }
+                })
+            })
+        };
+        // A concurrent verification may own this lock during the entire copy.
+        at_copy_end.recv_timeout(Duration::from_secs(10)).unwrap();
+        drop(busy);
+        at_placement.recv_timeout(Duration::from_secs(10)).unwrap();
+        store.cancel_add();
+        release.send(()).unwrap();
+        assert_eq!(adding.join().unwrap().unwrap_err(), ModelError::Cancelled);
+        assert_eq!(folder_names(&store), ["a.gguf"]);
+        assert_eq!(fs::read(store.choice_path()).unwrap(), choice_before);
+        assert_eq!(fs::read(store.dir.join("a.gguf")).unwrap(), a);
+        assert_eq!(row(&store, 0), (RowState::Installed, true, true));
+        assert_eq!(row(&store, 1), (RowState::NotDownloaded, false, false));
+        assert_eq!(stopped.load(Ordering::SeqCst), 0);
     }
 
     #[test]
