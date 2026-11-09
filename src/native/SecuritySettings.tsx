@@ -402,7 +402,9 @@ export function SecuritySettings({
         {onOpenAiHelperNotice && (
           <section className="native-setting">
             <h3>{translateNow("aiHelper.notice.title")}</h3>
-            <p>{translateNow("aiHelper.notice.introShare")}</p>
+            <p className="section-intro">
+              {translateNow("aiHelper.notice.introShare")}
+            </p>
             <button
               className="button"
               type="button"
