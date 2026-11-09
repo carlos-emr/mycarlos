@@ -616,8 +616,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = Esta foto ya está en la b
 
 interface-VaultLibrary-topLevel = Nivel superior
 
-interface-VaultLibrary-unlockedLockNow = Desbloqueada · Bloquear ahora
-
 interface-VaultLibrary-working = Procesando…
 
 kit-keep = Guárdela en un lugar privado y lejos del dispositivo. Cualquier persona con esta clave y una copia de su bóveda puede abrirla. Si configura una nueva clave de recuperación, esta ya no abrirá la bóveda en este dispositivo.
@@ -677,6 +675,12 @@ library-items =
     [many] { $count } de elementos visibles de la biblioteca
     *[other] { $count } elementos visibles de la biblioteca
     }
+
+library-location-documents = En { $place }: { $documents }.
+
+library-location-summary = En { $place }: { $folders }, { $documents }.
+
+library-lock-unlocked = Desbloqueada
 
 library-noMatch-help = Pruebe otra búsqueda.
 

@@ -115,10 +115,9 @@ test("Change passphrase: the form's own checks, a wrong current passphrase said,
 
   // Lock: the old passphrase is refused, the new one opens the vault.
   await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.unlockedLockNow"),
-      exact: true,
-    })
+    // The window's own Lock now, named by its words (#121).
+    .locator(".titlebar")
+    .getByRole("button", { name: en("security.lockNow"), exact: true })
     .click();
   const passphrase = page.getByLabel(en("passphrase.label"), { exact: true });
   const unlock = page.getByRole("button", { name: en("unlock.submit") });
