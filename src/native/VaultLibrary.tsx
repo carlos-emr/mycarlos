@@ -2253,18 +2253,20 @@ export function VaultLibrary({
                       placeholder={searchLabel}
                     />
                   </label>
-                  <PortalDocuments
-                    compact
-                    bridge={bridge}
-                    snapshot={snapshot}
-                    busy={busy || portalBusy}
-                    working={portalBusy}
-                    readOnly={readOnly}
-                    run={runPortal}
-                    waits={approvalWaits}
-                    refresh={refresh}
-                    setNotice={setPortalNotice}
-                  />
+                  {inShared && (
+                    <PortalDocuments
+                      compact
+                      bridge={bridge}
+                      snapshot={snapshot}
+                      busy={busy || portalBusy}
+                      working={portalBusy}
+                      readOnly={readOnly}
+                      run={runPortal}
+                      waits={approvalWaits}
+                      refresh={refresh}
+                      setNotice={setPortalNotice}
+                    />
+                  )}
                 </div>
                 <div className="viewbar">
                   <span className="native-location-chip">
@@ -2481,6 +2483,7 @@ export function VaultLibrary({
               <SecuritySettings
                 clinicDocuments={
                   <PortalDocuments
+                    showCheck={false}
                     bridge={bridge}
                     snapshot={snapshot}
                     busy={busy || portalBusy}

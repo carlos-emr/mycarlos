@@ -60,10 +60,9 @@ function unsupportedKey(reason: "ram" | "cpu" | "platform") {
       : "ai.model.unsupportedPlatform";
 }
 
-/** The bar under the status text while a model file comes in or is checked
- * (#275), from the same byte counts, so a resumed download starts where it
- * stopped. It is not a live region: the status text above says the progress,
- * at its own pace. Cancel sits beside it. */
+/** The bar and counts below it while a model file comes in or is checked.
+ * Resumed downloads keep the same native byte counts. The separate mounted
+ * status region announces progress; these visible counts are not a live region. */
 function ModelProgress({
   done,
   total,
@@ -80,27 +79,35 @@ function ModelProgress({
   }).format(percent / 100);
   return (
     <div className="native-ai-model-progress">
-      <div
-        className="native-ai-model-bar"
-        role="progressbar"
-        aria-label={t("ai.model.progressName")}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent}
-        aria-valuetext={t("ai.model.progressValue", {
-          percent: percentText,
-          done: mb(done, locale),
-          total: mb(total, locale),
-        })}
-      >
+      {total > 0 && (
         <div
-          className="native-ai-model-bar-fill"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-      <span className="native-ai-model-percent" aria-hidden="true">
-        {percentText}
-      </span>
+          className="native-ai-model-bar"
+          role="progressbar"
+          aria-label={t("ai.model.progressName")}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+          aria-valuetext={t("ai.model.progressValue", {
+            percent: percentText,
+            done: mb(done, locale),
+            total: mb(total, locale),
+          })}
+        >
+          <div
+            className="native-ai-model-bar-fill"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      )}
+      {total > 0 && (
+        <span className="native-ai-model-percent" aria-hidden="true">
+          {t("ai.model.progressValue", {
+            percent: percentText,
+            done: mb(done, locale),
+            total: mb(total, locale),
+          })}
+        </span>
+      )}
       <button
         ref={cancelRef}
         className="button"
@@ -258,12 +265,17 @@ export function AiModelSetting({
   }, []);
 
   useEffect(() => {
-    if (!progress || progress.total === 0 || cancelFocused.current) return;
+    if (
+      !progress ||
+      (!downloading && progress.total === 0) ||
+      cancelFocused.current
+    )
+      return;
     if (focusIsFree()) {
       cancelFocused.current = true;
       cancelRef.current?.focus();
     }
-  }, [progress]);
+  }, [progress, downloading]);
   useEffect(() => {
     const what = after.current;
     if (!what || adding || working || refreshing || !loaded || listError)
@@ -482,6 +494,11 @@ export function AiModelSetting({
     rows.some((row) => row.index === progressIndex)
       ? progressIndex
       : null;
+  const copyPhase = t(
+    progress && progress.total > 0 && progress.done >= progress.total
+      ? "ai.models.installing"
+      : "ai.models.downloading",
+  );
   const copyText =
     adding && progress.total > 0
       ? t(downloading ? "ai.model.downloading" : "ai.model.checking", {
@@ -495,10 +512,10 @@ export function AiModelSetting({
           : "";
   const copyContent = () => (
     <>
-      {copyIndex !== null && (
+      {copyIndex !== null && progress?.total === 0 && (
         <p className="native-ai-model-status">{copyText}</p>
       )}
-      {adding && progress.total > 0 && (
+      {adding && (downloading || progress.total > 0) && (
         <ModelProgress
           done={progress.done}
           total={progress.total}
@@ -557,6 +574,7 @@ export function AiModelSetting({
                     <button
                       type="button"
                       className="button primary"
+                      disabled={busy}
                       aria-disabled={busy}
                       aria-labelledby={`${prefix}-download ${prefix}-name`}
                       ref={(node) => {
@@ -566,7 +584,9 @@ export function AiModelSetting({
                       onClick={() => run("ai_model_download", row.index)}
                     >
                       <span id={`${prefix}-download`}>
-                        {t("ai.models.download")}
+                        {copyIndex === row.index
+                          ? copyPhase
+                          : t("ai.models.download")}
                       </span>
                     </button>
                   )}
@@ -598,7 +618,7 @@ export function AiModelSetting({
               </p>
               <p id={`${prefix}-state`}>
                 {copyIndex === row.index
-                  ? t("ai.models.downloading")
+                  ? copyPhase
                   : row.state === "damaged"
                     ? t("ai.model.damaged")
                     : t(

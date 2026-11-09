@@ -1985,6 +1985,7 @@ ai-models-addedByYou = 由你新增
 ai-models-notDownloaded = 尚未下載
 
 ai-models-downloading = 正在下載
+ai-models-installing = 正在安裝
 
 ai-models-download = 下載
 

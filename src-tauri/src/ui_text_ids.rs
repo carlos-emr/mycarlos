@@ -50,6 +50,7 @@ pub enum MessageId {
     AiModelsHelp,
     AiModelsInUse,
     AiModelsInstalled,
+    AiModelsInstalling,
     AiModelsLoadFailed,
     AiModelsLoading,
     AiModelsNotDownloaded,
@@ -1058,6 +1059,7 @@ impl MessageId {
         Self::AiModelsHelp,
         Self::AiModelsInUse,
         Self::AiModelsInstalled,
+        Self::AiModelsInstalling,
         Self::AiModelsLoadFailed,
         Self::AiModelsLoading,
         Self::AiModelsNotDownloaded,
@@ -2066,6 +2068,7 @@ impl MessageId {
             Self::AiModelsHelp => "ai-models-help",
             Self::AiModelsInUse => "ai-models-inUse",
             Self::AiModelsInstalled => "ai-models-installed",
+            Self::AiModelsInstalling => "ai-models-installing",
             Self::AiModelsLoadFailed => "ai-models-loadFailed",
             Self::AiModelsLoading => "ai-models-loading",
             Self::AiModelsNotDownloaded => "ai-models-notDownloaded",
@@ -4680,6 +4683,7 @@ impl MessageId {
             "ai.models.starting" => Some(Self::AiModelsStarting),
             "ai.models.picking" => Some(Self::AiModelsPicking),
             "ai.models.changed" => Some(Self::AiModelsChanged),
+            "ai.models.installing" => Some(Self::AiModelsInstalling),
             _ => None,
         }
     }

@@ -39,6 +39,7 @@ interface Props {
   refresh: () => Promise<VaultSnapshot>;
   setNotice: (text: UiText) => void;
   compact?: boolean;
+  showCheck?: boolean;
 }
 
 /** What a device's card says about its approval: a message, or the error
@@ -119,6 +120,7 @@ export function PortalDocuments({
   refresh,
   setNotice,
   compact = false,
+  showCheck = true,
 }: Props) {
   const { t } = useI18n();
   const [address, setAddress] = useState("");
@@ -376,7 +378,7 @@ export function PortalDocuments({
       {t(working && compact ? "portal.working" : "portal.check")}
     </button>
   );
-  if (compact) return links.length > 0 ? checkButton : null;
+  if (compact) return showCheck && links.length > 0 ? checkButton : null;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (
@@ -842,7 +844,7 @@ export function PortalDocuments({
           statusLine.text
         )}
       </p>
-      {checkButton}
+      {showCheck && checkButton}
       {offerNotices && (
         <NoticesAfterLink
           onClose={() => {

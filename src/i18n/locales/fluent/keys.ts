@@ -1004,6 +1004,7 @@ export const MESSAGE_KEYS = [
   "ai.models.starting",
   "ai.models.picking",
   "ai.models.changed",
+  "ai.models.installing",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2204,6 +2205,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.models.starting": "ai-models-starting",
   "ai.models.picking": "ai-models-picking",
   "ai.models.changed": "ai-models-changed",
+  "ai.models.installing": "ai-models-installing",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3322,6 +3324,7 @@ export interface MessageArgsByKey {
   "ai.models.starting": undefined;
   "ai.models.picking": undefined;
   "ai.models.changed": undefined;
+  "ai.models.installing": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

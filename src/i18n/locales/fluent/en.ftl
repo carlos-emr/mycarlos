@@ -2140,6 +2140,7 @@ ai-models-addedByYou = Added by you
 ai-models-notDownloaded = Not downloaded
 
 ai-models-downloading = Downloading
+ai-models-installing = Installing
 
 ai-models-download = Download
 
