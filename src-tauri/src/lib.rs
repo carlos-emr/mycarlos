@@ -4525,12 +4525,23 @@ mod historical_identifier_export_tests {
             .unwrap()
             .imported[0];
         store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        // The baseline uses every authoritative current, historical and delivery
+        // source. This canary must depend only on the explicit previous-name list.
+        let baseline = store.known_identifiers(record).unwrap();
+        assert!(
+            text_recheck::identifier_hits("Velorina", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        assert!(
+            !text_recheck::identifier_hits("Neralis", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
         let now = 1_792_713_600_000;
         store
             .update_profile_details(
                 profile,
                 vault::ProfileDetails {
-                    previous_full_names: Some(vec!["FAKE Zorvana Neralis".into()]),
+                    previous_full_names: Some(vec!["FAKE Velorina Tersovan".into()]),
                     ..Default::default()
                 },
                 &vault::utc_date_text(now),
@@ -4546,7 +4557,7 @@ mod historical_identifier_export_tests {
                 truncated: false,
                 pages_missing: false,
                 last_index: Some(0),
-                pages_digest: pages_digest([(0, "Zorvana")]),
+                pages_digest: pages_digest([(0, "Velorina")]),
             },
         );
         let pick_id = picks.store_text_export(
@@ -4563,12 +4574,16 @@ mod historical_identifier_export_tests {
             record_id: record,
             ticket,
             pick_id,
-            text: "Zorvana".to_owned(),
+            text: "Velorina".to_owned(),
         };
-        // The current label alone must not reject the unique former token.
-        let current_only = vec!["FAKE Neralis".to_owned()];
-        assert!(text_recheck::identifier_hits("Zorvana", &current_only, &[]).is_empty());
-        assert!(!text_recheck::identifier_hits("Neralis", &current_only, &[]).is_empty());
+        let with_previous = store.known_identifiers(record).unwrap();
+        let hits = text_recheck::identifier_hits(
+            "Velorina",
+            &with_previous.names,
+            &with_previous.birth_dates,
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!((hits[0].start, hits[0].end), (0, 8));
         let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
             app.state(),
             app.state(),
@@ -4578,7 +4593,7 @@ mod historical_identifier_export_tests {
         .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
         assert!(!outcome.saved);
         assert_eq!(outcome.hits.len(), 1);
-        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 7));
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 8));
         assert!(!destination.exists());
 
         // Only this disposable synthetic vault is damaged. The audit view may

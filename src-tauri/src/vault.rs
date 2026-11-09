@@ -10033,6 +10033,7 @@ mod tests {
     fn an_interrupted_reset_leaves_the_vault_whole_in_place_or_set_aside() {
         for create_directly in [false, true] {
             let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("vault");
             let store = VaultStore::new(root.clone());
             store.create(PASSWORD, "Jamie", 1).unwrap();
             store.lock();
@@ -12894,6 +12895,7 @@ mod tests {
     fn a_recovery_whose_first_header_landed_has_replaced_the_passphrase() {
         for left_behind in HEADER_SLOTS {
             let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("vault");
             let store = VaultStore::new(root.clone());
             store.create(PASSWORD, "Jamie", 1).unwrap();
             let key = set_up_recovery_key(&store, 5);
@@ -18711,6 +18713,7 @@ mod tests {
             data in prop::collection::vec(any::<u8>(), 0..(MAX_HEADER_BYTES + 1024)),
         ) {
             let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("vault");
             fs::create_dir(&root).unwrap();
             fs::write(root.join("header.json"), data).unwrap();
             let store = VaultStore::new(root);
@@ -18723,6 +18726,7 @@ mod tests {
             data in prop::collection::vec(any::<u8>(), 0..8192),
         ) {
             let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("vault");
             fs::create_dir_all(root.join("objects")).unwrap();
             fs::write(root.join("manifest-0.bin"), &data).unwrap();
             fs::write(root.join("manifest-1.bin"), data).unwrap();
