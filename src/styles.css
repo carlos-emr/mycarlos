@@ -1312,8 +1312,14 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
 .language-choices-compact { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; width: 100%; max-width: none; }
 .language-choices-compact .appearance-option { flex: 1 1 9rem; min-width: 0; }
 .language-choices-compact .appearance-error { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
-.native-ai-model-url code { overflow-wrap: anywhere; }
+/* The model's address and Copy address: apart, the address wrapping (#253). */
+.native-ai-model-url { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.native-ai-model-url code { overflow-wrap: anywhere; min-width: 0; }
 .record-dialog.native-ai-notice { width: min(680px, 100%); }
 .native-ai-notice-body { display: grid; gap: 10px; padding: 12px 20px; }
 .native-ai-notice-body p, .native-ai-notice-body h3 { margin: 0; }
 .native-ai-notice-body h3 { font-size: 1rem; }
+
+/* The model's buttons (#72): apart, and wrapped onto their own lines at
+   large text (#253). */
+.native-ai-model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
