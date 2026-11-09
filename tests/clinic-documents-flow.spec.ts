@@ -149,9 +149,18 @@ test("links this device to a clinic and asks for approval in one action: a refus
     FAKE_DEVICE_CODE,
   );
 
-  // Once linked, the library offers the check beside its search.
+  // Once linked, only Shared with me offers the check beside its search.
   await openMyRecords(page);
   await expect(myRecords(page)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: en("portal.check"), exact: true }),
+  ).toHaveCount(0);
+  await sidebar(page)
+    .getByRole("button", {
+      name: en("interface.LibrarySidebar.sharedWithMe"),
+      exact: true,
+    })
+    .click();
   await expect(
     page.getByRole("button", { name: en("portal.check"), exact: true }),
   ).toBeVisible();
@@ -164,6 +173,12 @@ test("Check for new documents brings a clinic's document into Shared with me, an
   await fakeVaultWith(page, { start: "unlocked", portal: "linked" });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
+  await sidebar(page)
+    .getByRole("button", {
+      name: en("interface.LibrarySidebar.sharedWithMe"),
+      exact: true,
+    })
+    .click();
   const check = page.getByRole("button", {
     name: en("portal.check"),
     exact: true,

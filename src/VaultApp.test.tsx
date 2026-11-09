@@ -9009,13 +9009,10 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: humanText("Security") }),
+      await screen.findByRole("button", { name: humanText(/^Shared with me/) }),
     );
-    const clinic = screen.getByRole("region", {
-      name: humanText(translate("en", "portal.title")),
-    });
     await user.click(
-      within(clinic).getByRole("button", {
+      screen.getByRole("button", {
         name: humanText(translate("en", "portal.check")),
       }),
     );
@@ -9027,7 +9024,7 @@ describe("durable vault UI", () => {
 
     act(() => setLocaleOverride("fr"));
     expect(
-      within(clinic).getByRole("button", {
+      screen.getByRole("button", {
         name: humanText(translate("fr", "portal.check")),
       }),
     ).toBeVisible();
@@ -9035,6 +9032,20 @@ describe("durable vault UI", () => {
       translate("fr", "portal.result", { added: 0, refused: 0 }),
     );
     expect(notice).not.toHaveHumanTextContent(english);
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText(translate("fr", "security.title")),
+        exact: true,
+      }),
+    );
+    const clinic = screen.getByRole("region", {
+      name: humanText(translate("fr", "portal.title")),
+    });
+    expect(
+      within(clinic).queryByRole("button", {
+        name: humanText(translate("fr", "portal.check")),
+      }),
+    ).toBeNull();
     expect(
       within(clinic).getByLabelText(translate("fr", "portal.deviceCode")),
     ).toHaveValue(deviceCode);
@@ -9045,7 +9056,10 @@ describe("durable vault UI", () => {
       within(clinic).getByRole("heading", { name: "FAKE {Clinic}" }),
     ).toBeVisible();
     act(() => setLocaleOverride("en"));
-    expect(notice).toHaveHumanTextContent(english);
+    // Navigation remounts the visible status; check its current node.
+    expect(
+      screen.getByText(humanText(english)).closest('[role="status"]'),
+    ).toHaveHumanTextContent(english);
     expect(check).toHaveBeenCalledOnce();
   });
 
@@ -10995,6 +11009,9 @@ describe("clinic connection operations", () => {
       await act(async () =>
         pending.finish({ link: connectedLink, approvalError: null }),
       );
+      await user.click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
       expect(
         await screen.findByRole("button", { name: "Check for new documents" }),
       ).toBeVisible();
@@ -11255,6 +11272,9 @@ describe("clinic connection operations", () => {
     await act(async () =>
       pending.finish({ link: connectedLink, approvalError: null }),
     );
+    await user.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
     expect(
       await screen.findByRole("button", { name: "Check for new documents" }),
     ).toBeVisible();
@@ -11354,6 +11374,9 @@ describe("clinic connection operations", () => {
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     expect(bridge.connectPortal).toHaveBeenCalledTimes(3);
     await act(async () => refuseLater({ code: "portal_busy" }));
+    await user.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
     expect(
       await screen.findByRole("button", { name: "Check for new documents" }),
     ).toBeVisible();
