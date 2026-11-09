@@ -950,5 +950,11 @@
   "ai.summary.again",
   "ai.keepFailed",
   "ai.keepFull",
+  "noticesStep.title",
+  "noticesStep.intro",
+  "noticesStep.later",
+  "noticesStep.done",
+  "noticesStep.notNow",
+  "notifications.autoNeedsNotices",
   "ai.settings.subtitle"
 ]

@@ -8,6 +8,7 @@ import {
   type MessageKey,
   type UiText,
 } from "../i18n";
+import { NoticesAfterLink } from "./NoticesAfterLink";
 import { hasVaultErrorCode, vaultErrorMessage } from "../vault";
 import type {
   VaultBridge,
@@ -45,6 +46,11 @@ interface Props {
   compact?: boolean;
 }
 
+/** The first link that has finished linking (an incomplete one has not).
+ * From the snapshot only, on purpose: a link the portal later says was removed
+ * still counts, so live state alone never makes a vault look newly linked. */
+const workingLink = (links: PortalLinkSummary[] | undefined) =>
+  (links ?? []).find((link) => !link.incomplete) ?? null;
 /** What a device's card says about its approval: a message, or the error
  * an automatic check failed with. Only the saved, verified state says the
  * clinic approved it; what the latest automatic check found (`live`) only
@@ -110,6 +116,26 @@ export function PortalDocuments({
   const [code, setCode] = useState("");
   const [device, setDevice] = useState("myCarlos");
   const [person, setPerson] = useState("");
+  // The link the notices step follows, while it is offered.
+  const [offerNotices, setOfferNotices] = useState<string | null>(null);
+  // The first working clinic link (#235): when the vault, open here, goes from
+  // no working link to one, document notices are offered once. Watching the
+  // vault rather than one button keeps it right whichever action made the link.
+  // Only the full panel offers it, so a compact copy never opens a second one.
+  // Links not known yet (linking off, or no list in this snapshot) are not
+  // "no link": an already linked vault must not look newly linked at unlock.
+  const firstWorking =
+    snapshot.portalLinkingEnabled === true && snapshot.portalLinks !== undefined
+      ? (workingLink(snapshot.portalLinks)?.id ?? "")
+      : null;
+  const hasWorkingLink = firstWorking === null ? null : firstWorking !== "";
+  const hadWorkingLink = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (compact || hasWorkingLink === null) return;
+    if (hadWorkingLink.current === false && hasWorkingLink && firstWorking)
+      setOfferNotices(firstWorking);
+    hadWorkingLink.current = hasWorkingLink;
+  }, [hasWorkingLink, firstWorking, compact]);
   // The panel's own status line: a copy result, or what an automatic check
   // found that changed. Read out politely; nothing here takes focus. A
   // check's change is already on the device's card, so it is only heard.
@@ -625,6 +651,19 @@ export function PortalDocuments({
         )}
       </p>
       {checkButton}
+      {offerNotices && (
+        <NoticesAfterLink
+          onClose={() => {
+            const linked = offerNotices;
+            setOfferNotices(null);
+            // Then to the new clinic's heading, where the panel has one: the
+            // control that made the link may be gone once a clinic is linked.
+            requestAnimationFrame(() =>
+              document.getElementById(`portal-link-title-${linked}`)?.focus(),
+            );
+          }}
+        />
+      )}
     </section>
   );
 }
