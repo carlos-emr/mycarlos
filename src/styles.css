@@ -1177,10 +1177,9 @@ p {
 .file-head,
 .file-row {
   display: grid;
-  grid-template-columns: 30px minmax(210px, 1fr) minmax(
-      6.5rem,
-      11.875rem
-    ) 9.5rem max(34px, calc(1.15rem + 12px));
+  grid-template-columns:
+    30px minmax(210px, 1fr) minmax(6.5rem, 11.875rem)
+    9.5rem max(34px, calc(1.15rem + 12px));
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -1522,10 +1521,9 @@ p {
 }
 .trash-list .file-head,
 .trash-list .file-row {
-  grid-template-columns: 30px minmax(10rem, 1fr) minmax(
-      6.5rem,
-      11.875rem
-    ) 9.5rem 4.5rem;
+  grid-template-columns:
+    30px minmax(10rem, 1fr) minmax(6.5rem, 11.875rem)
+    9.5rem 4.5rem;
 }
 /* #71: the Hidden list keeps the trash list's layout, but its dates are when a document was
    hidden, not a countdown to deletion: nothing is deleted. */
@@ -3000,10 +2998,9 @@ p {
    words, so the wider Source column cannot squeeze them out of the row. */
 .native-filelist .file-head,
 .native-filelist .file-row {
-  grid-template-columns: 44px minmax(10rem, 1fr) minmax(
-      8.5rem,
-      11.875rem
-    ) 9.5rem max-content;
+  grid-template-columns:
+    44px minmax(10rem, 1fr) minmax(8.5rem, 11.875rem)
+    9.5rem max-content;
 }
 /* The last column's least, 4.5rem as before, is kept on its control instead, and on the header's
    empty last cell, so that the header's columns stay over the rows'. */
