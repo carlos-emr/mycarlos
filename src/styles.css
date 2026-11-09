@@ -701,6 +701,15 @@ h1, h2, p { margin: 0; }
 .native-lock-warning h2 { margin: 0; font-size: 1.25rem; line-height: 1.4; }
 .native-lock-warning p { margin: 0; color: var(--ink-soft); }
 .native-lock-warning .button { justify-self: start; min-height: 52px; padding-inline: 24px; font-size: 1.125rem; }
+/* #235: the Notices setting offered right after the first clinic link. In the
+   dialog its text and its boxes stack in one column, as in first setup. */
+.notices-after-link-body { display: grid; gap: 12px; padding: 16px 20px 4px; }
+.notices-after-link-body > p { margin: 0; }
+.notices-after-link .setting-row { display: grid; gap: 10px; min-height: 0; padding: 0; border-bottom: 0; }
+.notices-after-link .setting-row > div { min-width: 0; }
+.notices-after-link .appearance-choice { max-width: none; }
+.notices-after-link .native-dialog-actions { display: flex; gap: 10px; padding: 14px 20px 18px; }
+.notices-after-link .native-dialog-actions .button { min-height: 44px; }
 .dialog-head { display: flex; align-items: flex-start; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
 .dialog-head > div { min-width: 0; }
 .dialog-head h2 { overflow: hidden; font-size: 1.125rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
