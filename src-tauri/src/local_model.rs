@@ -1492,6 +1492,7 @@ mod tests {
             expected_model: None,
             model_file: None,
             sandboxed: false,
+            generation_threads: None,
         }));
         let stopping = Arc::clone(&runner);
         store.set_before_replace(Box::new(move || {
