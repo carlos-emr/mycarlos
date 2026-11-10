@@ -6,6 +6,8 @@ import type { ModelRow, ModelAddOutcome, ModelStatus } from "../ai/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 const MB = 1_000_000;
+// Only a reconciliation signal: a reopened view reads the current native pair.
+const MUTATION_SETTLED = "mycarlos-model-mutation-settled";
 /** The host an address leads to, for the note beside Download. */
 function hostOf(address: string) {
   try {
@@ -147,6 +149,7 @@ export function AiModelSetting({
   >(null);
   const mounted = useRef(true);
   const activityRevision = useRef(0);
+  const progressObserved = useRef(false);
   const listRequest = useRef(0);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -248,9 +251,26 @@ export function AiModelSetting({
   useEffect(() => {
     let live = true;
     mounted.current = true;
+    const settled = () => {
+      activityRevision.current += 1;
+      void reloadRef.current(true);
+    };
+    window.addEventListener(MUTATION_SETTLED, settled);
     void reloadRef.current();
     const stop = listen<CopyProgress>("ai-model-add-progress", (event) => {
       if (!live || !mounted.current) return;
+      if (!progressObserved.current) {
+        progressObserved.current = true;
+        activityRevision.current += 1;
+        if (!own.current) void reloadRef.current(true);
+      }
+      const index = event.payload.index;
+      if (typeof index === "number" && Number.isInteger(index) && index >= 0) {
+        setDownloading(true);
+        starter.current = "download";
+        targetIndex.current = index;
+        if (!own.current && !mutating.current) after.current = "restart";
+      }
       setProgress((current) => ({
         ...event.payload,
         // Older native builds omit index; an own download still knows its row.
@@ -260,6 +280,7 @@ export function AiModelSetting({
     return () => {
       live = false;
       mounted.current = false;
+      window.removeEventListener(MUTATION_SETTLED, settled);
       void stop.then((unlisten) => unlisten());
     };
   }, []);
@@ -332,6 +353,7 @@ export function AiModelSetting({
   };
   const finish = (result: ModelAddOutcome, foreign = false) => {
     activityRevision.current += 1;
+    progressObserved.current = false;
     setNote(null);
     setProgress(null);
     if (result.outcome === "added" && (!foreign || !mutationNotice.current)) {
@@ -392,6 +414,7 @@ export function AiModelSetting({
     if (busy || own.current || mutating.current) return;
     activityRevision.current += 1;
     endedWhileOwn.current = null;
+    progressObserved.current = false;
     mutationNotice.current = false;
     setRefusal(null);
     setMessage(null);
@@ -479,6 +502,9 @@ export function AiModelSetting({
           : "ai.model.refusedStorage",
       );
     } finally {
+      // The invoking view may have closed. Never publish its returned status:
+      // any current view must reconcile authoritative rows and status together.
+      window.dispatchEvent(new Event(MUTATION_SETTLED));
       if (mounted.current && mutation === mutationRequest.current) {
         await reloadRef.current(true, true);
         mutating.current = false;
