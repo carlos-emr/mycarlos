@@ -164,6 +164,18 @@ debug = false
 [profile.dev.package.llama-cpp-2]
 opt-level = 3
 
+# Every other dependency is optimized in debug builds too, since the evaluation installers are
+# debug builds: the PDF reader's rasterizer (hayro), PNG encoding and decoding and lopdf otherwise
+# run unoptimized on every page view and zoom (measured: a page view 15-35x faster with this).
+# myCarlos's own crate stays unoptimized and debuggable, so code generic over a type parameter
+# and compiled there, such as the vault's XChaCha20-Poly1305, is not sped up by this. A named
+# package above wins over "*". Debug assertions and overflow checks are unchanged (opt-level
+# sets neither).
+[profile.dev.package."*"]
+opt-level = 3
+# No debug info for dependencies: a shorter cold build and smaller artifacts.
+debug = false
+
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
