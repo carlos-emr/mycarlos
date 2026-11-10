@@ -810,6 +810,8 @@ export const MESSAGE_KEYS = [
   "ai.preferences.body",
   "ai.preferences.notInstalled",
   "ai.working",
+  "ai.workingLong",
+  "ai.workingFor",
   "ai.summary.ready",
   "ai.explain.ready",
   "ai.failed",
@@ -1927,6 +1929,8 @@ const FLUENT_IDS_BY_KEY = {
   "ai.preferences.body": "ai-preferences-body",
   "ai.preferences.notInstalled": "ai-preferences-notInstalled",
   "ai.working": "ai-working",
+  "ai.workingLong": "ai-workingLong",
+  "ai.workingFor": "ai-workingFor",
   "ai.summary.ready": "ai-summary-ready",
   "ai.explain.ready": "ai-explain-ready",
   "ai.failed": "ai-failed",
@@ -3056,6 +3060,8 @@ export interface MessageArgsByKey {
   "ai.preferences.body": undefined;
   "ai.preferences.notInstalled": undefined;
   "ai.working": undefined;
+  "ai.workingLong": undefined;
+  "ai.workingFor": { minutes: FluentArgument };
   "ai.summary.ready": undefined;
   "ai.explain.ready": undefined;
   "ai.failed": undefined;
