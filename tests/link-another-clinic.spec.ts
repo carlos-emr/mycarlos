@@ -1,61 +1,23 @@
 import { translate } from "./support/fluent";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { expectOnlyFakedCommands } from "./support/a11y";
+import { FAKE_CLINIC, fakeVaultWith } from "./support/vaultFake";
 
 // #145: once a clinic is linked, Clinic documents shows the clinics first and
 // keeps the link form behind "Link another clinic", in a dialog. The native
-// side is faked with one FAKE clinic whose device is approved, so no
-// automatic approval check runs; any command this view should not send fails
-// the test.
+// side is main's shared fake (support/vaultFake.ts) with one FAKE clinic whose
+// device is approved, so no automatic approval check runs; a command the fake
+// does not answer fails the test.
 async function fakeNative(page: Page, linked: boolean, locale = "en") {
   await page.addInitScript(
-    ({ linked, locale }) => {
-      localStorage.setItem("mycarlos.language.v1", locale);
-      const link = {
-        id: "fake-link",
-        portalBase: "https://portal.example.test/patient",
-        deviceName: "myCarlos on Windows",
-        profileId: null,
-        clinicName: "FAKE Riverside Clinic",
-        fingerprints: [],
-        incomplete: false,
-        deviceKeyId: "FAKE_DEVICE_KEY_ID",
-        deviceFingerprint: "11".repeat(32),
-        approvalRequested: true,
-        clinicApproved: true,
-        approvalStatus: "accepted",
-      };
-      const snapshot = {
-        profiles: [
-          { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
-        ],
-        folders: [],
-        records: [],
-        recovery: null,
-        recoveryKeySetAtMs: 1,
-        portalLinkingEnabled: true,
-        portalLinks: linked ? [link] : [],
-      };
-      const unexpected: string[] = [];
-      Reflect.set(window, "__FAKE_UNEXPECTED__", unexpected);
-      Reflect.set(window, "__TAURI_INTERNALS__", {
-        invoke: async (command: string) => {
-          if (command === "vault_status") return "unlocked";
-          if (command === "vault_snapshot") return structuredClone(snapshot);
-          if (command === "runtime_info") return { platform: "windows" };
-          if (command === "vault_touch" || command === "vault_set_auto_lock")
-            return;
-          if (command === "vault_check_documents")
-            return { added: 0, refused: 0, receiptsPending: 0 };
-          // Files shared to myCarlos are looked for on focus (#49): none.
-          if (command === "received_list") return [];
-          unexpected.push(command);
-          throw new Error(`Unexpected IPC command: ${command}`);
-        },
-      });
-    },
-    { linked, locale },
+    (locale) => localStorage.setItem("mycarlos.language.v1", locale),
+    locale,
   );
+  await fakeVaultWith(page, {
+    start: "unlocked",
+    portal: linked ? "linked" : "unlinked",
+  });
 }
 
 async function openSecurity(page: Page, locale = "en") {
@@ -137,7 +99,7 @@ for (const width of [1280, 360])
     await openSecurity(page);
     await textAt200(page);
     const heading = page.getByRole("heading", {
-      name: "FAKE Riverside Clinic",
+      name: FAKE_CLINIC,
     });
     await expect(heading).toBeVisible();
     // The clinic comes first; the form is not on the panel.
@@ -156,9 +118,11 @@ for (const width of [1280, 360])
         await linkAnother.elementHandle(),
       ),
     ).toBe(true);
+    // Check for new documents is in Shared with me on main (#254), not on
+    // this panel.
     await expect(
-      page.getByRole("button", { name: "Check for new documents" }).first(),
-    ).toBeVisible();
+      page.getByRole("button", { name: "Check for new documents" }),
+    ).toHaveCount(0);
     expect(await fitsWindow(page)).toBe(true);
     await heading.scrollIntoViewIfNeeded();
     await page.screenshot({
@@ -199,9 +163,7 @@ for (const width of [1280, 360])
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
     await expect(linkAnother).toBeFocused();
-    expect(
-      await page.evaluate(() => Reflect.get(window, "__FAKE_UNEXPECTED__")),
-    ).toEqual([]);
+    await expectOnlyFakedCommands(page);
   });
 
 test("keeps the link form on the panel before any clinic is linked", async ({
@@ -278,7 +240,5 @@ for (const locale of ["en", "es", "fr", "pl", "pt-BR", "zh-CN", "zh-TW"])
       path: testInfo.outputPath(`after-dialog-320-${locale}.png`),
     });
     await textAt200(page);
-    expect(
-      await page.evaluate(() => Reflect.get(window, "__FAKE_UNEXPECTED__")),
-    ).toEqual([]);
+    await expectOnlyFakedCommands(page);
   });

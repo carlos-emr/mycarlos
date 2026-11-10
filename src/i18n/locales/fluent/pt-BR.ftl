@@ -975,8 +975,6 @@ readingAid-unavailable = Este auxílio de leitura não pode ser exibido com segu
 
 record-kind-document = Documento
 
-record-source-manual = Importação manual — não verificada
-
 recover-intro = Use sua chave de recuperação para abrir o cofre e escolher uma nova frase secreta.
 
 recover-key-format = 28 letras e números, em 7 grupos de 4, como no seu kit ou como você anotou. Traços, espaços e outros sinais de pontuação não importam.
@@ -1656,6 +1654,8 @@ interface-history-event-imported = Documento adicionado
 
 interface-history-event-moved = Documento movido
 
+interface-history-event-other = Outro evento
+
 interface-history-event-passphraseChanged = Frase-senha alterada
 
 interface-history-event-portalLinkStarted = Vinculação com a clínica iniciada
@@ -1708,6 +1708,8 @@ interface-history-how-movedFromShared = Movido de Compartilhado comigo
 interface-history-how-passphrase = Frase-senha
 
 interface-history-how-patient = Ocultado por você
+
+interface-history-how-personFolder = Pasta de uma pessoa
 
 interface-history-how-picked = Importado de um arquivo escolhido
 

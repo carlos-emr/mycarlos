@@ -860,8 +860,6 @@ readingAid-unavailable = 无法安全显示此阅读辅助。请改为打开原�
 
 record-kind-document = 文档
 
-record-source-manual = 手动导入 — 未验证
-
 recover-intro = 使用恢复密钥打开保险库并选择新密码短语。
 
 recover-key-format = 共 28 个英文字母和数字，分成 7 组、每组 4 个字符，如同恢复工具包上的内容或您抄下的内容。连字号、空格和其他标点符号不影响输入。
@@ -1491,6 +1489,8 @@ interface-history-event-imported = 文档已添加
 
 interface-history-event-moved = 文档已移动
 
+interface-history-event-other = 其他事件
+
 interface-history-event-passphraseChanged = 密码短语已变更
 
 interface-history-event-portalLinkStarted = 已开始关联诊所
@@ -1538,6 +1538,8 @@ interface-history-how-movedFromShared = 从「与我分享」移出
 interface-history-how-passphrase = 密码短语
 
 interface-history-how-patient = 由您隐藏
+
+interface-history-how-personFolder = 某人的文件夹
 
 interface-history-how-picked = 从所选文件导入
 

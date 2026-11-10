@@ -656,8 +656,6 @@ pub struct VaultRecord {
     pub folder_ids: Vec<Uuid>,
     pub display_name: String,
     pub source_label: String,
-    /// Presentation identity; the stored source label remains unchanged.
-    pub source_kind: &'static str,
     pub media_type: String,
     pub plaintext_size: u64,
     pub imported_at_ms: u64,
@@ -924,6 +922,12 @@ pub struct VaultStore {
     /// How far each clinic code request has got in this run of the app, by
     /// request id (clinic code v1). Never the code itself. In memory only.
     approval_codes: Mutex<HashMap<Uuid, delivery::CodeProgress>>,
+    /// Linked devices this run of the app found gone from their portal:
+    /// removed there, or unknown to a portal that answered another device of
+    /// this vault in the same check (a reset portal deletes devices). Later
+    /// checks and status refreshes do not ask about them again. By link id,
+    /// in memory only: never saved, and a restart asks once more.
+    gone_links: Mutex<std::collections::HashSet<Uuid>>,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
     /// How the last session of this run of the app ended, for the next
@@ -954,6 +958,7 @@ impl VaultStore {
             portal_session: Arc::new(AtomicU64::new(0)),
             portal_check_running: AtomicBool::new(false),
             approval_codes: Mutex::new(HashMap::new()),
+            gone_links: Mutex::new(std::collections::HashSet::new()),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
@@ -1863,7 +1868,6 @@ impl VaultStore {
                     folder_ids: record.folder_ids.clone(),
                     display_name: record.display_name.clone(),
                     source_label: record.source_label.clone(),
-                    source_kind: "manual",
                     media_type: record.media_type.clone(),
                     plaintext_size: record.plaintext_size,
                     imported_at_ms: record.imported_at_ms,
@@ -1970,7 +1974,37 @@ impl VaultStore {
         link_id: Uuid,
         session: u64,
     ) -> Result<delivery::ApprovalCheck, VaultError> {
-        self.poll_staff_approval(link_id, session)
+        use portal_link::LinkError;
+        // A device already found gone is not asked about again.
+        if self.link_gone(link_id) {
+            return Err(VaultError::Portal(LinkError::DeviceRemoved));
+        }
+        let result = self.poll_staff_approval(link_id, session);
+        let removed =
+            |error: &VaultError| matches!(error, VaultError::Portal(LinkError::DeviceRemoved));
+        if match &result {
+            Ok(check) => check.issue.as_ref().is_some_and(removed),
+            Err(error) => removed(error),
+        } {
+            self.mark_link_gone(link_id);
+        }
+        result
+    }
+
+    /// Whether this run of the app found this linked device gone from its
+    /// portal (see `gone_links`).
+    pub(crate) fn link_gone(&self, link_id: Uuid) -> bool {
+        self.gone_links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(&link_id)
+    }
+
+    pub(crate) fn mark_link_gone(&self, link_id: Uuid) {
+        self.gone_links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(link_id);
     }
 
     fn link_portal_using(
@@ -3028,16 +3062,31 @@ impl VaultStore {
     /// AI helper's native re-check (#72 part B, AI-02): every profile's
     /// display and full name and birth date, and the patient's name and
     /// birth date, the provider and the clinic from the document's delivery
-    /// manifest, if it has one. Nothing is stored or logged. An incomplete
-    /// history refuses this privacy check: checked fragments cannot establish
-    /// all former folder names. The audit view may still show those fragments.
+    /// manifest, if it has one. Nothing is stored or logged. A history that
+    /// cannot show every pinned event refuses this privacy check: checked
+    /// fragments cannot establish all former folder names. The audit view may
+    /// still show those fragments. Damage only to pieces without events
+    /// (padding) does not refuse it: the shown events then link from the
+    /// genesis value to the manifest's pinned count and head, so they are every
+    /// event, in order (`every_event_shown`).
     pub fn known_identifiers(&self, record_id: Uuid) -> Result<KnownIdentifiers, VaultError> {
         // History and current identifiers must describe the same session and
         // manifest. Keep this guard through both reads without taking it twice.
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let view = self.history_view_in_session(unlocked)?;
-        if !view.complete {
+        // `every_event_shown` re-checks `entries` then `later` from the genesis
+        // value: each entry's number is its place and its `prev` is the hash of
+        // the one before, ending at the pinned count and head. Each hash covers
+        // the whole entry (`old_name` and `how` too), and the count and head are
+        // in the authenticated manifest, so these are exactly the pinned events.
+        // A gap needs no per-piece count to be caught: a missing event breaks
+        // the chain. There are no linked events beyond the pinned count either:
+        // `validate_history` makes the pieces with events add up to the count,
+        // with the padding last, and each piece read must hold its stated count.
+        // So with every piece read the flag equals `complete`; it differs only
+        // when the damaged pieces are padding.
+        if !(view.complete || view.every_event_shown) {
             return Err(VaultError::Corrupt);
         }
         run_at_test_boundary("known-identifiers-history");
@@ -9074,6 +9123,125 @@ mod tests {
         }
         fs::write(path, original).unwrap();
         assert!(store.known_identifiers(record).is_ok());
+    }
+
+    #[test]
+    fn known_identifiers_keep_former_names_when_only_padding_is_damaged() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        let renamed = |index: usize| {
+            let mut entry = HistoryEntry::new(HistoryEvent::FolderRenamed, index as u64 + 3);
+            entry.how = Some("personFolder".to_owned());
+            // Alphabetic suffixes keep each former name a matchable name word.
+            let suffix = format!(
+                "{}{}",
+                char::from(b'a' + (index / 26) as u8),
+                char::from(b'a' + (index % 26) as u8)
+            );
+            entry.old_name = Some(format!("FAKE Zorvana{suffix}"));
+            entry.name = Some(format!("FAKE {}", "x".repeat(220)));
+            entry
+        };
+        let segments = || {
+            store
+                .session()
+                .as_ref()
+                .unwrap()
+                .manifest
+                .history
+                .segments
+                .clone()
+        };
+        {
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            assert!(record_in_session(
+                &store.root,
+                unlocked,
+                (0..400).map(renamed).collect()
+            ));
+        }
+        // Pieces with events are padded to a power of two with pieces without any. Should
+        // these renames fill exactly a power of two, add more until there is padding.
+        let mut added = 400;
+        while !segments().iter().any(|segment| segment.entry_count == 0) {
+            assert!(added < 26 * 26, "a padding piece before the names run out");
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            assert!(record_in_session(
+                &store.root,
+                unlocked,
+                vec![renamed(added)]
+            ));
+            added += 1;
+        }
+        let former: Vec<String> = store
+            .history_view()
+            .unwrap()
+            .entries
+            .into_iter()
+            .filter_map(|entry| entry.old_name)
+            .collect();
+        assert_eq!(former.len(), added);
+        let intact = store.known_identifiers(record).unwrap();
+        assert!(former.iter().all(|name| intact.names.contains(name)));
+        let pieces = segments();
+        let padding = pieces
+            .iter()
+            .find(|segment| segment.entry_count == 0)
+            .unwrap();
+        let path = store.root.join("objects").join(&padding.object_name);
+        let original = damage_segment(&store.root, padding);
+        for missing in [false, true] {
+            if missing {
+                fs::remove_file(&path).unwrap();
+            }
+            let view = store.history_view().unwrap();
+            assert!(!view.complete);
+            assert!(view.every_event_shown);
+            // Every pinned event is there, so every former name is too.
+            let known = store.known_identifiers(record).unwrap();
+            assert_eq!(known, intact);
+            let token = former.last().unwrap().strip_prefix("FAKE ").unwrap();
+            let hits =
+                crate::text_recheck::identifier_hits(token, &known.names, &known.birth_dates);
+            assert_eq!(hits.len(), 1);
+        }
+        // Only padding damaged, but the shown events do not end at the pinned head:
+        // refused. A lowered count is refused through the head too (the chain cut
+        // to that count ends at another hash); a valid manifest can't pin more
+        // events than its pieces hold (`validate_history`).
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
+        assert!(matches!(
+            store.known_identifiers(record),
+            Err(VaultError::Corrupt)
+        ));
+        store.session().as_mut().unwrap().manifest.history = history.clone();
+        store.session().as_mut().unwrap().manifest.history.count -= 1;
+        assert!(matches!(
+            store.known_identifiers(record),
+            Err(VaultError::Corrupt)
+        ));
+        store.session().as_mut().unwrap().manifest.history = history;
+        // A damaged piece with events beside the damaged padding: refused.
+        let events = pieces
+            .iter()
+            .find(|segment| segment.entry_count > 0 && segment.first_seq > 0)
+            .unwrap();
+        let events_original = damage_segment(&store.root, events);
+        assert!(!store.history_view().unwrap().every_event_shown);
+        assert!(matches!(
+            store.known_identifiers(record),
+            Err(VaultError::Corrupt)
+        ));
+        fs::write(
+            store.root.join("objects").join(&events.object_name),
+            events_original,
+        )
+        .unwrap();
+        fs::write(&path, original).unwrap();
+        assert!(store.history_view().unwrap().complete);
+        assert_eq!(store.known_identifiers(record).unwrap(), intact);
     }
 
     fn original_pdf_fixture() -> (tempfile::TempDir, VaultStore, Uuid, Vec<u8>) {
