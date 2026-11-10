@@ -62,8 +62,12 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// a newer manifest.
 const VAULT_FORMAT: u32 = MANIFEST_FORMAT_REFUSED;
 const MANIFEST_FORMAT_V1: u32 = 1;
-/// Format 12 (#143) remembers clinic deliveries that failed their checks. It follows
-/// 10 (AI answers, #212) and 11 (their caps, #250).
+/// Format 12 (#143) remembers clinic deliveries that failed their checks. It
+/// follows 10 (AI answers, #212) and 11 (their caps, #250). The newest, so
+/// `VAULT_FORMAT` is this one. Its number is taken at merge (VAULT_FORMAT.md,
+/// "Format numbers are taken at merge"): a renumber changes this line, the
+/// list of formats above and the format's heading in VAULT_FORMAT.md, nothing
+/// else here.
 const MANIFEST_FORMAT_REFUSED: u32 = 12;
 /// At most this many remembered refusals per linked clinic. Those kept stay;
 /// a further refusal is not remembered. A refusal lasts as long as its
@@ -77,10 +81,7 @@ const MANIFEST_FORMAT_HISTORY: u32 = 3;
 /// most 32 per document, hidden ones included.
 const MANIFEST_FORMAT_AI_RESULTS: u32 = 10;
 /// The first format whose hidden AI answers have a cap of their own (D13):
-/// 32 shown and 96 hidden per document. The newest, so `VAULT_FORMAT` is this
-/// one. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
-/// taken at merge"): a renumber changes this line and the format's heading in
-/// VAULT_FORMAT.md, nothing else here.
+/// 32 shown and 96 hidden per document.
 const MANIFEST_FORMAT_AI_HIDDEN_CAP: u32 = 11;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
