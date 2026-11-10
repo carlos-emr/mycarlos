@@ -150,6 +150,7 @@ export function AiModelSetting({
   // The window may not listen for the app's events (a missing capability):
   // progress then comes from asking the native side instead.
   const [eventsRefused, setEventsRefused] = useState(false);
+  const pollInFlight = useRef(false);
   const mounted = useRef(true);
   const activityRevision = useRef(0);
   const progressObserved = useRef(false);
@@ -421,6 +422,9 @@ export function AiModelSetting({
   useEffect(() => {
     if (!polling) return;
     const timer = window.setInterval(() => {
+      // A slow answer is not asked over again, so an older one never lands last.
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
       void invoke<ModelAddNow | null>("ai_model_add_active")
         .then((now) => {
           if (!mounted.current) return;
@@ -439,7 +443,10 @@ export function AiModelSetting({
             void reloadRef.current(true);
           }
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => {
+          pollInFlight.current = false;
+        });
     }, 1000);
     return () => window.clearInterval(timer);
   }, [polling]);

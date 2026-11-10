@@ -501,9 +501,10 @@ describe("The progress bar (#275)", () => {
   it("asks the native side each second for the progress when the window may not listen", async () => {
     native.refuseListen = true;
     let active: unknown = null;
+    let finish: (value: unknown) => void = () => undefined;
     answer({
       ai_model_catalog: [{ ...fake, sizeBytes: TOTAL }],
-      ai_model_download: () => new Promise(() => undefined),
+      ai_model_download: () => new Promise((resolve) => (finish = resolve)),
       ai_model_add_active: () => Promise.resolve(active),
       ai_model_add_cancel: null,
     });
@@ -532,6 +533,17 @@ describe("The progress bar (#275)", () => {
         ).toBeDisabled(),
       { timeout: 3000 },
     );
+    // Once the copy has ended, the page stops asking.
+    active = null;
+    await act(async () => finish({ outcome: "added", status: installed }));
+    await screen.findByText(humanText("Model added"));
+    const asked = () =>
+      native.invoke.mock.calls.filter(
+        ([command]) => command === "ai_model_add_active",
+      ).length;
+    const before = asked();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(asked()).toBe(before);
   });
 
   it("shows a running copy's progress on opening when the window may not listen", async () => {
@@ -546,10 +558,19 @@ describe("The progress bar (#275)", () => {
       },
       ai_model_add_cancel: null,
     });
-    render(
+    const view = render(
       <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
     );
     await waitFor(() => expect(bar()).toHaveAttribute("aria-valuenow", "29"));
+    // Leaving the page stops the asking too.
+    view.unmount();
+    const asked = () =>
+      native.invoke.mock.calls.filter(
+        ([command]) => command === "ai_model_add_active",
+      ).length;
+    const before = asked();
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(asked()).toBe(before);
   });
 
   it("starts a resumed download where it stopped", async () => {

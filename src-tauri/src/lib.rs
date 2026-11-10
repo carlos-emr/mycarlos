@@ -8518,8 +8518,9 @@ mod event_permission_ipc_tests {
     }
 
     /// With the real generated capability authority (only the OS runtime is mocked), as the
-    /// built app checks it: the main window may listen for the model download's events and stop
-    /// listening, may not emit, and no other window may listen.
+    /// built app checks it: the main window may listen for every event the page listens to (the
+    /// model download's, and an AI answer's start for the idle lock) and stop listening, may not
+    /// emit, and no other window may listen.
     #[test]
     fn the_main_window_may_listen_for_events_and_may_not_emit() {
         let app = tauri::test::mock_builder()
@@ -8537,7 +8538,11 @@ mod event_permission_ipc_tests {
                 serde_json::json!({ "event": event, "target": { "kind": "Any" }, "handler": 7 }),
             )
         };
-        for event in ["ai-model-add-progress", "ai-model-add-ended"] {
+        for event in [
+            "ai-model-add-progress",
+            "ai-model-add-ended",
+            "ai-answer-started",
+        ] {
             let id = tauri::test::get_ipc_response(&main, listen(event))
                 .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))
                 .deserialize::<serde_json::Value>()
