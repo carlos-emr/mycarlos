@@ -196,6 +196,7 @@ describe("required profile identity details", () => {
   });
   it("opens the person the library's reminder asks for as their own Edit details button does", () => {
     const people = [
+      { id: "p1", displayName: "FAKE Fresh", createdAtMs: 1 },
       {
         id: "p2",
         displayName: "FAKE Named",
@@ -231,8 +232,16 @@ describe("required profile identity details", () => {
         cancel: within(dialog).getByRole("button", { name: "Cancel" }),
       };
     };
-    const { rerender } = render(list({ profileId: "p2" }));
+    // The reminder's usual person: no full name yet, so the date box is open.
+    const { rerender } = render(list({ profileId: "p1" }));
     let opened = shown();
+    expect(opened.fullName).toHaveValue("");
+    expect(opened.unknown).not.toBeChecked();
+    expect(opened.date).toBeEnabled();
+    expect(opened.date).toHaveValue("");
+    fireEvent.click(opened.cancel);
+    rerender(list({ profileId: "p2" }));
+    opened = shown();
     expect(opened.fullName).toHaveValue("FAKE Named Example");
     expect(opened.unknown).toBeChecked();
     expect(opened.date).toBeDisabled();
@@ -253,6 +262,44 @@ describe("required profile identity details", () => {
     expect(opened.fullName).toHaveValue("FAKE Named Example");
     expect(opened.unknown).toBeChecked();
     expect(opened.date).toBeDisabled();
+  });
+
+  it("clears a refused save's message once the date's unknown box is unticked", async () => {
+    const save = vi.fn().mockResolvedValue(false);
+    render(
+      <PersonDetailsList
+        people={[
+          {
+            id: "p2",
+            displayName: "FAKE Named",
+            createdAtMs: 2,
+            fullName: "FAKE Named Example",
+          },
+        ]}
+        busy={false}
+        onSave={save}
+        refusalText="FAKE the vault refused these details"
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Named"),
+      }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Edit details" });
+    const refused = () =>
+      within(dialog).queryByText("FAKE the vault refused these details");
+    // A full name with the date unknown can be saved; the vault refuses it.
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save details" }),
+    );
+    await waitFor(() => expect(refused()).not.toBeNull());
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", {
+        name: "I don't know this person's date of birth",
+      }),
+    );
+    expect(refused()).toBeNull();
   });
 
   it("disables editing while busy or read-only", () => {

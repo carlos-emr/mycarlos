@@ -367,9 +367,13 @@ export function PersonDetailsList({
             setRefused(false);
           }}
           birthDateUnknown={editing.birthDateUnknown}
-          onBirthDateUnknownChange={(birthDateUnknown) =>
-            setEditing((current) => current && { ...current, birthDateUnknown })
-          }
+          // A tick is a change too: it clears a refusal, as typing does.
+          onBirthDateUnknownChange={(birthDateUnknown) => {
+            setEditing(
+              (current) => current && { ...current, birthDateUnknown },
+            );
+            setRefused(false);
+          }}
         />
       </fieldset>
     </PersonDialog>
