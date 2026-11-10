@@ -1871,6 +1871,13 @@ ai-model-add = Agregar un archivo de modelo…
 
 ai-model-accepted = { $name }, { $size } MB. Licencia: { $licence }.
 
+ai-model-reads =
+    { $pages ->
+    [one] Lee alrededor de { $pages } página a la vez (alrededor de { $characters } caracteres de texto en inglés). Menos con tablas y en algunos idiomas.
+    [many] Lee alrededor de { $pages } de páginas a la vez (alrededor de { $characters } caracteres de texto en inglés). Menos con tablas y en algunos idiomas.
+   *[other] Lee alrededor de { $pages } páginas a la vez (alrededor de { $characters } caracteres de texto en inglés). Menos con tablas y en algunos idiomas.
+    }
+
 ai-model-where = Dónde obtener el archivo
 
 ai-model-copy = Copiar dirección
