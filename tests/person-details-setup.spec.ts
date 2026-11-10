@@ -211,15 +211,24 @@ test("a person added with their details left for later is reminded about too", a
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
   await openSection(page, info, "security");
-  await page
-    .getByLabel(en("security.profiles.label"), { exact: true })
-    .fill("FAKE Child");
-  await page
-    .getByRole("checkbox", { name: en("personDetails.later"), exact: true })
-    .check();
+  // Add profile opens a dialog with the name and the person's details.
   await page
     .getByRole("button", { name: en("security.profiles.add"), exact: true })
     .click();
+  const addProfile = page.getByRole("dialog", {
+    name: en("security.profiles.add"),
+    exact: true,
+  });
+  await addProfile
+    .getByLabel(en("security.profiles.label"), { exact: true })
+    .fill("FAKE Child");
+  await addProfile
+    .getByRole("checkbox", { name: en("personDetails.later"), exact: true })
+    .check();
+  await addProfile
+    .getByRole("button", { name: en("security.profiles.add"), exact: true })
+    .click();
+  await expect(addProfile).toHaveCount(0);
   await expect(
     page.getByText(en("interface.notice.personAdded", { name: "FAKE Child" }), {
       exact: true,

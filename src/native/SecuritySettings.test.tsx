@@ -849,8 +849,12 @@ describe("Add profile with the person's details, or later (#234)", () => {
 
   it("asks for the details, and adds the person with them", () => {
     const props = withDetails();
+    // Add profile is a dialog now (Ben, 29 Oct): its own Add profile adds.
+    const { dialog } = openAddProfile();
     change("New profile name", "FAKE Child");
-    const add = screen.getByRole("button", { name: humanText("Add profile") });
+    const add = within(dialog).getByRole("button", {
+      name: humanText("Add profile"),
+    });
     expect(add).toBeDisabled();
     change("Full name, as on clinic documents", "FAKE Child Example");
     change("Date of birth", "2015-06-01");
@@ -864,13 +868,14 @@ describe("Add profile with the person's details, or later (#234)", () => {
 
   it("can add the person now and the details later", () => {
     const props = withDetails();
+    const { dialog } = openAddProfile();
     change("New profile name", "FAKE Child");
     fireEvent.click(screen.getByLabelText(humanText("Add them later")));
     expect(
       screen.queryByLabelText(humanText("Full name, as on clinic documents")),
     ).toBeNull();
     fireEvent.click(
-      screen.getByRole("button", { name: humanText("Add profile") }),
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
     );
     expect(props.onCreateProfile).toHaveBeenCalledWith("FAKE Child");
   });
