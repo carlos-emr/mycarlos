@@ -2345,6 +2345,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
         AiError::Memory => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
+        AiError::Storage => "ai.error.storage",
         AiError::Cancelled | AiError::Failed => "ai.failed",
     };
     PublicError {
@@ -2378,6 +2379,8 @@ struct AuditHistory {
     checked_until_ms: Option<u64>,
     /// The time of the first later entry, when there is one.
     checked_from_ms: Option<u64>,
+    /// Every event the manifest pins is shown, even when part of the storage is damaged.
+    every_event_shown: bool,
 }
 
 impl From<vault::HistoryView> for AuditHistory {
@@ -2395,6 +2398,7 @@ impl From<vault::HistoryView> for AuditHistory {
             complete: view.complete,
             checked_until_ms,
             checked_from_ms,
+            every_event_shown: view.every_event_shown,
         }
     }
 }
@@ -2689,6 +2693,8 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 /// none do). `complete` says whether `entries` are the whole chain. When not, `checkedUntilMs` is
 /// the time of the last of `entries` and `checkedFromMs` the time of the first of `laterEntries`
 /// (each null when there is none), so the screen can say which events can't be checked.
+/// `everyEventShown` says the shown entries are still every event the manifest pins (only
+/// pieces without events are damaged), so the screen says so and marks no gap (#120 C1).
 #[tauri::command]
 async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
     audit_history_result(run_blocking(store.inner(), VaultStore::history_view).await)
@@ -5999,6 +6005,7 @@ mod tests {
             (AiError::Damaged, "aiDamaged", "isn't on this computer"),
             (AiError::Memory, "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
+            (AiError::Storage, "aiStorage", "could not be read"),
             (AiError::Cancelled, "aiCancelled", "could not finish"),
             (AiError::Failed, "aiFailed", "could not finish"),
         ] {
@@ -8395,6 +8402,7 @@ mod audit_history_ipc_tests {
                 entries,
                 later,
                 complete,
+                every_event_shown: complete,
             })
         };
         let partial = shown(entries(), Vec::new(), false);
@@ -8474,11 +8482,13 @@ mod audit_history_ipc_tests {
                 "checkedUntilMs",
                 "complete",
                 "entries",
+                "everyEventShown",
                 "laterEntries"
             ]
             .into()
         );
         assert_eq!(response["complete"], true);
+        assert_eq!(response["everyEventShown"], true);
         assert!(response["checkedUntilMs"].is_null());
         let rows = &response["entries"];
         assert_eq!(rows[0]["event"], "created");
@@ -8527,7 +8537,8 @@ mod audit_history_ipc_tests {
                 "laterEntries": [],
                 "complete": false,
                 "checkedUntilMs": null,
-                "checkedFromMs": null
+                "checkedFromMs": null,
+                "everyEventShown": false
             })
         );
         store.lock();

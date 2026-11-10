@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { formatDate, getLocale, t as translateNow, useI18n } from "../i18n";
+import {
+  formatDate,
+  getLocale,
+  t as translateNow,
+  useI18n,
+  type MessageKey,
+} from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
 import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
@@ -38,6 +44,15 @@ const WORKING_TICK_MS = 15_000;
 /** The longest term to explain, typed or selected: the native side refuses
  * a longer one (AGREEMENT.md). */
 export const TERM_MAX = 200;
+/** Refusals with words of their own (#253), by their code: the model's file
+ * could not be read, there is too little free memory, or the model is being
+ * added or removed. The words depend on the code alone, never on the
+ * refusal's message; any other failure says the helper could not finish. */
+const OWN_WORDS = {
+  aiStorage: "ai.error.storage",
+  aiMemory: "ai.error.memory",
+  aiBusy: "ai.error.busy",
+} as const satisfies Record<string, MessageKey>;
 
 /** The AI helper's panel in the reader: a plain-words summary of the
  * document, or the explanation of a term. Until a model is installed it says
@@ -62,7 +77,8 @@ export function ReaderAiPanel({
   const lang = getLocale();
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [working, setWorking] = useState(false);
-  const [failed, setFailed] = useState(false);
+  // The last run's failure, said in the panel's alert; null when none.
+  const [failed, setFailed] = useState<{ failure: unknown } | null>(null);
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
@@ -148,7 +164,7 @@ export function ReaderAiPanel({
     // Stopped because the patient left, or the vault locked: nothing to say.
     if (!live.current || failure instanceof ModelCancelled) return;
     if (failure instanceof ModelNotInstalled) setStatus(NOT_INSTALLED);
-    else setFailed(true);
+    else setFailed({ failure });
   };
 
   // Keeps an answer with the document: the one the native side kept for it
@@ -184,7 +200,7 @@ export function ReaderAiPanel({
       return;
     startedFor.current = request;
     setWorking(true);
-    setFailed(false);
+    setFailed(null);
     setKeepFailed(null);
     const fresh = again > 0;
     Promise.resolve(
@@ -237,7 +253,7 @@ export function ReaderAiPanel({
     const asked = term.trim();
     if (!asked || working) return;
     setWorking(true);
-    setFailed(false);
+    setFailed(null);
     setKeepFailed(null);
     asModel(() =>
       explainTerm(
@@ -325,7 +341,15 @@ export function ReaderAiPanel({
           {t("ai.workingFor", { minutes: workingMinutes })}
         </p>
       )}
-      {failed && <p role="alert">{t("ai.failed")}</p>}
+      {failed && (
+        <p role="alert">
+          {t(
+            Object.entries(OWN_WORDS).find(([code]) =>
+              hasVaultErrorCode(failed.failure, code),
+            )?.[1] ?? "ai.failed",
+          )}
+        </p>
+      )}
       {noText && <p>{t("ai.summary.noText")}</p>}
       {summary && (
         <div className="native-reader-ai-result">
