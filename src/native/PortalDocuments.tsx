@@ -375,7 +375,9 @@ export function PortalDocuments({
     // unless the check names a problem with that device's clinic.
     let known: Record<string, LiveApproval | undefined> = {};
     void run(async () => {
-      await first?.();
+      // Only Try again has a first step. A plain check starts at once, in the
+      // same turn as the press, as before.
+      if (first) await first();
       const { result, vault: next } = await checkClinicDocuments({
         bridge,
         links,
