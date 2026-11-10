@@ -42,7 +42,9 @@ for (const view of ["ordinary", "shared"] as const) {
       await page
         .getByRole("main")
         .getByRole("button", {
-          name: translate("en", "library.folder.open", { name: "FAKE Letters" }),
+          name: translate("en", "library.folder.open", {
+            name: "FAKE Letters",
+          }),
           exact: true,
         })
         .click();
