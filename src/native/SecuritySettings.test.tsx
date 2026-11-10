@@ -6,11 +6,12 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
-import { setLocaleOverride } from "../i18n";
+import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
 import { printedDate } from "./KeyLabel";
 import { SecuritySettings, speedTestLine } from "./SecuritySettings";
@@ -29,7 +30,7 @@ const speedTest = {
   appVersion: "0.1.0",
 };
 
-function renderSettings(overrides: Record<string, unknown> = {}) {
+function settingsProps(overrides: Record<string, unknown> = {}) {
   const props = {
     busy: false,
     readOnly: false,
@@ -49,6 +50,10 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
     onSpeedTest: vi.fn().mockResolvedValue(speedTest),
     ...overrides,
   };
+  return props;
+}
+function renderSettings(overrides: Record<string, unknown> = {}) {
+  const props = settingsProps(overrides);
   render(<SecuritySettings {...props} />);
   return props;
 }
@@ -61,19 +66,37 @@ const change = (label: string, value: string) =>
 describe("SecuritySettings profile layout", () => {
   afterEach(async () => {
     document.documentElement.style.fontSize = "";
+    document
+      .querySelectorAll("[data-test-dialog-host]")
+      .forEach((host) => host.remove());
     await page.viewport(1100, 760);
   });
 
-  it("keeps the profile name and Add profile action inside their section on a phone with enlarged text", async () => {
-    renderSettings();
-    const input = screen.getByRole("textbox", { name: "New profile name" });
+  // #109's checks, now that Add profile is a button that opens a dialog (Ben,
+  // 29 Oct). The dialog is drawn in a host outside the section, as the app's
+  // library draws it.
+  function renderProfiles() {
+    const host = document.createElement("div");
+    host.dataset.testDialogHost = "";
+    document.body.append(host);
+    // As in the app, whose bridge always saves people's details: the Add
+    // profile dialog then has the person fields too.
+    renderSettings({
+      dialogHost: host,
+      onUpdateProfileDetails: vi.fn().mockResolvedValue(true),
+    });
     const button = screen.getByRole("button", { name: "Add profile" });
-    input.closest("main")!.classList.add("native-vault-page");
-    fireEvent.change(input, { target: { value: "FAKE Profile" } });
-    const form = input.closest("form")!;
-    const section = form.closest<HTMLElement>(".setting-row")!;
-    const intro = section.firstElementChild!;
-    section.style.fontFamily = "'DejaVu Sans', Verdana, sans-serif";
+    button.closest("main")!.classList.add("native-vault-page");
+    const section = button.closest<HTMLElement>(".setting-row")!;
+    return { button, section, intro: section.firstElementChild! };
+  }
+  const font = "'DejaVu Sans', Verdana, sans-serif";
+  const inside = (box: DOMRect, edge: DOMRect) =>
+    box.left >= edge.left - 1 && box.right <= edge.right + 1;
+
+  it("keeps Add profile inside its section, and its dialog's fields inside the dialog, on a phone with enlarged text", async () => {
+    const { button, section, intro } = renderProfiles();
+    section.style.fontFamily = font;
     const overlaps = (a: DOMRect, b: DOMRect) =>
       Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
       Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
@@ -86,12 +109,8 @@ describe("SecuritySettings profile layout", () => {
         expect(introduction.width).toBeGreaterThanOrEqual(
           Math.min(220, row.width - 4),
         );
-        for (const control of [form, input, button]) {
-          const box = control.getBoundingClientRect();
-          expect(box.left).toBeGreaterThanOrEqual(row.left - 1);
-          expect(box.right).toBeLessThanOrEqual(row.right + 1);
-        }
-        expect(overlaps(introduction, form.getBoundingClientRect())).toBe(
+        expect(inside(button.getBoundingClientRect(), row)).toBe(true);
+        expect(overlaps(introduction, button.getBoundingClientRect())).toBe(
           false,
         );
         expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth + 1);
@@ -103,19 +122,30 @@ describe("SecuritySettings profile layout", () => {
         );
       }
     }
+    const { dialog } = openAddProfile();
+    dialog.style.fontFamily = font;
+    fireEvent.change(
+      within(dialog).getByRole("textbox", { name: "New profile name" }),
+      { target: { value: "FAKE Profile" } },
+    );
+    for (const width of [360, 320]) {
+      await page.viewport(width, 800);
+      for (const fontSize of ["16px", "24px", "32px"]) {
+        document.documentElement.style.fontSize = fontSize;
+        const edge = dialog.getBoundingClientRect();
+        for (const field of dialog.querySelectorAll("input, label"))
+          expect(inside(field.getBoundingClientRect(), edge)).toBe(true);
+        expect(dialog.scrollWidth).toBeLessThanOrEqual(dialog.clientWidth + 1);
+      }
+    }
   });
 
-  it("keeps the profile form as wide as the other setting forms on a wide screen", () => {
-    renderSettings();
-    const input = screen.getByRole("textbox", { name: "New profile name" });
-    input.closest("main")!.classList.add("native-vault-page");
-    const profile = input.closest("form")!.getBoundingClientRect();
-    const passphrase = screen
-      .getByLabelText("Current passphrase")
-      .closest("form")!
-      .getBoundingClientRect();
-    expect(Math.abs(profile.width - passphrase.width)).toBeLessThanOrEqual(1);
-    expect(Math.abs(profile.right - passphrase.right)).toBeLessThanOrEqual(1);
+  it("puts Add profile beside the profiles' text on a wide screen, as the other rows' controls", () => {
+    const { button, intro } = renderProfiles();
+    const text = intro.getBoundingClientRect();
+    const box = button.getBoundingClientRect();
+    expect(box.left).toBeGreaterThanOrEqual(text.right);
+    expect(box.top).toBeLessThan(text.bottom);
   });
 });
 
@@ -395,6 +425,43 @@ describe("SecuritySettings privacy notice", () => {
       /sets the vault aside: it stays on this device, encrypted. myCarlos never deletes a vault/,
     );
   });
+
+  it("puts Hidden and Audit history beside its text, and under it when narrow", async () => {
+    renderSettings({ hiddenCount: 2 });
+    const heading = screen.getByRole("heading", {
+      name: humanText("What myCarlos keeps"),
+    });
+    const section = heading.closest("section")!;
+    const text = heading.parentElement!;
+    const paragraphs = text.querySelectorAll("p");
+    const last = paragraphs[paragraphs.length - 1];
+    const [hidden, audit] = within(section).getAllByRole("button");
+    expect(hidden).toHaveHumanTextContent(/^Hidden 2/);
+    expect(audit).toHaveHumanTextContent("Audit history");
+    // Read after all of the text, Hidden first.
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(paragraphs).toHaveLength(3);
+    expect(follows(last, hidden)).toBe(true);
+    expect(follows(hidden, audit)).toBe(true);
+    const box = (element: Element) => element.getBoundingClientRect();
+    try {
+      // Wide: the right-hand column, at the top of the row.
+      await page.viewport(1100, 760);
+      expect(box(hidden).left).toBeGreaterThanOrEqual(box(text).right);
+      expect(Math.abs(box(hidden).top - box(heading).top)).toBeLessThan(2);
+      expect(box(audit).top).toBeGreaterThanOrEqual(box(hidden).bottom);
+      // Narrow (a phone, or the app's text size at 200%): under the text,
+      // at the row's right edge.
+      await page.viewport(360, 800);
+      expect(box(hidden).top).toBeGreaterThanOrEqual(box(last).bottom);
+      expect(box(section).right - box(hidden).right).toBeLessThan(3);
+      expect(box(audit).top).toBeGreaterThanOrEqual(box(hidden).bottom);
+      expect(section.scrollWidth).toBeLessThanOrEqual(section.clientWidth + 1);
+    } finally {
+      await page.viewport(1100, 760);
+    }
+  });
 });
 
 describe("SecuritySettings passphrase change", () => {
@@ -439,6 +506,73 @@ describe("SecuritySettings passphrase change", () => {
     expect(section).not.toHaveHumanTextContent(/delet/i);
   });
 
+  it("keeps mismatched passphrase drafts while translating and clears all three only on explicit submit", () => {
+    setLocaleOverride("en");
+    const props = renderSettings();
+    const current = screen.getByLabelText(
+      "Current passphrase",
+    ) as HTMLInputElement;
+    const replacement = screen.getByLabelText("New passphrase");
+    const confirmation = screen.getByLabelText(
+      "Confirm new passphrase",
+    ) as HTMLInputElement;
+    const button = screen.getByRole("button", { name: "Change passphrase" });
+    const form = button.closest("form")!;
+    const currentValue = "FAKE current e\u0301{ $name }";
+    const newValue = "FAKE lantern-e\u0301-orbit-cobalt-934";
+    const mismatched = "FAKE different confirmation";
+    fireEvent.change(current, { target: { value: currentValue } });
+    fireEvent.change(replacement, { target: { value: newValue } });
+    fireEvent.change(confirmation, { target: { value: mismatched } });
+    confirmation.focus();
+    confirmation.setSelectionRange(2, 5);
+
+    for (const locale of ["pl", "fr"] as const) {
+      act(() => setLocaleOverride(locale));
+      expect(
+        screen.getByLabelText(translate(locale, "security.passphrase.current")),
+      ).toBe(current);
+      expect(
+        screen.getByLabelText(translate(locale, "passphrase.new.label")),
+      ).toBe(replacement);
+      expect(
+        screen.getByLabelText(translate(locale, "passphrase.confirmNew.label")),
+      ).toBe(confirmation);
+      expect(current).toHaveValue(currentValue);
+      expect(replacement).toHaveValue(newValue);
+      expect(confirmation).toHaveValue(mismatched);
+      expect(confirmation).toHaveFocus();
+      expect([confirmation.selectionStart, confirmation.selectionEnd]).toEqual([
+        2, 5,
+      ]);
+      expect(within(form).getByRole("alert")).toHaveHumanTextContent(
+        translate(locale, "security.passphrase.mismatch"),
+      );
+      expect(
+        screen.getByRole("button", {
+          name: translate(locale, "security.passphrase.submit"),
+        }),
+      ).toBe(button);
+      expect(button).toBeDisabled();
+      expect(props.onChangePassphrase).not.toHaveBeenCalled();
+    }
+
+    fireEvent.change(confirmation, { target: { value: newValue } });
+    expect(within(form).queryByRole("alert")).toBeNull();
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    expect(props.onChangePassphrase).toHaveBeenCalledExactlyOnceWith(
+      currentValue,
+      newValue,
+    );
+    for (const field of [current, replacement, confirmation])
+      expect(field).toHaveValue("");
+    act(() => setLocaleOverride("pt-BR"));
+    for (const field of [current, replacement, confirmation])
+      expect(field).toHaveValue("");
+    expect(props.onChangePassphrase).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses a replacement under the minimum length before sending it", () => {
     const props = renderSettings();
     change("Current passphrase", "river-azimuth-cobalt-sparrow-934");
@@ -477,27 +611,306 @@ describe("SecuritySettings passphrase change", () => {
   });
 });
 
+/** Opens the Add profile dialog (Ben, 29 Oct) and returns it. */
+function openAddProfile() {
+  const opener = screen.getByRole("button", { name: humanText("Add profile") });
+  opener.focus();
+  fireEvent.click(opener);
+  return {
+    opener,
+    dialog: screen.getByRole("dialog", { name: humanText("Add profile") }),
+  };
+}
+
+const FAKE_PEOPLE = [
+  {
+    id: "p1",
+    displayName: "FAKE Avery",
+    createdAtMs: 1,
+    fullName: "FAKE Avery Example",
+    birthDate: "1980-01-02",
+  },
+];
+
 describe("SecuritySettings profiles", () => {
+  for (const dismissal of ["Cancel", "Escape", "backdrop"] as const) {
+    for (const blockedBy of [
+      "read-only recovery",
+      "actual mutation",
+    ] as const) {
+      it(`Edit details after ${blockedBy} transition: ${dismissal}`, async () => {
+        const save = vi.fn().mockResolvedValue(true);
+        const changed = vi.fn();
+        const props = settingsProps({
+          people: FAKE_PEOPLE,
+          onUpdateProfileDetails: save,
+          onDialogChange: changed,
+        });
+        const view = render(<SecuritySettings {...props} />);
+        const opener = screen.getByRole("button", {
+          name: humanText("Edit details for FAKE Avery"),
+        });
+        opener.focus();
+        fireEvent.click(opener);
+        const dialog = screen.getByRole("dialog", {
+          name: humanText("Edit details"),
+        });
+        const name = within(dialog).getByLabelText(
+          humanText("Full name, as on clinic documents"),
+        );
+        fireEvent.change(name, { target: { value: "FAKE retained draft" } });
+        view.rerender(
+          <SecuritySettings
+            {...props}
+            readOnly={blockedBy === "read-only recovery"}
+            busy={blockedBy === "actual mutation"}
+          />,
+        );
+        expect(name).toBeDisabled();
+        expect(
+          within(dialog).getByRole("button", {
+            name: humanText("Save details"),
+          }),
+        ).toBeDisabled();
+        fireEvent.submit(dialog.querySelector("form")!);
+        expect(save).not.toHaveBeenCalled();
+        const cancel = within(dialog).getByRole("button", {
+          name: humanText("Cancel"),
+        });
+        if (blockedBy === "read-only recovery") expect(cancel).toBeEnabled();
+        else expect(cancel).toBeDisabled();
+        if (dismissal === "Cancel") fireEvent.click(cancel);
+        else if (dismissal === "Escape")
+          fireEvent.keyDown(document.body, { key: "Escape" });
+        else fireEvent.mouseDown(dialog.parentElement!);
+        if (blockedBy === "actual mutation") {
+          expect(screen.getByRole("dialog")).toBe(dialog);
+          expect(name).toHaveValue("FAKE retained draft");
+          view.rerender(<SecuritySettings {...props} />);
+          expect(name).toBeEnabled();
+          fireEvent.click(
+            within(dialog).getByRole("button", { name: humanText("Cancel") }),
+          );
+          await waitFor(() => expect(opener).toHaveFocus());
+        } else {
+          await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+          expect(opener).toBeDisabled();
+          expect(screen.getByText("FAKE Avery").closest("span")).toHaveFocus();
+        }
+        expect(changed).toHaveBeenLastCalledWith(false);
+        expect(save).not.toHaveBeenCalled();
+      });
+    }
+  }
+
   it("limits a profile name by characters, as the vault does", () => {
     renderSettings();
-    const name = screen.getByLabelText(humanText("New profile name"));
+    const { dialog } = openAddProfile();
+    const name = within(dialog).getByLabelText(humanText("New profile name"));
+    const add = within(dialog).getByRole("button", {
+      name: humanText("Add profile"),
+    });
     fireEvent.change(name, { target: { value: "\u{1F332}".repeat(120) } });
     expect(name).toHaveValue("\u{1F332}".repeat(120));
     expect((name as HTMLInputElement).maxLength).toBe(240);
-    expect(
-      screen.getByRole("button", { name: humanText("Add profile") }),
-    ).toBeEnabled();
+    expect(add).toBeEnabled();
 
     fireEvent.change(name, { target: { value: "a".repeat(121) } });
-    expect(screen.getByRole("alert")).toHaveHumanTextContent("too long");
-    expect(
-      screen.getByRole("button", { name: humanText("Add profile") }),
-    ).toBeDisabled();
+    expect(within(dialog).getByRole("alert")).toHaveHumanTextContent(
+      "too long",
+    );
+    expect(add).toBeDisabled();
 
     fireEvent.change(name, { target: { value: "   " } });
+    expect(add).toBeDisabled();
+  });
+
+  it("adds a profile in a dialog that Escape and Cancel close, giving focus back to Add profile", () => {
+    const props = renderSettings();
     expect(
-      screen.getByRole("button", { name: humanText("Add profile") }),
-    ).toBeDisabled();
+      screen.queryByLabelText(humanText("New profile name")),
+    ).not.toBeInTheDocument();
+    let { opener, dialog } = openAddProfile();
+    expect(opener).toHaveAttribute("aria-haspopup", "dialog");
+    const name = within(dialog).getByLabelText(humanText("New profile name"));
+    expect(name).toHaveFocus();
+    fireEvent.change(name, { target: { value: "FAKE Riley" } });
+    fireEvent.keyDown(name, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+
+    ({ opener, dialog } = openAddProfile());
+    // What was typed before Escape is gone.
+    expect(
+      within(dialog).getByLabelText(humanText("New profile name")),
+    ).toHaveValue("");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Cancel") }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+    expect(props.onCreateProfile).not.toHaveBeenCalled();
+  });
+
+  it("sends focus to the new person's line once the profile is added", async () => {
+    const base = {
+      busy: false,
+      readOnly: false,
+      notice: "",
+      autoLockMinutes: 5,
+      onAutoLockMinutes: vi.fn(),
+      onLock: vi.fn().mockResolvedValue(undefined),
+      onChangePassphrase: vi.fn().mockResolvedValue(undefined),
+      onCreateProfile: vi.fn().mockResolvedValue(true),
+      onUpdateProfileDetails: vi.fn().mockResolvedValue(true),
+      people: FAKE_PEOPLE,
+      hiddenCount: 0,
+      hiddenScopeName: "My records",
+      onOpenHidden: vi.fn(),
+      onOpenAuditHistory: vi.fn(),
+      recoveryKeySetAtMs: null,
+      onSetUpRecoveryKey: vi.fn(),
+      onSaveBackup: vi.fn().mockResolvedValue(undefined),
+      onSpeedTest: vi.fn().mockResolvedValue(speedTest),
+    };
+    const { rerender } = render(<SecuritySettings {...base} />);
+    const { dialog } = openAddProfile();
+    fireEvent.change(
+      within(dialog).getByLabelText(humanText("New profile name")),
+      { target: { value: "FAKE Riley" } },
+    );
+    fireEvent.change(
+      within(dialog).getByLabelText(
+        humanText("Full name, as on clinic documents"),
+      ),
+      { target: { value: " FAKE Riley Example " } },
+    );
+    fireEvent.change(
+      within(dialog).getByLabelText(humanText("Date of birth")),
+      {
+        target: { value: "2012-06-02" },
+      },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
+    expect(base.onCreateProfile).toHaveBeenCalledWith("FAKE Riley", {
+      fullName: "FAKE Riley Example",
+      birthDate: "2012-06-02",
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    rerender(
+      <SecuritySettings
+        {...base}
+        people={[
+          ...FAKE_PEOPLE,
+          {
+            id: "p2",
+            displayName: "FAKE Riley",
+            createdAtMs: 2,
+            fullName: "FAKE Riley Example",
+            birthDate: "2012-06-02",
+          },
+        ]}
+      />,
+    );
+    const list = screen.getByRole("list", {
+      name: humanText("People's details"),
+    });
+    const line = within(list).getByText("FAKE Riley").parentElement!;
+    await waitFor(() => expect(line).toHaveFocus());
+    expect(line).toHaveTextContent("FAKE Riley Example");
+  });
+
+  it("keeps the dialog open, with what was typed, when the vault refuses the profile", async () => {
+    const props = renderSettings({
+      onCreateProfile: vi.fn().mockResolvedValue(false),
+    });
+    const { dialog } = openAddProfile();
+    const name = within(dialog).getByLabelText(humanText("New profile name"));
+    fireEvent.change(name, { target: { value: "FAKE Riley" } });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
+    await waitFor(() => expect(props.onCreateProfile).toHaveBeenCalled());
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(name).toHaveValue("FAKE Riley");
+  });
+});
+
+describe("Add profile with the person's details, or later (#234)", () => {
+  const withDetails = () =>
+    renderSettings({
+      people: [],
+      onUpdateProfileDetails: vi.fn().mockResolvedValue(true),
+    });
+
+  it("asks for the details, and adds the person with them", () => {
+    const props = withDetails();
+    // Add profile is a dialog now (Ben, 29 Oct): its own Add profile adds.
+    const { dialog } = openAddProfile();
+    change("New profile name", "FAKE Child");
+    const add = within(dialog).getByRole("button", {
+      name: humanText("Add profile"),
+    });
+    expect(add).toBeDisabled();
+    change("Full name, as on clinic documents", "FAKE Child Example");
+    change("Date of birth", "2015-06-01");
+    expect(add).toBeEnabled();
+    fireEvent.click(add);
+    expect(props.onCreateProfile).toHaveBeenCalledWith("FAKE Child", {
+      fullName: "FAKE Child Example",
+      birthDate: "2015-06-01",
+    });
+  });
+
+  it("clears a refusal once Add them later or the date's unknown box is changed", async () => {
+    renderSettings({
+      people: [],
+      notice: "FAKE the vault refused this profile",
+      onUpdateProfileDetails: vi.fn().mockResolvedValue(true),
+      onCreateProfile: vi.fn().mockResolvedValue(false),
+    });
+    const { dialog } = openAddProfile();
+    const refused = () =>
+      within(dialog).queryByText("FAKE the vault refused this profile");
+    const add = () =>
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: humanText("Add profile") }),
+      );
+    const unknown = () =>
+      within(dialog).getByLabelText(
+        humanText("I don't know this person's date of birth"),
+      );
+    change("New profile name", "FAKE Child");
+    change("Full name, as on clinic documents", "FAKE Child Example");
+    fireEvent.click(unknown());
+    add();
+    await waitFor(() => expect(refused()).not.toBeNull());
+    // Unticking "unknown" is a change too.
+    fireEvent.click(unknown());
+    expect(refused()).toBeNull();
+    fireEvent.click(unknown());
+    add();
+    await waitFor(() => expect(refused()).not.toBeNull());
+    fireEvent.click(within(dialog).getByLabelText(humanText("Add them later")));
+    expect(refused()).toBeNull();
+  });
+
+  it("can add the person now and the details later", () => {
+    const props = withDetails();
+    const { dialog } = openAddProfile();
+    change("New profile name", "FAKE Child");
+    fireEvent.click(screen.getByLabelText(humanText("Add them later")));
+    expect(
+      screen.queryByLabelText(humanText("Full name, as on clinic documents")),
+    ).toBeNull();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
+    expect(props.onCreateProfile).toHaveBeenCalledWith("FAKE Child");
   });
 });
 

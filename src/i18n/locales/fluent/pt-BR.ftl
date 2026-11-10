@@ -560,7 +560,7 @@ interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteca de documentos
 
 interface-VaultLibrary-nameAZ = Nome A–Z
 
-interface-VaultLibrary-new = Novos
+interface-VaultLibrary-new = Novo
 
 interface-VaultLibrary-newestFirst = Mais recentes primeiro
 
@@ -615,8 +615,6 @@ interface-VaultLibrary-theyAreInNoOnesRecordsUntil = Eles não ficam nos documen
 interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = Esta foto já está no cofre, então não foi salva de novo.
 
 interface-VaultLibrary-topLevel = Nível principal
-
-interface-VaultLibrary-unlockedLockNow = Desbloqueado · Bloquear agora
 
 interface-VaultLibrary-working = Processando…
 
@@ -677,6 +675,12 @@ library-items =
     [many] { $count } de itens visíveis na biblioteca
     *[other] { $count } itens visíveis na biblioteca
     }
+
+library-location-documents = Em { $place }: { $documents }.
+
+library-location-summary = Em { $place }: { $folders }, { $documents }.
+
+library-lock-unlocked = Desbloqueado
 
 library-noMatch-help = Tente outra pesquisa.
 
@@ -867,6 +871,7 @@ native-setAside-title = Deixar este cofre do myCarlos de lado e começar de novo
 native-setAside-warning = Isso deixa todo o cofre de lado e começa de novo com um cofre vazio. { $kept } O myCarlos nunca o exclui. Se você está começando de novo porque outra pessoa pode saber sua frase secreta, ela ainda pode abri-lo, então remova-o. { $removal }
 
 native-vault-keep = Manter este cofre
+native-notice-arrival = Um documento da clínica chegou ao myCarlos. Abra o myCarlos para lê-lo.
 
 notice-autoLockSet =
     { $count ->
@@ -950,9 +955,25 @@ photo-zoomOut = Diminuir zoom
 
 preferences-subtitle = Como o myCarlos aparece neste computador
 
-record-kind-document = Documento
+readingAid-available = Sua clínica também enviou um auxílio de leitura para este documento.
 
-record-source-manual = Importação manual — não verificada
+readingAid-checked = Conferido por um clínico em { $date }.
+
+readingAid-evidence = Do documento:
+
+readingAid-open = Ler o auxílio de leitura
+
+readingAid-openOriginal = Abrir o documento original
+
+readingAid-overview = Visão geral
+
+readingAid-points = Pontos principais
+
+readingAid-title = Auxílio de leitura da sua clínica
+
+readingAid-unavailable = Este auxílio de leitura não pode ser exibido com segurança. Abra o documento original.
+
+record-kind-document = Documento
 
 recover-intro = Use sua chave de recuperação para abrir o cofre e escolher uma nova frase secreta.
 
@@ -1291,6 +1312,8 @@ sidebar-folderCount =
     *[other] { $count } pastas
     }
 
+sidebar-folderOfPerson = { $folder } ({ $person })
+
 sidebar-label = Biblioteca de documentos
 
 sidebar-myRecords = Meus documentos
@@ -1381,6 +1404,16 @@ personDetails-futureDate = A data de nascimento não pode estar no futuro.
 
 personDetails-help = Guardados neste cofre criptografado para sugerir a quem um documento compartilhado pertence. Esses dados não verificam a origem de um documento.
 
+personDetails-setup = Nome completo e data de nascimento
+
+personDetails-later = Adicionar depois
+
+personDetails-reminder = Adicione o nome completo e a data de nascimento de { $name }. Eles ajudam o myCarlos a saber para quem é um documento.
+
+personDetails-notNow = Agora não
+
+personDetails-notSaved = O cofre está pronto, mas o nome completo e a data de nascimento não foram guardados. Adicione-os em Editar dados.
+
 personDetails-invalidDate = Digite uma data de nascimento válida: ano, mês e dia.
 
 personDetails-list = Dados das pessoas
@@ -1419,7 +1452,7 @@ portal-approvalCancelled = Esta solicitação de aprovação foi cancelada. Veri
 
 portal-approvalContact = A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.
 
-portal-approvalExpired = Esta solicitação de aprovação expirou. Verifique atualizações antes de iniciar outra solicitação.
+portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Documentos da clínica.
 
 portal-approvalMissing = Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.
 
@@ -1451,6 +1484,18 @@ portal-deviceCode = Código do dispositivo
 
 portal-deviceName = Nome deste dispositivo
 
+portal-deviceDetailsShow = Mostrar os detalhes do dispositivo
+
+portal-deviceDetailsHide = Ocultar os detalhes do dispositivo
+
+portal-earlierShow =
+    { $count ->
+    [one] Mostrar { $count } tentativa anterior
+    *[other] Mostrar { $count } tentativas anteriores
+    }
+
+portal-earlierHide = Ocultar as tentativas anteriores
+
 portal-errorAddress = Digite o endereço HTTPS do portal sem nome de usuário, senha, parâmetros de consulta ou fragmento.
 
 portal-errorCancelled = A vinculação foi interrompida porque o cofre foi bloqueado. Confira os dispositivos vinculados no portal antes de tentar novamente.
@@ -1462,8 +1507,6 @@ portal-errorCodeRejected = O portal não aceitou esse código. Crie outro códig
 portal-errorDamaged = Um documento salvo desta clínica está danificado ou ausente, por isso o recibo de retirada não foi enviado. A busca pelos seus outros documentos continuou. Restaure-o a partir de um backup ou peça à clínica que o envie novamente.
 
 portal-errorDeviceName = Escolha um nome de dispositivo com 1 a 64 caracteres, sem caracteres de controle.
-
-portal-errorDisabled = A vinculação com o portal não está ativada nesta versão.
 
 portal-errorExists = Este dispositivo já está registrado. Confira os dispositivos vinculados no portal do paciente.
 
@@ -1477,11 +1520,11 @@ portal-errorUnavailable = A vinculação com o portal ainda não está disponív
 
 portal-fingerprint = Impressão digital completa do dispositivo
 
-portal-incomplete = Vinculação incompleta. Confira os dispositivos vinculados no portal antes de tentar novamente.
+portal-incomplete = Esta tentativa salva está incompleta. Confira os dispositivos vinculados no portal ou entre em contato com sua clínica antes de conectar novamente. Este aplicativo não pode retomar esta tentativa.
 
 portal-intro = Vincule o myCarlos usando o endereço e o código exibidos no portal do paciente.
 
-portal-link = Vincular à clínica
+portal-link = Conectar e solicitar aprovação
 
 portal-matchPerson = Usar os dados do documento
 
@@ -1503,8 +1546,6 @@ portal-serviceDate = Data do atendimento: { $date }
 
 portal-serviceDateLabel = Data do atendimento
 
-portal-sourceVerified = De { $clinic } · Verificado
-
 portal-title = Documentos da clínica
 
 rename-help-profile = Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.
@@ -1519,13 +1560,77 @@ rename-profile-saved = O nome da pasta foi alterado para { $name }.
 
 rename-title-profile = Renomear a pasta da pessoa
 
+portal-connectConsent = Esta ação vincula este dispositivo e envia uma solicitação de aprovação. Sua clínica precisa aprovar o dispositivo antes que ele possa receber documentos.
+
+portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Documentos da clínica.
+
+portal-connecting = Conectando e solicitando a aprovação da clínica…
+
+portal-errorBusy = Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.
+
+portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
+
+portal-retryApproval = Tentar novamente a solicitação de aprovação salva
+
+portal-working = Operação com a clínica em andamento…
+
+portal-approvalExpiredCard = Esta solicitação de aprovação expirou. Para pedir de novo para este mesmo dispositivo, escolha Iniciar outra solicitação de aprovação. Seus documentos e a conexão deste dispositivo continuam como estão.
+
+portal-approvalPickedUp = O sistema de prontuários da sua clínica recebeu esta solicitação. Aguardando a equipe da clínica aprovar este dispositivo.
+
+portal-approvalReplyInvalid = Não foi possível verificar a resposta do portal da clínica sobre esta solicitação, então ela não foi usada. Entre em contato com sua clínica.
+
+portal-approvalStillOpen = Esta solicitação de aprovação ainda está aberta no portal da clínica. Aguarde até que ela termine antes de iniciar outra.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Tempo restante para esta solicitação: cerca de { $count } minuto.
+    [many] Tempo restante para esta solicitação: cerca de { $count } de minutos.
+    *[other] Tempo restante para esta solicitação: cerca de { $count } minutos.
+    }
+
+portal-approvalTimeOver = O tempo desta solicitação acabou.
+
+portal-approvalTimeOverRestart = O tempo desta solicitação acabou. Se a sua clínica não aprovou este dispositivo, escolha { $button }.
+
+portal-approvalTimeUp = O tempo desta solicitação acabou. Verificando com sua clínica…
+
+portal-approvalUnanswered = O myCarlos não conseguiu obter o status desta solicitação no portal da clínica.
+
+portal-approvalUnreachable = O myCarlos não conseguiu acessar o portal da clínica, então o status desta solicitação ainda não é conhecido.
+
+portal-approvalWait = O portal da clínica pediu ao myCarlos que verifique com menos frequência.
+
+portal-autoChecking = Enquanto esta página estiver aberta, o myCarlos verifica automaticamente se a sua clínica respondeu.
+
+portal-autoCheckStopped = As verificações automáticas pararam. Para verificar novamente, escolha { $button }.
+
+portal-awaitingClinic = Sua clínica recebeu a solicitação de aprovação. Aguardando a equipe da clínica aprovar este dispositivo.
+
+portal-deviceRemoved = Este dispositivo foi removido da sua conta do portal da clínica. Para usá-lo novamente, vincule-o de novo com um novo código de vinculação do portal do paciente.
+
+portal-errorRateLimited = O portal da clínica pediu ao myCarlos que aguarde antes de tentar novamente.
 hidden-backToSecurity = Voltar para Segurança
 
 interface-history-appVersion = Versão do myCarlos
 
+interface-history-approval-accepted = Aprovada
+
+interface-history-approval-cancelled = Cancelada
+
+interface-history-approval-challengeReady = Aguardando o código do e-mail da clínica
+
+interface-history-approval-expired = Expirada
+
+interface-history-approval-pending = Aguardando a clínica
+
+interface-history-approval-refused = Recusada pela clínica
+
 interface-history-damaged = Parte deste histórico está danificada. Os eventos após { $date } não podem ser verificados e não são exibidos.
 
 interface-history-damagedAll = Parte deste histórico está danificada. Os eventos dele não podem ser verificados, por isso nenhum é exibido.
+
+interface-history-damagedStorageOnly = Parte do armazenamento deste histórico está danificada, mas todos os eventos dele foram verificados e são exibidos.
 
 interface-history-damagedBefore = Parte deste histórico está danificada. Os eventos anteriores a { $date } não podem ser verificados e não são exibidos.
 
@@ -1535,6 +1640,8 @@ interface-history-empty = Não há eventos no histórico.
 
 interface-history-error-unverified = Não foi possível ler e verificar o histórico. Nenhum evento foi exibido.
 
+interface-history-event-aiResultSaved = Resposta da IA guardada
+
 interface-history-event-backupRestored = Backup restaurado
 
 interface-history-event-backupSaved = Backup criptografado salvo
@@ -1542,6 +1649,18 @@ interface-history-event-backupSaved = Backup criptografado salvo
 interface-history-event-copySaved = Cópia legível salva
 
 interface-history-event-created = Cofre criado
+
+interface-history-event-deliveryFiled = Documento da clínica salvo
+
+interface-history-event-deliveryReceiptSettled = Recibo de retirada encerrado
+
+interface-history-event-deviceApprovalRequestRestarted = Outra solicitação de aprovação iniciada
+
+interface-history-event-deviceApprovalRequested = Aprovação da clínica solicitada
+
+interface-history-event-deviceApprovalStatusChanged = Aprovação da clínica atualizada
+
+interface-history-event-deviceApprovalVerified = Dispositivo aprovado pela clínica
 
 interface-history-event-folderCreated = Pasta criada
 
@@ -1557,9 +1676,19 @@ interface-history-event-imported = Documento adicionado
 
 interface-history-event-moved = Documento movido
 
+interface-history-event-other = Outro evento
+
 interface-history-event-passphraseChanged = Frase-senha alterada
 
+interface-history-event-portalLinkStarted = Vinculação com a clínica iniciada
+
+interface-history-event-portalLinked = Clínica vinculada
+
 interface-history-event-profileCreated = Perfil de paciente adicionado
+
+interface-history-event-profileDetailsChanged = Dados pessoais alterados
+
+interface-history-event-readingAidFiled = Auxílio de leitura salvo
 
 interface-history-event-recoveryKeySet = Chave de recuperação configurada
 
@@ -1584,7 +1713,13 @@ interface-history-gap = Os eventos neste ponto não podem ser verificados e não
 
 interface-history-how = Como
 
+interface-history-how-aidReplaced = Substituiu um auxílio de leitura anterior
+
 interface-history-how-camera = Adicionado com a câmera
+
+interface-history-how-summary = Resumo em palavras simples
+
+interface-history-how-explain = Um termo explicado
 
 interface-history-how-damaged = Ocultado porque o arquivo estava ausente
 
@@ -1595,6 +1730,8 @@ interface-history-how-movedFromShared = Movido de Compartilhado comigo
 interface-history-how-passphrase = Frase-senha
 
 interface-history-how-patient = Ocultado por você
+
+interface-history-how-personFolder = Pasta de uma pessoa
 
 interface-history-how-picked = Importado de um arquivo escolhido
 
@@ -1643,6 +1780,57 @@ interface-history-to = Para
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também guarda um histórico: quando o cofre foi aberto; quando a frase secreta ou a chave de recuperação foi configurada ou alterada e quando uma cópia de segurança foi salva ou restaurada; quando cada perfil de paciente foi adicionado e cada pasta foi criada, renomeada ou movida; e quando cada documento foi adicionado, renomeado, movido, ocultado, restaurado ou salvo fora do myCarlos e onde. Ele fica criptografado junto com todo o resto. Você pode consultá-lo aqui; o myCarlos nunca o altera nem o remove.
 
+portal-checkAgain = Para verificar novamente, escolha { $button }.
+
+portal-unlockCheckConsent = Após cada desbloqueio, o myCarlos se conecta aos portais das clínicas vinculadas para verificar atualizações da aprovação e novos documentos quando a clínica já aprovou o dispositivo ou uma solicitação de aprovação ainda está em aberto.
+
+portal-unlockChecked = Verificação de novos documentos da clínica feita após desbloquear o cofre.
+
+portal-unlockCheckIncomplete = O myCarlos não conseguiu concluir a verificação de novos documentos da clínica após desbloquear o cofre.
+
+portal-unlockCheckNotRun = O myCarlos não verificou novos documentos da clínica após desbloquear o cofre, porque outra operação com a clínica estava em andamento.
+
+portal-unlockCheckWaiting = O myCarlos não verificou novos documentos da clínica após desbloquear o cofre, porque o portal da clínica pediu para aguardar.
+
+portal-unlockRefused =
+    { $count ->
+    [one] Não foi possível verificar { $count } documento da clínica, então ele não foi adicionado. Entre em contato com sua clínica.
+    [many] Não foi possível verificar { $count } de documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.
+    *[other] Não foi possível verificar { $count } documentos da clínica, então eles não foram adicionados. Entre em contato com sua clínica.
+    }
+
+library-source-clinic = De { $clinic }
+
+library-source-manualImport = Importação manual
+
+library-status-unverified = Não verificado
+
+library-status-verified = Verificado
+
+portal-approvedByCode = Sua clínica confirmou este dispositivo por código.
+
+portal-codeFormat = Digite os 9 dígitos do código do e-mail da sua clínica.
+
+portal-codeHint = Digite o código de 9 dígitos que sua clínica enviou por e-mail. Nunca use um código mostrado em um site.
+
+portal-codeLabel = Código do e-mail da sua clínica
+
+portal-codeLocked = Foram tentados códigos demais para esta solicitação, então o myCarlos não aceitará outro. Entre em contato com a clínica.
+
+portal-codeMismatch = Este código não corresponde a esta clínica. Verifique se você vinculou o endereço real do portal da sua clínica e tente novamente.
+
+portal-codeNeeded = Sua clínica enviou por e-mail um código para confirmar este dispositivo. Digite-o abaixo.
+
+portal-codeNotOpen = Esta solicitação não está aguardando um código agora. O myCarlos mostrará a resposta da sua clínica na próxima verificação.
+
+portal-codeRefused = O portal da clínica não aceitou o código. Tente novamente em alguns minutos.
+
+portal-codeSubmit = Confirmar código
+
+portal-codeSubmitted = Código enviado. Aguardando sua clínica confirmar este dispositivo. Se ele não for confirmado em 10 minutos, peça novamente.
+
+portal-linkAnother = Vincular outra clínica
+
 ai-summary-button = Resumo
 
 ai-summary-title = Resumo em palavras simples
@@ -1651,9 +1839,9 @@ ai-explain-title = Explicar um termo
 
 ai-notInstalled-title = O assistente de IA ainda não está neste computador
 
-ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. A obtenção do modelo virá em uma versão futura do myCarlos.
+ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. Em Configurações, em Assistente de IA, você pode baixar o modelo ou adicionar um arquivo de modelo que já tenha.
 
-ai-notInstalled-openPreferences = Abrir Preferências
+ai-notInstalled-openPreferences = Abrir as configurações do assistente de IA
 
 aiHelper-resultLabel = Escrito por IA e pode estar errado. Confira com seu médico.
 
@@ -1673,42 +1861,123 @@ ai-explain-submit = Explicar
 
 ai-preferences-title = Assistente de IA
 
-ai-preferences-body = Explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. A obtenção do modelo virá em uma versão futura do myCarlos.
+ai-preferences-body = Explica seus documentos em palavras simples com um modelo de IA que funciona neste computador. Baixe um dos modelos abaixo ou adicione um arquivo correspondente que você já tenha. Os modelos ficam neste computador.
 
 ai-preferences-notInstalled = Não instalado
 
+ai-settings-subtitle = Como o assistente de IA funciona neste computador
+
+ai-model-add = Adicionar um arquivo de modelo…
+
+ai-model-accepted = { $name }, { $size } MB. Licença: { $licence }.
+
+ai-model-where = Onde obter o arquivo
+
+ai-model-copy = Copiar endereço
+
+ai-model-copied = Endereço copiado
+
+ai-model-checking = Verificando o arquivo… { $done } de { $total } MB
+
+ai-model-added = Modelo adicionado
+
+ai-model-installed = Instalado: { $name }
+
+ai-model-remove = Remover o modelo
+
+ai-model-removeConfirm = Remover o modelo deste computador? Você poderá adicioná-lo novamente depois.
+
+ai-model-damaged = O arquivo do modelo está danificado ou foi alterado. Remova-o e adicione-o novamente.
+
+ai-model-unsupportedRam = Este computador não tem memória suficiente para o assistente de IA (são necessários cerca de 8 GB).
+
+ai-model-unsupportedCpu = O processador deste computador não é compatível com o assistente de IA.
+
+ai-model-unsupportedPlatform = O assistente de IA ainda não está disponível neste tipo de computador.
+
+ai-model-refusedList = Este não é um arquivo aceito pelo myCarlos. Escolha um dos arquivos de modelo listados acima.
+
+ai-model-refusedHash = Este não é o arquivo esperado. Baixe-o novamente e adicione a cópia nova.
+
+ai-model-refusedIncomplete = Não foi possível ler o arquivo por completo. Verifique se o download terminou e tente novamente.
+
+ai-model-refusedDisk = Não há espaço livre suficiente neste computador. O modelo precisa de cerca de 4 GB.
+
+ai-model-refusedStorage = Não foi possível salvar o modelo neste computador.
+
+ai-model-refusedBusy = O assistente de IA está trabalhando. Tente novamente quando ele terminar.
+
+ai-model-download = Baixar o modelo padrão
+
+ai-model-downloadNote = Baixa um arquivo ({ $size } MB), uma única vez, de { $host }, somente quando você clica. Nada sobre você ou seus documentos é enviado. O site de download vê o seu endereço de internet, como em qualquer download.
+
+ai-model-downloading = Baixando e verificando… { $done } de { $total } MB
+
+ai-model-progressName = Download do modelo
+
+ai-model-progressValue = { $percent }, { $done } de { $total } MB
+
+ai-model-stillDownloading = O modelo ainda está sendo baixado.
+
+ai-model-stillChecking = O arquivo do modelo ainda está sendo verificado.
+
+ai-model-refusedNetwork = O download não foi concluído. Verifique sua conexão com a internet e tente novamente.
+
+ai-model-refusedUnavailable = O modelo não está disponível no endereço agora. Tente novamente mais tarde ou adicione um arquivo que já tenha.
+
+native-filter-models = Arquivos de modelo
+
 ai-working = O assistente de IA está trabalhando…
 
+ai-workingLong = Em um documento longo, isso pode levar vários minutos.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Trabalhando há { $minutes } minuto.
+    [many] Trabalhando há { $minutes } de minutos.
+    *[other] Trabalhando há { $minutes } minutos.
+    }
+
+ai-summary-ready = O resumo está pronto.
+
+ai-explain-ready = A explicação está pronta.
+
 ai-failed = O assistente de IA não conseguiu terminar. Tente de novo.
+
+ai-error-memory = Não há memória livre suficiente para o assistente de IA agora. Feche outros programas e tente de novo.
+
+ai-error-busy = O modelo do assistente de IA está sendo adicionado ou removido. Tente de novo quando isso terminar.
+
+ai-error-storage = Não foi possível ler o modelo do assistente de IA neste computador. Tente de novo. Se continuar acontecendo, remova o modelo em Configurações, em Assistente de IA, e adicione-o de novo.
 
 ai-summary-pagesMissing = Algumas páginas não puderam ser lidas por completo, então este resumo pode deixar partes de fora.
 
 ai-summary-noSource = Fonte não encontrada
 aiHelper-notice-title = Sobre o assistente de IA
 
-aiHelper-notice-introShare = O myCarlos pode preparar o texto de um documento para o serviço de IA que você escolher. O assistente de IA não envia nada pela internet.
+aiHelper-notice-introShare = O myCarlos pode preparar o texto de um documento para o serviço de IA que você escolher. O assistente de IA nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo. Ao baixá-lo, o site de download vê o endereço de internet deste computador.
 
-aiHelper-notice-intro = O assistente de IA explica um documento em palavras simples, aqui neste dispositivo, e pode preparar o texto de um documento para o serviço de IA que você escolher. Ele não envia nada pela internet.
+aiHelper-notice-intro = O assistente de IA explica um documento em palavras simples, aqui neste dispositivo, e pode preparar o texto de um documento para o serviço de IA que você escolher. Ele nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo. Ao baixá-lo, o site de download vê o endereço de internet deste computador.
 
 aiHelper-notice-testBuild = Esta versão de desenvolvimento é só para arquivos fictícios. Não a use com informações de saúde reais.
 
 aiHelper-notice-shareHeading = Salvar o texto para outro serviço de IA
 
-aiHelper-notice-shareBody = O myCarlos pode salvar o texto de um documento sem os dados que identificam pessoas, para que você possa entregá-lo ao serviço de IA que escolher. Ele procura os nomes das pessoas dos seus perfis e de “Dados das pessoas”, e os nomes que vêm depois de um título ou de um rótulo, como “Dr.”. Também procura números do cartão de saúde e de prontuário, datas de nascimento, idades de 90 anos ou mais, endereços, códigos postais, números de telefone e de fax, endereços de e-mail e de sites, nomes de clínicas e médicos, e outros números de identificação, como números de pedidos de exames, e remove o que encontra. Ele desloca as outras datas para trás pelo mesmo número de dias, para que o tempo entre elas continue igual.
+aiHelper-notice-shareBody = O myCarlos pode salvar o texto de um documento sem os dados que identificam pessoas, para que você possa entregá-lo ao serviço de IA que escolher. Ele procura os nomes das pessoas dos seus perfis e de “Dados das pessoas”, e os nomes que vêm depois de um título ou de um rótulo, como “Dr.”. Também procura números do cartão de saúde e de prontuário, datas de nascimento, idades de 90 anos ou mais, endereços, códigos postais, números de telefone e de fax, endereços de e-mail e de sites, nomes de clínicas e médicos, e outros números de identificação, como números de pedidos de exames, e remove o que encontra. As datas que ele reconhece não são enviadas. Cada uma é substituída por uma marca numerada, como “DATA 2, 14 dias depois de DATA 1”, para que o tempo entre as datas continue claro sem as datas reais. Uma idade de 90 anos ou mais é substituída por uma marca numerada que diz “90+”.
 
-aiHelper-notice-previewBody = Primeiro você vê o texto, com as partes removidas e as datas deslocadas marcadas, e pode remover mais. Uma data que não está marcada não foi deslocada. A prévia mostra todo o texto que o arquivo vai conter, inclusive texto escondido no documento. Nada é salvo até você decidir salvar.
+aiHelper-notice-previewBody = Primeiro você vê o texto, com as partes removidas e as datas substituídas marcadas, e pode remover mais. Uma data que não está marcada não foi reconhecida e continua no texto. A prévia mostra todo o texto que o arquivo vai conter, inclusive texto escondido no documento. Nada é salvo até você decidir salvar.
 
-aiHelper-notice-limitsBody = Remover esses dados nunca é perfeito. O myCarlos só encontra os nomes que conhece e os nomes que vêm depois de um título ou de um rótulo em inglês ou em francês, então outros nomes podem ficar. Ele também pode deixar passar um número, ou uma data escrita de outro jeito ou em outro idioma. Uma doença rara, uma profissão incomum ou uma cidade pequena ainda podem apontar para você ou para outra pessoa. Leia todo o texto antes de salvá-lo.
+aiHelper-notice-limitsBody = Remover esses dados nunca é perfeito. O myCarlos só encontra os nomes que conhece e os nomes que vêm depois de um título ou de um rótulo em inglês ou em francês, então outros nomes podem ficar. Ele também pode deixar passar um número, ou uma data escrita de outro jeito ou em outro idioma. Um ano sozinho, como em “Apendicectomia 2019”, não é removido. Uma doença rara, uma profissão incomum ou uma cidade pequena ainda podem apontar para você ou para outra pessoa. Leia todo o texto antes de salvá-lo.
 
 aiHelper-notice-fileBody = O texto é salvo como um arquivo de texto simples, no lugar que você escolher. Ele não é criptografado, e o myCarlos não consegue apagá-lo depois. Se esse lugar for uma pasta sincronizada com um armazenamento na nuvem, o arquivo também é copiado para lá. O salvamento fica registrado no histórico de auditoria.
 
-aiHelper-notice-serviceBody = Depois que você entrega o texto a outro serviço, o que acontece com ele depende desse serviço. Se você usa esse serviço com a sua conta, ele sabe quem você é, mesmo com os dados removidos, e mesmo sem a sua conta, ele vê o seu endereço IP. As datas que o myCarlos deslocou continuam deslocadas nas respostas dele. Um documento também pode conter instruções feitas para uma IA. Por isso, use uma IA que não possa agir por você (enviar mensagens, abrir links ou ler seus arquivos), ou desative esses recursos.
+aiHelper-notice-serviceBody = Depois que você entrega o texto a outro serviço, o que acontece com ele depende desse serviço. Se você usa esse serviço com a sua conta, ele sabe quem você é, mesmo com os dados removidos, e mesmo sem a sua conta, ele vê o seu endereço IP. As respostas dele vão usar as marcas, como DATA 2, e não as datas reais. No myCarlos, enquanto esta janela continuar aberta, você pode colar a resposta dele para recolocar os dados reais. Um documento também pode conter instruções feitas para uma IA. Por isso, use uma IA que não possa agir por você (enviar mensagens, abrir links ou ler seus arquivos), ou desative esses recursos.
 
 aiHelper-notice-adviceBody = Respostas escritas por uma IA podem estar erradas. Não as considere um diagnóstico nem um conselho sobre tratamentos ou remédios, e não mude um remédio ou um tratamento por causa do que uma IA diz. Pergunte ao seu médico.
 
 aiHelper-notice-modelHeading = A IA neste dispositivo
 
-aiHelper-notice-modelBody = A IA usa um arquivo de modelo que só é adicionado se você escolher adicioná-lo. O arquivo fica fora do cofre, porque não contém nada sobre você. O myCarlos o verifica antes de cada uso e não usa um arquivo que tenha sido alterado. A IA não pode usar a internet nem abrir seus outros arquivos.
+aiHelper-notice-modelBody = A IA usa um arquivo de modelo. Você escolhe como obtê-lo: o myCarlos pode baixar esse único arquivo, uma única vez e quando você escolher, do endereço mostrado em Preferências (nada sobre você ou seus documentos é enviado), ou você pode adicionar um arquivo que já tenha. O arquivo fica fora do cofre, porque não contém nada sobre você. O myCarlos o verifica antes de cada uso e não usa um arquivo que tenha sido alterado. A própria IA não pode usar a internet nem abrir seus outros arquivos.
 
 aiHelper-notice-resultsBody = As respostas da IA são salvas no cofre, criptografadas, com o documento, a ferramenta, o modelo e a data. Cada resposta traz o aviso “Escrito por IA e pode estar errado. Confira com seu médico.”
 
@@ -1719,6 +1988,12 @@ aiHelper-exportCut = [Texto cortado depois da página { $page }]
 aiHelper-exportFileName = Texto anonimizado.txt
 
 interface-history-how-anonymizedText = Texto anonimizado salvo
+
+interface-history-receipt-notFound = O documento não estava mais no portal
+
+interface-history-receipt-pickedUp = A clínica registrou a retirada
+
+interface-history-status = Status
 
 interface-RecordDetails-anonymizeText = Preparar o texto para uma IA…
 
@@ -1739,13 +2014,13 @@ interface-AnonymizePreview-replaced = { $count } sinais ilegíveis foram substit
 
 interface-AnonymizePreview-headerNote = O arquivo começará com esta linha:
 
-interface-AnonymizePreview-howMarked = Os dados removidos estão marcados e nomeados. As datas deslocadas também estão marcadas; uma data sem marca não foi deslocada.
+interface-AnonymizePreview-howMarked = Os dados removidos e as datas substituídas estão marcados e nomeados. Uma data sem marca não foi reconhecida e continua no texto.
 
 interface-AnonymizePreview-textRegion = O texto que será salvo
 
 interface-AnonymizePreview-removedKind = removido: { $kind }
 
-interface-AnonymizePreview-movedDate = data deslocada
+interface-AnonymizePreview-movedDate = data substituída
 
 interface-AnonymizePreview-kind-name = nome
 
@@ -1807,6 +2082,29 @@ interface-AnonymizePreview-placeholder-unclearDate = DATA
 
 interface-AnonymizePreview-placeholder-manual = REMOVIDO
 
+interface-AnonymizePreview-note-daysAfter = { $days ->
+    [one] { $days } dia depois de { $label } { $number }
+   *[other] { $days } dias depois de { $label } { $number }
+}
+
+interface-AnonymizePreview-note-ageOver90 = 90+
+
+interface-AnonymizePreview-pasteTitle = Recolocar os dados
+
+interface-AnonymizePreview-pasteHelp = Cole abaixo a resposta da IA. O myCarlos recoloca os nomes, as datas e os números que substituiu. Ele guarda a lista do que substituiu só na memória, enquanto o cofre continuar desbloqueado e esta janela continuar aberta. Nada é salvo.
+
+interface-AnonymizePreview-pasteLabel = A resposta da IA
+
+interface-AnonymizePreview-pasteButton = Recolocar os dados
+
+interface-AnonymizePreview-pasteResult = A resposta com os dados recolocados
+
+interface-AnonymizePreview-pasteFlagged = As marcas que não puderam ser associadas a este texto, ou que foram alteradas, estão destacadas ({ $count }). Confira-as com o original.
+
+interface-AnonymizePreview-pasteAllMatched = Todas as marcas foram reconhecidas e recolocadas.
+
+interface-AnonymizePreview-pasteFlaggedSr = (confira com o original)
+
 interface-AnonymizePreview-possibleNames = Palavras que podem ser nomes
 
 interface-AnonymizePreview-removeWord = Remover “{ $word }”
@@ -1842,3 +2140,63 @@ interface-AnonymizePreview-close = Fechar
 interface-AiHelperNotice-continue = Continuar
 
 interface-AnonymizePreview-footerNote = O arquivo terminará com esta linha:
+
+notifications-title = Avisos após verificar documentos
+notifications-help = Quando um documento da clínica é salvo após uma verificação manual, o Windows pode mostrar um aviso genérico. Abra o myCarlos normalmente para lê-lo. Os documentos não são verificados automaticamente.
+notifications-allow = Permitir avisos de chegada de documentos
+notifications-blocked = O Windows está bloqueando as notificações. Verifique as configurações de notificação.
+notifications-unknown = Não foi possível verificar a permissão de notificações do Windows.
+notifications-error = Não foi possível salvar esta configuração. Os avisos estão desativados nesta sessão.
+notifications-unavailable = Os avisos de documentos estão indisponíveis. Abra o myCarlos normalmente para verificar seus documentos.
+notifications-helpAutomatic = O Windows pode mostrar um aviso genérico depois que um documento da clínica for salvo. Abra o myCarlos normalmente para lê-lo.
+notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
+notifications-autoNeedsNotices = Primeiro permita os avisos de chegada de documentos para ativar esta opção.
+notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
+notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
+notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
+noticesStep-title = Avisos da sua clínica
+noticesStep-intro = Sua clínica está vinculada. O myCarlos pode avisar quando chegar um documento novo. Nada é ativado a menos que você marque.
+noticesStep-later = Você pode mudar isso a qualquer momento em { $settings }, em { $preferences }: { $notices }.
+noticesStep-done = Concluído
+noticesStep-notNow = Agora não
+
+ai-summary-again = Resumir de novo
+
+ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.
+
+ai-keepFull = Este documento já guarda o máximo de respostas da IA. As respostas novas são mostradas, mas não são guardadas.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modelos neste computador
+
+ai-models-group = Modelo em uso
+
+ai-models-inUse = Em uso
+
+ai-models-installed = Instalado
+
+ai-models-addedByYou = Adicionado por você
+
+ai-models-notDownloaded = Não baixado
+
+ai-models-downloading = Baixando
+ai-models-installing = Instalando
+
+ai-models-download = Baixar
+
+ai-models-remove = Remover
+
+ai-models-help = O modelo marcado Em uso escreve os resumos e as explicações. Escolher outro modelo interrompe a resposta que está sendo escrita.
+
+ai-models-loading = Lendo a lista de modelos…
+
+ai-models-loadFailed = Não foi possível ler a lista de modelos. Tente novamente.
+
+ai-models-retry = Ler a lista de modelos novamente
+
+ai-models-starting = Iniciando o download…
+
+ai-models-picking = Escolha um arquivo de modelo para adicionar.
+
+ai-models-changed = Modelo em uso alterado

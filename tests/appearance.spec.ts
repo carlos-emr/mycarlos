@@ -10,6 +10,8 @@ async function fakeVault(
 ) {
   await page.addInitScript(
     ({ platform, locked, recovery }) => {
+      const captureEpoch = crypto.randomUUID();
+      let captureSequence = 0;
       let status = locked ? "locked" : "unlocked";
       const calls: string[] = [];
       const themes: unknown[] = [];
@@ -21,8 +23,20 @@ async function fakeVault(
           calls.push(command);
           if (command === "runtime_info") return { platform };
           if (command === "vault_status") return status;
+          if (command === "vault_notification_status")
+            return {
+              supported: false,
+              available: false,
+              enabled: false,
+              permission: "unavailable",
+              automaticChecksEnabled: false,
+              automaticChecksSupported: false,
+              automaticChecksPaused: false,
+              lastOutcome: null,
+            };
           if (command === "vault_snapshot")
             return {
+              capture: { epoch: captureEpoch, sequence: ++captureSequence },
               profiles: [
                 { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
               ],
@@ -357,6 +371,7 @@ test("remembers appearance and follows live system changes without vault mutatio
         command.startsWith("vault_") &&
         ![
           "vault_status",
+          "vault_notification_status",
           "vault_snapshot",
           "vault_touch",
           "vault_set_auto_lock",
@@ -663,6 +678,23 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await expect(selected).toHaveCSS("outline-style", "solid");
   await expect(selected).toHaveCSS("opacity", "1");
   await expect(selected).toHaveCSS("box-shadow", "none");
+  // A selected sort choice shows focus differently from its selection (#121).
+  const newest = page.getByRole("button", {
+    name: translate("en", "interface.VaultLibrary.newestFirst"),
+  });
+  await expect(newest).toHaveAttribute("aria-pressed", "true");
+  const ring = () =>
+    newest.evaluate((element) => {
+      const style = getComputedStyle(element);
+      // Width and colour: an offset alone is too small a difference to see.
+      return `${style.outlineWidth} ${style.outlineColor}`;
+    });
+  const atRest = await ring();
+  await newest.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(newest).toBeFocused();
+  expect(await ring()).not.toBe(atRest);
   // A phone shows no sidebar, so no brand mark.
   if (info.project.name !== "phone")
     await expect(page.locator(".brand-mark .icon")).toBeVisible();

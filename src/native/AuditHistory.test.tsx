@@ -1,14 +1,29 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { page } from "vitest/browser";
 import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
-import { humanText } from "../test/humanText";
+import { humanText, visibleText } from "../test/humanText";
 import type {
   AuditHistoryEntry,
   AuditHistoryView,
   VaultBridge,
 } from "../vault";
-import { AuditHistory } from "./AuditHistory";
+import {
+  AuditHistory,
+  approvalLabels,
+  eventLabels,
+  eventTitle,
+  howLabels,
+  receiptLabels,
+} from "./AuditHistory";
+import { LOCALES } from "../i18n";
+import { formattingFailure } from "../i18n/catalogues";
+import historyRs from "../../src-tauri/src/history.rs?raw";
+import vaultRs from "../../src-tauri/src/vault.rs?raw";
+import deliveryRs from "../../src-tauri/src/vault/delivery.rs?raw";
+import approvalRs from "../../src-tauri/src/portal_approval.rs?raw";
+import aiResultsRs from "../../src-tauri/src/vault/ai_results.rs?raw";
 
 const entry = (
   overrides: Partial<AuditHistoryEntry> = {},
@@ -153,6 +168,56 @@ describe("AuditHistory verified native results", () => {
       expect(shown.bridge.history).toHaveBeenCalledOnce();
     },
   );
+
+  it("keeps audit detail labels and values inside their columns with enlarged text on a narrow screen", async () => {
+    const original = {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      fontSize: document.documentElement.style.fontSize,
+    };
+    try {
+      await page.viewport(320, 760);
+      document.documentElement.style.fontSize = "200%";
+      render(
+        <AuditHistory
+          {...props(
+            bridge(
+              vi.fn().mockResolvedValue(
+                complete([
+                  entry({
+                    event: "renamed",
+                    oldName: "FAKE previous.pdf",
+                    previousSession: "notRecorded",
+                  }),
+                ]),
+              ),
+            ),
+          )}
+        />,
+      );
+      const article = await screen.findByRole("article");
+      expect(within(article).getByText("FAKE previous.pdf")).toBeVisible();
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
+        window.innerWidth,
+      );
+      for (const label of article.querySelectorAll("dt")) {
+        expect(label, label.textContent ?? "History label").toBeVisible();
+        expect(
+          label.scrollWidth,
+          label.textContent ?? "History label",
+        ).toBeLessThanOrEqual(label.clientWidth + 1);
+      }
+      for (const value of article.querySelectorAll("dd")) {
+        expect(
+          value.scrollWidth,
+          value.textContent ?? "History value",
+        ).toBeLessThanOrEqual(value.clientWidth + 1);
+      }
+    } finally {
+      document.documentElement.style.fontSize = original.fontSize;
+      await page.viewport(original.width, original.height);
+    }
+  });
 
   it("shows only the localized verification failure and no partial history", async () => {
     const shown = props(bridge(vi.fn().mockRejectedValue(unverified)));
@@ -311,6 +376,62 @@ describe("AuditHistory dates keep the computer's format (D130)", () => {
 });
 
 describe("AuditHistory damaged history (D129)", () => {
+  it("says every event is shown when only storage without events is damaged (#120 C1)", async () => {
+    const rows = [
+      entry(),
+      entry({ seq: 1, event: "unlocked", atMs: Date.UTC(2026, 1, 3, 9) }),
+    ];
+    render(
+      <AuditHistory
+        {...props(
+          bridge(
+            vi.fn().mockResolvedValue({
+              ...damaged(rows),
+              everyEventShown: true,
+            }),
+          ),
+        )}
+      />,
+    );
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveHumanTextContent(
+      "Part of the storage for this history is damaged, but every event checks out and is shown.",
+    );
+    expect(alert).not.toHaveHumanTextContent("can't be checked");
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(document.querySelector(".audit-history-gap")).toBeNull();
+    await act(async () => setLocaleOverride("zh-CN"));
+    expect(alert).toHaveHumanTextContent(
+      translate("zh-CN", "interface.history.damagedStorageOnly"),
+    );
+  });
+
+  // Native code keeps padding last, so this view is defensive: the screen follows
+  // everyEventShown and marks no gap whatever the two parts hold.
+  it("marks no gap between contiguous checked parts (#120 C1)", async () => {
+    const early = [entry(), entry({ seq: 1, event: "unlocked" })];
+    const later = [
+      entry({ seq: 2, event: "renamed", atMs: Date.UTC(2026, 2, 1, 10) }),
+    ];
+    render(
+      <AuditHistory
+        {...props(
+          bridge(
+            vi.fn().mockResolvedValue({
+              ...damaged(early, later),
+              everyEventShown: true,
+            }),
+          ),
+        )}
+      />,
+    );
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "every event checks out and is shown",
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(document.querySelector(".audit-history-gap")).toBeNull();
+  });
+
   it("shows the entries that check out, newest first, under a dated warning", async () => {
     const rows = [
       entry(),
@@ -543,4 +664,307 @@ describe("AuditHistory recorded semantics", () => {
       ).not.toBeInTheDocument();
     },
   );
+});
+
+describe("AuditHistory words for every recorded event and how", () => {
+  /** Every event history.rs records, as the vault names it (camelCase). */
+  const recordedEvents = () => {
+    const body = /pub enum HistoryEvent \{([\s\S]*?)\n\}/.exec(historyRs)![1];
+    return [...body.matchAll(/^\s+([A-Z][A-Za-z]+),/gm)].map(
+      ([, name]) => name[0].toLowerCase() + name.slice(1),
+    );
+  };
+  /** Every `how` the vault writes. */
+  const recordedHows = () => {
+    // Passed in as arguments: an import's source, how a vault was opened.
+    const found = new Set(["picked", "camera", "passphrase", "recoveryKey"]);
+    for (const source of [vaultRs, deliveryRs, historyRs])
+      for (const [, how] of source.matchAll(/\.how = Some\(\s*"([A-Za-z_]+)"/g))
+        found.add(how);
+    // What the portal said to a pickup confirmation (settle_receipt).
+    for (const [, how] of deliveryRs.matchAll(
+      /ReceiptOutcome::\w+ => "([a-z_]+)"/g,
+    ))
+      found.add(how);
+    // A device approval request's state (ApprovalState::code).
+    const code =
+      /pub fn code\(self\) -> &'static str \{([\s\S]*?)\n {4}\}/.exec(
+        approvalRs,
+      )![1];
+    for (const [, how] of code.matchAll(/=> "([a-z_]+)"/g)) found.add(how);
+    // A copy saved with a how of its own (record_copy_saved_how).
+    for (const [, how] of vaultRs.matchAll(
+      /record_copy_saved_how\(\s*[^;]*?Some\("([A-Za-z_]+)"\)/g,
+    ))
+      found.add(how);
+    // What the AI helper kept (AiTool::history_how in ai_results.rs).
+    const tools =
+      /fn history_how\(self\) -> &'static str \{([\s\S]*?)\n {4}\}/.exec(
+        aiResultsRs,
+      )![1];
+    for (const [, how] of tools.matchAll(/=> "([A-Za-z_]+)"/g)) found.add(how);
+    return found;
+  };
+
+  it("has a title for every event history.rs records, in every language", () => {
+    const events = recordedEvents();
+    expect(events).toEqual(
+      expect.arrayContaining(["created", "portalLinked", "deliveryFiled"]),
+    );
+    for (const event of events) {
+      expect(Object.hasOwn(eventLabels, event), event).toBe(true);
+      for (const locale of LOCALES)
+        expect(
+          translate(locale, eventTitle(event)),
+          `${locale} ${event}`,
+        ).not.toBe(formattingFailure(locale));
+    }
+    // An event from a newer build is never the formatting failure.
+    expect(eventTitle("fromANewerBuild")).toBe("interface.history.event.other");
+  });
+
+  it("has words for every how the vault records, in every language", () => {
+    const hows = recordedHows();
+    expect([...hows]).toEqual(
+      expect.arrayContaining([
+        "personFolder",
+        "pending",
+        "challenge_ready",
+        "accepted",
+        "refused",
+        "expired",
+        "cancelled",
+        "picked_up",
+        "delivery_not_found",
+        "anonymizedText",
+        "summary",
+        "explain",
+      ]),
+    );
+    for (const how of hows) {
+      // "shared" is told by where the document went (importedShared or movedFromShared).
+      if (how === "shared") continue;
+      // An approval's state and a receipt's outcome are shown as the
+      // entry's Status (main's #222 words); every other how as How.
+      const key = [howLabels, approvalLabels, receiptLabels].find((labels) =>
+        Object.hasOwn(labels, how),
+      )?.[how];
+      expect(key, how).toBeDefined();
+      for (const locale of LOCALES)
+        expect(translate(locale, key!), `${locale} ${how}`).not.toBe(
+          formattingFailure(locale),
+        );
+    }
+  });
+
+  it("shows a clinic's events in words, and one it does not know as Other event", async () => {
+    const rows = [
+      entry({ seq: 0, event: "portalLinkStarted", name: null }),
+      entry({ seq: 1, event: "portalLinked", name: "FAKE Clinic" }),
+      entry({
+        seq: 2,
+        event: "deviceApprovalRequested",
+        name: null,
+        how: "pending",
+      }),
+      entry({
+        seq: 3,
+        event: "deviceApprovalStatusChanged",
+        name: null,
+        how: "challenge_ready",
+      }),
+      entry({
+        seq: 4,
+        event: "deviceApprovalVerified",
+        name: null,
+        how: "accepted",
+      }),
+      entry({ seq: 5, event: "deliveryFiled", name: "FAKE Letter.pdf" }),
+      entry({
+        seq: 6,
+        event: "deliveryReceiptSettled",
+        name: null,
+        how: "picked_up",
+      }),
+      entry({ seq: 7, event: "profileDetailsChanged", name: null }),
+      entry({
+        seq: 8,
+        event: "fromANewerBuild" as AuditHistoryEntry["event"],
+        name: null,
+        how: "fromANewerBuild",
+      }),
+    ];
+    render(
+      <AuditHistory
+        {...props(bridge(vi.fn().mockResolvedValue(complete(rows))))}
+      />,
+    );
+    for (const title of [
+      "Clinic link started",
+      "Clinic linked",
+      "Clinic approval requested",
+      "Clinic approval updated",
+      "Device approved by the clinic",
+      "Clinic document saved",
+      "Pickup receipt closed",
+      "Personal details changed",
+      "Other event",
+    ])
+      expect(
+        await screen.findByRole("heading", {
+          level: 2,
+          name: humanText(title),
+        }),
+      ).toBeVisible();
+    for (const key of [
+      "interface.history.approval.pending",
+      "interface.history.approval.challengeReady",
+      "interface.history.approval.accepted",
+      "interface.history.receipt.pickedUp",
+    ] as const)
+      expect(screen.getByText(humanText(translate("en", key)))).toBeVisible();
+    // Unknown words are shown as they are, never as the formatting failure.
+    expect(screen.getByText("fromANewerBuild")).toBeVisible();
+    expect(document.body.textContent).not.toContain(formattingFailure("en"));
+    expect(document.body.textContent).not.toMatch(/challenge_ready|picked_up/);
+  });
+});
+
+describe("AuditHistory reading aid events", () => {
+  it.each(["en", "fr", "es", "pl", "pt-BR", "zh-CN", "zh-TW"] as const)(
+    "labels a filed and a replaced reading aid in %s",
+    async (locale) => {
+      const shown = props(
+        bridge(
+          vi.fn().mockResolvedValue(
+            complete([
+              entry({ event: "readingAidFiled", name: "FAKE Result.pdf" }),
+              entry({
+                event: "readingAidFiled",
+                name: "FAKE Result.pdf",
+                how: "replaced",
+                atMs: 2,
+              }),
+            ]),
+          ),
+        ),
+      );
+      render(<AuditHistory {...shown} />);
+      await screen.findAllByText("FAKE Result.pdf");
+      await act(async () => setLocaleOverride(locale));
+      const headings = screen.getAllByRole("heading", { level: 2 });
+      expect(headings).toHaveLength(2);
+      for (const heading of headings)
+        expect(heading).toHaveHumanTextContent(
+          translate(locale, "interface.history.event.readingAidFiled"),
+        );
+      const replaced = translate(locale, "interface.history.how.aidReplaced");
+      expect(screen.getAllByText(humanText(replaced))).toHaveLength(1);
+      // The vault-restore wording must never describe an aid.
+      expect(
+        screen.queryByText(
+          humanText(translate(locale, "interface.history.how.replaced")),
+        ),
+      ).toBeNull();
+    },
+  );
+});
+
+type Key = Parameters<typeof translate>[1];
+
+describe("AuditHistory clinic link, approval and delivery events", () => {
+  const events: [AuditHistoryEntry["event"], string | null][] = [
+    ["profileDetailsChanged", null],
+    ["portalLinkStarted", null],
+    ["portalLinked", null],
+    ["deviceApprovalRequested", "pending"],
+    ["deviceApprovalStatusChanged", "challenge_ready"],
+    ["deviceApprovalVerified", "accepted"],
+    ["deviceApprovalStatusChanged", "refused"],
+    ["deviceApprovalRequestRestarted", "pending"],
+    ["deliveryFiled", null],
+    ["deliveryReceiptSettled", "picked_up"],
+    ["deliveryReceiptSettled", "delivery_not_found"],
+  ];
+  it.each(["en", "fr", "es", "pl", "pt-BR", "zh-CN", "zh-TW"] as const)(
+    "labels every event and its status in %s",
+    async (locale) => {
+      const shown = props(
+        bridge(
+          vi.fn().mockResolvedValue(
+            complete(
+              events.map(([event, how], seq) =>
+                entry({
+                  seq,
+                  atMs: seq + 1,
+                  event,
+                  how,
+                  name: event === "portalLinked" ? "FAKE Clinic" : null,
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      render(<AuditHistory {...shown} />);
+      await screen.findByText("FAKE Clinic");
+      await act(async () => setLocaleOverride(locale));
+      const headings = screen.getAllByRole("heading", { level: 2 });
+      // Newest first.
+      expect(
+        headings.map((heading) => visibleText(heading.textContent ?? "")),
+      ).toEqual(
+        [...events]
+          .reverse()
+          .map(([event]) =>
+            visibleText(
+              translate(locale, `interface.history.event.${event}` as Key),
+            ),
+          ),
+      );
+      const statuses = [
+        "approval.pending",
+        "approval.challengeReady",
+        "approval.accepted",
+        "approval.refused",
+        "receipt.pickedUp",
+        "receipt.notFound",
+      ] as const;
+      for (const status of statuses)
+        expect(
+          screen.getAllByText(
+            humanText(translate(locale, `interface.history.${status}` as Key)),
+          ).length,
+        ).toBeGreaterThan(0);
+      expect(
+        screen.getAllByText(
+          humanText(translate(locale, "interface.history.status")),
+        ),
+      ).toHaveLength(7);
+      // Native codes never reach the screen, and these events have no "How".
+      for (const code of ["challenge_ready", "picked_up", "delivery_not_found"])
+        expect(screen.queryByText(code)).toBeNull();
+      expect(
+        screen.queryByText(
+          humanText(translate(locale, "interface.history.how")),
+        ),
+      ).toBeNull();
+    },
+  );
+
+  it("shows an unknown status code as written", async () => {
+    const shown = props(
+      bridge(
+        vi
+          .fn()
+          .mockResolvedValue(
+            complete([
+              entry({ event: "deviceApprovalStatusChanged", how: "newState" }),
+            ]),
+          ),
+      ),
+    );
+    render(<AuditHistory {...shown} />);
+    expect(await screen.findByText("newState")).toBeInTheDocument();
+  });
 });

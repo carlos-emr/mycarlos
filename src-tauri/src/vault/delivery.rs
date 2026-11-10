@@ -1,9 +1,65 @@
 //! Native custody transaction. No network call is permitted while a vault lock is held.
 use super::*;
 use crate::portal_delivery::{self as wire, Receipt};
-#[cfg(feature = "portal-linking")]
 use crate::portal_delivery::{Custody, ReceiptOutcome};
 use crate::portal_link::KeyStatus;
+
+#[cfg(windows)]
+impl VaultStore {
+    /// Only a freshly committed local custody record, never a renderer count or remote hint.
+    pub(crate) fn notify_local_arrival(&self, record_id: Uuid, link: &StoredLink, session: u64) {
+        self.notify_local_arrival_controlled(record_id, link, session, &|| false)
+    }
+
+    pub(crate) fn notify_local_arrival_controlled(
+        &self,
+        record_id: Uuid,
+        link: &StoredLink,
+        session: u64,
+        stop: &dyn Fn() -> bool,
+    ) {
+        let Some(runtime) = self.notifications.get() else {
+            return;
+        };
+        let current = || {
+            if stop() {
+                return None;
+            }
+            let guard = self.session();
+            let open = guard.as_ref()?;
+            if self.portal_link_ticket() != session
+                || open.recovery.is_some()
+                || !open.manifest.portal_links.contains(link)
+            {
+                return None;
+            }
+            let record = open
+                .manifest
+                .records
+                .iter()
+                .find(|r| r.id == record_id && r.hidden.is_none())?;
+            if record.delivery.as_ref()?.link_id != link.id
+                || !valid_custody(record, &open.manifest.portal_links)
+            {
+                return None;
+            }
+            let custody = record.delivery.as_ref()?;
+            Some((
+                open.manifest.vault_id,
+                custody.outer.delivery_id.clone(),
+                link.keys.device_key_id(),
+            ))
+        };
+        let Some((vault, delivery, device)) = current() else {
+            return;
+        };
+        // Do not hold the vault lock across filesystem or OS API calls. A later unlink/lock can
+        // still race OS acceptance; this generic notice is not instantly recallable or a grant.
+        runtime.arrived(vault, link.id, &device, &delivery, record_id, || {
+            current().is_some_and(|now| now == (vault, delivery.clone(), device.clone()))
+        });
+    }
+}
 
 pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool {
     let Some(c) = &record.delivery else {
@@ -77,14 +133,173 @@ pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool
         && receipt.picked_up_at == c.checked_at_ms / 1000
 }
 
+/// A kept reading aid is checked again every time the manifest is read: it belongs to a
+/// delivered original of the same clinic link, names that original and its PDF hash, and its
+/// signed manifest, JSON hash and kept receipt all agree.
+pub(super) fn valid_aid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool {
+    use serde_json::Value;
+    let Some(a) = &record.reading_aid else {
+        return true;
+    };
+    let (Some(c), Some(original)) = (&record.delivery, &record.original_pdf) else {
+        return false;
+    };
+    let Some(link) = links.iter().find(|l| l.id == a.link_id) else {
+        return false;
+    };
+    let Some(clinic) = &link.clinic else {
+        return false;
+    };
+    if a.link_id != c.link_id
+        || a.outer.validate().is_err()
+        || a.outer.kind.as_deref() != Some("reading-aid/1")
+        || a.outer.delivery_id == c.outer.delivery_id
+        || a.outer.recipient_id != clinic.recipient_id
+        || a.outer.device_key_id != link.keys.device_key_id()
+        || a.json.is_empty()
+        || a.json.len() > 64 * 1024
+    {
+        return false;
+    }
+    let Ok((payload, _)) = wire::split_compact(&a.manifest_compact, 16 * 1024) else {
+        return false;
+    };
+    let Ok(m) = serde_json::from_slice::<Value>(&payload) else {
+        return false;
+    };
+    let text = |path: &str| m.pointer(path).and_then(Value::as_str);
+    if text("/delivery_id") != Some(a.outer.delivery_id.as_str())
+        || text("/clinic_id") != Some(clinic.clinic_id.as_str())
+        || text("/recipient_id") != Some(a.outer.recipient_id.as_str())
+        || text("/device_key_id") != Some(a.outer.device_key_id.as_str())
+        || text("/pair/original_delivery_id") != Some(c.outer.delivery_id.as_str())
+        || text("/pair/original_document_sha256") != Some(original.sha256.as_str())
+        || text("/reading_aid/sha256") != Some(wire::sha256(a.json.as_bytes()).as_str())
+        || m.pointer("/reading_aid/size").and_then(Value::as_u64) != Some(a.json.len() as u64)
+        || m.pointer("/created_at").and_then(Value::as_u64) != Some(c.manifest.created_at)
+        || m.pointer("/expires_at").and_then(Value::as_u64) != Some(c.manifest.expires_at)
+    {
+        return false;
+    }
+    let Some(head) = wire::head_bytes(&a.anchor_head) else {
+        return false;
+    };
+    let Ok(anchor) = link.keys.anchor(&head) else {
+        return false;
+    };
+    let Ok((payload, signature)) = wire::split_compact(&a.receipt, 4096) else {
+        return false;
+    };
+    let Ok(receipt) = serde_json::from_slice::<Receipt>(&payload) else {
+        return false;
+    };
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    let (_, public) = link.keys.public();
+    let Ok(key) = VerifyingKey::from_bytes(&public) else {
+        return false;
+    };
+    let Ok(signature) = Signature::from_slice(&signature) else {
+        return false;
+    };
+    key.verify(&payload, &signature).is_ok()
+        && receipt.aud == "carlos-delivery-receipt"
+        && receipt.typ == "mycarlos-delivery-receipt"
+        && receipt.delivery_id == a.outer.delivery_id
+        && receipt.device_key_id == a.outer.device_key_id
+        && receipt.recipient_id == a.outer.recipient_id
+        && receipt.ciphertext_sha256 == a.outer.ciphertext_sha256
+        && receipt.document_sha256 == wire::sha256(a.json.as_bytes())
+        && receipt.vault_head_link == anchor
+        && receipt.jti.get_version_num() == 4
+        && receipt.picked_up_at == a.checked_at_ms / 1000
+}
+
+/// Kept waiting aids are checked again on every manifest read: a known clinic link, a reading-aid
+/// outer record, the contract's size limits, a manifest whose claims name this delivery and the
+/// JSON's hash, and an ID that no filed delivery or other kept aid uses.
+pub(super) fn valid_waiting_aids<'a>(
+    waiting: &'a [crate::portal_delivery::WaitingAid],
+    links: &[StoredLink],
+    ids: &mut HashSet<(Uuid, &'a str)>,
+) -> bool {
+    use serde_json::Value;
+    if waiting.len() > crate::portal_delivery::MAX_WAITING_AIDS {
+        return false;
+    }
+    for w in waiting {
+        let Some(link) = links.iter().find(|l| l.id == w.link_id) else {
+            return false;
+        };
+        let Some(clinic) = &link.clinic else {
+            return false;
+        };
+        if !ids.insert((w.link_id, w.outer.delivery_id.as_str()))
+            || w.outer.validate().is_err()
+            || w.outer.kind.as_deref() != Some("reading-aid/1")
+            || w.outer.size > 1024 * 1024
+            || w.outer.recipient_id != clinic.recipient_id
+            || w.outer.device_key_id != link.keys.device_key_id()
+            || w.json.is_empty()
+            || w.json.len() > 64 * 1024
+        {
+            return false;
+        }
+        let Ok((payload, _)) = wire::split_compact(&w.manifest_compact, 16 * 1024) else {
+            return false;
+        };
+        let Ok(m) = serde_json::from_slice::<Value>(&payload) else {
+            return false;
+        };
+        let text = |path: &str| m.pointer(path).and_then(Value::as_str);
+        if text("/delivery_id") != Some(w.outer.delivery_id.as_str())
+            || text("/clinic_id") != Some(clinic.clinic_id.as_str())
+            || text("/recipient_id") != Some(w.outer.recipient_id.as_str())
+            || text("/device_key_id") != Some(w.outer.device_key_id.as_str())
+            || text("/reading_aid/sha256") != Some(wire::sha256(w.json.as_bytes()).as_str())
+            || m.pointer("/reading_aid/size").and_then(Value::as_u64) != Some(w.json.len() as u64)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// What offering a downloaded aid copy to the vault did.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AidFiling {
+    /// Filed on its original, with a receipt waiting to be sent.
+    Filed,
+    /// Filed in place of an earlier-reviewed aid for the same original.
+    Replaced,
+    /// The same copy was filed before; its kept receipt is sent from the vault.
+    AlreadyFiled,
+    /// Verified and kept, with no receipt, until its original is filed.
+    Waiting,
+    /// Not filed: an earlier or equal review than the held aid. The signed receipt tells the
+    /// portal to stop offering it; it is sent once and not kept.
+    NotFiled(String),
+}
+
+/// The outcome of looking again at the aids kept waiting for one link.
+#[derive(Default)]
+pub(crate) struct WaitingRecheck {
+    pub filed: usize,
+    pub refused: usize,
+    /// (delivery ID, signed receipt) of aids not filed because the held aid is newer.
+    pub not_filed: Vec<(String, String)>,
+}
+
 /// One link's unsettled receipts: the ones whose documents still read back,
 /// and how many were skipped because a document the vault still shows is
 /// damaged.
-#[cfg(feature = "portal-linking")]
 #[derive(Default)]
 pub(crate) struct PendingReceipts {
     pub ready: Vec<Custody>,
+    /// Receipts of filed reading aids; they wait on the same readable original.
+    pub ready_aids: Vec<crate::portal_delivery::AidCustody>,
     pub damaged: usize,
+    pub budget_deferred: bool,
+    pub manual_required: bool,
 }
 
 pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Option<String> {
@@ -98,27 +313,52 @@ pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Op
         .then(|| clinic.clinic_name.clone())
 }
 
-#[cfg(feature = "portal-linking")]
+/// How far one clinic code request has got in this run of the app (clinic
+/// code v1). Never the code itself.
+#[derive(Clone, Copy, Default)]
+pub(super) struct CodeProgress {
+    /// Codes typed that did not match this clinic. None of them was sent.
+    mismatches: u8,
+    /// The portal took a code; the clinic has yet to answer.
+    pub(super) submitted: bool,
+    /// No more codes are taken for this request.
+    pub(super) locked: bool,
+}
+
+/// After this many codes that do not match the clinic, a request takes no
+/// more (clinic code v1).
+const MAX_CODE_MISMATCHES: u8 = 5;
+
 impl VaultStore {
+    /// Reserve portal work without queuing it behind another session's HTTP.
+    /// Linking and approval requests take the same guard as document checks
+    /// (`CheckLease`); local reads and the short vault commits remain
+    /// independent of it.
+    pub(super) fn start_portal_work(
+        &self,
+    ) -> Result<crate::document_collection::CheckLease<'_>, VaultError> {
+        crate::document_collection::CheckLease::try_acquire(&self.portal_check_running)
+            .ok_or(VaultError::Portal(portal_link::LinkError::Busy))
+    }
+
     pub(crate) fn check_documents(
         &self,
         session: u64,
     ) -> Result<crate::portal_pickup::CheckResult, VaultError> {
-        if self
-            .portal_check_running
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err(VaultError::Invalid);
-        }
-        struct Running<'a>(&'a AtomicBool);
-        impl Drop for Running<'_> {
-            fn drop(&mut self) {
-                self.0.store(false, Ordering::Release);
+        let _running = self
+            .collection
+            .manual_acquire(&self.portal_check_running, Instant::now, || {
+                std::thread::sleep(Duration::from_millis(20))
+            })
+            .ok_or(VaultError::DocumentCheckBusy)?;
+        let result = crate::portal_pickup::check(self, session);
+        if result.as_ref().is_ok_and(|r| r.issues.is_empty()) {
+            if let Ok(mut cache) = self.collection_resume.lock() {
+                *cache = None;
+                self.collection.set_paused(false);
             }
         }
-        let _running = Running(&self.portal_check_running);
-        crate::portal_pickup::check(self, session)
+        result
     }
 
     /// A snapshot is cloned under the lock, used for HTTP/parsing outside it,
@@ -196,35 +436,136 @@ impl VaultStore {
         let keys = derive_keys(open.manifest.vault_id, &open.master_key)?;
         let mut pending = PendingReceipts::default();
         for record in &open.manifest.records {
-            if let Some(c) = &record.delivery {
-                if c.link_id == link.id && c.receipt_outcome.is_none() {
-                    // A restored/damaged object must never be acknowledged merely
-                    // because its metadata and old receipt are still readable.
-                    let readable = record.objects().try_for_each(|object| {
-                        read_object_ref(
-                            &self.root.join("objects").join(object.object_name),
-                            open.manifest.vault_id,
-                            &keys,
-                            object,
-                            io::sink(),
-                        )
-                    });
-                    match readable {
-                        Ok(()) => pending.ready.push(c.clone()),
-                        // Damage stays until the patient restores a good copy;
-                        // a failed read that a retry can get past still stops.
-                        Err(VaultError::Corrupt) => {
-                            if object_required(record) {
-                                pending.damaged += 1;
-                            }
-                        }
-                        Err(error) => return Err(error),
+            let owes_receipt = record
+                .delivery
+                .as_ref()
+                .is_some_and(|c| c.link_id == link.id && c.receipt_outcome.is_none());
+            let aid_owes_receipt = record
+                .reading_aid
+                .as_ref()
+                .is_some_and(|a| a.link_id == link.id && a.receipt_outcome.is_none());
+            if !owes_receipt && !aid_owes_receipt {
+                continue;
+            }
+            // A restored/damaged object must never be acknowledged merely
+            // because its metadata and old receipt are still readable. An aid is
+            // acknowledged only while its original reads back too.
+            let readable = record.objects().try_for_each(|object| {
+                read_object_ref(
+                    &self.root.join("objects").join(object.object_name),
+                    open.manifest.vault_id,
+                    &keys,
+                    object,
+                    io::sink(),
+                )
+            });
+            match readable {
+                Ok(()) => {
+                    if let Some(c) = record.delivery.as_ref().filter(|_| owes_receipt) {
+                        pending.ready.push(c.clone());
+                    }
+                    if let Some(a) = record.reading_aid.as_ref().filter(|_| aid_owes_receipt) {
+                        pending.ready_aids.push(a.clone());
                     }
                 }
+                // Damage stays until the patient restores a good copy;
+                // a failed read that a retry can get past still stops.
+                Err(VaultError::Corrupt) => {
+                    if object_required(record) {
+                        pending.damaged += usize::from(owes_receipt || aid_owes_receipt);
+                    }
+                }
+                Err(error) => return Err(error),
             }
         }
         Ok(pending)
     }
+    /// Automatic path: every raw metadata entry is charged before inspection.
+    /// Direct Vec indexing is bounded even with a long nonpending prefix.
+    pub(crate) fn pending_receipts_controlled(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        control: &crate::document_collection::CycleControl,
+        cursor: &mut crate::document_collection::ScanCursor,
+    ) -> Result<PendingReceipts, VaultError> {
+        if control.stopped() || self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        let guard = self.session();
+        let open = guard.as_ref().ok_or(VaultError::Locked)?;
+        if open.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        if !open.manifest.portal_links.contains(link) {
+            return Err(VaultError::Invalid);
+        }
+        let keys = derive_keys(open.manifest.vault_id, &open.master_key)?;
+        let mut pending = PendingReceipts::default();
+        let mut window = cursor.window(open.manifest.records.len());
+        while let Some(index) = window.next(control) {
+            if self.portal_link_ticket() != session {
+                control.session_changed();
+                return Err(VaultError::Cancelled);
+            }
+            let record = &open.manifest.records[index];
+            let Some(c) = &record.delivery else {
+                continue;
+            };
+            if c.link_id != link.id || c.receipt_outcome.is_some() {
+                continue;
+            }
+            if !control.candidate() {
+                window.defer(index);
+                break;
+            }
+            let physical_before = control.physical_read_bytes();
+            let readable = record.objects().try_for_each(|object| {
+                read_object_ref_controlled(
+                    &self.root.join("objects").join(object.object_name),
+                    open.manifest.vault_id,
+                    &keys,
+                    object,
+                    io::sink(),
+                    Some(control),
+                )
+            });
+            // Preserve interruption before the damage classifier. A record that
+            // merely lacks residual budget must lead the next fresh cycle.
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if control.reason() == Some(crate::document_collection::StopReason::Budget) {
+                if physical_before == 0 {
+                    // This item exhausted a FRESH40MiB allowance. Pause only its
+                    // link for explicit manual review rather than pinning all
+                    // later records/clinics behind an impossible automatic read.
+                    pending.manual_required = true;
+                } else {
+                    window.defer(index);
+                    pending.budget_deferred = true;
+                }
+                return Ok(pending);
+            }
+            if control.stopped() {
+                return Err(VaultError::Cancelled);
+            }
+            match readable {
+                Ok(()) => {
+                    pending.ready.push(c.clone());
+                    break;
+                }
+                Err(VaultError::Corrupt) => {
+                    if object_required(record) {
+                        pending.damaged += 1;
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(pending)
+    }
+
     pub(crate) fn settle_receipt(
         &self,
         link: &StoredLink,
@@ -232,8 +573,19 @@ impl VaultStore {
         outcome: ReceiptOutcome,
         session: u64,
     ) -> Result<(), VaultError> {
+        self.settle_receipt_controlled(link, c, outcome, session, &|| false)
+    }
+
+    pub(crate) fn settle_receipt_controlled(
+        &self,
+        link: &StoredLink,
+        c: &Custody,
+        outcome: ReceiptOutcome,
+        session: u64,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<(), VaultError> {
         self.mutate_recorded(|manifest, entries| {
-            if self.portal_link_ticket() != session {
+            if stop() || self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
             }
             if !manifest.portal_links.contains(link) {
@@ -269,6 +621,505 @@ impl VaultStore {
                 );
                 entries.push(entry);
             }
+            if stop() {
+                return Err(VaultError::Cancelled);
+            }
+            Ok(())
+        })
+    }
+    /// What the device holds for this link, by delivery ID, for the reading-aid checks.
+    fn aid_pair_state(manifest: &Manifest, link: &StoredLink) -> crate::reading_aid::PairState {
+        let mut state = crate::reading_aid::PairState::default();
+        for record in &manifest.records {
+            if let Some(c) = record.delivery.as_ref().filter(|c| c.link_id == link.id) {
+                state.filed_originals.insert(
+                    c.outer.delivery_id.clone(),
+                    crate::reading_aid::FiledOriginal {
+                        ciphertext_sha256: c.outer.ciphertext_sha256.clone(),
+                        document_sha256: c.manifest.document.sha256.clone(),
+                        created_at: c.manifest.created_at,
+                        expires_at: c.manifest.expires_at,
+                    },
+                );
+            }
+            if let Some(a) = record.reading_aid.as_ref().filter(|a| a.link_id == link.id) {
+                state.filed_aids.insert(
+                    a.outer.delivery_id.clone(),
+                    a.outer.ciphertext_sha256.clone(),
+                );
+            }
+        }
+        for w in manifest
+            .waiting_aids
+            .iter()
+            .filter(|w| w.link_id == link.id)
+        {
+            state.waiting_aids.insert(
+                w.outer.delivery_id.clone(),
+                w.outer.ciphertext_sha256.clone(),
+            );
+        }
+        state
+    }
+
+    /// What the listing alone says about an aid (contract, step 12): a copy already kept or filed
+    /// under its ID and hash is not downloaded again; a different hash under a known ID is replayed.
+    pub(crate) fn aid_listed(
+        &self,
+        outer: &wire::Outer,
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<crate::reading_aid::Listed, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        if !unlocked.manifest.portal_links.contains(link) {
+            return Err(VaultError::Invalid);
+        }
+        Ok(crate::reading_aid::listed(
+            outer,
+            &Self::aid_pair_state(&unlocked.manifest, link),
+        ))
+    }
+
+    /// Check a downloaded reading-aid copy. When its original is filed with the same PDF and
+    /// lifetime it is kept on that record with a signed receipt; when the original is not filed
+    /// yet it is kept waiting by its ID and hash, with no receipt, and checked again after each
+    /// original is filed. A second aid for an original that already holds one is judged by its
+    /// signed review time (see `file_or_refuse`).
+    pub(crate) fn receive_aid(
+        &self,
+        outer: &wire::Outer,
+        sealed: &[u8],
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<AidFiling, VaultError> {
+        self.receive_aid_at(outer, sealed, link, session, crate::now_ms())
+    }
+
+    fn receive_aid_at(
+        &self,
+        outer: &wire::Outer,
+        sealed: &[u8],
+        link: &StoredLink,
+        session: u64,
+        now: u64,
+    ) -> Result<AidFiling, VaultError> {
+        use crate::reading_aid::{self as aid, Outcome};
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        if !unlocked.manifest.portal_links.contains(link) {
+            return Err(VaultError::Invalid);
+        }
+        let others = unlocked
+            .manifest
+            .portal_links
+            .iter()
+            .filter(|l| l.id != link.id)
+            .filter_map(|l| l.clinic.as_ref())
+            .flat_map(|c| c.clinic_keys.iter().map(|k| k.kid.clone()))
+            .collect::<Vec<_>>();
+        let state = Self::aid_pair_state(&unlocked.manifest, link);
+        let opened = aid::open(outer, sealed, link, &others, &state, now / 1000)
+            .map_err(|_| VaultError::PickupRefused)?;
+        let json =
+            String::from_utf8(opened.json.to_vec()).map_err(|_| VaultError::PickupRefused)?;
+        match opened.outcome {
+            Outcome::AlreadyFiled => Ok(AidFiling::AlreadyFiled),
+            Outcome::WaitingForOriginal => {
+                self.keep_waiting(
+                    unlocked,
+                    link,
+                    outer,
+                    opened.manifest_compact,
+                    json,
+                    now,
+                    session,
+                )?;
+                Ok(AidFiling::Waiting)
+            }
+            Outcome::File => self.file_or_refuse(
+                unlocked,
+                link,
+                outer,
+                opened.manifest,
+                opened.manifest_compact,
+                json,
+                now,
+                session,
+            ),
+        }
+    }
+
+    /// Commits a manifest that changes no history (a kept waiting aid, or one forgotten).
+    fn commit_plain(
+        &self,
+        unlocked: &mut UnlockedVault,
+        next: Manifest,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        let redundant = commit_manifest_redundant(
+            &self.root,
+            &unlocked.master_key,
+            &mut unlocked.manifest,
+            next,
+            || Ok(()),
+        )?;
+        unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+        if redundant {
+            Ok(())
+        } else {
+            Err(VaultError::RecoveryMode)
+        }
+    }
+
+    /// Keeps a verified aid whose original is not filed (contract, step 12). A vault already
+    /// holding `MAX_WAITING_AIDS` keeps no more: the extra aid is simply downloaded again.
+    #[allow(clippy::too_many_arguments)]
+    fn keep_waiting(
+        &self,
+        unlocked: &mut UnlockedVault,
+        link: &StoredLink,
+        outer: &wire::Outer,
+        manifest_compact: String,
+        json: String,
+        now: u64,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        let kept = &unlocked.manifest.waiting_aids;
+        if kept.len() >= wire::MAX_WAITING_AIDS
+            || kept
+                .iter()
+                .any(|w| w.link_id == link.id && w.outer.delivery_id == outer.delivery_id)
+        {
+            return Ok(());
+        }
+        let mut next = unlocked.manifest.clone();
+        next.waiting_aids.push(wire::WaitingAid {
+            link_id: link.id,
+            outer: outer.clone(),
+            manifest_compact,
+            json,
+            kept_at_ms: now,
+        });
+        self.commit_plain(unlocked, next, session)
+    }
+
+    fn forget_waiting(
+        &self,
+        unlocked: &mut UnlockedVault,
+        link: &StoredLink,
+        delivery_id: &str,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        let mut next = unlocked.manifest.clone();
+        next.waiting_aids
+            .retain(|w| !(w.link_id == link.id && w.outer.delivery_id == delivery_id));
+        if next.waiting_aids.len() == unlocked.manifest.waiting_aids.len() {
+            return Ok(());
+        }
+        self.commit_plain(unlocked, next, session)
+    }
+
+    /// After the originals of a check are filed: look again at the aids kept waiting for this
+    /// link. One whose original is now filed is filed; one past its expiry (and the device's 24 h
+    /// skew) is deleted silently; one that no longer fits its original, or was replayed, is
+    /// dropped and counted as refused.
+    pub(crate) fn recheck_waiting_aids(
+        &self,
+        link: &StoredLink,
+        session: u64,
+    ) -> Result<WaitingRecheck, VaultError> {
+        self.recheck_waiting_aids_at(link, session, crate::now_ms())
+    }
+
+    fn recheck_waiting_aids_at(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        now: u64,
+    ) -> Result<WaitingRecheck, VaultError> {
+        use crate::reading_aid::{self as aid, Outcome};
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        if !unlocked.manifest.portal_links.contains(link) {
+            return Err(VaultError::Invalid);
+        }
+        let mut out = WaitingRecheck::default();
+        let kept = unlocked
+            .manifest
+            .waiting_aids
+            .iter()
+            .filter(|w| w.link_id == link.id)
+            .cloned()
+            .collect::<Vec<_>>();
+        for w in kept {
+            let id = w.outer.delivery_id.clone();
+            let Ok(manifest) = aid::kept_manifest(&w.manifest_compact) else {
+                self.forget_waiting(unlocked, link, &id, session)?;
+                continue;
+            };
+            if now / 1000 > manifest.expires_at.saturating_add(aid::SKEW_SECONDS) {
+                self.forget_waiting(unlocked, link, &id, session)?;
+                continue;
+            }
+            let state = Self::aid_pair_state(&unlocked.manifest, link);
+            match aid::decide(&w.outer, &manifest, &state) {
+                Ok(Outcome::WaitingForOriginal) => {}
+                Ok(Outcome::File) => {
+                    match self.file_or_refuse(
+                        unlocked,
+                        link,
+                        &w.outer,
+                        manifest,
+                        w.manifest_compact.clone(),
+                        w.json.clone(),
+                        now,
+                        session,
+                    )? {
+                        AidFiling::NotFiled(receipt) => {
+                            out.not_filed.push((id.clone(), receipt));
+                            self.forget_waiting(unlocked, link, &id, session)?;
+                        }
+                        _ => out.filed += 1,
+                    }
+                }
+                Ok(Outcome::AlreadyFiled) => self.forget_waiting(unlocked, link, &id, session)?,
+                Err(_) => {
+                    out.refused += 1;
+                    self.forget_waiting(unlocked, link, &id, session)?;
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Files a verified aid whose original is filed, or refuses it. A record holds one aid. A
+    /// second aid for the same original (a new review) replaces the held one only when it is
+    /// greater by (`approval.reviewed_at`, `approval.id`): the later review, and within the same
+    /// second the larger approval ID. The summary version is an opaque hash and cannot be
+    /// ordered. A lesser or equal one is not filed and is answered with its own signed receipt,
+    /// so the portal stops offering it.
+    #[allow(clippy::too_many_arguments)]
+    fn file_or_refuse(
+        &self,
+        unlocked: &mut UnlockedVault,
+        link: &StoredLink,
+        outer: &wire::Outer,
+        manifest: crate::reading_aid::AidManifest,
+        manifest_compact: String,
+        json: String,
+        now: u64,
+        session: u64,
+    ) -> Result<AidFiling, VaultError> {
+        use crate::reading_aid as aid;
+        let index = unlocked
+            .manifest
+            .records
+            .iter()
+            .position(|r| {
+                r.delivery.as_ref().is_some_and(|c| {
+                    c.link_id == link.id
+                        && c.outer.delivery_id == manifest.pair.original_delivery_id
+                })
+            })
+            .ok_or(VaultError::Corrupt)?;
+        let replace = match &unlocked.manifest.records[index].reading_aid {
+            None => false,
+            Some(held) => {
+                let held_approval = aid::kept_manifest(&held.manifest_compact)
+                    .map_err(|_| VaultError::Corrupt)?
+                    .approval;
+                // Review time first; within the same second the larger approval ID, byte by byte,
+                // so that two devices always keep the same aid. The same approval under another
+                // delivery ID is not greater and is not filed.
+                if (
+                    manifest.approval.reviewed_at,
+                    manifest.approval.id.as_bytes(),
+                ) <= (held_approval.reviewed_at, held_approval.id.as_bytes())
+                {
+                    let head = wire::head_bytes(&unlocked.manifest.history.head)
+                        .ok_or(VaultError::Corrupt)?;
+                    let anchor = link.keys.anchor(&head).map_err(VaultError::Portal)?;
+                    let claims = aid::receipt(outer, &manifest, anchor, now / 1000);
+                    let receipt = link
+                        .keys
+                        .sign(&serde_json::to_vec(&claims).map_err(|_| VaultError::Storage)?);
+                    return Ok(AidFiling::NotFiled(receipt));
+                }
+                true
+            }
+        };
+        self.file_aid(
+            unlocked,
+            link,
+            outer,
+            &manifest,
+            manifest_compact,
+            json,
+            index,
+            replace,
+            now,
+            session,
+        )?;
+        Ok(if replace {
+            AidFiling::Replaced
+        } else {
+            AidFiling::Filed
+        })
+    }
+
+    /// One commit: the history entry, the aid on its record (replacing a held one), the aid no
+    /// longer waiting, and the signed receipt over the new head's anchor.
+    #[allow(clippy::too_many_arguments)]
+    fn file_aid(
+        &self,
+        unlocked: &mut UnlockedVault,
+        link: &StoredLink,
+        outer: &wire::Outer,
+        manifest: &crate::reading_aid::AidManifest,
+        manifest_compact: String,
+        json: String,
+        index: usize,
+        replace: bool,
+        now: u64,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        use crate::reading_aid as aid;
+        let mut entry = HistoryEntry::new(HistoryEvent::ReadingAidFiled, now);
+        entry.record_id = Some(unlocked.manifest.records[index].id);
+        entry.portal_link_id = Some(link.id);
+        entry.delivery_id = Some(outer.delivery_id.clone());
+        entry.ciphertext_sha256 = Some(outer.ciphertext_sha256.clone());
+        entry.profile_id = Some(unlocked.manifest.records[index].profile_id);
+        if replace {
+            entry.how = Some("replaced".into());
+        }
+        let prepared = prepare_history(
+            &self.root,
+            &unlocked.master_key,
+            &unlocked.manifest,
+            vec![entry],
+        )?;
+        let mut history_written = prepared.written;
+        let mut commit_attempted = false;
+        let result = (|| {
+            let head = wire::head_bytes(&prepared.state.head).ok_or(VaultError::Corrupt)?;
+            let anchor = link.keys.anchor(&head).map_err(VaultError::Portal)?;
+            let claims = aid::receipt(outer, manifest, anchor, now / 1000);
+            let receipt = link
+                .keys
+                .sign(&serde_json::to_vec(&claims).map_err(|_| VaultError::Storage)?);
+            let mut next = unlocked.manifest.clone();
+            next.history = prepared.state;
+            next.waiting_aids
+                .retain(|w| !(w.link_id == link.id && w.outer.delivery_id == outer.delivery_id));
+            next.records[index].reading_aid = Some(crate::portal_delivery::AidCustody {
+                link_id: link.id,
+                outer: outer.clone(),
+                manifest_compact,
+                json,
+                checked_at_ms: now,
+                anchor_head: next.history.head.clone(),
+                receipt,
+                receipt_outcome: None,
+            });
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            terminate_at_test_boundary("delivery.before-aid-commit");
+            fail_at_test_boundary("delivery.before-aid-commit")?;
+            commit_attempted = true;
+            let redundant = commit_manifest_redundant(
+                &self.root,
+                &unlocked.master_key,
+                &mut unlocked.manifest,
+                next,
+                || {
+                    remove_objects(
+                        &self.root,
+                        &prepared.superseded,
+                        Removable::SupersededSegment,
+                    );
+                    Ok(())
+                },
+            )?;
+            history_written.clear();
+            unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+            if !redundant {
+                return Err(VaultError::RecoveryMode);
+            }
+            Ok(())
+        })();
+        if result.is_err() && commit_attempted {
+            unlocked.recovery = Some(RecoveryReason::WriteFailed);
+        } else {
+            remove_objects(&self.root, &history_written, Removable::UncommittedObject);
+        }
+        result
+    }
+
+    pub(crate) fn settle_aid_receipt(
+        &self,
+        link: &StoredLink,
+        a: &crate::portal_delivery::AidCustody,
+        outcome: ReceiptOutcome,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        self.mutate_recorded(|manifest, entries| {
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if !manifest.portal_links.contains(link) {
+                return Err(VaultError::Invalid);
+            }
+            let record = manifest
+                .records
+                .iter_mut()
+                .find(|r| {
+                    r.reading_aid.as_ref().is_some_and(|d| {
+                        d.link_id == link.id && d.outer.delivery_id == a.outer.delivery_id
+                    })
+                })
+                .ok_or(VaultError::NotFound)?;
+            let saved = record.reading_aid.as_mut().ok_or(VaultError::Corrupt)?;
+            if saved.receipt != a.receipt {
+                return Err(VaultError::Corrupt);
+            }
+            if saved.receipt_outcome.is_none() {
+                saved.receipt_outcome = Some(outcome);
+                let mut entry =
+                    HistoryEntry::new(HistoryEvent::DeliveryReceiptSettled, crate::now_ms());
+                entry.record_id = Some(record.id);
+                entry.portal_link_id = Some(link.id);
+                entry.delivery_id = Some(a.outer.delivery_id.clone());
+                entry.ciphertext_sha256 = Some(a.outer.ciphertext_sha256.clone());
+                entry.how = Some(
+                    match outcome {
+                        ReceiptOutcome::PickedUp => "picked_up",
+                        ReceiptOutcome::Gone => "delivery_not_found",
+                    }
+                    .into(),
+                );
+                entries.push(entry);
+            }
             Ok(())
         })
     }
@@ -279,7 +1130,18 @@ impl VaultStore {
         link: &StoredLink,
         session: u64,
     ) -> Result<(Uuid, bool), VaultError> {
-        let cancelled = || self.portal_link_ticket() != session;
+        self.receive_delivery_controlled(outer, sealed, link, session, &|| false)
+    }
+
+    pub(crate) fn receive_delivery_controlled(
+        &self,
+        outer: &wire::Outer,
+        sealed: &[u8],
+        link: &StoredLink,
+        session: u64,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<(Uuid, bool), VaultError> {
+        let cancelled = || stop() || self.portal_link_ticket() != session;
         if cancelled() {
             return Err(VaultError::Cancelled);
         }
@@ -290,8 +1152,21 @@ impl VaultStore {
             .filter_map(|l| l.clinic.as_ref())
             .flat_map(|c| c.clinic_keys.iter().map(|k| k.kid.clone()))
             .collect::<Vec<_>>();
-        let opened = wire::open(outer, sealed, link, &others, crate::now_ms() / 1000)
-            .map_err(|_| VaultError::PickupRefused)?;
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
+        let opened = wire::open(outer, sealed, link, &others, crate::now_ms() / 1000);
+        run_at_test_boundary("notifications.after-delivery-open");
+        let opened = opened.map_err(|_| {
+            if cancelled() {
+                VaultError::Cancelled
+            } else {
+                VaultError::PickupRefused
+            }
+        })?;
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
         let clinic = link.clinic.as_ref().ok_or(VaultError::Invalid)?;
         let pins = crate::signed_pdf::PinnedLink {
             clinic_id: clinic.clinic_id.clone(),
@@ -304,7 +1179,16 @@ impl VaultStore {
                 .collect(),
         };
         let checked = crate::signed_pdf_helper::verify(&opened.pdf, "", &[pins], &cancelled)
-            .map_err(|_| VaultError::PickupRefused)?;
+            .map_err(|_| {
+                if cancelled() {
+                    VaultError::Cancelled
+                } else {
+                    VaultError::PickupRefused
+                }
+            })?;
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
         let crate::signed_pdf::Verdict::Verified { kid, manifest: pdf } = checked else {
             return Err(VaultError::PickupRefused);
         };
@@ -342,9 +1226,18 @@ impl VaultStore {
         if cancelled() {
             return Err(VaultError::Cancelled);
         }
-        self.commit_delivery(outer, opened, link, &pdf, crate::now_ms(), session)
+        self.commit_delivery_controlled(
+            outer,
+            opened,
+            link,
+            &pdf,
+            crate::now_ms(),
+            session,
+            &cancelled,
+        )
     }
 
+    #[cfg(test)]
     fn commit_delivery(
         &self,
         outer: &wire::Outer,
@@ -354,9 +1247,26 @@ impl VaultStore {
         now: u64,
         session: u64,
     ) -> Result<(Uuid, bool), VaultError> {
+        self.commit_delivery_controlled(outer, opened, link, pdf, now, session, &|| false)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Existing custody inputs plus the same stop predicate.
+    fn commit_delivery_controlled(
+        &self,
+        outer: &wire::Outer,
+        opened: wire::Opened,
+        link: &StoredLink,
+        pdf: &crate::signed_pdf::Manifest,
+        now: u64,
+        session: u64,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<(Uuid, bool), VaultError> {
+        if stop() {
+            return Err(VaultError::Cancelled);
+        }
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
-        if self.portal_link_ticket() != session {
+        if stop() || self.portal_link_ticket() != session {
             return Err(VaultError::Cancelled);
         }
         if unlocked.recovery.is_some() {
@@ -406,6 +1316,9 @@ impl VaultStore {
         let mut history_written = Vec::new();
         let mut commit_attempted = false;
         let result = (|| {
+            if stop() {
+                return Err(VaultError::Cancelled);
+            }
             let encrypted = encrypt_object(
                 Box::new(io::Cursor::new(opened.pdf)),
                 &stage.join(&object_name),
@@ -417,6 +1330,9 @@ impl VaultStore {
                 &key,
                 &keys.fingerprint,
             )?;
+            if stop() {
+                return Err(VaultError::Cancelled);
+            }
             let mut record = StoredRecord {
                 id,
                 profile_id,
@@ -432,6 +1348,8 @@ impl VaultStore {
                 hidden: None,
                 original_pdf: None,
                 delivery: None,
+                reading_aid: None,
+                ai_results: Vec::new(),
             };
             record.original_pdf = Some(self.stage_original_pdf(
                 unlocked.manifest.vault_id,
@@ -440,6 +1358,9 @@ impl VaultStore {
                 &stage.join(&record.object_name),
                 &stage,
             )?);
+            if stop() {
+                return Err(VaultError::Cancelled);
+            }
             let original = record.original_pdf.as_ref().ok_or(VaultError::Corrupt)?;
             if original.sha256 != opened.manifest.document.sha256
                 || original.plaintext_size != opened.manifest.document.size
@@ -497,7 +1418,7 @@ impl VaultStore {
             }
             next.history = prepared.state;
             next.records.push(record);
-            if self.portal_link_ticket() != session {
+            if stop() || self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
             }
             terminate_at_test_boundary("delivery.before-custody-commit");
@@ -542,7 +1463,7 @@ impl VaultStore {
     }
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 mod unknown_service_date_tests {
     use super::*;
     use serde_json::{json, Value};
@@ -745,7 +1666,7 @@ mod unknown_service_date_tests {
     }
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::Value;
@@ -963,29 +1884,403 @@ mod tests {
     }
 }
 
-#[cfg(feature = "portal-linking")]
 use crate::portal_approval::{ApprovalExchange, ApprovalHttp};
-#[cfg(feature = "portal-linking")]
+
+/// What a read-only status check of a linked device's approval found (#131).
+pub(crate) struct ApprovalCheck {
+    pub capture: SnapshotCapture,
+    /// The device's saved state after the check, in the same session.
+    pub link: portal_link::LinkSummary,
+    /// For a request still open: the time the portal leaves it. Its end
+    /// (`expires_at`) was set from this device's clock when the request was
+    /// made, but the portal enforces that same number with its own clock, so
+    /// what is left is counted from the portal's clock when it replied (its
+    /// `Date` header), not from this device's. Display only: it never
+    /// decides a state, and `None` when the portal gave no time.
+    pub expires_in_ms: Option<u64>,
+    /// Why the check could not finish (no connection, a refusal, a portal
+    /// asking to wait, a reply that did not verify, a request it does not
+    /// have). What the check could read before it is still saved; the
+    /// failure itself saves nothing.
+    pub issue: Option<VaultError>,
+    /// The vault went into read-only recovery during the check (a save that
+    /// reached only one copy): the renderer must read the vault again.
+    pub recovery: bool,
+}
+
+#[derive(Clone)]
+pub(super) struct ApprovalPollProgress {
+    session: u64,
+    current: Option<Uuid>,
+    history: Vec<Uuid>,
+    next: usize,
+    history_first: bool,
+}
+impl ApprovalPollProgress {
+    fn matches(&self, session: u64, link: &StoredLink) -> bool {
+        self.session == session
+            && self.current == link.approval.as_ref().map(|a| a.request_id)
+            && self.history
+                == link
+                    .approval_history
+                    .iter()
+                    .map(|a| a.request_id)
+                    .collect::<Vec<_>>()
+    }
+}
+#[derive(Clone, Copy)]
+enum ApprovalRead {
+    Current,
+    History(usize),
+}
+struct ApprovalReadOrder<'a> {
+    next: usize,
+    history_first: bool,
+    budgeted: bool,
+    completed_history: &'a mut dyn FnMut(usize) -> Result<(), VaultError>,
+}
+
 struct ApprovalReconciliation {
     saved: StoredLink,
     missing: bool,
     deferred: Option<VaultError>,
 }
-#[cfg(feature = "portal-linking")]
 impl VaultStore {
+    pub(super) fn connect_portal_using(
+        &self,
+        session: u64,
+        link: impl FnOnce() -> Result<portal_link::LinkSummary, VaultError>,
+        http: &impl ApprovalExchange,
+    ) -> Result<(portal_link::LinkSummary, Option<VaultError>), VaultError> {
+        let _running = self.start_portal_work()?;
+        let linked = link()?;
+        run_at_test_boundary("portal.connected-before-approval");
+        // Both operations use the ticket captured before IPC was queued. A
+        // lock/reopen between them must not authorize work in the new session.
+        let approval_error = self
+            .request_staff_approval_using(linked.id, session, false, http)
+            .err();
+        // Publish only current persisted state in that same writable session.
+        // A failed second step never starts a replacement link or request.
+        let current = self
+            .delivery_links(session)?
+            .into_iter()
+            .find(|saved| saved.id == linked.id)
+            .ok_or(VaultError::NotFound)?;
+        Ok((self.link_summary(&current), approval_error))
+    }
+
     pub(crate) fn request_staff_approval(
         &self,
         link_id: Uuid,
         session: u64,
     ) -> Result<(), VaultError> {
-        self.request_staff_approval_using(link_id, session, false, &ApprovalHttp)
+        let _running = self.start_portal_work()?;
+        self.request_staff_approval_using(link_id, session, false, &ApprovalHttp::default())
     }
     pub(crate) fn restart_staff_approval(
         &self,
         link_id: Uuid,
         session: u64,
     ) -> Result<(), VaultError> {
-        self.request_staff_approval_using(link_id, session, true, &ApprovalHttp)
+        let _running = self.start_portal_work()?;
+        self.request_staff_approval_using(link_id, session, true, &ApprovalHttp::default())
+    }
+    pub(super) fn code_progress(&self, request_id: Uuid) -> CodeProgress {
+        self.approval_codes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&request_id)
+            .copied()
+            .unwrap_or_default()
+    }
+    fn update_code_progress(&self, request_id: Uuid, change: impl FnOnce(&mut CodeProgress)) {
+        change(
+            self.approval_codes
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .entry(request_id)
+                .or_default(),
+        );
+    }
+    /// Takes the code the patient typed for this link's open code request
+    /// (clinic code v1). It is checked here first, against the clinic key that
+    /// signed the request's verified challenge, this device and this request:
+    /// a code that does not match is never sent, and after five of those the
+    /// request takes no more. A code that matches is sent to the portal in a
+    /// signed device request; the clinic's answer comes through the usual
+    /// status checks. The code is never saved or logged.
+    pub(crate) fn submit_approval_code(
+        &self,
+        link_id: Uuid,
+        typed: &str,
+        session: u64,
+    ) -> Result<(), VaultError> {
+        self.submit_approval_code_using(link_id, typed, session, &ApprovalHttp::default())
+    }
+    fn submit_approval_code_using(
+        &self,
+        link_id: Uuid,
+        typed: &str,
+        session: u64,
+        http: &impl ApprovalExchange,
+    ) -> Result<(), VaultError> {
+        let _running = self.start_portal_work()?;
+        // Refuses a locked vault, another session's ticket and recovery mode.
+        let link = self
+            .delivery_links(session)?
+            .into_iter()
+            .find(|l| l.id == link_id)
+            .ok_or(VaultError::NotFound)?;
+        let attempt = link
+            .approval
+            .as_ref()
+            .filter(|attempt| {
+                !crate::portal_approval::currently_approved(&link)
+                    && attempt.acceptance.is_none()
+                    && attempt.state() == crate::portal_approval::ApprovalState::ChallengeReady
+            })
+            .ok_or(VaultError::ApprovalCodeNotOpen)?;
+        let kid = crate::portal_approval::code_challenge_kid(&link, attempt)?;
+        if self.code_progress(attempt.request_id).locked {
+            return Err(VaultError::ApprovalCodeLocked);
+        }
+        let digits = crate::portal_approval::code_digits(typed)?;
+        let (code_r, check) = digits.split_at(6);
+        let expected = crate::portal_approval::code_check(
+            &kid,
+            &link.keys.device_key_id(),
+            &attempt.request_id.to_string(),
+            code_r,
+        );
+        if expected.as_str() != check {
+            let mut locked = false;
+            self.update_code_progress(attempt.request_id, |progress| {
+                progress.mismatches = progress.mismatches.saturating_add(1);
+                progress.locked |= progress.mismatches >= MAX_CODE_MISMATCHES;
+                locked = progress.locked;
+            });
+            return Err(if locked {
+                VaultError::ApprovalCodeLocked
+            } else {
+                VaultError::ApprovalCodeMismatch
+            });
+        }
+        let anchor = self.delivery_anchor(&link, session)?;
+        let cancelled = || self.portal_link_ticket() != session;
+        let sent = http.submit_code(&link, attempt, code_r, &anchor, &cancelled);
+        // Kept even if the vault locked meanwhile: the portal has the code.
+        match &sent {
+            Ok(()) => {
+                self.update_code_progress(attempt.request_id, |progress| progress.submitted = true)
+            }
+            Err(VaultError::ApprovalCodeLocked) => {
+                self.update_code_progress(attempt.request_id, |progress| progress.locked = true)
+            }
+            Err(_) => {}
+        }
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
+        sent
+    }
+    /// Reads one linked device's approval status for the clinic view's
+    /// automatic refresh (#131). It only reads the portal (GET) and saves what
+    /// the clinic answered, through the same strict parsing and acceptance
+    /// verification as every other read: it never sends, re-sends or starts a
+    /// request, so a poll cannot mint requests or wear down the request limit.
+    /// Same admission guard, session ticket and recovery-mode refusal as all
+    /// other clinic work.
+    pub(crate) fn poll_staff_approval(
+        &self,
+        link_id: Uuid,
+        session: u64,
+    ) -> Result<ApprovalCheck, VaultError> {
+        self.poll_staff_approval_using(link_id, session, &ApprovalHttp::default())
+    }
+    fn poll_staff_approval_using(
+        &self,
+        link_id: Uuid,
+        session: u64,
+        http: &impl ApprovalExchange,
+    ) -> Result<ApprovalCheck, VaultError> {
+        self.poll_staff_approval_using_boundary(link_id, session, http, || {})
+    }
+    fn poll_staff_approval_using_boundary(
+        &self,
+        link_id: Uuid,
+        session: u64,
+        http: &impl ApprovalExchange,
+        before_summary: impl FnOnce(),
+    ) -> Result<ApprovalCheck, VaultError> {
+        self.poll_staff_approval_using_controls(
+            link_id,
+            session,
+            http,
+            &Instant::now,
+            before_summary,
+        )
+    }
+    fn poll_staff_approval_using_controls(
+        &self,
+        link_id: Uuid,
+        session: u64,
+        http: &impl ApprovalExchange,
+        now: &dyn Fn() -> Instant,
+        before_summary: impl FnOnce(),
+    ) -> Result<ApprovalCheck, VaultError> {
+        let _running = self.start_portal_work()?;
+        let links = self.delivery_links(session)?;
+        let initial = links
+            .iter()
+            .find(|link| link.id == link_id)
+            .cloned()
+            .ok_or(VaultError::NotFound)?;
+        let plan = {
+            let mut progress = self.approval_poll_progress();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            // Runtime only, bounded by the current linked devices. A changed
+            // session or exact request inventory never inherits a cursor.
+            progress.retain(|id, entry| {
+                entry.session == session && links.iter().any(|link| link.id == *id)
+            });
+            let fresh = || ApprovalPollProgress {
+                session,
+                current: initial.approval.as_ref().map(|a| a.request_id),
+                history: initial
+                    .approval_history
+                    .iter()
+                    .map(|a| a.request_id)
+                    .collect(),
+                next: 0,
+                history_first: false,
+            };
+            let entry = progress.entry(link_id).or_insert_with(fresh);
+            if !entry.matches(session, &initial) {
+                *entry = fresh();
+            }
+            let plan = entry.clone();
+            // Advance priority even on ordinary budget exhaustion: history
+            // gets a full first slot, current gets one at least every2 turns.
+            entry.history_first = !entry.history_first;
+            plan
+        };
+        // One monotonic network budget for the entire automatic check, not
+        // a fresh HTTP timeout for every retained request. Verification and
+        // durable-summary cleanup still follow their normal bounded paths.
+        let deadline = now() + Duration::from_secs(30);
+        let stop = || now() >= deadline;
+        let mut completed = |index| {
+            let mut progress = self.approval_poll_progress();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if let Some(entry) = progress.get_mut(&link_id) {
+                if entry.matches(session, &initial) {
+                    entry.next = (index + 1) % entry.history.len();
+                }
+            }
+            Ok(())
+        };
+        let recovery = self.reconcile_approvals_ordered(
+            &initial,
+            session,
+            http,
+            &stop,
+            true,
+            ApprovalReadOrder {
+                next: plan.next,
+                history_first: plan.history_first,
+                budgeted: true,
+                completed_history: &mut completed,
+            },
+        )?;
+        if !stop() {
+            // A fast completed scan already considered history; an ordinary
+            // first-failure result keeps the existing current-first retry
+            // rule. Only budget exhaustion owes history its full next turn.
+            let mut progress = self.approval_poll_progress();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            if let Some(entry) = progress.get_mut(&link_id) {
+                if entry.matches(session, &initial) {
+                    entry.history_first = false;
+                }
+            }
+        }
+        // Publish only the persisted state, read again in the same session.
+        // Read directly: a save during this check that reached only one copy
+        // has just put the vault into read-only recovery, which the caller
+        // must be told, with the state that was saved.
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        before_summary();
+        let (current, in_recovery, capture) = {
+            let guard = self.session();
+            // session() may itself invalidate a poisoned session. Check the
+            // original owner under this guard before cloning or capturing.
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            let current = open
+                .manifest
+                .portal_links
+                .iter()
+                .find(|l| l.id == link_id && l.clinic.is_some())
+                .cloned()
+                .ok_or(VaultError::NotFound)?;
+            (
+                current,
+                open.recovery.is_some(),
+                self.reserve_snapshot_capture()?,
+            )
+        };
+        let mut link = self.link_summary(&current);
+        let open = !link.clinic_approved
+            && matches!(
+                link.approval_status,
+                Some(
+                    crate::portal_approval::ApprovalState::Pending
+                        | crate::portal_approval::ApprovalState::ChallengeReady
+                )
+            );
+        // The portal's clock when it can stand for it, else this device's:
+        // the same choice the restart makes.
+        let local_now = crate::now_ms() / 1000;
+        let portal_now = current.approval.as_ref().and_then(|attempt| {
+            crate::portal_approval::deciding_portal_time(
+                http.portal_time(),
+                &current,
+                attempt,
+                !recovery.missing,
+                local_now,
+            )
+        });
+        link.approval_can_restart =
+            crate::portal_approval::can_restart(&current, portal_now.unwrap_or(local_now));
+        let mut expires_in_ms = None;
+        if let (Some(attempt), Some(portal_now)) = (&current.approval, portal_now) {
+            if open && !recovery.missing && recovery.deferred.is_none() {
+                let end = crate::portal_approval::request_expires_at(&current, attempt);
+                expires_in_ms = Some(end.saturating_sub(portal_now) * 1000);
+            }
+        }
+        Ok(ApprovalCheck {
+            capture,
+            link,
+            expires_in_ms,
+            issue: if recovery.missing {
+                Some(VaultError::ApprovalRequestMissing)
+            } else {
+                recovery.deferred
+            },
+            recovery: in_recovery,
+        })
     }
     fn approval_error(link: &StoredLink, missing: bool) -> Result<(), VaultError> {
         if crate::portal_approval::currently_approved(link) {
@@ -1070,12 +2365,57 @@ impl VaultStore {
             Ok(next)
         })
     }
+    /// Reads the portal's status of each request of `link` not yet accepted
+    /// (the current one, then kept older ones) and saves what changed. A
+    /// portal asking to wait ends it at once; with `stop_early`, so does any
+    /// other failure (the status check); otherwise the first is kept and the
+    /// rest are still read.
     fn reconcile_approvals(
         &self,
         link: &StoredLink,
         session: u64,
         http: &impl ApprovalExchange,
+        stop_early: bool,
     ) -> Result<ApprovalReconciliation, VaultError> {
+        self.reconcile_approvals_controlled(link, session, http, &|| false, stop_early)
+    }
+
+    fn reconcile_approvals_controlled(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        http: &impl ApprovalExchange,
+        stop: &dyn Fn() -> bool,
+        stop_early: bool,
+    ) -> Result<ApprovalReconciliation, VaultError> {
+        let mut completed = |_| Ok(());
+        self.reconcile_approvals_ordered(
+            link,
+            session,
+            http,
+            stop,
+            stop_early,
+            ApprovalReadOrder {
+                next: 0,
+                history_first: false,
+                budgeted: false,
+                completed_history: &mut completed,
+            },
+        )
+    }
+
+    fn reconcile_approvals_ordered(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        http: &impl ApprovalExchange,
+        stop: &dyn Fn() -> bool,
+        stop_early: bool,
+        order: ApprovalReadOrder<'_>,
+    ) -> Result<ApprovalReconciliation, VaultError> {
+        if self.portal_link_ticket() != session || (stop() && !order.budgeted) {
+            return Err(VaultError::Cancelled);
+        }
         if crate::portal_approval::currently_approved(link) {
             return Ok(ApprovalReconciliation {
                 saved: link.clone(),
@@ -1083,59 +2423,93 @@ impl VaultStore {
                 deferred: None,
             });
         }
-        let cancelled = || self.portal_link_ticket() != session;
+        let cancelled = || stop() || self.portal_link_ticket() != session;
         let mut saved = link.clone();
         let mut missing = false;
         let mut deferred = None;
-        if let Some(attempt) = link.approval.as_ref().filter(|a| a.acceptance.is_none()) {
-            let reply = http.get(link, attempt, &cancelled);
+        let current = link
+            .approval
+            .as_ref()
+            .filter(|a| a.acceptance.is_none())
+            .map(|_| ApprovalRead::Current);
+        let len = link.approval_history.len();
+        let history = (0..len)
+            .map(|offset| (order.next + offset) % len)
+            .filter(|&i| link.approval_history[i].acceptance.is_none())
+            .map(ApprovalRead::History);
+        let mut reads = Vec::with_capacity(len + 1);
+        if !order.history_first {
+            reads.extend(current);
+        }
+        reads.extend(history);
+        if order.history_first {
+            reads.extend(current);
+        }
+        for read in reads {
+            // Only a poll's own network budget may yield partial progress.
+            // An actual ended session always refuses, even at the deadline.
             if cancelled() {
-                return Err(VaultError::Cancelled);
-            }
-            match reply {
-                Ok(Some(reply)) => {
-                    let mut next = saved.clone();
-                    next.approval = Some(reply);
-                    saved = self.save_approval_state(&saved, next, session, false)?;
+                if self.portal_link_ticket() != session || !order.budgeted {
+                    return Err(VaultError::Cancelled);
                 }
-                Ok(None) => missing = true,
-                Err(error) if crate::portal_pickup::is_per_link_failure(&error) => {
-                    deferred = Some(error)
-                }
-                Err(error) => return Err(error),
-            }
-            if crate::portal_approval::currently_approved(&saved) {
                 return Ok(ApprovalReconciliation {
                     saved,
-                    missing: false,
-                    deferred: None,
+                    missing,
+                    deferred: Some(VaultError::Portal(portal_link::LinkError::Network)),
                 });
             }
-        }
-        for (index, attempt) in link.approval_history.iter().enumerate() {
-            if attempt.acceptance.is_some() {
-                continue;
-            }
+            let attempt = match read {
+                ApprovalRead::Current => link.approval.as_ref().unwrap(),
+                ApprovalRead::History(i) => &link.approval_history[i],
+            };
             let reply = http.get(&saved, attempt, &cancelled);
             if cancelled() {
-                return Err(VaultError::Cancelled);
+                if self.portal_link_ticket() != session || !order.budgeted {
+                    return Err(VaultError::Cancelled);
+                }
+                return Ok(ApprovalReconciliation {
+                    saved,
+                    missing,
+                    deferred: Some(VaultError::Portal(portal_link::LinkError::Network)),
+                });
             }
             match reply {
-                Ok(Some(reply)) => {
-                    let mut next = saved.clone();
-                    next.approval_history[index] = reply;
-                    saved = self.save_approval_state(&saved, next, session, false)?;
+                Ok(reply) => {
+                    if let Some(reply) = reply {
+                        let mut next = saved.clone();
+                        match read {
+                            ApprovalRead::Current => next.approval = Some(reply),
+                            ApprovalRead::History(i) => next.approval_history[i] = reply,
+                        }
+                        saved = self.save_approval_state(&saved, next, session, false)?;
+                    } else if matches!(read, ApprovalRead::Current) {
+                        missing = true;
+                    }
+                    if let ApprovalRead::History(i) = read {
+                        (order.completed_history)(i)?;
+                    }
                 }
-                Ok(None) => {}
+                Err(error @ VaultError::Portal(portal_link::LinkError::RateLimited(_))) => {
+                    return Ok(ApprovalReconciliation {
+                        saved,
+                        missing,
+                        deferred: Some(error),
+                    });
+                }
                 Err(error) if crate::portal_pickup::is_per_link_failure(&error) => {
+                    if stop_early {
+                        return Ok(ApprovalReconciliation {
+                            saved,
+                            missing,
+                            deferred: Some(error),
+                        });
+                    }
                     if deferred.is_none() {
                         deferred = Some(error);
                     }
                 }
                 Err(error) => return Err(error),
             }
-            // Once a verified current acceptance is durable, broken historical
-            // endpoints must not prevent this independently eligible link.
             if crate::portal_approval::currently_approved(&saved) {
                 return Ok(ApprovalReconciliation {
                     saved,
@@ -1162,7 +2536,7 @@ impl VaultStore {
             .into_iter()
             .find(|l| l.id == link_id)
             .ok_or(VaultError::NotFound)?;
-        let recovery = self.reconcile_approvals(&initial, session, http)?;
+        let recovery = self.reconcile_approvals(&initial, session, http, false)?;
         let mut link = recovery.saved;
         if crate::portal_approval::currently_approved(&link) {
             return Ok(());
@@ -1184,10 +2558,27 @@ impl VaultStore {
             if prior.state() == crate::portal_approval::ApprovalState::Refused {
                 return Err(VaultError::ApprovalTerminal(prior.state(), prior.reason));
             }
-            if prior.expires_at > now
-                && prior.state() != crate::portal_approval::ApprovalState::Cancelled
-            {
-                return Err(VaultError::Invalid);
+            // The portal's word, and its clock, decide whether the request
+            // is still open (#131). It would accept a second open request
+            // for this device, so none is started while the one it has can
+            // still be approved. Its clock is used only when it can stand
+            // for it (`portal_clock`); otherwise, or when it does not have
+            // the request, this device's clock decides, so a stuck or far-off
+            // date can never hold a new request back for good.
+            let clock = crate::portal_approval::deciding_portal_time(
+                http.portal_time(),
+                &link,
+                prior,
+                !recovery.missing,
+                now,
+            );
+            if !crate::portal_approval::request_ended(&link, prior, clock.unwrap_or(now)) {
+                // "Still open on the portal" only when the portal has it.
+                return Err(if recovery.missing {
+                    VaultError::ApprovalRequestMissing
+                } else {
+                    VaultError::ApprovalStillOpen
+                });
             }
             if link.approval_history.len() + 1 >= crate::portal_approval::MAX_APPROVAL_REQUESTS {
                 return Err(VaultError::ApprovalNeedsClinic);
@@ -1222,7 +2613,24 @@ impl VaultStore {
         session: u64,
         http: &impl ApprovalExchange,
     ) -> Result<(StoredLink, Option<VaultError>), VaultError> {
-        let recovery = self.reconcile_approvals(link, session, http)?;
+        self.refresh_staff_approval_controlled(link, session, http, &|| false)
+    }
+
+    pub(crate) fn refresh_staff_approval_controlled(
+        &self,
+        link: &StoredLink,
+        session: u64,
+        http: &impl ApprovalExchange,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<(StoredLink, Option<VaultError>), VaultError> {
+        let recovery = self.reconcile_approvals_controlled(link, session, http, stop, false)?;
+        // The portal asked to wait: this link's document check stops here
+        // too, rather than asking it again at once.
+        if let Some(error @ VaultError::Portal(portal_link::LinkError::RateLimited(_))) =
+            recovery.deferred
+        {
+            return Err(error);
+        }
         Self::approval_error(&recovery.saved, recovery.missing)?;
         Ok((recovery.saved, recovery.deferred))
     }
@@ -1241,7 +2649,7 @@ impl VaultStore {
     }
 }
 
-#[cfg(all(test, feature = "portal-linking"))]
+#[cfg(test)]
 mod approval_recovery_tests {
     use super::*;
     use crate::portal_approval::{self, ApprovalReason as Reason, ApprovalState as State, Attempt};
@@ -1249,10 +2657,23 @@ mod approval_recovery_tests {
     const PASSWORD: &str = "meadow-planet-copper-window-743";
     enum Reply {
         Accepted,
+        /// Says "accepted" with a proof that is not this request's signed
+        /// acceptance (#131): it must never count as approval.
+        UnverifiedAccepted,
         Pending,
+        /// "Challenge ready" with this clinic-signed challenge.
+        ChallengeReady(String),
         Terminal(State, Reason),
         Missing,
         Network,
+        RateLimited(Option<u64>),
+        /// The portal answered with another status (maintenance, a refused
+        /// device assertion…).
+        Refused(u16),
+        /// The portal says this device was removed from the account.
+        DeviceRemoved,
+        /// "Accepted" with this signed challenge and acceptance.
+        AcceptedWith(String, String),
     }
     struct Script<'a> {
         gets: Mutex<VecDeque<Reply>>,
@@ -1260,6 +2681,15 @@ mod approval_recovery_tests {
         calls: Mutex<Vec<(&'static str, Uuid, String)>>,
         lock_on_get: Option<&'a VaultStore>,
         check_saved_on_post: Option<&'a VaultStore>,
+        /// The portal's clock its replies give (Unix seconds).
+        portal_time: Option<u64>,
+        /// Other clinic work tried while a status read is under way.
+        busy_on_get: Option<(&'a VaultStore, Uuid)>,
+        /// Replies to sent codes, in order; a code sent with none left fails
+        /// the test.
+        code_replies: Mutex<VecDeque<Result<(), VaultError>>>,
+        /// Each code sent: request id, the 6 digits, and the vault anchor.
+        sent_codes: Mutex<Vec<(Uuid, String, String)>>,
     }
     impl<'a> Script<'a> {
         fn new(gets: Vec<Reply>, posts: Vec<Reply>) -> Self {
@@ -1269,6 +2699,10 @@ mod approval_recovery_tests {
                 calls: Mutex::new(Vec::new()),
                 lock_on_get: None,
                 check_saved_on_post: None,
+                portal_time: None,
+                busy_on_get: None,
+                code_replies: Mutex::new(VecDeque::new()),
+                sent_codes: Mutex::new(Vec::new()),
             }
         }
         fn response(
@@ -1283,11 +2717,35 @@ mod approval_recovery_tests {
             let body = match reply {
                 Reply::Missing => return Ok(None),
                 Reply::Network => return Err(VaultError::Portal(portal_link::LinkError::Network)),
+                Reply::Refused(status) => {
+                    return Err(VaultError::Portal(portal_link::LinkError::HttpRefused(
+                        status, None,
+                    )))
+                }
+                Reply::DeviceRemoved => {
+                    return Err(VaultError::Portal(portal_link::LinkError::DeviceRemoved))
+                }
+                Reply::RateLimited(wait) => {
+                    return Err(VaultError::Portal(portal_link::LinkError::RateLimited(
+                        wait,
+                    )))
+                }
                 Reply::Accepted => {
                     serde_json::json!({"request_id":attempt.request_id,"status":"accepted","challenge":fixture["flows"]["first"]["challenge"]["compact"],"acceptance":fixture["flows"]["first"]["acceptance"]["compact"],"reason":null})
                 }
+                Reply::UnverifiedAccepted => {
+                    // The clinic-signed challenge offered as the acceptance.
+                    let challenge = &fixture["flows"]["first"]["challenge"]["compact"];
+                    serde_json::json!({"request_id":attempt.request_id,"status":"accepted","challenge":challenge,"acceptance":challenge,"reason":null})
+                }
                 Reply::Pending => {
                     serde_json::json!({"request_id":attempt.request_id,"status":"pending","challenge":null,"acceptance":null,"reason":null})
+                }
+                Reply::AcceptedWith(challenge, acceptance) => {
+                    serde_json::json!({"request_id":attempt.request_id,"status":"accepted","challenge":challenge,"acceptance":acceptance,"reason":null})
+                }
+                Reply::ChallengeReady(challenge) => {
+                    serde_json::json!({"request_id":attempt.request_id,"status":"challenge_ready","challenge":challenge,"acceptance":null,"reason":null})
                 }
                 Reply::Terminal(state, reason) => {
                     serde_json::json!({"request_id":attempt.request_id,"status":state,"challenge":null,"acceptance":null,"reason":reason})
@@ -1314,6 +2772,45 @@ mod approval_recovery_tests {
                 .push(("GET", attempt.request_id, attempt.intent.clone()));
             if let Some(store) = self.lock_on_get {
                 store.lock();
+            }
+            if let Some((store, link_id)) = self.busy_on_get {
+                let session = store.portal_link_ticket();
+                let busy =
+                    |error| matches!(error, VaultError::Portal(portal_link::LinkError::Busy));
+                assert!(busy(
+                    store
+                        .request_staff_approval(link_id, session)
+                        .err()
+                        .unwrap()
+                ));
+                assert!(busy(
+                    store
+                        .restart_staff_approval(link_id, session)
+                        .err()
+                        .unwrap()
+                ));
+                // A manual document check shares the guard. Main's rule waits
+                // for it (up to 10 s) and then refuses; a clock that jumps past
+                // the wait shows the refusal without sleeping.
+                let clock = std::cell::Cell::new(std::time::Instant::now());
+                let jump = || {
+                    let at = clock.get();
+                    clock.set(at + std::time::Duration::from_secs(11));
+                    at
+                };
+                assert!(store
+                    .collection
+                    .manual_acquire(&store.portal_check_running, jump, || {})
+                    .is_none());
+                assert!(busy(
+                    store.poll_staff_approval(link_id, session).err().unwrap()
+                ));
+                assert!(busy(
+                    store
+                        .submit_approval_code(link_id, "000000000", session)
+                        .err()
+                        .unwrap()
+                ));
             }
             Self::response(
                 self.gets
@@ -1358,7 +2855,522 @@ mod approval_recovery_tests {
             )?
             .ok_or(VaultError::Invalid)
         }
+        fn portal_time(&self) -> Option<u64> {
+            self.portal_time
+        }
+        fn submit_code(
+            &self,
+            _: &StoredLink,
+            attempt: &Attempt,
+            code_r: &str,
+            anchor: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<(), VaultError> {
+            self.sent_codes.lock().unwrap().push((
+                attempt.request_id,
+                code_r.to_owned(),
+                anchor.to_owned(),
+            ));
+            self.code_replies
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("unexpected code sent")
+        }
     }
+    /// A vault whose one link has an open request that the clinic answered
+    /// with a code challenge (clinic code v1), and the code that matches it.
+    fn code_setup() -> (tempfile::TempDir, VaultStore, StoredLink, String) {
+        let (_, mut link, mut attempt) = portal_approval::first_fixture();
+        attempt.challenge = Some(portal_approval::fixture_challenge_with(|c| {
+            c["approval_kind"] = "code".into()
+        }));
+        attempt.status = Some(State::ChallengeReady);
+        link.approval = Some(attempt.clone());
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Code Patient", 1).unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(link.clone());
+                Ok(())
+            })
+            .unwrap();
+        let code = code_for(&link, &link.clinic.as_ref().unwrap().clinic_keys[0].kid);
+        (temp, store, link, code)
+    }
+    /// The 9-digit code `482193` + check digits made with `kid` for this
+    /// link's device and current request.
+    fn code_for(link: &StoredLink, kid: &str) -> String {
+        let attempt = link.approval.as_ref().unwrap();
+        format!(
+            "482193{}",
+            portal_approval::code_check(
+                kid,
+                &link.keys.device_key_id(),
+                &attempt.request_id.to_string(),
+                "482193"
+            )
+            .as_str()
+        )
+    }
+    fn shown(store: &VaultStore) -> portal_link::LinkSummary {
+        store.snapshot().unwrap().portal_links.remove(0)
+    }
+    #[test]
+    fn should_check_a_code_natively_and_never_send_one_that_does_not_match_this_clinic() {
+        let (_temp, store, link, code) = code_setup();
+        let attempt = link.approval.as_ref().unwrap();
+        let session = store.portal_link_ticket();
+        let script = Script::new(vec![], vec![]);
+        let submit =
+            |typed: &str| store.submit_approval_code_using(link.id, typed, session, &script);
+        // Not 9 digits: refused before any check, and not counted.
+        for typed in ["48219364", "482 193 64x", ""] {
+            assert!(matches!(submit(typed), Err(VaultError::Invalid)));
+        }
+        // A code made for another clinic key (a look-alike portal's), another
+        // device, another request, or with a digit wrong.
+        let other_device = portal_approval::code_check(
+            &link.clinic.as_ref().unwrap().clinic_keys[0].kid,
+            "FAKE-device-key-0002",
+            &attempt.request_id.to_string(),
+            "482193",
+        );
+        let other_request = portal_approval::code_check(
+            &link.clinic.as_ref().unwrap().clinic_keys[0].kid,
+            &link.keys.device_key_id(),
+            &Uuid::new_v4().to_string(),
+            "482193",
+        );
+        let mut typo = code.clone().into_bytes();
+        typo[0] = if typo[0] == b'9' { b'0' } else { typo[0] + 1 };
+        let wrong = [
+            code_for(&link, "FAKE-kid-clinic-B-0001"),
+            format!("482193{}", other_device.as_str()),
+            format!("482193{}", other_request.as_str()),
+            String::from_utf8(typo).unwrap(),
+        ]
+        .into_iter()
+        .filter(|candidate| candidate != &code)
+        .collect::<Vec<_>>();
+        assert!(wrong.len() >= 3, "the check digits tell these apart");
+        let mut tries = 0;
+        for candidate in wrong.iter().cycle() {
+            tries += 1;
+            let result = submit(candidate);
+            if tries < 5 {
+                assert!(
+                    matches!(result, Err(VaultError::ApprovalCodeMismatch)),
+                    "{tries}"
+                );
+                assert!(!shown(&store).approval_code_locked);
+            } else {
+                // The fifth says that no more are taken.
+                assert!(matches!(result, Err(VaultError::ApprovalCodeLocked)));
+                break;
+            }
+        }
+        assert!(shown(&store).approval_code_locked);
+        // Now even the right code is refused, and still nothing was sent.
+        assert!(matches!(submit(&code), Err(VaultError::ApprovalCodeLocked)));
+        assert!(script.sent_codes.lock().unwrap().is_empty());
+        let summary = shown(&store);
+        assert!(summary.approval_by_code && !summary.approval_code_submitted);
+    }
+    #[test]
+    fn should_send_a_matching_code_with_the_vault_anchor_and_show_it_submitted_until_accepted() {
+        let (_temp, store, link, code) = code_setup();
+        let attempt = link.approval.clone().unwrap();
+        let session = store.portal_link_ticket();
+        let script = Script::new(vec![], vec![]);
+        script.code_replies.lock().unwrap().push_back(Ok(()));
+        let summary = shown(&store);
+        assert!(summary.approval_by_code);
+        assert!(!summary.approval_code_submitted && !summary.approval_code_locked);
+        // Typed as the email shows it.
+        let typed = format!("{} {}-{}", &code[..3], &code[3..6], &code[6..]);
+        store
+            .submit_approval_code_using(link.id, &typed, session, &script)
+            .unwrap();
+        assert_eq!(
+            *script.sent_codes.lock().unwrap(),
+            vec![(
+                attempt.request_id,
+                "482193".to_owned(),
+                store.delivery_anchor(&link, session).unwrap()
+            )]
+        );
+        let summary = shown(&store);
+        assert!(summary.approval_code_submitted && !summary.clinic_approved);
+        // The usual status check then finds the clinic's code acceptance.
+        let challenge = attempt.challenge.clone().unwrap();
+        let acceptance = portal_approval::fixture_acceptance_with(&challenge, |a| {
+            a["approval_kind"] = "code".into()
+        });
+        let check = Script::new(vec![Reply::AcceptedWith(challenge, acceptance)], vec![]);
+        let found = store
+            .poll_staff_approval_using(link.id, session, &check)
+            .unwrap();
+        assert!(found.link.clinic_approved && found.link.approval_by_code);
+        assert!(saved(&store).summary().clinic_approved);
+        // Approved: no code is taken any more, and none is sent.
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeNotOpen)
+        ));
+        assert_eq!(script.sent_codes.lock().unwrap().len(), 1);
+    }
+    #[test]
+    fn should_take_no_more_codes_once_the_portal_has_had_five() {
+        let (_temp, store, link, code) = code_setup();
+        let session = store.portal_link_ticket();
+        let script = Script::new(vec![], vec![]);
+        script
+            .code_replies
+            .lock()
+            .unwrap()
+            .push_back(Err(VaultError::ApprovalCodeLocked));
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeLocked)
+        ));
+        assert!(shown(&store).approval_code_locked);
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeLocked)
+        ));
+        assert_eq!(script.sent_codes.lock().unwrap().len(), 1);
+        // The clinic's final refusal is kept with its reason.
+        let check = Script::new(
+            vec![Reply::Terminal(State::Refused, Reason::CodeAttempts)],
+            vec![],
+        );
+        let found = store
+            .poll_staff_approval_using(link.id, session, &check)
+            .unwrap();
+        assert_eq!(found.link.approval_status, Some(State::Refused));
+        assert_eq!(found.link.approval_reason, Some(Reason::CodeAttempts));
+    }
+    #[test]
+    fn should_send_no_code_for_a_request_that_is_not_waiting_for_one() {
+        // Staff approval, and a request with no challenge yet.
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let script = Script::new(vec![], vec![]);
+        let code = code_for(&link, &link.clinic.as_ref().unwrap().clinic_keys[0].kid);
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeNotOpen)
+        ));
+        let mut staff = link.clone();
+        let attempt = staff.approval.as_mut().unwrap();
+        attempt.challenge = Some(portal_approval::fixture_challenge_with(|_| {}));
+        attempt.status = Some(State::ChallengeReady);
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = staff.clone();
+                Ok(())
+            })
+            .unwrap();
+        assert!(!shown(&store).approval_by_code);
+        assert!(matches!(
+            store.submit_approval_code_using(link.id, &code, session, &script),
+            Err(VaultError::ApprovalCodeNotOpen)
+        ));
+        // A locked vault takes none either.
+        let (_temp, store, link, code) = code_setup();
+        let session = store.portal_link_ticket();
+        store.lock();
+        assert!(store
+            .submit_approval_code_using(link.id, &code, session, &script)
+            .is_err());
+        assert!(script.sent_codes.lock().unwrap().is_empty());
+    }
+    fn new_connect_store() -> (tempfile::TempDir, VaultStore) {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Connect Patient", 1).unwrap();
+        (temp, store)
+    }
+
+    fn finish_connect_link(
+        store: &VaultStore,
+        session: u64,
+    ) -> Result<portal_link::LinkSummary, VaultError> {
+        store.link_portal_using(
+            "https://fake.example",
+            "FAKE0001-FAKE7-Q2M4K",
+            "myCarlos FAKE device",
+            None,
+            (crate::now_ms(), session),
+            |_, device_id, _| {
+                let (_, fixture, _) = portal_approval::first_fixture();
+                let mut clinic = fixture.clinic.unwrap();
+                clinic.device_key_id = device_id.to_owned();
+                Ok(clinic)
+            },
+        )
+    }
+
+    #[test]
+    fn connect_submits_only_for_the_exact_durably_linked_device_without_granting_approval() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let mut http = Script::new(vec![], vec![Reply::Pending]);
+        http.check_saved_on_post = Some(&store);
+        let (result, error) = store
+            .connect_portal_using(session, || finish_connect_link(&store, session), &http)
+            .unwrap();
+        assert!(error.is_none());
+        assert!(!result.incomplete && result.approval_requested && !result.clinic_approved);
+        let current = saved(&store);
+        assert_eq!(current.id, result.id);
+        assert_eq!(current.keys.device_key_id(), result.device_key_id);
+        assert_eq!(
+            store
+                .session()
+                .as_ref()
+                .unwrap()
+                .manifest
+                .portal_links
+                .len(),
+            1
+        );
+        assert!(current.approval_history.is_empty());
+        let calls = http.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0],
+            (
+                "POST",
+                current.approval.as_ref().unwrap().request_id,
+                current.approval.as_ref().unwrap().intent.clone()
+            )
+        );
+    }
+
+    #[test]
+    fn connect_lost_approval_reply_keeps_the_original_link_keys_and_request_for_retry_after_reopen()
+    {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let http = Script::new(vec![], vec![Reply::Network]);
+        let (result, error) = store
+            .connect_portal_using(session, || finish_connect_link(&store, session), &http)
+            .unwrap();
+        assert!(matches!(
+            error,
+            Some(VaultError::Portal(portal_link::LinkError::Network))
+        ));
+        let original = saved(&store);
+        assert_eq!(original.id, result.id);
+        assert!(!result.incomplete && result.approval_requested && !result.clinic_approved);
+        let store = restart(store);
+        let http = Script::new(vec![Reply::Missing], vec![Reply::Pending]);
+        store
+            .request_staff_approval_using(result.id, store.portal_link_ticket(), false, &http)
+            .unwrap();
+        let retried = saved(&store);
+        assert_eq!(original.id, retried.id);
+        assert_eq!(original.keys.device_key_id(), retried.keys.device_key_id());
+        assert_eq!(
+            original.approval.as_ref().unwrap().request_id,
+            retried.approval.as_ref().unwrap().request_id
+        );
+        assert_eq!(
+            original.approval.as_ref().unwrap().intent,
+            retried.approval.as_ref().unwrap().intent
+        );
+        assert!(retried.approval_history.is_empty());
+        assert_eq!(
+            store
+                .session()
+                .as_ref()
+                .unwrap()
+                .manifest
+                .portal_links
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn connect_lock_and_reopen_between_link_and_request_never_posts_in_the_new_session() {
+        let (_temp, store) = new_connect_store();
+        let store = Arc::new(store);
+        let session = store.portal_link_ticket();
+        let locker = Arc::clone(&store);
+        AT_TEST_BOUNDARY.with(|slot| {
+            *slot.borrow_mut() = Some((
+                "portal.connected-before-approval",
+                Box::new(move || {
+                    locker.lock();
+                    locker.unlock(PASSWORD).unwrap();
+                }),
+            ));
+        });
+        let http = Script::new(vec![], vec![]);
+        let result =
+            store.connect_portal_using(session, || finish_connect_link(&store, session), &http);
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        assert!(http.calls.lock().unwrap().is_empty());
+        let current = saved(&store);
+        assert!(!current.summary().incomplete);
+        assert!(current.approval.is_none());
+        assert_eq!(
+            store
+                .session()
+                .as_ref()
+                .unwrap()
+                .manifest
+                .portal_links
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn connect_lost_link_reply_keeps_incomplete_attempt_without_requesting_approval() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let http = Script::new(vec![], vec![]);
+        let result = store.connect_portal_using(
+            session,
+            || {
+                store.link_portal_using(
+                    "https://fake.example",
+                    "FAKE0001-FAKE7-Q2M4K",
+                    "myCarlos",
+                    None,
+                    (crate::now_ms(), session),
+                    |_, _, _| Err(portal_link::LinkError::Network),
+                )
+            },
+            &http,
+        );
+        assert!(matches!(
+            result,
+            Err(VaultError::Portal(portal_link::LinkError::Network))
+        ));
+        assert!(http.calls.lock().unwrap().is_empty());
+        let guard = store.session();
+        let links = &guard.as_ref().unwrap().manifest.portal_links;
+        assert_eq!(links.len(), 1);
+        assert!(links[0].summary().incomplete && links[0].approval.is_none());
+        drop(guard);
+        assert!(
+            store.start_portal_work().is_ok(),
+            "failed work releases admission"
+        );
+    }
+
+    #[test]
+    fn connect_shared_admission_rejects_repeated_callbacks_and_other_portal_work_without_queuing() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let running = store.start_portal_work().unwrap();
+        let stale = session.wrapping_add(1);
+        let busy = |error| matches!(error, VaultError::Portal(portal_link::LinkError::Busy));
+        assert!(busy(
+            store
+                .connect_portal_using(
+                    stale,
+                    || panic!("duplicate link must not generate keys"),
+                    &Script::new(vec![], vec![])
+                )
+                .err()
+                .unwrap()
+        ));
+        assert!(busy(
+            store
+                .link_portal(
+                    "https://fake.example",
+                    "FAKE0001-FAKE7-Q2M4K",
+                    "myCarlos",
+                    None,
+                    1,
+                    stale
+                )
+                .err()
+                .unwrap()
+        ));
+        assert!(busy(
+            store
+                .request_staff_approval(Uuid::nil(), stale)
+                .err()
+                .unwrap()
+        ));
+        assert!(busy(
+            store
+                .restart_staff_approval(Uuid::nil(), stale)
+                .err()
+                .unwrap()
+        ));
+        // A manual document check shares the guard. It waits for it (main's
+        // manual rule, up to 10 s) and then refuses; a clock that jumps past
+        // the wait shows the refusal without sleeping.
+        let clock = std::cell::Cell::new(Instant::now());
+        let jump = || {
+            let at = clock.get();
+            clock.set(at + Duration::from_secs(11));
+            at
+        };
+        assert!(store
+            .collection
+            .manual_acquire(&store.portal_check_running, jump, || {})
+            .is_none());
+        assert!(
+            store.snapshot().unwrap().portal_links.is_empty(),
+            "local records remain readable"
+        );
+        drop(running);
+        let http = Script::new(vec![], vec![Reply::Pending]);
+        assert!(store
+            .connect_portal_using(session, || finish_connect_link(&store, session), &http)
+            .is_ok());
+    }
+
+    #[test]
+    fn connect_recovery_mode_and_stale_tickets_never_link_or_request_approval() {
+        for recovery in [false, true] {
+            let (_temp, store) = new_connect_store();
+            let session = store.portal_link_ticket();
+            if recovery {
+                store.session().as_mut().unwrap().recovery = Some(RecoveryReason::WriteFailed);
+            } else {
+                store.lock();
+                store.unlock(PASSWORD).unwrap();
+            }
+            let before = store.session().as_ref().unwrap().manifest.clone();
+            let http = Script::new(vec![], vec![]);
+            let result = store.connect_portal_using(
+                session,
+                || {
+                    store.link_portal_using(
+                        "https://fake.example",
+                        "FAKE0001-FAKE7-Q2M4K",
+                        "myCarlos",
+                        None,
+                        (crate::now_ms(), session),
+                        |_, _, _| panic!("ineligible session must not send HTTP"),
+                    )
+                },
+                &http,
+            );
+            if recovery {
+                assert!(matches!(result, Err(VaultError::RecoveryMode)));
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(VaultError::Portal(portal_link::LinkError::Cancelled))
+                ));
+            }
+            assert!(http.calls.lock().unwrap().is_empty());
+            assert!(before == store.session().as_ref().unwrap().manifest);
+        }
+    }
+
     fn setup(saved: bool) -> (tempfile::TempDir, VaultStore, StoredLink, Attempt) {
         let (_, mut link, attempt) = portal_approval::first_fixture();
         if saved {
@@ -1388,6 +3400,516 @@ mod approval_recovery_tests {
             .delivery_links(store.portal_link_ticket())
             .unwrap()
             .remove(0)
+    }
+    /// The contract's reference clock for the aid vectors.
+    const NOW_MS: u64 = 1_792_454_400_000;
+    fn pair_fixture() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/reading-aid-pair-contract.json"
+        ))
+        .unwrap()
+    }
+    /// A vault holding the contract's original (delivery 6f1c2a7e): a real committed record
+    /// (unit tests have no PDF helper for the contract's own document) whose custody is
+    /// rewritten to the contract's original, with its receipt signed again.
+    fn vault_with_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+        let pair = pair_fixture();
+        let pair_link = wire::tests::fixture_link(&pair);
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Aid Patient", 1).unwrap();
+        let (other, record_id, _) = add_signed_pending_delivery(&store);
+        let outer: wire::Outer =
+            serde_json::from_value(pair["original_package"]["outer"].clone()).unwrap();
+        let compact = pair["sender"]["original_manifest"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (payload, _) = wire::split_compact(&compact, 16 * 1024).unwrap();
+        let manifest: wire::Manifest = serde_json::from_slice(&payload).unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.retain(|l| l.id != other.id);
+                m.portal_links.push(pair_link.clone());
+                let head = m.history.head.clone();
+                let record = m.records.iter_mut().find(|r| r.id == record_id).unwrap();
+                let original = record.original_pdf.as_mut().unwrap();
+                original.sha256 = manifest.document.sha256.clone();
+                original.plaintext_size = manifest.document.size;
+                let c = record.delivery.as_mut().unwrap();
+                let anchor = pair_link
+                    .keys
+                    .anchor(&wire::head_bytes(&head).unwrap())
+                    .unwrap();
+                let claims = Receipt::new(&outer, &manifest, anchor, c.checked_at_ms / 1000);
+                c.receipt = pair_link.keys.sign(&serde_json::to_vec(&claims).unwrap());
+                c.link_id = pair_link.id;
+                c.outer = outer.clone();
+                c.manifest = manifest.clone();
+                c.manifest_compact = compact.clone();
+                c.anchor_head = head;
+                Ok(())
+            })
+            .unwrap();
+        (temp, store, pair_link, record_id)
+    }
+    /// A custody-only fixture with the contract's actual original bytes in
+    /// normal encrypted objects. The older pair helper rewrites metadata only;
+    /// receipt readback tests must keep bytes, digests and lengths coherent.
+    /// This verifies the package envelope at its reference clock, not a new
+    /// confined PDF-helper or installed-app delivery proof.
+    fn vault_with_readable_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+        let (temp, store, link, record_id) = vault_with_pair_original();
+        let pair = pair_fixture();
+        let outer: wire::Outer =
+            serde_json::from_value(pair["original_package"]["outer"].clone()).unwrap();
+        let sealed = wire::decode(pair["original_package"]["blob"].as_str().unwrap()).unwrap();
+        let opened = wire::open(&outer, &sealed, &link, &[], NOW_MS / 1000).unwrap();
+        let (mut record, vault_id, keys) = {
+            let guard = store.session();
+            let open = guard.as_ref().unwrap();
+            let record = open
+                .manifest
+                .records
+                .iter()
+                .find(|r| r.id == record_id)
+                .unwrap()
+                .clone();
+            (
+                record,
+                open.manifest.vault_id,
+                derive_keys(open.manifest.vault_id, &open.master_key).unwrap(),
+            )
+        };
+        assert_eq!(
+            record.delivery.as_ref().unwrap().manifest_compact,
+            opened.manifest_compact
+        );
+        let objects = store.root.join("objects");
+        record.object_name = format!("{}.mcobj", Uuid::new_v4());
+        let mut key = Zeroizing::new([0; 32]);
+        OsRng.fill_bytes(key.as_mut());
+        let encrypted = encrypt_object(
+            Box::new(io::Cursor::new(opened.pdf)),
+            &objects.join(&record.object_name),
+            ObjectContext {
+                vault_id,
+                record_id,
+                profile_id: record.profile_id,
+            },
+            &key,
+            &keys.fingerprint,
+        )
+        .unwrap();
+        record.plaintext_size = encrypted.plaintext_size;
+        record.fingerprint = BASE64.encode(encrypted.fingerprint);
+        record.wrapped_object_key =
+            wrap_secret(&keys.object_wrap, &key, record_id.as_bytes()).unwrap();
+        record.original_pdf = Some(
+            store
+                .stage_original_pdf(
+                    vault_id,
+                    &keys,
+                    &record,
+                    &objects.join(&record.object_name),
+                    &objects,
+                )
+                .unwrap(),
+        );
+        let original = record.original_pdf.as_ref().unwrap();
+        assert_eq!(original.sha256, opened.manifest.document.sha256);
+        assert_eq!(original.plaintext_size, opened.manifest.document.size);
+        store
+            .mutate_recorded(|m, _| {
+                *m.records.iter_mut().find(|r| r.id == record_id).unwrap() = record;
+                Ok(())
+            })
+            .unwrap();
+        let pending = store
+            .pending_receipts_checked(&link, store.portal_link_ticket())
+            .unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (1, 0, 0)
+        );
+        (temp, store, link, record_id)
+    }
+
+    fn aid_vector(name: &str) -> (wire::Outer, Vec<u8>) {
+        let pair = pair_fixture();
+        let v = pair["packages"]["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == name)
+            .unwrap()
+            .clone();
+        (
+            serde_json::from_value(v["outer"].clone()).unwrap(),
+            wire::decode(v["blob"].as_str().unwrap()).unwrap(),
+        )
+    }
+    fn stored_aid(store: &VaultStore, record_id: Uuid) -> Option<wire::AidCustody> {
+        store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .records
+            .iter()
+            .find(|r| r.id == record_id)
+            .unwrap()
+            .reading_aid
+            .clone()
+    }
+    #[test]
+    fn a_reading_aid_is_filed_on_its_original_once_with_a_receipt_that_settles() {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        let session = store.portal_link_ticket();
+        // The vector's clock is the contract's reference time; the receiver checks "now".
+        let filed = store.receive_aid_at(&outer, &sealed, &link, session, NOW_MS);
+        let filed = filed.unwrap_or_else(|e| panic!("{e:?}"));
+        assert_eq!(filed, AidFiling::Filed);
+        let kept = stored_aid(&store, record_id).unwrap();
+        assert_eq!(kept.outer.delivery_id, outer.delivery_id);
+        assert!(kept.receipt_outcome.is_none());
+        let again = store
+            .receive_aid_at(&outer, &sealed, &link, session, NOW_MS)
+            .unwrap();
+        assert_eq!(again, AidFiling::AlreadyFiled);
+        assert_eq!(stored_aid(&store, record_id).unwrap().receipt, kept.receipt);
+        let events = crate::vault::history_events_for_test(&store);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| e.event == HistoryEvent::ReadingAidFiled)
+                .count(),
+            1
+        );
+        store
+            .settle_aid_receipt(&link, &kept, wire::ReceiptOutcome::PickedUp, session)
+            .unwrap();
+        assert!(stored_aid(&store, record_id)
+            .unwrap()
+            .receipt_outcome
+            .is_some());
+        // It survives a restart: the validation of format 8 accepts what was written.
+        let store = restart(store);
+        let kept = stored_aid(&store, record_id).unwrap();
+        assert_eq!(kept.outer.delivery_id, outer.delivery_id);
+    }
+    #[test]
+    fn a_filed_aid_reaches_the_snapshot_with_its_notice_and_review_time_and_a_plain_record_does_not(
+    ) {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let before = store.snapshot().unwrap();
+        assert!(before.records.iter().all(|r| r.reading_aid.is_none()));
+        let json = serde_json::to_value(&before.records[0]).unwrap();
+        assert!(json.get("readingAid").is_none());
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        store
+            .receive_aid_at(&outer, &sealed, &link, store.portal_link_ticket(), NOW_MS)
+            .unwrap();
+        let held = stored_aid(&store, record_id).unwrap();
+        let reviewed = crate::reading_aid::kept_manifest(&held.manifest_compact)
+            .unwrap()
+            .approval
+            .reviewed_at;
+        let snapshot = store.snapshot().unwrap();
+        let record = snapshot.records.iter().find(|r| r.id == record_id).unwrap();
+        let aid = record
+            .reading_aid
+            .as_ref()
+            .expect("the filed aid is on its record");
+        assert_eq!(aid.delivery_id, outer.delivery_id);
+        assert_eq!(aid.reviewed_at_ms, reviewed * 1000);
+        assert_eq!(aid.language, "en");
+        assert!(aid.notice.heading.starts_with("AI-generated reading aid"));
+        assert!(aid.notice.body.starts_with("FAKE notice body"));
+        assert_eq!(aid.points.len(), 2);
+        assert_eq!(aid.points[0].evidence.len(), 1);
+        // The reader receives it under camelCase names, and it is not a document of its own.
+        let json = serde_json::to_value(record).unwrap();
+        assert_eq!(json["readingAid"]["reviewedAtMs"], reviewed * 1000);
+        assert_eq!(json["readingAid"]["notice"]["heading"], aid.notice.heading);
+        assert_eq!(snapshot.records.len(), before.records.len());
+    }
+    fn waiting_aids(store: &VaultStore) -> Vec<wire::WaitingAid> {
+        store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .waiting_aids
+            .clone()
+    }
+    /// A vault with the pair link and no original, holding the contract's aid as a waiting aid.
+    fn vault_with_waiting_aid() -> (
+        tempfile::TempDir,
+        VaultStore,
+        StoredLink,
+        wire::Outer,
+        Vec<u8>,
+    ) {
+        let pair = pair_fixture();
+        let link = wire::tests::fixture_link(&pair);
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Aid Patient", 1).unwrap();
+        add_link(&store, &link);
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        let kept = store
+            .receive_aid_at(&outer, &sealed, &link, store.portal_link_ticket(), NOW_MS)
+            .unwrap();
+        assert_eq!(kept, AidFiling::Waiting);
+        (temp, store, link, outer, sealed)
+    }
+    #[test]
+    fn a_reading_aid_without_its_original_is_kept_waiting_by_id_and_hash_with_no_receipt() {
+        use crate::reading_aid::Listed;
+        let (_temp, store, link, outer, sealed) = vault_with_waiting_aid();
+        let session = store.portal_link_ticket();
+        let kept = waiting_aids(&store);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].outer.delivery_id, outer.delivery_id);
+        assert_eq!(kept[0].outer.ciphertext_sha256, outer.ciphertext_sha256);
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .all(|e| e.event != HistoryEvent::ReadingAidFiled));
+        // The same copy is never downloaded again; a different hash under that ID is replayed.
+        assert_eq!(
+            store.aid_listed(&outer, &link, session).unwrap(),
+            Listed::Kept
+        );
+        let mut other = outer.clone();
+        other.ciphertext_sha256 = wire::sha256(b"another copy");
+        assert_eq!(
+            store.aid_listed(&other, &link, session).unwrap(),
+            Listed::Replayed
+        );
+        // Seeing it again keeps one copy, and it survives a restart.
+        let again = store
+            .receive_aid_at(&outer, &sealed, &link, session, NOW_MS)
+            .unwrap();
+        assert_eq!(again, AidFiling::Waiting);
+        assert_eq!(waiting_aids(&restart(store)).len(), 1);
+    }
+    #[test]
+    fn a_waiting_aid_is_filed_once_its_original_is_filed_and_is_not_kept_after() {
+        let (_temp, kept_store, _link, _outer, _sealed) = vault_with_waiting_aid();
+        let waiting = waiting_aids(&kept_store).remove(0);
+        let (_temp2, store, link, record_id) = vault_with_pair_original();
+        let session = store.portal_link_ticket();
+        let mut moved = waiting.clone();
+        moved.link_id = link.id;
+        store
+            .mutate_recorded(|m, _| {
+                m.waiting_aids.push(moved.clone());
+                Ok(())
+            })
+            .unwrap();
+        let done = store
+            .recheck_waiting_aids_at(&link, session, NOW_MS)
+            .unwrap();
+        assert_eq!((done.filed, done.refused, done.not_filed.len()), (1, 0, 0));
+        assert!(waiting_aids(&store).is_empty());
+        let filed = stored_aid(&store, record_id).unwrap();
+        assert_eq!(filed.outer.delivery_id, waiting.outer.delivery_id);
+        assert!(filed.receipt_outcome.is_none());
+        assert_eq!(
+            crate::vault::history_events_for_test(&store)
+                .iter()
+                .filter(|e| e.event == HistoryEvent::ReadingAidFiled)
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn a_waiting_aid_past_its_expiry_and_skew_is_deleted_silently() {
+        let (_temp, store, link, _outer, _sealed) = vault_with_waiting_aid();
+        let session = store.portal_link_ticket();
+        // The aid expires at 1793055600; the device allows 24 hours more.
+        let inside = (1_793_055_600 + 86_400) * 1000;
+        let kept = store
+            .recheck_waiting_aids_at(&link, session, inside)
+            .unwrap();
+        assert_eq!((kept.filed, kept.refused), (0, 0));
+        assert_eq!(waiting_aids(&store).len(), 1);
+        let gone = store
+            .recheck_waiting_aids_at(&link, session, inside + 1000)
+            .unwrap();
+        assert_eq!((gone.filed, gone.refused, gone.not_filed.len()), (0, 0, 0));
+        assert!(waiting_aids(&store).is_empty());
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .all(|e| e.event != HistoryEvent::ReadingAidFiled));
+    }
+    #[test]
+    fn a_waiting_aid_whose_original_was_replaced_is_dropped_as_refused() {
+        let (_temp, kept_store, _link, _outer, _sealed) = vault_with_waiting_aid();
+        let waiting = waiting_aids(&kept_store).remove(0);
+        let (_temp2, store, link, record_id) = vault_with_pair_original();
+        let session = store.portal_link_ticket();
+        let mut moved = waiting;
+        moved.link_id = link.id;
+        // The aid was approved for another PDF than the one now filed: its pair claim names a
+        // different document hash.
+        {
+            use base64::Engine;
+            let (payload, signature) =
+                wire::split_compact(&moved.manifest_compact, 16 * 1024).unwrap();
+            let mut claims: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+            claims["pair"]["original_document_sha256"] = wire::sha256(b"another pdf").into();
+            moved.manifest_compact = format!(
+                "{}.{}",
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(serde_json::to_vec(&claims).unwrap()),
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature)
+            );
+        }
+        store
+            .mutate_recorded(|m, _| {
+                m.waiting_aids.push(moved.clone());
+                Ok(())
+            })
+            .unwrap_or_else(|e| panic!("{e:?}"));
+        let done = store
+            .recheck_waiting_aids_at(&link, session, NOW_MS)
+            .unwrap();
+        assert_eq!((done.filed, done.refused), (0, 1));
+        assert!(waiting_aids(&store).is_empty());
+        assert!(stored_aid(&store, record_id).is_none());
+    }
+    fn aid_approval_id(custody: &wire::AidCustody) -> String {
+        crate::reading_aid::kept_manifest(&custody.manifest_compact)
+            .unwrap()
+            .approval
+            .id
+    }
+    /// A second aid for the filed original: the contract's aid with another delivery ID and review
+    /// time, its signed manifest re-encoded (the vault checks signatures on arrival, not here).
+    fn second_aid(
+        first: &wire::AidCustody,
+        id: &str,
+        reviewed_at: u64,
+        approval_id: Option<String>,
+    ) -> (wire::Outer, crate::reading_aid::AidManifest, String) {
+        use base64::Engine;
+        let (payload, signature) = wire::split_compact(&first.manifest_compact, 16 * 1024).unwrap();
+        let mut claims: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        claims["delivery_id"] = id.into();
+        claims["approval"]["reviewed_at"] = reviewed_at.into();
+        if let Some(approval_id) = approval_id {
+            claims["approval"]["id"] = approval_id.into();
+        }
+        let compact = format!(
+            "{}.{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(serde_json::to_vec(&claims).unwrap()),
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature)
+        );
+        let mut outer = first.outer.clone();
+        outer.delivery_id = id.into();
+        outer.ciphertext_sha256 = wire::sha256(id.as_bytes());
+        (
+            outer,
+            crate::reading_aid::kept_manifest(&compact).unwrap(),
+            compact,
+        )
+    }
+    #[test]
+    fn a_later_reviewed_aid_replaces_the_held_one_and_an_earlier_or_equal_one_gets_only_a_receipt()
+    {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let session = store.portal_link_ticket();
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        store
+            .receive_aid_at(&outer, &sealed, &link, session, NOW_MS)
+            .unwrap();
+        let held = stored_aid(&store, record_id).unwrap();
+        let held_at = crate::reading_aid::kept_manifest(&held.manifest_compact)
+            .unwrap()
+            .approval
+            .reviewed_at;
+        let session_of = |s: &VaultStore| s.portal_link_ticket();
+        let attempt = |id: &str, at: u64, approval: Option<String>| {
+            let (o, m, c) = second_aid(&held, id, at, approval);
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            store.file_or_refuse(
+                unlocked,
+                &link,
+                &o,
+                m,
+                c,
+                held.json.clone(),
+                NOW_MS,
+                session_of(&store),
+            )
+        };
+        // Equal and earlier reviews: not filed, a signed receipt for the new aid only.
+        for at in [held_at, held_at - 10] {
+            let id = "11111111-1111-4111-8111-111111111111";
+            let AidFiling::NotFiled(receipt) = attempt(id, at, None).unwrap() else {
+                panic!("an equal or earlier review must not replace the held aid");
+            };
+            let (payload, _) = wire::split_compact(&receipt, 4096).unwrap();
+            let claims: wire::Receipt = serde_json::from_slice(&payload).unwrap();
+            assert_eq!(claims.delivery_id, id);
+            assert_eq!(
+                stored_aid(&store, record_id).unwrap().outer.delivery_id,
+                held.outer.delivery_id
+            );
+        }
+        // Within the same second the larger approval ID wins, byte by byte: a smaller one is not
+        // filed and a larger one replaces the held aid, so devices cannot disagree.
+        let held_id = aid_approval_id(&held);
+        let mut smaller = held_id.clone();
+        smaller.pop();
+        assert!(matches!(
+            attempt(
+                "44444444-4444-4444-8444-444444444444",
+                held_at,
+                Some(smaller)
+            )
+            .unwrap(),
+            AidFiling::NotFiled(_)
+        ));
+        let larger = format!("{held_id}z");
+        assert_eq!(
+            attempt(
+                "33333333-3333-4333-8333-333333333333",
+                held_at,
+                Some(larger)
+            )
+            .unwrap(),
+            AidFiling::Replaced
+        );
+        // A strictly later review replaces it, in a commit that says so, and keeps the validation happy.
+        let id = "22222222-2222-4222-8222-222222222222";
+        assert_eq!(
+            attempt(id, held_at + 10, None).unwrap(),
+            AidFiling::Replaced
+        );
+        let now_held = stored_aid(&store, record_id).unwrap();
+        assert_eq!(now_held.outer.delivery_id, id);
+        assert!(now_held.receipt_outcome.is_none());
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .any(|e| e.event == HistoryEvent::ReadingAidFiled
+                && e.how.as_deref() == Some("replaced")));
+        assert_eq!(
+            stored_aid(&restart(store), record_id)
+                .unwrap()
+                .outer
+                .delivery_id,
+            id
+        );
     }
     #[test]
     fn should_recover_original_acceptance_after_expiry_and_restart_before_request_or_explicit_restart(
@@ -1544,6 +4066,1038 @@ mod approval_recovery_tests {
         assert!(current.approval.as_ref().unwrap().acceptance.is_none());
         assert!(!current.summary().clinic_approved);
     }
+    /// A linked FAKE device whose saved request was made at `made_at` (Unix
+    /// seconds), so that its end is near this device's clock (#131).
+    fn connect_with_request_made_at(
+        made_at: u64,
+    ) -> (tempfile::TempDir, VaultStore, StoredLink, Attempt) {
+        let (temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let linked = finish_connect_link(&store, session).unwrap();
+        let link = saved(&store);
+        assert_eq!(link.id, linked.id);
+        let attempt = portal_approval::create(&link, made_at).unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0].approval = Some(attempt.clone());
+                Ok(())
+            })
+            .unwrap();
+        let current = saved(&store);
+        (temp, store, current, attempt)
+    }
+
+    fn manifest(store: &VaultStore) -> Manifest {
+        store.session().as_ref().unwrap().manifest.clone()
+    }
+    fn only_gets(http: &Script<'_>) -> Vec<Uuid> {
+        let calls = http.calls.lock().unwrap();
+        assert!(
+            calls.iter().all(|(method, _, _)| *method == "GET"),
+            "a status check must never send a request"
+        );
+        calls.iter().map(|(_, id, _)| *id).collect()
+    }
+
+    struct TimedPoll {
+        elapsed: std::cell::Cell<Duration>,
+        current: Uuid,
+        acceptance: Option<Uuid>,
+        current_time: Duration,
+        history_time: Duration,
+        calls: std::cell::RefCell<Vec<Uuid>>,
+        completed: std::cell::RefCell<Vec<Uuid>>,
+    }
+    impl TimedPoll {
+        fn new(current: Uuid, acceptance: Option<Uuid>, current_ms: u64, history_ms: u64) -> Self {
+            Self {
+                elapsed: std::cell::Cell::new(Duration::ZERO),
+                current,
+                acceptance,
+                current_time: Duration::from_millis(current_ms),
+                history_time: Duration::from_millis(history_ms),
+                calls: Default::default(),
+                completed: Default::default(),
+            }
+        }
+    }
+    impl ApprovalExchange for TimedPoll {
+        fn get(
+            &self,
+            link: &StoredLink,
+            attempt: &Attempt,
+            cancelled: &dyn Fn() -> bool,
+        ) -> Result<Option<Attempt>, VaultError> {
+            self.calls.borrow_mut().push(attempt.request_id);
+            let cost = if attempt.request_id == self.current {
+                self.current_time
+            } else {
+                self.history_time
+            };
+            let finish = self.elapsed.get() + cost;
+            while self.elapsed.get() < finish {
+                if cancelled() {
+                    return Err(VaultError::Cancelled);
+                }
+                self.elapsed
+                    .set((self.elapsed.get() + Duration::from_millis(50)).min(finish));
+            }
+            if cancelled() {
+                return Err(VaultError::Cancelled);
+            }
+            let result = Script::response(
+                if self.acceptance == Some(attempt.request_id) {
+                    Reply::Accepted
+                } else {
+                    Reply::Pending
+                },
+                link,
+                attempt,
+            );
+            if result.is_ok() {
+                self.completed.borrow_mut().push(attempt.request_id);
+            }
+            result
+        }
+        fn post(
+            &self,
+            _: &StoredLink,
+            _: &Attempt,
+            _: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<Attempt, VaultError> {
+            panic!("automatic status polls must never POST")
+        }
+        fn submit_code(
+            &self,
+            _: &StoredLink,
+            _: &Attempt,
+            _: &str,
+            _: &str,
+            _: &dyn Fn() -> bool,
+        ) -> Result<(), VaultError> {
+            panic!("automatic status polls must never submit a clinic code")
+        }
+    }
+    fn history_poll_fixture(count: usize) -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+        let (temp, store, link, old) = setup(true);
+        let now = crate::now_ms() / 1000;
+        let mut history: Vec<_> = (0..count)
+            .map(|i| portal_approval::create(&link, now - 900 - i as u64).unwrap())
+            .collect();
+        history[count - 1] = old.clone();
+        let mut current = link;
+        current.approval = Some(portal_approval::create(&current, now - 700).unwrap());
+        current.approval_history = history;
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = current.clone();
+                Ok(())
+            })
+            .unwrap();
+        (temp, store, current, old.request_id)
+    }
+    fn assert_poll_budget_fairness(current_ms: u64, history_ms: u64) {
+        let (_temp, store, link, acceptance) = history_poll_fixture(5);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let http = TimedPoll::new(current, Some(acceptance), current_ms, history_ms);
+        let origin = Instant::now();
+        let clock = || origin + http.elapsed.get();
+        let mut verified = false;
+        for turn in 0..40 {
+            let before = http.elapsed.get();
+            let first = http.calls.borrow().len();
+            let result = store
+                .poll_staff_approval_using_controls(
+                    link.id,
+                    store.portal_link_ticket(),
+                    &http,
+                    &clock,
+                    || {},
+                )
+                .unwrap();
+            assert!(
+                http.elapsed.get() - before <= Duration::from_secs(30),
+                "one poll must not consume a separate timeout for each retained request"
+            );
+            if turn % 2 == 0 {
+                assert_eq!(http.calls.borrow()[first], current);
+            } else {
+                assert_ne!(
+                    http.calls.borrow()[first],
+                    current,
+                    "a history turn must give the retained request its genuine first slot"
+                );
+            }
+            if result.link.clinic_approved {
+                verified = true;
+                break;
+            }
+            assert!(matches!(
+                result.issue,
+                Some(VaultError::Portal(portal_link::LinkError::Network))
+            ));
+            // The patient's manual work has admission again on return.
+            drop(store.start_portal_work().unwrap());
+        }
+        assert!(
+            verified,
+            "continued bounded polls must eventually verify the late retained acceptance"
+        );
+        assert!(http.completed.borrow().contains(&acceptance));
+        assert!(saved(&store).summary().clinic_approved);
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .any(|e| e.event == HistoryEvent::DeviceApprovalVerified));
+    }
+    #[test]
+    fn poll_budget_fairness_for_ten_second_successful_reads() {
+        assert_poll_budget_fairness(10_000, 10_000);
+    }
+    #[test]
+    fn poll_budget_fairness_gives_slow_history_a_full_turn() {
+        assert_poll_budget_fairness(10_000, 25_000);
+    }
+    #[test]
+    fn poll_budget_fairness_keeps_current_priority_near_its_full_timeout() {
+        assert_poll_budget_fairness(29_900, 25_000);
+    }
+
+    #[test]
+    fn poll_budget_fast_scan_still_reads_all_sixteen_requests_without_posting() {
+        let (_temp, store, link, _) = history_poll_fixture(15);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let http = TimedPoll::new(current, None, 100, 100);
+        let origin = Instant::now();
+        let result = store
+            .poll_staff_approval_using_controls(
+                link.id,
+                store.portal_link_ticket(),
+                &http,
+                &|| origin + http.elapsed.get(),
+                || {},
+            )
+            .unwrap();
+        assert!(result.issue.is_none());
+        assert_eq!(http.completed.borrow().len(), 16);
+        assert_eq!(http.calls.borrow()[0], current);
+        for attempt in &link.approval_history {
+            assert!(http.completed.borrow().contains(&attempt.request_id));
+        }
+        assert!(!result.link.clinic_approved);
+    }
+
+    #[test]
+    fn poll_budget_runtime_progress_resets_for_session_restart_and_inventory_changes() {
+        for reset in ["session", "restart", "inventory"] {
+            let (_temp, store, link, _) = history_poll_fixture(5);
+            let current = link.approval.as_ref().unwrap().request_id;
+            let http = TimedPoll::new(current, None, 10_000, 25_000);
+            let origin = Instant::now();
+            let clock = || origin + http.elapsed.get();
+            store
+                .poll_staff_approval_using_controls(
+                    link.id,
+                    store.portal_link_ticket(),
+                    &http,
+                    &clock,
+                    || {},
+                )
+                .unwrap();
+            match reset {
+                "session" => {
+                    store.lock();
+                    store.unlock(PASSWORD).unwrap();
+                }
+                "restart" => {
+                    let transport = Script::new(
+                        (0..6).map(|_| Reply::Pending).collect(),
+                        vec![Reply::Pending],
+                    );
+                    store
+                        .request_staff_approval_using(
+                            link.id,
+                            store.portal_link_ticket(),
+                            true,
+                            &transport,
+                        )
+                        .unwrap();
+                }
+                "inventory" => {
+                    store
+                        .mutate_recorded(|m, _| {
+                            m.portal_links[0].approval_history.swap(0, 1);
+                            Ok(())
+                        })
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let next = saved(&store).approval.unwrap().request_id;
+            let after = TimedPoll::new(next, None, 10_000, 25_000);
+            let origin = Instant::now();
+            store
+                .poll_staff_approval_using_controls(
+                    link.id,
+                    store.portal_link_ticket(),
+                    &after,
+                    &|| origin + after.elapsed.get(),
+                    || {},
+                )
+                .unwrap();
+            assert_eq!(
+                after.calls.borrow()[0],
+                next,
+                "{reset} starts with current priority"
+            );
+        }
+    }
+
+    #[test]
+    fn poll_budget_session_cancellation_wins_over_deadline_and_discards_old_progress() {
+        let (_temp, store, link, _) = history_poll_fixture(5);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let http = TimedPoll::new(current, None, 10_000, 25_000);
+        let origin = Instant::now();
+        let result = store.poll_staff_approval_using_controls(
+            link.id,
+            store.portal_link_ticket(),
+            &http,
+            &|| origin + http.elapsed.get(),
+            || {
+                store.lock();
+                store.unlock(PASSWORD).unwrap();
+            },
+        );
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        let fresh = TimedPoll::new(current, None, 10_000, 25_000);
+        let origin = Instant::now();
+        store
+            .poll_staff_approval_using_controls(
+                link.id,
+                store.portal_link_ticket(),
+                &fresh,
+                &|| origin + fresh.elapsed.get(),
+                || {},
+            )
+            .unwrap();
+        assert_eq!(fresh.calls.borrow()[0], current);
+    }
+
+    #[test]
+    fn poll_budget_manual_full_history_recovers_acceptance_beyond_automatic_slice() {
+        let (_temp, store, link, acceptance) = history_poll_fixture(15);
+        let current = link.approval.as_ref().unwrap().request_id;
+        let automatic = TimedPoll::new(current, None, 10_000, 25_000);
+        let origin = Instant::now();
+        let result = store
+            .poll_staff_approval_using_controls(
+                link.id,
+                store.portal_link_ticket(),
+                &automatic,
+                &|| origin + automatic.elapsed.get(),
+                || {},
+            )
+            .unwrap();
+        assert!(!result.link.clinic_approved);
+        assert!(!automatic.completed.borrow().contains(&acceptance));
+        // The UI stops its automatic schedule after its unchanged window;
+        // its manual action still uses the complete native reconciliation.
+        let manual = TimedPoll::new(current, Some(acceptance), 0, 0);
+        let (updated, issue) = store
+            .refresh_staff_approval_for_check(&saved(&store), store.portal_link_ticket(), &manual)
+            .unwrap();
+        assert!(issue.is_none());
+        assert!(updated.summary().clinic_approved);
+        assert!(manual.completed.borrow().contains(&acceptance));
+        assert!(saved(&store).summary().clinic_approved);
+    }
+
+    #[test]
+    fn poll_final_summary_refuses_a_session_reopened_at_the_guard_boundary() {
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let sequence_at_boundary = std::cell::Cell::new(0);
+        let result = store.poll_staff_approval_using_boundary(
+            link.id,
+            session,
+            &Script::new(vec![Reply::Pending], vec![]),
+            || {
+                store.lock();
+                store.unlock(PASSWORD).unwrap();
+                store.session().as_mut().unwrap().manifest.portal_links[0].device_name =
+                    "FAKE reopened-session device".to_string();
+                sequence_at_boundary.set(store.snapshot_sequence.load(Ordering::Relaxed));
+            },
+        );
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        assert_eq!(
+            store.snapshot_sequence.load(Ordering::Relaxed),
+            sequence_at_boundary.get()
+        );
+        assert_eq!(
+            store.session().as_ref().unwrap().manifest.portal_links[0].device_name,
+            "FAKE reopened-session device"
+        );
+    }
+
+    #[test]
+    fn poll_final_summary_refuses_a_session_poisoned_at_the_guard_boundary() {
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let before = store.snapshot_sequence.load(Ordering::Relaxed);
+        let result = store.poll_staff_approval_using_boundary(
+            link.id,
+            session,
+            &Script::new(vec![Reply::Pending], vec![]),
+            || {
+                let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _guard = store.unlocked.lock().unwrap();
+                    panic!("FAKE final-read boundary poison");
+                }));
+                assert!(panic.is_err());
+            },
+        );
+        assert!(matches!(result, Err(VaultError::Cancelled)));
+        assert_eq!(store.snapshot_sequence.load(Ordering::Relaxed), before);
+        assert!(store.session().is_none());
+    }
+
+    #[test]
+    fn poll_final_summary_capture_orders_partial_and_whole_reads_without_touching_idle() {
+        let (_temp, store, link, _) = setup(true);
+        let before = store.snapshot().unwrap().capture;
+        let armed = Instant::now() - Duration::from_secs(1);
+        store.idle.arm(armed);
+        let due = armed + Duration::from_secs(15 * 60) + crate::idle::MARGIN;
+        assert!(store.idle.is_due(due));
+        let session = store.portal_link_ticket();
+        let check = store
+            .poll_staff_approval_using(link.id, session, &Script::new(vec![Reply::Pending], vec![]))
+            .unwrap();
+        let after = store.snapshot().unwrap().capture;
+        assert_eq!(before.epoch, check.capture.epoch);
+        assert_eq!(check.capture.epoch, after.epoch);
+        assert_eq!(check.capture.sequence, before.sequence + 1);
+        assert_eq!(after.sequence, check.capture.sequence + 1);
+        assert_eq!(check.link.id, link.id);
+        assert!(store.idle.is_due(due));
+    }
+
+    #[test]
+    fn poll_only_reads_status_and_gives_time_left_by_the_portals_clock_not_this_devices() {
+        // By this device's clock the request ran out 10 s ago; the portal's
+        // clock, 110 s behind it, gives it 100 s more.
+        let now = crate::now_ms() / 1000;
+        let (_temp, store, link, attempt) = connect_with_request_made_at(now - 610);
+        let session = store.portal_link_ticket();
+        let before = manifest(&store);
+        assert!(attempt.expires_at <= now);
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.portal_time = Some(attempt.expires_at - 100);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(check.issue.is_none());
+        assert_eq!(check.expires_in_ms, Some(100_000));
+        assert_eq!(check.link.approval_status, Some(State::Pending));
+        assert!(!check.link.clinic_approved);
+        // No new request is offered while the portal gives this one time.
+        assert!(link.summary().approval_can_restart);
+        assert!(!check.link.approval_can_restart);
+        assert_eq!(only_gets(&http), vec![attempt.request_id]);
+        // Nothing changed, so nothing was written or added to the history.
+        assert!(before == manifest(&store));
+        // A portal that gives no time gives no countdown.
+        let http = Script::new(vec![Reply::Pending], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(check.expires_in_ms, None);
+        // Nor does one whose clock is already past the expiry say time is left.
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.portal_time = Some(attempt.expires_at + 5);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(check.expires_in_ms, Some(0));
+        assert!(check.link.approval_can_restart);
+    }
+    #[test]
+    fn poll_shows_approval_only_from_a_verified_acceptance_and_keeps_it_across_restart() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        let mut http = Script::new(vec![Reply::UnverifiedAccepted], vec![]);
+        http.portal_time = Some(attempt.expires_at - 60);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(matches!(
+            check.issue,
+            Some(VaultError::Portal(portal_link::LinkError::InvalidResponse))
+        ));
+        assert!(!check.link.clinic_approved);
+        assert_eq!(check.link.approval_status, Some(State::Pending));
+        assert!(saved(&store)
+            .approval
+            .as_ref()
+            .unwrap()
+            .acceptance
+            .is_none());
+        // Pending, then a late but real signed acceptance.
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.portal_time = Some(attempt.expires_at - 30);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(!check.link.clinic_approved);
+        let http = Script::new(vec![Reply::Accepted], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(check.issue.is_none());
+        assert!(check.link.clinic_approved);
+        assert_eq!(check.link.approval_status, Some(State::Accepted));
+        assert_eq!(check.expires_in_ms, None);
+        assert_eq!(only_gets(&http), vec![attempt.request_id]);
+        assert!(crate::vault::history_events_for_test(&store)
+            .iter()
+            .any(|e| e.event == HistoryEvent::DeviceApprovalVerified));
+        let store = restart(store);
+        assert!(saved(&store).summary().clinic_approved);
+        // An approved device needs no further reads.
+        let http = Script::new(vec![], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, store.portal_link_ticket(), &http)
+            .unwrap();
+        assert!(check.link.clinic_approved);
+        assert!(http.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn poll_never_sends_or_starts_a_request_for_a_missing_or_finished_one() {
+        for reply in [
+            Reply::Missing,
+            Reply::Terminal(State::Expired, Reason::ChallengeExpired),
+            Reply::Terminal(State::Cancelled, Reason::ChallengeCancelled),
+            Reply::Terminal(State::Refused, Reason::StaffRequired),
+        ] {
+            let terminal = match reply {
+                Reply::Terminal(state, _) => Some(state),
+                _ => None,
+            };
+            let (_temp, store, link, attempt) = setup(true);
+            let session = store.portal_link_ticket();
+            let mut http = Script::new(vec![reply], vec![]);
+            http.portal_time = Some(attempt.expires_at - 60);
+            let check = store
+                .poll_staff_approval_using(link.id, session, &http)
+                .unwrap();
+            assert_eq!(only_gets(&http), vec![attempt.request_id]);
+            let current = saved(&store);
+            assert_eq!(
+                current.approval.as_ref().unwrap().request_id,
+                attempt.request_id
+            );
+            assert_eq!(current.approval.as_ref().unwrap().intent, attempt.intent);
+            assert!(current.approval_history.is_empty());
+            assert_eq!(check.expires_in_ms, None);
+            assert!(!check.link.clinic_approved);
+            match terminal {
+                None => {
+                    assert!(matches!(
+                        check.issue,
+                        Some(VaultError::ApprovalRequestMissing)
+                    ));
+                    assert_eq!(check.link.approval_status, Some(State::Pending));
+                }
+                Some(state) => {
+                    assert!(check.issue.is_none());
+                    assert_eq!(check.link.approval_status, Some(state));
+                    assert_eq!(
+                        check.link.approval_can_restart,
+                        state != State::Refused,
+                        "{state:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn poll_reports_an_unreachable_or_waiting_portal_without_calling_the_request_expired() {
+        for reply in [
+            Reply::Network,
+            Reply::RateLimited(Some(30)),
+            Reply::RateLimited(None),
+        ] {
+            let rate_limited = matches!(reply, Reply::RateLimited(_));
+            let (_temp, store, link, attempt) = setup(true);
+            let session = store.portal_link_ticket();
+            let before = manifest(&store);
+            let http = Script::new(vec![reply], vec![]);
+            let check = store
+                .poll_staff_approval_using(link.id, session, &http)
+                .unwrap();
+            assert_eq!(only_gets(&http), vec![attempt.request_id]);
+            assert!(before == manifest(&store));
+            assert_eq!(check.link.approval_status, Some(State::Pending));
+            assert!(!check.link.clinic_approved);
+            assert_eq!(check.expires_in_ms, None);
+            let issue = check.issue.expect("the failure is reported");
+            assert_eq!(
+                matches!(
+                    issue,
+                    VaultError::Portal(portal_link::LinkError::RateLimited(_))
+                ),
+                rate_limited
+            );
+            assert!(matches!(issue, VaultError::Portal(_)));
+        }
+    }
+
+    #[test]
+    fn poll_shares_admission_ticket_and_recovery_rules_with_all_clinic_work() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        let busy = |error| matches!(error, VaultError::Portal(portal_link::LinkError::Busy));
+        // Another clinic operation holds the guard: refused at once, no HTTP.
+        let running = store.start_portal_work().unwrap();
+        let http = Script::new(vec![], vec![]);
+        assert!(busy(
+            store
+                .poll_staff_approval_using(link.id, session, &http)
+                .err()
+                .unwrap()
+        ));
+        drop(running);
+        // A check under way holds it in turn for every other clinic action.
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.busy_on_get = Some((&store, link.id));
+        store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        drop(http);
+        // A ticket from before a lock, recovery mode, and a lock during the
+        // read: nothing is read, or what was read is not saved.
+        let before = manifest(&store);
+        let http = Script::new(vec![], vec![]);
+        assert!(matches!(
+            store.poll_staff_approval_using(link.id, session.wrapping_add(1), &http),
+            Err(VaultError::Cancelled)
+        ));
+        store.session().as_mut().unwrap().recovery = Some(RecoveryReason::WriteFailed);
+        assert!(matches!(
+            store.poll_staff_approval_using(link.id, session, &http),
+            Err(VaultError::RecoveryMode)
+        ));
+        store.session().as_mut().unwrap().recovery = None;
+        assert!(http.calls.lock().unwrap().is_empty());
+        assert!(before == manifest(&store));
+        let mut http = Script::new(vec![Reply::Accepted], vec![]);
+        http.lock_on_get = Some(&store);
+        assert!(matches!(
+            store.poll_staff_approval_using(link.id, session, &http),
+            Err(VaultError::Cancelled)
+        ));
+        drop(http);
+        store.unlock(PASSWORD).unwrap();
+        let current = saved(&store);
+        assert_eq!(
+            current.approval.as_ref().unwrap().request_id,
+            attempt.request_id
+        );
+        assert!(current.approval.as_ref().unwrap().acceptance.is_none());
+        assert!(!current.summary().clinic_approved);
+        assert!(matches!(
+            store.poll_staff_approval_using(
+                Uuid::nil(),
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![])
+            ),
+            Err(VaultError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn restart_follows_the_portals_expiry_on_the_same_device_when_this_clock_is_behind() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let linked = finish_connect_link(&store, session).unwrap();
+        store
+            .request_staff_approval_using(
+                linked.id,
+                session,
+                false,
+                &Script::new(vec![], vec![Reply::Pending]),
+            )
+            .unwrap();
+        let first = saved(&store);
+        let old = first.approval.clone().unwrap();
+        // By this device's clock the request still has minutes left.
+        assert!(old.expires_at > crate::now_ms() / 1000 + 60);
+        let http = Script::new(
+            vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+            vec![],
+        );
+        let check = store
+            .poll_staff_approval_using(linked.id, session, &http)
+            .unwrap();
+        assert_eq!(check.link.approval_status, Some(State::Expired));
+        assert!(check.link.approval_can_restart);
+        assert!(
+            saved(&store).approval_history.is_empty(),
+            "a poll never restarts"
+        );
+        // The patient starts a new request: the same link, keys and device.
+        let http = Script::new(
+            vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+            vec![Reply::Pending],
+        );
+        store
+            .request_staff_approval_using(linked.id, session, true, &http)
+            .unwrap();
+        let current = saved(&store);
+        assert_eq!(current.id, first.id);
+        assert!(current.keys == first.keys);
+        assert_eq!(current.keys.device_key_id(), linked.device_key_id);
+        assert_eq!(manifest(&store).portal_links.len(), 1);
+        assert_eq!(current.approval_history.len(), 1);
+        assert_eq!(current.approval_history[0].request_id, old.request_id);
+        assert_eq!(current.approval_history[0].intent, old.intent);
+        assert_eq!(current.approval_history[0].state(), State::Expired);
+        let new = current.approval.clone().unwrap();
+        assert_ne!(new.request_id, old.request_id);
+        {
+            let calls = http.calls.lock().unwrap();
+            assert_eq!(calls.len(), 2);
+            assert_eq!(calls[0], ("GET", old.request_id, old.intent.clone()));
+            assert_eq!(calls[1], ("POST", new.request_id, new.intent.clone()));
+        }
+        // Checking the new request reads both, and sends nothing.
+        let http = Script::new(
+            vec![
+                Reply::Pending,
+                Reply::Terminal(State::Expired, Reason::ChallengeExpired),
+            ],
+            vec![],
+        );
+        let check = store
+            .poll_staff_approval_using(linked.id, session, &http)
+            .unwrap();
+        assert_eq!(check.link.approval_status, Some(State::Pending));
+        assert_eq!(only_gets(&http), vec![new.request_id, old.request_id]);
+    }
+
+    #[test]
+    fn poll_recovers_a_late_acceptance_of_the_old_request_after_a_new_one_started() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        let http = Script::new(
+            vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+            vec![Reply::Pending],
+        );
+        store
+            .request_staff_approval_using(link.id, session, true, &http)
+            .unwrap();
+        let http = Script::new(vec![Reply::Pending, Reply::Accepted], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(check.link.clinic_approved);
+        assert_eq!(check.expires_in_ms, None);
+        let calls = only_gets(&http);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1], attempt.request_id);
+        let store = restart(store);
+        assert!(saved(&store).summary().clinic_approved);
+    }
+
+    #[test]
+    fn checks_and_document_checks_stop_asking_once_the_portal_asks_to_wait() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        // A kept older request, which a status check reads too.
+        store
+            .request_staff_approval_using(
+                link.id,
+                session,
+                true,
+                &Script::new(
+                    vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+                    vec![Reply::Pending],
+                ),
+            )
+            .unwrap();
+        let current = saved(&store);
+        assert_eq!(current.approval_history[0].request_id, attempt.request_id);
+        let new_id = current.approval.as_ref().unwrap().request_id;
+        // One read, refused with a wait: nothing more is asked.
+        let http = Script::new(vec![Reply::RateLimited(Some(300))], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(matches!(
+            check.issue,
+            Some(VaultError::Portal(portal_link::LinkError::RateLimited(
+                Some(300)
+            )))
+        ));
+        assert_eq!(only_gets(&http), vec![new_id]);
+        // The document check's approval step stops that link the same way.
+        let http = Script::new(vec![Reply::RateLimited(None)], vec![]);
+        assert!(matches!(
+            store.refresh_staff_approval_for_check(&current, session, &http),
+            Err(VaultError::Portal(portal_link::LinkError::RateLimited(
+                None
+            )))
+        ));
+        assert_eq!(only_gets(&http), vec![new_id]);
+        // A wait asked on the older request stops there too.
+        let http = Script::new(vec![Reply::Pending, Reply::RateLimited(Some(60))], vec![]);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(matches!(
+            check.issue,
+            Some(VaultError::Portal(portal_link::LinkError::RateLimited(
+                Some(60)
+            )))
+        ));
+        assert_eq!(only_gets(&http), vec![new_id, attempt.request_id]);
+    }
+
+    #[test]
+    fn poll_counts_time_left_to_the_portals_end_of_the_request_by_its_clock() {
+        let now = crate::now_ms() / 1000;
+        let (_temp, store, link, attempt) = connect_with_request_made_at(now);
+        let session = store.portal_link_ticket();
+        // The clinic's system published a challenge that ends 400 s
+        // before the intent does: the portal moves the request's end to it.
+        let challenge = portal_approval::signed_challenge(&link, &attempt, now - 10, now + 200);
+        let mut http = Script::new(vec![Reply::ChallengeReady(challenge.clone())], vec![]);
+        http.portal_time = Some(now + 100);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(check.issue.is_none());
+        assert_eq!(check.link.approval_status, Some(State::ChallengeReady));
+        assert_eq!(check.expires_in_ms, Some(100_000));
+        assert!(!check.link.approval_can_restart);
+        // Past the challenge's end by the portal's clock: time is up, and a
+        // new request may start, before the intent's own end, and while this
+        // device's clock still gives the request time.
+        let mut http = Script::new(vec![Reply::ChallengeReady(challenge.clone())], vec![]);
+        http.portal_time = Some(now + 205);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(check.expires_in_ms, Some(0));
+        assert!(check.link.approval_can_restart);
+        assert!(!saved(&store).summary().approval_can_restart);
+        // A date that cannot be the portal's clock gives no time at all.
+        let mut http = Script::new(vec![Reply::ChallengeReady(challenge)], vec![]);
+        http.portal_time = Some(now - portal_approval::PORTAL_CLOCK_BOUND_SECONDS - 60);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(check.expires_in_ms, None);
+        assert!(!check.link.approval_can_restart);
+    }
+    #[test]
+    fn restart_never_opens_a_second_request_while_the_portals_clock_gives_the_first_time() {
+        // By this device's clock the request ran out 10 s ago; the portal's,
+        // 110 s behind, gives it 100 s more.
+        let now = crate::now_ms() / 1000;
+        let (_temp, store, link, attempt) = connect_with_request_made_at(now - 610);
+        let session = store.portal_link_ticket();
+        let before = manifest(&store);
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.portal_time = Some(attempt.expires_at - 100);
+        assert!(matches!(
+            store.request_staff_approval_using(link.id, session, true, &http),
+            Err(VaultError::ApprovalStillOpen)
+        ));
+        assert_eq!(only_gets(&http), vec![attempt.request_id]);
+        assert!(before == manifest(&store));
+        assert_eq!(
+            crate::PublicError::from(VaultError::ApprovalStillOpen).code,
+            "approval_still_open"
+        );
+        // Once its time is up by the portal's clock, even before the portal
+        // says "expired", a new request starts for the same device.
+        let mut http = Script::new(vec![Reply::Pending], vec![Reply::Pending]);
+        http.portal_time = Some(attempt.expires_at + 5);
+        store
+            .request_staff_approval_using(link.id, session, true, &http)
+            .unwrap();
+        let current = saved(&store);
+        assert_eq!(current.approval_history.len(), 1);
+        assert_eq!(current.approval_history[0].request_id, attempt.request_id);
+        assert_ne!(current.approval.unwrap().request_id, attempt.request_id);
+    }
+
+    #[test]
+    fn restart_is_never_held_back_by_a_date_that_cannot_be_the_portals_clock() {
+        let now = crate::now_ms() / 1000;
+        // Stuck at the epoch, an hour behind, and far ahead: none can be the
+        // clock that accepted this device's signed request.
+        for stuck in [0, now - 3_600, now + 7_200] {
+            // By this device's clock the request ran out 10 s ago.
+            let (_temp, store, link, attempt) = connect_with_request_made_at(now - 610);
+            let session = store.portal_link_ticket();
+            let mut http = Script::new(vec![Reply::Pending], vec![]);
+            http.portal_time = Some(stuck);
+            let check = store
+                .poll_staff_approval_using(link.id, session, &http)
+                .unwrap();
+            assert_eq!(check.expires_in_ms, None, "{stuck}");
+            assert!(check.link.approval_can_restart, "{stuck}");
+            let mut http = Script::new(vec![Reply::Pending], vec![Reply::Pending]);
+            http.portal_time = Some(stuck);
+            store
+                .request_staff_approval_using(link.id, session, true, &http)
+                .unwrap();
+            let current = saved(&store);
+            assert_eq!(current.approval_history[0].request_id, attempt.request_id);
+        }
+        // With no usable date, this device's clock still refuses while the
+        // request has time left.
+        let (_temp, store, link, _) = connect_with_request_made_at(now);
+        let mut http = Script::new(vec![Reply::Pending], vec![]);
+        http.portal_time = Some(0);
+        assert!(matches!(
+            store.request_staff_approval_using(link.id, store.portal_link_ticket(), true, &http),
+            Err(VaultError::ApprovalStillOpen)
+        ));
+    }
+
+    #[test]
+    fn a_request_the_portal_does_not_have_is_judged_by_this_devices_clock_in_check_and_restart() {
+        // This device's clock gives the request 30 s; the portal's clock is
+        // 60 s ahead (past its end), but the portal does not have it.
+        let now = crate::now_ms() / 1000;
+        let (_temp, store, link, attempt) = connect_with_request_made_at(now - 570);
+        let session = store.portal_link_ticket();
+        let mut http = Script::new(vec![Reply::Missing], vec![]);
+        http.portal_time = Some(now + 60);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(matches!(
+            check.issue,
+            Some(VaultError::ApprovalRequestMissing)
+        ));
+        assert!(
+            !check.link.approval_can_restart,
+            "no offer the restart refuses"
+        );
+        let mut http = Script::new(vec![Reply::Missing], vec![]);
+        http.portal_time = Some(now + 60);
+        // Never "still open on the portal" for a request the portal lacks.
+        assert!(matches!(
+            store.request_staff_approval_using(link.id, session, true, &http),
+            Err(VaultError::ApprovalRequestMissing)
+        ));
+        assert_eq!(only_gets(&http), vec![attempt.request_id]);
+        assert!(saved(&store).approval_history.is_empty());
+    }
+
+    #[test]
+    fn poll_stops_at_its_first_failure_and_the_document_check_still_reads_on() {
+        let (_temp, store, link, attempt) = setup(true);
+        let session = store.portal_link_ticket();
+        store
+            .request_staff_approval_using(
+                link.id,
+                session,
+                true,
+                &Script::new(
+                    vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+                    vec![Reply::Pending],
+                ),
+            )
+            .unwrap();
+        let current = saved(&store);
+        let new_id = current.approval.as_ref().unwrap().request_id;
+        for failure in [Reply::Network, Reply::Refused(503), Reply::DeviceRemoved] {
+            let http = Script::new(vec![failure], vec![]);
+            let check = store
+                .poll_staff_approval_using(link.id, session, &http)
+                .unwrap();
+            assert!(matches!(check.issue, Some(VaultError::Portal(_))));
+            assert_eq!(only_gets(&http), vec![new_id], "one read only");
+        }
+        // The current request read, then a failure on the older one: stop.
+        let http = Script::new(vec![Reply::Pending, Reply::Network], vec![]);
+        store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(only_gets(&http), vec![new_id, attempt.request_id]);
+        // The document check's step reads on past a failure (unchanged).
+        let http = Script::new(vec![Reply::Network, Reply::Pending], vec![]);
+        let (_, warning) = store
+            .refresh_staff_approval_for_check(&current, session, &http)
+            .unwrap();
+        assert!(matches!(
+            warning,
+            Some(VaultError::Portal(portal_link::LinkError::Network))
+        ));
+        assert_eq!(only_gets(&http), vec![new_id, attempt.request_id]);
+    }
+    #[test]
+    fn restart_follows_the_portals_clock_when_this_device_is_behind_it() {
+        // By this device's clock the request has 200 s left; the portal's
+        // clock, 205 s ahead, is past its end. It is still "pending" there
+        // (no "expired" until the clinic's system says so), but can no
+        // longer be approved.
+        let now = crate::now_ms() / 1000;
+        let (_temp, store, link, old) = connect_with_request_made_at(now - 400);
+        let session = store.portal_link_ticket();
+        let mut http = Script::new(vec![Reply::Pending], vec![Reply::Pending]);
+        http.portal_time = Some(now + 205);
+        store
+            .request_staff_approval_using(link.id, session, true, &http)
+            .unwrap();
+        let current = saved(&store);
+        assert_eq!(current.approval_history[0].request_id, old.request_id);
+        assert_ne!(current.approval.unwrap().request_id, old.request_id);
+    }
+    #[test]
+    fn poll_reports_read_only_recovery_when_its_save_reaches_one_copy() {
+        struct FailSecondCopy;
+        impl Drop for FailSecondCopy {
+            fn drop(&mut self) {
+                FAIL_AT_TEST_BOUNDARY.set(&[]);
+            }
+        }
+        let (_temp, store, link, _) = setup(true);
+        let session = store.portal_link_ticket();
+        let http = Script::new(vec![Reply::Pending], vec![]);
+        assert!(
+            !store
+                .poll_staff_approval_using(link.id, session, &http)
+                .unwrap()
+                .recovery
+        );
+        let failing = FailSecondCopy;
+        FAIL_AT_TEST_BOUNDARY.set(&["manifest.after-first-write"]);
+        let http = Script::new(
+            vec![Reply::Terminal(State::Expired, Reason::ChallengeExpired)],
+            vec![],
+        );
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        drop(failing);
+        assert!(check.recovery, "the vault is read-only now");
+        assert_eq!(check.link.approval_status, Some(State::Expired));
+        assert!(matches!(
+            store.poll_staff_approval_using(link.id, session, &Script::new(vec![], vec![])),
+            Err(VaultError::RecoveryMode)
+        ));
+    }
+
     /// The checked-in FAKE package and the link it was sealed for.
     fn fixture_package() -> (StoredLink, wire::Outer, Vec<u8>, u64) {
         let packet: serde_json::Value = serde_json::from_str(include_str!(
@@ -1619,6 +5173,18 @@ mod approval_recovery_tests {
         };
         (opened, checked)
     }
+    /// The checked-in synthetic Java delivery, opened and its signed PDF
+    /// verified, ready to commit: its link, envelope, contents and manifest.
+    fn signed_delivery() -> (
+        StoredLink,
+        wire::Outer,
+        wire::Opened,
+        crate::signed_pdf::Manifest,
+    ) {
+        let (link, outer, sealed, now) = fixture_package();
+        let (opened, checked) = opened_fixture(&link, &outer, &sealed, now);
+        (link, outer, opened, checked)
+    }
     fn add_signed_pending_delivery(store: &VaultStore) -> (StoredLink, Uuid, String) {
         let (link, outer, sealed, now) = fixture_package();
         add_link(store, &link);
@@ -1641,6 +5207,1206 @@ mod approval_recovery_tests {
             .clone();
         (link, id, receipt)
     }
+    /// Each unlock checks for new documents once (#128). A delivery its
+    /// portal lists again at a later unlock, because the pickup confirmation
+    /// did not reach the portal, is the one already filed: no second record,
+    /// history entry or receipt. The next unlock's check then sends that same
+    /// saved receipt, through `check_using`, and files nothing.
+    ///
+    /// The re-listing itself is committed directly: through `check_using`,
+    /// `receive_delivery` verifies the PDF again with the confined helper
+    /// and this device's clock before it reaches the record already filed,
+    /// and the checked-in synthetic delivery needs its own reference clock
+    /// (see the ignored helper tests).
+    #[test]
+    fn should_file_a_delivery_listed_again_after_lock_and_unlock_only_once() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, id, receipt) = add_signed_pending_delivery(&store);
+        let filed = |store: &VaultStore| {
+            crate::vault::history_events_for_test(store)
+                .iter()
+                .filter(|e| e.event == HistoryEvent::DeliveryFiled)
+                .count()
+        };
+        assert_eq!(filed(&store), 1);
+        for _ in 0..2 {
+            let ended = store.portal_link_ticket();
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
+            let session = store.portal_link_ticket();
+            assert_ne!(session, ended, "a new session after the unlock");
+            let history = crate::vault::history_events_for_test(&store).len();
+            let (_, outer, opened, checked) = signed_delivery();
+            assert_eq!(
+                store
+                    .commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session)
+                    .unwrap(),
+                (id, false)
+            );
+            assert_eq!(store.snapshot().unwrap().records.len(), 1);
+            assert_eq!(filed(&store), 1);
+            assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+            let pending = store.pending_receipts(&link, session).unwrap();
+            assert_eq!(pending.len(), 1);
+            assert_eq!(pending[0].receipt, receipt);
+        }
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let session = store.portal_link_ticket();
+        let sent = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            session,
+            &Script::new(vec![], vec![]),
+            |to, method, path, body, _, _, _| {
+                if path.ends_with("/receipt") {
+                    assert_eq!((to.id, method), (link.id, "POST"));
+                    sent.lock()
+                        .unwrap()
+                        .push(serde_json::from_slice::<serde_json::Value>(&body).unwrap());
+                    Ok(picked_up())
+                } else {
+                    Ok(empty_page())
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (result.added, result.refused, result.receipts_pending),
+            (0, 0, 0)
+        );
+        assert!(result.issues.is_empty());
+        let sent = sent.into_inner().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["receipt"], receipt);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        assert_eq!(filed(&store), 1);
+        assert!(store.pending_receipts(&link, session).unwrap().is_empty());
+    }
+    /// Ben's D132c with clinic code v1 (#141, root-87's review of #138): a
+    /// device the clinic approved by code is asked, and its documents are
+    /// listed, like one approved by staff.
+    #[test]
+    fn should_ask_a_clinic_that_approved_this_device_by_code() {
+        let (_, mut link, mut attempt) = portal_approval::first_fixture();
+        let challenge =
+            portal_approval::fixture_challenge_with(|c| c["approval_kind"] = "code".into());
+        attempt.acceptance = Some(portal_approval::fixture_acceptance_with(&challenge, |a| {
+            a["approval_kind"] = "code".into()
+        }));
+        attempt.challenge = Some(challenge);
+        attempt.status = Some(State::Accepted);
+        link.approval = Some(attempt);
+        assert!(portal_approval::currently_approved(&link));
+        assert!(portal_approval::approval_by_code(&link));
+        assert!(crate::portal_pickup::worth_asking(&link));
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create(PASSWORD, "FAKE Code Approved Patient", 1)
+            .unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(link.clone());
+                Ok(())
+            })
+            .unwrap();
+        let listed = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_asking_using(
+            &store,
+            store.portal_link_ticket(),
+            // Approved already: its status is not read again.
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                assert_eq!(method, "GET");
+                assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                listed.lock().unwrap().push(l.id);
+                Ok(empty_page())
+            },
+        )
+        .unwrap();
+        assert_eq!(listed.into_inner().unwrap(), vec![link.id]);
+        assert!(result.issues.is_empty());
+    }
+    /// Ben's D132c: the check after unlocking, and Check for new documents,
+    /// ask only clinics that approved this device or have a request still
+    /// open. No saved request, or one refused or ended, is no reason to ask.
+    #[test]
+    fn should_ask_only_clinics_that_approved_this_device_or_have_an_open_request() {
+        for (state, asked) in [
+            (None, false),
+            (Some(State::Refused), false),
+            (Some(State::Expired), false),
+            (Some(State::Cancelled), false),
+            (Some(State::Pending), true),
+        ] {
+            // A device the clinic approved, checked first.
+            let (x, mut approved, mut accepted) = portal_approval::first_fixture();
+            let first = &x["flows"]["first"];
+            accepted.challenge = Some(first["challenge"]["compact"].as_str().unwrap().into());
+            accepted.acceptance = Some(first["acceptance"]["compact"].as_str().unwrap().into());
+            accepted.status = Some(State::Accepted);
+            approved.approval = Some(accepted);
+            // A second clinic's device, with a request in `state`.
+            let (mut other, _, _, _) = signed_delivery();
+            if let Some(state) = state {
+                let mut attempt = portal_approval::create(&other, crate::now_ms() / 1000).unwrap();
+                attempt.status = Some(state);
+                other.approval = Some(attempt);
+            }
+            let temp = tempfile::tempdir().unwrap();
+            let store = VaultStore::new(temp.path().join("vault"));
+            store.create(PASSWORD, "FAKE Asking Patient", 1).unwrap();
+            store
+                .mutate_recorded(|m, _| {
+                    m.portal_links.push(approved.clone());
+                    m.portal_links.push(other.clone());
+                    Ok(())
+                })
+                .unwrap();
+            assert!(crate::portal_pickup::worth_asking(&approved));
+            assert_eq!(
+                crate::portal_pickup::worth_asking(&other),
+                asked,
+                "{state:?}"
+            );
+            let approvals = Script::new(if asked { vec![Reply::Pending] } else { vec![] }, vec![]);
+            let listed = Mutex::new(Vec::new());
+            let result = crate::portal_pickup::check_asking_using(
+                &store,
+                store.portal_link_ticket(),
+                &approvals,
+                |link, method, path, _, _, _, _| {
+                    assert_eq!(method, "GET");
+                    assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                    listed.lock().unwrap().push(link.id);
+                    Ok(empty_page())
+                },
+            )
+            .unwrap();
+            let expected = if asked {
+                vec![approved.id, other.id]
+            } else {
+                vec![approved.id]
+            };
+            assert_eq!(listed.into_inner().unwrap(), expected, "{state:?}");
+            // Its status is read only when its request is open.
+            assert_eq!(
+                approvals.calls.lock().unwrap().len(),
+                usize::from(asked),
+                "{state:?}"
+            );
+            assert!(result.issues.is_empty(), "{state:?}");
+        }
+        // A request the clinic has picked up is still open.
+        let (mut other, _, _, _) = signed_delivery();
+        let mut attempt = portal_approval::create(&other, crate::now_ms() / 1000).unwrap();
+        attempt.status = Some(State::ChallengeReady);
+        other.approval = Some(attempt);
+        assert!(crate::portal_pickup::worth_asking(&other));
+        // So is a saved request with no status yet: it reads as pending.
+        other.approval.as_mut().unwrap().status = None;
+        assert!(crate::portal_pickup::worth_asking(&other));
+    }
+    fn not_found_page() -> crate::portal_client::ApiResponse {
+        crate::portal_client::ApiResponse {
+            status: 404,
+            body: Zeroizing::new(br#"{"detail":"not found"}"#.to_vec()),
+            date: None,
+            retry_after: None,
+        }
+    }
+    /// An approved device, and a second device of this vault with a request
+    /// still open, on the same portal (all FAKE). The second stands for a
+    /// device a reset portal deleted. It comes first: the portal's answer to
+    /// the working one, later in the check, still counts.
+    fn store_with_a_gone_device(temp: &tempfile::TempDir) -> (VaultStore, StoredLink, StoredLink) {
+        let (x, mut working, mut accepted) = portal_approval::first_fixture();
+        let first = &x["flows"]["first"];
+        accepted.challenge = Some(first["challenge"]["compact"].as_str().unwrap().into());
+        accepted.acceptance = Some(first["acceptance"]["compact"].as_str().unwrap().into());
+        accepted.status = Some(State::Accepted);
+        working.approval = Some(accepted);
+        let (mut gone, _, _, _) = signed_delivery();
+        // Same portal first: the request it signs names it.
+        gone.portal_base = working.portal_base.clone();
+        let mut attempt = portal_approval::create(&gone, crate::now_ms() / 1000).unwrap();
+        attempt.status = Some(State::Pending);
+        gone.approval = Some(attempt);
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create(PASSWORD, "FAKE Gone Device Patient", 1)
+            .unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(gone.clone());
+                m.portal_links.push(working.clone());
+                Ok(())
+            })
+            .unwrap();
+        assert!(crate::portal_pickup::worth_asking(&gone));
+        assert!(crate::portal_pickup::worth_asking(&working));
+        (store, working, gone)
+    }
+    /// Demo fix (29 Oct, Ben): a device a reset portal deleted answers "not
+    /// found". The portal answered another device of this vault in the same
+    /// check, so it is said removed and not asked again in this run: not its
+    /// documents, not its request's status.
+    #[test]
+    fn should_not_ask_again_about_a_device_its_portal_no_longer_knows() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, working, gone) = store_with_a_gone_device(&temp);
+        // One status read: the first check's. A second would find no reply.
+        let approvals = Script::new(vec![Reply::Pending], vec![]);
+        let asked = Mutex::new(Vec::new());
+        let check = || {
+            crate::portal_pickup::check_asking_using(
+                &store,
+                store.portal_link_ticket(),
+                &approvals,
+                |l, _, _, _, _, _, _| {
+                    asked.lock().unwrap().push(l.id);
+                    Ok(if l.id == working.id {
+                        empty_page()
+                    } else {
+                        not_found_page()
+                    })
+                },
+            )
+            .unwrap()
+        };
+        let removed = |result: &crate::portal_pickup::CheckResult| {
+            result
+                .issues
+                .iter()
+                .filter(|i| i.link_id == gone.id)
+                .map(|i| i.code.as_str())
+                .collect::<Vec<_>>()
+                == vec!["portal_device_removed"]
+        };
+        let first = check();
+        assert_eq!(*asked.lock().unwrap(), vec![gone.id, working.id]);
+        assert!(
+            removed(&first),
+            "{:?}",
+            first.issues.iter().map(|i| &i.code).collect::<Vec<_>>()
+        );
+        assert!(!first.issues.iter().any(|i| i.link_id == working.id));
+        assert!(store.link_gone(gone.id));
+        asked.lock().unwrap().clear();
+        let second = check();
+        assert_eq!(*asked.lock().unwrap(), vec![working.id]);
+        assert!(removed(&second));
+        assert_eq!(approvals.calls.lock().unwrap().len(), 1);
+        // A status refresh does not ask about it either.
+        assert!(matches!(
+            store.refresh_device_approval(gone.id, store.portal_link_ticket()),
+            Err(VaultError::Portal(portal_link::LinkError::DeviceRemoved))
+        ));
+    }
+    /// root-53's review: a "not found" for one receipt (a delivery the portal
+    /// no longer has) says nothing about the device. A device whose receipt
+    /// got one, and whose check then failed, is not marked gone, even though
+    /// the same portal answered another device of this vault.
+    #[test]
+    fn should_not_mark_a_device_gone_for_a_receipt_not_found() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store
+            .create(PASSWORD, "FAKE Receipt Not Found Patient", 1)
+            .unwrap();
+        let (with_receipt, _, _) = add_signed_pending_delivery(&store);
+        // Another device of this vault on the same portal, which answers.
+        let (_, mut other, _) = portal_approval::first_fixture();
+        other.approval = None;
+        other.portal_base = with_receipt.portal_base.clone();
+        add_link(&store, &other);
+        let posted = Mutex::new(0);
+        for _ in 0..2 {
+            crate::portal_pickup::check_using(
+                &store,
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![]),
+                |l, method, _, _, _, _, _| {
+                    if l.id == other.id {
+                        return Ok(empty_page());
+                    }
+                    assert_eq!(method, "POST");
+                    *posted.lock().unwrap() += 1;
+                    Ok(not_found_page())
+                },
+            )
+            .unwrap();
+            assert!(!store.link_gone(with_receipt.id));
+        }
+        // Asked again on the second check.
+        assert_eq!(*posted.lock().unwrap(), 2);
+    }
+    /// The control: "not found" from a portal that answered no device of
+    /// this vault may be a portal that is not there; it is asked again.
+    #[test]
+    fn should_ask_again_when_the_portal_answered_no_device() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, working, gone) = store_with_a_gone_device(&temp);
+        let approvals = Script::new(vec![Reply::Pending, Reply::Pending], vec![]);
+        let asked = Mutex::new(0);
+        for _ in 0..2 {
+            crate::portal_pickup::check_asking_using(
+                &store,
+                store.portal_link_ticket(),
+                &approvals,
+                |_, _, _, _, _, _, _| {
+                    *asked.lock().unwrap() += 1;
+                    Ok(not_found_page())
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(*asked.lock().unwrap(), 4);
+        assert!(!store.link_gone(gone.id) && !store.link_gone(working.id));
+    }
+
+    /// Production eligibility must keep a previously approved clinic eligible
+    /// after a newer request ends, and retry its stored receipt byte for byte.
+    /// The custody helper below rewrites fixture identifiers; this exercises
+    /// saved-custody admission and retry, not a new clinic-signature proof.
+    #[test]
+    fn production_check_retries_known_custody_with_archived_approval_after_restart() {
+        let (_temp, store, link, _) = setup(true);
+        let approved = store
+            .refresh_staff_approval_using(
+                &link,
+                store.portal_link_ticket(),
+                &Script::new(vec![Reply::Accepted], vec![]),
+            )
+            .unwrap();
+        let mut link = approved.clone();
+        link.approval_history.push(link.approval.take().unwrap());
+        let mut current = portal_approval::create(&link, crate::now_ms() / 1000).unwrap();
+        current.status = Some(State::Refused);
+        current.reason = Some(Reason::StaffRequired);
+        link.approval = Some(current);
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = link.clone();
+                Ok(())
+            })
+            .unwrap();
+        assert!(crate::portal_pickup::worth_asking(&link));
+        let record = add_unsent_delivery_for(&store, &link);
+        let receipt = store
+            .pending_receipts_checked(&link, store.portal_link_ticket())
+            .unwrap()
+            .ready[0]
+            .receipt
+            .clone();
+        let approvals = Script::new(vec![], vec![]);
+        let sent = Mutex::new(Vec::new());
+        let first = crate::portal_pickup::check_asking_using(
+            &store,
+            store.portal_link_ticket(),
+            &approvals,
+            |to, method, path, body, _, _, _| {
+                assert_eq!((to.id, method), (link.id, "POST"));
+                assert!(path.ends_with("/receipt"));
+                sent.lock().unwrap().push(body);
+                Err(portal_link::LinkError::Network)
+            },
+        )
+        .unwrap();
+        assert_eq!(first.receipts_pending, 1);
+        assert_eq!(first.issues.len(), 1);
+        let store = restart(store);
+        let second = crate::portal_pickup::check_asking_using(
+            &store,
+            store.portal_link_ticket(),
+            &approvals,
+            |to, method, path, body, _, _, _| {
+                assert_eq!(to.id, link.id);
+                if path.ends_with("/receipt") {
+                    assert_eq!(method, "POST");
+                    sent.lock().unwrap().push(body);
+                    Ok(picked_up())
+                } else {
+                    assert_eq!(method, "GET");
+                    assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                    Ok(empty_page())
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (second.added, second.refused, second.receipts_pending),
+            (0, 0, 0)
+        );
+        assert!(second.issues.is_empty());
+        assert!(approvals.calls.lock().unwrap().is_empty());
+        let sent = sent.into_inner().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[0], sent[1]);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&sent[1]).unwrap()["receipt"],
+            receipt
+        );
+        assert_eq!(
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .map(|r| r.id)
+                .collect::<Vec<_>>(),
+            vec![record]
+        );
+    }
+
+    #[test]
+    fn production_check_preserves_original_and_aid_receipts_on_device_removal() {
+        for aid in [false, true] {
+            for (code, expected) in [
+                ("device_removed", "portal_device_removed"),
+                ("forbidden", "portal_link_incomplete"),
+            ] {
+                let (_temp, store, mut link, record) = vault_with_readable_pair_original();
+                let (outer, sealed) = aid_vector("a reading aid for a filed original");
+                let session = store.portal_link_ticket();
+                assert!(matches!(
+                    store
+                        .receive_aid_at(&outer, &sealed, &link, session, NOW_MS)
+                        .unwrap(),
+                    AidFiling::Filed
+                ));
+                link.approval =
+                    Some(portal_approval::create(&link, crate::now_ms() / 1000).unwrap());
+                store
+                    .mutate_recorded(|m, _| {
+                        m.portal_links[0] = link.clone();
+                        Ok(())
+                    })
+                    .unwrap();
+                assert!(crate::portal_pickup::worth_asking(&link));
+                let pending = store.pending_receipts_checked(&link, session).unwrap();
+                assert_eq!(
+                    (
+                        pending.ready.len(),
+                        pending.ready_aids.len(),
+                        pending.damaged
+                    ),
+                    (1, 1, 0)
+                );
+                let (delivery, receipt) = if aid {
+                    store
+                        .settle_receipt(
+                            &link,
+                            &pending.ready[0],
+                            wire::ReceiptOutcome::PickedUp,
+                            session,
+                        )
+                        .unwrap();
+                    (
+                        pending.ready_aids[0].outer.delivery_id.clone(),
+                        pending.ready_aids[0].receipt.clone(),
+                    )
+                } else {
+                    store
+                        .settle_aid_receipt(
+                            &link,
+                            &pending.ready_aids[0],
+                            wire::ReceiptOutcome::PickedUp,
+                            session,
+                        )
+                        .unwrap();
+                    (
+                        pending.ready[0].outer.delivery_id.clone(),
+                        pending.ready[0].receipt.clone(),
+                    )
+                };
+                let sent = Mutex::new(Vec::new());
+                let approvals = Script::new(vec![Reply::Pending], vec![]);
+                let refused = crate::portal_pickup::check_asking_using(
+                    &store,
+                    session,
+                    &approvals,
+                    |to, method, path, body, _, _, _| {
+                        assert_eq!((to.id, method), (link.id, "POST"));
+                        assert_eq!(path, format!("/api/mycarlos/deliveries/{delivery}/receipt"));
+                        sent.lock().unwrap().push(body);
+                        Ok(refusal(code))
+                    },
+                )
+                .unwrap();
+                assert_eq!(issues(&refused), vec![(link.id, expected)]);
+                assert_eq!(refused.receipts_pending, 1);
+                assert!(approvals.calls.lock().unwrap().is_empty());
+                let store = restart(store);
+                let pending = store
+                    .pending_receipts_checked(&link, store.portal_link_ticket())
+                    .unwrap();
+                let kept = if aid {
+                    &pending.ready_aids[0].receipt
+                } else {
+                    &pending.ready[0].receipt
+                };
+                assert_eq!(kept, &receipt);
+                let retried = crate::portal_pickup::check_asking_using(
+                    &store,
+                    store.portal_link_ticket(),
+                    &approvals,
+                    |to, method, path, body, _, _, _| {
+                        assert_eq!(to.id, link.id);
+                        if method == "POST" {
+                            assert_eq!(
+                                path,
+                                format!("/api/mycarlos/deliveries/{delivery}/receipt")
+                            );
+                            sent.lock().unwrap().push(body);
+                            Ok(picked_up())
+                        } else {
+                            assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                            Ok(empty_page())
+                        }
+                    },
+                )
+                .unwrap();
+                assert_eq!(
+                    (retried.added, retried.refused, retried.receipts_pending),
+                    (0, 0, 0)
+                );
+                assert!(retried.issues.is_empty());
+                assert_eq!(approvals.calls.lock().unwrap().len(), 1);
+                let sent = sent.into_inner().unwrap();
+                assert_eq!(sent.len(), 2);
+                assert_eq!(sent[0], sent[1]);
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&sent[1]).unwrap()["receipt"],
+                    receipt
+                );
+                assert_eq!(store.snapshot().unwrap().records[0].id, record);
+                assert_eq!(
+                    stored_aid(&store, record).unwrap().outer.delivery_id,
+                    outer.delivery_id
+                );
+            }
+        }
+    }
+
+    fn check_reading_aid_download_refusal(status: u16, code: &str, expected: Option<&str>) {
+        let (_temp, store, mut link, record) = vault_with_readable_pair_original();
+        let session = store.portal_link_ticket();
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        store
+            .settle_receipt(
+                &link,
+                &pending.ready[0],
+                wire::ReceiptOutcome::PickedUp,
+                session,
+            )
+            .unwrap();
+        link.approval = Some(portal_approval::create(&link, crate::now_ms() / 1000).unwrap());
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = link.clone();
+                Ok(())
+            })
+            .unwrap();
+        let (outer, _) = aid_vector("a reading aid for a filed original");
+        let fetched = Mutex::new(Vec::new());
+        let approvals = Script::new(vec![Reply::Pending], vec![]);
+        let result = crate::portal_pickup::check_asking_using(
+            &store,
+            session,
+            &approvals,
+            |to, method, path, _, _, _, _| {
+                assert_eq!((to.id, method), (link.id, "GET"));
+                fetched.lock().unwrap().push(path.to_owned());
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    Ok(listing(std::slice::from_ref(&outer)))
+                } else {
+                    assert_eq!(
+                        path,
+                        format!("/api/mycarlos/deliveries/{}", outer.delivery_id)
+                    );
+                    Ok(reply(
+                        status,
+                        &serde_json::to_vec(&serde_json::json!({"code": code})).unwrap(),
+                    ))
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", outer.delivery_id),
+            ]
+        );
+        assert_eq!(
+            issues(&result),
+            expected
+                .map(|code| vec![(link.id, code)])
+                .unwrap_or_default()
+        );
+        assert_eq!(
+            (result.added, result.refused, result.receipts_pending),
+            (0, 0, 0)
+        );
+        assert_eq!(approvals.calls.lock().unwrap().len(), 1);
+        assert_eq!(store.snapshot().unwrap().records[0].id, record);
+        assert!(stored_aid(&store, record).is_none());
+    }
+    #[test]
+    fn production_check_reports_removed_reading_aid_download() {
+        check_reading_aid_download_refusal(403, "device_removed", Some("portal_device_removed"));
+    }
+    #[test]
+    fn production_check_keeps_other_reading_aid_download_refusals_unchanged() {
+        for (status, code) in [
+            (403, "forbidden"),
+            (404, "delivery_not_found"),
+            (500, "device_removed"),
+        ] {
+            check_reading_aid_download_refusal(status, code, None);
+        }
+    }
+
+    /// Re-sign and re-seal the public FAKE package at today's clock, through
+    /// the existing fixture producer. PDF bytes stay unchanged and readable.
+    fn current_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid, u64) {
+        let (temp, store, link, record) = vault_with_readable_pair_original();
+        let now = crate::now_ms() / 1000;
+        let pair = pair_fixture();
+        let mut packet = pair["original_package"].clone();
+        packet["receiver"] = pair["receiver"].clone();
+        packet["now"] = now.into();
+        let (outer, sealed, _, _) = wire::tests::mutated_packet(&packet, |claims| {
+            claims["created_at"] = (now - 60).into();
+            claims["expires_at"] = (now + 3600).into();
+        });
+        let opened = wire::open(&outer, &sealed, &link, &[], now).unwrap();
+        store
+            .mutate_recorded(|m, _| {
+                let head = m.history.head.clone();
+                let record = m.records.iter_mut().find(|r| r.id == record).unwrap();
+                let original = record.original_pdf.as_ref().unwrap();
+                assert_eq!(wire::sha256(&opened.pdf), original.sha256);
+                assert_eq!(opened.pdf.len() as u64, original.plaintext_size);
+                let custody = record.delivery.as_mut().unwrap();
+                custody.outer = outer.clone();
+                custody.manifest = opened.manifest.clone();
+                custody.manifest_compact = opened.manifest_compact.clone();
+                custody.checked_at_ms = now * 1000;
+                custody.anchor_head = head.clone();
+                let anchor = link.keys.anchor(&wire::head_bytes(&head).unwrap()).unwrap();
+                custody.receipt = link.keys.sign(
+                    &serde_json::to_vec(&Receipt::new(&outer, &opened.manifest, anchor, now))
+                        .unwrap(),
+                );
+                custody.receipt_outcome = None;
+                Ok(())
+            })
+            .unwrap();
+        let pending = store
+            .pending_receipts_checked(&link, store.portal_link_ticket())
+            .unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (1, 0, 0)
+        );
+        (temp, store, link, record, now)
+    }
+
+    fn current_aid_packet(name: &str, now: u64, reviewed_at: u64) -> (wire::Outer, Vec<u8>) {
+        let pair = pair_fixture();
+        let mut packet = pair["packages"]["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == name)
+            .unwrap()
+            .clone();
+        packet["receiver"] = pair["receiver"].clone();
+        packet["now"] = now.into();
+        let (outer, sealed, _, _) = wire::tests::mutated_packet(&packet, |claims| {
+            claims["created_at"] = (now - 60).into();
+            claims["expires_at"] = (now + 3600).into();
+            claims["approval"]["reviewed_at"] = reviewed_at.into();
+        });
+        (outer, sealed)
+    }
+
+    fn check_not_filed_aid_receipt_refusal(rechecked: bool, code: &str, expected: Option<&str>) {
+        let (_temp, store, mut link, record, now) = current_pair_original();
+        let session = store.portal_link_ticket();
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        store
+            .settle_receipt(
+                &link,
+                &pending.ready[0],
+                wire::ReceiptOutcome::PickedUp,
+                session,
+            )
+            .unwrap();
+        let (held_outer, held_sealed) =
+            current_aid_packet("an aid the device filed but never confirmed", now, now - 10);
+        assert!(matches!(
+            store
+                .receive_aid(&held_outer, &held_sealed, &link, session)
+                .unwrap(),
+            AidFiling::Filed
+        ));
+        let held = stored_aid(&store, record).unwrap();
+        store
+            .settle_aid_receipt(&link, &held, wire::ReceiptOutcome::PickedUp, session)
+            .unwrap();
+        let held = stored_aid(&store, record).unwrap();
+        let (older_outer, older_sealed) =
+            current_aid_packet("a reading aid for a filed original", now, now - 20);
+        assert_ne!(older_outer.delivery_id, held_outer.delivery_id);
+        if rechecked {
+            // A verified aid waited before the original/newer review arrived.
+            // Keep actual encrypted objects and restore the same readable record.
+            let saved_record = store.session().as_ref().unwrap().manifest.records[0].clone();
+            store
+                .mutate_recorded(|m, _| {
+                    m.records.clear();
+                    Ok(())
+                })
+                .unwrap();
+            assert!(matches!(
+                store
+                    .receive_aid(&older_outer, &older_sealed, &link, session)
+                    .unwrap(),
+                AidFiling::Waiting
+            ));
+            store
+                .mutate_recorded(|m, _| {
+                    m.records.push(saved_record);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(waiting_aids(&store).len(), 1);
+        }
+        link.approval = Some(portal_approval::create(&link, now).unwrap());
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links[0] = link.clone();
+                Ok(())
+            })
+            .unwrap();
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (0, 0, 0)
+        );
+        let sent = Mutex::new(Vec::new());
+        let approvals = Script::new(vec![Reply::Pending], vec![]);
+        let result = crate::portal_pickup::check_asking_using(
+            &store,
+            session,
+            &approvals,
+            |to, method, path, body, _, _, _| {
+                assert_eq!(to.id, link.id);
+                sent.lock()
+                    .unwrap()
+                    .push((method.to_owned(), path.to_owned()));
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    assert_eq!(method, "GET");
+                    Ok(if rechecked {
+                        empty_page()
+                    } else {
+                        listing(std::slice::from_ref(&older_outer))
+                    })
+                } else if path.ends_with("/receipt") {
+                    assert_eq!(
+                        (method, path),
+                        (
+                            "POST",
+                            format!(
+                                "/api/mycarlos/deliveries/{}/receipt",
+                                older_outer.delivery_id
+                            )
+                            .as_str()
+                        )
+                    );
+                    let posted: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                    let receipt = posted["receipt"].as_str().unwrap();
+                    let (payload, _) = wire::split_compact(receipt, 4096).unwrap();
+                    let claims: wire::Receipt = serde_json::from_slice(&payload).unwrap();
+                    assert_eq!(claims.delivery_id, older_outer.delivery_id);
+                    Ok(refusal(code))
+                } else {
+                    assert!(!rechecked);
+                    assert_eq!(
+                        (method, path),
+                        (
+                            "GET",
+                            format!("/api/mycarlos/deliveries/{}", older_outer.delivery_id)
+                                .as_str()
+                        )
+                    );
+                    Ok(reply(200, &older_sealed))
+                }
+            },
+        )
+        .unwrap();
+        let sent = sent.into_inner().unwrap();
+        assert_eq!(sent.len(), if rechecked { 2 } else { 3 });
+        assert_eq!(sent.last().unwrap().0, "POST");
+        assert_eq!(
+            issues(&result),
+            expected.map(|c| vec![(link.id, c)]).unwrap_or_default()
+        );
+        assert_eq!(
+            (result.added, result.refused, result.receipts_pending),
+            (0, 1, 0)
+        );
+        assert_eq!(stored_aid(&store, record).unwrap().outer, held.outer);
+        assert_eq!(stored_aid(&store, record).unwrap().receipt, held.receipt);
+        assert!(waiting_aids(&store).is_empty());
+        let pending = store.pending_receipts_checked(&link, session).unwrap();
+        assert_eq!(
+            (
+                pending.ready.len(),
+                pending.ready_aids.len(),
+                pending.damaged
+            ),
+            (0, 0, 0)
+        );
+    }
+    #[test]
+    fn production_best_effort_reports_removed_device_on_not_filed_aid_receipt() {
+        check_not_filed_aid_receipt_refusal(false, "device_removed", Some("portal_device_removed"));
+    }
+    #[test]
+    fn production_best_effort_reports_removed_device_on_rechecked_aid_receipt() {
+        check_not_filed_aid_receipt_refusal(true, "device_removed", Some("portal_device_removed"));
+    }
+    #[test]
+    fn production_best_effort_keeps_other_receipt_refusals_unchanged() {
+        for rechecked in [false, true] {
+            check_not_filed_aid_receipt_refusal(rechecked, "forbidden", None);
+        }
+    }
+
+    // SOURCE ONLY: insert these two functions INSIDE the existing cfg(test)
+    // vault::delivery::approval_recovery_tests module. They use its actual encrypted
+    // saved-custody fixture helpers. As documented by add_unsent_delivery_for, the
+    // fixture derives local custody/receipt identities AFTER validation; it is not
+    // a new proof of clinic signatures, pickup authentication, HTTP or OS display.
+    // Requires source04 CycleControl::test_counts() and Arc portal_session.
+
+    #[test]
+    fn actual_pending_candidate_cap_retains_the_unadmitted_sixty_fifth_record() {
+        use crate::document_collection::{CycleControl, ScanCursor};
+        use std::{
+            sync::{atomic::AtomicBool, Arc},
+            time::Instant,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Approval Patient", 1).unwrap();
+        let (link, seed, _) = add_signed_pending_delivery(&store);
+        let ids = add_scan_prefix(&store, &link, seed, 64, None);
+        // A short corrupt physical file keeps this a candidate-boundary test,
+        // rather than accidentally exhausting40MiB before reaching candidate64.
+        for id in &ids[..64] {
+            let (path, _, permissions) = object_file(&store, *id);
+            replace_object(&path, b"", permissions);
+        }
+        let last = ids[64];
+        let (last_delivery, ciphertext_bytes) = {
+            let guard = store.session();
+            let record = guard
+                .as_ref()
+                .unwrap()
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == last)
+                .unwrap();
+            let bytes: usize = record
+                .objects()
+                .map(|object| {
+                    std::fs::metadata(store.root.join("objects").join(object.object_name))
+                        .unwrap()
+                        .len() as usize
+                })
+                .sum();
+            (
+                record.delivery.as_ref().unwrap().outer.delivery_id.clone(),
+                bytes,
+            )
+        };
+        assert!(ciphertext_bytes > 0 && ciphertext_bytes < 40 * 1024 * 1024);
+        let ticket = store.portal_link_ticket();
+        let mut cursor = ScanCursor::default();
+        let first = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)))
+            .with_session(store.portal_session.clone(), ticket);
+        let pending = store
+            .pending_receipts_controlled(&link, ticket, &first, &mut cursor)
+            .unwrap();
+        assert!(pending.ready.is_empty());
+        assert_eq!(pending.damaged, 64);
+        assert_eq!(first.test_counts(), (65, 64, 0));
+        assert_eq!(first.reason(), None, "scan allowance is not corrupt data");
+
+        let next = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)))
+            .with_session(store.portal_session.clone(), ticket);
+        let pending = store
+            .pending_receipts_controlled(&link, ticket, &next, &mut cursor)
+            .unwrap();
+        assert_eq!(pending.damaged, 0);
+        assert_eq!(pending.ready.len(), 1);
+        assert_eq!(pending.ready[0].outer.delivery_id, last_delivery);
+        assert_eq!(next.test_counts(), (1, 1, ciphertext_bytes));
+        assert!(pending.ready[0].receipt_outcome.is_none());
+        // Reading pending custody never acknowledges it or invents another record.
+        let guard = store.session();
+        assert_eq!(guard.as_ref().unwrap().manifest.records.len(), 65);
+        assert!(guard
+            .as_ref()
+            .unwrap()
+            .manifest
+            .records
+            .iter()
+            .all(|record| { record.delivery.as_ref().unwrap().receipt_outcome.is_none() }));
+    }
+
+    /// Build this scan's settled input in one validated commit, rather than
+    /// revalidating every earlier receipt after each individual fixture write.
+    /// Each record still has its own encrypted objects and genuine signatures.
+    /// This constructs local saved custody, not a claim of receipt HTTP.
+    fn add_settled_scan_prefix(store: &VaultStore, link: &StoredLink, pending_id: Uuid) {
+        let _ = add_scan_prefix(store, link, pending_id, 257, Some(ReceiptOutcome::PickedUp));
+    }
+
+    /// Prepend independently encrypted and signed custody in one normal commit.
+    /// Return ids in scan order, including the untouched pending seed last.
+    fn add_scan_prefix(
+        store: &VaultStore,
+        link: &StoredLink,
+        pending_id: Uuid,
+        prefix_count: usize,
+        receipt_outcome: Option<ReceiptOutcome>,
+    ) -> Vec<Uuid> {
+        use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+        use sha2::Digest as _;
+
+        let (template, vault_id, keys, pdf) = {
+            let guard = store.session();
+            let open = guard.as_ref().unwrap();
+            assert_eq!(open.manifest.records.len(), 1);
+            let record = open.manifest.records[0].clone();
+            assert_eq!(record.id, pending_id);
+            let keys = derive_keys(open.manifest.vault_id, &open.master_key).unwrap();
+            let mut pdf = Zeroizing::new(Vec::new());
+            read_object_ref(
+                &store.root.join("objects").join(&record.object_name),
+                open.manifest.vault_id,
+                &keys,
+                record.objects().next().unwrap(),
+                &mut *pdf,
+            )
+            .unwrap();
+            (record, open.manifest.vault_id, keys, pdf)
+        };
+        // Same documented FAKE key derivation as portal_delivery::tests.
+        // Every derived manifest is checked against this link's pinned key.
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/delivery-contract.json"))
+                .unwrap();
+        let mut scalar: [u8; 32] = Sha256::digest(
+            fixture["keys"]["clinic_a"]["seed_text"]
+                .as_str()
+                .unwrap()
+                .as_bytes(),
+        )
+        .into();
+        for byte in scalar.iter_mut().rev() {
+            let (value, carry) = byte.overflowing_add(1);
+            *byte = value;
+            if !carry {
+                break;
+            }
+        }
+        let signer = SigningKey::from_slice(&scalar).unwrap();
+        let objects = store.root.join("objects");
+        let mut prefix = Vec::with_capacity(prefix_count);
+        for _ in 0..prefix_count {
+            let mut record = template.clone();
+            record.id = Uuid::new_v4();
+            record.object_name = format!("{}.mcobj", Uuid::new_v4());
+            let mut key = Zeroizing::new([0; 32]);
+            OsRng.fill_bytes(key.as_mut());
+            let encrypted = encrypt_object(
+                Box::new(io::Cursor::new(pdf.to_vec())),
+                &objects.join(&record.object_name),
+                ObjectContext {
+                    vault_id,
+                    record_id: record.id,
+                    profile_id: record.profile_id,
+                },
+                &key,
+                &keys.fingerprint,
+            )
+            .unwrap();
+            record.plaintext_size = encrypted.plaintext_size;
+            record.fingerprint = BASE64.encode(encrypted.fingerprint);
+            record.wrapped_object_key =
+                wrap_secret(&keys.object_wrap, &key, record.id.as_bytes()).unwrap();
+            record.original_pdf = Some(
+                store
+                    .stage_original_pdf(
+                        vault_id,
+                        &keys,
+                        &record,
+                        &objects.join(&record.object_name),
+                        &objects,
+                    )
+                    .unwrap(),
+            );
+            let custody = record.delivery.as_mut().unwrap();
+            custody.outer.delivery_id = Uuid::new_v4().to_string();
+            custody.manifest.delivery_id = custody.outer.delivery_id.clone();
+            let payload = serde_json::to_vec(&custody.manifest).unwrap();
+            let signature: Signature = signer.sign(&payload);
+            custody.manifest_compact = format!(
+                "{}.{}",
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&payload),
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes())
+            );
+            assert_eq!(
+                wire::signed_payload(
+                    &custody.manifest_compact,
+                    &link.clinic.as_ref().unwrap().clinic_keys,
+                    16 * 1024,
+                )
+                .unwrap(),
+                payload
+            );
+            let head = wire::head_bytes(&custody.anchor_head).unwrap();
+            let receipt = Receipt::new(
+                &custody.outer,
+                &custody.manifest,
+                link.keys.anchor(&head).unwrap(),
+                custody.checked_at_ms / 1000,
+            );
+            custody.receipt = link.keys.sign(&serde_json::to_vec(&receipt).unwrap());
+            custody.receipt_outcome = receipt_outcome;
+            prefix.push(record);
+        }
+        sync_dir(&objects).unwrap();
+        let ids = prefix
+            .iter()
+            .map(|record| record.id)
+            .chain(std::iter::once(pending_id))
+            .collect();
+        store
+            .mutate_recorded(|manifest, entries| {
+                assert_eq!(manifest.records.len(), 1);
+                assert_eq!(manifest.records[0].id, pending_id);
+                for record in &prefix {
+                    let custody = record.delivery.as_ref().unwrap();
+                    let settled_how = custody.receipt_outcome.map(|outcome| match outcome {
+                        ReceiptOutcome::PickedUp => "picked_up",
+                        ReceiptOutcome::Gone => "delivery_not_found",
+                    });
+                    for (event, how) in std::iter::once((HistoryEvent::DeliveryFiled, None)).chain(
+                        settled_how.map(|how| (HistoryEvent::DeliveryReceiptSettled, Some(how))),
+                    ) {
+                        let mut entry = record_entry(event, record.imported_at_ms, record);
+                        entry.portal_link_id = Some(link.id);
+                        entry.delivery_id = Some(custody.outer.delivery_id.clone());
+                        entry.ciphertext_sha256 = Some(custody.outer.ciphertext_sha256.clone());
+                        entry.how = how.map(str::to_owned);
+                        entries.push(entry);
+                    }
+                }
+                prefix.append(&mut manifest.records);
+                manifest.records = prefix;
+                Ok(())
+            })
+            .unwrap();
+        ids
+    }
+
+    #[test]
+    fn actual_pending_scan_charges_the_settled_prefix_and_resumes_beyond_raw_256() {
+        use crate::document_collection::{CycleControl, ScanCursor};
+        use std::{
+            sync::{atomic::AtomicBool, Arc},
+            time::Instant,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Approval Patient", 1).unwrap();
+        let (link, last, _) = add_signed_pending_delivery(&store);
+        add_settled_scan_prefix(&store, &link, last);
+        // Reopen through the real reader after both validated manifest writes.
+        let store = restart(store);
+        let ticket = store.portal_link_ticket();
+        let expected = {
+            let guard = store.session();
+            guard
+                .as_ref()
+                .unwrap()
+                .manifest
+                .records
+                .iter()
+                .find(|record| record.id == last)
+                .unwrap()
+                .delivery
+                .as_ref()
+                .unwrap()
+                .outer
+                .delivery_id
+                .clone()
+        };
+        let mut cursor = ScanCursor::default();
+        let first = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)))
+            .with_session(store.portal_session.clone(), ticket);
+        let pending = store
+            .pending_receipts_controlled(&link, ticket, &first, &mut cursor)
+            .unwrap();
+        assert!(pending.ready.is_empty());
+        assert_eq!(pending.damaged, 0);
+        assert_eq!(first.test_counts(), (256, 0, 0));
+
+        let second = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)))
+            .with_session(store.portal_session.clone(), ticket);
+        let pending = store
+            .pending_receipts_controlled(&link, ticket, &second, &mut cursor)
+            .unwrap();
+        assert_eq!(pending.damaged, 0);
+        assert_eq!(pending.ready.len(), 1);
+        assert_eq!(pending.ready[0].outer.delivery_id, expected);
+        let (raw, candidates, physical) = second.test_counts();
+        assert_eq!((raw, candidates), (2, 1));
+        assert!(physical > 0 && physical <= 40 * 1024 * 1024);
+        assert!(pending.ready[0].receipt_outcome.is_none());
+        let guard = store.session();
+        let records = &guard.as_ref().unwrap().manifest.records;
+        assert_eq!(records.len(), 258);
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.delivery.as_ref().unwrap().receipt_outcome.is_none())
+                .count(),
+            1
+        );
+    }
+
     fn empty_page() -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
             status: 200,
@@ -1648,19 +6414,104 @@ mod approval_recovery_tests {
                 br#"{"deliveries":[],"next_cursor":null,"through":"0","anchor_recorded":true}"#
                     .to_vec(),
             ),
+            date: None,
+            retry_after: None,
         }
     }
     fn picked_up() -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
             status: 200,
             body: Zeroizing::new(br#"{"status":"picked_up"}"#.to_vec()),
+            date: None,
+            retry_after: None,
+        }
+    }
+    fn refusal(code: &str) -> crate::portal_client::ApiResponse {
+        crate::portal_client::ApiResponse {
+            status: 403,
+            body: Zeroizing::new(serde_json::to_vec(&serde_json::json!({ "code": code })).unwrap()),
+            date: None,
+            retry_after: None,
         }
     }
     fn reply(status: u16, body: &[u8]) -> crate::portal_client::ApiResponse {
         crate::portal_client::ApiResponse {
             status,
             body: Zeroizing::new(body.to_vec()),
+            date: None,
+            retry_after: None,
         }
+    }
+    fn issues(result: &crate::portal_pickup::CheckResult) -> Vec<(Uuid, &str)> {
+        result
+            .issues
+            .iter()
+            .map(|issue| (issue.link_id, issue.code.as_str()))
+            .collect()
+    }
+    /// The document check says a device the portal removed as it is (#128),
+    /// as the status check does (#131): checking again cannot help it.
+    #[test]
+    fn should_say_an_approved_device_whose_document_list_says_it_was_removed() {
+        let (_temp, store, link, _) = setup(true);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![Reply::Accepted], vec![]),
+            |_, method, path, _, _, _, _| {
+                assert_eq!(method, "GET");
+                assert!(path.starts_with("/api/mycarlos/deliveries?"));
+                Ok(refusal("device_removed"))
+            },
+        )
+        .unwrap();
+        assert!(saved(&store).summary().clinic_approved);
+        assert_eq!(issues(&result), vec![(link.id, "portal_device_removed")]);
+    }
+    #[test]
+    fn should_say_a_waiting_device_whose_status_read_says_it_was_removed() {
+        let (_temp, store, link, _) = setup(true);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![Reply::DeviceRemoved], vec![]),
+            |_, _, _, _, _, _, _| Ok(empty_page()),
+        )
+        .unwrap();
+        assert!(!saved(&store).summary().clinic_approved);
+        assert_eq!(issues(&result), vec![(link.id, "portal_device_removed")]);
+    }
+    #[test]
+    fn should_say_a_removed_device_whose_saved_receipt_is_refused_and_keep_the_receipt() {
+        let (_temp, store, _, _) = setup(false);
+        let (healthy, _, _) = add_signed_pending_delivery(&store);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, path, _, _, _, _| {
+                Ok(if path.ends_with("/receipt") {
+                    refusal("device_removed")
+                } else {
+                    empty_page()
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(issues(&result), vec![(healthy.id, "portal_device_removed")]);
+        assert_eq!(result.receipts_pending, 1);
+    }
+    #[test]
+    fn should_keep_other_refusals_of_the_document_list_a_connection_failure() {
+        let (_temp, store, link, _) = setup(false);
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, _, _, _, _, _| Ok(refusal("forbidden")),
+        )
+        .unwrap();
+        assert_eq!(issues(&result), vec![(link.id, "portal_link_incomplete")]);
     }
     fn listing(outers: &[wire::Outer]) -> crate::portal_client::ApiResponse {
         reply(
@@ -1678,7 +6529,7 @@ mod approval_recovery_tests {
     /// the checked-in package with that clinic's ids. Its manifest signature
     /// is not the clinic's: tests use only its saved custody and receipt,
     /// never a pickup.
-    fn add_unsent_delivery_for(store: &VaultStore, other: &StoredLink) -> Uuid {
+    pub(super) fn add_unsent_delivery_for(store: &VaultStore, other: &StoredLink) -> Uuid {
         let (fixture, mut outer, sealed, now) = fixture_package();
         let (mut opened, checked) = opened_fixture(&fixture, &outer, &sealed, now);
         let clinic = other.clinic.as_ref().unwrap();
@@ -1928,7 +6779,7 @@ mod approval_recovery_tests {
             assert_eq!(
                 fetched.into_inner().unwrap(),
                 vec![
-                    "/api/mycarlos/deliveries?limit=50".to_owned(),
+                    "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
                     format!("/api/mycarlos/deliveries/{}", first.delivery_id),
                     format!("/api/mycarlos/deliveries/{}", second.delivery_id),
                 ]
@@ -1941,6 +6792,225 @@ mod approval_recovery_tests {
             assert_eq!(result.issues[0].link_id, link.id);
             assert_eq!(result.issues[0].code, "portal_link_incomplete");
         }
+    }
+    /// What a portal from before reading aids (1705edb) answers a query key it does not know.
+    fn older_portal_refusal() -> crate::portal_client::ApiResponse {
+        reply(400, br#"{"code":"invalid_cursor"}"#)
+    }
+    fn page(
+        outers: &[wire::Outer],
+        next: Option<&str>,
+        through: &str,
+    ) -> crate::portal_client::ApiResponse {
+        reply(
+            200,
+            &serde_json::to_vec(&serde_json::json!({
+                "deliveries": outers,
+                "next_cursor": next,
+                "through": through,
+                "anchor_recorded": true,
+            }))
+            .unwrap(),
+        )
+    }
+    #[test]
+    fn a_portal_from_before_reading_aids_is_listed_again_without_the_kinds_for_the_whole_check() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, second, sealed, _) = fixture_package();
+        add_link(&store, &link);
+        let mut first = second.clone();
+        first.delivery_id = Uuid::new_v4().to_string();
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                assert_eq!(method, "GET", "nothing is filed, so no receipt is sent");
+                fetched.lock().unwrap().push(path.to_owned());
+                if path.contains("accept=") {
+                    Ok(older_portal_refusal())
+                } else if path == "/api/mycarlos/deliveries?limit=50" {
+                    Ok(page(std::slice::from_ref(&first), Some("1"), "2"))
+                } else if path.starts_with("/api/mycarlos/deliveries?") {
+                    Ok(page(std::slice::from_ref(&second), None, "2"))
+                } else {
+                    Ok(reply(200, &sealed))
+                }
+            },
+        )
+        .unwrap();
+        // Asked once with the kinds, then without them, and the next page without them too.
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                "/api/mycarlos/deliveries?limit=50".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", first.delivery_id),
+                "/api/mycarlos/deliveries?after=1&through=2&limit=50".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", second.delivery_id),
+            ]
+        );
+        // Both deliveries were downloaded and checked; the checked-in package is past its
+        // pickup window, so both are refused instead of filed. The listing itself is no issue.
+        assert_eq!((result.added, result.refused), (0, 2));
+        assert!(
+            result.issues.is_empty(),
+            "{:?}",
+            result.issues.iter().map(|i| &i.code).collect::<Vec<_>>()
+        );
+    }
+    #[test]
+    fn a_listing_refused_without_the_kinds_too_is_an_incomplete_check_as_before() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, _, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                fetched.lock().unwrap().push(path.to_owned());
+                Ok(older_portal_refusal())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                "/api/mycarlos/deliveries?limit=50".to_owned(),
+            ]
+        );
+        assert_eq!((result.added, result.refused), (0, 0));
+        assert_eq!(result.issues.len(), 1);
+        assert_eq!(result.issues[0].link_id, link.id);
+        assert_eq!(result.issues[0].code, "portal_link_incomplete");
+    }
+    #[test]
+    fn any_other_listing_refusal_is_not_asked_again_without_the_kinds() {
+        for refusal in [
+            reply(400, br#"{"code":"invalid_anchor"}"#),
+            reply(400, b"not json"),
+            reply(500, br#"{"code":"invalid_cursor"}"#),
+            reply(403, br#"{"code":"invalid_cursor"}"#),
+        ] {
+            let (_temp, store, _, _) = setup(false);
+            let (link, _, _, _) = fixture_package();
+            add_link(&store, &link);
+            let fetched = Mutex::new(Vec::new());
+            let result = crate::portal_pickup::check_using(
+                &store,
+                store.portal_link_ticket(),
+                &Script::new(vec![], vec![]),
+                |l, _, path, _, _, _, _| {
+                    if l.id != link.id {
+                        return Ok(empty_page());
+                    }
+                    fetched.lock().unwrap().push(path.to_owned());
+                    Ok(reply(refusal.status, &refusal.body))
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                fetched.into_inner().unwrap(),
+                vec!["/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned()],
+                "status {}",
+                refusal.status
+            );
+            assert_eq!(result.issues.len(), 1, "status {}", refusal.status);
+            assert_eq!(result.issues[0].link_id, link.id);
+        }
+    }
+    /// A package download that says the portal removed this device ends that
+    /// clinic's check there (#128): nothing more can be fetched with it, so
+    /// its later deliveries are not asked for, and it is said as removed, not
+    /// as a connection failure.
+    #[test]
+    fn should_end_a_clinics_check_when_a_package_download_says_the_device_was_removed() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, second, _sealed, _) = fixture_package();
+        add_link(&store, &link);
+        let mut first = second.clone();
+        first.delivery_id = Uuid::new_v4().to_string();
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                assert_eq!(method, "GET", "nothing is filed, so no receipt is sent");
+                fetched.lock().unwrap().push(path.to_owned());
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    Ok(listing(&[first.clone(), second.clone()]))
+                } else {
+                    Ok(refusal("device_removed"))
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", first.delivery_id),
+            ]
+        );
+        assert_eq!((result.added, result.refused), (0, 0));
+        assert_eq!(issues(&result), vec![(link.id, "portal_device_removed")]);
+    }
+    #[test]
+    fn a_check_asks_for_reading_aids_and_downloads_them_after_the_originals() {
+        let (_temp, store, link, _) = vault_with_pair_original();
+        let (aid_outer, aid_sealed) = aid_vector("a reading aid for a filed original");
+        let pair = pair_fixture();
+        let mut other: wire::Outer =
+            serde_json::from_value(pair["original_package"]["outer"].clone()).unwrap();
+        other.delivery_id = Uuid::new_v4().to_string();
+        let fetched = Mutex::new(Vec::new());
+        let result = crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |l, method, path, _, _, _, _| {
+                if l.id != link.id {
+                    return Ok(empty_page());
+                }
+                if method == "GET" {
+                    fetched.lock().unwrap().push(path.to_owned());
+                }
+                if path.starts_with("/api/mycarlos/deliveries?") {
+                    // The aid is listed first, the other delivery second.
+                    Ok(listing(&[aid_outer.clone(), other.clone()]))
+                } else if path.ends_with(&aid_outer.delivery_id) {
+                    Ok(reply(200, &aid_sealed))
+                } else {
+                    Ok(reply(200, b"not a delivery"))
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fetched.into_inner().unwrap(),
+            vec![
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
+                format!("/api/mycarlos/deliveries/{}", other.delivery_id),
+                format!("/api/mycarlos/deliveries/{}", aid_outer.delivery_id),
+            ]
+        );
+        // The other delivery is not a delivery; the checked-in aid is past its lifetime at the
+        // real clock. Both are refused and neither stops the check.
+        assert_eq!(result.refused, 2);
     }
     #[test]
     fn should_stop_a_clinic_after_three_downloads_in_a_row_get_no_reply() {
@@ -2298,4 +7368,11 @@ mod approval_recovery_tests {
             portal_approval::MAX_APPROVAL_REQUESTS - 1
         );
     }
+}
+
+// Narrow existing saved-custody input seam for automatic collection fault tests.
+// This is absent from product builds and never grants new clinic signature trust.
+#[cfg(test)]
+pub(super) fn automatic_pending_fixture_for_test(store: &VaultStore, link: &StoredLink) -> Uuid {
+    approval_recovery_tests::add_unsent_delivery_for(store, link)
 }

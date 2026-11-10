@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
 import type { VaultFolder, VaultRecord } from "../vault";
-import { formatBytes, recordKind, recordSource } from "./recordPresentation";
+import { formatBytes, recordKind } from "./recordPresentation";
+import { RecordSource } from "./RecordSource";
 import {
   MoveTargetSelect,
   moveTargetValue,
@@ -34,6 +35,9 @@ interface RecordDetailsProps {
   onExport: () => void;
   /** Opens the document in myCarlos's reader. */
   onRead?: () => void;
+  /** Opens the clinic's reading aid for this document, under its notice, before the original
+   * if the patient likes; given only when the delivery holds one. */
+  onReadAid?: () => void;
   /** Opens the AI helper's preview: the text with identifying details
    * removed, to save for an AI service (#72). Computers only, PDFs only. */
   onAnonymize?: () => void;
@@ -60,6 +64,7 @@ export function RecordDetails({
   onHide,
   onExport,
   onRead,
+  onReadAid,
   onAnonymize,
   onViewPhoto,
   locked = false,
@@ -191,14 +196,10 @@ export function RecordDetails({
             <dt>{translateNow("interface.RecordDetails.kind")}</dt>
             <dd>{kind.label}</dd>
           </div>
-          <div>
+          <div className="native-source-row">
             <dt>{translateNow("library.column.source")}</dt>
             <dd>
-              {record.verifiedClinicName
-                ? translateNow("portal.sourceVerified", {
-                    clinic: record.verifiedClinicName,
-                  })
-                : recordSource(record)}
+              <RecordSource record={record} />
             </dd>
           </div>
           <div>
@@ -226,7 +227,7 @@ export function RecordDetails({
                 .map((id) => folderNameById.get(id))
                 .filter(Boolean)
                 .join(", ") ||
-                (moveTargets
+                (inShared
                   ? translateNow("interface.LibrarySidebar.sharedWithMe")
                   : translateNow("sidebar.myRecords"))}
             </dd>
@@ -335,6 +336,16 @@ export function RecordDetails({
           >
             {translateNow("interface.RecordDetails.hide")}
           </button>
+          {onReadAid && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={onReadAid}
+            >
+              {translateNow("readingAid.open")}
+            </button>
+          )}
           {onRead && (
             <button
               className="button primary"

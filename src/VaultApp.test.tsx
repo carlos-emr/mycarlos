@@ -1,4 +1,4 @@
-import { humanText } from "./test/humanText";
+import { humanText, humanValue } from "./test/humanText";
 import {
   act,
   fireEvent,
@@ -18,17 +18,42 @@ import {
 } from "./native/recoveryOffer";
 
 const offerIsDue = () => forgetRecoveryOffer();
+// The window's own lock button, named by its words "Lock now" (#121). Security
+// has a Lock now button too, so look only in the title bar.
+const windowLock = (name: string | RegExp = "Lock now") =>
+  within(document.querySelector(".titlebar") as HTMLElement).getByRole(
+    "button",
+    { name: typeof name === "string" ? humanText(name) : name },
+  );
 import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type {
   ImportOutcome,
+  PortalApprovalCheck,
+  PortalLinkSummary,
+  PersonDetails,
+  ReceivedAcceptOutcome,
   SavedBackup,
   VaultBridge,
   VaultSnapshot,
   ViewedPage,
 } from "./vault";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
+import type { ModelSummary } from "./ai/types";
+import { FAKE_MODEL, fakeDocumentText } from "./test/fakeLocalModel";
 import { setLocaleOverride, translate } from "./i18n";
+
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
 
 const TRANSFER_HOLD =
   "Vault content is hidden. myCarlos will lock as soon as the transfer finishes.";
@@ -44,6 +69,7 @@ const PARTIAL_EXPORT = {
 };
 
 const emptySnapshot: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [{ id: "profile-1", displayName: "Jamie", createdAtMs: 1 }],
   folders: [],
   records: [],
@@ -67,13 +93,19 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       notAName: true,
       hardToGuess: true,
     }),
-    create: vi.fn().mockResolvedValue(emptySnapshot),
-    unlock: vi.fn().mockResolvedValue(emptySnapshot),
+    create: vi
+      .fn()
+      .mockImplementation(async () => captureSnapshot(emptySnapshot)),
+    unlock: vi
+      .fn()
+      .mockImplementation(async () => captureSnapshot(emptySnapshot)),
     lock: vi.fn().mockResolvedValue(undefined),
     touch: vi.fn().mockResolvedValue(undefined),
     setAutoLock: vi.fn().mockResolvedValue(undefined),
     platform: vi.fn().mockResolvedValue("windows"),
-    snapshot: vi.fn().mockResolvedValue(emptySnapshot),
+    snapshot: vi
+      .fn()
+      .mockImplementation(async () => captureSnapshot(emptySnapshot)),
     history: vi.fn().mockResolvedValue({
       entries: [],
       laterEntries: [],
@@ -89,16 +121,19 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .mockRejectedValue({ code: "storage", message: "FAKE no key here." }),
     confirmRecoveryKey: vi
       .fn()
-      .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+      .mockImplementation(async () =>
+        captureSnapshot({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+      ),
     saveRecoveryKit: vi.fn().mockResolvedValue(true),
     benchmarkKdf: vi
       .fn()
       .mockRejectedValue({ code: "busy", message: "FAKE no speed test." }),
     recoveryKeyLabel: vi.fn().mockResolvedValue("7F3A"),
     cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
-    recover: vi
-      .fn()
-      .mockResolvedValue({ passphraseReplaced: true, snapshot: emptySnapshot }),
+    recover: vi.fn().mockImplementation(async () => {
+      const result = { passphraseReplaced: true, snapshot: emptySnapshot };
+      return { ...result, snapshot: captureSnapshot(result.snapshot) };
+    }),
     pickBackupDestination: vi.fn().mockResolvedValue(null),
     saveBackupToPicked: vi.fn().mockResolvedValue(undefined),
     pickRestoreSource: vi.fn().mockResolvedValue(null),
@@ -146,6 +181,13 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .mockRejectedValue(new Error("FAKE: no reader in this test")),
     cancelView: vi.fn().mockResolvedValue(undefined),
     aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
+    aiSummarize: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiExplain: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiCancel: vi.fn().mockResolvedValue(undefined),
     documentText: vi.fn().mockRejectedValue(new Error("FAKE no text")),
     cancelDocumentText: vi.fn().mockResolvedValue(undefined),
     recordKnownDetails: vi.fn().mockResolvedValue({
@@ -156,6 +198,13 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     }),
     pickTextExportDestination: vi.fn().mockResolvedValue(null),
     exportTextToPicked: vi.fn().mockResolvedValue({ saved: false, hits: [] }),
+    saveAiResult: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: not in this test")),
+    aiResults: vi.fn().mockResolvedValue([]),
+    readAiResult: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: not in this test")),
     reset: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
@@ -337,7 +386,7 @@ function renameBridge() {
   };
   return nativeBridge({
     status: vi.fn().mockResolvedValue("unlocked"),
-    snapshot: vi.fn().mockImplementation(async () => snapshot),
+    snapshot: vi.fn().mockImplementation(async () => captureSnapshot(snapshot)),
     updateFolder: vi.fn().mockImplementation(async (id, parentId, name) => {
       snapshot = {
         ...snapshot,
@@ -357,7 +406,131 @@ function renameBridge() {
   });
 }
 
+describe("the first person's details at setup (#234)", () => {
+  it("says when the details typed at setup could not be saved, and the vault is still ready", async () => {
+    const user = userEvent.setup();
+    const updateProfileDetails = vi
+      .fn()
+      .mockRejectedValue({ code: "storage", message: "FAKE: not saved" });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      updateProfileDetails,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    await user.type(
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
+      "FAKE Patient",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Full name, as on clinic documents")),
+      "FAKE Patient Example",
+    );
+    fireEvent.change(screen.getByLabelText(humanText("Date of birth")), {
+      target: { value: "1980-04-12" },
+    });
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Confirm passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(updateProfileDetails).toHaveBeenCalledOnce();
+    expect(bridge.create).toHaveBeenCalledOnce();
+  });
+});
+
 describe("durable vault UI", () => {
+  it.each(["status", "snapshot"])(
+    "locks native state and shows unlock when the current startup %s fails",
+    async (stage) => {
+      const failure = {
+        code: "storage",
+        message: "FAKE current startup failed",
+      };
+      const bridge = nativeBridge({
+        status:
+          stage === "status"
+            ? vi.fn().mockRejectedValue(failure)
+            : vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn().mockRejectedValue(failure),
+      });
+      render(<VaultApp bridge={bridge} />);
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByText(humanText("FAKE current startup failed")),
+      ).toBeVisible();
+      expect(bridge.snapshot).toHaveBeenCalledTimes(
+        stage === "snapshot" ? 1 : 0,
+      );
+      expect(
+        screen.queryByRole("heading", { name: humanText("My records") }),
+      ).toBeNull();
+    },
+  );
+
+  it("does not lock a new unlock when an abandoned startup check fails", async () => {
+    let refuseEarlier!: (error: unknown) => void;
+    const earlier = new Promise<"locked">((_, reject) => {
+      refuseEarlier = reject;
+    });
+    const failure = { code: "storage", message: "FAKE earlier startup failed" };
+    const bridge = nativeBridge({
+      status: vi.fn().mockReturnValueOnce(earlier).mockResolvedValue("locked"),
+      unlock: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+    });
+    try {
+      // The application itself uses StrictMode. Its abandoned first effect
+      // must not issue a native lock owned by the later, successful startup.
+      render(
+        <StrictMode>
+          <VaultApp bridge={bridge} />
+        </StrictMode>,
+      );
+      const passphrase = await screen.findByLabelText(humanText("Passphrase"));
+      expect(bridge.status).toHaveBeenCalledTimes(2);
+      fireEvent.change(passphrase, {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      expect(
+        await screen.findByText(humanText("FAKE_Results.pdf")),
+      ).toBeVisible();
+      expect(bridge.unlock).toHaveBeenCalledOnce();
+      expect(bridge.lock).not.toHaveBeenCalled();
+
+      await act(async () => refuseEarlier(failure));
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(screen.getByText(humanText("FAKE_Results.pdf"))).toBeVisible();
+      expect(
+        screen.queryByText(humanText("FAKE earlier startup failed")),
+      ).not.toBeInTheDocument();
+    } finally {
+      await act(async () => refuseEarlier(failure));
+    }
+  });
+
   it.each(["verified", "pending"])(
     "conceals %s audit history while a manual native lock is still pending",
     async (kind) => {
@@ -413,9 +586,7 @@ describe("durable vault UI", () => {
           ? "FAKE pending lock secret"
           : "Checking and reading the complete history…",
       );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Unlocked · Lock now" }),
-      );
+      fireEvent.click(windowLock());
       expect(
         screen.getByText(
           "Vault content is hidden while myCarlos finishes locking…",
@@ -515,9 +686,7 @@ describe("durable vault UI", () => {
       fireEvent.click(screen.getByRole("button", { name: "Security" }));
       fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
       await screen.findByText("Checking and reading the complete history…");
-      fireEvent.click(
-        screen.getByRole("button", { name: "Unlocked · Lock now" }),
-      );
+      fireEvent.click(windowLock());
       await screen.findByLabelText("Passphrase");
       expect(
         screen.queryByRole("heading", { name: "Audit history" }),
@@ -599,9 +768,7 @@ describe("durable vault UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
     await screen.findByText("FAKE verified session secret");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Unlocked · Lock now" }),
-    );
+    fireEvent.click(windowLock());
     await screen.findByLabelText("Passphrase");
     expect(document.body).not.toHaveTextContent("FAKE verified session secret");
   });
@@ -824,22 +991,24 @@ describe("durable vault UI", () => {
         imported: ["record-1"],
         skippedDuplicates: ["copy.pdf"],
       }),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        records: [
-          {
-            id: "record-1",
-            profileId: "profile-1",
-            folderIds: [],
-            displayName: "report.pdf",
-            sourceLabel: "Manual import — unverified",
-            mediaType: "application/octet-stream",
-            plaintextSize: 2048,
-            importedAtMs: 1,
-            available: true,
-          },
-        ],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          records: [
+            {
+              id: "record-1",
+              profileId: "profile-1",
+              folderIds: [],
+              displayName: "report.pdf",
+              sourceLabel: "Manual import — unverified",
+              mediaType: "application/octet-stream",
+              plaintextSize: 2048,
+              importedAtMs: 1,
+              available: true,
+            },
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -881,6 +1050,7 @@ describe("durable vault UI", () => {
   ) {
     const SHARED = "shared-profile";
     const vault: VaultSnapshot = {
+      capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
       profiles: people.map((displayName, index) => ({
         id: `profile-${index + 1}`,
         displayName,
@@ -897,8 +1067,8 @@ describe("durable vault UI", () => {
       sourceLabel: "Manual import — unverified",
     }));
     const bridge = nativeBridge({
-      unlock: vi.fn(async () => structuredClone(vault)),
-      snapshot: vi.fn(async () => structuredClone(vault)),
+      unlock: vi.fn(async () => captureSnapshot(vault)),
+      snapshot: vi.fn(async () => captureSnapshot(vault)),
       listReceived: vi.fn(async () => ({
         files: structuredClone(queue),
         notice: { dropped: 0, refusedShares: 0 },
@@ -1002,7 +1172,7 @@ describe("durable vault UI", () => {
     let holdNext = false;
     let releaseOld: (() => void) | undefined;
     const snapshot = vi.mocked(bridge.snapshot).mockImplementation(() => {
-      const captured = structuredClone(vault);
+      const captured = captureSnapshot(vault);
       if (holdNext) {
         holdNext = false;
         return new Promise<VaultSnapshot>((resolve) => {
@@ -1102,7 +1272,7 @@ describe("durable vault UI", () => {
           message: "FAKE interrupted snapshot response.",
         });
       }
-      const captured = structuredClone(vault);
+      const captured = captureSnapshot(vault);
       if (holdNext) {
         holdNext = false;
         return new Promise<VaultSnapshot>((resolve) => {
@@ -1150,6 +1320,89 @@ describe("durable vault UI", () => {
     );
     await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
   }
+
+  it.each(["same session", "after another unlock"] as const)(
+    "counts shared intake only for the session whose refresh completed: %s",
+    async (when) => {
+      const user = userEvent.setup();
+      const { bridge, vault, arrive } = sharedVault(["FAKE Patient"], [], {
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      let holdNext = false;
+      let finish: (() => void) | undefined;
+      vi.mocked(bridge.snapshot).mockImplementation(() => {
+        const captured = captureSnapshot(vault);
+        if (!holdNext) return Promise.resolve(captured);
+        holdNext = false;
+        return new Promise<VaultSnapshot>((resolve) => {
+          finish = () => resolve(captured);
+        });
+      });
+      const complete = async () => {
+        const reply = finish;
+        finish = undefined;
+        if (reply) await act(async () => reply());
+      };
+      onTestFinished(complete);
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      holdNext = true;
+      arrive("FAKE_Before_lock.pdf");
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      await waitFor(() => expect(finish).toBeTypeOf("function"));
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+      expect(vault.records).toHaveLength(1);
+
+      if (when === "after another unlock") {
+        let state: DocumentVisibilityState = "visible";
+        const visibility = vi
+          .spyOn(document, "visibilityState", "get")
+          .mockImplementation(() => state);
+        try {
+          await act(async () => {
+            state = "hidden";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          });
+          await act(async () => {
+            state = "visible";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await user.type(
+            screen.getByLabelText(humanText("Passphrase")),
+            "river-azimuth-cobalt-sparrow-934",
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Unlock") }),
+          );
+          await screen.findByRole("heading", { name: humanText("My records") });
+          expect(
+            screen.getByRole("button", { name: humanText("Shared with me") }),
+          ).toBeVisible();
+        } finally {
+          visibility.mockRestore();
+        }
+      }
+
+      await complete();
+      const shared = screen.getByRole("button", {
+        name: humanText(
+          when === "same session" ? "Shared with me, 1 new" : "Shared with me",
+        ),
+      });
+      await user.click(shared);
+      expect(screen.getByText(humanText("FAKE_Before_lock.pdf"))).toBeVisible();
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+      expect(bridge.lock).toHaveBeenCalledTimes(
+        when === "same session" ? 0 : 1,
+      );
+      expect(bridge.unlock).toHaveBeenCalledTimes(
+        when === "same session" ? 0 : 1,
+      );
+    },
+  );
 
   it("keeps shared files waiting while locked, puts them in Shared with me at unlock, and moves one to the person (#61)", async () => {
     const user = userEvent.setup();
@@ -1756,6 +2009,62 @@ describe("durable vault UI", () => {
     },
   );
 
+  it.each([
+    ["person", "profile-1", "My records"],
+    ["shared", "shared-profile", "Shared with me"],
+  ])(
+    "shows the %s root location in document details with several people",
+    async (scope, profileId, location) => {
+      const user = userEvent.setup();
+      const { bridge, vault } = sharedVault(["Jamie", "Morgan"], [], {
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      vault.profiles.push({
+        id: "shared-profile",
+        displayName: "Shared with me",
+        createdAtMs: 2,
+      });
+      vault.records.push({
+        id: "root-record",
+        profileId,
+        folderIds: [],
+        displayName: "FAKE_Root_Record.pdf",
+        sourceLabel: "Manual import — unverified",
+        mediaType: "application/pdf",
+        plaintextSize: 2048,
+        importedAtMs: 2,
+        available: true,
+      });
+      render(<VaultApp bridge={bridge} />);
+      if (scope === "shared") {
+        await user.click(
+          await screen.findByRole("button", {
+            name: humanText(/^Shared with me/),
+          }),
+        );
+      }
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("Details for FAKE_Root_Record.pdf"),
+        }),
+      );
+      const details = screen.getByRole("dialog", {
+        name: humanText("FAKE_Root_Record.pdf"),
+      });
+      const folder = within(details).getByText(humanText("Folder"), {
+        selector: "dt",
+      }).parentElement!;
+      expect(within(folder).getByRole("definition")).toHaveHumanTextContent(
+        location,
+      );
+      expect(
+        within(details).getByRole("combobox", { name: humanText("Move to") }),
+      ).toHaveValue(scope === "shared" ? "" : `${profileId}|`);
+      expect(bridge.assignFolders).not.toHaveBeenCalled();
+      expect(bridge.moveToPerson).not.toHaveBeenCalled();
+    },
+  );
+
   it("keeps same-person detail moves on the folder assignment path with several people", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = sharedVault(["Jamie", "Morgan"], []);
@@ -1913,6 +2222,228 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it.each([false, true])(
+    "imports a second share received before the first intake reply: %s",
+    async (anotherShare) => {
+      const user = userEvent.setup();
+      const { bridge, vault, arrive } = sharedVault(
+        ["FAKE Patient"],
+        ["FAKE_First.pdf"],
+        { status: vi.fn().mockResolvedValue("unlocked") },
+      );
+      const accept = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+      const list = vi.mocked(bridge.listReceived).getMockImplementation()!;
+      let finish: (() => void) | undefined;
+      let listedSecond = false;
+      vi.mocked(bridge.acceptReceived)
+        .mockImplementationOnce(async () => {
+          const committed = await accept();
+          return new Promise<ReceivedAcceptOutcome>((resolve) => {
+            finish = () => resolve(committed);
+          });
+        })
+        .mockImplementation(accept);
+      vi.mocked(bridge.listReceived).mockImplementation(async () => {
+        const state = await list();
+        if (state.files.some((file) => file.name === "FAKE_Second.pdf"))
+          listedSecond = true;
+        return state;
+      });
+      const complete = async () => {
+        const reply = finish;
+        finish = undefined;
+        if (reply) await act(async () => reply());
+      };
+      onTestFinished(complete);
+      render(<VaultApp bridge={bridge} />);
+      await waitFor(() => expect(finish).toBeTypeOf("function"));
+      expect(vault.records).toHaveLength(1);
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+      if (anotherShare) {
+        arrive("FAKE_Second.pdf");
+        await act(async () => window.dispatchEvent(new Event("focus")));
+        await waitFor(() => expect(listedSecond).toBe(true));
+        // The native first import is committed; only its reply is pending.
+        // Its busy flag must serialize the two imports, then hand off the ask.
+        expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+        expect(vault.records).toHaveLength(1);
+      }
+      await complete();
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText(`Shared with me, ${anotherShare ? 2 : 1} new`),
+        }),
+      );
+      expect(screen.getByText(humanText("FAKE_First.pdf"))).toBeVisible();
+      if (anotherShare)
+        expect(screen.getByText(humanText("FAKE_Second.pdf"))).toBeVisible();
+      expect(bridge.acceptReceived).toHaveBeenCalledTimes(anotherShare ? 2 : 1);
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("waits for the next focus after a current intake storage refusal", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sharedVault(
+      ["FAKE Patient"],
+      ["FAKE_Waiting.pdf"],
+      {
+        status: vi.fn().mockResolvedValue("unlocked"),
+      },
+    );
+    const accept = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+    let rejectOld: ((error: unknown) => void) | undefined;
+    vi.mocked(bridge.acceptReceived)
+      .mockImplementationOnce(
+        () =>
+          new Promise<ReceivedAcceptOutcome>((_resolve, reject) => {
+            rejectOld = reject;
+          }),
+      )
+      .mockImplementation(accept);
+    const refuse = async () => {
+      const reject = rejectOld;
+      rejectOld = undefined;
+      if (reject) await act(async () => reject({ code: "storage" }));
+    };
+    onTestFinished(refuse);
+    render(<VaultApp bridge={bridge} />);
+    await waitFor(() => expect(bridge.acceptReceived).toHaveBeenCalledOnce());
+    await refuse();
+    expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+    expect(vault.records).toHaveLength(0);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Shared with me, 1 new"),
+      }),
+    );
+    expect(screen.getByText(humanText("FAKE_Waiting.pdf"))).toBeVisible();
+    expect(bridge.acceptReceived).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it.each(["same session", "after another unlock", "while locked"] as const)(
+    "rechecks restored shared intake: %s",
+    async (when) => {
+      const user = userEvent.setup();
+      const { bridge } = sharedVault(["FAKE Patient"], ["FAKE_Restored.pdf"], {
+        status: vi.fn().mockResolvedValue("unlocked"),
+      });
+      const accept = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+      const list = vi.mocked(bridge.listReceived).getMockImplementation()!;
+      const unlock = vi.mocked(bridge.unlock).getMockImplementation()!;
+      let taken = false;
+      let unlockedAgain = false;
+      let listedAfterUnlock = false;
+      let listedRestored = false;
+      let rejectOld: ((error: unknown) => void) | undefined;
+      vi.mocked(bridge.acceptReceived)
+        .mockImplementationOnce(() => {
+          taken = true;
+          return new Promise<ReceivedAcceptOutcome>((_resolve, reject) => {
+            rejectOld = reject;
+          });
+        })
+        .mockImplementation(accept);
+      vi.mocked(bridge.listReceived).mockImplementation(async () => {
+        const state = await list();
+        if (unlockedAgain) listedAfterUnlock = true;
+        if (!taken && vi.mocked(bridge.acceptReceived).mock.calls.length === 1)
+          listedRestored = true;
+        // Native received_accept takes files out of the waiting list, then
+        // restores them before returning a failed attempt (received.rs).
+        return taken ? { ...state, files: [] } : state;
+      });
+      vi.mocked(bridge.unlock).mockImplementation(async (passphrase) => {
+        unlockedAgain = true;
+        return unlock(passphrase);
+      });
+      const refuse = async () => {
+        const reject = rejectOld;
+        rejectOld = undefined;
+        if (!reject) return;
+        taken = false;
+        await act(async () =>
+          reject({ code: when === "same session" ? "storage" : "locked" }),
+        );
+      };
+      onTestFinished(refuse);
+      render(<VaultApp bridge={bridge} />);
+      await waitFor(() => expect(bridge.acceptReceived).toHaveBeenCalledOnce());
+      const unlockAgain = async () => {
+        await user.type(
+          screen.getByLabelText(humanText("Passphrase")),
+          "river-azimuth-cobalt-sparrow-934",
+        );
+        await user.click(
+          screen.getByRole("button", { name: humanText("Unlock") }),
+        );
+        await screen.findByRole("heading", { name: humanText("My records") });
+      };
+
+      if (when !== "same session") {
+        let state: DocumentVisibilityState = "visible";
+        const visibility = vi
+          .spyOn(document, "visibilityState", "get")
+          .mockImplementation(() => state);
+        try {
+          await act(async () => {
+            state = "hidden";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          });
+          await act(async () => {
+            state = "visible";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          if (when === "after another unlock") {
+            await unlockAgain();
+            await waitFor(() => expect(listedAfterUnlock).toBe(true));
+          }
+          expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+        } finally {
+          visibility.mockRestore();
+        }
+      }
+
+      await refuse();
+      if (when === "same session") {
+        // A current refusal waits for the next ask, without an automatic loop.
+        expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+        expect(listedRestored).toBe(false);
+        await act(async () => window.dispatchEvent(new Event("focus")));
+      } else if (when === "while locked") {
+        await waitFor(() => expect(listedRestored).toBe(true));
+        expect(
+          await screen.findByText(
+            humanText(
+              "One shared file is waiting. Unlock and it goes into Shared with me. If myCarlos closes first, it is not kept: share it again.",
+            ),
+          ),
+        ).toBeVisible();
+        expect(document.body).not.toHaveTextContent("FAKE_Restored.pdf");
+        expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+        await unlockAgain();
+      }
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("Shared with me, 1 new"),
+        }),
+      );
+      expect(screen.getByText(humanText("FAKE_Restored.pdf"))).toBeVisible();
+      expect(bridge.acceptReceived).toHaveBeenCalledTimes(2);
+      expect(bridge.lock).toHaveBeenCalledTimes(
+        when === "same session" ? 0 : 1,
+      );
+      expect(bridge.unlock).toHaveBeenCalledTimes(
+        when === "same session" ? 0 : 1,
+      );
+    },
+  );
+
   it("lets no person be called Shared with me (#61)", async () => {
     const user = userEvent.setup();
     const { bridge } = sharedVault(["Jamie"], [], {
@@ -1922,17 +2453,78 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: humanText("Security") }),
     );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
     await user.type(
-      screen.getByLabelText(humanText("New profile name")),
+      within(dialog).getByLabelText(humanText("New profile name")),
       " shared WITH me ",
     );
-    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+    expect(within(dialog).getByRole("alert")).toHaveHumanTextContent(
       "Shared with me is where shared files go. Choose another name.",
     );
     expect(
-      screen.getByRole("button", { name: humanText("Add profile") }),
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
     ).toBeDisabled();
     expect(bridge.createProfile).not.toHaveBeenCalled();
+  });
+
+  it("discards a shared-file refusal name that arrives after Lock", async () => {
+    const user = userEvent.setup();
+    const privateName = "FAKE_Private_Patient_Result.jpg";
+    const { bridge } = sharedVault(["Jamie"], [privateName], {
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    const accept = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+    let releaseIntake!: () => void;
+    const intake = new Promise<void>((resolve) => {
+      releaseIntake = resolve;
+    });
+    vi.mocked(bridge.acceptReceived).mockImplementationOnce(async () => {
+      await intake;
+      return accept();
+    });
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      await waitFor(() => expect(bridge.acceptReceived).toHaveBeenCalledOnce());
+      expect(document.body).not.toHaveTextContent(privateName);
+
+      // Intake runs in the background: Lock remains available while the
+      // native reply containing this document name is still in flight.
+      await user.click(windowLock());
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      await act(async () => {
+        releaseIntake();
+        await intake;
+      });
+      expect(document.body).not.toHaveTextContent(privateName);
+      expect(screen.getByLabelText(humanText("Passphrase"))).toBeVisible();
+      expect(
+        within(
+          screen.getByLabelText(humanText("Passphrase")).closest("form")!,
+        ).getByRole("status"),
+      ).toHaveHumanTextContent("Vault locked.");
+
+      await unlockWith(user);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      await passAnnounceDelay();
+      expect(document.body).not.toHaveTextContent(privateName);
+      expect(screen.getByText(humanText(/^Vault unlocked\.$/))).toBeVisible();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(bridge.unlock).toHaveBeenCalledOnce();
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => {
+        releaseIntake();
+        await intake;
+      });
+    }
   });
 
   it("adds a file shared while the vault is open, and names one that is not a PDF (#61)", async () => {
@@ -2023,7 +2615,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       isPhoto: vi.fn().mockResolvedValue(true),
       viewPhoto: vi.fn().mockResolvedValue("data:image/jpeg;base64,FAKE"),
     });
@@ -2057,7 +2651,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       viewPage: vi.fn().mockResolvedValue({
         pageCount: 1,
         width: 800,
@@ -2094,6 +2690,111 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it.each(["locked", "pdf_locked", "late-locked"] as const)(
+    "distinguishes a native vault lock from a document password: %s",
+    async (code) => {
+      const user = userEvent.setup();
+      let rejectPage: ((error: unknown) => void) | undefined;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+        unlock: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+        viewPage: vi.fn(
+          () =>
+            new Promise<ViewedPage>((_resolve, reject) => {
+              rejectPage = reject;
+            }),
+        ),
+      });
+      const refuse = async (failure: unknown) => {
+        const reject = rejectPage;
+        rejectPage = undefined;
+        if (reject) await act(async () => reject(failure));
+      };
+      onTestFinished(async () => {
+        await refuse({ code: "locked" });
+      });
+      render(<VaultApp bridge={bridge} />);
+      await user.click(await screen.findByText(humanText("FAKE_Results.pdf")));
+      await user.click(screen.getByRole("button", { name: humanText("Read") }));
+      await waitFor(() =>
+        expect(bridge.viewPage).toHaveBeenCalledExactlyOnceWith(
+          "record-1",
+          0,
+          expect.any(Number),
+          undefined,
+        ),
+      );
+      if (code !== "late-locked")
+        await refuse({ code, message: "FAKE page refused." });
+      if (code === "late-locked") {
+        let state: DocumentVisibilityState = "visible";
+        const visibility = vi
+          .spyOn(document, "visibilityState", "get")
+          .mockImplementation(() => state);
+        try {
+          await act(async () => {
+            state = "hidden";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          });
+          await act(async () => {
+            state = "visible";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await user.type(
+            screen.getByLabelText(humanText("Passphrase")),
+            "river-azimuth-cobalt-sparrow-934",
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Unlock") }),
+          );
+          await screen.findByRole("button", {
+            name: humanText("FAKE_Results.pdf"),
+          });
+          await refuse({ code: "locked" });
+          expect(bridge.lock).toHaveBeenCalledOnce();
+          expect(bridge.unlock).toHaveBeenCalledOnce();
+          expect(
+            screen.getByRole("button", {
+              name: humanText("FAKE_Results.pdf"),
+            }),
+          ).toBeVisible();
+          expect(screen.queryByRole("dialog")).toBeNull();
+        } finally {
+          visibility.mockRestore();
+        }
+      } else if (code === "locked") {
+        expect(
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
+        ).toBeVisible();
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        expect(document.body).not.toHaveTextContent("FAKE_Results.pdf");
+      } else {
+        const reader = screen.getByRole("dialog", {
+          name: humanText("FAKE_Results.pdf"),
+        });
+        expect(
+          await within(reader).findByLabelText(humanText("Document password")),
+        ).toBeVisible();
+        expect(bridge.lock).not.toHaveBeenCalled();
+        expect(
+          screen.queryByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
+        ).toBeNull();
+      }
+    },
+  );
+
   it("closes the reader, and stops its page, when the vault locks", async () => {
     const user = userEvent.setup();
     const record = {
@@ -2111,7 +2812,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       // Still drawing when the lock comes.
       viewPage: vi.fn(() => new Promise<ViewedPage>(() => undefined)),
     });
@@ -2122,9 +2825,7 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByRole("dialog", { name: humanText("FAKE_Letter.pdf") }),
     ).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
-    );
+    await user.click(windowLock());
     expect(
       await screen.findByRole("heading", {
         name: humanText("Unlock your vault"),
@@ -2134,9 +2835,114 @@ describe("durable vault UI", () => {
     expect(bridge.cancelView).toHaveBeenCalled();
   });
 
+  it("keeps the bulk selection and destination after a refused move, then retries once", async () => {
+    const user = userEvent.setup();
+    let vault: VaultSnapshot = {
+      ...snapshotWithRecord,
+      folders: [
+        {
+          id: "letters",
+          profileId: "profile-1",
+          parentId: null,
+          name: "FAKE Letters",
+          createdAtMs: 2,
+        },
+      ],
+      records: [
+        snapshotWithRecord.records[0],
+        {
+          ...snapshotWithRecord.records[0],
+          id: "record-2",
+          displayName: "FAKE_Letter.pdf",
+        },
+      ],
+    };
+    const assignFoldersBatch = vi
+      .fn<VaultBridge["assignFoldersBatch"]>()
+      .mockRejectedValueOnce({
+        code: "busy",
+        message: "FAKE move was refused.",
+      })
+      .mockImplementationOnce(async (ids, folderIds) => {
+        // Only the successful fake native mutation changes the returned snapshot.
+        vault = {
+          ...vault,
+          records: vault.records.map((record) =>
+            ids.includes(record.id) ? { ...record, folderIds } : record,
+          ),
+        };
+      });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(vault)),
+      assignFoldersBatch,
+    });
+    render(<VaultApp bridge={bridge} />);
+    for (const name of ["FAKE_Results.pdf", "FAKE_Letter.pdf"]) {
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText(`Select ${name}`),
+        }),
+      );
+    }
+    await user.selectOptions(
+      screen.getByLabelText(humanText("Move selected to")),
+      "letters",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Move") }));
+    expect(await screen.findByText("FAKE move was refused.")).toBeVisible();
+    expect(assignFoldersBatch).toHaveBeenCalledOnce();
+    expect(assignFoldersBatch).toHaveBeenLastCalledWith(
+      ["record-1", "record-2"],
+      ["letters"],
+    );
+    expect(screen.getByText(humanText("2 selected"))).toBeVisible();
+    expect(screen.getByLabelText(humanText("Move selected to"))).toHaveValue(
+      "letters",
+    );
+    for (const name of ["FAKE_Results.pdf", "FAKE_Letter.pdf"]) {
+      expect(
+        screen.getByRole("button", { name: humanText(`Select ${name}`) }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(
+        vault.records.find((record) => record.displayName === name)?.folderIds,
+      ).toEqual([]);
+    }
+    const retry = screen.getByRole("button", { name: humanText("Move") });
+    await waitFor(() => expect(retry).toBeEnabled());
+    await user.click(retry);
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText(humanText("Move selected to")),
+      ).not.toBeInTheDocument(),
+    );
+    expect(assignFoldersBatch.mock.calls).toEqual([
+      [["record-1", "record-2"], ["letters"]],
+      [["record-1", "record-2"], ["letters"]],
+    ]);
+    expect(
+      screen.queryByText("FAKE move was refused."),
+    ).not.toBeInTheDocument();
+    for (const name of ["FAKE_Results.pdf", "FAKE_Letter.pdf"]) {
+      expect(
+        screen.queryByRole("article", { name: humanText(`${name} document`) }),
+      ).not.toBeInTheDocument();
+    }
+    await user.click(
+      screen.getByRole("button", { name: humanText("Open FAKE Letters") }),
+    );
+    for (const name of ["FAKE_Results.pdf", "FAKE_Letter.pdf"]) {
+      expect(
+        screen.getByRole("article", { name: humanText(`${name} document`) }),
+      ).toBeVisible();
+    }
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
   it("presents durable records as a navigable filing cabinet", async () => {
     const user = userEvent.setup();
     const filingSnapshot: VaultSnapshot = {
+      capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
       profiles: [
         { id: "profile-1", displayName: "FAKE Avery Patient", createdAtMs: 1 },
       ],
@@ -2191,7 +2997,9 @@ describe("durable vault UI", () => {
     };
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(filingSnapshot),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(filingSnapshot)),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -2796,6 +3604,79 @@ describe("durable vault UI", () => {
     },
   );
 
+  it("says that details typed at setup were not saved once the recovery key dialog is done", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+      updateProfileDetails: vi
+        .fn()
+        .mockRejectedValue({ code: "storage", message: "FAKE: not saved" }),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+        ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    await user.type(
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
+      "FAKE Patient",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Full name, as on clinic documents")),
+      "FAKE Patient Example",
+    );
+    fireEvent.change(screen.getByLabelText(humanText("Date of birth")), {
+      target: { value: "1980-04-12" },
+    });
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Confirm passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: humanText("Your recovery key"),
+    });
+    expect(bridge.updateProfileDetails).toHaveBeenCalledOnce();
+    // Nothing is written under the dialog, where it would not be read out.
+    expect(
+      screen.queryByText(humanText(/weren't saved/)),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Next: check your recovery key"),
+      }),
+    );
+    await user.type(
+      within(dialog).getByLabelText(humanText("Your recovery key")),
+      RECOVERY_KEY,
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Check and save") }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    // The dialog's result says both: the key is saved, the details are not.
+    expect(
+      await screen.findByText(
+        humanText(
+          "Recovery key saved. Keep your kit somewhere safe. The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.",
+        ),
+      ),
+    ).toBeVisible();
+  });
+
   it("returns focus to the Security recovery setup button after Escape", async () => {
     const user = userEvent.setup();
     render(
@@ -2824,7 +3705,9 @@ describe("durable vault UI", () => {
       beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     await continuePastComfort();
@@ -3125,8 +4008,16 @@ describe("durable vault UI", () => {
     offerIsDue();
     const user = userEvent.setup();
     const bridge = nativeBridge({
-      unlock: vi.fn().mockResolvedValue({ ...emptySnapshot, ...state }),
-      snapshot: vi.fn().mockResolvedValue({ ...emptySnapshot, ...state }),
+      unlock: vi
+        .fn()
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, ...state }),
+        ),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, ...state }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     await user.type(
@@ -3231,7 +4122,9 @@ describe("durable vault UI", () => {
     const recordId = snapshotWithRecord.records[0].id;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
       saveBackupToPicked: vi.fn().mockRejectedValue({
         code: "damaged_document",
@@ -3401,8 +4294,8 @@ describe("durable vault UI", () => {
     const vault = { ...emptySnapshot, recoveryKeySetAtMs: setAtMs };
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(vault),
-      unlock: vi.fn().mockResolvedValue(vault),
+      snapshot: vi.fn().mockImplementation(async () => captureSnapshot(vault)),
+      unlock: vi.fn().mockImplementation(async () => captureSnapshot(vault)),
       beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
       ...overrides,
     });
@@ -3486,6 +4379,246 @@ describe("durable vault UI", () => {
     return { user, bridge, view, hide, setVisibility, unlock, typeKeyBack };
   }
 
+  it("conceals a recovery key when its current label request reports a locked vault", async () => {
+    let finishLabel!: (label: string) => void;
+    let failLabel!: (error: unknown) => void;
+    const pendingLabel = new Promise<string>((resolve, reject) => {
+      finishLabel = resolve;
+      failLabel = reject;
+    });
+    const { bridge } = await showKeyInSetup(5, {
+      recoveryKeyLabel: vi.fn().mockReturnValue(pendingLabel),
+    });
+    try {
+      expect(bridge.recoveryKeyLabel).toHaveBeenCalledOnce();
+      expect(bridge.lock).not.toHaveBeenCalled();
+      await act(async () => failLabel({ code: "locked" }));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      expect(
+        screen.queryByRole("dialog", { name: humanText("Your recovery key") }),
+      ).toBeNull();
+      expect(document.querySelector(".recovery-key-groups")).toBeNull();
+    } finally {
+      await act(async () => finishLabel("FAKE"));
+    }
+  });
+
+  it("conceals the current recovery key before acknowledging a native locked label", async () => {
+    let failLabel!: (failure: unknown) => void;
+    const pendingLabel = new Promise<string>((_resolve, reject) => {
+      failLabel = reject;
+    });
+    let finishLock!: () => void;
+    let acknowledged = false;
+    const locking = new Promise<void>((resolve) => {
+      finishLock = () => {
+        acknowledged = true;
+        resolve();
+      };
+    });
+    try {
+      const { bridge } = await showKeyInSetup(5, {
+        recoveryKeyLabel: vi.fn().mockReturnValue(pendingLabel),
+        lock: vi.fn().mockReturnValue(locking),
+      });
+      const groups = document.querySelector(".recovery-key-groups");
+      expect(groups).toBeVisible();
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(document.visibilityState).toBe("visible");
+
+      // Native already reports Locked. This read, not hiding/focusing the app,
+      // must conceal current content while the follow-up lock IPC still waits.
+      await act(async () => failLabel({ code: "locked" }));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(acknowledged).toBe(false);
+      expect(document.visibilityState).toBe("visible");
+      expect(groups).not.toBeVisible();
+      expect(document.querySelector(".recovery-key-groups")).toBeNull();
+      expect(
+        screen.queryByRole("dialog", { name: humanText("Your recovery key") }),
+      ).toBeNull();
+      expect(
+        screen.getByText(
+          humanText("Vault content is hidden while myCarlos finishes locking…"),
+        ),
+      ).toBeVisible();
+      expect(screen.queryByLabelText(humanText("Passphrase"))).toBeNull();
+
+      await act(async () => finishLock());
+      expect(
+        await screen.findByLabelText(humanText("Passphrase")),
+      ).toBeVisible();
+      expect(document.querySelector(".recovery-key-groups")).toBeNull();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(bridge.confirmRecoveryKey).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => finishLock());
+    }
+  });
+
+  it("does not relock a new session when an earlier label request reports locked", async () => {
+    let finishLabel!: (label: string) => void;
+    let failLabel!: (error: unknown) => void;
+    const pendingLabel = new Promise<string>((resolve, reject) => {
+      finishLabel = resolve;
+      failLabel = reject;
+    });
+    const { bridge, hide, unlock } = await showKeyInSetup(5, {
+      recoveryKeyLabel: vi.fn().mockReturnValue(pendingLabel),
+    });
+    try {
+      await hide();
+      await unlock();
+      expect(
+        await screen.findByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      await act(async () => failLabel({ code: "locked" }));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
+    } finally {
+      await act(async () => finishLabel("FAKE"));
+    }
+  });
+
+  it("does not relock a new session when an earlier recovery setup reports locked", async () => {
+    let finishBegin!: (key: string) => void;
+    let failBegin!: (error: unknown) => void;
+    const pendingBegin = new Promise<string>((resolve, reject) => {
+      finishBegin = resolve;
+      failBegin = reject;
+    });
+    const vault = { ...emptySnapshot, recoveryKeySetAtMs: 5 };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => captureSnapshot(vault)),
+      unlock: vi.fn().mockImplementation(async () => captureSnapshot(vault)),
+      beginRecoveryKey: vi.fn().mockReturnValue(pendingBegin),
+    });
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("visible");
+    onTestFinished(() => visibility.mockRestore());
+    const user = userEvent.setup();
+    render(<VaultApp bridge={bridge} />);
+    try {
+      await user.click(
+        await screen.findByRole("button", { name: humanText("Security") }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Replace recovery key") }),
+      );
+      const dialog = screen.getByRole("dialog");
+      await user.type(
+        within(dialog).getByLabelText(humanText("Passphrase")),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(
+        within(dialog).getByLabelText(
+          humanText("I just want a new key: its kit is safe"),
+        ),
+      );
+      await user.click(
+        within(dialog).getByRole("button", { name: humanText("Continue") }),
+      );
+      expect(bridge.beginRecoveryKey).toHaveBeenCalledOnce();
+      visibility.mockReturnValue("hidden");
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await screen.findByLabelText(humanText("Passphrase"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      visibility.mockReturnValue("visible");
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await user.type(
+        screen.getByLabelText(humanText("Passphrase")),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      expect(
+        await screen.findByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
+      // The old IPC result belongs to the setup that ended at the first lock.
+      await act(async () => failBegin({ code: "locked" }));
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
+    } finally {
+      await act(async () => finishBegin(RECOVERY_KEY));
+    }
+  });
+
+  it("conceals a printed recovery key before a hidden app's native lock finishes", async () => {
+    let finishLock!: () => void;
+    const locking = new Promise<void>((resolve) => {
+      finishLock = resolve;
+    });
+    onTestFinished(() => finishLock());
+    // No afterprint arrives: the app can be hidden before printing finishes.
+    // This checks the webview DOM, not the operating system's print buffers.
+    const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
+    onTestFinished(() => print.mockRestore());
+    const { user, bridge, view, setVisibility } = await showKeyInSetup(5, {
+      lock: vi.fn().mockReturnValue(locking),
+    });
+    const printButton = screen.getByRole("button", {
+      name: humanText("Print recovery kit"),
+    });
+    await waitFor(() => expect(printButton).toBeEnabled());
+    await user.click(printButton);
+    expect(print).toHaveBeenCalledOnce();
+    // This secret-bearing portal lives outside the library's own subtree.
+    expect(
+      document.querySelector("body > .recovery-kit-print"),
+    ).toHaveTextContent(RECOVERY_KEY);
+    expect(document.body).toHaveClass("printing-recovery-kit");
+
+    await setVisibility("hidden");
+    expect(bridge.lock).toHaveBeenCalledOnce();
+    expect(
+      screen.getByText(
+        humanText("Vault content is hidden while myCarlos finishes locking…"),
+      ),
+    ).toBeVisible();
+    expect(screen.queryByLabelText(humanText("Passphrase"))).toBeNull();
+    const expectKeyAbsent = () => {
+      expect(document.querySelector(".recovery-kit-print")).toBeNull();
+      expect(document.querySelector(".recovery-key-groups")).toBeNull();
+      expect(document.body).not.toHaveTextContent(RECOVERY_KEY);
+      expect(document.body).not.toHaveClass("printing-recovery-kit");
+      expect(
+        screen.queryByRole("dialog", { name: humanText("Your recovery key") }),
+      ).toBeNull();
+    };
+    expectKeyAbsent();
+    // A late completion cannot restore the key while acknowledgement waits.
+    await act(async () => {
+      window.dispatchEvent(new Event("afterprint"));
+    });
+    expectKeyAbsent();
+
+    await act(async () => finishLock());
+    await setVisibility("visible");
+    expect(await screen.findByLabelText(humanText("Passphrase"))).toBeVisible();
+    expectKeyAbsent();
+    expect(print).toHaveBeenCalledOnce();
+    expect(bridge.lock).toHaveBeenCalledOnce();
+    expect(bridge.confirmRecoveryKey).not.toHaveBeenCalled();
+    expect(bridge.saveRecoveryKit).not.toHaveBeenCalled();
+    await act(async () => view.unmount());
+  });
+
   it.each([
     [
       "first",
@@ -3505,6 +4638,275 @@ describe("durable vault UI", () => {
       await hide();
       await unlock();
       expect(await screen.findByText(humanText(said))).toBeVisible();
+    },
+  );
+
+  it.each(["equal", "foreign epoch"] as const)(
+    "ignores a refresh with an %s capture stamp",
+    async (kind) => {
+      const user = userEvent.setup();
+      const current = captureSnapshot(snapshotWithRecord);
+      const rejected: VaultSnapshot = {
+        ...structuredClone(current),
+        capture:
+          kind === "equal"
+            ? current.capture
+            : {
+                epoch: "00000000-0000-4000-8000-000000000186",
+                sequence: Number.MAX_SAFE_INTEGER,
+              },
+        records: [{ ...current.records[0], displayName: "FAKE_Rejected.pdf" }],
+      };
+      const snapshot = vi
+        .fn()
+        .mockImplementationOnce(async () => current)
+        .mockImplementationOnce(async () => rejected);
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        // A duplicate result still refreshes, without simulating a new file write.
+        importPickedFiles: vi.fn().mockResolvedValue({
+          imported: [],
+          skippedDuplicates: ["FAKE existing.pdf"],
+        }),
+        snapshot,
+      });
+      render(<VaultApp bridge={bridge} />);
+      expect(
+        await screen.findByText(humanText("FAKE_Results.pdf")),
+      ).toBeVisible();
+      const choose = screen.getByRole("button", {
+        name: humanText("Choose files to import"),
+      });
+      await user.click(choose);
+      await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(choose).toBeEnabled());
+      expect(screen.getByText(humanText("FAKE_Results.pdf"))).toBeVisible();
+      expect(
+        screen.queryByText(humanText("FAKE_Rejected.pdf")),
+      ).not.toBeInTheDocument();
+      expect(bridge.importPickedFiles).toHaveBeenCalledOnce();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("anchors a newly unlocked native epoch before applying its later captures", async () => {
+    const user = userEvent.setup();
+    const current = captureSnapshot({
+      ...snapshotWithRecord,
+      recoveryKeySetAtMs: 5,
+    });
+    const reopened: VaultSnapshot = {
+      ...structuredClone(current),
+      capture: { epoch: "00000000-0000-4000-8000-000000000186", sequence: 1 },
+      records: [{ ...current.records[0], displayName: "FAKE_NewRuntime.pdf" }],
+    };
+    const newer: VaultSnapshot = {
+      ...reopened,
+      capture: { ...reopened.capture, sequence: 2 },
+      records: [
+        { ...reopened.records[0], displayName: "FAKE_LaterRuntime.pdf" },
+      ],
+    };
+    const snapshot = vi
+      .fn()
+      .mockImplementationOnce(async () => current)
+      .mockImplementationOnce(async () => newer);
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      importPickedFiles: vi.fn().mockResolvedValue({
+        imported: [],
+        skippedDuplicates: ["FAKE existing.pdf"],
+      }),
+      snapshot,
+      unlock: vi.fn(async () => reopened),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByText(humanText("FAKE_Results.pdf"));
+    await user.click(windowLock());
+    await user.type(
+      await screen.findByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    expect(
+      await screen.findByText(humanText("FAKE_NewRuntime.pdf")),
+    ).toBeVisible();
+    const choose = screen.getByRole("button", {
+      name: humanText("Choose files to import"),
+    });
+    await user.click(choose);
+    expect(
+      await screen.findByText(humanText("FAKE_LaterRuntime.pdf")),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText("FAKE_NewRuntime.pdf")),
+    ).not.toBeInTheDocument();
+    expect(snapshot).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).toHaveBeenCalledOnce();
+  });
+
+  it("keeps newer shared intake after a delayed recovery confirmation snapshot", async () => {
+    const {
+      bridge: receivedBridge,
+      vault,
+      arrive,
+    } = sharedVault(["FAKE Patient"], []);
+    vault.recoveryKeySetAtMs = 5;
+    let finish: (() => void) | undefined;
+    const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
+      snapshot: receivedBridge.snapshot,
+      listReceived: receivedBridge.listReceived,
+      acceptReceived: receivedBridge.acceptReceived,
+      confirmRecoveryKey: vi.fn(() => {
+        // The command returns the snapshot captured when it stored the key.
+        // Only delivery of that captured reply is held here.
+        vault.recoveryKeySetAtMs = 9;
+        const stored = captureSnapshot(vault);
+        return new Promise<VaultSnapshot>((resolve) => {
+          finish = () => resolve(stored);
+        });
+      }),
+    });
+    try {
+      await typeKeyBack();
+      expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
+      expect(finish).toBeTypeOf("function");
+      arrive("FAKE_After_key.pdf");
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      await waitFor(() => expect(bridge.snapshot).toHaveBeenCalledTimes(2));
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+      expect(vault.records).toHaveLength(1);
+      // Intake announces only after its snapshot refresh has completed.
+      expect(
+        await screen.findByText(
+          humanText("A shared file was added to Shared with me."),
+        ),
+      ).toBeInTheDocument();
+
+      await act(async () => finish!());
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(
+        await screen.findByText(humanText(/^Recovery key replaced\./)),
+      ).toBeVisible();
+      expect(bridge.snapshot).toHaveBeenCalledTimes(2);
+      await user.click(
+        within(
+          screen.getByRole("navigation", { name: humanText("Record library") }),
+        ).getByRole("button", { name: humanText(/^Shared with me/) }),
+      );
+      expect(screen.getByText(humanText("FAKE_After_key.pdf"))).toBeVisible();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => finish?.());
+    }
+  });
+
+  it.each(["before", "after"] as const)(
+    "applies a recovery key captured after a query made while confirmation was pending (query reply %s key reply)",
+    async (order) => {
+      const {
+        bridge: receivedBridge,
+        vault,
+        arrive,
+      } = sharedVault(["FAKE Patient"], []);
+      vault.recoveryKeySetAtMs = 5;
+      vault.recoveryKeyLabel = "OLD1";
+      let commit: (() => void) | undefined;
+      let deliverQuery: (() => void) | undefined;
+      let commits = 0;
+      let keySnapshot: VaultSnapshot | undefined;
+      const reads: VaultSnapshot[] = [];
+      const snapshot = vi.fn(() => {
+        const captured = captureSnapshot(vault);
+        reads.push(captured);
+        if (order === "after" && reads.length === 2) {
+          return new Promise<VaultSnapshot>((resolve) => {
+            deliverQuery = () => resolve(captured);
+          });
+        }
+        return Promise.resolve(captured);
+      });
+      const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
+        snapshot,
+        listReceived: receivedBridge.listReceived,
+        acceptReceived: receivedBridge.acceptReceived,
+        confirmRecoveryKey: vi.fn(
+          () =>
+            new Promise<VaultSnapshot>((resolve) => {
+              commit = () => {
+                if (commits) return;
+                commits += 1;
+                vault.recoveryKeySetAtMs = 9;
+                vault.recoveryKeyLabel = "NEW2";
+                keySnapshot = captureSnapshot(vault);
+                resolve(keySnapshot);
+              };
+            }),
+        ),
+      });
+      try {
+        await typeKeyBack();
+        expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
+        arrive("FAKE_Before_commit.pdf");
+        await act(async () => window.dispatchEvent(new Event("focus")));
+        await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+        expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+        expect(vault.records).toHaveLength(1);
+        expect(reads[1].recoveryKeyLabel).toBe("OLD1");
+        if (order === "before") {
+          expect(
+            await screen.findByText(
+              humanText("A shared file was added to Shared with me."),
+            ),
+          ).toBeInTheDocument();
+        } else {
+          expect(deliverQuery).toBeTypeOf("function");
+        }
+        expect(vault.recoveryKeyLabel).toBe("OLD1");
+        await act(async () => commit!());
+        expect(reads[1].capture.epoch).toBe(keySnapshot!.capture.epoch);
+        expect(reads[1].capture.sequence).toBeLessThan(
+          keySnapshot!.capture.sequence,
+        );
+        expect(
+          await screen.findByText(humanText(/^Recovery key replaced\./)),
+        ).toBeVisible();
+        await user.click(
+          screen.getByRole("button", { name: humanText("Security") }),
+        );
+        expect(screen.getByText("NEW2")).toBeVisible();
+        if (order === "after") {
+          await act(async () => deliverQuery!());
+          expect(
+            await screen.findByText(
+              humanText("A shared file was added to Shared with me."),
+            ),
+          ).toBeInTheDocument();
+          expect(screen.getByText("NEW2")).toBeVisible();
+        }
+        expect(screen.queryByText("OLD1")).not.toBeInTheDocument();
+        await user.click(
+          within(
+            screen.getByRole("navigation", {
+              name: humanText("Record library"),
+            }),
+          ).getByRole("button", { name: humanText(/^Shared with me/) }),
+        );
+        expect(
+          screen.getByText(humanText("FAKE_Before_commit.pdf")),
+        ).toBeVisible();
+        expect(snapshot).toHaveBeenCalledTimes(2);
+        expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
+        expect(commits).toBe(1);
+        expect(bridge.lock).not.toHaveBeenCalled();
+      } finally {
+        await act(async () => {
+          deliverQuery?.();
+          commit?.();
+        });
+      }
     },
   );
 
@@ -3529,11 +4931,13 @@ describe("durable vault UI", () => {
     expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
     await setVisibility("hidden");
     expect(bridge.lock).not.toHaveBeenCalled();
-    const saved = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
+    const saved = captureSnapshot({ ...emptySnapshot, recoveryKeySetAtMs: 9 });
     await act(async () => answer(saved));
     await waitFor(() => expect(bridge.lock).toHaveBeenCalled());
     await setVisibility("visible");
-    vi.mocked(bridge.unlock).mockResolvedValue(saved);
+    vi.mocked(bridge.unlock).mockImplementation(async () =>
+      captureSnapshot(saved),
+    );
     await unlock();
     expect(
       await screen.findByText(humanText(/^Vault unlocked\./)),
@@ -3551,7 +4955,11 @@ describe("durable vault UI", () => {
       const after = { ...emptySnapshot, recoveryKeySetAtMs: saved ? 9 : 5 };
       const { user, bridge, hide, unlock, typeKeyBack } = await showKeyInSetup(
         5,
-        { confirmRecoveryKey: vi.fn().mockResolvedValue(after) },
+        {
+          confirmRecoveryKey: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(after)),
+        },
       );
       if (saved) await typeKeyBack();
       else
@@ -3574,7 +4982,9 @@ describe("durable vault UI", () => {
             ),
           ),
         ).toBeVisible();
-      vi.mocked(bridge.unlock).mockResolvedValue(after);
+      vi.mocked(bridge.unlock).mockImplementation(async () =>
+        captureSnapshot(after),
+      );
       await hide();
       await unlock();
       expect(
@@ -3592,7 +5002,9 @@ describe("durable vault UI", () => {
       recovery: "writeFailed" as const,
     };
     const { typeKeyBack } = await showKeyInSetup(5, {
-      confirmRecoveryKey: vi.fn().mockResolvedValue(stored),
+      confirmRecoveryKey: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(stored)),
     });
     await typeKeyBack();
     expect(
@@ -3609,7 +5021,11 @@ describe("durable vault UI", () => {
     const after = { ...emptySnapshot, recoveryKeySetAtMs: 9 };
     const { user, typeKeyBack } = await showKeyInSetup(
       5,
-      { confirmRecoveryKey: vi.fn().mockResolvedValue(after) },
+      {
+        confirmRecoveryKey: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(after)),
+      },
       false,
     );
     await typeKeyBack();
@@ -3632,7 +5048,9 @@ describe("durable vault UI", () => {
     };
     const written = "myCarlos backup 2026-09-30 7F3A.mycarlosbackup";
     const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
-      confirmRecoveryKey: vi.fn().mockResolvedValue(after),
+      confirmRecoveryKey: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(after)),
       pickBackupDestination: vi.fn().mockResolvedValue("pick-9"),
       saveBackupToPicked: vi
         .fn()
@@ -3793,9 +5211,7 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
-    await user.click(
-      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
-    );
+    await user.click(windowLock());
     await screen.findByRole("heading", {
       name: humanText("Unlock your vault"),
     });
@@ -3859,8 +5275,12 @@ describe("durable vault UI", () => {
     render(
       <VaultApp
         bridge={nativeBridge({
-          unlock: vi.fn().mockResolvedValue(vault),
-          snapshot: vi.fn().mockResolvedValue(vault),
+          unlock: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(vault)),
+          snapshot: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(vault)),
         })}
       />,
     );
@@ -3888,7 +5308,11 @@ describe("durable vault UI", () => {
     const vault = { ...emptySnapshot, recoveryKeySetAtMs: 5 };
     render(
       <VaultApp
-        bridge={nativeBridge({ unlock: vi.fn().mockResolvedValue(vault) })}
+        bridge={nativeBridge({
+          unlock: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(vault)),
+        })}
       />,
     );
     await user.type(
@@ -3916,7 +5340,11 @@ describe("durable vault UI", () => {
     };
     render(
       <VaultApp
-        bridge={nativeBridge({ unlock: vi.fn().mockResolvedValue(vault) })}
+        bridge={nativeBridge({
+          unlock: vi
+            .fn()
+            .mockImplementation(async () => captureSnapshot(vault)),
+        })}
       />,
     );
     await user.type(
@@ -4279,10 +5707,15 @@ describe("durable vault UI", () => {
     });
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        records: [record("a", "FAKE_Alpha.pdf"), record("b", "FAKE_Beta.pdf")],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          records: [
+            record("a", "FAKE_Alpha.pdf"),
+            record("b", "FAKE_Beta.pdf"),
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -4326,7 +5759,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -4386,10 +5821,12 @@ describe("durable vault UI", () => {
     unmount();
 
     const snapshot = await bridge.snapshot();
-    vi.mocked(bridge.snapshot).mockResolvedValue({
-      ...snapshot,
-      recovery: "writeFailed",
-    });
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot({
+        ...snapshot,
+        recovery: "writeFailed",
+      }),
+    );
     render(<VaultApp bridge={bridge} />);
     expect(
       await screen.findByRole("button", {
@@ -4721,12 +6158,21 @@ describe("durable vault UI", () => {
     };
     const hideRecord = vi.fn().mockResolvedValue(undefined);
     const unhideRecord = vi.fn().mockResolvedValue(undefined);
-    const hidden = { ...record, hidden: { atMs: 5, reason: "patient" } };
+    const hidden = {
+      ...record,
+      hidden: { atMs: 5, reason: "patient" as const },
+    };
     const snapshot = vi
       .fn()
-      .mockResolvedValueOnce({ ...emptySnapshot, records: [record] })
-      .mockResolvedValueOnce({ ...emptySnapshot, records: [hidden] })
-      .mockResolvedValue({ ...emptySnapshot, records: [record] });
+      .mockImplementationOnce(async () =>
+        captureSnapshot({ ...emptySnapshot, records: [record] }),
+      )
+      .mockImplementationOnce(async () =>
+        captureSnapshot({ ...emptySnapshot, records: [hidden] }),
+      )
+      .mockImplementation(async () =>
+        captureSnapshot({ ...emptySnapshot, records: [record] }),
+      );
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot,
@@ -4816,7 +6262,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     const document = await screen.findByRole("article", {
@@ -5138,13 +6586,400 @@ describe("durable vault UI", () => {
     }
   });
 
+  describe("while an AI answer is written (D19)", () => {
+    const summary: ModelSummary = {
+      sentences: [{ text: "FAKE: a short summary.", quote: "FAKE results" }],
+      model: FAKE_MODEL,
+      lastPage: 0,
+      lastPageCut: false,
+      keptId: "FAKE-kept-1",
+    };
+    // Opens FAKE_Results.pdf in the reader and asks for its summary, on fake
+    // timers. The answer waits until the test settles it; `started` is what
+    // native says once the model is asked it.
+    async function askForSummary(synchronousLimit?: number) {
+      let settle!: {
+        resolve: (written: ModelSummary) => void;
+        reject: (failure: unknown) => void;
+      };
+      // Every answer asked, oldest first.
+      const settles: (typeof settle)[] = [];
+      let started: (answer: {
+        answerId: string;
+        limitMs: number;
+      }) => void = () => undefined;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+        viewPage: vi.fn().mockResolvedValue({
+          pageCount: 1,
+          width: 800,
+          height: 1035,
+          image:
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+          text: "FAKE results text",
+        }),
+        documentText: vi.fn(async () =>
+          fakeDocumentText(["FAKE results text"]),
+        ),
+        aiModelStatus: vi
+          .fn()
+          .mockResolvedValue({ state: "installed", model: FAKE_MODEL }),
+        aiSummarize: vi.fn((_pages, _lang, _keep, answerId) => {
+          if (synchronousLimit !== undefined)
+            started({ answerId: answerId!, limitMs: synchronousLimit });
+          return new Promise<ModelSummary>((resolve, reject) => {
+            settle = { resolve, reject };
+            settles.push(settle);
+          });
+        }),
+        onAiAnswerStarted: vi.fn(
+          (
+            handler: (answer: { answerId: string; limitMs: number }) => void,
+          ) => {
+            started = handler;
+            return () => undefined;
+          },
+        ),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText(humanText("FAKE_Results.pdf")));
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Read") }),
+        );
+      });
+      const reader = screen.getByRole("dialog", {
+        name: humanText("FAKE_Results.pdf"),
+      });
+      await act(async () => {
+        fireEvent.click(
+          within(reader).getByRole("button", { name: humanText("Summary") }),
+        );
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Continue") }),
+        );
+      });
+      // The kept answers looked up, then the text read, then the model asked.
+      for (let flush = 0; flush < 10; flush += 1) {
+        if (vi.mocked(bridge.aiSummarize).mock.calls.length) break;
+        await act(async () => undefined);
+      }
+      expect(bridge.aiSummarize).toHaveBeenCalledOnce();
+      return {
+        bridge,
+        settle: () => settle,
+        settles,
+        started: (limitMs: number, index = settles.length - 1) =>
+          act(async () => {
+            const answerId = vi.mocked(bridge.aiSummarize).mock.calls[index][3];
+            expect(answerId).toMatch(/^[0-9a-f-]{36}$/);
+            started({ answerId: answerId!, limitMs });
+          }),
+      };
+    }
+
+    it("ownership: the token exists before a synchronous started event", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge } = await askForSummary(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(10 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ownership: a failed manual lock keeps the current answer's session", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, started } = await askForSummary();
+        await started(5 * 60 * 1000);
+        vi.mocked(bridge.lock).mockRejectedValueOnce({ code: "storage" });
+        await act(async () => fireEvent.click(windowLock()));
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    for (const ending of ["pending", "resolve", "reject"] as const) {
+      it(`ownership: an old answer ${ending} cannot postpone the next session`, async () => {
+        vi.useFakeTimers();
+        try {
+          const { bridge, settles } = await askForSummary();
+          await act(async () => fireEvent.click(windowLock()));
+          expect(bridge.lock).toHaveBeenCalledOnce();
+          vi.mocked(bridge.unlock).mockImplementation(async () =>
+            captureSnapshot(snapshotWithRecord),
+          );
+          await act(async () => {
+            fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
+              target: { value: "river-azimuth-cobalt-sparrow-934" },
+            });
+            fireEvent.click(
+              screen.getByRole("button", { name: humanText("Unlock") }),
+            );
+          });
+          expect(
+            screen.getByRole("heading", { name: humanText("My records") }),
+          ).toBeVisible();
+          await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+          if (ending !== "pending")
+            await act(async () => {
+              if (ending === "resolve") settles[0].resolve(summary);
+              else settles[0].reject({ code: "aiCancelled" });
+            });
+          await act(async () => vi.advanceTimersByTime(60_000 + 10_000));
+          expect(bridge.lock).toHaveBeenCalledTimes(2);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    }
+
+    it("ownership: a superseded answer's late start and end cannot extend the current answer", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles, started } = await askForSummary();
+        const summaryButton = () =>
+          within(
+            screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+          ).getByRole("button", { name: humanText("Summary") });
+        await act(async () => fireEvent.click(summaryButton()));
+        await act(async () => fireEvent.click(summaryButton()));
+        for (
+          let flush = 0;
+          flush < 10 && vi.mocked(bridge.aiSummarize).mock.calls.length < 2;
+          flush += 1
+        )
+          await act(async () => undefined);
+        expect(bridge.aiSummarize).toHaveBeenCalledTimes(2);
+        await started(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+        await started(20 * 60 * 1000, 0);
+        await act(async () => settles[0].reject({ code: "aiCancelled" }));
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ownership: old delivery cannot retain work after the current answer ends", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles } = await askForSummary();
+        const button = () =>
+          within(
+            screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+          ).getByRole("button", { name: humanText("Summary") });
+        await act(async () => fireEvent.click(button()));
+        await act(async () => fireEvent.click(button()));
+        for (let i = 0; i < 10 && settles.length < 2; i += 1)
+          await act(async () => undefined);
+        expect(settles).toHaveLength(2);
+        await act(async () => vi.advanceTimersByTime(60_000));
+        await act(async () => settles[1].resolve(summary));
+        await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ownership: old started and settled deliveries cannot extend an answer in a new session", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles, started } = await askForSummary();
+        await act(async () => fireEvent.click(windowLock()));
+        vi.mocked(bridge.unlock).mockImplementation(async () =>
+          captureSnapshot(snapshotWithRecord),
+        );
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
+            target: { value: "river-azimuth-cobalt-sparrow-934" },
+          });
+          fireEvent.click(
+            screen.getByRole("button", { name: humanText("Unlock") }),
+          );
+        });
+        await act(async () =>
+          fireEvent.click(screen.getByText(humanText("FAKE_Results.pdf"))),
+        );
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", { name: humanText("Read") }),
+          ),
+        );
+        const reader = screen.getByRole("dialog", {
+          name: humanText("FAKE_Results.pdf"),
+        });
+        await act(async () =>
+          fireEvent.click(
+            within(reader).getByRole("button", { name: humanText("Summary") }),
+          ),
+        );
+        const go = screen.queryByRole("button", {
+          name: humanText("Continue"),
+        });
+        if (go) await act(async () => fireEvent.click(go));
+        for (let i = 0; i < 10 && settles.length < 2; i += 1)
+          await act(async () => undefined);
+        expect(settles).toHaveLength(2);
+        await started(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+        await started(20 * 60 * 1000, 0);
+        await act(async () => settles[0].reject({ code: "aiCancelled" }));
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not lock until the answer's own limit and the delay have passed", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, started } = await askForSummary();
+        // Unheld, the five-minute delay would have locked by now.
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        // Asked at 6 minutes with a limit of 7: held until 13, then the delay.
+        await started(7 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(11 * 60 * 1000 + 30_000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(60_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("waits at most 20 minutes for an answer not yet asked, as while the helper starts", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge } = await askForSummary();
+        await act(async () => vi.advanceTimersByTime(20 * 60 * 1000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("counts a limit said to be longer than 20 minutes as 20", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, started } = await askForSummary();
+        await act(async () => vi.advanceTimersByTime(60_000));
+        // Said at 1 minute: held until 21, then the delay.
+        await started(60 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(20 * 60 * 1000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps a newer answer's hold when an older answer's word comes late", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles, started } = await askForSummary();
+        // The panel closed and opened again: a newer summary is asked while
+        // the older one is still ending.
+        const summaryButton = () =>
+          within(
+            screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+          ).getByRole("button", { name: humanText("Summary") });
+        await act(async () => fireEvent.click(summaryButton()));
+        await act(async () => fireEvent.click(summaryButton()));
+        for (let flush = 0; flush < 10; flush += 1) {
+          if (vi.mocked(bridge.aiSummarize).mock.calls.length > 1) break;
+          await act(async () => undefined);
+        }
+        expect(bridge.aiSummarize).toHaveBeenCalledTimes(2);
+        // The older answer's limit of 5 minutes arrives now: it must not cut
+        // the newer one's hold short, which would lock at about 10 minutes.
+        await started(5 * 60 * 1000, 0);
+        await act(async () => vi.advanceTimersByTime(10 * 60 * 1000 + 30_000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        // Once the older one has ended, the newer one's own limit counts.
+        await act(async () => settles[0].reject({ code: "aiCancelled" }));
+        await started(7 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(11 * 60 * 1000 + 30_000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(60_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each(["an answer", "a failure", "a cancel"])(
+      "restarts the delay from the end, then holds no more, when it ends with %s",
+      async (ending) => {
+        vi.useFakeTimers();
+        try {
+          const { bridge, settle, started } = await askForSummary();
+          await started(15 * 60 * 1000);
+          await act(async () => vi.advanceTimersByTime(10 * 60 * 1000));
+          await act(async () => {
+            if (ending === "an answer") settle().resolve(summary);
+            else if (ending === "a failure")
+              settle().reject(new Error("FAKE failure"));
+            else settle().reject({ code: "aiCancelled" });
+          });
+          // Still held (until 15 minutes), it would not lock before 20.
+          await act(async () => vi.advanceTimersByTime(4 * 60 * 1000 + 30_000));
+          expect(bridge.lock).not.toHaveBeenCalled();
+          await act(async () => vi.advanceTimersByTime(60_000));
+          expect(bridge.lock).toHaveBeenCalledOnce();
+        } finally {
+          vi.useRealTimers();
+        }
+      },
+    );
+
+    it("still locks at once on Lock now, and stops the answer", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, started } = await askForSummary();
+        await started(15 * 60 * 1000);
+        await act(async () => {
+          fireEvent.click(windowLock());
+        });
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        expect(bridge.aiCancel).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it("hides content at the deadline during an export and locks once it finishes", async () => {
     vi.useFakeTimers();
     try {
       let failExport!: (error: unknown) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
         pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
         exportToPicked: vi.fn(
           () =>
@@ -5366,16 +7201,17 @@ describe("durable vault UI", () => {
       vi.useFakeTimers();
       try {
         let finishImport!: (value: ImportOutcome) => void;
-        let finishRefresh!: (value: VaultSnapshot) => void;
+        let finishRefresh!: () => void;
         const bridge = nativeBridge({
           status: vi.fn().mockResolvedValue("unlocked"),
           snapshot: vi
             .fn()
-            .mockResolvedValueOnce(emptySnapshot)
+            .mockImplementationOnce(async () => captureSnapshot(emptySnapshot))
             .mockImplementationOnce(
               () =>
                 new Promise<VaultSnapshot>((resolve) => {
-                  finishRefresh = resolve;
+                  const captured = captureSnapshot(emptySnapshot);
+                  finishRefresh = () => resolve(captured);
                 }),
             ),
           importPickedFiles: vi.fn(
@@ -5413,7 +7249,7 @@ describe("durable vault UI", () => {
         expect(bridge.lock).not.toHaveBeenCalled();
         expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
 
-        await act(async () => finishRefresh(emptySnapshot));
+        await act(async () => finishRefresh());
         expect(bridge.lock).toHaveBeenCalledOnce();
         await expectOutcomeAfterUnlock("1 document encrypted and added.");
       } finally {
@@ -5431,16 +7267,17 @@ describe("durable vault UI", () => {
       vi.useFakeTimers();
       try {
         let finishImport!: (value: ImportOutcome) => void;
-        let finishRefresh!: (value: VaultSnapshot) => void;
+        let finishRefresh!: () => void;
         const bridge = nativeBridge({
           status: vi.fn().mockResolvedValue("unlocked"),
           snapshot: vi
             .fn()
-            .mockResolvedValueOnce(emptySnapshot)
+            .mockImplementationOnce(async () => captureSnapshot(emptySnapshot))
             .mockImplementationOnce(
               () =>
                 new Promise<VaultSnapshot>((resolve) => {
-                  finishRefresh = resolve;
+                  const captured = captureSnapshot(emptySnapshot);
+                  finishRefresh = () => resolve(captured);
                 }),
             ),
           importPickedFiles: vi.fn(
@@ -5478,7 +7315,7 @@ describe("durable vault UI", () => {
         expect(bridge.lock).not.toHaveBeenCalled();
         expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
 
-        await act(async () => finishRefresh(emptySnapshot));
+        await act(async () => finishRefresh());
         expect(bridge.lock).toHaveBeenCalledOnce();
         await expectOutcomeAfterUnlock("1 document encrypted and added.");
       } finally {
@@ -5690,7 +7527,9 @@ describe("durable vault UI", () => {
     let failExport!: (error: unknown) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
       exportToPicked: vi.fn(
         () =>
@@ -5945,7 +7784,9 @@ describe("durable vault UI", () => {
       let failExport!: (error: unknown) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
         pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
         exportToPicked: vi.fn(
           () =>
@@ -6016,7 +7857,9 @@ describe("durable vault UI", () => {
       let failExport!: (error: unknown) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
         pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
         exportToPicked: vi.fn(
           () =>
@@ -6990,7 +8833,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       pickExportDestination: vi.fn().mockResolvedValue(null),
     });
     render(<VaultApp bridge={bridge} />);
@@ -7154,7 +8999,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
       pickImportFiles: vi.fn().mockResolvedValue(null),
     });
     render(<VaultApp bridge={bridge} />);
@@ -7236,23 +9083,31 @@ describe("durable vault UI", () => {
       importedAtMs: 1,
       available: true,
     };
-    let deliverSnapshot: (value: VaultSnapshot) => void = () => undefined;
+    let deliverSnapshot: () => void = () => undefined;
     const snapshot = vi
       .fn()
-      .mockResolvedValueOnce({ ...emptySnapshot, records: [record] })
+      .mockImplementationOnce(async () =>
+        captureSnapshot({ ...emptySnapshot, records: [record] }),
+      )
       .mockImplementationOnce(
         () =>
           new Promise<VaultSnapshot>((resolve) => {
-            deliverSnapshot = resolve;
+            const captured = captureSnapshot({
+              ...emptySnapshot,
+              records: [{ ...record, displayName: "FAKE_Renamed.pdf" }],
+            });
+            deliverSnapshot = () => resolve(captured);
           }),
       );
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot,
-      unlock: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        records: [{ ...record, displayName: "FAKE_Current.pdf" }],
-      }),
+      unlock: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          records: [{ ...record, displayName: "FAKE_Current.pdf" }],
+        }),
+      ),
       renameRecord: vi.fn().mockResolvedValue(undefined),
     });
     render(<VaultApp bridge={bridge} />);
@@ -7292,12 +9147,7 @@ describe("durable vault UI", () => {
       await screen.findByText(humanText("FAKE_Current.pdf")),
     ).toBeVisible();
 
-    await act(async () =>
-      deliverSnapshot({
-        ...emptySnapshot,
-        records: [{ ...record, displayName: "FAKE_Renamed.pdf" }],
-      }),
-    );
+    await act(async () => deliverSnapshot());
     expect(screen.getByText(humanText("FAKE_Current.pdf"))).toBeVisible();
     expect(
       screen.queryByText(humanText(/FAKE_Renamed/)),
@@ -7412,6 +9262,94 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(window.localStorage.getItem(guide)).toBeNull());
   });
 
+  it.each([
+    ["unchanged", ""],
+    ["edited", "FAKE Second folder"],
+  ])(
+    "keeps the %s folder draft reset scoped to the name that was saved",
+    async (draft, expected) => {
+      const user = userEvent.setup();
+      const vault = structuredClone(emptySnapshot);
+      let finishSave!: () => void;
+      const saving = new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      const createFolder = vi.fn(
+        async (profileId: string, parentId: string | null, name: string) => {
+          await saving;
+          vault.folders.push({
+            id: "folder-first",
+            profileId,
+            parentId,
+            name,
+            createdAtMs: 2,
+          });
+          return "folder-first";
+        },
+      );
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi.fn(async () => captureSnapshot(vault)),
+        createFolder,
+      });
+      let view: ReturnType<typeof render> | undefined;
+      try {
+        view = render(<VaultApp bridge={bridge} />);
+        await user.click(
+          await screen.findByRole("button", { name: humanText("New folder") }),
+        );
+        const name = screen.getByLabelText(humanText("Folder name"));
+        await user.type(name, "FAKE First folder");
+        const create = screen.getByRole("button", {
+          name: humanText("Create"),
+        });
+        await user.click(create);
+        await waitFor(() =>
+          expect(createFolder).toHaveBeenCalledExactlyOnceWith(
+            "profile-1",
+            null,
+            "FAKE First folder",
+          ),
+        );
+        expect(create).toBeDisabled();
+        expect(name).toBeEnabled();
+        if (draft === "edited") {
+          await user.clear(name);
+          await user.type(name, expected);
+        }
+        await act(async () => {
+          finishSave();
+          await createFolder.mock.results[0].value;
+        });
+        await screen.findByText(
+          humanText(
+            translate("en", "interface.notice.folderCreated", {
+              name: "FAKE First folder",
+            }),
+          ),
+        );
+        // Inspect the next draft without imposing a form-closing policy.
+        // If the successful create closed it, reopen it first.
+        if (!screen.queryByLabelText(humanText("Folder name"))) {
+          await act(async () => {
+            await user.click(
+              screen.getByRole("button", { name: humanText("New folder") }),
+            );
+          });
+        }
+        expect(screen.getByLabelText(humanText("Folder name"))).toHaveValue(
+          expected,
+        );
+        expect(createFolder).toHaveBeenCalledOnce();
+      } finally {
+        await act(async () => {
+          finishSave();
+          view?.unmount();
+        });
+      }
+    },
+  );
+
   it("stays in the library when a command there finds no vault", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
@@ -7465,6 +9403,323 @@ describe("durable vault UI", () => {
     expect(screen.getByText(humanText("Vault locked."))).toBeVisible();
   });
 
+  it("updates a settled person-details save notice when the language changes", async () => {
+    const user = userEvent.setup();
+    const vault = structuredClone(emptySnapshot);
+    const displayName = "FAKE {Person}";
+    const fullName = "FAKE Exact {Clinic} Name";
+    vault.profiles[0].displayName = displayName;
+    vault.profiles[0].fullName = "FAKE Earlier Name";
+    const update = vi.fn(async (_id: string, details: PersonDetails) => {
+      Object.assign(vault.profiles[0], details);
+    });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(vault)),
+      updateProfileDetails: update,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText(
+          translate("en", "personDetails.editFor", { name: displayName }),
+        ),
+      }),
+    );
+    const form = screen.getByRole("form", {
+      name: humanText(
+        translate("en", "personDetails.for", { name: displayName }),
+      ),
+    });
+    const input = within(form).getByLabelText(
+      humanText(translate("en", "personDetails.fullName")),
+    );
+    await user.clear(input);
+    await user.paste(fullName);
+    await user.click(
+      within(form).getByRole("button", {
+        name: humanText(translate("en", "personDetails.save")),
+      }),
+    );
+    const english = translate("en", "personDetails.saved", {
+      name: displayName,
+    });
+    const notice = (await screen.findByText(humanText(english))).closest(
+      '[role="status"]',
+    )!;
+    expect(update).toHaveBeenCalledExactlyOnceWith("profile-1", { fullName });
+    expect(
+      screen.queryByRole("form", {
+        name: humanText(
+          translate("en", "personDetails.for", { name: displayName }),
+        ),
+      }),
+    ).toBeNull();
+    const list = screen.getByRole("list", {
+      name: humanText(translate("en", "personDetails.list")),
+    });
+    expect(list).toHaveTextContent(fullName);
+
+    act(() => setLocaleOverride("fr"));
+    expect(
+      screen.getByRole("button", {
+        name: humanText(
+          translate("fr", "personDetails.editFor", { name: displayName }),
+        ),
+      }),
+    ).toBeVisible();
+    expect(notice).toHaveHumanTextContent(
+      translate("fr", "personDetails.saved", { name: displayName }),
+    );
+    expect(notice).not.toHaveHumanTextContent(english);
+    expect(list).toHaveTextContent(fullName);
+    act(() => setLocaleOverride("en"));
+    expect(notice).toHaveHumanTextContent(english);
+    expect(list).toHaveTextContent(fullName);
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("updates a settled clinic-check result when the language changes without another check", async () => {
+    const user = userEvent.setup();
+    const deviceCode = "FAKE-DEVICE-CODE";
+    const fingerprint = "11".repeat(32);
+    const vault: VaultSnapshot = {
+      ...structuredClone(emptySnapshot),
+      portalLinkingEnabled: true,
+      portalLinks: [
+        {
+          id: "fake-link",
+          portalBase: "https://portal.example.test/patient",
+          deviceName: "FAKE device",
+          profileId: "profile-1",
+          clinicName: "FAKE {Clinic}",
+          fingerprints: [],
+          incomplete: false,
+          deviceKeyId: deviceCode,
+          deviceFingerprint: fingerprint,
+          approvalRequested: true,
+          clinicApproved: true,
+        },
+      ],
+    };
+    const check = vi
+      .fn()
+      .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(vault)),
+      linkPortal: vi.fn().mockResolvedValue(vault.portalLinks![0]),
+      // The clinic panel offers the one composite action (#136).
+      connectPortal: vi.fn(),
+      checkDocuments: check,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/^Shared with me/) }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText(translate("en", "portal.check")),
+      }),
+    );
+    const english = translate("en", "portal.result", { added: 0, refused: 0 });
+    const notice = (await screen.findByText(humanText(english))).closest(
+      '[role="status"]',
+    )!;
+    expect(check).toHaveBeenCalledOnce();
+
+    act(() => setLocaleOverride("fr"));
+    expect(
+      screen.getByRole("button", {
+        name: humanText(translate("fr", "portal.check")),
+      }),
+    ).toBeVisible();
+    expect(notice).toHaveHumanTextContent(
+      translate("fr", "portal.result", { added: 0, refused: 0 }),
+    );
+    expect(notice).not.toHaveHumanTextContent(english);
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText(translate("fr", "security.title")),
+      }),
+    );
+    const clinic = screen.getByRole("region", {
+      name: humanText(translate("fr", "portal.title")),
+    });
+    expect(
+      within(clinic).queryByRole("button", {
+        name: humanText(translate("fr", "portal.check")),
+      }),
+    ).toBeNull();
+    expect(
+      within(clinic).getByLabelText(translate("fr", "portal.deviceCode")),
+    ).toHaveValue(deviceCode);
+    expect(
+      within(clinic).getByLabelText(translate("fr", "portal.fingerprint")),
+    ).toHaveValue(fingerprint);
+    expect(
+      within(clinic).getByRole("heading", { name: "FAKE {Clinic}" }),
+    ).toBeVisible();
+    act(() => setLocaleOverride("en"));
+    // Navigation remounts the visible status; check its current node.
+    expect(
+      screen.getByText(humanText(english)).closest('[role="status"]'),
+    ).toHaveHumanTextContent(english);
+    expect(check).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the Add profile dialog and its fields while a profile is being saved, and opens it empty for the next", async () => {
+    // With Add profile in a dialog (#165), nothing can be typed for a next
+    // profile while one is saved: the dialog holds the fields until the save
+    // ends, and opens empty for the next.
+    const user = userEvent.setup();
+    const vault = structuredClone(emptySnapshot);
+    let finishSave!: () => void;
+    const saving = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    const createProfile = vi.fn(
+      async (name: string, details?: PersonDetails) => {
+        await saving;
+        vault.profiles.push({
+          id: "profile-2",
+          displayName: name,
+          createdAtMs: 2,
+          ...details,
+        });
+        return "profile-2";
+      },
+    );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(vault)),
+      createProfile,
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+    const fullNameLabel = humanText(translate("en", "personDetails.fullName"));
+    const openAdd = async () => {
+      await user.click(
+        screen.getByRole("button", { name: humanText("Add profile") }),
+      );
+      return screen.getByRole("dialog", { name: humanText("Add profile") });
+    };
+    try {
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: humanText("Security") }),
+      );
+      const dialog = await openAdd();
+      const name = within(dialog).getByLabelText(humanText("New profile name"));
+      await user.type(name, "FAKE First");
+      await user.type(
+        within(dialog).getByLabelText(fullNameLabel),
+        "FAKE First Person",
+      );
+      await user.click(
+        within(dialog).getByRole("checkbox", {
+          name: humanText(translate("en", "personDetails.birthDateUnknown")),
+        }),
+      );
+      const add = within(dialog).getByRole("button", {
+        name: humanText("Add profile"),
+      });
+      await user.click(add);
+      await waitFor(() =>
+        expect(createProfile).toHaveBeenCalledExactlyOnceWith("FAKE First", {
+          fullName: "FAKE First Person",
+        }),
+      );
+      // While it saves: the same dialog, its fields kept and held.
+      expect(dialog).toBeInTheDocument();
+      expect(add).toBeDisabled();
+      expect(name).toBeDisabled();
+      expect(name).toHaveValue("FAKE First");
+
+      await act(async () => finishSave());
+      await screen.findByText(
+        humanText(
+          translate("en", "interface.notice.personAdded", {
+            name: "FAKE First",
+          }),
+        ),
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const next = await openAdd();
+      expect(
+        within(next).getByLabelText(humanText("New profile name")),
+      ).toHaveValue("");
+      expect(within(next).getByLabelText(fullNameLabel)).toHaveValue("");
+      expect(createProfile).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => finishSave());
+    }
+  });
+
+  it("keeps a person's unsaved details while their Edit details dialog is open: Add profile can't start then", async () => {
+    // With both in dialogs (#165), adding another profile can't refresh the
+    // list under an Edit details draft: the page behind the dialog is inert.
+    const user = userEvent.setup();
+    const vault = structuredClone(emptySnapshot);
+    vault.profiles[0].displayName = "FAKE Existing";
+    vault.profiles[0].fullName = "FAKE Original Person";
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(vault)),
+      createProfile: vi.fn().mockResolvedValue("profile-2"),
+      updateProfileDetails: vi.fn(
+        async (id: string, details: PersonDetails) => {
+          Object.assign(
+            vault.profiles.find((person) => person.id === id)!,
+            details,
+          );
+        },
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    const opener = screen.getByRole("button", {
+      name: humanText("Add profile"),
+    });
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Existing"),
+      }),
+    );
+    const existing = screen.getByRole("form", {
+      name: humanText("Details for FAKE Existing"),
+    });
+    const fullName = humanText(translate("en", "personDetails.fullName"));
+    await user.clear(within(existing).getByLabelText(fullName));
+    await user.type(
+      within(existing).getByLabelText(fullName),
+      "FAKE Unsaved Person",
+    );
+    // Add profile is behind the dialog, out of reach.
+    expect(opener.closest("[inert]")).not.toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: humanText("Add profile") }),
+    ).toBeNull();
+    expect(within(existing).getByLabelText(fullName)).toHaveValue(
+      "FAKE Unsaved Person",
+    );
+    expect(bridge.createProfile).not.toHaveBeenCalled();
+    await user.click(
+      within(existing).getByRole("button", {
+        name: humanText("Save details"),
+      }),
+    );
+    await screen.findByText(humanText("Details for FAKE Existing saved."));
+    expect(bridge.updateProfileDetails).toHaveBeenCalledExactlyOnceWith(
+      "profile-1",
+      { fullName: "FAKE Unsaved Person" },
+    );
+  });
+
   it("keeps a refused profile name in the form and clears an accepted one", async () => {
     const user = userEvent.setup();
     const createProfile = vi
@@ -7484,24 +9739,34 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Security") }),
     );
 
-    const name = screen.getByLabelText(humanText("New profile name"));
-    await user.type(name, "Jamie's parent");
+    // Add profile opens a dialog (Ben, 29 Oct).
     await user.click(
       screen.getByRole("button", { name: humanText("Add profile") }),
     );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
+    const name = within(dialog).getByLabelText(humanText("New profile name"));
+    await user.type(name, "Jamie's parent");
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
     await waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
     expect(name).toHaveValue("Jamie's parent");
-    // The refusal names the box to check (#69).
+    // The refusal names the box to check (#69), inside the dialog, which
+    // stays open: the page behind it is inert.
     expect(
-      await screen.findByText(
+      await within(dialog).findByText(
         humanText("Check the profile name, then try again."),
       ),
     ).toBeVisible();
 
     await user.click(
-      screen.getByRole("button", { name: humanText("Add profile") }),
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
     );
-    await waitFor(() => expect(name).toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 
   it("clears unfinished passphrase fields when leaving Security", async () => {
@@ -7604,7 +9869,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
@@ -7633,6 +9900,187 @@ describe("durable vault UI", () => {
     expect(opener).toHaveFocus();
   });
 
+  it.each([
+    ["composition", { isComposing: true }],
+    ["composition compatibility", { keyCode: 229 }],
+    ["ordinary", {}],
+  ] as const)(
+    "handles Escape on a rename draft during %s input",
+    async (kind, flags) => {
+      const user = userEvent.setup();
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+      });
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("FAKE_Results.pdf"),
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Rename document") }),
+      );
+      const rename = () =>
+        screen.queryByRole("dialog", { name: humanText("Rename document") });
+      const input = within(rename()!).getByLabelText(humanText("File name"));
+      await waitFor(() => expect(input).toBeEnabled());
+      await user.clear(input);
+      await user.type(input, "FAKE Draft");
+      if (kind !== "ordinary") fireEvent.compositionStart(input);
+      if (kind === "composition compatibility") fireEvent.compositionEnd(input);
+      const escape = new KeyboardEvent("keydown", {
+        key: "Escape",
+        code: "Escape",
+        bubbles: true,
+        cancelable: true,
+        ...flags,
+      });
+      if (kind === "composition") expect(escape.isComposing).toBe(true);
+      if (kind === "composition compatibility")
+        expect(escape.keyCode).toBe(229);
+      fireEvent(input, escape);
+      if (kind !== "ordinary") {
+        expect(rename()).toBeVisible();
+        expect(input).toHaveValue("FAKE Draft");
+        expect(escape.defaultPrevented).toBe(false);
+        fireEvent.compositionEnd(input);
+        await user.keyboard("{Escape}");
+      } else expect(escape.defaultPrevented).toBe(true);
+      expect(rename()).toBeNull();
+      expect(bridge.renameRecord).not.toHaveBeenCalled();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["locked", "storage", "late-locked"] as const)(
+    "handles a document rename %s refusal in its own session",
+    async (code) => {
+      const user = userEvent.setup();
+      const vault = {
+        ...emptySnapshot,
+        records: [
+          {
+            id: "FAKE-record",
+            profileId: "profile-1",
+            folderIds: [],
+            displayName: "FAKE_Report.pdf",
+            sourceLabel: "Manual import — unverified",
+            mediaType: "application/octet-stream",
+            plaintextSize: 2048,
+            importedAtMs: 1,
+            available: true,
+          },
+        ],
+      };
+      let rejectRename: ((error: unknown) => void) | undefined;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(vault)),
+        unlock: vi.fn().mockImplementation(async () => captureSnapshot(vault)),
+        renameRecord: vi.fn(
+          () =>
+            new Promise<void>((_resolve, reject) => {
+              rejectRename = reject;
+            }),
+        ),
+      });
+      const refuse = async (failure: unknown) => {
+        const reject = rejectRename;
+        rejectRename = undefined;
+        if (reject) await act(async () => reject(failure));
+      };
+      onTestFinished(async () => {
+        await refuse({ code: "locked" });
+      });
+      render(<VaultApp bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", {
+          name: humanText("FAKE_Report.pdf"),
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Rename document") }),
+      );
+      await user.clear(screen.getByLabelText(humanText("File name")));
+      await user.type(
+        screen.getByLabelText(humanText("File name")),
+        "FAKE Revised",
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Save name") }),
+      );
+      expect(bridge.renameRecord).toHaveBeenCalledExactlyOnceWith(
+        "FAKE-record",
+        "FAKE Revised.pdf",
+      );
+      if (code !== "late-locked")
+        await refuse({ code, message: "FAKE rename refused." });
+      if (code === "late-locked") {
+        // An external visibility lock can close a dialog while Save is pending.
+        let state: DocumentVisibilityState = "visible";
+        const visibility = vi
+          .spyOn(document, "visibilityState", "get")
+          .mockImplementation(() => state);
+        try {
+          await act(async () => {
+            state = "hidden";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          });
+          await act(async () => {
+            state = "visible";
+            document.dispatchEvent(new Event("visibilitychange"));
+          });
+          await user.type(
+            screen.getByLabelText(humanText("Passphrase")),
+            "river-azimuth-cobalt-sparrow-934",
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Unlock") }),
+          );
+          await screen.findByRole("button", {
+            name: humanText("FAKE_Report.pdf"),
+          });
+          await refuse({ code: "locked" });
+          expect(bridge.lock).toHaveBeenCalledOnce();
+          expect(bridge.unlock).toHaveBeenCalledOnce();
+          expect(
+            screen.getByRole("button", {
+              name: humanText("FAKE_Report.pdf"),
+            }),
+          ).toBeVisible();
+          expect(screen.queryByRole("dialog")).toBeNull();
+        } finally {
+          visibility.mockRestore();
+        }
+      } else if (code === "locked") {
+        expect(
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
+        ).toBeVisible();
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        expect(document.body).not.toHaveTextContent("FAKE_Report.pdf");
+        expect(document.body).not.toHaveTextContent("FAKE Revised");
+      } else {
+        expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+          "FAKE rename refused.",
+        );
+        expect(screen.getByLabelText(humanText("File name"))).toHaveValue(
+          "FAKE Revised",
+        );
+        expect(bridge.lock).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("returns focus to the record control after renaming from its details", async () => {
     const user = userEvent.setup();
     const record = {
@@ -7650,7 +10098,9 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValue({ ...emptySnapshot, records: [record] }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, records: [record] }),
+        ),
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
@@ -7700,23 +10150,25 @@ describe("durable vault UI", () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "lostObjects",
-        records: [
-          {
-            id: "record-lost",
-            profileId: "profile-1",
-            folderIds: [],
-            displayName: "FAKE_Lost.pdf",
-            sourceLabel: "Manual import — unverified",
-            mediaType: "application/octet-stream",
-            plaintextSize: 2048,
-            importedAtMs: 1,
-            available: false,
-          },
-        ],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records: [
+            {
+              id: "record-lost",
+              profileId: "profile-1",
+              folderIds: [],
+              displayName: "FAKE_Lost.pdf",
+              sourceLabel: "Manual import — unverified",
+              mediaType: "application/octet-stream",
+              plaintextSize: 2048,
+              importedAtMs: 1,
+              available: false,
+            },
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
     expect(
@@ -7770,7 +10222,7 @@ describe("durable vault UI", () => {
     let shown = lost;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn(async () => structuredClone(shown)),
+      snapshot: vi.fn(async () => captureSnapshot(shown)),
       hideUnavailableRecords: vi.fn(async (ids) => {
         shown = {
           ...lost,
@@ -7863,16 +10315,20 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValueOnce({
-          ...emptySnapshot,
-          recovery: "lostObjects",
-          records: [lost, kept],
-        })
-        .mockResolvedValue({
-          ...emptySnapshot,
-          recovery: null,
-          records: [kept],
-        }),
+        .mockImplementationOnce(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: "lostObjects",
+            records: [lost, kept],
+          }),
+        )
+        .mockImplementation(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: null,
+            records: [kept],
+          }),
+        ),
       hideUnavailableRecords,
     });
     render(<VaultApp bridge={bridge} />);
@@ -7966,13 +10422,17 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValueOnce({
-          ...emptySnapshot,
-          recovery: "lostObjects",
-          records: [lost],
-        })
+        .mockImplementationOnce(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: "lostObjects",
+            records: [lost],
+          }),
+        )
         // The removal committed, but its redundant write failed.
-        .mockResolvedValue({ ...emptySnapshot, recovery: "writeFailed" }),
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, recovery: "writeFailed" }),
+        ),
       hideUnavailableRecords: vi.fn().mockResolvedValue(["record-lost"]),
     });
     render(<VaultApp bridge={bridge} />);
@@ -7997,10 +10457,12 @@ describe("durable vault UI", () => {
   it("offers no removal when recovery is not about missing files", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "unreadableSlot",
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "unreadableSlot",
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
     expect(
@@ -8028,11 +10490,13 @@ describe("durable vault UI", () => {
     }));
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "lostObjects",
-        records,
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "lostObjects",
+          records,
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
@@ -8079,17 +10543,21 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
-        .mockResolvedValueOnce({
-          ...emptySnapshot,
-          recovery: "lostObjects",
-          records: [record("a", false), record("b", true)],
-        })
+        .mockImplementationOnce(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: "lostObjects",
+            records: [record("a", false), record("b", true)],
+          }),
+        )
         // Another file went missing before the removal ran.
-        .mockResolvedValue({
-          ...emptySnapshot,
-          recovery: "lostObjects",
-          records: [record("a", false), record("b", false)],
-        }),
+        .mockImplementation(async () =>
+          captureSnapshot({
+            ...emptySnapshot,
+            recovery: "lostObjects",
+            records: [record("a", false), record("b", false)],
+          }),
+        ),
       hideUnavailableRecords: vi.fn().mockRejectedValue({
         code: "removal_changed",
         message: "FAKE the vault changed.",
@@ -8157,23 +10625,25 @@ describe("durable vault UI", () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "unreadableSlot",
-        records: [
-          {
-            id: "record-1",
-            profileId: "profile-1",
-            folderIds: [],
-            displayName: "FAKE_Unreadable.pdf",
-            sourceLabel: "Manual import — unverified",
-            mediaType: "application/pdf",
-            plaintextSize: 2048,
-            importedAtMs: 1,
-            available: false,
-          },
-        ],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "unreadableSlot",
+          records: [
+            {
+              id: "record-1",
+              profileId: "profile-1",
+              folderIds: [],
+              displayName: "FAKE_Unreadable.pdf",
+              sourceLabel: "Manual import — unverified",
+              mediaType: "application/pdf",
+              plaintextSize: 2048,
+              importedAtMs: 1,
+              available: false,
+            },
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
     expect(
@@ -8197,23 +10667,25 @@ describe("durable vault UI", () => {
       '<img src="https://attacker.invalid/leak">\u202ereport.pdf';
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue({
-        ...emptySnapshot,
-        recovery: "writeFailed",
-        records: [
-          {
-            id: "record-hostile",
-            profileId: "profile-1",
-            folderIds: [],
-            displayName: hostileName,
-            sourceLabel: "Manual import — unverified",
-            mediaType: "application/octet-stream",
-            plaintextSize: 42,
-            importedAtMs: 1,
-            available: true,
-          },
-        ],
-      }),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...emptySnapshot,
+          recovery: "writeFailed",
+          records: [
+            {
+              id: "record-hostile",
+              profileId: "profile-1",
+              folderIds: [],
+              displayName: hostileName,
+              sourceLabel: "Manual import — unverified",
+              mediaType: "application/octet-stream",
+              plaintextSize: 42,
+              importedAtMs: 1,
+              available: true,
+            },
+          ],
+        }),
+      ),
     });
     render(<VaultApp bridge={bridge} />);
 
@@ -8285,6 +10757,17 @@ describe("durable vault UI", () => {
 
   // The old vault's outcome must not reach a new one.
   it("does not carry a kept outcome into a vault created after the old one went missing", async () => {
+    const guideKey = "mycarlos.oldBackupsGuide.v1";
+    const previousBackup = "FAKE previous vault backup.mycarlosbackup";
+    window.localStorage.setItem(
+      guideKey,
+      JSON.stringify({
+        step: "delete",
+        keep: previousBackup,
+        savedAtMs: Date.now(),
+        bytes: 4096,
+      }),
+    );
     let finishImport!: (value: ImportOutcome) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
@@ -8296,6 +10779,19 @@ describe("durable vault UI", () => {
       ),
     });
     render(<VaultApp bridge={bridge} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    const previousGuide = screen.getByRole("region", {
+      name: humanText("Your older backups"),
+    });
+    expect(previousGuide).toBeVisible();
+    expect(previousGuide).toHaveHumanTextContent(previousBackup);
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: humanText("Record library") }),
+      ).getByRole("button", { name: humanText(/^My records/) }),
+    );
     const user = await holdLockForImport(bridge, () =>
       finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
     );
@@ -8330,8 +10826,15 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Create vault") }),
     );
     await user.click(
-      await screen.findByRole("button", { name: humanText(/Lock now/) }),
+      await screen.findByRole("button", { name: humanText("Security") }),
     );
+    expect(bridge.create).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("region", { name: humanText("Your older backups") }),
+    ).not.toBeInTheDocument();
+    expect(document.body).not.toHaveHumanTextContent(previousBackup);
+    expect(window.localStorage.getItem(guideKey)).toBeNull();
+    await user.click(await waitFor(() => windowLock()));
     await screen.findByLabelText(humanText("Passphrase"));
     await expectNothingKeptAfterUnlock();
   });
@@ -8372,7 +10875,9 @@ describe("durable vault UI", () => {
     let failExport!: (error: unknown) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
       exportToPicked: vi.fn(
         () =>
@@ -8411,7 +10916,9 @@ describe("durable vault UI", () => {
       let failExport!: (error: unknown) => void;
       const bridge = nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
         pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
         exportToPicked: vi.fn(
           () =>
@@ -8453,7 +10960,9 @@ describe("durable vault UI", () => {
     let finishExport!: () => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
       exportToPicked: vi.fn(
         () =>
@@ -8485,7 +10994,9 @@ describe("durable vault UI", () => {
     let failExport!: (error: unknown) => void;
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
-      snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       pickExportDestination: vi.fn().mockResolvedValue("pick-1"),
       exportToPicked: vi.fn(
         () =>
@@ -8509,7 +11020,9 @@ describe("durable vault UI", () => {
     await screen.findByRole("heading", {
       name: humanText("Unlock your vault"),
     });
-    vi.mocked(bridge.snapshot).mockResolvedValue(snapshotWithRecord);
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(snapshotWithRecord),
+    );
     await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
   });
 });
@@ -8568,11 +11081,7 @@ describe("the app's notices in the language in use (#46)", () => {
     ).toBeVisible();
     expect(screen.queryByText(humanText(/Automatic locking set/))).toBeNull();
 
-    await user.click(
-      screen.getByRole("button", {
-        name: humanText(pl("interface.VaultLibrary.unlockedLockNow")),
-      }),
-    );
+    await user.click(windowLock(pl("security.lockNow")));
     expect(
       await screen.findByText(humanText(pl("notice.locked"))),
     ).toBeVisible();
@@ -8723,7 +11232,9 @@ describe("the warning before the automatic lock (#68)", () => {
     const bridge = await openLibrary(
       nativeBridge({
         status: vi.fn().mockResolvedValue("unlocked"),
-        snapshot: vi.fn().mockResolvedValue(snapshotWithRecord),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
       }),
     );
     await act(async () => {
@@ -8802,5 +11313,3312 @@ describe("the warning before the automatic lock (#68)", () => {
         ),
       ),
     ).toBeVisible();
+  });
+});
+
+describe("clinic connection operations", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
+  });
+  const connectedLink = {
+    id: "fake-clinic-link",
+    portalBase: "https://portal.example.test/patient",
+    deviceName: "myCarlos FAKE device",
+    profileId: null,
+    clinicName: "FAKE First Clinic",
+    fingerprints: [],
+    incomplete: false,
+    deviceKeyId: "FAKE_FIRST_DEVICE",
+    deviceFingerprint: "11".repeat(32),
+    approvalRequested: true,
+    clinicApproved: false,
+  };
+  const clinicSnapshot: VaultSnapshot = {
+    ...snapshotWithRecord,
+    profiles: [
+      { id: "profile-1", displayName: "FAKE First Patient", createdAtMs: 1 },
+    ],
+    recoveryKeySetAtMs: 5,
+    portalLinkingEnabled: true,
+    portalLinks: [],
+  };
+  type ConnectResult = Awaited<
+    ReturnType<NonNullable<VaultBridge["connectPortal"]>>
+  >;
+  function pendingConnection() {
+    let finish!: (result: ConnectResult) => void;
+    const promise = new Promise<ConnectResult>((resolve) => {
+      finish = resolve;
+    });
+    return { promise, finish };
+  }
+  async function openConnectForm(code = "01234567-89ABCDEFGH") {
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(screen.getByLabelText("Linking code"), code);
+    return screen
+      .getByRole("button", { name: "Connect and request approval" })
+      .closest("form")!;
+  }
+
+  it("opens Link another clinic over an inert page, and returns focus to it (#145)", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...clinicSnapshot, portalLinks: [connectedLink] }),
+      connectPortal: vi.fn(),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    // A clinic is linked: its card comes first, and the form is not on the page.
+    expect(
+      screen.getByRole("heading", { name: "FAKE First Clinic" }),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Portal HTTPS address")).toBeNull();
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await user.click(linkAnother);
+    const dialog = screen.getByRole("dialog", { name: "Link another clinic" });
+    expect(document.activeElement).toBe(
+      within(dialog).getByLabelText("Portal HTTPS address"),
+    );
+    // The page behind the dialog is inert; the dialog is not.
+    expect(document.querySelector(".app-body")).toHaveAttribute("inert");
+    expect(dialog.closest("[inert]")).toBeNull();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector(".app-body")).not.toHaveAttribute("inert");
+    expect(document.activeElement).toBe(linkAnother);
+    expect(bridge.connectPortal).not.toHaveBeenCalled();
+  });
+
+  it("gives focus back to Link another clinic when a link sent from its dialog is refused (#145)", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...clinicSnapshot, portalLinks: [connectedLink] }),
+      connectPortal: vi
+        .fn()
+        .mockRejectedValue({ code: "portal_link_code_rejected" }),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await user.click(linkAnother);
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector(".app-body")).not.toHaveAttribute("inert");
+    expect(
+      await screen.findByText(
+        "The portal did not accept that code. Make a new linking code in your patient portal.",
+      ),
+    ).toBeVisible();
+    expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    await waitFor(() => expect(linkAnother).toBeEnabled());
+    await waitFor(() => expect(document.activeElement).toBe(linkAnother));
+  });
+
+  it("gives focus to the new clinic after a link sent from the dialog, which then opens empty (#145)", async () => {
+    const second = {
+      ...connectedLink,
+      id: "fake-clinic-link-2",
+      clinicName: "FAKE Second Clinic",
+      portalBase: "https://second.example.test/patient",
+    };
+    let current: VaultSnapshot = {
+      ...clinicSnapshot,
+      portalLinks: [connectedLink],
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      connectPortal: vi.fn().mockImplementation(async () => {
+        current = { ...current, portalLinks: [connectedLink, second] };
+        return { link: second, approvalError: null };
+      }),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://second.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const heading = await screen.findByRole("heading", {
+      name: "FAKE Second Clinic",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    // Once the link is finished the button is usable again, and focus stays
+    // on the new clinic.
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await waitFor(() => expect(linkAnother).toBeEnabled());
+    expect(document.activeElement).toBe(heading);
+    await user.click(linkAnother);
+    expect(screen.getByLabelText("Portal HTTPS address")).toHaveValue("");
+  });
+
+  it("keeps local records usable and shares admission across clinic-view remounts", async () => {
+    let current = clinicSnapshot;
+    const pending = pendingConnection();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      connectPortal: vi.fn().mockReturnValue(pending.promise),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const form = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    await userEvent
+      .setup()
+      .click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
+    expect(
+      await screen.findByRole("dialog", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Close document details" }));
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Security" }));
+    const connect = screen.getByRole("button", {
+      name: "Connect and request approval",
+    });
+    expect(connect).toBeDisabled();
+    expect(screen.getByText("Clinic operation in progress…")).toBeVisible();
+    await act(async () => {
+      fireEvent.submit(connect.closest("form")!);
+    });
+    expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+    await act(async () =>
+      pending.finish({ link: connectedLink, approvalError: null }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByLabelText("Full device fingerprint")).toHaveValue(
+      connectedLink.deviceFingerprint,
+    );
+    expect(bridge.linkPortal).not.toHaveBeenCalled();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "picker",
+      "No files selected. Nothing changed. Device linked. Its approval status is shown in Security, under Clinic documents.",
+    ],
+    [
+      "transfer",
+      "1 document encrypted and added. Device linked. Its approval status is shown in Security, under Clinic documents.",
+    ],
+  ] as const)(
+    "adds a clinic result that arrives during an import's %s after the import's own result",
+    async (stage, expected) => {
+      let current = clinicSnapshot;
+      const pending = pendingConnection();
+      let pick!: (value: string | null) => void;
+      let finishImport!: (value: ImportOutcome) => void;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(current)),
+        connectPortal: vi.fn().mockReturnValue(pending.promise),
+        checkDocuments: vi.fn(),
+        requestDeviceApproval: vi.fn(),
+        ...(stage === "picker"
+          ? {
+              pickImportFiles: vi.fn().mockReturnValue(
+                new Promise<string | null>((resolve) => {
+                  pick = resolve;
+                }),
+              ),
+            }
+          : {
+              importPickedFiles: vi.fn().mockReturnValue(
+                new Promise<ImportOutcome>((resolve) => {
+                  finishImport = resolve;
+                }),
+              ),
+            }),
+      });
+      render(<VaultApp bridge={bridge} />);
+      const form = await openConnectForm();
+      await act(async () => {
+        fireEvent.submit(form);
+      });
+      await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+      const user = userEvent.setup();
+      await user.click(
+        screen.getAllByRole("button", { name: /^My records/ })[0],
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Choose files to import" }),
+      );
+      await waitFor(() =>
+        expect(
+          stage === "picker"
+            ? bridge.pickImportFiles
+            : bridge.importPickedFiles,
+        ).toHaveBeenCalled(),
+      );
+      current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+      // The clinic view is gone and the import holds the line: the result
+      // waits. The compact control shows the clinic work has ended.
+      await act(async () =>
+        pending.finish({ link: connectedLink, approvalError: null }),
+      );
+      await user.click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
+      expect(
+        await screen.findByRole("button", { name: "Check for new documents" }),
+      ).toBeVisible();
+      expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+      await act(async () =>
+        stage === "picker"
+          ? pick(null)
+          : finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
+      );
+      await waitFor(() =>
+        expect(screen.getByText(humanText(expected))).toBeVisible(),
+      );
+    },
+  );
+
+  it.each([
+    ["during save", "announce"],
+    ["before announcement", "announce"],
+    ["during save", "lock"],
+    ["before announcement", "lock"],
+    ["before announcement", "change document"],
+    ["before announcement", "rename"],
+    ["before announcement", "change person"],
+  ] as const)(
+    "settles photo and clinic results arriving %s before %s",
+    async (arrival, nextAction) => {
+      let current = clinicSnapshot;
+      const pending = pendingConnection();
+      let finishPhoto!: (outcome: ImportOutcome) => void;
+      const streamCanvas = document.createElement("canvas");
+      streamCanvas.width = 64;
+      streamCanvas.height = 48;
+      const paint = () => streamCanvas.getContext("2d")!.fillRect(0, 0, 64, 48);
+      paint();
+      const stream = streamCanvas.captureStream(15);
+      const painter = window.setInterval(paint, 40);
+      const camera = vi
+        .spyOn(navigator.mediaDevices, "getUserMedia")
+        .mockResolvedValue(stream);
+      window.localStorage.setItem("mycarlos.cameraExplained.v1", "1");
+      onTestFinished(() => {
+        vi.useRealTimers();
+        camera.mockRestore();
+        window.clearInterval(painter);
+        stream.getTracks().forEach((track) => track.stop());
+        window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+      });
+      const photo = {
+        ...clinicSnapshot.records[0],
+        id: "FAKE-photo-notice",
+        displayName: "FAKE_Camera.jpg",
+        mediaType: "application/octet-stream",
+      };
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        platform: vi.fn().mockResolvedValue("windows"),
+        snapshot: vi.fn(async () => captureSnapshot(current)),
+        unlock: vi.fn(async () => captureSnapshot(current)),
+        connectPortal: vi.fn().mockReturnValue(pending.promise),
+        checkDocuments: vi
+          .fn()
+          .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+        savePhoto: vi.fn().mockReturnValue(
+          new Promise<ImportOutcome>((resolve) => {
+            finishPhoto = resolve;
+          }),
+        ),
+        isPhoto: vi.fn(async (id) => id === photo.id),
+        renameRecord: vi.fn(async (id, name) => {
+          current = {
+            ...current,
+            records: current.records.map((record) =>
+              record.id === id ? { ...record, displayName: name } : record,
+            ),
+          };
+        }),
+      });
+      render(<VaultApp bridge={bridge} />);
+      const form = await openConnectForm();
+      await act(async () => fireEvent.submit(form));
+      await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+      const user = userEvent.setup();
+      await user.click(
+        screen.getAllByRole("button", { name: /^My records/ })[0],
+      );
+      await user.click(screen.getByRole("button", { name: "Take a photo" }));
+      const shutter = screen.getByRole("button", { name: "Take photo" });
+      await waitFor(() => expect(shutter).toBeEnabled());
+      fireEvent.click(shutter);
+      fireEvent.click(screen.getByRole("button", { name: "Use photo" }));
+      await waitFor(() => expect(bridge.savePhoto).toHaveBeenCalledOnce());
+
+      // Control the actual deferred announcement, after camera encoding has
+      // finished, without changing the native save or clinic promise order.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const finishClinic = async () => {
+        current = { ...current, portalLinks: [connectedLink] };
+        if (nextAction === "change person")
+          current = {
+            ...current,
+            profiles: [
+              ...current.profiles,
+              {
+                id: "FAKE-other-person",
+                displayName: "FAKE Second Patient",
+                createdAtMs: 2,
+              },
+            ],
+          };
+        await act(async () =>
+          pending.finish({ link: connectedLink, approvalError: null }),
+        );
+      };
+      if (arrival === "during save") await finishClinic();
+      current = { ...current, records: [...current.records, photo] };
+      await act(async () =>
+        finishPhoto({ imported: [photo.id], skippedDuplicates: [] }),
+      );
+      const details = screen.getByRole("dialog", { name: photo.displayName });
+      expect(details).toBeVisible();
+      if (arrival === "before announcement") await finishClinic();
+      const closeDetails = () =>
+        fireEvent.click(
+          within(details).getByRole("button", {
+            name: "Close document details",
+          }),
+        );
+      if (nextAction === "lock") {
+        closeDetails();
+        await act(async () =>
+          fireEvent.click(
+            screen.getAllByRole("button", { name: /Lock now/ })[0],
+          ),
+        );
+        expect(
+          screen.getByRole("heading", { name: "Unlock your vault" }),
+        ).toBeVisible();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+        });
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved|Device linked/),
+        ).not.toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+          target: { value: "FAKE photo notice passphrase" },
+        });
+        await act(async () =>
+          fireEvent.submit(
+            screen.getByRole("button", { name: "Unlock" }).closest("form")!,
+          ),
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+        });
+        expect(
+          screen.getByRole("heading", { name: "My records" }),
+        ).toBeVisible();
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved|Device linked/),
+        ).not.toBeInTheDocument();
+        expect(bridge.savePhoto).toHaveBeenCalledOnce();
+        return;
+      }
+      if (nextAction === "change document") {
+        closeDetails();
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", { name: "FAKE_Results.pdf" }),
+          ),
+        );
+      } else if (nextAction === "change person") {
+        closeDetails();
+        const otherPerson = () =>
+          within(
+            screen.getByRole("navigation", { name: "Record library" }),
+          ).getByRole("button", { name: /^FAKE Second Patient\b/ });
+        await act(async () => fireEvent.click(otherPerson()));
+        expect(otherPerson()).toHaveAttribute("aria-current", "page");
+      } else if (nextAction === "rename") {
+        await act(async () =>
+          fireEvent.click(
+            within(details).getByRole("button", { name: "Rename document" }),
+          ),
+        );
+        fireEvent.change(screen.getByRole("textbox", { name: "File name" }), {
+          target: { value: "FAKE_Renamed" },
+        });
+        await act(async () =>
+          fireEvent.click(screen.getByRole("button", { name: "Save name" })),
+        );
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+      });
+      const clinicNotice =
+        "Device linked. Its approval status is shown in Security, under Clinic documents.";
+      if (nextAction === "announce")
+        expect(within(details).getByRole("status")).toHaveHumanTextContent(
+          `FAKE_Camera.jpg was saved in myCarlos. ${clinicNotice}`,
+        );
+      else if (nextAction === "rename")
+        expect(
+          within(
+            screen.getByRole("dialog", { name: "FAKE_Renamed.jpg" }),
+          ).getByRole("status"),
+        ).toHaveHumanTextContent(
+          `Document renamed to FAKE_Renamed.jpg. ${clinicNotice}`,
+        );
+      else if (nextAction === "change document")
+        expect(
+          within(
+            screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+          ).getByRole("status"),
+        ).toHaveHumanTextContent(clinicNotice);
+      else
+        expect(screen.getByText(clinicNotice, { exact: true })).toBeVisible();
+      if (nextAction !== "announce")
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved/),
+        ).not.toBeInTheDocument();
+      expect(bridge.savePhoto).toHaveBeenCalledOnce();
+      expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("forgets a held clinic result when the vault locks", async () => {
+    let current = clinicSnapshot;
+    const pending = pendingConnection();
+    let pick!: (value: string | null) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      unlock: vi.fn().mockImplementation(async () => captureSnapshot(current)),
+      connectPortal: vi.fn().mockReturnValue(pending.promise),
+      // The unlock checks for documents (#128): nothing new.
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+      requestDeviceApproval: vi.fn(),
+      pickImportFiles: vi.fn().mockReturnValue(
+        new Promise<string | null>((resolve) => {
+          pick = resolve;
+        }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const form = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await user.click(
+      screen.getByRole("button", { name: "Choose files to import" }),
+    );
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+    await act(async () =>
+      pending.finish({ link: connectedLink, approvalError: null }),
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
+    expect(
+      await screen.findByRole("button", { name: "Check for new documents" }),
+    ).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    // The picker settles in the ended session: nothing reaches the unlock
+    // screen.
+    await act(async () => pick(null));
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+    await user.type(
+      screen.getByLabelText("Passphrase", { exact: true }),
+      "FAKE clinic lock passphrase",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(
+      await screen.findByRole("heading", { name: "My records" }),
+    ).toBeVisible();
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+  });
+
+  it("replaces an earlier clinic error with the next result, and holds an error during a picker", async () => {
+    let current = clinicSnapshot;
+    const retry = pendingConnection();
+    let refuseLater!: (error: unknown) => void;
+    const later = new Promise<never>((_, reject) => {
+      refuseLater = reject;
+    });
+    let pick!: (value: string | null) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      connectPortal: vi
+        .fn()
+        .mockRejectedValueOnce({ code: "portal_link_code_rejected" })
+        .mockReturnValueOnce(retry.promise)
+        .mockReturnValueOnce(later),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+      pickImportFiles: vi.fn().mockReturnValue(
+        new Promise<string | null>((resolve) => {
+          pick = resolve;
+        }),
+      ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const rejected =
+      "The portal did not accept that code. Make a new linking code in your patient portal.";
+    const form = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    expect(await screen.findByText(rejected)).toBeVisible();
+    // A new attempt clears the line when it starts; its result is alone.
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGJ",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(rejected)).not.toBeInTheDocument();
+    current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+    await act(async () =>
+      retry.finish({ link: connectedLink, approvalError: null }),
+    );
+    expect(
+      await screen.findByText(
+        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+      ),
+    ).toBeVisible();
+    // The result can render before clinic admission is released. Wait for
+    // the next attempt to be usable before typing its code: a clinic is
+    // linked now, so it starts from "Link another clinic" (#145).
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Link another clinic" }),
+      ).toBeEnabled(),
+    );
+    // An error that arrives while a picker is open waits for its result.
+    // The form opens from "Link another clinic", empty for the next clinic's
+    // address.
+    await user.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    expect(screen.getByLabelText("Linking code")).toHaveValue(
+      "01234567-89ABCDEFGK",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    // The third request must have entered before the picker is opened.
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(3));
+    await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await user.click(
+      screen.getByRole("button", { name: "Choose files to import" }),
+    );
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    expect(bridge.connectPortal).toHaveBeenCalledTimes(3);
+    await act(async () => refuseLater({ code: "portal_busy" }));
+    await user.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
+    expect(
+      await screen.findByRole("button", { name: "Check for new documents" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Another clinic operation is running/),
+    ).not.toBeInTheDocument();
+    await act(async () => pick(null));
+    expect(
+      await screen.findByText(
+        "No files selected. Nothing changed. Another clinic operation is running. Wait for it to finish, then try again.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("drops old-session completion without unlocking or clearing a new session's clinic work", async () => {
+    const first = pendingConnection();
+    const second = pendingConnection();
+    const secondLink = {
+      ...connectedLink,
+      id: "fake-clinic-link-2",
+      clinicName: "FAKE Second Clinic",
+      deviceKeyId: "FAKE_SECOND_DEVICE",
+      deviceFingerprint: "22".repeat(32),
+    };
+    const secondSnapshot: VaultSnapshot = {
+      ...clinicSnapshot,
+      profiles: [
+        { id: "profile-2", displayName: "FAKE Second Patient", createdAtMs: 2 },
+      ],
+      records: [],
+    };
+    let current = clinicSnapshot;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      unlock: vi.fn().mockResolvedValue(secondSnapshot),
+      connectPortal: vi
+        .fn()
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const submittedForm = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(submittedForm);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    await userEvent
+      .setup()
+      .click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    expect(
+      await screen.findByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Passphrase", { exact: true }),
+      "FAKE second session passphrase",
+    );
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    current = secondSnapshot;
+    const nextForm = await openConnectForm("01234567-89ABCDEFGJ");
+    await act(async () => {
+      fireEvent.submit(nextForm);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(2));
+    vi.mocked(bridge.snapshot).mockResolvedValueOnce({
+      ...clinicSnapshot,
+      portalLinks: [connectedLink],
+    });
+    await act(async () =>
+      first.finish({ link: connectedLink, approvalError: null }),
+    );
+    expect(screen.queryByText("FAKE First Clinic")).not.toBeInTheDocument();
+    // Nothing of the old session's result reaches the new session's line.
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Connecting and requesting clinic approval…"),
+    ).toBeVisible();
+    current = { ...secondSnapshot, portalLinks: [secondLink] };
+    await act(async () =>
+      second.finish({ link: secondLink, approvalError: null }),
+    );
+    expect(await screen.findByText("FAKE Second Clinic")).toBeVisible();
+    expect(screen.queryByText("FAKE First Clinic")).not.toBeInTheDocument();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+  });
+});
+
+describe("automatic clinic approval checks in the app (#131)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
+  });
+  const pending: PortalLinkSummary = {
+    id: "fake-clinic-link",
+    portalBase: "https://portal.example.test/patient",
+    deviceName: "myCarlos FAKE device",
+    profileId: null,
+    clinicName: "FAKE First Clinic",
+    fingerprints: [],
+    incomplete: false,
+    deviceKeyId: "FAKE_FIRST_DEVICE",
+    deviceFingerprint: "11".repeat(32),
+    approvalRequested: true,
+    clinicApproved: false,
+    approvalStatus: "pending",
+  };
+  const vaultWith = (link: PortalLinkSummary): VaultSnapshot => ({
+    ...snapshotWithRecord,
+    profiles: [
+      { id: "profile-1", displayName: "FAKE First Patient", createdAtMs: 1 },
+    ],
+    recoveryKeySetAtMs: 5,
+    portalLinkingEnabled: true,
+    portalLinks: [link],
+  });
+  const found = (
+    link: PortalLinkSummary,
+    extra: Partial<PortalApprovalCheck> = {},
+  ): PortalApprovalCheck => ({
+    capture: captureSnapshot(vaultWith(link)).capture,
+    link,
+    expiresInMs: null,
+    issue: null,
+    ...extra,
+  });
+  const BUSY = /Another clinic operation is running/;
+  function fakeClock() {
+    vi.useFakeTimers({
+      toFake: [
+        "setTimeout",
+        "clearTimeout",
+        "setInterval",
+        "clearInterval",
+        "Date",
+        "performance",
+      ],
+    });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+  }
+  const pass = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  const click = (element: HTMLElement) =>
+    act(async () => {
+      fireEvent.click(element);
+    });
+  async function openClinicView(bridge: VaultBridge) {
+    fakeClock();
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    await pass(100);
+    await click(screen.getByRole("button", { name: "Security" }));
+  }
+  function clinicBridge(overrides: Partial<VaultBridge>) {
+    return nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(vaultWith(pending))),
+      unlock: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(vaultWith(pending))),
+      connectPortal: vi.fn(),
+      // An unlock now checks for documents (#128): nothing new.
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+      restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    });
+  }
+
+  it("checks quietly, is never activity, and lets the vault lock when left alone", async () => {
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () =>
+          found(pending, { expiresInMs: 4 * 60_000 }),
+        ),
+    });
+    await openClinicView(bridge);
+    const snapshots = vi.mocked(bridge.snapshot).mock.calls.length;
+    const touches = vi.mocked(bridge.touch).mock.calls.length;
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledWith(pending.id);
+    expect(
+      screen.getByText(
+        humanText("Time left for this request: about 4 minutes."),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Your clinic has the approval request. Waiting for clinic staff to approve this device.",
+      ),
+    ).toBeVisible();
+    // Quiet: nothing says clinic work is running, and nothing is disabled.
+    expect(
+      screen.queryByText("Clinic operation in progress…"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    ).toBeEnabled();
+    await pass(3 * 60_000);
+    expect(
+      vi.mocked(bridge.refreshDeviceApproval!).mock.calls.length,
+    ).toBeGreaterThanOrEqual(4);
+    // Not activity: no whole-vault read (which counts natively), no touch.
+    expect(bridge.snapshot).toHaveBeenCalledTimes(snapshots);
+    expect(bridge.touch).toHaveBeenCalledTimes(touches);
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    expect(bridge.restartDeviceApproval).not.toHaveBeenCalled();
+    // Left alone, the vault locks on time, and the checks stop with it.
+    await pass(2 * 60_000 + 30_000);
+    expect(bridge.lock).toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    const atLock = vi.mocked(bridge.refreshDeviceApproval!).mock.calls.length;
+    await pass(10 * 60_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(atLock);
+  });
+
+  it("holds the patient's own retry for a check under way instead of refusing it, with records usable", async () => {
+    let finishCheck!: (value: PortalApprovalCheck) => void;
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi
+        .fn()
+        .mockReturnValueOnce(
+          new Promise<PortalApprovalCheck>((resolve) => {
+            finishCheck = resolve;
+          }),
+        )
+        .mockImplementation(async () => found(pending)),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    // Local records stay usable while the check waits on the portal.
+    await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
+    expect(
+      screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+    await click(screen.getByRole("button", { name: "Close document details" }));
+    await click(screen.getByRole("button", { name: "Security" }));
+    await click(
+      screen.getByRole("button", { name: "Retry saved approval request" }),
+    );
+    expect(screen.getByText("Clinic operation in progress…")).toBeVisible();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    await act(async () => finishCheck(found(pending)));
+    await pass(0);
+    expect(bridge.requestDeviceApproval).toHaveBeenCalledOnce();
+    expect(screen.queryByText(BUSY)).not.toBeInTheDocument();
+    // No check runs beside it, and none overlaps the next one.
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["a save that reached one copy", "result"],
+    ["a refusal in recovery mode", "error"],
+  ] as const)(
+    "shows read-only recovery after %s during a check, and stops checking",
+    async (_, how) => {
+      let current = vaultWith(pending);
+      // The vault is read again after the check's own result is shown, as
+      // in the app, where that read takes a moment.
+      let releaseRead!: () => void;
+      const reread = new Promise<void>((resolve) => {
+        releaseRead = resolve;
+      });
+      const bridge = clinicBridge({
+        snapshot: vi.fn().mockImplementation(async () => {
+          if (current.recovery) await reread;
+          return captureSnapshot(current);
+        }),
+        refreshDeviceApproval: vi.fn().mockImplementation(async () => {
+          current = { ...vaultWith(pending), recovery: "writeFailed" };
+          if (how === "error")
+            throw {
+              code: "recovery_mode",
+              message: "FAKE native recovery text.",
+            };
+          return found(pending, { recovery: true });
+        }),
+      });
+      await openClinicView(bridge);
+      expect(
+        screen.getByRole("button", { name: "Link another clinic" }),
+      ).toBeEnabled();
+      // The focused control is disabled once the vault reads read-only:
+      // focus goes to the device's heading, not to the page.
+      screen
+        .getByRole("button", { name: "Retry saved approval request" })
+        .focus();
+      const snapshots = vi.mocked(bridge.snapshot).mock.calls.length;
+      await pass(10_000);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      ).toHaveFocus();
+      await act(async () => releaseRead());
+      await pass(0);
+      // Read again, once: the vault on screen is read-only now.
+      expect(bridge.snapshot).toHaveBeenCalledTimes(snapshots + 1);
+      expect(
+        screen.getByRole("button", { name: "Link another clinic" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("heading", { name: "FAKE First Clinic", level: 3 }),
+      ).toHaveFocus();
+      await pass(5 * 60_000);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("keeps a wait asked of the header's document check for the clinic view, until the vault locks", async () => {
+    const bridge = clinicBridge({
+      // The header's two checks are asked to wait; the next session's own
+      // check after unlocking (#128) is not.
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValueOnce({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: pending.id,
+              clinicName: "FAKE First Clinic",
+              code: "portal_rate_limited",
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: pending.id,
+              clinicName: "FAKE First Clinic",
+              code: "portal_rate_limited",
+            },
+          ],
+        })
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(pending)),
+    });
+    fakeClock();
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    await pass(100);
+    // Start the manual document check from the reserved Shared view.
+    await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
+    await click(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    );
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await click(screen.getByRole("button", { name: "Security" }));
+    // Not 10 s after the view opens: the portal's wait (60 s, as it gave no
+    // time) holds the first check.
+    await pass(50_000);
+    expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+    await pass(10_100);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    // A wait does not outlive the session: after a lock, the first check
+    // comes 10 s after the view opens.
+    vi.mocked(bridge.checkDocuments!).mockClear();
+    await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
+    await click(
+      screen.getAllByRole("button", { name: "Check for new documents" })[0],
+    );
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    await pass(100);
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+        target: { value: "FAKE wait lock passphrase" },
+      });
+    });
+    await click(screen.getByRole("button", { name: "Unlock" }));
+    // The unlock's own check runs first (#128); it is not asked to wait.
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    await click(screen.getByRole("button", { name: "Security" }));
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+  });
+
+  const arrivalVault = (link: PortalLinkSummary): VaultSnapshot => ({
+    ...vaultWith(link),
+    sharedProfileId: "FAKE_NATIVE_CAPTURE_OWNER",
+    automaticDocumentChecksSupported: true,
+  });
+  const accepted: PortalLinkSummary = {
+    ...pending,
+    approvalStatus: "accepted",
+    clinicApproved: true,
+  };
+
+  it("keeps a newer polled device and unrelated records from an older whole capture", async () => {
+    let deliverWhole!: () => void;
+    const beforePoll = arrivalVault(pending);
+    const withArrival: VaultSnapshot = {
+      ...beforePoll,
+      records: [
+        ...beforePoll.records,
+        {
+          ...beforePoll.records[0],
+          id: "FAKE_PARALLEL_RECORD",
+          displayName: "FAKE_Parallel_Arrival.pdf",
+        },
+      ],
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(beforePoll)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(accepted)),
+    });
+    await openClinicView(bridge);
+    const beforeRead = vi.mocked(bridge.snapshot).mock.calls.length;
+    vi.mocked(bridge.snapshot).mockImplementationOnce(() => {
+      const captured = captureSnapshot(withArrival);
+      return new Promise<VaultSnapshot>((resolve) => {
+        deliverWhole = () => resolve(captured);
+      });
+    });
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(bridge.snapshot).toHaveBeenCalledTimes(beforeRead + 1);
+    await pass(10_000);
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "The clinic approved this device.",
+      ),
+    ).toBeVisible();
+    await act(async () => deliverWhole());
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "The clinic approved this device.",
+      ),
+    ).toBeVisible();
+    await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    expect(
+      screen.getByRole("button", { name: "FAKE_Parallel_Arrival.pdf" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+  });
+
+  it("keeps a newer whole device capture ahead of an older delivered poll and panel notice", async () => {
+    let deliverPoll!: () => void;
+    const refused: PortalLinkSummary = {
+      ...pending,
+      approvalStatus: "refused",
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi.fn().mockImplementationOnce(() => {
+        const captured = found(accepted, { expiresInMs: 240_000 });
+        return new Promise<PortalApprovalCheck>((resolve) => {
+          deliverPoll = () => resolve(captured);
+        });
+      }),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(refused)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(
+      screen.getByText(
+        "The clinic refused this device approval request. Contact your clinic for next steps.",
+      ),
+    ).toBeVisible();
+    await act(async () => deliverPoll());
+    expect(
+      screen.getByText(
+        "The clinic refused this device approval request. Contact your clinic for next steps.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("The clinic approved this device."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Time left for this request/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("retires a poll countdown when a newer whole capture changes the device", async () => {
+    const pickedUp: PortalLinkSummary = {
+      ...pending,
+      approvalStatus: "challenge_ready",
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () =>
+          found(pending, { expiresInMs: 240_000 }),
+        ),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(
+      screen.getByText(
+        humanText("Time left for this request: about 4 minutes."),
+      ),
+    ).toBeVisible();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(pickedUp)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(
+      screen.getByText(
+        "Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Time left for this request/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("refuses a poll capture from another native runtime before device or panel publication", async () => {
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi.fn().mockImplementation(async () => {
+        const result = found(accepted, { expiresInMs: 240_000 });
+        return {
+          ...result,
+          capture: {
+            ...result.capture,
+            epoch: "FAKE_DIFFERENT_NATIVE_RUNTIME",
+          },
+        };
+      }),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(
+      screen.getByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("The clinic approved this device."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Time left for this request/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps an ordinary poll timeout retryable without locking the current vault", async () => {
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi.fn().mockImplementation(async () =>
+        found(pending, {
+          issue: {
+            code: "portal_link_incomplete",
+            message: "FAKE whole-poll network budget expired.",
+          },
+        }),
+      ),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "myCarlos could not reach the clinic portal, so this request's status is not known yet.",
+      ),
+    ).toBeVisible();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Retry saved approval request" }),
+    ).toBeEnabled();
+  });
+
+  it("keeps the manual full document check available after automatic approval checks stop", async () => {
+    let current = vaultWith(pending);
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(pending)),
+      checkDocuments: vi.fn().mockImplementation(async () => {
+        current = vaultWith(accepted);
+        return { added: 0, refused: 0, receiptsPending: 0, issues: [] };
+      }),
+    });
+    await openClinicView(bridge);
+    // Actual user input keeps the vault open; polling itself never does.
+    // It does not restart the independent fifteen-minute polling window.
+    for (let step = 0; step < 3; step += 1) {
+      await pass(4 * 60_000);
+      await act(async () => fireEvent.keyDown(window, { key: "Shift" }));
+    }
+    await pass(3 * 60_000 + 1_000);
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        humanText(
+          "Automatic checks have stopped. To check again, choose Check for new documents.",
+        ),
+      ),
+    ).toBeVisible();
+    await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
+    const check = screen.getByRole("button", {
+      name: "Check for new documents",
+    });
+    await click(check);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await click(screen.getByRole("button", { name: "Security" }));
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "The clinic approved this device.",
+      ),
+    ).toBeVisible();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    expect(bridge.restartDeviceApproval).not.toHaveBeenCalled();
+  });
+
+  const pickedUp: PortalLinkSummary = {
+    ...pending,
+    approvalStatus: "challenge_ready",
+  };
+  const pickupText =
+    "Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.";
+  const deviceCard = () =>
+    within(document.getElementById(`portal-link-${pending.id}`)!);
+
+  it("drops an old rejected poll after a newer whole pickup capture", async () => {
+    let rejectOld!: () => void;
+    const oldError = "FAKE old poll failed after its newer whole capture.";
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi.fn().mockImplementationOnce(
+        () =>
+          new Promise<PortalApprovalCheck>((_, reject) => {
+            rejectOld = () =>
+              reject({ code: "FAKE_older_poll", message: oldError });
+          }),
+      ),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(pickedUp)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    await act(async () => rejectOld());
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    expect(screen.queryAllByText(oldError)).toHaveLength(0);
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("retires a genuine poll failure and its announcement on a subsequent whole capture", async () => {
+    const failure = "FAKE current poll failed before the later whole capture.";
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "FAKE_current_poll",
+          message: failure,
+        })
+        .mockImplementation(async () => found(pickedUp)),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(pickedUp)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    expect(screen.queryAllByText(failure)).toHaveLength(0);
+    await pass(1_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a current failure when an older whole capture only merges unrelated records", async () => {
+    let deliverOldWhole!: () => void;
+    let rejectCurrent!: () => void;
+    const failure = "FAKE current failure after the newest device capture.";
+    const beforePoll = arrivalVault(pending);
+    const withRecord: VaultSnapshot = {
+      ...beforePoll,
+      records: [
+        ...beforePoll.records,
+        {
+          ...beforePoll.records[0],
+          id: "FAKE_DURING_FAILURE",
+          displayName: "FAKE_Arrived_Before_Poll.pdf",
+        },
+      ],
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(beforePoll)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementationOnce(async () => found(pickedUp))
+        .mockImplementationOnce(
+          () =>
+            new Promise<PortalApprovalCheck>((_, reject) => {
+              rejectCurrent = () =>
+                reject({ code: "FAKE_current_poll", message: failure });
+            }),
+        ),
+    });
+    await openClinicView(bridge);
+    vi.mocked(bridge.snapshot).mockImplementationOnce(() => {
+      const captured = captureSnapshot(withRecord);
+      return new Promise<VaultSnapshot>((resolve) => {
+        deliverOldWhole = () => resolve(captured);
+      });
+    });
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await pass(10_000);
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    // This whole read predates the successful partial device capture, and
+    // cannot disown the next poll's genuine error merely by arriving late.
+    await act(async () => deliverOldWhole());
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    await act(async () => rejectCurrent());
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    expect(
+      screen.getByRole("button", { name: "FAKE_Arrived_Before_Poll.pdf" }),
+    ).toBeVisible();
+  });
+
+  it("keeps a genuine current poll failure when no newer whole capture supersedes it", async () => {
+    const failure = "FAKE genuine current poll failure.";
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi.fn().mockRejectedValue({
+        code: "FAKE_current_poll",
+        message: failure,
+      }),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    await pass(30_000);
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it.each(["locked", "cancelled"])(
+    "still locks for a genuine current %s poll rejection",
+    async (code) => {
+      const bridge = clinicBridge({
+        refreshDeviceApproval: vi.fn().mockRejectedValue({
+          code,
+          message: "FAKE actual native session ended.",
+        }),
+      });
+      await openClinicView(bridge);
+      await pass(10_000);
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible();
+    },
+  );
+
+  it.each(["result", "error"])(
+    "keeps immediate read-only recovery and focused-control cleanup for a current poll %s",
+    async (how) => {
+      let current = vaultWith(pending);
+      const bridge = clinicBridge({
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(current)),
+        refreshDeviceApproval: vi.fn().mockImplementation(async () => {
+          current = { ...vaultWith(pending), recovery: "writeFailed" };
+          if (how === "error")
+            throw {
+              code: "recovery_mode",
+              message: "FAKE immediate current recovery.",
+            };
+          return found(pending, { recovery: true });
+        }),
+      });
+      await openClinicView(bridge);
+      screen
+        .getByRole("button", { name: "Retry saved approval request" })
+        .focus();
+      const reads = vi.mocked(bridge.snapshot).mock.calls.length;
+      await pass(10_000);
+      expect(bridge.snapshot).toHaveBeenCalledTimes(reads + 1);
+      expect(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("heading", { name: "FAKE First Clinic", level: 3 }),
+      ).toHaveFocus();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["result", "error"])(
+    "rereads genuine recovery from a current poll %s after leaving the clinic view",
+    async (how) => {
+      let current = vaultWith(pending);
+      let finish!: () => void;
+      const bridge = clinicBridge({
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(current)),
+        refreshDeviceApproval: vi.fn().mockImplementationOnce(
+          () =>
+            new Promise<PortalApprovalCheck>((resolve, reject) => {
+              finish = () => {
+                current = { ...vaultWith(pending), recovery: "writeFailed" };
+                if (how === "error")
+                  reject({
+                    code: "recovery_mode",
+                    message: "FAKE current recovery after navigation.",
+                  });
+                else resolve(found(pending, { recovery: true }));
+              };
+            }),
+        ),
+      });
+      await openClinicView(bridge);
+      await pass(10_000);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+      await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+      const reads = vi.mocked(bridge.snapshot).mock.calls.length;
+      await act(async () => finish());
+      await pass(0);
+      expect(bridge.snapshot).toHaveBeenCalledTimes(reads + 1);
+      expect(
+        screen.getByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
+      ).toBeDisabled();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  const ownWaitActions = [
+    "connect",
+    "request",
+    "restart",
+    "header check",
+    "panel check",
+  ] as const;
+  type OwnWaitAction = (typeof ownWaitActions)[number];
+  async function holdOwnWait(action: OwnWaitAction) {
+    let current = vaultWith({ ...pending, approvalCanRestart: true });
+    if (action === "connect") current = { ...current, portalLinks: [] };
+    let complete!: () => void;
+    const rateLimit = {
+      code: "portal_rate_limited",
+      message: "FAKE portal asked this session to wait.",
+      retryAfterMs: 120_000,
+    };
+    const held = <T,>(value: T, reject = false) =>
+      new Promise<T>((resolve, fail) => {
+        complete = () => {
+          if (action === "connect") current = vaultWith(pending);
+          if (reject) fail(rateLimit);
+          else resolve(value);
+        };
+      });
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      unlock: vi.fn().mockImplementation(async () => {
+        // The native result can already be persisted while its IPC reply is
+        // still held. The new session has an awaiting device at that portal.
+        current = vaultWith(pending);
+        return captureSnapshot(current);
+      }),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(pending)),
+    });
+    vi.mocked(bridge.connectPortal!).mockImplementationOnce(() =>
+      held({ link: pending, approvalError: rateLimit }),
+    );
+    vi.mocked(bridge.requestDeviceApproval!).mockImplementationOnce(() =>
+      held(undefined, true),
+    );
+    vi.mocked(bridge.restartDeviceApproval!).mockImplementationOnce(() =>
+      held(undefined, true),
+    );
+    // Only the action under test holds a check. After the next unlock,
+    // an automatic document check must receive the bridge's ordinary reply.
+    if (action.endsWith("check")) {
+      vi.mocked(bridge.checkDocuments!).mockImplementationOnce(() =>
+        held({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: pending.id,
+              clinicName: pending.clinicName!,
+              code: "portal_rate_limited",
+            },
+          ],
+        }),
+      );
+    }
+    await openClinicView(bridge);
+    if (action === "connect") {
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Portal HTTPS address"), {
+          target: { value: pending.portalBase },
+        });
+        fireEvent.change(screen.getByLabelText("Linking code"), {
+          target: { value: "01234567-89ABCDEFGH" },
+        });
+        fireEvent.submit(
+          screen
+            .getByRole("button", { name: "Connect and request approval" })
+            .closest("form")!,
+        );
+      });
+      expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    } else if (action === "request" || action === "restart") {
+      await click(
+        screen.getByRole("button", {
+          name:
+            action === "request"
+              ? "Retry saved approval request"
+              : "Start a new approval request",
+        }),
+      );
+      expect(
+        action === "request"
+          ? bridge.requestDeviceApproval
+          : bridge.restartDeviceApproval,
+      ).toHaveBeenCalledOnce();
+    } else {
+      // Keep both originating-view cases; Shared now owns the one manual control.
+      if (action === "header check")
+        await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+      await click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
+      const check = screen.getByRole("button", {
+        name: "Check for new documents",
+      });
+      await click(check);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    }
+    expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+    return {
+      bridge,
+      finish: () => act(async () => complete()),
+      waitMs: action.endsWith("check") ? 60_000 : rateLimit.retryAfterMs,
+    };
+  }
+
+  it.each(ownWaitActions)(
+    "keeps a late old %s wait out of the newly unlocked session",
+    async (action) => {
+      const { bridge, finish } = await holdOwnWait(action);
+      await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+      await pass(100);
+      expect(
+        screen.getByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+          target: { value: "FAKE detached wait passphrase" },
+        });
+      });
+      await click(screen.getByRole("button", { name: "Unlock" }));
+      await pass(100);
+      await click(screen.getByRole("button", { name: "Security" }));
+      // Deliver the old result/error only AFTER the new clinic view mounts.
+      await finish();
+      await pass(0);
+      await pass(9_999);
+      expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+      await pass(1);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledExactlyOnceWith(
+        pending.id,
+      );
+    },
+  );
+
+  it.each(
+    ownWaitActions.flatMap((action) =>
+      [false, true].map((failedLock) => ({ action, failedLock })),
+    ),
+  )(
+    "keeps the current $action wait for its session (failed lock: $failedLock)",
+    async ({ action, failedLock }) => {
+      const { bridge, finish, waitMs } = await holdOwnWait(action);
+      await finish();
+      await pass(0);
+      if (failedLock) {
+        vi.mocked(bridge.lock).mockRejectedValueOnce({
+          code: "storage",
+          message: "FAKE lock did not end this session.",
+        });
+        await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        // The native session stays open, with its content concealed, until
+        // a successful retry ends it and installs a new wait owner.
+        expect(screen.getByRole("alert")).toHaveHumanTextContent(
+          "the vault is still open",
+        );
+        expect(
+          screen.queryByRole("button", { name: "Security" }),
+        ).not.toBeInTheDocument();
+        await click(screen.getByRole("button", { name: "Try locking again" }));
+        await act(async () => {
+          fireEvent.change(
+            screen.getByLabelText("Passphrase", { exact: true }),
+            {
+              target: { value: "FAKE retried lock passphrase" },
+            },
+          );
+        });
+        await click(screen.getByRole("button", { name: "Unlock" }));
+        await pass(100);
+        await click(screen.getByRole("button", { name: "Security" }));
+        await pass(10_000);
+        expect(bridge.refreshDeviceApproval).toHaveBeenCalledExactlyOnceWith(
+          pending.id,
+        );
+        return;
+      }
+      await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+      await click(screen.getByRole("button", { name: "Security" }));
+      await pass(waitMs - 1);
+      expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+      await pass(1);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledExactlyOnceWith(
+        pending.id,
+      );
+    },
+  );
+
+  it("does not offer automatic checks when this build cannot check", async () => {
+    const bridge = clinicBridge({ refreshDeviceApproval: undefined });
+    await openClinicView(bridge);
+    await pass(60_000);
+    expect(
+      screen.getByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(
+        "While this page is open, myCarlos checks for your clinic's answer automatically.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says nothing for a busy refusal, and keeps a check from before a lock out of the next session", async () => {
+    let finishOld!: (value: PortalApprovalCheck) => void;
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "portal_busy",
+          message:
+            "Another clinic operation is running. Wait for it to finish, then try again.",
+        })
+        .mockReturnValueOnce(
+          new Promise<PortalApprovalCheck>((resolve) => {
+            finishOld = resolve;
+          }),
+        )
+        .mockImplementation(async () => found(pending)),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(screen.queryByText(BUSY)).not.toBeInTheDocument();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    await pass(100);
+    expect(
+      screen.getByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+        target: { value: "FAKE approval lock passphrase" },
+      });
+    });
+    await click(screen.getByRole("button", { name: "Unlock" }));
+    await pass(100);
+    await click(screen.getByRole("button", { name: "Security" }));
+    // The earlier session's check answers "approved" now: not shown.
+    await act(async () =>
+      finishOld(
+        found({ ...pending, approvalStatus: "accepted", clinicApproved: true }),
+      ),
+    );
+    await pass(0);
+    expect(
+      screen.queryByText("The clinic approved this device."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).toBeVisible();
+    // This session's own checks begin as for any newly opened view.
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("checks for new clinic documents after unlocking (#128)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    forgetRecoveryOffer();
+    recordRecoveryOffer(Date.now());
+  });
+  const approved: PortalLinkSummary = {
+    id: "fake-approved-link",
+    portalBase: "https://portal.example.test/patient",
+    deviceName: "myCarlos FAKE device",
+    profileId: null,
+    clinicName: "FAKE First Clinic",
+    fingerprints: [],
+    incomplete: false,
+    deviceKeyId: "FAKE_FIRST_DEVICE",
+    deviceFingerprint: "11".repeat(32),
+    approvalRequested: true,
+    clinicApproved: true,
+    approvalStatus: "accepted",
+  };
+  // Still waiting for the clinic to approve it.
+  const waiting: PortalLinkSummary = {
+    ...approved,
+    id: "fake-waiting-link",
+    clinicName: "FAKE Second Clinic",
+    deviceKeyId: "FAKE_SECOND_DEVICE",
+    deviceFingerprint: "22".repeat(32),
+    clinicApproved: false,
+    approvalStatus: "pending",
+  };
+  const vaultWith = (...links: PortalLinkSummary[]): VaultSnapshot => ({
+    ...snapshotWithRecord,
+    profiles: [
+      { id: "profile-1", displayName: "FAKE First Patient", createdAtMs: 1 },
+    ],
+    recoveryKeySetAtMs: 5,
+    portalLinkingEnabled: true,
+    portalLinks: links,
+  });
+  const delivered = {
+    id: "record-from-clinic",
+    profileId: "profile-1",
+    folderIds: [],
+    displayName: "FAKE_Clinic_Letter.pdf",
+    sourceLabel: "Clinic delivery",
+    mediaType: "application/pdf",
+    plaintextSize: 4096,
+    importedAtMs: 2,
+    available: true,
+    originalPdfAvailable: true,
+    verifiedClinicName: "FAKE First Clinic",
+  };
+  type Check = Awaited<ReturnType<NonNullable<VaultBridge["checkDocuments"]>>>;
+  const found = (extra: Partial<Check> = {}): Check => ({
+    added: 0,
+    refused: 0,
+    receiptsPending: 0,
+    issues: [],
+    ...extra,
+  });
+  const issue = (link: PortalLinkSummary, code: string) => ({
+    linkId: link.id,
+    clinicName: link.clinicName!,
+    code,
+  });
+  const UNLOCKED = "Vault unlocked.";
+  const CHECKED = "Checked for new clinic documents after unlocking.";
+  const NOT_FINISHED =
+    "myCarlos could not finish checking for new clinic documents after unlocking.";
+  const RETRY = "To check again, choose Check for new documents.";
+  const WORKING = "Clinic operation in progress…";
+  const OFFLINE =
+    "The portal request could not be completed. Check your connection and device clock, then try again.";
+  const BUSY_TEXT = /Another clinic operation is running/;
+
+  function fakeClock() {
+    vi.useFakeTimers({
+      toFake: [
+        "setTimeout",
+        "clearTimeout",
+        "setInterval",
+        "clearInterval",
+        "Date",
+        "performance",
+      ],
+    });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+  }
+  const pass = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  const click = (element: HTMLElement) =>
+    act(async () => {
+      fireEvent.click(element);
+    });
+  function later<T>() {
+    let settle!: (value: T) => void;
+    let fail!: (error: unknown) => void;
+    const promise = new Promise<T>((resolve, reject) => {
+      settle = resolve;
+      fail = reject;
+    });
+    return { promise, settle, fail };
+  }
+  /** A locked vault with clinic links. `state.current` is the vault as the
+   * native side has it, which a check may add a delivery to. */
+  function clinicBridge(
+    start: VaultSnapshot,
+    overrides: Partial<VaultBridge> = {},
+  ) {
+    const state = { current: start };
+    const bridge = nativeBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(state.current)),
+      unlock: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(state.current)),
+      connectPortal: vi.fn(),
+      checkDocuments: vi.fn().mockResolvedValue(found()),
+      requestDeviceApproval: vi.fn(),
+      restartDeviceApproval: vi.fn(),
+      ...overrides,
+    });
+    // The clinic's new document is filed by the check.
+    const deliver = (result: Check) => async () => {
+      state.current = {
+        ...state.current,
+        records: [...state.current.records, delivered],
+      };
+      return result;
+    };
+    return { bridge, state, deliver };
+  }
+  async function start(bridge: VaultBridge) {
+    fakeClock();
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    await pass(100);
+  }
+  async function unlock() {
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+        target: { value: "FAKE unlock passphrase" },
+      });
+    });
+    await click(screen.getByRole("button", { name: "Unlock" }));
+  }
+  const openShared = () =>
+    click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
+  const openRecords = () =>
+    click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+  const lockNow = async () => {
+    await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+    await pass(100);
+    expect(
+      screen.getByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+  };
+  /** The library's polite status line, as it reads. */
+  // Fluent isolates placeables; compare what a person reads.
+  const said = () => humanValue(screen.getByRole("status").textContent);
+
+  it("checks once after the unlock's own message, and says what arrived without moving focus or opening it", async () => {
+    const { bridge, deliver } = clinicBridge(vaultWith(approved));
+    vi.mocked(bridge.checkDocuments!).mockImplementation(
+      deliver(found({ added: 1 })),
+    );
+    await start(bridge);
+    await unlock();
+    // Saved records are on screen at once; the check follows the unlock's
+    // own message, in the background.
+    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    const search = screen.getByPlaceholderText(
+      humanText("Search everything in My records"),
+    );
+    search.focus();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${CHECKED} New documents saved: 1. Documents that could not be verified: 0.`,
+    );
+    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByText("FAKE_Clinic_Letter.pdf")).toBeVisible();
+    // Not opened, and focus stays where the patient left it.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(search).toHaveFocus();
+    await openShared();
+    expect(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    ).toBeEnabled();
+    // One check per unlock: none follows by itself, and nothing was sent
+    // that asks for approval or links again.
+    await pass(60_000);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    expect(bridge.restartDeviceApproval).not.toHaveBeenCalled();
+    expect(bridge.connectPortal).not.toHaveBeenCalled();
+  });
+
+  it("says nothing more when nothing new arrived", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved));
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(60_000);
+    expect(said()).toBe(UNLOCKED);
+    await openShared();
+    expect(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    ).toBeEnabled();
+  });
+
+  // The check's one read of the vault at its end touches the native idle
+  // deadline, as every vault command does (a backstop that fires after the
+  // app's own). The app's own idle lock counts only the patient's input.
+  it("does not count as use: left alone after unlocking, the vault locks on time", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved));
+    await start(bridge);
+    await unlock();
+    const touches = vi.mocked(bridge.touch).mock.calls.length;
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(5 * 60_000 + 1_000);
+    expect(bridge.touch).toHaveBeenCalledTimes(touches);
+    expect(bridge.lock).toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+  });
+
+  it("keeps saved records usable while the portal is slow, then says the check could not finish and how to try again", async () => {
+    const slow = later<Check>();
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi
+        .fn()
+        .mockReturnValueOnce(slow.promise)
+        .mockResolvedValue(found()),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    // Shown as running on the clinic control, as the patient's own check
+    // is; pressing it starts nothing beside the check under way.
+    await openShared();
+    const control = screen.getByRole("button", { name: WORKING });
+    expect(control).toBeDisabled();
+    await click(control);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await openRecords();
+    // A saved document opens while the portal has not answered.
+    await click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
+    expect(
+      screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+    await click(screen.getByRole("button", { name: "Close document details" }));
+    await act(async () =>
+      slow.settle(
+        found({ issues: [issue(approved, "portal_link_incomplete")] }),
+      ),
+    );
+    await pass(0);
+    // (Opening the document cleared the unlock's message, as it does.)
+    expect(said()).toBe(
+      `${NOT_FINISHED} FAKE First Clinic: ${OFFLINE} ${RETRY}`,
+    );
+    // The retry is the patient's own check, which says what it found, even
+    // when that is nothing.
+    await openShared();
+    await click(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    );
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    expect(said()).toBe(
+      "New documents saved: 0. Documents that could not be verified: 0.",
+    );
+  });
+
+  // Demo fix (29 Oct, Ben): a vault with devices a reset portal deleted. The
+  // library is usable before the check ends; the native check says those
+  // devices are removed, and asks no more about them in this run of the app.
+  it("keeps the library usable during a check with three gone devices, then says they were removed", async () => {
+    const gone = [1, 2, 3].map(
+      (n): PortalLinkSummary => ({
+        ...approved,
+        id: `fake-gone-link-${n}`,
+        deviceKeyId: `FAKE_GONE_DEVICE_${n}`,
+      }),
+    );
+    const slow = later<Check>();
+    const { bridge } = clinicBridge(vaultWith(...gone, approved), {
+      checkDocuments: vi.fn().mockReturnValueOnce(slow.promise),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    // The check control is in Shared with me (main's c9fea1ed).
+    await openShared();
+    expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
+    await openRecords();
+    // A saved document opens while the check runs.
+    await click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
+    expect(
+      screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+    await click(screen.getByRole("button", { name: "Close document details" }));
+    await act(async () =>
+      slow.settle(
+        found({
+          issues: gone.map((link) => issue(link, "portal_device_removed")),
+        }),
+      ),
+    );
+    await pass(0);
+    // Said as removed (the native check asks no more about them in this run
+    // of the app), and the check is over: it can be run again.
+    // One line for each of the three gone devices.
+    expect(
+      said().split("This device was removed from your clinic portal account."),
+    ).toHaveLength(4);
+    await openShared();
+    expect(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    ).toBeEnabled();
+  });
+
+  it.each([
+    [
+      "a fault on this device",
+      { code: "storage", message: "FAKE storage fault." },
+      `${NOT_FINISHED} FAKE storage fault. ${RETRY}`,
+    ],
+    // Nothing can be tried again in read-only recovery.
+    [
+      "read-only recovery during the check",
+      { code: "recovery_mode", message: "FAKE native recovery text." },
+      `${NOT_FINISHED} FAKE native recovery text.`,
+    ],
+  ])(
+    "says a check that failed with %s apart from one that found nothing",
+    async (_, error, expected) => {
+      const { bridge } = clinicBridge(vaultWith(approved), {
+        checkDocuments: vi.fn().mockRejectedValue(error),
+      });
+      await start(bridge);
+      await unlock();
+      await pass(ANNOUNCE_DELAY_MS);
+      await pass(0);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+      expect(said()).toBe(`${UNLOCKED} ${expected}`);
+    },
+  );
+
+  // The portal offers it again at every unlock: no receipt is sent for it.
+  it("says plainly that a document could not be verified and to contact the clinic, without a retry that cannot help", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi.fn().mockResolvedValue(found({ refused: 1 })),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${CHECKED} 1 clinic document could not be verified, so it was not added. Contact your clinic.`,
+    );
+    expect(screen.queryByText("FAKE_Clinic_Letter.pdf")).toBeNull();
+  });
+
+  // The native document check sends this code for a 403 device_removed,
+  // from the document list, a receipt or a status read (see the
+  // delivery tests).
+  it("names a device the portal removed, without a retry that cannot help", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue(
+          found({ issues: [issue(approved, "portal_device_removed")] }),
+        ),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${NOT_FINISHED} FAKE First Clinic: This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.`,
+    );
+  });
+
+  it("names a device the portal removed even while its approval was still waiting", async () => {
+    const { bridge } = clinicBridge(vaultWith(waiting), {
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue(
+          found({ issues: [issue(waiting, "portal_device_removed")] }),
+        ),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${NOT_FINISHED} FAKE Second Clinic: This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.`,
+    );
+  });
+
+  it.each([
+    ["under way", true],
+    ["finished", false],
+  ] as [string, boolean][])(
+    "checks after other clinic work %s since the unlock, once",
+    async (_, slow) => {
+      const request = later<void>();
+      const { bridge } = clinicBridge(vaultWith(waiting), {
+        requestDeviceApproval: slow
+          ? vi.fn().mockReturnValue(request.promise)
+          : vi.fn().mockResolvedValue(undefined),
+      });
+      await start(bridge);
+      await unlock();
+      // The patient's own approval request, before the check would start.
+      await click(screen.getByRole("button", { name: "Security" }));
+      await click(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      );
+      expect(bridge.requestDeviceApproval).toHaveBeenCalledOnce();
+      await pass(ANNOUNCE_DELAY_MS);
+      if (slow) {
+        // Not beside it, and not refused: it follows.
+        expect(bridge.checkDocuments).not.toHaveBeenCalled();
+        await act(async () => request.settle());
+        await pass(0);
+      }
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+      await pass(30_000);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("says the check did not run when a portal asked to wait since the unlock, without a retry", async () => {
+    const { bridge } = clinicBridge(vaultWith(waiting), {
+      requestDeviceApproval: vi.fn().mockRejectedValue({
+        code: "portal_rate_limited",
+        message: "FAKE native text.",
+        retryAfterMs: 120_000,
+      }),
+    });
+    await start(bridge);
+    await unlock();
+    await click(screen.getByRole("button", { name: "Security" }));
+    await click(
+      screen.getByRole("button", { name: "Retry saved approval request" }),
+    );
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    const line = screen.getByText(
+      /myCarlos did not check for new clinic documents after unlocking, because the clinic portal asked it to wait\.$/,
+    );
+    expect(line).toHaveAttribute("role", "status");
+    expect(line.textContent).not.toContain(RETRY);
+    await pass(60_000);
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+  });
+
+  it("is not held back by a wait on the portal of a request that ended (D132c)", async () => {
+    // Another clinic's request ended; restarting it was asked to wait. The
+    // check asks only the clinic that approved this device, on its own
+    // portal.
+    const ended: PortalLinkSummary = {
+      ...waiting,
+      id: "fake-ended-link",
+      portalBase: "https://second-portal.example.test/patient",
+      approvalStatus: "expired",
+      approvalCanRestart: true,
+    };
+    const { bridge } = clinicBridge(vaultWith(approved, ended), {
+      restartDeviceApproval: vi.fn().mockRejectedValue({
+        code: "portal_rate_limited",
+        message: "FAKE native text.",
+        retryAfterMs: 120_000,
+      }),
+    });
+    await start(bridge);
+    await unlock();
+    await click(screen.getByRole("button", { name: "Security" }));
+    await click(
+      screen.getByRole("button", { name: "Start a new approval request" }),
+    );
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByText(
+        /did not check for new clinic documents after unlocking/,
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says confirmations still owed, and how to finish them, once", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi.fn().mockResolvedValue(
+        found({
+          receiptsPending: 1,
+          issues: [issue(approved, "portal_link_incomplete")],
+        }),
+      ),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${NOT_FINISHED} FAKE First Clinic: ${OFFLINE} Saved documents awaiting pickup confirmation: 1. Check again to finish confirmation. Your saved copies stay in the vault.`,
+    );
+  });
+
+  it.each([
+    [
+      "in read-only recovery",
+      { ...vaultWith(approved), recovery: "writeFailed" },
+      {},
+    ],
+    [
+      "with clinic documents off in this build",
+      { ...vaultWith(approved), portalLinkingEnabled: false },
+      {},
+    ],
+    [
+      "for an incomplete link",
+      vaultWith({
+        ...approved,
+        incomplete: true,
+        clinicApproved: false,
+        approvalStatus: null,
+      }),
+      {},
+    ],
+    [
+      "for a request the clinic refused",
+      vaultWith({ ...waiting, approvalStatus: "refused" }),
+      {},
+    ],
+    [
+      "for a request that expired",
+      vaultWith({ ...waiting, approvalStatus: "expired" }),
+      {},
+    ],
+    [
+      "for a request that was cancelled",
+      vaultWith({ ...waiting, approvalStatus: "cancelled" }),
+      {},
+    ],
+    [
+      "for a device whose approval was never requested",
+      vaultWith({
+        ...waiting,
+        approvalRequested: false,
+        approvalStatus: null,
+      }),
+      {},
+    ],
+    [
+      "without a document check in this build",
+      vaultWith(approved),
+      { checkDocuments: undefined },
+    ],
+    [
+      "without clinic linking in this build",
+      vaultWith(approved),
+      { connectPortal: undefined },
+    ],
+  ] as [string, VaultSnapshot, Partial<VaultBridge>][])(
+    "does not check %s",
+    async (_, vault, overrides) => {
+      const { bridge } = clinicBridge(vault, overrides);
+      await start(bridge);
+      await unlock();
+      await pass(5_000);
+      expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+      if (bridge.checkDocuments)
+        expect(bridge.checkDocuments).not.toHaveBeenCalled();
+      expect(screen.queryByText(WORKING)).not.toBeInTheDocument();
+    },
+  );
+
+  it("does not check when myCarlos starts with the vault already open", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      status: vi.fn().mockResolvedValue("unlocked"),
+    });
+    await start(bridge);
+    await pass(5_000);
+    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+  });
+
+  it("runs no second check after the patient's own check since the unlock", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved));
+    await start(bridge);
+    await unlock();
+    await openShared();
+    await click(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    );
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(5_000);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    expect(said()).toBe(
+      "New documents saved: 0. Documents that could not be verified: 0.",
+    );
+  });
+
+  const BUSY = {
+    code: "portal_busy",
+    message:
+      "Another clinic operation is running. Wait for it to finish, then try again.",
+  };
+
+  it("asks once more when other clinic work held the native side, and says nothing of it", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi
+        .fn()
+        .mockRejectedValueOnce(BUSY)
+        .mockResolvedValue(found()),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    // Still shown as running while it waits to ask again.
+    await openShared();
+    expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
+    await pass(1_900);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(100);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    await pass(0);
+    expect(said()).toBe(UNLOCKED);
+    expect(screen.queryByText(BUSY_TEXT)).toBeNull();
+  });
+
+  it("says the check did not run, and how to check, when the native side stays busy", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi.fn().mockRejectedValue(BUSY),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(2_000);
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    expect(said()).toBe(
+      `${UNLOCKED} myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running. ${RETRY}`,
+    );
+    await openShared();
+    expect(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    ).toBeEnabled();
+  });
+
+  it("locks when the vault locked natively during the check, as for any clinic work", async () => {
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi
+        .fn()
+        .mockRejectedValue({ code: "locked", message: "FAKE locked." }),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(100);
+    expect(bridge.lock).toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Unlock your vault" }),
+    ).toBeVisible();
+    expect(screen.queryByText(/clinic documents/)).toBeNull();
+  });
+
+  it("keeps what a check a lock ended found out of the unlock screen and the next session, which checks again", async () => {
+    const first = later<Check>();
+    const { bridge, state } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi
+        .fn()
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValue(found()),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await lockNow();
+    // It answers after the lock: nothing of it reaches the unlock screen.
+    state.current = {
+      ...state.current,
+      records: [...state.current.records, delivered],
+    };
+    await act(async () => first.settle(found({ added: 1 })));
+    await pass(0);
+    expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+    expect(
+      screen.queryByText(/FAKE_Clinic_Letter|clinic documents/),
+    ).toBeNull();
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    // This unlock checks for itself. The document the ended check filed is
+    // in the vault, and was not filed again: nothing new is said.
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    expect(said()).toBe(UNLOCKED);
+    expect(screen.getByText("FAKE_Clinic_Letter.pdf")).toBeVisible();
+  });
+
+  it("waits for an ended session's check to return before the next unlock checks", async () => {
+    const first = later<Check>();
+    const { bridge, deliver } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi
+        .fn()
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValue(found()),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await lockNow();
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    // The native side still has the ended check: this one waits, shown as
+    // running, rather than being refused as busy.
+    await pass(5_000);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await openShared();
+    expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
+    await act(async () => first.settle(await deliver(found({ added: 1 }))()));
+    await pass(0);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    // What the ended check found is not this session's to say.
+    expect(said()).toBe(UNLOCKED);
+    expect(screen.queryByText(BUSY_TEXT)).toBeNull();
+  });
+
+  it("runs one check per unlock, never two at once, over quick locks and unlocks", async () => {
+    let running = 0;
+    let most = 0;
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi.fn().mockImplementation(async () => {
+        running += 1;
+        most = Math.max(most, running);
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        running -= 1;
+        return found();
+      }),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(1);
+    for (const round of [2, 3]) {
+      // Locked and unlocked again before the portal answers.
+      await lockNow();
+      await unlock();
+      await pass(ANNOUNCE_DELAY_MS);
+      expect(bridge.checkDocuments).toHaveBeenCalledTimes(round - 1);
+      await pass(2_000);
+      expect(bridge.checkDocuments).toHaveBeenCalledTimes(round);
+    }
+    await pass(5_000);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(3);
+    expect(most).toBe(1);
+    expect(said()).toBe(UNLOCKED);
+  });
+
+  it("checks once the recovery key offer the unlock opened on has closed and its message is on the line, which a fast result follows", async () => {
+    forgetRecoveryOffer();
+    const { bridge, deliver } = clinicBridge({
+      ...vaultWith(approved),
+      recoveryKeySetAtMs: null,
+    });
+    vi.mocked(bridge.checkDocuments!).mockImplementation(
+      deliver(found({ added: 1 })),
+    );
+    await start(bridge);
+    await unlock();
+    const dialog = screen.getByRole("dialog", {
+      name: "Set up a recovery key",
+    });
+    await pass(5_000);
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    await click(within(dialog).getByRole("button", { name: "Set up later" }));
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    // The dialog's own message is written: the check starts then, not on a
+    // guess of when that would be.
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${CHECKED} New documents saved: 1. Documents that could not be verified: 0.`,
+    );
+  });
+
+  it("keeps what an offered key setup left unfinished says first, before a fast result", async () => {
+    forgetRecoveryOffer();
+    const { bridge, deliver } = clinicBridge(
+      { ...vaultWith(approved), recoveryKeySetAtMs: null },
+      {
+        beginRecoveryKey: vi
+          .fn()
+          .mockResolvedValue("ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345"),
+      },
+    );
+    vi.mocked(bridge.checkDocuments!).mockImplementation(
+      deliver(found({ added: 1 })),
+    );
+    await start(bridge);
+    await unlock();
+    const offer = screen.getByRole("dialog", {
+      name: "Set up a recovery key",
+    });
+    await act(async () => {
+      fireEvent.change(within(offer).getByLabelText("Passphrase"), {
+        target: { value: "FAKE unlock passphrase" },
+      });
+    });
+    await click(within(offer).getByRole("button", { name: "Continue" }));
+    const shown = screen.getByRole("dialog", { name: "Your recovery key" });
+    await click(within(shown).getByRole("button", { name: "Set up later" }));
+    expect(bridge.checkDocuments).not.toHaveBeenCalled();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(0);
+    expect(said()).toBe(
+      `Recovery key setup was not finished. The key you were shown does not open the vault. Destroy any kit saved or printed just now. ${CHECKED} New documents saved: 1. Documents that could not be verified: 0.`,
+    );
+  });
+
+  it.each([
+    ["writable", true, vaultWith(approved), 1],
+    [
+      "read-only",
+      false,
+      { ...vaultWith(approved), recovery: "writeFailed" },
+      0,
+    ],
+  ] as [string, boolean, VaultSnapshot, number][])(
+    "after opening with the recovery key, checks only a %s vault",
+    async (_, passphraseReplaced, vault, checks) => {
+      const { bridge } = clinicBridge(vault, {
+        recover: vi
+          .fn()
+          .mockResolvedValue({ passphraseReplaced, snapshot: vault }),
+      });
+      await start(bridge);
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Recovery key"), {
+          target: { value: "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345" },
+        });
+        fireEvent.change(screen.getByLabelText("New passphrase"), {
+          target: { value: "FAKE lantern orbit willow cascade" },
+        });
+        fireEvent.change(screen.getByLabelText("Confirm new passphrase"), {
+          target: { value: "FAKE lantern orbit willow cascade" },
+        });
+      });
+      await click(
+        screen.getByRole("button", { name: "Open with recovery key" }),
+      );
+      expect(bridge.recover).toHaveBeenCalledOnce();
+      await pass(ANNOUNCE_DELAY_MS);
+      await pass(5_000);
+      expect(bridge.checkDocuments).toHaveBeenCalledTimes(checks);
+    },
+  );
+
+  it("keeps a wait a portal asks of the check for the clinic view, and does not say to check again", async () => {
+    const sameClinic = { ...waiting, portalBase: approved.portalBase };
+    const { bridge } = clinicBridge(vaultWith(approved, sameClinic), {
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue(
+          found({ issues: [issue(approved, "portal_rate_limited")] }),
+        ),
+      refreshDeviceApproval: vi.fn().mockResolvedValue({
+        link: sameClinic,
+        expiresInMs: null,
+        issue: null,
+      }),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${NOT_FINISHED} FAKE First Clinic: The clinic portal asked myCarlos to wait before trying again.`,
+    );
+    // The clinic view's own status checks keep that portal's wait (60 s, as
+    // a document check gives no time), not its usual 10 s.
+    await click(screen.getByRole("button", { name: "Security" }));
+    await pass(50_000);
+    expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+    await pass(10_100);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["beside an approved one", [approved, waiting]],
+    ["alone", [waiting]],
+  ] as [string, PortalLinkSummary[]][])(
+    "stays quiet about a device still waiting for approval, %s",
+    async (_, links) => {
+      const { bridge } = clinicBridge(vaultWith(...links), {
+        checkDocuments: vi
+          .fn()
+          .mockResolvedValue(
+            found({ issues: [issue(waiting, "portal_link_incomplete")] }),
+          ),
+      });
+      await start(bridge);
+      await unlock();
+      await pass(ANNOUNCE_DELAY_MS);
+      await pass(0);
+      // Checked, for the status the clinic may have given while myCarlos
+      // was closed; the card under Clinic documents says the rest.
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+      expect(said()).toBe(UNLOCKED);
+      expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+      expect(bridge.restartDeviceApproval).not.toHaveBeenCalled();
+    },
+  );
+
+  it("receives the first documents at the next unlock for a device the clinic approved while myCarlos was closed", async () => {
+    const { bridge, state } = clinicBridge(vaultWith(waiting));
+    // The native check reads the request's status first: the clinic
+    // approved it meanwhile, so its documents come in the same check.
+    vi.mocked(bridge.checkDocuments!).mockImplementation(async () => {
+      state.current = {
+        ...state.current,
+        portalLinks: [
+          { ...waiting, clinicApproved: true, approvalStatus: "accepted" },
+        ],
+        records: [...state.current.records, delivered],
+      };
+      return found({ added: 1 });
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await pass(0);
+    expect(said()).toBe(
+      `${UNLOCKED} ${CHECKED} New documents saved: 1. Documents that could not be verified: 0.`,
+    );
+    expect(screen.getByText("FAKE_Clinic_Letter.pdf")).toBeVisible();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    await click(screen.getByRole("button", { name: "Security" }));
+    expect(screen.getByText("The clinic approved this device.")).toBeVisible();
+  });
+
+  it.each([
+    [
+      "the library's Check for new documents",
+      async () => {
+        await openShared();
+        return screen.getByRole("button", { name: "Check for new documents" });
+      },
+      { name: "Shared with me", level: 1 },
+    ],
+    [
+      "Link another clinic",
+      async () => {
+        await click(screen.getByRole("button", { name: "Security" }));
+        // A clinic is linked: the form is behind this button (#145).
+        return screen.getByRole("button", { name: "Link another clinic" });
+      },
+      { name: "Clinic documents", level: 2 },
+    ],
+    [
+      "a device's Copy device code",
+      async () => {
+        await click(screen.getByRole("button", { name: "Security" }));
+        // The device code is behind Show device details.
+        await click(screen.getByText("Show device details"));
+        return screen.getByRole("button", { name: "Copy device code" });
+      },
+      { name: "FAKE First Clinic", level: 3 },
+    ],
+  ] as [string, () => Promise<HTMLElement>, { name: string; level: number }][])(
+    "moves focus to the nearest heading when the check disables %s, which had it",
+    async (_, control, heading) => {
+      const slow = later<Check>();
+      const { bridge } = clinicBridge(vaultWith(approved), {
+        checkDocuments: vi.fn().mockReturnValue(slow.promise),
+      });
+      await start(bridge);
+      await unlock();
+      const focused = await control();
+      focused.focus();
+      expect(focused).toHaveFocus();
+      await pass(ANNOUNCE_DELAY_MS);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+      expect(focused).toBeDisabled();
+      expect(screen.getByRole("heading", heading)).toHaveFocus();
+      await act(async () => slow.settle(found()));
+      await pass(0);
+      // Back in use, it is not given focus again: nothing moves twice.
+      expect(focused).toBeEnabled();
+      expect(screen.getByRole("heading", heading)).toHaveFocus();
+    },
+  );
+
+  it("moves no focus for the patient's own check, or when the focused control stays usable", async () => {
+    const own = later<Check>();
+    const { bridge } = clinicBridge(vaultWith(approved), {
+      checkDocuments: vi
+        .fn()
+        .mockReturnValueOnce(own.promise)
+        .mockResolvedValue(found()),
+    });
+    await start(bridge);
+    await unlock();
+    // The patient's own press, just after unlocking: the automatic check
+    // does not run beside it, and focus is left as that press leaves it.
+    await openShared();
+    // Finish navigation's focus recovery before starting the patient's check.
+    // Animation frames use the browser's clock, not the announcement's fake one.
+    await act(
+      () =>
+        new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => resolve());
+        }),
+    );
+    const check = screen.getByRole("button", {
+      name: "Check for new documents",
+    });
+    fireEvent.pointerDown(check);
+    check.focus();
+    expect(check).toHaveFocus();
+    await click(check);
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole("heading", { name: "Shared with me", level: 1 }),
+    ).not.toHaveFocus();
+    await act(async () => own.settle(found()));
+    await pass(0);
+    // The next unlock's check, with focus on the search box, which it does
+    // not disable.
+    await lockNow();
+    await unlock();
+    const search = screen.getByPlaceholderText(
+      humanText("Search everything in My records"),
+    );
+    search.focus();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    expect(search).toHaveFocus();
+  });
+
+  it.each([
+    ["the check after unlocking", false],
+    ["the patient's own check", true],
+  ] as [string, boolean][])(
+    "keeps a wait a portal asked of %s before a lock out of the next session",
+    async (_, own) => {
+      const stale = later<Check>();
+      const { bridge } = clinicBridge(vaultWith(approved), {
+        checkDocuments: vi
+          .fn()
+          .mockReturnValueOnce(stale.promise)
+          .mockResolvedValue(found()),
+      });
+      await start(bridge);
+      await unlock();
+      if (own) {
+        await openShared();
+        await click(
+          screen.getByRole("button", { name: "Check for new documents" }),
+        );
+      }
+      await pass(ANNOUNCE_DELAY_MS);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+      await lockNow();
+      // The reply comes after the lock, which cleared the session's waits.
+      await act(async () =>
+        stale.settle(
+          found({ issues: [issue(approved, "portal_rate_limited")] }),
+        ),
+      );
+      await pass(0);
+      await unlock();
+      await pass(ANNOUNCE_DELAY_MS);
+      // Not held back by the ended session's wait.
+      expect(bridge.checkDocuments).toHaveBeenCalledTimes(2);
+    },
+  );
+});
+
+describe("Automatic arrival snapshot ownership", () => {
+  const supported = {
+    ...emptySnapshot,
+    sharedProfileId: "FAKE_NATIVE_VAULT_OWNER",
+    automaticDocumentChecksSupported: true,
+  };
+  const withArrival = (name: string): VaultSnapshot => ({
+    ...supported,
+    records: [{ ...snapshotWithRecord.records[0], displayName: name }],
+  });
+
+  it("keeps a newer manual snapshot after an older automatic response arrives", async () => {
+    const user = userEvent.setup();
+    let finishAutomatic!: () => void;
+    const snapshot = vi
+      .fn()
+      .mockImplementationOnce(async () => captureSnapshot(supported))
+      .mockImplementationOnce(() => {
+        const captured = captureSnapshot(withArrival("FAKE old automatic.pdf"));
+        return new Promise<VaultSnapshot>((resolve) => {
+          finishAutomatic = () => resolve(captured);
+        });
+      })
+      .mockImplementationOnce(async () =>
+        captureSnapshot(withArrival("FAKE newer manual.pdf")),
+      );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot,
+      importPickedFiles: vi.fn().mockResolvedValue({
+        imported: [],
+        skippedDuplicates: ["FAKE existing.pdf"],
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Choose files to import"),
+      }),
+    );
+    await screen.findByText(humanText("FAKE newer manual.pdf"));
+    await act(async () => finishAutomatic());
+    expect(screen.getByText(humanText("FAKE newer manual.pdf"))).toBeVisible();
+    expect(screen.queryByText(humanText("FAKE old automatic.pdf"))).toBeNull();
+    // Opening, the automatic check, the import's own refresh: nothing else.
+    expect(snapshot).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps a newer automatic snapshot after an older manual response arrives", async () => {
+    const user = userEvent.setup();
+    let finishManual!: () => void;
+    const snapshot = vi
+      .fn()
+      .mockImplementationOnce(async () => captureSnapshot(supported))
+      .mockImplementationOnce(() => {
+        const captured = captureSnapshot(withArrival("FAKE old manual.pdf"));
+        return new Promise<VaultSnapshot>((resolve) => {
+          finishManual = () => resolve(captured);
+        });
+      })
+      .mockImplementationOnce(async () =>
+        captureSnapshot(withArrival("FAKE newer automatic.pdf")),
+      );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot,
+      importPickedFiles: vi.fn().mockResolvedValue({
+        imported: [],
+        skippedDuplicates: ["FAKE existing.pdf"],
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Choose files to import"),
+      }),
+    );
+    await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await screen.findByText(humanText("FAKE newer automatic.pdf"));
+    await act(async () => finishManual());
+    expect(
+      screen.getByText(humanText("FAKE newer automatic.pdf")),
+    ).toBeVisible();
+    expect(screen.queryByText(humanText("FAKE old manual.pdf"))).toBeNull();
+    // Opening, the import's own refresh, the automatic check: nothing else.
+    expect(snapshot).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(["equal", "foreign epoch"] as const)(
+    "rejects an automatic %s capture without blocking a later valid arrival",
+    async (kind) => {
+      const opening = captureSnapshot(supported);
+      const rejected = {
+        ...withArrival("FAKE rejected capture.pdf"),
+        capture:
+          kind === "equal"
+            ? opening.capture
+            : {
+                epoch: "00000000-0000-4000-8000-000000000186",
+                sequence: Number.MAX_SAFE_INTEGER,
+              },
+      };
+      const snapshot = vi
+        .fn()
+        .mockResolvedValueOnce(opening)
+        .mockResolvedValueOnce(rejected)
+        .mockImplementationOnce(async () =>
+          captureSnapshot(withArrival("FAKE valid capture.pdf")),
+        );
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot,
+      });
+      render(<VaultApp bridge={bridge} />);
+      await screen.findByRole("heading", { name: humanText("My records") });
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      expect(snapshot).toHaveBeenCalledTimes(2);
+      expect(
+        screen.queryByText(humanText("FAKE rejected capture.pdf")),
+      ).toBeNull();
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      await screen.findByText(humanText("FAKE valid capture.pdf"));
+    },
+  );
+
+  it("uses native capture order when automatic requests enter native in reverse order", async () => {
+    let finishFirst!: () => void;
+    const snapshot = vi
+      .fn()
+      .mockImplementationOnce(async () => captureSnapshot(supported))
+      .mockImplementationOnce(
+        () =>
+          new Promise<VaultSnapshot>((resolve) => {
+            finishFirst = () =>
+              resolve(
+                captureSnapshot(withArrival("FAKE latest native capture.pdf")),
+              );
+          }),
+      )
+      .mockImplementationOnce(async () =>
+        captureSnapshot(withArrival("FAKE earlier native capture.pdf")),
+      );
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await screen.findByText(humanText("FAKE earlier native capture.pdf"));
+    await act(async () => finishFirst());
+    expect(
+      screen.getByText(humanText("FAKE latest native capture.pdf")),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText("FAKE earlier native capture.pdf")),
+    ).toBeNull();
+  });
+  it("refreshes on focus while preserving the current search input", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(supported)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const search = await screen.findByRole("searchbox");
+    fireEvent.change(search, { target: { value: "FAKE" } });
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot({
+        ...supported,
+        records: [
+          { ...snapshotWithRecord.records[0], displayName: "FAKE arrived.pdf" },
+        ],
+      }),
+    );
+    act(() => window.dispatchEvent(new Event("focus")));
+    await screen.findByText(humanText("FAKE arrived.pdf"));
+    expect(search).toHaveValue("FAKE");
+  });
+  it("ignores a response from a different native vault owner", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(supported)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const initial = vi.mocked(bridge.snapshot).mock.calls.length;
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot({
+        ...supported,
+        sharedProfileId: "FAKE_OTHER_OWNER",
+        profiles: [
+          { ...supported.profiles[0], displayName: "FAKE must not merge" },
+        ],
+      }),
+    );
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(bridge.snapshot).toHaveBeenCalledTimes(initial + 1),
+    );
+    expect(screen.queryByText(humanText("FAKE must not merge"))).toBeNull();
+  });
+  it("does not request an automatic snapshot refresh without native build support", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(emptySnapshot)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const initial = vi.mocked(bridge.snapshot).mock.calls.length;
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    expect(bridge.snapshot).toHaveBeenCalledTimes(initial);
+  });
+  it("refreshes when Security (where Clinic documents lives) opens and keeps that route until the patient leaves", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(supported)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const initial = vi.mocked(bridge.snapshot).mock.calls.length;
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot({
+        ...supported,
+        records: [
+          {
+            ...snapshotWithRecord.records[0],
+            displayName: "FAKE clinic arrival.pdf",
+          },
+        ],
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Security") }),
+    );
+    await waitFor(() =>
+      expect(bridge.snapshot).toHaveBeenCalledTimes(initial + 1),
+    );
+    expect(
+      screen.getByRole("heading", { name: humanText("Security") }),
+    ).toBeVisible();
+    fireEvent.click(
+      within(
+        screen.getByRole("navigation", { name: humanText("Record library") }),
+      ).getByRole("button", { name: humanText(/^My records/) }),
+    );
+    await screen.findByText(humanText("FAKE clinic arrival.pdf"));
+  });
+  it("rejects a deferred response after re-unlocking the same owner and does not refresh while locked", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(supported)),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    let finish!: (value: VaultSnapshot) => void;
+    vi.mocked(bridge.snapshot).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const before = vi.mocked(bridge.snapshot).mock.calls.length;
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() =>
+      expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1),
+    );
+    fireEvent.click(windowLock());
+    await screen.findByLabelText(humanText("Passphrase"));
+    act(() => window.dispatchEvent(new Event("focus")));
+    await Promise.resolve();
+    expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1);
+    vi.mocked(bridge.unlock).mockImplementation(async () =>
+      captureSnapshot({
+        ...supported,
+        recoveryKeySetAtMs: 5,
+      }),
+    );
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+    });
+    await screen.findByRole("heading", { name: humanText("My records") });
+    await act(async () => {
+      finish(
+        captureSnapshot({
+          ...supported,
+          records: [
+            {
+              ...snapshotWithRecord.records[0],
+              displayName: "FAKE stale arrival.pdf",
+            },
+          ],
+        }),
+      );
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(humanText("FAKE stale arrival.pdf"))).toBeNull();
+    expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1);
   });
 });

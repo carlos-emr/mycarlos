@@ -3,6 +3,7 @@ import {
   expect,
   test,
   type Browser,
+  type Locator,
   type Page,
   type TestInfo,
 } from "@playwright/test";
@@ -201,7 +202,9 @@ async function walkThePreview(large: LargeText) {
  */
 async function mockNativeVault(page: Page, status: "absent" | "locked") {
   await page.addInitScript((initialStatus) => {
-    let current = initialStatus;
+    let current: "absent" | "locked" | "unlocked" = initialStatus;
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const snapshot = {
       profiles: [
         { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
@@ -257,14 +260,36 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return current;
+        if (command === "vault_notification_status")
+          return {
+            supported: false,
+            available: false,
+            enabled: false,
+            permission: "unavailable",
+            automaticChecksEnabled: false,
+            automaticChecksSupported: false,
+            automaticChecksPaused: false,
+            lastOutcome: null,
+          };
         if (command === "vault_unlock") {
           current = "unlocked";
-          return structuredClone(snapshot);
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         }
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform: "windows" };
         // Preferences on a computer asks whether an AI model is installed (#72).
         if (command === "ai_model_status") return { state: "notInstalled" };
+        if (command === "ai_model_catalog") return [];
+        if (command === "ai_models") return [];
+        // No add or download running when the row opens (#275).
+        if (command === "ai_model_add_active") return null;
         // The setup checklist asks which rules a passphrase meets (#76).
         if (command === "vault_passphrase_rules")
           return { longEnough: false, notAName: true, hardToGuess: false };
@@ -399,6 +424,12 @@ async function walkTheVault(large: LargeText) {
     page.getByRole("heading", { name: "Preferences" }),
   ).toBeVisible();
   await expectNoViolations(page, "Preferences", large.cutOff);
+  await openSection(page, "ai", "AI helper");
+  await expect(
+    page.getByRole("heading", { name: "AI helper", level: 1 }),
+  ).toBeVisible();
+  await expect(page.getByText("Not installed", { exact: true })).toBeVisible();
+  await expectNoViolations(page, "AI helper, the model's row", large.cutOff);
   await expectOnlyMockedCommands(page);
 }
 
@@ -426,15 +457,9 @@ test("has no automatically detectable WCAG violations on the vault screens with 
   await withReaderText200(page, walkTheVault);
 });
 
-// #84: the preview library still cuts controls off at 200% default text.
-// The vault test below requires the cut-off checks on both desktop and phone.
 test("cuts nothing off with the reader's default text at 200% (#84)", async ({
   page,
 }) => {
-  test.fail(
-    true,
-    "#84: the library's controls are cut off at 200% default text",
-  );
   await withReaderText200(page, walkThePreview, true);
 });
 
@@ -442,4 +467,82 @@ test("cuts nothing off on the vault screens with the reader's default text at 20
   page,
 }) => {
   await withReaderText200(page, walkTheVault, true);
+});
+
+test("opens a non-first preview record from Grid with 200% default text and returns to List", async ({
+  page,
+}) => {
+  await withReaderText200(page, async (large) => {
+    const shown = await large.newPage();
+    await shown.goto("/");
+    await large.check(shown);
+
+    const expectReachable = async (control: Locator) => {
+      await control.scrollIntoViewIfNeeded();
+      await expect(control).toBeInViewport();
+      const box = await control.boundingBox();
+      const viewport = shown.viewportSize();
+      expect(box).not.toBeNull();
+      expect(viewport).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(-1);
+      expect(box!.y).toBeGreaterThanOrEqual(-1);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width + 1);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height + 1);
+    };
+    const expectAccessiblePage = async (where: string) => {
+      const results = await new AxeBuilder({ page: shown })
+        .withTags(WCAG_TAGS)
+        .analyze();
+      expect(results.violations, where).toEqual([]);
+      expect(
+        await shown.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+        `${where}: scrolls sideways`,
+      ).toBe(true);
+    };
+
+    const grid = shown.getByRole("button", { name: "Grid view", exact: true });
+    await expectReachable(grid);
+    await grid.click();
+    await expect(grid).toHaveAttribute("aria-pressed", "true");
+    const tiles = shown.locator(".file-grid");
+    await expect(tiles).toBeVisible();
+
+    const title = "Prescription — ramipril 5mg";
+    const recordName = /^Prescription — ramipril 5mg(?: |$)/;
+    await expect(tiles.locator(".tile-open").first()).not.toHaveAccessibleName(
+      recordName,
+    );
+    const record = tiles.getByRole("button", { name: recordName });
+    await expectReachable(record);
+    await expectAccessiblePage("preview grid with enlarged default text");
+    await record.click();
+
+    const dialog = shown.getByRole("dialog", { name: title, exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole("heading", { name: title, exact: true }),
+    ).toHaveText(title);
+    const close = dialog.getByRole("button", {
+      name: "Close document preview",
+      exact: true,
+    });
+    await expectReachable(close);
+    await expectAccessiblePage("the grid record's document preview");
+    await close.click();
+    await expect(dialog).toHaveCount(0);
+
+    const list = shown.getByRole("button", { name: "List view", exact: true });
+    await expectReachable(list);
+    await list.click();
+    await expect(list).toHaveAttribute("aria-pressed", "true");
+    await expect(grid).toHaveAttribute("aria-pressed", "false");
+    await expect(shown.locator(".filelist")).toBeVisible();
+    await expect(tiles).toHaveCount(0);
+    await expect(
+      shown.getByRole("button", { name: title, exact: true }),
+    ).toBeVisible();
+    await expectAccessiblePage("the list restored after closing a grid record");
+  });
 });

@@ -15,7 +15,9 @@ import {
   type VaultBridge,
 } from "../vault";
 
-const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
+/** A title for each event the vault records (history.rs `HistoryEvent`). A test checks
+ * that every event there has one; an event from a newer build is "Other event". */
+export const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   created: "interface.history.event.created",
   historyStarted: "interface.history.event.historyStarted",
   unlocked: "interface.history.event.unlocked",
@@ -34,17 +36,67 @@ const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   folderRenamed: "interface.history.event.folderRenamed",
   folderMoved: "interface.history.event.folderMoved",
   setAside: "interface.history.event.setAside",
+  readingAidFiled: "interface.history.event.readingAidFiled",
+  profileDetailsChanged: "interface.history.event.profileDetailsChanged",
+  portalLinkStarted: "interface.history.event.portalLinkStarted",
+  portalLinked: "interface.history.event.portalLinked",
+  deviceApprovalRequested: "interface.history.event.deviceApprovalRequested",
+  deviceApprovalVerified: "interface.history.event.deviceApprovalVerified",
+  deviceApprovalStatusChanged:
+    "interface.history.event.deviceApprovalStatusChanged",
+  deviceApprovalRequestRestarted:
+    "interface.history.event.deviceApprovalRequestRestarted",
+  deliveryFiled: "interface.history.event.deliveryFiled",
+  deliveryReceiptSettled: "interface.history.event.deliveryReceiptSettled",
+  aiResultSaved: "interface.history.event.aiResultSaved",
 };
 
-const howLabels: Record<string, MessageKey> = {
+/** The title of an entry's event; never the formatting-failure text, even for an
+ * event this build does not know (#167). */
+export function eventTitle(event: string): MessageKey {
+  return Object.hasOwn(eventLabels, event)
+    ? eventLabels[event as AuditHistoryEntry["event"]]
+    : "interface.history.event.other";
+}
+
+/** A device approval's state when the event was written (native
+ * `ApprovalState::code`), shown as its status rather than as "how". */
+export const approvalLabels: Record<string, MessageKey> = {
+  pending: "interface.history.approval.pending",
+  challenge_ready: "interface.history.approval.challengeReady",
+  accepted: "interface.history.approval.accepted",
+  refused: "interface.history.approval.refused",
+  expired: "interface.history.approval.expired",
+  cancelled: "interface.history.approval.cancelled",
+};
+
+/** How a pickup receipt ended (native `ReceiptOutcome`). */
+export const receiptLabels: Record<string, MessageKey> = {
+  picked_up: "interface.history.receipt.pickedUp",
+  delivery_not_found: "interface.history.receipt.notFound",
+};
+
+const approvalEvents = new Set<AuditHistoryEntry["event"]>([
+  "deviceApprovalRequested",
+  "deviceApprovalVerified",
+  "deviceApprovalStatusChanged",
+  "deviceApprovalRequestRestarted",
+]);
+
+/** Words for each other `how` the vault records. A how this build does not know is shown
+ * as it is. A test checks the values history.rs and the vault can write. */
+export const howLabels: Record<string, MessageKey> = {
   picked: "interface.history.how.picked",
   passphrase: "interface.history.how.passphrase",
   recoveryKey: "interface.history.how.recoveryKey",
   patient: "interface.history.how.patient",
   damaged: "interface.history.how.damaged",
   camera: "interface.history.how.camera",
+  summary: "interface.history.how.summary",
+  explain: "interface.history.how.explain",
   replaced: "interface.history.how.replaced",
   anonymizedText: "interface.history.how.anonymizedText",
+  personFolder: "interface.history.how.personFolder",
 };
 
 /** Dates keep the computer's own format, whatever language myCarlos uses (D130), as
@@ -109,15 +161,30 @@ function details(entry: AuditHistoryEntry): [MessageKey, string][] {
       : "interface.history.rootFolder",
   );
   if (to) rows.push(["interface.history.to", to]);
-  if (entry.how) {
+  const statusLabels = approvalEvents.has(entry.event)
+    ? approvalLabels
+    : entry.event === "deliveryReceiptSettled"
+      ? receiptLabels
+      : null;
+  if (entry.how && statusLabels) {
+    const key = Object.hasOwn(statusLabels, entry.how)
+      ? statusLabels[entry.how]
+      : undefined;
+    rows.push([
+      "interface.history.status",
+      key ? translateNow(key) : entry.how,
+    ]);
+  } else if (entry.how) {
     const key =
       entry.how === "shared"
         ? movedFromShared
           ? "interface.history.how.movedFromShared"
           : "interface.history.how.importedShared"
-        : Object.hasOwn(howLabels, entry.how)
-          ? howLabels[entry.how]
-          : undefined;
+        : entry.event === "readingAidFiled" && entry.how === "replaced"
+          ? "interface.history.how.aidReplaced"
+          : Object.hasOwn(howLabels, entry.how)
+            ? howLabels[entry.how]
+            : undefined;
     rows.push(["interface.history.how", key ? translateNow(key) : entry.how]);
   }
   if (entry.place) rows.push(["interface.history.place", entry.place]);
@@ -215,7 +282,11 @@ export function AuditHistory({
           {entries.length === 0 && view.laterEntries.length === 0 ? (
             view.complete && <p>{translateNow("interface.history.empty")}</p>
           ) : (
-            <HistoryList entries={entries} later={view.laterEntries} />
+            <HistoryList
+              entries={entries}
+              later={view.laterEntries}
+              contiguous={view.everyEventShown === true}
+            />
           )}
         </>
       )}
@@ -223,9 +294,13 @@ export function AuditHistory({
   );
 }
 
-/** The notice for a history that is not complete, from the native dates only (D146): the gap
- * between the two checked ends, or what lies before or after the only one, or all of it. */
+/** The notice for a history that is not complete, from the native fields only (D146): that
+ * only storage without events is damaged (#120 C1), or else the gap between the two checked
+ * ends, or what lies before or after the only one, or all of it. */
 function damageNotice(view: AuditHistoryView): string {
+  // Only storage without events is damaged: every event checks out and is shown.
+  if (view.everyEventShown)
+    return translateNow("interface.history.damagedStorageOnly");
   const until = view.checkedUntilMs;
   const from = view.checkedFromMs;
   if (until !== null && from !== null)
@@ -247,9 +322,12 @@ function damageNotice(view: AuditHistoryView): string {
 function HistoryList({
   entries,
   later,
+  contiguous,
 }: {
   entries: AuditHistoryEntry[];
   later: AuditHistoryEntry[];
+  /** No event is missing between the two parts, so no gap is marked. */
+  contiguous: boolean;
 }) {
   return (
     <>
@@ -260,7 +338,7 @@ function HistoryList({
       </p>
       <ol className="audit-history-list">
         {[...later].reverse().map(historyItem)}
-        {later.length > 0 && entries.length > 0 && (
+        {!contiguous && later.length > 0 && entries.length > 0 && (
           <li key="gap" className="audit-history-gap">
             <p className="purpose-note warning">
               {translateNow("interface.history.gap")}
@@ -277,7 +355,7 @@ function historyItem(entry: AuditHistoryEntry) {
   return (
     <li key={entry.seq}>
       <article className="audit-history-entry">
-        <h2>{translateNow(eventLabels[entry.event])}</h2>
+        <h2>{translateNow(eventTitle(entry.event))}</h2>
         <p className="audit-history-date">{formatTimestamp(entry.atMs)}</p>
         <dl>
           {details(entry).map(([label, value], index) => (

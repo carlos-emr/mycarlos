@@ -56,10 +56,16 @@ if (typeof window !== "undefined") {
   );
 }
 
-/** Recover focus lost when a library action disables or removes its trigger.
- * Dialogs keep their own focus rules; deliberate focus elsewhere always wins.
- * Returns a request to recover after the next change however it started, for
- * a dialog whose opener may be gone when it closes. */
+/** Recover focus lost when a library action disables or removes its trigger,
+ * and take it to the heading of a place the reader opens.
+ * Dialogs keep their own focus rules. After an action, deliberate focus
+ * elsewhere always wins.
+ * Returns `recover`, a request to recover after the next change however it
+ * started, for a dialog whose opener may be gone when it closes; and
+ * `openedPlace`, called with the location a navigation goes to. Once the
+ * library shows that location, focus goes to its heading whatever the input,
+ * mouse and touch included, so a screen reader says where the reader now is
+ * (#121, Ben's D128). Choosing the place already shown changes nothing. */
 export function useLibraryFocus(
   root: RefObject<HTMLElement | null>,
   heading: RefObject<HTMLElement | null>,
@@ -70,6 +76,17 @@ export function useLibraryFocus(
   const requested = useRef(false);
   const startedByKey = useRef(false);
   const wasBlocked = useRef<boolean | null>(null);
+  // The location on screen, and the one a navigation asked to land on.
+  const shown = useRef(location);
+  const place = useRef<string | null>(null);
+  // That place came while the library was busy or covered: by the time it is
+  // free, the reader may have moved on.
+  const placeLate = useRef(false);
+  // What had focus as the place was asked for: the control that opened it.
+  const opener = useRef<Element | null>(null);
+  useEffect(() => {
+    shown.current = location;
+  }, [location]);
   useEffect(() => {
     const remember = (event?: FocusEvent) => {
       const element = event?.target ?? document.activeElement;
@@ -90,29 +107,52 @@ export function useLibraryFocus(
     // note how it started. The end of an action keeps what its start noted.
     if (!wasBlocked.current) startedByKey.current = keyboardLast;
     wasBlocked.current = blocked;
-    if (blocked) return;
+    if (blocked) {
+      if (place.current === location) placeLate.current = true;
+      return;
+    }
     const byKey = startedByKey.current;
     // Wait for disabled controls and modal cleanup to finish their commit.
     // Superseding navigation, a dialog, a lock or unmount cancels this frame.
     const frame = window.requestAnimationFrame(() => {
       const asked = requested.current;
       requested.current = false;
+      // A place opened on the way to another (a person's folder opens after
+      // the person) waits for the location it asked for.
+      const opened = place.current === location;
+      const late = placeLate.current;
+      if (opened) {
+        place.current = null;
+        placeLate.current = false;
+      }
       const library = root.current;
       const focused = document.activeElement;
       if (
-        !(byKey || asked) ||
         !library ||
         !available(library) ||
         !document.hasFocus() ||
-        (focused instanceof Element &&
-          focused !== document.body &&
-          focused !== document.documentElement &&
-          available(focused)) ||
         Array.from(
           document.querySelectorAll<HTMLElement>('[aria-modal="true"]'),
         ).some(available)
       )
         return;
+      const focusedElsewhere =
+        focused instanceof Element &&
+        focused !== document.body &&
+        focused !== document.documentElement &&
+        available(focused);
+      if (opened) {
+        // Over the control that opened it too: that one still names the old
+        // place, or none. A place reached while the library was busy or
+        // covered is like the end of an action: focus the reader has put on
+        // something else since stays there.
+        if (late && focusedElsewhere && focused !== opener.current) return;
+        const target = heading.current;
+        if (target && library.contains(target) && available(target))
+          target.focus();
+        return;
+      }
+      if (!(byKey || asked) || focusedElsewhere) return;
       const previous = trigger.current;
       const target =
         previous && library.contains(previous) && available(previous)
@@ -124,7 +164,19 @@ export function useLibraryFocus(
     return () => window.cancelAnimationFrame(frame);
   }, [root, heading, blocked, location]);
 
-  return useCallback(() => {
+  const recover = useCallback(() => {
     requested.current = true;
   }, []);
+  const openedPlace = useCallback((next: string) => {
+    // A second press on a place shown while the library was busy keeps that
+    // request, from whichever control it came: nothing has been said yet.
+    if (place.current === next && next === shown.current) {
+      opener.current = document.activeElement;
+      return;
+    }
+    place.current = next === shown.current ? null : next;
+    placeLate.current = false;
+    opener.current = document.activeElement;
+  }, []);
+  return { recover, openedPlace };
 }
