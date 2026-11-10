@@ -975,8 +975,6 @@ readingAid-unavailable = Cette aide à la lecture ne peut pas être affichée en
 
 record-kind-document = Document
 
-record-source-manual = Importation manuelle — non vérifiée
-
 recover-intro = Utilisez votre clé de récupération pour ouvrir le coffre-fort et choisir une nouvelle phrase secrète.
 
 recover-key-format = 28 lettres et chiffres, en 7 groupes de 4, comme sur votre trousse ou tels que vous les avez notés. Les tirets, les espaces et les autres signes de ponctuation n’ont pas d’importance.
