@@ -84,6 +84,15 @@ for (const [status, said] of [
 
     await restart.click();
     await expect(awaiting(page)).toBeVisible();
+    // Require the fake-driven automatic read as well as its confirmed text.
+    await expect
+      .poll(() => fakeCalls(page, "vault_refresh_device_approval"), {
+        timeout: 15_000,
+      })
+      .toContainEqual({ linkId: FAKE_IDS.link });
+    await expect(
+      page.getByText(en("portal.awaitingClinic"), { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText(en(said), { exact: true })).toHaveCount(0);
     expect(await fakeCalls(page, "vault_restart_device_approval")).toEqual([
       { linkId: FAKE_IDS.link },

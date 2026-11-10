@@ -1544,7 +1544,7 @@ portal-connecting = Conectando e solicitando a aprovação da clínica…
 
 portal-errorBusy = Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.
 
-portal-linkedApprovalIssue = Dispositivo vinculado, mas não foi possível confirmar a solicitação de aprovação. O status do dispositivo, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
+portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
 
 portal-retryApproval = Tentar novamente a solicitação de aprovação salva
 
@@ -1605,6 +1605,8 @@ interface-history-approval-refused = Recusada pela clínica
 interface-history-damaged = Parte deste histórico está danificada. Os eventos após { $date } não podem ser verificados e não são exibidos.
 
 interface-history-damagedAll = Parte deste histórico está danificada. Os eventos dele não podem ser verificados, por isso nenhum é exibido.
+
+interface-history-damagedStorageOnly = Parte do armazenamento deste histórico está danificada, mas todos os eventos dele foram verificados e são exibidos.
 
 interface-history-damagedBefore = Parte deste histórico está danificada. Os eventos anteriores a { $date } não podem ser verificados e não são exibidos.
 
@@ -1756,7 +1758,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = O myCarlos também
 
 portal-checkAgain = Para verificar novamente, escolha { $button }.
 
-portal-unlockCheckConsent = Sempre que você desbloquear seu cofre, o myCarlos se conecta ao portal da clínica de cada dispositivo vinculado para verificar atualizações da aprovação e novos documentos.
+portal-unlockCheckConsent = Após cada desbloqueio, o myCarlos se conecta aos portais das clínicas vinculadas para verificar atualizações da aprovação e novos documentos quando a clínica já aprovou o dispositivo ou uma solicitação de aprovação ainda está em aberto.
 
 portal-unlockChecked = Verificação de novos documentos da clínica feita após desbloquear o cofre.
 
@@ -1821,9 +1823,9 @@ ai-explain-title = Explicar um termo
 
 ai-notInstalled-title = O assistente de IA ainda não está neste computador
 
-ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. Em Preferências, você pode baixar o modelo ou adicionar um arquivo de modelo que já tenha.
+ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. Em Configurações, em Assistente de IA, você pode baixar o modelo ou adicionar um arquivo de modelo que já tenha.
 
-ai-notInstalled-openPreferences = Abrir Preferências
+ai-notInstalled-openPreferences = Abrir as configurações do assistente de IA
 
 aiHelper-resultLabel = Escrito por IA e pode estar errado. Confira com seu médico.
 
@@ -1843,9 +1845,11 @@ ai-explain-submit = Explicar
 
 ai-preferences-title = Assistente de IA
 
-ai-preferences-body = Explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. Você pode baixar o modelo ou adicionar um arquivo de modelo que já tenha; ele fica neste computador.
+ai-preferences-body = Explica seus documentos em palavras simples com um modelo de IA que funciona neste computador. Baixe um dos modelos abaixo ou adicione um arquivo correspondente que você já tenha. Os modelos ficam neste computador.
 
 ai-preferences-notInstalled = Não instalado
+
+ai-settings-subtitle = Como o assistente de IA funciona neste computador
 
 ai-model-add = Adicionar um arquivo de modelo…
 
@@ -1875,7 +1879,7 @@ ai-model-unsupportedCpu = O processador deste computador não é compatível com
 
 ai-model-unsupportedPlatform = O assistente de IA ainda não está disponível neste tipo de computador.
 
-ai-model-refusedList = Este não é um arquivo que o myCarlos aceita. Escolha o arquivo de modelo indicado acima.
+ai-model-refusedList = Este não é um arquivo aceito pelo myCarlos. Escolha um dos arquivos de modelo listados acima.
 
 ai-model-refusedHash = Este não é o arquivo esperado. Baixe-o novamente e adicione a cópia nova.
 
@@ -1893,6 +1897,14 @@ ai-model-downloadNote = Baixa um arquivo ({ $size } MB), uma única vez, de { $h
 
 ai-model-downloading = Baixando e verificando… { $done } de { $total } MB
 
+ai-model-progressName = Download do modelo
+
+ai-model-progressValue = { $percent }, { $done } de { $total } MB
+
+ai-model-stillDownloading = O modelo ainda está sendo baixado.
+
+ai-model-stillChecking = O arquivo do modelo ainda está sendo verificado.
+
 ai-model-refusedNetwork = O download não foi concluído. Verifique sua conexão com a internet e tente novamente.
 
 ai-model-refusedUnavailable = O modelo não está disponível no endereço agora. Tente novamente mais tarde ou adicione um arquivo que já tenha.
@@ -1900,6 +1912,15 @@ ai-model-refusedUnavailable = O modelo não está disponível no endereço agora
 native-filter-models = Arquivos de modelo
 
 ai-working = O assistente de IA está trabalhando…
+
+ai-workingLong = Em um documento longo, isso pode levar vários minutos.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Trabalhando há { $minutes } minuto.
+    [many] Trabalhando há { $minutes } de minutos.
+    *[other] Trabalhando há { $minutes } minutos.
+    }
 
 ai-summary-ready = O resumo está pronto.
 
@@ -1910,6 +1931,8 @@ ai-failed = O assistente de IA não conseguiu terminar. Tente de novo.
 ai-error-memory = Não há memória livre suficiente para o assistente de IA agora. Feche outros programas e tente de novo.
 
 ai-error-busy = O modelo do assistente de IA está sendo adicionado ou removido. Tente de novo quando isso terminar.
+
+ai-error-storage = Não foi possível ler o modelo do assistente de IA neste computador. Tente de novo. Se continuar acontecendo, remova o modelo em Configurações, em Assistente de IA, e adicione-o de novo.
 
 ai-summary-pagesMissing = Algumas páginas não puderam ser lidas por completo, então este resumo pode deixar partes de fora.
 
@@ -2111,12 +2134,53 @@ notifications-error = Não foi possível salvar esta configuração. Os avisos e
 notifications-unavailable = Os avisos de documentos estão indisponíveis. Abra o myCarlos normalmente para verificar seus documentos.
 notifications-helpAutomatic = O Windows pode mostrar um aviso genérico depois que um documento da clínica for salvo. Abra o myCarlos normalmente para lê-lo.
 notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
+notifications-autoNeedsNotices = Primeiro permita os avisos de chegada de documentos para ativar esta opção.
 notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
 notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
 notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
+noticesStep-title = Avisos da sua clínica
+noticesStep-intro = Sua clínica está vinculada. O myCarlos pode avisar quando chegar um documento novo. Nada é ativado a menos que você marque.
+noticesStep-later = Você pode mudar isso a qualquer momento em { $settings }, em { $preferences }: { $notices }.
+noticesStep-done = Concluído
+noticesStep-notNow = Agora não
 
 ai-summary-again = Resumir de novo
 
 ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.
 
 ai-keepFull = Este documento já guarda o máximo de respostas da IA. As respostas novas são mostradas, mas não são guardadas.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modelos neste computador
+
+ai-models-group = Modelo em uso
+
+ai-models-inUse = Em uso
+
+ai-models-installed = Instalado
+
+ai-models-addedByYou = Adicionado por você
+
+ai-models-notDownloaded = Não baixado
+
+ai-models-downloading = Baixando
+ai-models-installing = Instalando
+
+ai-models-download = Baixar
+
+ai-models-remove = Remover
+
+ai-models-help = O modelo marcado Em uso escreve os resumos e as explicações. Escolher outro modelo interrompe a resposta que está sendo escrita.
+
+ai-models-loading = Lendo a lista de modelos…
+
+ai-models-loadFailed = Não foi possível ler a lista de modelos. Tente novamente.
+
+ai-models-retry = Ler a lista de modelos novamente
+
+ai-models-starting = Iniciando o download…
+
+ai-models-picking = Escolha um arquivo de modelo para adicionar.
+
+ai-models-changed = Modelo em uso alterado
