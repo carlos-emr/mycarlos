@@ -1,0 +1,96 @@
+{
+ "id": "bakeoff-hospital-header",
+ "title": "Bake-off: abdominal ultrasound with a busy header",
+ "lang": "en",
+ "synthetic": true,
+ "source": "29 Oct 2026 model bake-off FAKE set",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nSAMPLETOWN GENERAL HOSPITAL\nDIAGNOSTIC IMAGING REPORT\n\nPATIENT: NOTREAL, MARGARET A.        MRN: H00099881\nPatient Name: Notreal, Margaret A.\nDOB: 1972-05-09\n\nExam: Ultrasound abdomen\nFindings: Normal liver echotexture. No gallstones.\nImpression: Normal study.\n\nNext of kin: O'Sample, Sean (husband)\nEmergency contact: MACEXAMPLE, ROWAN  Tel: 613-555-0131\nCopy to: de la Testa, Maria\n\nCare team\nNurse Practitioner: Jules Placeholder\nPharmacist: Indigo Testperson\nSocial Worker: Drew Sampleson\nNP: Sasha Fakename\n\nElectronically signed by Testcase, Quinn, MD\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "ultrasound",
+   "category": "finding",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Exam: Ultrasound abdomen",
+   "approved_statements": [
+    "This was an ultrasound of the abdomen."
+   ],
+   "anchors": [
+    "ultrasound"
+   ],
+   "match": [
+    [
+     "ultrasound"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "liver_normal",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Normal liver echotexture.",
+   "approved_statements": [
+    "The liver looked normal."
+   ],
+   "anchors": [
+    "liver"
+   ],
+   "match": [
+    [
+     "liver"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "no_gallstones",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "No gallstones.",
+   "approved_statements": [
+    "There were no gallstones."
+   ],
+   "anchors": [
+    "gallstone"
+   ],
+   "match": [
+    [
+     "gallstone"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "normal_study",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Impression: Normal study.",
+   "approved_statements": [
+    "The study was normal."
+   ],
+   "anchors": [
+    "normal"
+   ],
+   "match": [
+    [
+     "normal"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "any abnormal finding",
+  "any follow-up or treatment not in the document"
+ ],
+ "notes": ""
+}

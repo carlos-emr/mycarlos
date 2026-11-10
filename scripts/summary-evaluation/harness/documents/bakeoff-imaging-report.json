@@ -1,0 +1,132 @@
+{
+ "id": "bakeoff-imaging-report",
+ "title": "Bake-off: CT chest, stable 6 mm nodule",
+ "lang": "en",
+ "synthetic": true,
+ "source": "29 Oct 2026 model bake-off FAKE set",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nHôpital Fictif de Testville - Department of Diagnostic Imaging\n\nName: Avery Example\nRAMQ: EXAA 6104 1799\nChart #: 0045123\nRequisition number: R-778812\n\nExam: CT chest with contrast        Date: 12 October 2026\nComparison: CT chest, 3 Mar 2025.\n\nFindings: A 6 mm nodule in the right upper lobe, unchanged since March 3, 2025.\nNo new consolidation. Heart size normal.\n\nImpression: Stable 6 mm nodule. Follow-up CT in 12 months, around Oct. 12, 2027.\n\nDiscussed by phone with Robin.\n\nReported by: Dr. Robin Fakename, radiologist\ncc: Dr. Blake Sample, Riverside Cardiology Clinic\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "ct_chest",
+   "category": "finding",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Exam: CT chest with contrast        Date: 12 October 2026",
+   "approved_statements": [
+    "A CT of the chest with contrast was done on 12 October 2026."
+   ],
+   "anchors": [
+    "ct",
+    "scan"
+   ],
+   "match": [
+    [
+     "ct",
+     "scan"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "nodule_6mm_rul",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "A 6 mm nodule in the right upper lobe, unchanged since March 3, 2025.",
+   "approved_statements": [
+    "There is a 6 mm nodule in the right upper lobe, unchanged since March 3, 2025."
+   ],
+   "anchors": [
+    "6 mm",
+    "6mm",
+    "nodule"
+   ],
+   "match": [
+    [
+     "6 mm",
+     "6mm"
+    ],
+    [
+     "nodule"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "stable",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Impression: Stable 6 mm nodule.",
+   "approved_statements": [
+    "The 6 mm nodule is stable."
+   ],
+   "anchors": [
+    "stable",
+    "unchanged"
+   ],
+   "match": [
+    [
+     "stable",
+     "unchanged"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "no_new_findings",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "No new consolidation. Heart size normal.",
+   "approved_statements": [
+    "There is no new consolidation and the heart size is normal."
+   ],
+   "anchors": [
+    "consolidation",
+    "heart"
+   ],
+   "match": [
+    [
+     "consolidation",
+     "heart"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "follow_up_ct_12_months",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Follow-up CT in 12 months, around Oct. 12, 2027.",
+   "approved_statements": [
+    "A follow-up CT is planned in 12 months, around October 2027."
+   ],
+   "anchors": [
+    "12 months",
+    "2027",
+    "twelve months"
+   ],
+   "match": [
+    [
+     "12 months",
+     "twelve months",
+     "2027"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying the nodule grew, is new, or is cancer",
+  "saying it is certainly benign (report says stable, not benign)",
+  "wrong size or lobe"
+ ],
+ "notes": ""
+}

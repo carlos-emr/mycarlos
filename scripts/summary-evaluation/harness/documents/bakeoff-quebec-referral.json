@@ -1,0 +1,96 @@
+{
+ "id": "bakeoff-quebec-referral",
+ "title": "Bake-off: short French referral (chest pain)",
+ "lang": "fr",
+ "synthetic": true,
+ "source": "29 Oct 2026 model bake-off FAKE set",
+ "pages": [
+  {
+   "index": 0,
+   "text": "DOCUMENT D'ESSAI SYNTHÉTIQUE - DONNÉES FICTIVES SEULEMENT\n\nClinique médicale Saint-Laurent\n1234, rue Sherbrooke Est, app. 5\nMontréal (Québec) H2X 1A1\nTél. : 514 555-0123   Téléc. : 5145550124\n\nLe 3 octobre 2026\n\nDre Émilie Tremblay\nCentre hospitalier de Fictiveville\n88, boul. René-Lévesque Ouest\nFictiveville, QC G1R 9Z9\n\nObjet : Patiente : Renée Côté\nDate de naissance : 1958/03/02\nRAMQ : COTR 5803 0299\nDossier no : 0077123\n\nDocteure Tremblay,\n\nJe vous adresse Mme Renée Côté, 68 ans, pour une douleur thoracique depuis le\n15 septembre 2026. ECG du 2026/09/22 : rythme sinusal. Son conjoint, Jean de la Cruz,\nest joignable au 4185550177. Ancien numéro de carte : 1234 567 890.\nJean l'accompagnera au rendez-vous.\n\nDr Pierre d'Amours, médecin de famille\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "chest_pain_since",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "pour une douleur thoracique depuis le\n15 septembre 2026.",
+   "approved_statements": [
+    "Elle a une douleur thoracique depuis le 15 septembre 2026.",
+    "She has had chest pain since 15 September 2026."
+   ],
+   "anchors": [
+    "15",
+    "chest",
+    "poitrine",
+    "thoraci"
+   ],
+   "match": [
+    [
+     "thoraci",
+     "chest",
+     "poitrine"
+    ],
+    [
+     "15"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ecg_sinus",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "ECG du 2026/09/22 : rythme sinusal.",
+   "approved_statements": [
+    "L'ECG du 22 septembre 2026 montre un rythme sinusal.",
+    "The ECG on 22 September 2026 showed a sinus rhythm."
+   ],
+   "anchors": [
+    "ecg",
+    "sinus"
+   ],
+   "match": [
+    [
+     "ecg"
+    ],
+    [
+     "sinus"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "referral",
+   "category": "finding",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Je vous adresse Mme Renée Côté, 68 ans,",
+   "approved_statements": [
+    "Le médecin de famille l'adresse à la Dre Tremblay.",
+    "Her family doctor is referring her to Dr. Tremblay."
+   ],
+   "anchors": [
+    "adress",
+    "refer",
+    "tremblay"
+   ],
+   "match": [
+    [
+     "adress",
+     "refer",
+     "tremblay"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying the ECG was abnormal",
+  "inventing a diagnosis such as heart attack or angina"
+ ],
+ "notes": ""
+}

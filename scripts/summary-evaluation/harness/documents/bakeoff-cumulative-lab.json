@@ -1,0 +1,156 @@
+{
+ "id": "bakeoff-cumulative-lab",
+ "title": "Bake-off: cumulative lab report (trends)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "29 Oct 2026 model bake-off FAKE set",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories - Cumulative Report\n\nPatient: SAMPLESON, Drew (FAKE)       PHN: 9000 000 000\nDate of birth: 1983-07-21             Sex: M\nOrdering provider: Dr. Morgan Testcase (FAKE)\nPrinted: 2026-10-27\n\nHEMATOLOGY                     2026-04-02   2026-07-15   2026-10-24   Units      Reference\nWhite blood cells (WBC)        6.8          7.1          11.9 H       x10^9/L    4.0-11.0\nNeutrophils                    4.1          4.3          9.2 H        x10^9/L    2.0-7.5\nLymphocytes                    1.9          2.0          1.8          x10^9/L    1.0-4.0\nHemoglobin                     148          145          139          g/L        135-175\nPlatelets                      231          240          262          x10^9/L    150-400\nMCV                            89           90           89           fL         80-100\n\nCHEMISTRY\nSodium                         140          139          138          mmol/L     135-145\nPotassium                      4.2          4.4          4.3          mmol/L     3.5-5.0\nCreatinine                     84           86           85           umol/L     60-110\neGFR                           >90          >90          >90          mL/min/1.73m2  >60\nGlucose, fasting               5.6          6.1 H        6.4 H        mmol/L     3.6-6.0\nHbA1c                          5.8          6.0          6.2 H        %          <6.0\nALT                            38           52 H         71 H         U/L        <40\nAST                            29           35           44 H         U/L        <35\nGGT                            41           58 H         66 H         U/L        <55\nAlkaline phosphatase           74           80           78           U/L        40-130\nBilirubin, total               11           12           10           umol/L     <20\nAlbumin                        44           43           43           g/L        35-50\nC-reactive protein (CRP)       2            3            38 H         mg/L       <10\n\nLIPIDS (fasting)\nTotal cholesterol              5.9          --           6.1          mmol/L\nLDL cholesterol                3.8          --           4.0 H        mmol/L     <3.5\nHDL cholesterol                1.0          --           0.9 L        mmol/L     >1.0\nTriglycerides                  2.4 H        --           2.7 H        mmol/L     <1.7\nNon-HDL cholesterol            4.9          --           5.2 H        mmol/L     <4.2\n\nTHYROID\nTSH                            1.9          --           2.2          mU/L       0.32-4.0\n\nURINALYSIS (2026-10-24)\nGlucose                        negative\nProtein                        trace\nBlood                          negative\nLeukocytes                     negative\nNitrite                        negative\n\nLab comment (2026-10-24): WBC, neutrophils and CRP raised, which can be seen with an\ninfection or inflammation. Sample taken 2 days after the patient reported a sore throat\nand fever (per requisition). Suggest repeat CBC and CRP in 2-3 weeks.\nHbA1c 6.2% is in the prediabetes range (6.0-6.4%).\nLiver enzymes (ALT, AST, GGT) have risen gradually since April 2026.\nQuestions: call the lab at 1-800-555-0100.\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "infection_markers",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "WBC, neutrophils and CRP raised, which can be seen with an\ninfection or inflammation.",
+   "approved_statements": [
+    "White cells, neutrophils and CRP are raised, which can be seen with an infection or inflammation."
+   ],
+   "anchors": [
+    "crp",
+    "infection",
+    "inflammation",
+    "neutrophil",
+    "wbc",
+    "white"
+   ],
+   "match": [
+    [
+     "crp",
+     "white",
+     "wbc",
+     "neutrophil",
+     "infection",
+     "inflammation"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "repeat_cbc_crp",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Suggest repeat CBC and CRP in 2-3 weeks.",
+   "approved_statements": [
+    "Repeat the blood count and CRP in 2 to 3 weeks."
+   ],
+   "anchors": [
+    "2",
+    "3",
+    "again",
+    "recheck",
+    "repeat",
+    "week"
+   ],
+   "match": [
+    [
+     "repeat",
+     "again",
+     "recheck"
+    ],
+    [
+     "2",
+     "3"
+    ],
+    [
+     "week"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "prediabetes",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "HbA1c 6.2% is in the prediabetes range (6.0-6.4%).",
+   "approved_statements": [
+    "The HbA1c of 6.2% is in the prediabetes range."
+   ],
+   "anchors": [
+    "6.2",
+    "prediabet"
+   ],
+   "match": [
+    [
+     "prediabet",
+     "6.2"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "liver_enzymes_rising",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Liver enzymes (ALT, AST, GGT) have risen gradually since April 2026.",
+   "approved_statements": [
+    "Liver enzymes have risen gradually since April 2026."
+   ],
+   "anchors": [
+    "alt",
+    "ast",
+    "ggt",
+    "liver"
+   ],
+   "match": [
+    [
+     "liver",
+     "alt",
+     "ast",
+     "ggt"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "lipids",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "LDL cholesterol                3.8          --           4.0 H        mmol/L     <3.5",
+   "approved_statements": [
+    "LDL is high at 4.0 mmol/L."
+   ],
+   "anchors": [
+    "cholesterol",
+    "hdl",
+    "ldl",
+    "triglycerid"
+   ],
+   "match": [
+    [
+     "ldl",
+     "cholesterol",
+     "triglycerid",
+     "hdl"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying the patient has diabetes (it is prediabetes range)",
+  "diagnosing liver disease or a specific infection",
+  "calling kidney or thyroid results abnormal",
+  "wrong direction of a trend",
+  "medication advice such as starting a statin"
+ ],
+ "notes": ""
+}

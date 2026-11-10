@@ -1,0 +1,250 @@
+{
+ "id": "bakeoff-ptbr-endocrinology",
+ "title": "Bake-off: Brazilian Portuguese endocrinology letter",
+ "lang": "pt-BR",
+ "synthetic": true,
+ "source": "29 Oct 2026 model bake-off FAKE set",
+ "pages": [
+  {
+   "index": 0,
+   "text": "DOCUMENTO DE TESTE SINTÉTICO - SOMENTE DADOS FICTÍCIOS\n\nClínica de Endocrinologia Exemplo\nRua Fictícia, 100 - Sala 12\nTestópolis - SP, 00000-000\nTel.: (11) 5555-0101\n\nTestópolis, 21 de outubro de 2026\n\nPrezada Dra. Helena Modelo (FICTÍCIA),\nUnidade Básica de Saúde Vila Exemplo\n\nRef.: Sra. Lúcia Testeira (FICTÍCIA), 58 anos\nData de nascimento: 04/02/1968\nProntuário: 0099-123\n\nAgradeço o encaminhamento da Sra. Lúcia, que atendi hoje em consulta de endocrinologia\npor diabetes mellitus tipo 2, diagnosticado em 2019.\n\nHistória\nA paciente usa metformina 850 mg duas vezes ao dia, com boa tolerância. Relata sede e\nvontade de urinar com mais frequência nos últimos três meses. Nega episódios de\nhipoglicemia. Não fuma. Caminha 20 minutos, três vezes por semana.\n\nExame físico\nPeso 84 kg, altura 1,62 m, IMC 32 kg/m². Pressão arterial 134/82 mmHg.\nPés: sensibilidade preservada, pulsos presentes, sem feridas.\n\nExames recentes (15/10/2026)\n- Hemoglobina glicada (HbA1c): 8,1% (em abril de 2026 era 7,2%)\n- Glicemia de jejum: 162 mg/dL\n- Creatinina: 0,9 mg/dL; taxa de filtração glomerular estimada (TFGe): 72 mL/min/1,73m²\n- Relação albumina/creatinina na urina: 18 mg/g (normal, abaixo de 30)\n- LDL-colesterol: 98 mg/dL\n- TSH: 2,4 mUI/L (normal)\n- Fundoscopia (12/09/2026): sem sinais de retinopatia diabética\n\nAvaliação\nDiabetes tipo 2 com controle abaixo do desejado (HbA1c 8,1%). Função dos rins normal e\nsem perda de proteína na urina. Sem complicações nos olhos ou nos pés neste momento.\nA sede e a urina frequente provavelmente se devem à glicose alta.\n\nConduta\n1. Manter a metformina 850 mg duas vezes ao dia, sem alteração.\n2. Iniciar empagliflozina 10 mg uma vez ao dia, pela manhã. Orientei sobre beber água\n   suficiente e sobre a higiene íntima, porque este remédio pode aumentar o risco de\n   infecção genital por fungos.\n3. Encaminhada à nutricionista da unidade.\n4. Repetir HbA1c, creatinina e TFGe em 3 meses.\n5. Retorno nesta clínica em 3 meses, em janeiro de 2027.\n\nA meta combinada com a paciente é HbA1c abaixo de 7%.\n\nFico à disposição.\n\nAtenciosamente,\n\nDr. Rafael Exemplar (FICTÍCIO)\nEndocrinologista - CRM-SP 000000\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "a1c_8_1",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Hemoglobina glicada (HbA1c): 8,1% (em abril de 2026 era 7,2%)",
+   "approved_statements": [
+    "A HbA1c foi de 8,1% (era 7,2% em abril de 2026).",
+    "The HbA1c was 8.1% (it was 7.2% in April 2026)."
+   ],
+   "anchors": [
+    "8,1",
+    "8.1"
+   ],
+   "match": [
+    [
+     "8,1",
+     "8.1"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "kidney_normal",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Função dos rins normal e\nsem perda de proteína na urina.",
+   "approved_statements": [
+    "Os rins funcionam bem e não há perda de proteína na urina.",
+    "Kidney function is normal with no protein loss in the urine."
+   ],
+   "anchors": [
+    "kidney",
+    "renal",
+    "rim",
+    "rins"
+   ],
+   "match": [
+    [
+     "rim",
+     "rins",
+     "renal",
+     "kidney"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "no_complications",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Sem complicações nos olhos ou nos pés neste momento.",
+   "approved_statements": [
+    "Não há complicações nos olhos ou nos pés.",
+    "There are no eye or foot complications."
+   ],
+   "anchors": [
+    "eye",
+    "feet",
+    "foot",
+    "olho",
+    "pé",
+    "pés",
+    "retin"
+   ],
+   "match": [
+    [
+     "olho",
+     "pé",
+     "pés",
+     "eye",
+     "foot",
+     "feet",
+     "retin"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "metformin_unchanged",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Manter a metformina 850 mg duas vezes ao dia, sem alteração.",
+   "approved_statements": [
+    "Manter a metformina 850 mg duas vezes ao dia.",
+    "Keep metformin 850 mg twice daily, unchanged."
+   ],
+   "anchors": [
+    "metformin"
+   ],
+   "match": [
+    [
+     "metformin"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "start_empagliflozin",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Iniciar empagliflozina 10 mg uma vez ao dia, pela manhã.",
+   "approved_statements": [
+    "Iniciar empagliflozina 10 mg uma vez ao dia, pela manhã.",
+    "Start empagliflozin 10 mg once a day in the morning."
+   ],
+   "anchors": [
+    "empagliflozin"
+   ],
+   "match": [
+    [
+     "empagliflozin"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "water_hygiene",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Orientei sobre beber água\n   suficiente e sobre a higiene íntima",
+   "approved_statements": [
+    "Beber água suficiente e cuidar da higiene íntima.",
+    "Drink enough water and keep up intimate hygiene."
+   ],
+   "anchors": [
+    "agua",
+    "higien",
+    "hygien",
+    "water",
+    "água"
+   ],
+   "match": [
+    [
+     "água",
+     "agua",
+     "water",
+     "higien",
+     "hygien"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "dietitian",
+   "category": "follow_up",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Encaminhada à nutricionista da unidade.",
+   "approved_statements": [
+    "Foi encaminhada à nutricionista.",
+    "She was referred to a dietitian."
+   ],
+   "anchors": [
+    "dietit",
+    "nutricion",
+    "nutrition"
+   ],
+   "match": [
+    [
+     "nutricion",
+     "dietit",
+     "nutrition"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "repeat_3_months",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Retorno nesta clínica em 3 meses, em janeiro de 2027.",
+   "approved_statements": [
+    "Retorno em 3 meses, em janeiro de 2027.",
+    "Return to the clinic in 3 months, in January 2027."
+   ],
+   "anchors": [
+    "3",
+    "janeiro",
+    "january",
+    "mes",
+    "miesi",
+    "mois",
+    "month"
+   ],
+   "match": [
+    [
+     "3"
+    ],
+    [
+     "month",
+     "mois",
+     "miesi",
+     "mes",
+     "janeiro",
+     "january"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "target_below_7",
+   "category": "finding",
+   "required": false,
+   "critical": false,
+   "source_evidence": "A meta combinada com a paciente é HbA1c abaixo de 7%.",
+   "approved_statements": [
+    "A meta é HbA1c abaixo de 7%.",
+    "The goal is an HbA1c below 7%."
+   ],
+   "anchors": [
+    "7 %",
+    "7%"
+   ],
+   "match": [
+    [
+     "7%",
+     "7 %"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying metformin changed",
+  "saying there is kidney damage or retinopathy",
+  "wrong HbA1c values",
+  "inventing insulin"
+ ],
+ "notes": ""
+}

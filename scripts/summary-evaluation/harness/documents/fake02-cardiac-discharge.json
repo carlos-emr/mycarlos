@@ -1,0 +1,441 @@
+{
+ "id": "fake02-cardiac-discharge",
+ "title": "FAKE-02 discharge summary (NSTEMI, heart failure)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "myCarlos FAKE demo texts, 5 Nov 2026 (FAKE-02)",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE DEMONSTRATION ONLY\n\nLakeview Test General Hospital (FAKE)\n\nDepartment of Medicine · 200 Sample Avenue, Testville ON\n\nMRN: FAKE-000123\n\nDischarge Summary\n\n  Patient  Rowan Testwood  DOB  21 June 1958\n\n  Admitted  12 October 2026  Discharged  19 October 2026\n\n  Attending  Dr. Ian Sampleton (Cardiology)  Family physician  Dr. Henrietta Fakeham\n\nDiagnoses\n\n1. Non-ST-elevation myocardial infarction (NSTEMI), treated with a drug-eluting stent to the proximal left anterior descending artery on 13 October 2026\n\n2. New heart failure with reduced ejection fraction: LVEF 40% on echocardiogram (14 October 2026)\n\n3. Acute kidney injury after contrast. Creatinine peaked at 162 µmol/L and was back to 104 µmol/L at discharge.\n\n4. Type 2 diabetes, not at target\n\n5. Hypertension\n\nPresentation\n\nMr. Testwood came to the emergency department with 40 minutes of chest pressure at rest. The ECG showed 1 mm ST depression in V3 to V6. Troponin rose from 48 ng/L to 1,260 ng/L over 3 hours. He had been referred to cardiology clinic on 2 October 2026 with six weeks of exertional chest pressure.\n\nHospital course\n\nCoronary disease. Angiography on 13 October showed a 90% proximal LAD stenosis, treated with one drug-eluting stent, and a 50% right coronary stenosis managed medically. There were no complications at the radial access site. He has been free of chest pain since the procedure.\n\nHeart failure. The echocardiogram showed anterior hypokinesis with LVEF 40% and no significant valve disease. He received two doses of furosemide 40 mg IV for mild pulmonary congestion; it is not continued. Discharge weight 92.4 kg.\n\nKidney function. Creatinine rose after contrast and recovered with IV fluids. Metformin was held from 13 to 17 October and restarted at a lower dose. Ramipril was held for 48 hours and restarted at 2.5 mg.\n\nDiabetes. Glucose 8 to 14 mmol/L in hospital. Glyburide was stopped because of hypoglycemia risk and empagliflozin was started for both diabetes and heart failure. HbA1c is pending.\n\nMedications at discharge\n\n  Medication  Dose  Status\n\n  Acetylsalicylic acid  81 mg daily, indefinitely  Continued\n\n  Ticagrelor  90 mg twice daily for 12 months (until October 2027)  NEW\n\n  Atorvastatin  80 mg daily  CHANGED (was 20 mg)\n\n  Metoprolol  25 mg twice daily  NEW\n\n  Ramipril  2.5 mg daily  CHANGED (was 5 mg)\n\n  Empagliflozin  10 mg daily  NEW\n\n  Metformin  500 mg twice daily  CHANGED (was 1000 mg twice daily)\n\n  Nitroglycerin spray  0.4 mg as needed for chest pain  Continued\n\n  Glyburide  —  STOPPED\n\nFollow-up\n\n- Blood tests in 1 week (around 26 October 2026): creatinine, potassium, CBC. Requisition given.\n\n- Family physician visit within 2 weeks: review the blood tests and the HbA1c result, and adjust ramipril if potassium and kidney function allow.\n\n- Cardiology clinic with Dr. Sampleton in 4 weeks.\n\n- Repeat echocardiogram in 3 months to recheck LVEF.\n\n- Referral sent to the cardiac rehabilitation program.\n\nInstructions to the patient\n\n- Do not stop ticagrelor or acetylsalicylic acid without talking to cardiology. Stopping them early can block the stent.\n\n- No driving for 1 week. No heavy lifting (more than 5 kg) with the right arm for 1 week.\n\n- Weigh yourself every morning. Call if your weight goes up more than 2 kg in 3 days.\n\n- For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.\n\nElectronically signed: Dr. Ian Sampleton, MD (FAKE), Cardiology · 19 October 2026\n\ncc: Dr. Henrietta Fakeham (family physician)\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "nstemi_stent",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Non-ST-elevation myocardial infarction (NSTEMI), treated with a drug-eluting stent to the proximal left anterior descending artery on 13 October 2026",
+   "approved_statements": [
+    "He had a heart attack (NSTEMI) treated with a stent on 13 October 2026."
+   ],
+   "anchors": [
+    "heart attack",
+    "myocardial infarction",
+    "nstemi",
+    "stent"
+   ],
+   "match": [
+    [
+     "heart attack",
+     "myocardial infarction",
+     "nstemi",
+     "stent"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "heart_failure_lvef_40",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "New heart failure with reduced ejection fraction: LVEF 40% on echocardiogram (14 October 2026)",
+   "approved_statements": [
+    "He has new heart failure with an ejection fraction of 40%."
+   ],
+   "anchors": [
+    "40%",
+    "ejection",
+    "heart failure"
+   ],
+   "match": [
+    [
+     "heart failure",
+     "40%",
+     "ejection"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "kidney_injury_recovered",
+   "category": "finding",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Acute kidney injury after contrast. Creatinine peaked at 162 µmol/L and was back to 104 µmol/L at discharge.",
+   "approved_statements": [
+    "His kidneys were injured by the contrast dye and recovered by discharge."
+   ],
+   "anchors": [
+    "creatinine",
+    "kidney"
+   ],
+   "match": [
+    [
+     "kidney",
+     "creatinine"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ticagrelor_new",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Ticagrelor  90 mg twice daily for 12 months (until October 2027)  NEW",
+   "approved_statements": [
+    "Ticagrelor 90 mg twice daily is new, for 12 months."
+   ],
+   "anchors": [
+    "ticagrelor"
+   ],
+   "match": [
+    [
+     "ticagrelor"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "ticagrelor\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mg)",
+    "value": "90",
+    "unit": "mg"
+   }
+  },
+  {
+   "id": "atorvastatin_80",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Atorvastatin  80 mg daily  CHANGED (was 20 mg)",
+   "approved_statements": [
+    "Atorvastatin was raised to 80 mg daily."
+   ],
+   "anchors": [
+    "atorvastatin"
+   ],
+   "match": [
+    [
+     "atorvastatin"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "atorvastatin\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mg)",
+    "value": "80",
+    "unit": "mg"
+   }
+  },
+  {
+   "id": "ramipril_2_5",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Ramipril  2.5 mg daily  CHANGED (was 5 mg)",
+   "approved_statements": [
+    "Ramipril was lowered to 2.5 mg daily."
+   ],
+   "anchors": [
+    "ramipril"
+   ],
+   "match": [
+    [
+     "ramipril"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "ramipril\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mg)",
+    "value": "2.5",
+    "unit": "mg"
+   }
+  },
+  {
+   "id": "empagliflozin_new",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Empagliflozin  10 mg daily  NEW",
+   "approved_statements": [
+    "Empagliflozin 10 mg daily is new."
+   ],
+   "anchors": [
+    "empagliflozin"
+   ],
+   "match": [
+    [
+     "empagliflozin"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "metoprolol_new",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Metoprolol  25 mg twice daily  NEW",
+   "approved_statements": [
+    "Metoprolol 25 mg twice daily is new."
+   ],
+   "anchors": [
+    "metoprolol"
+   ],
+   "match": [
+    [
+     "metoprolol"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "metformin_lower",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Metformin  500 mg twice daily  CHANGED (was 1000 mg twice daily)",
+   "approved_statements": [
+    "Metformin was lowered to 500 mg twice daily."
+   ],
+   "anchors": [
+    "metformin"
+   ],
+   "match": [
+    [
+     "metformin"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "metformin\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mg)",
+    "value": "500",
+    "unit": "mg"
+   }
+  },
+  {
+   "id": "glyburide_stopped",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Glyburide  —  STOPPED",
+   "approved_statements": [
+    "Glyburide was stopped."
+   ],
+   "anchors": [
+    "glyburide"
+   ],
+   "match": [
+    [
+     "glyburide"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "blood_tests_1_week",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Blood tests in 1 week (around 26 October 2026): creatinine, potassium, CBC.",
+   "approved_statements": [
+    "Have blood tests in 1 week."
+   ],
+   "anchors": [
+    "1 week",
+    "26 october",
+    "blood",
+    "lab",
+    "one week"
+   ],
+   "match": [
+    [
+     "blood",
+     "lab"
+    ],
+    [
+     "1 week",
+     "one week",
+     "26 october"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "family_physician_2_weeks",
+   "category": "follow_up",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Family physician visit within 2 weeks",
+   "approved_statements": [
+    "See the family physician within 2 weeks."
+   ],
+   "anchors": [
+    "2 weeks",
+    "family",
+    "two weeks"
+   ],
+   "match": [
+    [
+     "family"
+    ],
+    [
+     "2 weeks",
+     "two weeks"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "cardiology_4_weeks",
+   "category": "follow_up",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Cardiology clinic with Dr. Sampleton in 4 weeks.",
+   "approved_statements": [
+    "See cardiology in 4 weeks."
+   ],
+   "anchors": [
+    "4 weeks",
+    "cardiolog",
+    "four weeks"
+   ],
+   "match": [
+    [
+     "cardiolog"
+    ],
+    [
+     "4 weeks",
+     "four weeks"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "echo_3_months",
+   "category": "follow_up",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Repeat echocardiogram in 3 months to recheck LVEF.",
+   "approved_statements": [
+    "Repeat the echocardiogram in 3 months."
+   ],
+   "anchors": [
+    "3 months",
+    "echo",
+    "three months"
+   ],
+   "match": [
+    [
+     "echo"
+    ],
+    [
+     "3 months",
+     "three months"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "dont_stop_antiplatelets",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Do not stop ticagrelor or acetylsalicylic acid without talking to cardiology.",
+   "approved_statements": [
+    "Do not stop ticagrelor or acetylsalicylic acid without talking to cardiology."
+   ],
+   "anchors": [
+    "acetylsalicylic",
+    "aspirin",
+    "blood thinner",
+    "stop",
+    "ticagrelor"
+   ],
+   "match": [
+    [
+     "stop"
+    ],
+    [
+     "ticagrelor",
+     "acetylsalicylic",
+     "aspirin",
+     "blood thinner"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "no_driving_1_week",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "No driving for 1 week.",
+   "approved_statements": [
+    "Do not drive for 1 week."
+   ],
+   "anchors": [
+    "driv"
+   ],
+   "match": [
+    [
+     "driv"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "daily_weight",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Weigh yourself every morning. Call if your weight goes up more than 2 kg in 3 days.",
+   "approved_statements": [
+    "Weigh yourself every morning and call if your weight goes up more than 2 kg in 3 days."
+   ],
+   "anchors": [
+    "2 kg",
+    "weigh",
+    "weight"
+   ],
+   "match": [
+    [
+     "weigh",
+     "weight"
+    ],
+    [
+     "2 kg"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "chest_pain_911",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.",
+   "approved_statements": [
+    "For chest pain, use the spray once and call 911 if the pain is not gone after 5 minutes."
+   ],
+   "anchors": [
+    "911",
+    "emergency"
+   ],
+   "match": [
+    [
+     "911",
+     "emergency"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "calling a continued medicine new or a new medicine continued",
+  "wrong doses",
+  "saying to stop ticagrelor or aspirin"
+ ],
+ "notes": ""
+}
