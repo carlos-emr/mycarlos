@@ -23,6 +23,7 @@ import historyRs from "../../src-tauri/src/history.rs?raw";
 import vaultRs from "../../src-tauri/src/vault.rs?raw";
 import deliveryRs from "../../src-tauri/src/vault/delivery.rs?raw";
 import approvalRs from "../../src-tauri/src/portal_approval.rs?raw";
+import aiResultsRs from "../../src-tauri/src/vault/ai_results.rs?raw";
 
 const entry = (
   overrides: Partial<AuditHistoryEntry> = {},
@@ -691,6 +692,17 @@ describe("AuditHistory words for every recorded event and how", () => {
         approvalRs,
       )![1];
     for (const [, how] of code.matchAll(/=> "([a-z_]+)"/g)) found.add(how);
+    // A copy saved with a how of its own (record_copy_saved_how).
+    for (const [, how] of vaultRs.matchAll(
+      /record_copy_saved_how\(\s*[^;]*?Some\("([A-Za-z_]+)"\)/g,
+    ))
+      found.add(how);
+    // What the AI helper kept (AiTool::history_how in ai_results.rs).
+    const tools =
+      /fn history_how\(self\) -> &'static str \{([\s\S]*?)\n {4}\}/.exec(
+        aiResultsRs,
+      )![1];
+    for (const [, how] of tools.matchAll(/=> "([A-Za-z_]+)"/g)) found.add(how);
     return found;
   };
 
@@ -724,6 +736,9 @@ describe("AuditHistory words for every recorded event and how", () => {
         "cancelled",
         "picked_up",
         "delivery_not_found",
+        "anonymizedText",
+        "summary",
+        "explain",
       ]),
     );
     for (const how of hows) {
