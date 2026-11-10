@@ -1026,6 +1026,165 @@ describe("Device model catalog (#276A)", () => {
   const region = (name: string) => screen.getByRole("region", { name });
   const radio = (name: string) => screen.getByRole("radio", { name });
 
+  for (const outcome of ["committed", "rejected", "superseded"] as const) {
+    it(`reconciles a switch ${outcome} after its initiating view closes`, async () => {
+      const chosen = entries().map((row) => ({
+        ...row,
+        inUse: row.index === 1,
+      }));
+      let currentRows = entries();
+      let currentStatus = installed;
+      let finish!: () => void;
+      let switches = 0;
+      const readRows = vi.fn(() =>
+        Promise.resolve(structuredClone(currentRows)),
+      );
+      answer({
+        ai_models: readRows,
+        ai_model_status: () => Promise.resolve(currentStatus),
+        ai_model_add_active: null,
+        ai_model_use: () => {
+          if (++switches === 1)
+            return new Promise((resolve, reject) => {
+              finish = () =>
+                outcome === "rejected"
+                  ? reject({ code: "busy" })
+                  : resolve(usedSecond);
+            });
+          currentRows = entries();
+          currentStatus = installed;
+          return Promise.resolve(installed);
+        },
+      });
+      const oldStatus = vi.fn();
+      const first = render(
+        <AiModelSetting status={installed} onStatus={oldStatus} />,
+      );
+      await userEvent.click(
+        await screen.findByRole("radio", { name: second.name }),
+      );
+      first.unmount();
+      // In the stale-delivery case the native commit precedes the reply.
+      if (outcome === "superseded") {
+        currentRows = chosen;
+        currentStatus = usedSecond;
+      }
+      const onStatus = vi.fn();
+      render(<AiModelSetting status={installed} onStatus={onStatus} />);
+      await screen.findByRole("radio", { name: second.name });
+      await waitFor(() =>
+        expect(
+          radio(outcome === "superseded" ? second.name : fake.name),
+        ).toBeChecked(),
+      );
+      if (outcome === "superseded") {
+        await userEvent.click(radio(fake.name));
+        await waitFor(() => expect(radio(fake.name)).toBeChecked());
+        expect(onStatus).toHaveBeenLastCalledWith(installed);
+      }
+      const before = readRows.mock.calls.length;
+      if (outcome === "committed") {
+        currentRows = chosen;
+        currentStatus = usedSecond;
+      }
+      await act(async () => finish());
+      await waitFor(() =>
+        expect(readRows.mock.calls.length).toBeGreaterThan(before),
+      );
+      expect(
+        radio(outcome === "committed" ? second.name : fake.name),
+      ).toBeChecked();
+      if (outcome === "committed")
+        expect(onStatus).toHaveBeenLastCalledWith(usedSecond);
+      else if (outcome === "rejected")
+        expect(onStatus).not.toHaveBeenCalledWith(usedSecond);
+      else expect(onStatus).toHaveBeenLastCalledWith(installed);
+      expect(oldStatus).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const snapshot of ["already empty", "delayed empty"] as const) {
+    it(`owns a download first seen in progress after an ${snapshot} activity snapshot`, async () => {
+      let empty!: (value: null) => void;
+      answer({
+        ai_models: entries(false),
+        ai_model_add_active: () =>
+          snapshot === "delayed empty"
+            ? new Promise((resolve) => {
+                empty = resolve;
+              })
+            : Promise.resolve(null),
+      });
+      render(<AiModelSetting status={installed} onStatus={vi.fn()} />);
+      await screen.findByRole("button", { name: "Download FAKE Gemma" });
+      await waitFor(() =>
+        expect(native.invoke).toHaveBeenCalledWith("ai_model_add_active"),
+      );
+      act(() =>
+        native.listener?.({
+          payload: { index: 1, done: 1_400_000_000, total: 2_800_000_000 },
+        }),
+      );
+      if (snapshot === "delayed empty") await act(async () => empty(null));
+      const row = region(second.name);
+      expect(
+        within(row).getByRole("button", { name: "Downloading FAKE Gemma" }),
+      ).toBeDisabled();
+      expect(within(row).getByRole("progressbar")).toHaveAttribute(
+        "aria-valuenow",
+        "50",
+      );
+      expect(within(row).getByRole("button", { name: "Cancel" })).toBeVisible();
+      expect(row).toHaveTextContent("Downloading");
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Downloading and checking",
+      );
+      expect(screen.getByRole("status")).not.toHaveTextContent(
+        "Checking the file",
+      );
+      act(() =>
+        native.listener?.({
+          payload: { index: 1, done: 2_800_000_000, total: 2_800_000_000 },
+        }),
+      );
+      expect(
+        within(row).getByRole("button", { name: "Installing FAKE Gemma" }),
+      ).toBeDisabled();
+      act(() =>
+        native.listeners["ai-model-add-ended"]?.({
+          payload: { outcome: "cancelled" },
+        }),
+      );
+      await waitFor(() => expect(screen.queryByRole("progressbar")).toBeNull());
+      expect(
+        within(region(second.name)).getByRole("button", {
+          name: "Download FAKE Gemma",
+        }),
+      ).toBeEnabled();
+      expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    });
+  }
+
+  it("keeps an index-less picked-file check global after an empty activity snapshot", async () => {
+    answer({ ai_models: entries(false), ai_model_add_active: null });
+    render(<AiModelSetting status={installed} onStatus={vi.fn()} />);
+    await screen.findByRole("button", { name: "Download FAKE Gemma" });
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith("ai_model_add_active"),
+    );
+    act(() =>
+      native.listener?.({
+        payload: { done: 1_400_000_000, total: 2_800_000_000 },
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Checking the file");
+    expect(within(region(second.name)).queryByRole("progressbar")).toBeNull();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "50",
+    );
+  });
+
   for (const operation of ["use", "remove", "failure"] as const) {
     it(`reconciles ${operation} after an older completion during its native request`, async () => {
       let currentRows = entries();
