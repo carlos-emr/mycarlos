@@ -359,6 +359,10 @@ interface-reader-textFollows = Page { $page } sur { $total }. Le texte de la pag
 
 interface-reader-where = Page { $page } sur { $total }
 
+interface-reader-markedOnPage = Page { $page } : les mots cités sont marqués sur l’image de la page et dans « Texte de cette page ».
+
+interface-reader-markedInText = Page { $page } : les mots cités sont marqués dans « Texte de cette page ». Ils n’ont pas pu être marqués sur l’image de la page.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =

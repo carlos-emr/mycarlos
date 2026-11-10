@@ -493,6 +493,10 @@ interface-reader-textFollows = 第 { $page } 頁，共 { $total } 頁。以下�
 
 interface-reader-where = 第 { $page } 頁，共 { $total } 頁
 
+interface-reader-markedOnPage = 第 { $page } 頁：引用的文字已在頁面圖像和「本頁文字」中標出。
+
+interface-reader-markedInText = 第 { $page } 頁：引用的文字已在「本頁文字」中標出，但無法在頁面圖像上標出。
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped = 有 { $count } 個分享項目未接收：myCarlos 只接受 PDF 檔案。

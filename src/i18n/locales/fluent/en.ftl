@@ -346,6 +346,10 @@ interface-reader-textFollows = Page { $page } of { $total }. The page's text fol
 
 interface-reader-where = Page { $page } of { $total }
 
+interface-reader-markedOnPage = Page { $page }: the quoted words are marked on the page picture and in Text on this page.
+
+interface-reader-markedInText = Page { $page }: the quoted words are marked in Text on this page. They could not be marked on the page picture.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =

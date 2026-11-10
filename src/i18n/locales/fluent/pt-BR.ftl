@@ -359,6 +359,10 @@ interface-reader-textFollows = Página { $page } de { $total }. O texto da pági
 
 interface-reader-where = Página { $page } de { $total }
 
+interface-reader-markedOnPage = Página { $page }: as palavras citadas estão marcadas na imagem da página e no texto desta página.
+
+interface-reader-markedInText = Página { $page }: as palavras citadas estão marcadas no texto desta página. Não foi possível marcá-las na imagem da página.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =

@@ -13,6 +13,8 @@
   --teal-line: #b9dcd7;
   --amber: #9a5b00;
   --amber-soft: #fdf1de;
+  --page-mark-line: #9a5b00;
+  --page-mark-fill: rgb(255 196 0 / 0.35);
   --green: #1f6b3a;
   --green-soft: #e6f4ea;
   --red: #a4232b;
@@ -78,6 +80,8 @@
   --teal-line: #3c786c;
   --amber: #f1c47c;
   --amber-soft: #3b2c16;
+  --page-mark-line: #9a5b00;
+  --page-mark-fill: rgb(255 196 0 / 0.35);
   --green: #8cd9a6;
   --green-soft: #183c26;
   --red: #ffadb2;
@@ -129,6 +133,7 @@
   --line: #fff; --control-line: #fff; --metadata-line: #fff;
   --teal: #ffff00; --teal-dark: #ffff7a; --teal-soft: #000; --teal-line: #ffff00;
   --amber: #ffff00; --amber-soft: #000; --warning-ink: #fff; --warning-line: #ffff00;
+  --page-mark-line: #9a5b00; --page-mark-fill: rgb(255 196 0 / 0.35);
   --green: #aaffaa; --green-soft: #000; --green-line: #aaffaa;
   --red: #ff9b9b; --danger-soft: #000; --danger-line: #ff9b9b;
   --blue: #00ffff; --blue-soft: #000; --purple: #ffff00; --purple-soft: #000;
@@ -462,7 +467,24 @@ h1, h2, p { margin: 0; }
 .native-reader-text summary { cursor: pointer; font-weight: 700; }
 .native-reader-text div { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .native-reader-ai-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
-.native-reader-text mark { background: var(--amber-soft); color: var(--ink); }
+/* The marked words: outlined too, so not by colour alone (#292). */
+.native-reader-text mark { background: var(--amber-soft); color: var(--ink); outline: 2px solid var(--amber); outline-offset: 1px; border-radius: 2px; }
+/* The page picture, and the quoted words' boxes over it (#292). A box is a
+   fraction of the picture, so it stays on its words at every zoom. The picture
+   is always white paper, so every theme gives the boxes the same colours: an
+   outline with at least 3:1 against white paper and black ink, and a light
+   fill the ink shows through. Forced colours use Highlight. */
+.native-reader-picture { position: relative; display: inline-block; vertical-align: top; }
+/* The wrapper takes the picture's own size: the boxes cover it exactly. */
+.native-reader-picture img { display: block; }
+.native-reader-boxes { position: absolute; inset: 0; pointer-events: none; }
+.native-reader-boxes > span { position: absolute; box-sizing: border-box; outline: 3px solid var(--page-mark-line); outline-offset: 1px; border-radius: 2px; background: var(--page-mark-fill); mix-blend-mode: multiply; }
+@media (forced-colors: active) { .native-reader-boxes > span { mix-blend-mode: normal; } }
+/* While Show in document marks a quote, the text and the AI panel give the
+   picture room, so that a short or narrow window keeps the words in view in
+   both places (#292). */
+.native-reader-highlighting .native-reader-text { max-height: 20vh; }
+.native-reader-highlighting .native-reader-ai { max-height: 25vh; }
 .native-reader-ai { max-height: 40vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
 .native-reader-ai h3 { margin: 0 0 6px; font-size: 1rem; }
 .native-reader-ai p { max-width: 70ch; margin: 4px 0; }
@@ -1254,6 +1276,7 @@ button:disabled, .button:disabled, .button[aria-disabled="true"] { opacity: 1; b
     --line: ButtonBorder; --control-line: ButtonBorder; --focus: Highlight;
     --teal: LinkText; --teal-dark: LinkText; --teal-soft: Canvas; --teal-line: ButtonBorder;
     --amber: CanvasText; --amber-soft: Canvas; --warning-ink: CanvasText; --warning-line: ButtonBorder;
+    --page-mark-line: Highlight; --page-mark-fill: transparent;
     --green: CanvasText; --green-soft: Canvas; --green-line: ButtonBorder;
     --red: CanvasText; --danger-soft: Canvas; --danger-line: ButtonBorder;
     --blue: CanvasText; --blue-soft: Canvas; --purple: CanvasText; --purple-soft: Canvas;

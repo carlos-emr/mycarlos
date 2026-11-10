@@ -372,6 +372,10 @@ interface-reader-textFollows = Strona { $page } z { $total }. Poniżej znajduje 
 
 interface-reader-where = Strona { $page } z { $total }
 
+interface-reader-markedOnPage = Strona { $page }: cytowane słowa są zaznaczone na obrazie strony i w sekcji „Tekst na tej stronie”.
+
+interface-reader-markedInText = Strona { $page }: cytowane słowa są zaznaczone w sekcji „Tekst na tej stronie”. Nie udało się ich zaznaczyć na obrazie strony.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =

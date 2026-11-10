@@ -2810,6 +2810,12 @@ export function VaultLibrary({
                   })
               }
               cancelView={() => void bridge.cancelView().catch(() => undefined)}
+              pageBoxes={
+                computer && bridge.pageBoxes
+                  ? (page, span, password) =>
+                      bridge.pageBoxes!(readerRecord.id, page, span, password)
+                  : undefined
+              }
               onClose={() => setReaderRecordId(null)}
               ai={
                 computer
