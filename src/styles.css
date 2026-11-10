@@ -2870,39 +2870,49 @@ p {
   width: 16px;
   height: 16px;
 }
+/* #121: "Sort by" stays in view before its choices, each its own Tab stop. With
+   large text on a narrow window, the choices go under the label and then under
+   each other, each whole: the window hides what runs past its edge. A 1px gap
+   over the line colour draws the dividers both across and down. */
 .native-sort-choice {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0 14px;
-  margin: 0;
-  padding: 0;
-  border: 0;
+  gap: 0 8px;
+  min-width: 0;
+  max-width: 100%;
 }
-.native-sort-choice legend {
-  float: left;
-  margin-right: 2px;
-  padding: 0;
+.native-sort-label {
   color: var(--ink-soft);
   font-weight: 700;
 }
-.native-sort-choice label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.native-sort-segment {
+  flex-wrap: wrap;
+  gap: 1px;
+  max-width: 100%;
+  background: var(--line);
+}
+.native-sort-segment button {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 44px;
+  max-width: 100%;
   min-height: 44px;
+  padding-inline: 12px;
+  background: var(--paper);
   color: var(--ink);
+  font: inherit;
   font-weight: 600;
-  cursor: pointer;
 }
-.native-sort-choice input {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin: 0;
+.native-sort-segment button + button {
+  border-left: 0;
 }
-/* With words on List and Grid, the radios and the segment can need more than a
-   narrow window's width, so the segment moves to its own line, whole. */
+/* Drawn inside the button, so the segment's rounded corners do not cut it off. */
+.native-sort-segment button:focus-visible {
+  outline-offset: -4px;
+}
+/* With words on List and Grid, the sort choices and the view segment can need
+   more than a narrow window's width, so the segment moves to its own line, whole. */
 .native-vault-page .view-controls {
   flex-wrap: wrap;
   row-gap: 0;
@@ -3382,8 +3392,7 @@ p {
    button's line breaks, as names do. A folder's item count wraps like its name.
    Only where the sidebar is hidden, so the computer's layout is unchanged. */
 @media (max-width: 56.25em) {
-  .native-vault-page
-    :is(.view-controls, .native-sort-choice, .native-top-level-narrow) {
+  .native-vault-page :is(.view-controls, .native-top-level-narrow) {
     min-width: 0;
     max-width: 100%;
   }
@@ -3747,6 +3756,12 @@ button:disabled,
     outline: 3px solid Highlight;
     outline-offset: 2px;
   }
+  /* A selected segment button already has a Highlight ring; with focus it gets a
+     different one, so a keyboard user can tell focus from selection (#121). */
+  .native-vault-page .segment button[aria-pressed="true"]:focus-visible {
+    outline: 3px solid CanvasText;
+    outline-offset: -6px;
+  }
   .text-size-box input[aria-invalid="true"] {
     outline: 2px solid CanvasText;
   }
@@ -3964,6 +3979,13 @@ button:disabled,
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* A section's heading, its intro close under it, then a clear gap before the
+   form, box or buttons that follow: one rule for every such section (Clinic
+   documents, and the AI helper in Security and on its own page). After the
+   rules above, so the gap also replaces the inline form's pull-up margin. */
+:where(h1, h2, h3):has(+ .section-intro) { margin-block-end: 0; }
+.section-intro { margin-block-start: 4px; }
+.section-intro + * { margin-block-start: 14px; }
 /* Visible choices before opening a vault, wrapping instead of a dropdown. */
 .language-compact {
   display: grid;

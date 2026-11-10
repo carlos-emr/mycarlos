@@ -616,8 +616,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = Esta foto já está no cof
 
 interface-VaultLibrary-topLevel = Nível principal
 
-interface-VaultLibrary-unlockedLockNow = Desbloqueado · Bloquear agora
-
 interface-VaultLibrary-working = Processando…
 
 kit-keep = Guarde-a em um lugar reservado e longe do dispositivo. Qualquer pessoa com esta chave e uma cópia do seu cofre pode abri-lo. Se você configurar uma nova chave de recuperação, esta não abre mais o cofre neste dispositivo.
@@ -677,6 +675,12 @@ library-items =
     [many] { $count } de itens visíveis na biblioteca
     *[other] { $count } itens visíveis na biblioteca
     }
+
+library-location-documents = Em { $place }: { $documents }.
+
+library-location-summary = Em { $place }: { $folders }, { $documents }.
+
+library-lock-unlocked = Desbloqueado
 
 library-noMatch-help = Tente outra pesquisa.
 
