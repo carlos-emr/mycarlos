@@ -314,6 +314,10 @@ impl From<VaultError> for PublicText {
                     code: "approval_cancelled",
                     message_key: "portal.approvalCancelled",
                 },
+                _ if reason == Some(portal_approval::ApprovalReason::CodeAttempts) => Self {
+                    code: "approval_code_locked",
+                    message_key: "portal.codeLocked",
+                },
                 _ if reason.is_some_and(|r| r.needs_clinic()) => Self {
                     code: "approval_contact_clinic",
                     message_key: "portal.approvalContact",
@@ -338,6 +342,18 @@ impl From<VaultError> for PublicText {
             VaultError::ApprovalStillOpen => Self {
                 code: "approval_still_open",
                 message_key: "portal.approvalStillOpen",
+            },
+            VaultError::ApprovalCodeMismatch => Self {
+                code: "approval_code_mismatch",
+                message_key: "portal.codeMismatch",
+            },
+            VaultError::ApprovalCodeLocked => Self {
+                code: "approval_code_locked",
+                message_key: "portal.codeLocked",
+            },
+            VaultError::ApprovalCodeNotOpen => Self {
+                code: "approval_code_not_open",
+                message_key: "portal.codeNotOpen",
             },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
@@ -2859,6 +2875,49 @@ async fn vault_refresh_device_approval(
         .map_err(Into::into)
 }
 
+/// Why a code the patient typed was not taken (clinic code v1). A code that
+/// is not 9 digits, and a refusal by the portal, are said as such; the rest
+/// as a status check says them.
+fn approval_code_issue(error: VaultError) -> PublicError {
+    use portal_link::LinkError;
+    let (code, message_key) = match &error {
+        VaultError::Invalid => ("approval_code_format", "portal.codeFormat"),
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => {
+            ("approval_code_refused", "portal.codeRefused")
+        }
+        _ => return approval_check_issue(error),
+    };
+    PublicError {
+        code,
+        message_key,
+        record_id: None,
+        note_key: None,
+        retry_after_ms: None,
+    }
+}
+
+/// Takes the code a clinic emailed for a linked device's open request
+/// (clinic code v1). It is checked natively and sent to the portal only if it
+/// matches this clinic; it is never saved or logged, and the typed text is
+/// wiped here once used.
+#[tauri::command]
+async fn vault_submit_approval_code(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+    mut code: String,
+) -> CommandResult<()> {
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = store.submit_approval_code(link_id, &code, session);
+        code.zeroize();
+        result
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(approval_code_issue)
+}
+
 #[tauri::command]
 async fn vault_request_device_approval(
     store: State<'_, Arc<VaultStore>>,
@@ -5161,6 +5220,7 @@ pub fn run() {
             vault_request_device_approval,
             vault_restart_device_approval,
             vault_refresh_device_approval,
+            vault_submit_approval_code,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
