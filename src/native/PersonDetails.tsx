@@ -295,16 +295,21 @@ export function PersonDetailsList({
     dialogChange.current?.(next !== null);
   };
   useEffect(() => () => dialogChange.current?.(false), []);
-  // The library's reminder opens this person's Edit details dialog (#234),
-  // which puts the focus in its first box.
-  useEffect(() => {
-    const person = people.find((p) => p.id === openFor?.profileId);
-    if (!person) return;
+  // A person's Edit details dialog, as their own button and the library's
+  // reminder open it. A person with no details yet (a profile just made)
+  // starts with the date box open; "unknown" is ticked only once a full name
+  // was saved without a date.
+  const showEditFor = (person: PatientProfile) =>
     showEdit({
       id: person.id,
       details: { fullName: person.fullName, birthDate: person.birthDate },
       birthDateUnknown: !person.birthDate && Boolean(person.fullName),
     });
+  // The library's reminder opens this person's Edit details dialog (#234),
+  // which puts the focus in its first box.
+  useEffect(() => {
+    const person = people.find((p) => p.id === openFor?.profileId);
+    if (person) showEditFor(person);
     // `people` only finds the person asked for: a refresh must not reopen it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openFor]);
@@ -406,20 +411,7 @@ export function PersonDetailsList({
                 if (button) editButtons.current.set(person.id, button);
                 else editButtons.current.delete(person.id);
               }}
-              onClick={() =>
-                showEdit({
-                  id: person.id,
-                  details: {
-                    fullName: person.fullName,
-                    birthDate: person.birthDate,
-                  },
-                  // A person with no details yet (a profile just made)
-                  // starts with the date box open; "unknown" is ticked
-                  // only once a full name was saved without a date.
-                  birthDateUnknown:
-                    !person.birthDate && Boolean(person.fullName),
-                })
-              }
+              onClick={() => showEditFor(person)}
             >
               {t("personDetails.edit")}
             </button>
