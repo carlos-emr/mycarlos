@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
@@ -341,6 +341,53 @@ describe("Notices after the first clinic link", () => {
     await user.click(screen.getByRole("button", { name: "Not now" }));
     await waitFor(() => expect(document.activeElement).toBe(heading));
   });
+
+  it.each<[string, Status | null]>([
+    [
+      "notices are unsupported",
+      { ...offStatus, supported: false, permission: "unavailable" },
+    ],
+    [
+      "both are already on",
+      { ...offStatus, enabled: true, automaticChecksEnabled: true },
+    ],
+    // No answer: the status cannot be read.
+    ["their status cannot be read", null],
+  ])(
+    "leaves the focus where the patient put it when nothing is offered, as when %s",
+    async (_why, answered) => {
+      // The answer comes once the patient is typing in the form again.
+      let answer!: () => void;
+      native.invoke.mockImplementation(
+        (command: string) =>
+          new Promise((resolve, reject) => {
+            if (command !== "vault_notification_status") return resolve({});
+            answer = () =>
+              answered
+                ? resolve({ ...answered })
+                : reject(new Error("FAKE no native side"));
+          }),
+      );
+      linkForm([], [link]);
+      const user = await submitLink();
+      const box = screen.getByLabelText(humanText("Linking code"));
+      await waitFor(() => expect(box).toBeEnabled());
+      await waitFor(() =>
+        expect(native.invoke).toHaveBeenCalledWith(
+          "vault_notification_status",
+          { locale: "en" },
+        ),
+      );
+      await user.type(box, "FAKE");
+      await act(async () => answer());
+      // A frame for any focus move the closing asked for.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await user.keyboard("-CODE");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(document.activeElement).toBe(box);
+      expect(box).toHaveValue("FAKE-CODE");
+    },
+  );
 
   it("is not offered for a second clinic, nor when the link fails", async () => {
     const second = { ...link, id: "fake-link-2", clinicName: "FAKE Clinic 2" };
