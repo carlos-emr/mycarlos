@@ -1299,11 +1299,11 @@ describe("Show in document also marks the page picture (#292)", () => {
     return { user, unmount };
   };
   const overlay = () =>
-    document.querySelector<HTMLElement>("[data-testid=reader-boxes]");
+    document.querySelector<HTMLElement>(".native-reader-boxes");
   const status = () =>
-    Array.from(document.querySelectorAll('[role="status"]')).map((node) =>
-      visibleText(node.textContent ?? ""),
-    );
+    Array.from(
+      document.querySelectorAll('[role="status"], [aria-live="polite"]'),
+    ).map((node) => visibleText(node.textContent ?? ""));
 
   it("draws the quote's boxes over the picture, hidden from screen readers, while the marked text keeps the focus", async () => {
     const pageBoxes = vi.fn(async () => ({

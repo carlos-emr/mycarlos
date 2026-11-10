@@ -656,11 +656,7 @@ function ReadingDocument({
                   {/* The quoted words on the picture: for seeing only. The
                   marked text below is what a screen reader reads (#292). */}
                   {boxes && boxes.length > 0 && (
-                    <span
-                      className="native-reader-boxes"
-                      aria-hidden="true"
-                      data-testid="reader-boxes"
-                    >
+                    <span className="native-reader-boxes" aria-hidden="true">
                       {boxes.map((box, index) => (
                         <span
                           key={index}
@@ -673,8 +669,10 @@ function ReadingDocument({
                 </span>
               )}
             </div>
+            {/* Said once the boxes are known (#292). A live region of its
+            own, beside the reader's status, which says the page. */}
             {pageBoxes && (
-              <p className="sr-only" role="status">
+              <p className="sr-only" id="reader-marked" aria-live="polite">
                 {boxes && highlight
                   ? translateNow(
                       boxes.length > 0
