@@ -10,7 +10,7 @@ import type { ReaderAi } from "./ReaderAiPanel";
 import type { KeptAnswers } from "../ai/kept";
 import type { SourceSpan } from "../documentText";
 import { nativeLocalModel, notInstalledModel } from "../ai/localModel";
-import { LOCALES, translate } from "../i18n";
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { ModelCancelled, type LocalModel } from "../ai/types";
 import {
   FAKE_MODEL,
@@ -967,8 +967,12 @@ describe("the reader's AI helper", () => {
 
   // Refused as the native side refuses (lib.rs ai_error): a code and the key
   // of its words, passed on by the real bridge.
-  const refusingModel = (code: string, messageKey: string) => {
-    const refusal = { code, messageKey, message: "FAKE native words" };
+  const refusingModel = (code: string, messageKey?: string) => {
+    const refusal = {
+      code,
+      message: "FAKE native words",
+      ...(messageKey === undefined ? {} : { messageKey }),
+    };
     return nativeLocalModel({
       aiModelStatus: async () => ({ state: "installed", model: FAKE_MODEL }),
       aiSummarize: () => Promise.reject(refusal),
@@ -1021,6 +1025,45 @@ describe("the reader's AI helper", () => {
       expect((await screen.findByRole("alert")).textContent).toBe(words);
     },
   );
+
+  // The code alone picks the words: not the key a refusal carries, nor its
+  // message.
+  it.each([
+    ["aiStorage", "ai.failed", OWN_WORDS[0][2]],
+    ["aiStorage", undefined, OWN_WORDS[0][2]],
+    ["aiMemory", "ai.error.storage", OWN_WORDS[1][2]],
+  ] as const)(
+    "says the words of %s whatever key the refusal carries (%s)",
+    async (code, messageKey, words) => {
+      renderReader(refusingModel(code, messageKey));
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe(words);
+      expect(alert.textContent).not.toContain("FAKE native words");
+    },
+  );
+
+  it("says a refusal's own words in the language chosen after it", async () => {
+    renderReader(refusingModel("aiMemory", "ai.error.memory"));
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Word or phrase" }),
+      "eGFR",
+    );
+    await user.click(screen.getByRole("button", { name: "Explain" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      OWN_WORDS[1][2],
+    );
+    act(() => setLocaleOverride("fr"));
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+      "Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.",
+    );
+  });
 
   // Only these codes choose the words: any other refusal, even one naming
   // other words, says the helper could not finish.
