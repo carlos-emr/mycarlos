@@ -268,6 +268,9 @@ pub(crate) struct SummaryResult {
     pub(crate) model: ModelInfo,
     pub(crate) last_page: u32,
     pub(crate) last_page_cut: bool,
+    /// The document's last page, read after a gap (left out when there was none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tail_page: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -488,6 +491,7 @@ impl ModelRuntime {
             model: summary.model,
             last_page: summary.last_page,
             last_page_cut: summary.last_page_cut,
+            tail_page: summary.tail_page,
         })
     }
 
@@ -890,6 +894,7 @@ mod tests {
                 model: model.clone(),
                 last_page: 3,
                 last_page_cut: false,
+                tail_page: None,
             })
             .unwrap(),
             serde_json::json!({
@@ -898,6 +903,21 @@ mod tests {
                 "lastPage": 3,
                 "lastPageCut": false
             })
+        );
+        // A last page read after a gap is named; without one the shape is unchanged.
+        assert_eq!(
+            serde_json::to_value(SummaryResult {
+                sentences: vec![Sentence {
+                    text: "t".to_owned(),
+                    quote: String::new()
+                }],
+                model: model.clone(),
+                last_page: 3,
+                last_page_cut: false,
+                tail_page: Some(9),
+            })
+            .unwrap()["tailPage"],
+            9
         );
         assert_eq!(
             serde_json::to_value(ExplainResult {
@@ -1247,6 +1267,8 @@ pub mod engine_testing {
         /// The index of the last page read, and whether only its start fitted.
         pub last_page: u32,
         pub last_page_cut: bool,
+        /// The document's last page, read after a gap.
+        pub tail_page: Option<u32>,
         /// The answer's `Stats` as the helper reports them: counts and times, never words.
         pub stats: Option<serde_json::Value>,
         /// The time limit the runner gave this answer.
@@ -1397,6 +1419,7 @@ pub mod engine_testing {
                 sentences,
                 last_page: summary.last_page,
                 last_page_cut: summary.last_page_cut,
+                tail_page: summary.tail_page,
                 stats: self
                     .runner
                     .last_stats()

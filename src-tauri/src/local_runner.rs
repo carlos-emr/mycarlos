@@ -425,6 +425,9 @@ pub(crate) struct Summary {
     pub(crate) last_page: u32,
     /// Only the start of that page fitted.
     pub(crate) last_page_cut: bool,
+    /// The document's last page, when the model read it after a gap: the pages it read are the
+    /// first ones up to `last_page`, then this one.
+    pub(crate) tail_page: Option<u32>,
     /// How many quotes were not in the pages read, and were emptied.
     pub(crate) unlocated: usize,
     /// What those quotes said, for measuring a model's quoting (tests print them); never shown.
@@ -572,6 +575,9 @@ struct Answer {
     last_page: Option<u32>,
     #[serde(default)]
     last_page_cut: bool,
+    /// The document's last page, read after a gap.
+    #[serde(default)]
+    tail_page: Option<u32>,
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
@@ -861,7 +867,17 @@ impl Runner {
         else {
             return Err(RunnerError::Protocol("last page not sent".to_owned()));
         };
-        let text = request.pages[..=read]
+        let mut read_pages: Vec<&Page> = request.pages[..=read].iter().collect();
+        if let Some(tail_page) = answer.tail_page {
+            let Some(tail) = request.pages[read + 1..]
+                .iter()
+                .find(|page| page.index == tail_page)
+            else {
+                return Err(RunnerError::Protocol("tail page not sent".to_owned()));
+            };
+            read_pages.push(tail);
+        }
+        let text = read_pages
             .iter()
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
@@ -882,6 +898,7 @@ impl Runner {
             model,
             last_page,
             last_page_cut: answer.last_page_cut,
+            tail_page: answer.tail_page,
             unlocated: unlocated_quotes.len(),
             unlocated_quotes,
         })
@@ -2275,6 +2292,29 @@ mod tests {
             let summary = runner.summarize(runner.ticket(), &request()).unwrap();
             assert_eq!(summary.last_page, 0);
             assert_eq!(summary.unlocated, 1);
+        }
+
+        #[test]
+        fn a_last_page_read_after_a_gap_comes_back_and_its_quotes_are_located() {
+            let runner = Runner::new(config(&["--head-tail"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!((summary.last_page, summary.tail_page), (0, Some(2)));
+            // The quote from page 3 (index 2) is found in what was read.
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|sentence| sentence.quote.contains("FAKE page three")));
+            assert_eq!(summary.unlocated, 0);
+            for tail in ["1", "0"] {
+                let wrong = Runner::new(config(&["--head-tail", "--tail-page", tail], GIB));
+                wrong.start(&Fixed(Some(8 * GIB))).unwrap();
+                assert_eq!(
+                    wrong.summarize(wrong.ticket(), &request()),
+                    Err(RunnerError::Protocol("tail page not sent".to_owned())),
+                    "tail page {tail}"
+                );
+            }
         }
 
         #[test]
