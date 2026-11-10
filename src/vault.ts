@@ -46,7 +46,6 @@ export interface VaultRecord {
   folderIds: string[];
   displayName: string;
   sourceLabel: string;
-  sourceKind?: "manual";
   mediaType: string;
   plaintextSize: number;
   importedAtMs: number;
@@ -275,7 +274,6 @@ export interface ReceivedFile {
   name: string;
   /** The label the document will carry once added. */
   sourceLabel: string;
-  sourceKind?: "manual";
 }
 
 /** What could not be received since the page last asked. Counts only. */
