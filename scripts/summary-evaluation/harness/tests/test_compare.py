@@ -226,6 +226,16 @@ class RunTest(unittest.TestCase):
         scored = compare.score_document(doc, entry, "en")
         self.assertEqual((scored["cut"], scored["gap"]), (True, False))
 
+    def test_a_repeat_of_the_same_build_matches_token_for_token(self):
+        first = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        again = write_run(self.folder.name, "B0R", run_lines("B0R", BASE))
+        self.assertEqual(compare.repeat(first, again), (["fake-letter"], [], 1, []))
+        changed = run_lines("B0R", BASE)
+        changed[1]["result"]["stats"]["answerHash"] = 2
+        changed[0]["build"] = dict(fingerprint="0" * 64)
+        same, different, compared, problems = compare.repeat(first, write_run(self.folder.name, "B0X", changed))
+        self.assertEqual((same, different, problems), ([], ["fake-letter"], ["build"]))
+
     def test_the_review_sheet_is_never_overwritten(self):
         _, out = self.score(run_lines("E1", BETTER))
         sheet = out / "review.csv"

@@ -10,6 +10,7 @@ wrong statements only flag sentences for that review; they never decide on their
   compare.py check                         validate the document set
   compare.py prepare --out DIR             write the run's input documents (<id>.json)
   compare.py score --run A.jsonl [--run B.jsonl ...] --out DIR [--review FILLED.csv]
+  compare.py repeat --run A.jsonl --run B.jsonl   same build, same answers token for token?
 
 The first run given is the baseline the others are compared with (see HARNESS.md).
 """
@@ -459,6 +460,20 @@ def score(run_paths, out, docs, review=None):
     return summaries, decisions
 
 
+def repeat(first, second):
+    """Whether two runs of one build and model gave the same answers, token for token, on the
+    documents both answered: (same, different, compared, problems)."""
+    (meta_a, entries_a), (meta_b, entries_b) = read_run(first), read_run(second)
+    problems = [key for key in ("build", "lang", "threads") if meta_a.get(key) != meta_b.get(key)]
+    if meta_a.get("model", {}).get("sha256") != meta_b.get("model", {}).get("sha256"):
+        problems.append("model")
+    same, different = [], []
+    for doc_id in sorted(set(entries_a) & set(entries_b)):
+        hashes = [((e.get("result") or {}).get("stats") or {}).get("answerHash") for e in (entries_a[doc_id], entries_b[doc_id])]
+        (same if hashes[0] is not None and hashes[0] == hashes[1] else different).append(doc_id)
+    return same, different, len(same) + len(different), problems
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--documents", default=str(DOCUMENTS))
@@ -472,7 +487,15 @@ def main(argv=None):
     sc.add_argument("--run", action="append", required=True)
     sc.add_argument("--out", required=True)
     sc.add_argument("--review")
+    rep = sub.add_parser("repeat")
+    rep.add_argument("--run", action="append", required=True)
     args = parser.parse_args(argv)
+    if args.command == "repeat":
+        if len(args.run) != 2:
+            raise SystemExit("repeat compares exactly two runs")
+        same, different, compared, problems = repeat(*args.run)
+        print(json.dumps(dict(compared=compared, same=same, different=different, not_comparable=problems)))
+        return 0 if compared and not different and not problems else 1
     docs = load_documents(args.documents, args.fixtures)
     if args.command == "check":
         problems = {doc_id: check_document(doc) for doc_id, doc in docs.items()}
