@@ -1894,6 +1894,8 @@ ai-error-memory = Ahora mismo no hay suficiente memoria libre para el asistente 
 
 ai-error-busy = Se está agregando o quitando el modelo del asistente de IA. Intente de nuevo cuando termine.
 
+ai-error-storage = No se pudo leer el modelo del asistente de IA en este equipo. Intente de nuevo. Si sigue pasando, quite el modelo en Configuración, en Asistente de IA, y vuelva a agregarlo.
+
 ai-summary-pagesMissing = Algunas páginas no se pudieron leer completas, así que puede que este resumen omita partes.
 
 ai-summary-noSource = No se encontró la fuente

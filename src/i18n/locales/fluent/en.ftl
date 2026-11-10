@@ -1857,6 +1857,8 @@ ai-error-memory = There isn't enough free memory for the AI helper right now. Cl
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
 
+ai-error-storage = The AI helper's model could not be read from this computer. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.
+
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 
 ai-summary-noSource = No source found

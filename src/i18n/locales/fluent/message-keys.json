@@ -816,6 +816,7 @@
   "ai.failed",
   "ai.error.memory",
   "ai.error.busy",
+  "ai.error.storage",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
   "aiHelper.notice.title",
