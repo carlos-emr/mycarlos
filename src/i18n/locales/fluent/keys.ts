@@ -424,7 +424,6 @@ export const MESSAGE_KEYS = [
   "readingAid.title",
   "readingAid.unavailable",
   "record.kind.document",
-  "record.source.manual",
   "recover.intro",
   "recover.key.format",
   "recover.key.label",
@@ -1533,7 +1532,6 @@ const FLUENT_IDS_BY_KEY = {
   "readingAid.title": "readingAid-title",
   "readingAid.unavailable": "readingAid-unavailable",
   "record.kind.document": "record-kind-document",
-  "record.source.manual": "record-source-manual",
   "recover.intro": "recover-intro",
   "recover.key.format": "recover-key-format",
   "recover.key.label": "recover-key-label",
@@ -2692,7 +2690,6 @@ export interface MessageArgsByKey {
   "readingAid.title": undefined;
   "readingAid.unavailable": undefined;
   "record.kind.document": undefined;
-  "record.source.manual": undefined;
   "recover.intro": undefined;
   "recover.key.format": undefined;
   "recover.key.label": undefined;
