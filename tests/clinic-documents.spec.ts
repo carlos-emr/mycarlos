@@ -3,9 +3,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 // #124 review points: Clinic documents in Security at 360 px, at 100% and
 // 200% default text. The native side is faked with one FAKE clinic whose
-// device is approved; any command this view should not send fails the test.
-async function fakeNative(page: Page, locale: string) {
-  await page.addInitScript((locale) => {
+// device is approved, or with no clinic linked; any command this view should
+// not send fails the test.
+async function fakeNative(page: Page, locale: string, linked = true) {
+  const setup = { locale, linked };
+  await page.addInitScript(({ locale, linked }) => {
     localStorage.setItem("mycarlos.language.v1", locale);
     const link = {
       id: "fake-link",
@@ -30,7 +32,7 @@ async function fakeNative(page: Page, locale: string) {
       recovery: null,
       recoveryKeySetAtMs: 1,
       portalLinkingEnabled: true,
-      portalLinks: [link],
+      portalLinks: linked ? [link] : [],
     };
     const unexpected: string[] = [];
     Reflect.set(window, "__FAKE_UNEXPECTED__", unexpected);
@@ -47,7 +49,7 @@ async function fakeNative(page: Page, locale: string) {
         throw new Error(`Unexpected IPC command: ${command}`);
       },
     });
-  }, locale);
+  }, setup);
 }
 
 async function openSecurity(page: Page, locale: string) {
@@ -129,7 +131,9 @@ test("offers a device name in the patient's language", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "one window size is enough");
-  await fakeNative(page, "fr");
+  // No clinic linked yet: the link form, with its device name, is offered
+  // first (#145).
+  await fakeNative(page, "fr", false);
   await page.goto("/");
   await openSecurity(page, "fr");
   await expect(
