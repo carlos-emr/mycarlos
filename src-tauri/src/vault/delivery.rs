@@ -6805,7 +6805,7 @@ mod approval_recovery_tests {
         assert_eq!(
             fetched.into_inner().unwrap(),
             vec![
-                "/api/mycarlos/deliveries?limit=50".to_owned(),
+                "/api/mycarlos/deliveries?limit=50&accept=reading-aid/1".to_owned(),
                 format!("/api/mycarlos/deliveries/{}", first.delivery_id),
             ]
         );
