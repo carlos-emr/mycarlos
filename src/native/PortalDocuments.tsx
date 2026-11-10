@@ -12,12 +12,19 @@ import {
   useTextState,
   message,
   deferredText,
+  resolveText,
   t as translateNow,
   type MessageKey,
   type UiText,
 } from "../i18n";
+import { NoticesAfterLink } from "./NoticesAfterLink";
 import { hasVaultErrorCode, vaultErrorMessage } from "../vault";
-import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
+import type {
+  VaultBridge,
+  VaultSnapshot,
+  PortalLinkSummary,
+  SnapshotCapture,
+} from "../vault";
 import { checkClinicDocuments, documentCheckText } from "./documentCheck";
 import { useModalFocus } from "../useModalFocus";
 import {
@@ -47,6 +54,7 @@ interface Props {
   refresh: () => Promise<VaultSnapshot>;
   setNotice: (text: UiText) => void;
   compact?: boolean;
+  showCheck?: boolean;
   /** Where the "Link another clinic" dialog is drawn: beside the library's
    * other dialogs, outside the page it makes inert while one is open (#145).
    * Without it, the dialog is drawn in place. */
@@ -113,6 +121,11 @@ function LinkClinicDialog({
   );
 }
 
+/** The first link that has finished linking (an incomplete one has not).
+ * From the snapshot only, on purpose: a link the portal later says was removed
+ * still counts, so live state alone never makes a vault look newly linked. */
+const workingLink = (links: PortalLinkSummary[] | undefined) =>
+  (links ?? []).find((link) => !link.incomplete) ?? null;
 /** What a device's card says about its approval: a message, or the error
  * an automatic check failed with. Only the saved, verified state says the
  * clinic approved it; what the latest automatic check found (`live`) only
@@ -186,6 +199,7 @@ export function PortalDocuments({
   refresh,
   setNotice,
   compact = false,
+  showCheck = true,
   dialogHost,
   onDialogChange,
 }: Props) {
@@ -194,6 +208,26 @@ export function PortalDocuments({
   const [code, setCode] = useState("");
   const [device, setDevice] = useState("myCarlos");
   const [person, setPerson] = useState("");
+  // The link the notices step follows, while it is offered.
+  const [offerNotices, setOfferNotices] = useState<string | null>(null);
+  // The first working clinic link (#235): when the vault, open here, goes from
+  // no working link to one, document notices are offered once. Watching the
+  // vault rather than one button keeps it right whichever action made the link.
+  // Only the full panel offers it, so a compact copy never opens a second one.
+  // Links not known yet (linking off, or no list in this snapshot) are not
+  // "no link": an already linked vault must not look newly linked at unlock.
+  const firstWorking =
+    snapshot.portalLinkingEnabled === true && snapshot.portalLinks !== undefined
+      ? (workingLink(snapshot.portalLinks)?.id ?? "")
+      : null;
+  const hasWorkingLink = firstWorking === null ? null : firstWorking !== "";
+  const hadWorkingLink = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (compact || hasWorkingLink === null) return;
+    if (hadWorkingLink.current === false && hasWorkingLink && firstWorking)
+      setOfferNotices(firstWorking);
+    hadWorkingLink.current = hasWorkingLink;
+  }, [hasWorkingLink, firstWorking, compact]);
   // The panel's own status line: a copy result, or what an automatic check
   // found that changed. Read out politely; nothing here takes focus. A
   // check's change is already on the device's card, so it is only heard.
@@ -201,10 +235,27 @@ export function PortalDocuments({
   const [statusText, setStatusText] = useTextState();
   const [statusHeardOnly, setStatusHeardOnly] = useState(false);
   const statusLine = { text: statusText, heardOnly: statusHeardOnly };
+  const statusOwnerRef = useRef<{
+    capture: SnapshotCapture;
+    partial: boolean;
+  } | null>(null);
   const setStatusLine = (next: { text: UiText; heardOnly?: boolean }) => {
     setStatusText(next.text);
     setStatusHeardOnly(Boolean(next.heardOnly));
   };
+  useEffect(() => {
+    const owner = statusOwnerRef.current;
+    if (
+      owner &&
+      (owner.capture.epoch !== snapshot.capture.epoch ||
+        (owner.partial
+          ? owner.capture.sequence <= snapshot.capture.sequence
+          : owner.capture.sequence < snapshot.capture.sequence))
+    ) {
+      statusOwnerRef.current = null;
+      if (statusHeardOnly) setStatusLine({ text: "" });
+    }
+  }, [snapshot.capture.epoch, snapshot.capture.sequence, statusHeardOnly]);
   const [connecting, setConnecting] = useState(false);
   const [focusLink, setFocusLink] = useState<string | null>(null);
   // "Link another clinic" (#145): its dialog, and where focus goes once a
@@ -219,7 +270,7 @@ export function PortalDocuments({
   const [approvalCodes, setApprovalCodes] = useState<Record<string, string>>(
     {},
   );
-  const [codeIssues, setCodeIssues] = useState<Record<string, string>>({});
+  const [codeIssues, setCodeIssues] = useState<Record<string, UiText>>({});
   const submitting = useRef(false);
   const codeRevision = useRef(0);
   const submittedRevision = useRef<number | null>(null);
@@ -308,7 +359,13 @@ export function PortalDocuments({
   // Said once, when an automatic check changes what a card says (#131). A
   // check that finds nothing new says nothing; nor does the first check
   // confirming that the portal has a request the card already calls saved.
-  const said = ({ before, after, recovery }: CheckChange) => {
+  const said = ({
+    before,
+    after,
+    recovery,
+    capture,
+    afterCapture,
+  }: CheckChange) => {
     const focused = document.activeElement;
     if (
       focused &&
@@ -330,6 +387,11 @@ export function PortalDocuments({
     )
       return;
     const several = links.length > 1;
+    statusOwnerRef.current = capture
+      ? { capture, partial: true }
+      : afterCapture
+        ? { capture: afterCapture, partial: false }
+        : null;
     setStatusLine({
       text: deferredText(() =>
         several
@@ -388,6 +450,7 @@ export function PortalDocuments({
   });
   const polling = useApprovalPolling({
     links,
+    capture: snapshot.capture,
     poll,
     waits,
     enabled: available && !compact && !readOnly,
@@ -435,7 +498,7 @@ export function PortalDocuments({
       {t(working && compact ? "portal.working" : "portal.check")}
     </button>
   );
-  if (compact) return links.length > 0 ? checkButton : null;
+  if (compact) return showCheck && links.length > 0 ? checkButton : null;
   /** Sends the link form; false when nothing was sent. */
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -563,7 +626,7 @@ export function PortalDocuments({
         known = waitingNow();
         if (shown.current) {
           setApprovalCodes((codes) => ({ ...codes, [link.id]: "" }));
-          setStatusLine({ text: t("portal.codeSubmitted") });
+          setStatusLine({ text: message("portal.codeSubmitted") });
         }
       } catch (error) {
         if (isRateLimited(error))
@@ -580,12 +643,14 @@ export function PortalDocuments({
         if (shown.current) {
           setCodeIssues((issues) => ({
             ...issues,
-            [link.id]: vaultErrorMessage(error),
+            [link.id]: deferredText(() => vaultErrorMessage(error)),
           }));
           if (final) {
             // The form may go with the next state: also said in the panel.
             setApprovalCodes((codes) => ({ ...codes, [link.id]: "" }));
-            setStatusLine({ text: vaultErrorMessage(error) });
+            setStatusLine({
+              text: deferredText(() => vaultErrorMessage(error)),
+            });
           }
         }
       } finally {
@@ -796,7 +861,7 @@ export function PortalDocuments({
                     {t("portal.codeSubmit")}
                   </button>
                   <p id={`portal-code-issue-${link.id}`} aria-live="polite">
-                    {codeIssues[link.id] ?? ""}
+                    {resolveText(codeIssues[link.id] ?? "")}
                   </p>
                 </form>
               )}
@@ -904,11 +969,24 @@ export function PortalDocuments({
           statusLine.text
         )}
       </p>
-      {checkButton}
+      {showCheck && checkButton}
       {linkDialogShown &&
         (dialogHost
           ? createPortal(linkDialogShown, dialogHost)
           : linkDialogShown)}
+      {offerNotices && (
+        <NoticesAfterLink
+          onClose={() => {
+            const linked = offerNotices;
+            setOfferNotices(null);
+            // Then to the new clinic's heading, where the panel has one: the
+            // control that made the link may be gone once a clinic is linked.
+            requestAnimationFrame(() =>
+              document.getElementById(`portal-link-title-${linked}`)?.focus(),
+            );
+          }}
+        />
+      )}
     </section>
   );
 }

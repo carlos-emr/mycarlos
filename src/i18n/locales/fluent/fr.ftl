@@ -1544,7 +1544,7 @@ portal-connecting = Connexion et demande d’approbation à la clinique en cours
 
 portal-errorBusy = Une autre opération avec la clinique est en cours. Attendez qu’elle se termine, puis réessayez.
 
-portal-linkedApprovalIssue = Appareil associé, mais la demande d’approbation n’a pas pu être confirmée. L’état de l’appareil, sur la page Sécurité, section Documents de la clinique, indique la marche à suivre.
+portal-linkedApprovalIssue = Appareil associé. L’état de son approbation, sur la page Sécurité, section Documents de la clinique, indique la marche à suivre.
 
 portal-retryApproval = Réessayer la demande d’approbation enregistrée
 
@@ -1605,6 +1605,8 @@ interface-history-approval-refused = Refusée par la clinique
 interface-history-damaged = Une partie de cet historique est endommagée. Les événements après le { $date } ne peuvent pas être vérifiés et ne s’affichent pas.
 
 interface-history-damagedAll = Une partie de cet historique est endommagée. Ses événements ne peuvent pas être vérifiés, donc aucun ne s’affiche.
+
+interface-history-damagedStorageOnly = Une partie du stockage de cet historique est endommagée, mais tous ses événements ont été vérifiés et s’affichent.
 
 interface-history-damagedBefore = Une partie de cet historique est endommagée. Les événements avant le { $date } ne peuvent pas être vérifiés et ne s’affichent pas.
 
@@ -1752,7 +1754,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos conserve 
 
 portal-checkAgain = Pour vérifier de nouveau, choisissez { $button }.
 
-portal-unlockCheckConsent = Chaque fois que vous déverrouillez votre coffre-fort, myCarlos communique avec le portail de la clinique de chaque appareil associé pour vérifier les mises à jour de l’approbation et rechercher de nouveaux documents.
+portal-unlockCheckConsent = Après chaque déverrouillage, myCarlos communique avec les portails des cliniques associées pour vérifier les mises à jour de l’approbation et rechercher de nouveaux documents si la clinique a approuvé l’appareil ou si une demande d’approbation est encore en cours.
 
 portal-unlockChecked = Recherche de nouveaux documents de la clinique effectuée après le déverrouillage.
 
@@ -1809,9 +1811,9 @@ ai-explain-title = Expliquer un terme
 
 ai-notInstalled-title = L’assistant IA n’est pas encore sur cet ordinateur
 
-ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Dans Préférences, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
+ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Dans Paramètres, sous Assistant IA, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
 
-ai-notInstalled-openPreferences = Ouvrir les Préférences
+ai-notInstalled-openPreferences = Ouvrir les paramètres de l’assistant IA
 
 aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.
 
@@ -1831,9 +1833,11 @@ ai-explain-submit = Expliquer
 
 ai-preferences-title = Assistant IA
 
-ai-preferences-body = Explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà ; il reste sur cet ordinateur.
+ai-preferences-body = Explique vos documents en termes simples avec un modèle d’IA qui fonctionne sur cet ordinateur. Téléchargez un des modèles ci-dessous ou ajoutez un fichier correspondant que vous possédez déjà. Les modèles restent sur cet ordinateur.
 
 ai-preferences-notInstalled = Non installé
+
+ai-settings-subtitle = Le fonctionnement de l’assistant IA sur cet ordinateur
 
 ai-model-add = Ajouter un fichier de modèle…
 
@@ -1863,7 +1867,7 @@ ai-model-unsupportedCpu = Le processeur de cet ordinateur n’est pas pris en ch
 
 ai-model-unsupportedPlatform = L’assistant IA n’est pas encore disponible sur ce type d’ordinateur.
 
-ai-model-refusedList = Ce fichier n’est pas accepté par myCarlos. Choisissez le fichier de modèle indiqué ci-dessus.
+ai-model-refusedList = Ce fichier n’est pas accepté par myCarlos. Choisissez un des fichiers de modèle indiqués ci-dessus.
 
 ai-model-refusedHash = Ce n’est pas le fichier attendu. Téléchargez-le de nouveau et ajoutez la nouvelle copie.
 
@@ -1881,6 +1885,14 @@ ai-model-downloadNote = Télécharge un fichier ({ $size } Mo), une seule fois, 
 
 ai-model-downloading = Téléchargement et vérification… { $done } sur { $total } Mo
 
+ai-model-progressName = Téléchargement du modèle
+
+ai-model-progressValue = { $percent }, { $done } sur { $total } Mo
+
+ai-model-stillDownloading = Le modèle est encore en cours de téléchargement.
+
+ai-model-stillChecking = Le fichier du modèle est encore en cours de vérification.
+
 ai-model-refusedNetwork = Le téléchargement n’a pas abouti. Vérifiez votre connexion Internet et réessayez.
 
 ai-model-refusedUnavailable = Le modèle n’est pas disponible à son adresse pour le moment. Réessayez plus tard ou ajoutez un fichier que vous avez déjà.
@@ -1888,6 +1900,15 @@ ai-model-refusedUnavailable = Le modèle n’est pas disponible à son adresse p
 native-filter-models = Fichiers de modèle
 
 ai-working = L’assistant IA travaille…
+
+ai-workingLong = Pour un long document, cela peut prendre plusieurs minutes.
+
+ai-workingFor =
+    { $minutes ->
+    [one] En cours depuis { $minutes } minute.
+    [many] En cours depuis { $minutes } de minutes.
+    *[other] En cours depuis { $minutes } minutes.
+    }
 
 ai-summary-ready = Le résumé est prêt.
 
@@ -1898,6 +1919,8 @@ ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
 ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.
 
 ai-error-busy = Le modèle de l’assistant IA est en cours d’ajout ou de suppression. Réessayez quand ce sera terminé.
+
+ai-error-storage = Le modèle de l’assistant IA n’a pas pu être lu sur cet ordinateur. Réessayez. Si cela continue, supprimez le modèle dans Paramètres, sous Assistant IA, puis ajoutez-le de nouveau.
 
 ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; ce résumé peut donc en omettre des parties.
 
@@ -2099,12 +2122,53 @@ notifications-error = Ce réglage n’a pas pu être enregistré. Les avis sont 
 notifications-unavailable = Les avis de documents ne sont pas disponibles. Ouvrez myCarlos normalement pour consulter vos documents.
 notifications-helpAutomatic = Windows peut afficher un avis générique après l’enregistrement d’un document de la clinique. Ouvrez myCarlos normalement pour le lire.
 notifications-autoAllow = Vérifier automatiquement les documents des cliniques lorsque le coffre est déverrouillé
+notifications-autoNeedsNotices = Autorisez d’abord les avis d’arrivée de documents pour activer cette option.
 notifications-autoHelp = Avec votre accord, myCarlos vérifie les liens enregistrés et approuvés des cliniques lorsque cette application est ouverte et le coffre déverrouillé, avec au moins deux minutes entre les tentatives. Les vérifications peuvent continuer si Windows bloque les avis. Verrouiller le coffre ou fermer l’application arrête les vérifications suivantes.
 notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Documents de la clinique et choisissez Rechercher de nouveaux documents.
 notifications-checkBusy = Une vérification de documents est en cours d’arrêt. Choisissez à nouveau Rechercher de nouveaux documents dans un instant.
+noticesStep-title = Avis de votre clinique
+noticesStep-intro = Votre clinique est associée. myCarlos peut vous avertir quand un nouveau document arrive. Rien n’est activé à moins que vous ne le cochiez.
+noticesStep-later = Vous pouvez les modifier à tout moment dans { $settings }, sous { $preferences } : { $notices }.
+noticesStep-done = Terminé
+noticesStep-notNow = Pas maintenant
 
 ai-summary-again = Résumer à nouveau
 
 ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.
 
 ai-keepFull = Ce document conserve déjà le nombre maximal de réponses de l’IA. Les nouvelles réponses s’affichent, mais ne sont pas conservées.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modèles sur cet ordinateur
+
+ai-models-group = Modèle utilisé
+
+ai-models-inUse = Utilisé
+
+ai-models-installed = Installé
+
+ai-models-addedByYou = Ajouté par vous
+
+ai-models-notDownloaded = Non téléchargé
+
+ai-models-downloading = Téléchargement en cours
+ai-models-installing = Installation en cours
+
+ai-models-download = Télécharger
+
+ai-models-remove = Supprimer
+
+ai-models-help = Le modèle marqué Utilisé rédige les résumés et les explications. Choisir un autre modèle arrête la réponse en cours de rédaction.
+
+ai-models-loading = Lecture de la liste des modèles…
+
+ai-models-loadFailed = La liste des modèles n’a pas pu être lue. Réessayez.
+
+ai-models-retry = Relire la liste des modèles
+
+ai-models-starting = Démarrage du téléchargement…
+
+ai-models-picking = Choisissez un fichier de modèle à ajouter.
+
+ai-models-changed = Le modèle utilisé a été changé

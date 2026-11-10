@@ -12,8 +12,15 @@ type NoticeStatus = {
   permission: "unavailable" | "unknown" | "allowed" | "blocked";
 };
 
-/** Native owns consent, event identity, persistence and the fixed OS message. */
-export function NotificationSetting() {
+/** Native owns consent, event identity, persistence and the fixed OS message.
+ * `headingLevel` 3 when it sits under another heading (the notices step after
+ * the first clinic link); `onSaved` hears each choice native has saved. */
+export function NotificationSetting({
+  headingLevel = 2,
+  onSaved,
+}: { headingLevel?: 2 | 3; onSaved?: () => void } = {}) {
+  const savedRef = useRef(onSaved);
+  savedRef.current = onSaved;
   const { t, locale } = useI18n();
   const id = useId();
   const [status, setStatus] = useState<NoticeStatus | null>(null);
@@ -55,6 +62,7 @@ export function NotificationSetting() {
       .then(
         (value) => {
           if (mounted.current && issued === request.current) setStatus(value);
+          savedRef.current?.();
         },
         () => {
           if (mounted.current && issued === request.current) {
@@ -84,10 +92,17 @@ export function NotificationSetting() {
     status.permission === "unknown" ? `${id}-unknown` : "",
   ].filter(Boolean);
   const describedBy = (helpId: string) => [helpId, ...permissionIds].join(" ");
+  // The automatic checks wait for the notices: said under their box, not only shown greyed out.
+  const needsNotices =
+    status.automaticChecksSupported === true &&
+    status.available &&
+    !status.enabled &&
+    !status.automaticChecksEnabled;
+  const Heading = headingLevel === 3 ? "h3" : "h2";
   return (
     <section className="setting-row">
       <div>
-        <h2>{t("notifications.title")}</h2>
+        <Heading>{t("notifications.title")}</Heading>
         <p id={`${id}-help`}>
           {t(
             status.automaticChecksSupported
@@ -121,7 +136,12 @@ export function NotificationSetting() {
                   ((!status.available || !status.enabled) &&
                     !status.automaticChecksEnabled)
                 }
-                aria-describedby={describedBy(`${id}-auto-help`)}
+                aria-describedby={[
+                  describedBy(`${id}-auto-help`),
+                  needsNotices ? `${id}-auto-needs` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onChange={(event) =>
                   save(
                     "vault_set_automatic_document_checks",
@@ -131,6 +151,12 @@ export function NotificationSetting() {
               />
               <span>{t("notifications.autoAllow")}</span>
             </label>
+            {/* Why the box is greyed out, read with it: it needs the notices first. */}
+            {needsNotices && (
+              <p id={`${id}-auto-needs`}>
+                {t("notifications.autoNeedsNotices")}
+              </p>
+            )}
             {status.automaticChecksEnabled && status.automaticChecksPaused && (
               <p role="status">{t("notifications.autoPaused")}</p>
             )}
