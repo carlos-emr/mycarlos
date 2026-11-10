@@ -1,0 +1,394 @@
+{
+ "id": "new-long-hospital-record",
+ "title": "New: long hospital record (18 pages, about 6k tokens)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "written for the evaluation harness, 10 Nov 2026",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 1 of 18\n\nADMISSION NOTE — General Internal Medicine\nDate of admission: 18 October 2026, 21:40\n\nPatient: Morgan FAKE-Ellison · DOB: 9 February 1952 (74 years) · Health card: 9999990452 (FAKE)\nFamily physician: Dr. Henrietta Fakeham (FAKE), Maple Test Family Health Team\nAdmitting physician: Dr. Ian Sampleton (FAKE), Internal Medicine\n\nReason for admission\nFever, confusion and burning on passing urine for two days. The patient's daughter, who lives with them, found them confused and unsteady this evening and called an ambulance.\n\nHistory of present illness\nMx. FAKE-Ellison was well until three days ago, when they began to pass urine more often, with burning and a feeling of not emptying fully. Two days ago they had shivers and a temperature of 38.9 °C at home. They have eaten and drunk little since. Today they were drowsy and did not recognize the date. There was no fall, no head injury, no cough, no chest pain and no diarrhea.\n\nPast medical history\n- Type 2 diabetes for 18 years, on metformin and gliclazide. Last HbA1c 7.6% in August 2026.\n- Hypertension, on amlodipine and perindopril.\n- Chronic kidney disease stage 3a; usual creatinine about 110 µmol/L.\n- Mild cognitive impairment noted in 2025; lives at home with their daughter and manages their own pills with a weekly dosette.\n- Urinary urge incontinence since a hysterectomy in 1998.\n- Osteoporosis, on weekly alendronate.\n\nMedications before admission\n- Metformin 1000 mg twice daily\n- Gliclazide MR 60 mg once daily\n- Amlodipine 10 mg once daily\n- Perindopril 4 mg once daily\n- Alendronate 70 mg once weekly\n- Vitamin D 1000 units daily\n\nAllergies: sulfa drugs (hives).\n\nExamination\nTemperature 39.2 °C, heart rate 112, blood pressure 96/58, respiratory rate 22, oxygen saturation 95% on room air. Drowsy but rousable, oriented to person only. Dry mouth. Tender over the right flank. Chest clear. Heart sounds normal. No neck stiffness. No focal weakness.\n\nInitial results\nWhite cells 18.4 ×10⁹/L, CRP 212 mg/L, lactate 3.1 mmol/L, creatinine 198 µmol/L, urea 14.2 mmol/L, potassium 5.1 mmol/L, glucose 16.8 mmol/L. Urine dipstick: leukocytes and nitrites positive. Blood and urine cultures sent before antibiotics.\n\nAssessment\nSepsis from a right-sided kidney infection (pyelonephritis), with acute kidney injury on chronic kidney disease and delirium from the infection.\n\nPlan\n- IV fluids: 1 litre of Ringer's lactate now, then by blood pressure and urine output.\n- Ceftriaxone 2 g IV once daily (sulfa allergy noted; no cephalosporin allergy).\n- Hold metformin, perindopril and amlodipine while blood pressure is low and kidney function is poor.\n- Hold gliclazide; insulin sliding scale with glucose checks before meals and at bedtime.\n- Delirium care: daughter may stay, lights and clock in the room, glasses and hearing aid on.\n- Ultrasound of the kidneys tomorrow to look for a blockage or abscess.\n"
+  },
+  {
+   "index": 1,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 2 of 18\n\nEMERGENCY DEPARTMENT RECORD — 18 October 2026\nArrival 19:55 by ambulance. Triage level 2.\n\nParamedic report: found by daughter sitting on the edge of the bed, confused, warm to touch. Blood glucose on scene 17.1 mmol/L. No seizure activity. Given 500 mL of normal saline on the way.\n\nEmergency physician assessment (Dr. Kai FAKE-Brennan): 74-year-old with diabetes and chronic kidney disease, three days of urinary symptoms, two days of fever, and new confusion today. Looks unwell. Temperature 39.2 °C, heart rate 112, blood pressure 96/58 after the first fluid bolus, oxygen saturation 95% on room air. Confusion Assessment Method positive for delirium. Right costovertebral angle tenderness. No meningism. Capillary refill 3 seconds.\n\nInvestigations ordered: complete blood count, electrolytes, creatinine, glucose, lactate, venous blood gas, blood cultures ×2, urinalysis and urine culture, ECG, chest X-ray.\nECG: sinus tachycardia at 110, no acute ischemic changes. Chest X-ray: no pneumonia, no fluid in the lungs.\nVenous blood gas: pH 7.31, bicarbonate 18 mmol/L, lactate 3.1 mmol/L.\n\nTreatment in the emergency department: Ringer's lactate 1 litre over 30 minutes, then a second litre over 1 hour. Ceftriaxone 2 g IV given at 20:50, within one hour of arrival. Acetaminophen 1 g by mouth for fever. Blood pressure improved to 104/62 after fluids.\nDisposition: admitted to General Internal Medicine under Dr. Sampleton.\n"
+  },
+  {
+   "index": 2,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 3 of 18\n\nNURSING ADMISSION ASSESSMENT — 18 October 2026, 23:10\n\nLives with: daughter (Riley FAKE-Ellison), in a two-storey house; bedroom upstairs, bathroom on both floors.\nMobility before admission: independent indoors with a cane; uses a walker outdoors. One fall in the past year, without injury.\nActivities of daily living: independent with washing and dressing; the daughter helps with shopping and fills the weekly dosette.\nContinence: urge incontinence, uses pads at night.\nSkin: intact; Braden score 15 (moderate risk). Heels offloaded.\nNutrition: usual weight 64 kg; weighed today 61.5 kg. Poor intake for 3 days. Dietitian referral made.\nCognition: confused tonight; usually oriented. Wears glasses and a hearing aid in the left ear.\nBelongings: glasses, hearing aid, dentures (upper plate), cane.\nAdvance care planning: full treatment; the daughter is the substitute decision-maker.\nFalls risk: high (confusion, urgency, cane). Bed in low position, alarm on, hourly rounding.\n"
+  },
+  {
+   "index": 3,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 4 of 18\n\nPROGRESS NOTE — 19 October 2026 (Hospital day 1)\nInternal Medicine, Dr. Ian Sampleton (FAKE)\n\nSubjective\nStill feverish overnight, 38.6 °C. Drowsy in the morning, more alert by noon. Took small sips of fluid. Urine output 25 mL per hour after 2.5 litres of fluid.\n\nObjective\nBlood pressure 108/64, heart rate 98. Right flank still tender.\n\nResults\nCreatinine 186 µmol/L, CRP 240 mg/L, lactate 1.8 mmol/L.\n\nAssessment and plan\nKidney ultrasound: no blockage, no abscess; the right kidney is swollen, which fits infection. Continue ceftriaxone. Continue IV fluids at 100 mL per hour.\n\nNursing summary, 19 October 2026\nVital signs every 4 hours. Fluid balance charted. Pressure areas checked twice; skin intact. Falls risk high: bed alarm on, call bell within reach, non-slip socks. The daughter visited in the afternoon and was updated at the bedside. Medications given as prescribed; no missed doses.\n"
+  },
+  {
+   "index": 4,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 5 of 18\n\nPROGRESS NOTE — 20 October 2026 (Hospital day 2)\nInternal Medicine, Dr. Ian Sampleton (FAKE)\n\nSubjective\nNo fever since 04:00. Ate half of breakfast. Knew they were in hospital but not the date. The daughter says this is better than yesterday.\n\nObjective\nBlood pressure 122/70, heart rate 88.\n\nResults\nCreatinine 161 µmol/L, CRP 168 mg/L, white cells 12.9 ×10⁹/L. Blood cultures: Escherichia coli growing in 2 of 2 bottles.\n\nAssessment and plan\nE. coli in the blood. Continue ceftriaxone while waiting for sensitivities. Encourage drinking. Start walking with physiotherapy.\n\nNursing summary, 20 October 2026\nVital signs every 4 hours. Fluid balance charted. Pressure areas checked twice; skin intact. Falls risk high: bed alarm on, call bell within reach, non-slip socks. The daughter visited in the afternoon and was updated at the bedside. Medications given as prescribed; no missed doses.\n"
+  },
+  {
+   "index": 5,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 6 of 18\n\nPROGRESS NOTE — 21 October 2026 (Hospital day 3)\nInternal Medicine, Dr. Ian Sampleton (FAKE)\n\nSubjective\nAfebrile. Oriented to time and place this morning. Walked to the bathroom with a walker. Some urgency, no burning.\n\nObjective\nBlood pressure 134/76, heart rate 80.\n\nResults\nCreatinine 138 µmol/L, potassium 4.6 mmol/L. E. coli sensitive to ceftriaxone, ciprofloxacin and amoxicillin-clavulanate; resistant to trimethoprim-sulfamethoxazole.\n\nAssessment and plan\nDelirium resolving. IV fluids stopped. Restart amlodipine 5 mg daily. Perindopril and metformin remain on hold.\n\nNursing summary, 21 October 2026\nVital signs every 4 hours. Fluid balance charted. Pressure areas checked twice; skin intact. Falls risk high: bed alarm on, call bell within reach, non-slip socks. The daughter visited in the afternoon and was updated at the bedside. Medications given as prescribed; no missed doses.\n"
+  },
+  {
+   "index": 6,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 7 of 18\n\nPROGRESS NOTE — 22 October 2026 (Hospital day 4)\nInternal Medicine, Dr. Ian Sampleton (FAKE)\n\nSubjective\nFeels much better. Eating well. Asked when they can go home. Slept poorly because of the noise on the ward.\n\nObjective\nBlood pressure 142/80, heart rate 76.\n\nResults\nCreatinine 124 µmol/L, CRP 61 mg/L, glucose before meals 7 to 11 mmol/L.\n\nAssessment and plan\nSwitch to oral antibiotic tomorrow if still well. Restart gliclazide MR 30 mg daily; stop the sliding scale if glucose stays under 12.\n\nNursing summary, 22 October 2026\nVital signs every 4 hours. Fluid balance charted. Pressure areas checked twice; skin intact. Falls risk high: bed alarm on, call bell within reach, non-slip socks. The daughter visited in the afternoon and was updated at the bedside. Medications given as prescribed; no missed doses.\n"
+  },
+  {
+   "index": 7,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 8 of 18\n\nPROGRESS NOTE — 23 October 2026 (Hospital day 5)\nInternal Medicine, Dr. Ian Sampleton (FAKE)\n\nSubjective\nWell. Walking the corridor with the physiotherapist. Fully oriented. Memory at their usual level per the daughter.\n\nObjective\nBlood pressure 138/78, heart rate 74, temperature 36.8 °C.\n\nResults\nCreatinine 118 µmol/L.\n\nAssessment and plan\nChanged to amoxicillin-clavulanate 875/125 mg by mouth twice daily to complete 14 days of antibiotics in total (last dose 31 October 2026). Restart metformin at 500 mg twice daily.\n\nNursing summary, 23 October 2026\nVital signs every 4 hours. Fluid balance charted. Pressure areas checked twice; skin intact. Falls risk high: bed alarm on, call bell within reach, non-slip socks. The daughter visited in the afternoon and was updated at the bedside. Medications given as prescribed; no missed doses.\n"
+  },
+  {
+   "index": 8,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 9 of 18\n\nPROGRESS NOTE — 24 October 2026 (Hospital day 6)\nInternal Medicine, Dr. Ian Sampleton (FAKE)\n\nSubjective\nThree loose watery stools overnight and crampy lower abdominal pain. No blood in the stool. Appetite down again. Planned discharge today was postponed.\n\nObjective\nTemperature 37.9 °C, blood pressure 128/72, heart rate 92. Abdomen soft, mildly tender in the lower part, no guarding.\n\nResults\nWhite cells 13.1 ×10⁹/L, creatinine 121 µmol/L. Stool sent for Clostridioides difficile testing.\n\nAssessment and plan\nPossible C. difficile infection after antibiotics. Contact precautions: single room, gloves and gown, hand washing with soap and water. Oral fluids encouraged; IV fluids restarted at 75 mL per hour.\n\nNursing summary, 24 October 2026\nVital signs every 4 hours. Fluid balance charted. Pressure areas checked twice; skin intact. Falls risk high: bed alarm on, call bell within reach, non-slip socks. The daughter visited in the afternoon and was updated at the bedside. Medications given as prescribed; no missed doses.\n"
+  },
+  {
+   "index": 9,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 10 of 18\n\nPROGRESS NOTE — 25 October 2026 (Hospital day 7)\nInternal Medicine, Dr. Ian Sampleton (FAKE)\n\nSubjective\nFive loose stools in 24 hours. Tired. Still oriented. Drinking well with encouragement from the daughter.\n\nObjective\nTemperature 37.6 °C, blood pressure 124/70, heart rate 88.\n\nResults\nStool test positive for C. difficile toxin. Creatinine 126 µmol/L, albumin 31 g/L.\n\nAssessment and plan\nC. difficile infection, not severe. Start vancomycin 125 mg by mouth four times daily for 10 days (until 3 November 2026). Amoxicillin-clavulanate continues, as the kidney infection still needs treatment. Avoid loperamide.\n\nNursing summary, 25 October 2026\nVital signs every 4 hours. Fluid balance charted. Pressure areas checked twice; skin intact. Falls risk high: bed alarm on, call bell within reach, non-slip socks. The daughter visited in the afternoon and was updated at the bedside. Medications given as prescribed; no missed doses.\n"
+  },
+  {
+   "index": 10,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 11 of 18\n\nPROGRESS NOTE — 26 October 2026 (Hospital day 8)\nInternal Medicine, Dr. Ian Sampleton (FAKE)\n\nSubjective\nTwo loose stools overnight, less cramping. Ate most of lunch. Walked twice with physiotherapy.\n\nObjective\nTemperature 37.1 °C, blood pressure 130/74, heart rate 80.\n\nResults\nWhite cells 10.4 ×10⁹/L, creatinine 117 µmol/L.\n\nAssessment and plan\nImproving on vancomycin. IV fluids stopped. Plan discharge in 1 to 2 days if stools keep settling.\n\nNursing summary, 26 October 2026\nVital signs every 4 hours. Fluid balance charted. Pressure areas checked twice; skin intact. Falls risk high: bed alarm on, call bell within reach, non-slip socks. The daughter visited in the afternoon and was updated at the bedside. Medications given as prescribed; no missed doses.\n"
+  },
+  {
+   "index": 11,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 12 of 18\n\nPROGRESS NOTE — 27 October 2026 (Hospital day 9)\nInternal Medicine, Dr. Ian Sampleton (FAKE)\n\nSubjective\nOne formed stool today. Feels ready to go home. The daughter has arranged to stay home from work for the first week.\n\nObjective\nTemperature 36.7 °C, blood pressure 136/78, heart rate 76.\n\nResults\nCreatinine 115 µmol/L, potassium 4.4 mmol/L, CRP 19 mg/L.\n\nAssessment and plan\nDischarge tomorrow. Discharge medication teaching with the daughter, including the vancomycin schedule and hand washing at home.\n\nNursing summary, 27 October 2026\nVital signs every 4 hours. Fluid balance charted. Pressure areas checked twice; skin intact. Falls risk high: bed alarm on, call bell within reach, non-slip socks. The daughter visited in the afternoon and was updated at the bedside. Medications given as prescribed; no missed doses.\n"
+  },
+  {
+   "index": 12,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 13 of 18\n\nPHYSIOTHERAPY AND OCCUPATIONAL THERAPY NOTES\n\nPhysiotherapy, 20 October 2026: assessed in bed and at the bedside. Strength reduced in both legs (4/5). Sit-to-stand with one person assisting. Walked 10 metres with a walker and one person. Plan: walk three times a day with staff.\nPhysiotherapy, 23 October 2026: walked 60 metres with a walker, supervision only. Climbed 6 stairs with a rail and supervision. Safe for home with a walker, with someone present for the first week.\nPhysiotherapy, 27 October 2026: walked 80 metres with a walker independently after the diarrhea settled. Climbed a full flight of stairs with the rail. Home exercise sheet given.\nOccupational therapy, 26 October 2026: washing and dressing with set-up only. Recommends a raised toilet seat and a shower chair; the daughter will buy them. A community home safety visit has been requested.\nDietitian, 21 October 2026: intake about half of meals. Oral nutrition supplement twice daily while in hospital. Weight at discharge 60.8 kg (usual 64 kg).\n"
+  },
+  {
+   "index": 13,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 14 of 18\n\nCONSULTATIONS AND RESULTS\n\nGeriatric medicine consultation — 22 October 2026 (Dr. Lena FAKE-Morrow)\nReason: delirium in a patient with mild cognitive impairment.\nThe confusion came on with the infection and is clearing as it is treated. Before this illness the patient managed their own medicines with a weekly dosette and did their own shopping with help. Montreal Cognitive Assessment today 22/30, similar to 2025. No new medicines that worsen confusion. Recommendations: continue delirium care, avoid sedatives, home with daughter when medically ready, community occupational therapy home safety visit, and a follow-up memory clinic visit as already planned for January 2027.\n\nPharmacy medication review — 23 October 2026\nThe patient takes medicines from a weekly dosette filled by the daughter. A new dosette list was prepared with the changes at discharge. Alendronate is taken on Sunday mornings with water, 30 minutes before food. Sulfa allergy documented; trimethoprim-sulfamethoxazole must not be used.\n\nLaboratory results (selected)\nDate            Creatinine (µmol/L)   CRP (mg/L)   White cells (×10⁹/L)   Potassium (mmol/L)\n18 Oct 2026     198                   212          18.4                   5.1\n19 Oct 2026     186                   240          16.0                   4.9\n20 Oct 2026     161                   168          12.9                   4.7\n21 Oct 2026     138                   104          10.2                   4.6\n22 Oct 2026     124                   61           8.8                    4.5\n24 Oct 2026     121                   28           13.1                   4.4\n25 Oct 2026     126                   34           11.8                   4.3\n26 Oct 2026     117                   24           10.4                   4.4\n27 Oct 2026     115                   19           8.9                    4.4\n\nMicrobiology\nBlood cultures 18 October 2026: Escherichia coli in 2 of 2 bottles. Urine culture 18 October 2026: Escherichia coli more than 100 million per litre. Same sensitivities in both. Repeat blood cultures 21 October 2026: no growth after 5 days.\nStool 24 October 2026: Clostridioides difficile toxin positive.\n\nImaging\nKidney ultrasound 19 October 2026: no hydronephrosis, no stones, no abscess. Swollen right kidney in keeping with pyelonephritis. Bladder wall normal. Post-void residual 60 mL.\n"
+  },
+  {
+   "index": 14,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 15 of 18\n\nPHARMACY MEDICATION RECONCILIATION AT DISCHARGE — 28 October 2026 (pharmacist: Sam FAKE-Ortega)\n\nSource of the home list: the weekly dosette, the community pharmacy profile (FAKE Corner Pharmacy) and the daughter.\n\nMedicine                      Before admission          At discharge                      Reason\nMetformin                     1000 mg twice daily       500 mg twice daily                kidney function still below usual\nGliclazide MR                 60 mg once daily          30 mg once daily                  low sugars in hospital on the full dose\nAmlodipine                    10 mg once daily          5 mg once daily                   blood pressure lower after the infection\nPerindopril                   4 mg once daily           on hold                           kidney injury; family physician to review\nAlendronate                   70 mg weekly (Sunday)     70 mg weekly (Sunday)             no change\nVitamin D                     1000 units daily          1000 units daily                  no change\nAmoxicillin-clavulanate       —                         875/125 mg twice daily to 31 Oct  kidney infection\nVancomycin (oral capsules)    —                         125 mg four times daily to 3 Nov  C. difficile diarrhea\n\nInteractions checked: none of concern. Sulfa allergy recorded with the community pharmacy. The pharmacy was faxed the new list and will repackage the dosette for the next 2 weeks.\nCounselling given to the patient and daughter: how to take each antibiotic, what to do if a dose is missed (take it when remembered unless the next dose is due within 2 hours), and that alcohol gel does not replace hand washing.\n"
+  },
+  {
+   "index": 15,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 16 of 18\n\nSOCIAL WORK AND INFECTION PREVENTION NOTES\n\nSocial work, 26 October 2026 (Alex FAKE-Duval): met with the patient and daughter. The daughter works full time and will take one week of leave. A neighbour can check in at lunchtime in the second week. Home care nursing referral made for a medication check and a wellness visit twice a week for 2 weeks. The patient wants to return home and has capacity for this decision. Caregiver stress discussed; the daughter was given the community caregiver support line.\n\nInfection prevention and control, 25 October 2026: confirmed C. difficile infection. Contact precautions until 48 hours after the diarrhea stops. Single room with its own bathroom. Visitors to wash hands with soap and water on leaving the room. At home: wash hands with soap and water after the toilet and before food; clean the toilet and bathroom taps with a bleach-based cleaner daily until 2 days after the diarrhea stops; wash soiled laundry separately on a hot cycle. No need to stay away from other people once the diarrhea has stopped, but hand washing should continue.\n"
+  },
+  {
+   "index": 16,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 17 of 18\n\nDISCHARGE MEDICATION SCHEDULE FOR THE DOSETTE (prepared by pharmacy, 28 October 2026)\n\nTime            Medicines\n08:00           Metformin 500 mg, gliclazide MR 30 mg, amlodipine 5 mg, vitamin D 1000 units,\n                amoxicillin-clavulanate 875/125 mg (until 31 October), vancomycin 125 mg (until 3 November)\n12:00           Vancomycin 125 mg (until 3 November)\n17:00           Metformin 500 mg, vancomycin 125 mg (until 3 November)\n20:00           Amoxicillin-clavulanate 875/125 mg (until 31 October), vancomycin 125 mg (until 3 November)\nSunday 07:00    Alendronate 70 mg with a full glass of water, 30 minutes before breakfast; stay upright\n\nNot in the dosette: perindopril (on hold). Keep the old perindopril box at home until the family physician decides.\n"
+  },
+  {
+   "index": 17,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nLakeview Test General Hospital (FAKE) · Patient: Morgan FAKE-Ellison · MRN FAKE-778899 · Page 18 of 18\n\nDISCHARGE SUMMARY\nAdmitted 18 October 2026 · Discharged 28 October 2026 · Internal Medicine, Dr. Ian Sampleton (FAKE)\n\nDiagnoses\n1. Sepsis from right pyelonephritis (kidney infection) with Escherichia coli in the blood, treated.\n2. Acute kidney injury on chronic kidney disease stage 3a; creatinine back to 115 µmol/L at discharge (usual about 110).\n3. Clostridioides difficile diarrhea after antibiotics, improving on oral vancomycin.\n4. Delirium caused by the infection, resolved.\n5. Type 2 diabetes, hypertension, mild cognitive impairment, osteoporosis.\n\nMedications at discharge\n- Amoxicillin-clavulanate 875/125 mg by mouth twice daily until 31 October 2026, then stop. NEW\n- Vancomycin 125 mg by mouth four times daily until 3 November 2026, then stop. NEW\n- Metformin 500 mg twice daily. CHANGED (was 1000 mg twice daily)\n- Gliclazide MR 30 mg once daily. CHANGED (was 60 mg)\n- Amlodipine 5 mg once daily. CHANGED (was 10 mg)\n- Perindopril: ON HOLD until the family physician reviews the kidney blood test.\n- Alendronate 70 mg once weekly. Continued.\n- Vitamin D 1000 units daily. Continued.\n\nInstructions to the patient and family\n- Finish both antibiotics, even when you feel well. The last dose of amoxicillin-clavulanate is on the evening of 31 October 2026, and the last dose of vancomycin on 3 November 2026.\n- Wash your hands with soap and water after using the toilet and before eating; alcohol gel does not kill the diarrhea germ. Clean the toilet with a bleach cleaner every day until the diarrhea has stopped for 2 days.\n- Do not take loperamide (Imodium) for the diarrhea.\n- Do not restart perindopril until your family physician tells you to.\n- Drink about 6 to 8 glasses of fluid a day unless told otherwise.\n- Check your blood sugar once a day before breakfast and write it down; bring the list to your family physician.\n- Come back to the emergency department if you have a fever over 38 °C, shivers, new confusion, pain in your side, if you pass very little urine, or if you have more than 6 loose stools a day or blood in the stool.\n\nFollow-up\n- Blood test (creatinine, potassium, CBC) in 1 week, around 4 November 2026. A requisition was given.\n- Family physician, Dr. Fakeham, within 10 days to review the blood test, the blood pressure and the perindopril.\n- Community occupational therapy home safety visit: referral sent.\n- Memory clinic in January 2027, as already booked.\n\nElectronically signed: Dr. Ian Sampleton, MD (FAKE), Internal Medicine · 28 October 2026\ncc: Dr. Henrietta Fakeham (family physician)\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "sepsis_pyelonephritis",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Sepsis from right pyelonephritis (kidney infection) with Escherichia coli in the blood, treated.",
+   "approved_statements": [
+    "They had sepsis from a right kidney infection, with E. coli in the blood, now treated."
+   ],
+   "anchors": [
+    "kidney infection",
+    "pyelonephritis",
+    "sepsis"
+   ],
+   "match": [
+    [
+     "kidney infection",
+     "pyelonephritis",
+     "sepsis"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "aki_recovered",
+   "category": "finding",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Acute kidney injury on chronic kidney disease stage 3a; creatinine back to 115 µmol/L at discharge (usual about 110).",
+   "approved_statements": [
+    "Kidney function dropped and is back near usual (creatinine 115 µmol/L)."
+   ],
+   "anchors": [
+    "creatinine",
+    "kidney"
+   ],
+   "match": [
+    [
+     "kidney",
+     "creatinine"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "c_diff",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Clostridioides difficile diarrhea after antibiotics, improving on oral vancomycin.",
+   "approved_statements": [
+    "They got C. difficile diarrhea after antibiotics, improving on vancomycin."
+   ],
+   "anchors": [
+    "diarrh",
+    "difficile"
+   ],
+   "match": [
+    [
+     "difficile",
+     "diarrh"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "delirium_resolved",
+   "category": "finding",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Delirium caused by the infection, resolved.",
+   "approved_statements": [
+    "The confusion from the infection has cleared."
+   ],
+   "anchors": [
+    "confus",
+    "delirium"
+   ],
+   "match": [
+    [
+     "delirium",
+     "confus"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "amox_clav_until_31",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Amoxicillin-clavulanate 875/125 mg by mouth twice daily until 31 October 2026, then stop. NEW",
+   "approved_statements": [
+    "Take amoxicillin-clavulanate twice daily until 31 October 2026."
+   ],
+   "anchors": [
+    "amoxicillin",
+    "clavulan"
+   ],
+   "match": [
+    [
+     "amoxicillin",
+     "clavulan"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "vancomycin_until_3",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Vancomycin 125 mg by mouth four times daily until 3 November 2026, then stop. NEW",
+   "approved_statements": [
+    "Take vancomycin 125 mg four times daily until 3 November 2026."
+   ],
+   "anchors": [
+    "vancomycin"
+   ],
+   "match": [
+    [
+     "vancomycin"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "metformin_500",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Metformin 500 mg twice daily. CHANGED (was 1000 mg twice daily)",
+   "approved_statements": [
+    "Metformin is lowered to 500 mg twice daily."
+   ],
+   "anchors": [
+    "metformin"
+   ],
+   "match": [
+    [
+     "metformin"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "metformin\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mg)",
+    "value": "500",
+    "unit": "mg"
+   }
+  },
+  {
+   "id": "perindopril_on_hold",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Do not restart perindopril until your family physician tells you to.",
+   "approved_statements": [
+    "Do not restart perindopril until the family physician says so."
+   ],
+   "anchors": [
+    "perindopril"
+   ],
+   "match": [
+    [
+     "perindopril"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "finish_antibiotics",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Finish both antibiotics, even when you feel well.",
+   "approved_statements": [
+    "Finish both antibiotics even if you feel well."
+   ],
+   "anchors": [
+    "antibiotic",
+    "complete",
+    "finish"
+   ],
+   "match": [
+    [
+     "finish",
+     "complete"
+    ],
+    [
+     "antibiotic"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "hand_washing",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Wash your hands with soap and water after using the toilet and before eating; alcohol gel does not kill the diarrhea germ.",
+   "approved_statements": [
+    "Wash your hands with soap and water; alcohol gel does not kill the diarrhea germ."
+   ],
+   "anchors": [
+    "soap",
+    "wash"
+   ],
+   "match": [
+    [
+     "wash",
+     "soap"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "no_loperamide",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Do not take loperamide (Imodium) for the diarrhea.",
+   "approved_statements": [
+    "Do not take loperamide (Imodium)."
+   ],
+   "anchors": [
+    "imodium",
+    "loperamide"
+   ],
+   "match": [
+    [
+     "loperamide",
+     "imodium"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "return_if",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Come back to the emergency department if you have a fever over 38 °C, shivers, new confusion, pain in your side, if you pass very little urine, or if you have more than 6 loose stools a day or blood in the stool.",
+   "approved_statements": [
+    "Come back to the emergency department for a fever over 38 °C, shivers, new confusion, side pain, very little urine, more than 6 loose stools a day or blood in the stool."
+   ],
+   "anchors": [
+    "emergency"
+   ],
+   "match": [
+    [
+     "emergency"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "blood_test_1_week",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Blood test (creatinine, potassium, CBC) in 1 week, around 4 November 2026.",
+   "approved_statements": [
+    "Have a blood test in 1 week, around 4 November 2026."
+   ],
+   "anchors": [
+    "1 week",
+    "4 november",
+    "blood",
+    "november 4",
+    "one week"
+   ],
+   "match": [
+    [
+     "blood"
+    ],
+    [
+     "1 week",
+     "one week",
+     "4 november",
+     "november 4"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "family_physician_10_days",
+   "category": "timing",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Family physician, Dr. Fakeham, within 10 days to review the blood test, the blood pressure and the perindopril.",
+   "approved_statements": [
+    "See the family physician within 10 days."
+   ],
+   "anchors": [
+    "10 days",
+    "ten days"
+   ],
+   "match": [
+    [
+     "10 days",
+     "ten days"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying perindopril is stopped for good or restarted now",
+  "calling the delirium dementia",
+  "saying the antibiotics are finished"
+ ],
+ "notes": "The patient instructions and follow-up are on the last page; about 26 KB of text. Whether the last page fits the model's room is part of what the run measures."
+}

@@ -1,0 +1,259 @@
+{
+ "id": "new-polish-discharge",
+ "title": "New: Polish discharge card (pneumonia, COPD)",
+ "lang": "pl",
+ "synthetic": true,
+ "source": "written for the evaluation harness, 10 Nov 2026",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTETYCZNY DOKUMENT TESTOWY — FIKCYJNY PACJENT — WYŁĄCZNIE DO TESTÓW OPROGRAMOWANIA\nSzpital Testowy w Fikcyjnowie (FIKCYJNY) — Oddział Chorób Wewnętrznych\nul. Przykładowa 12, 00-000 Fikcyjnów · tel. 22 555 01 90\n\nKARTA INFORMACYJNA LECZENIA SZPITALNEGO\n\nPacjent: Tomasz FAKE-Nowak · data urodzenia: 14.05.1961 · PESEL: 00000000000 (FIKCYJNY)\nData przyjęcia: 27.10.2026 · Data wypisu: 02.11.2026\n\nRozpoznanie\nZapalenie płuc prawostronne. Zaostrzenie przewlekłej obturacyjnej choroby płuc (POChP).\n\nPrzebieg hospitalizacji\nPacjent, lat 65, został przyjęty z powodu gorączki do 39°C, kaszlu z odkrztuszaniem ropnej wydzieliny i narastającej duszności od 4 dni. W RTG klatki piersiowej stwierdzono zagęszczenie w dolnym płacie prawego płuca. CRP przy przyjęciu 148 mg/l, leukocytoza 15,2 tys./µl. Saturacja 88% bez tlenu.\nLeczono amoksycyliną z kwasem klawulanowym dożylnie, następnie doustnie, oraz prednizonem 40 mg przez 5 dni. Stosowano tlenoterapię do 3. doby. Uzyskano poprawę: pacjent bez gorączki od 30.10.2026, saturacja przy wypisie 94% bez tlenu, CRP 22 mg/l.\nPacjent pali papierosy od 40 lat (około 20 dziennie).\n\nLeki przy wypisie\n- Amoksycylina z kwasem klawulanowym 875/125 mg doustnie co 12 godzin jeszcze przez 3 dni (do 05.11.2026).\n- Tiotropium 18 µg wziewnie raz dziennie — bez zmian.\n- Salbutamol wziewnie doraźnie przy duszności — bez zmian.\n\nZalecenia\n1. Bezwzględnie zaprzestać palenia papierosów. Pacjent otrzymał skierowanie do poradni leczenia uzależnienia od tytoniu.\n2. Kontrola u lekarza rodzinnego za 7 dni, z oznaczeniem CRP i morfologii krwi.\n3. Kontrolne RTG klatki piersiowej za 6 tygodni, aby potwierdzić ustąpienie zmian.\n4. Szczepienie przeciw grypie i pneumokokom po wyzdrowieniu.\n5. W razie ponownej gorączki, nasilenia duszności lub krwioplucia — pilny kontakt z lekarzem lub wezwanie pogotowia (tel. 112).\n\nLekarz prowadzący: lek. Anna FAKE-Kowalska (FIKCYJNA), specjalista chorób wewnętrznych\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "pneumonia_copd",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Zapalenie płuc prawostronne. Zaostrzenie przewlekłej obturacyjnej choroby płuc (POChP).",
+   "approved_statements": [
+    "Rozpoznano prawostronne zapalenie płuc i zaostrzenie POChP.",
+    "Right-sided pneumonia and a flare of COPD."
+   ],
+   "anchors": [
+    "copd",
+    "pneumoni",
+    "pochp",
+    "zapaleni"
+   ],
+   "match": [
+    [
+     "zapaleni",
+     "pneumoni",
+     "pochp",
+     "copd"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "improved",
+   "category": "finding",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Uzyskano poprawę: pacjent bez gorączki od 30.10.2026, saturacja przy wypisie 94% bez tlenu, CRP 22 mg/l.",
+   "approved_statements": [
+    "Stan się poprawił: bez gorączki od 30.10.2026.",
+    "He improved: no fever since 30 October 2026."
+   ],
+   "anchors": [
+    "94",
+    "fever",
+    "goraczk",
+    "improv",
+    "popraw"
+   ],
+   "match": [
+    [
+     "popraw",
+     "goraczk",
+     "fever",
+     "improv",
+     "94"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "antibiotic_3_days",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Amoksycylina z kwasem klawulanowym 875/125 mg doustnie co 12 godzin jeszcze przez 3 dni (do 05.11.2026).",
+   "approved_statements": [
+    "Amoksycylina z kwasem klawulanowym jeszcze przez 3 dni, do 05.11.2026.",
+    "Amoxicillin-clavulanate for 3 more days, until 5 November 2026."
+   ],
+   "anchors": [
+    "amoksycylin",
+    "amoxicillin",
+    "antibiotic",
+    "antybiotyk"
+   ],
+   "match": [
+    [
+     "amoksycylin",
+     "amoxicillin",
+     "antybiotyk",
+     "antibiotic"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "inhalers_unchanged",
+   "category": "medication",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Tiotropium 18 µg wziewnie raz dziennie — bez zmian.",
+   "approved_statements": [
+    "Tiotropium bez zmian.",
+    "Tiotropium unchanged."
+   ],
+   "anchors": [
+    "tiotrop"
+   ],
+   "match": [
+    [
+     "tiotrop"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "stop_smoking",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Bezwzględnie zaprzestać palenia papierosów.",
+   "approved_statements": [
+    "Bezwzględnie rzucić palenie.",
+    "Stop smoking completely."
+   ],
+   "anchors": [
+    "palen",
+    "papieros",
+    "smok"
+   ],
+   "match": [
+    [
+     "palen",
+     "papieros",
+     "smok"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "gp_7_days",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Kontrola u lekarza rodzinnego za 7 dni, z oznaczeniem CRP i morfologii krwi.",
+   "approved_statements": [
+    "Kontrola u lekarza rodzinnego za 7 dni.",
+    "See the family doctor in 7 days, with CRP and a blood count."
+   ],
+   "anchors": [
+    "7",
+    "day",
+    "dni",
+    "doctor",
+    "lekarz"
+   ],
+   "match": [
+    [
+     "7"
+    ],
+    [
+     "dni",
+     "day",
+     "lekarz",
+     "doctor"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "xray_6_weeks",
+   "category": "follow_up",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Kontrolne RTG klatki piersiowej za 6 tygodni, aby potwierdzić ustąpienie zmian.",
+   "approved_statements": [
+    "Kontrolne RTG klatki piersiowej za 6 tygodni.",
+    "A chest X-ray in 6 weeks."
+   ],
+   "anchors": [
+    "6",
+    "rentgen",
+    "rtg",
+    "x-ray",
+    "xray"
+   ],
+   "match": [
+    [
+     "rtg",
+     "x-ray",
+     "xray",
+     "rentgen"
+    ],
+    [
+     "6"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "vaccines",
+   "category": "follow_up",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Szczepienie przeciw grypie i pneumokokom po wyzdrowieniu.",
+   "approved_statements": [
+    "Szczepienie przeciw grypie i pneumokokom.",
+    "Flu and pneumococcal vaccines after recovery."
+   ],
+   "anchors": [
+    "flu",
+    "grypie",
+    "szczepi",
+    "vaccin"
+   ],
+   "match": [
+    [
+     "szczepi",
+     "vaccin",
+     "grypie",
+     "flu"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "urgent_112",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "W razie ponownej gorączki, nasilenia duszności lub krwioplucia — pilny kontakt z lekarzem lub wezwanie pogotowia (tel. 112).",
+   "approved_statements": [
+    "W razie gorączki, większej duszności lub krwioplucia pilnie skontaktować się z lekarzem lub dzwonić pod 112.",
+    "For new fever, worse breathlessness or coughing blood, contact a doctor urgently or call 112."
+   ],
+   "anchors": [
+    "112",
+    "emergency",
+    "pilny",
+    "pogotowi",
+    "urgent"
+   ],
+   "match": [
+    [
+     "112",
+     "pogotowi",
+     "emergency",
+     "pilny",
+     "urgent"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying the inhalers changed",
+  "saying antibiotics are finished (3 more days)",
+  "inventing a diagnosis such as lung cancer"
+ ],
+ "notes": ""
+}
