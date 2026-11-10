@@ -1489,6 +1489,8 @@ interface-history-event-imported = 文件已新增
 
 interface-history-event-moved = 文件已移動
 
+interface-history-event-other = 其他事件
+
 interface-history-event-passphraseChanged = 密語已變更
 
 interface-history-event-portalLinkStarted = 已開始連結診所
@@ -1536,6 +1538,8 @@ interface-history-how-movedFromShared = 從「與我分享」移出
 interface-history-how-passphrase = 密語
 
 interface-history-how-patient = 由您隱藏
+
+interface-history-how-personFolder = 某人的資料夾
 
 interface-history-how-picked = 從所選檔案匯入
 

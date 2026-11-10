@@ -1654,6 +1654,8 @@ interface-history-event-imported = Documento adicionado
 
 interface-history-event-moved = Documento movido
 
+interface-history-event-other = Outro evento
+
 interface-history-event-passphraseChanged = Frase-senha alterada
 
 interface-history-event-portalLinkStarted = Vinculação com a clínica iniciada
@@ -1706,6 +1708,8 @@ interface-history-how-movedFromShared = Movido de Compartilhado comigo
 interface-history-how-passphrase = Frase-senha
 
 interface-history-how-patient = Ocultado por você
+
+interface-history-how-personFolder = Pasta de uma pessoa
 
 interface-history-how-picked = Importado de um arquivo escolhido
 
