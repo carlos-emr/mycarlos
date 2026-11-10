@@ -40,6 +40,11 @@ fn add_issue(
         crate::vault::VaultError::Invalid | crate::vault::VaultError::NotFound => {
             "portal_link_incomplete"
         }
+        // Said as it is, as the status check says it (#131): checking again
+        // cannot help a device the portal removed (#128).
+        crate::vault::VaultError::Portal(crate::portal_link::LinkError::DeviceRemoved) => {
+            "portal_device_removed"
+        }
         _ => crate::PublicText::from(error).code,
     };
     add_issue_code(result, link, code);
@@ -51,6 +56,15 @@ pub(crate) const DAMAGED_CODE: &str = "pickup_damaged";
 /// the connection is taken to be down for this clinic, rather than waiting
 /// out a timeout for every delivery still listed.
 const MAX_DOWNLOAD_FAILURES_IN_A_ROW: usize = 3;
+/// A portal from before reading aids (the 29 Oct demo portal, 1705edb) refuses a listing
+/// that names the kinds this device understands: it answers any query key it does not know
+/// with 400 `{"code":"invalid_cursor"}`.
+fn refuses_unknown_query(response: &crate::portal_client::ApiResponse) -> bool {
+    response.status == 400
+        && serde_json::from_slice::<serde_json::Value>(&response.body)
+            .ok()
+            .is_some_and(|body| body.get("code").and_then(|c| c.as_str()) == Some("invalid_cursor"))
+}
 fn add_issue_code(result: &mut CheckResult, link: &crate::portal_link::StoredLink, code: &str) {
     if result
         .issues
@@ -69,22 +83,94 @@ fn add_issue_code(result: &mut CheckResult, link: &crate::portal_link::StoredLin
         code: code.into(),
     });
 }
+/// Whether a check for new documents contacts this link's clinic (Ben,
+/// D132c): only for a device the clinic approved, or with a request still
+/// open as last saved (pending, or ready for the clinic). A link with no
+/// saved request, or whose request was refused or has ended, is no reason to
+/// ask; a saved request with no status yet reads as pending, and is asked.
+/// The check after unlocking and Check for new documents both go by it.
+///
+/// "Approved" is judged by the clinic's current keys (`currently_approved`).
+/// That holds while a link's clinic keys are fixed when it is made; when key
+/// refresh or revocation comes, decide whether an acceptance signed by a
+/// retired key still counts here, or an approved device stops being asked.
+pub(crate) fn worth_asking(link: &crate::portal_link::StoredLink) -> bool {
+    crate::portal_approval::currently_approved(link)
+        || link
+            .approval
+            .as_ref()
+            .is_some_and(|attempt| attempt.acceptance.is_none() && still_open(attempt.state()))
+}
+/// Whether a request in this state can still be approved. Every state is
+/// named, so that a new one has to be decided here.
+fn still_open(state: crate::portal_approval::ApprovalState) -> bool {
+    use crate::portal_approval::ApprovalState;
+    match state {
+        ApprovalState::Pending | ApprovalState::ChallengeReady => true,
+        ApprovalState::Accepted
+        | ApprovalState::Refused
+        | ApprovalState::Expired
+        | ApprovalState::Cancelled => false,
+    }
+}
 pub(crate) fn check(
     store: &crate::vault::VaultStore,
     session: u64,
 ) -> Result<CheckResult, crate::vault::VaultError> {
-    check_using(
+    check_asking_using(
         store,
         session,
-        &crate::portal_approval::ApprovalHttp,
+        &crate::portal_approval::ApprovalHttp::default(),
         crate::portal_client::api,
     )
 }
+/// The check as the app runs it: only the clinics worth asking.
+pub(crate) fn check_asking_using<F>(
+    store: &crate::vault::VaultStore,
+    session: u64,
+    approval: &impl crate::portal_approval::ApprovalExchange,
+    exchange: F,
+) -> Result<CheckResult, crate::vault::VaultError>
+where
+    F: Fn(
+        &crate::portal_link::StoredLink,
+        &str,
+        &str,
+        Vec<u8>,
+        Option<&str>,
+        usize,
+        &dyn Fn() -> bool,
+    ) -> Result<crate::portal_client::ApiResponse, crate::portal_link::LinkError>,
+{
+    check_links_using(store, session, approval, exchange, &worth_asking)
+}
+/// Every linked clinic, whatever its approval: for tests of the pipeline.
+#[cfg(test)]
 pub(crate) fn check_using<F>(
     store: &crate::vault::VaultStore,
     session: u64,
     approval: &impl crate::portal_approval::ApprovalExchange,
     exchange: F,
+) -> Result<CheckResult, crate::vault::VaultError>
+where
+    F: Fn(
+        &crate::portal_link::StoredLink,
+        &str,
+        &str,
+        Vec<u8>,
+        Option<&str>,
+        usize,
+        &dyn Fn() -> bool,
+    ) -> Result<crate::portal_client::ApiResponse, crate::portal_link::LinkError>,
+{
+    check_links_using(store, session, approval, exchange, &|_| true)
+}
+fn check_links_using<F>(
+    store: &crate::vault::VaultStore,
+    session: u64,
+    approval: &impl crate::portal_approval::ApprovalExchange,
+    exchange: F,
+    include: &dyn Fn(&crate::portal_link::StoredLink) -> bool,
 ) -> Result<CheckResult, crate::vault::VaultError>
 where
     F: Fn(
@@ -104,6 +190,16 @@ where
     };
     use serde::Deserialize;
     let cancelled = || store.portal_link_ticket() != session;
+    // A refusal that says the portal removed this device is told apart from
+    // a connection failure (#128); any other answer is not one this check
+    // can use.
+    let refused = |response: &crate::portal_client::ApiResponse| {
+        VaultError::Portal(if crate::portal_approval::device_removed(response) {
+            LinkError::DeviceRemoved
+        } else {
+            LinkError::Network
+        })
+    };
     // Posts one kept receipt (an original's or a reading aid's) and returns what the
     // portal answered; settling it in the vault is the caller's step.
     let post_receipt = |link: &StoredLink,
@@ -146,7 +242,7 @@ where
             {
                 Ok(ReceiptOutcome::Gone)
             }
-            _ => Err(VaultError::Portal(LinkError::Network)),
+            _ => Err(refused(&response)),
         }
     };
     let send = |link: &StoredLink, c: &crate::portal_delivery::Custody| -> Result<(), VaultError> {
@@ -191,7 +287,11 @@ where
         Ok(n)
     };
     let mut result = CheckResult::default();
-    for original in store.delivery_links(session)? {
+    for original in store
+        .delivery_links(session)?
+        .into_iter()
+        .filter(|link| include(link))
+    {
         let outcome = (|| -> Result<(), VaultError> {
             // Known durable custody is independent of advisory approval refresh.
             // Retry it first, including for a link whose new request was refused.
@@ -208,7 +308,12 @@ where
             let mut download_failures = 0;
             // The kinds this device understands, named in every listing: the portal only
             // lists a reading aid to a device that asks for it (a format-version guard).
-            let accept = format!("accept={}", crate::reading_aid::accepted_kinds().join(","));
+            // A portal from before reading aids refuses the unknown key (see
+            // refuses_unknown_query) and never lists an aid either: for this link and this
+            // check its first page is asked again once without the kinds, and its later
+            // pages leave them out. Any other refusal stays an error.
+            let accept = format!("&accept={}", crate::reading_aid::accepted_kinds().join(","));
+            let mut ask_kinds = true;
             // Reading aids wait until every original of this check is filed, so an aid
             // delivered with its original is filed in the same check.
             let mut aids: Vec<Outer> = Vec::new();
@@ -216,27 +321,32 @@ where
                 if cancelled() {
                     return Err(VaultError::Cancelled);
                 }
-                let suffix = match through {
-                    None => format!("/api/mycarlos/deliveries?limit=50&{accept}"),
-                    Some(t) => {
-                        format!(
-                            "/api/mycarlos/deliveries?after={after}&through={t}&limit=50&{accept}"
-                        )
-                    }
+                let list = |kinds: &str| -> Result<crate::portal_client::ApiResponse, VaultError> {
+                    let suffix = match through {
+                        None => format!("/api/mycarlos/deliveries?limit=50{kinds}"),
+                        Some(t) => format!(
+                            "/api/mycarlos/deliveries?after={after}&through={t}&limit=50{kinds}"
+                        ),
+                    };
+                    let anchor = store.delivery_anchor(&link, session)?;
+                    exchange(
+                        &link,
+                        "GET",
+                        &suffix,
+                        Vec::new(),
+                        Some(&anchor),
+                        524288,
+                        &cancelled,
+                    )
+                    .map_err(VaultError::Portal)
                 };
-                let anchor = store.delivery_anchor(&link, session)?;
-                let response = exchange(
-                    &link,
-                    "GET",
-                    &suffix,
-                    Vec::new(),
-                    Some(&anchor),
-                    524288,
-                    &cancelled,
-                )
-                .map_err(VaultError::Portal)?;
+                let mut response = list(if ask_kinds { accept.as_str() } else { "" })?;
+                if ask_kinds && page_number == 0 && refuses_unknown_query(&response) {
+                    ask_kinds = false;
+                    response = list("")?;
+                }
                 if response.status != 200 {
-                    return Err(VaultError::Portal(LinkError::Network));
+                    return Err(refused(&response));
                 }
                 let page: Page = serde_json::from_slice(&response.body)
                     .map_err(|_| VaultError::Portal(LinkError::InvalidResponse))?;
@@ -307,7 +417,14 @@ where
                         {
                             continue;
                         }
-                        add_issue(&mut result, &link, VaultError::Portal(LinkError::Network));
+                        // A device the portal removed can fetch nothing more:
+                        // this clinic's check ends there (#128). Any other
+                        // refusal is this delivery's alone (#124's fix).
+                        let error = refused(&response);
+                        if matches!(error, VaultError::Portal(LinkError::DeviceRemoved)) {
+                            return Err(error);
+                        }
+                        add_issue(&mut result, &link, error);
                         continue;
                     }
                     match store.receive_delivery(&outer, &response.body, &link, session) {
@@ -342,8 +459,13 @@ where
             for (delivery_id, receipt) in &rechecked.not_filed {
                 result.refused += 1;
                 // Not filed because a newer-reviewed aid is held: the receipt only tells the portal
-                // to stop offering it, so a failed post is simply tried again on the next check.
-                let _ = post_receipt(&link, delivery_id, receipt);
+                // to stop offering it. Ordinary failed posts are tried on the next check;
+                // a removed device needs to be linked again.
+                if let Err(error @ VaultError::Portal(LinkError::DeviceRemoved)) =
+                    post_receipt(&link, delivery_id, receipt)
+                {
+                    return Err(error);
+                }
             }
             if rechecked.filed > 0 {
                 send_pending(&link)?;
@@ -373,6 +495,9 @@ where
                     &cancelled,
                 ) {
                     Ok(response) if response.status == 200 => response,
+                    Ok(response) if crate::portal_approval::device_removed(&response) => {
+                        return Err(VaultError::Portal(LinkError::DeviceRemoved));
+                    }
                     // Gone or unavailable: the next check asks again.
                     Ok(_) => continue,
                     Err(error) => {
@@ -387,7 +512,11 @@ where
                 match store.receive_aid(&outer, &response.body, &link, session) {
                     Ok(crate::vault::AidFiling::NotFiled(receipt)) => {
                         result.refused += 1;
-                        let _ = post_receipt(&link, &outer.delivery_id, &receipt);
+                        if let Err(error @ VaultError::Portal(LinkError::DeviceRemoved)) =
+                            post_receipt(&link, &outer.delivery_id, &receipt)
+                        {
+                            return Err(error);
+                        }
                     }
                     Ok(_) => send_pending(&link)?,
                     Err(VaultError::PickupRefused) => result.refused += 1,
@@ -410,7 +539,7 @@ where
             .find(|l| l.id == original.id)
             .ok_or(VaultError::NotFound)?;
         let pending = store.pending_receipts_checked(&current, session)?;
-        result.receipts_pending += pending.ready.len();
+        result.receipts_pending += pending.ready.len() + pending.ready_aids.len();
         if pending.damaged > 0 {
             add_issue_code(&mut result, &current, DAMAGED_CODE);
         }

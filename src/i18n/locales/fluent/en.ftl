@@ -1408,7 +1408,7 @@ portal-approvalCancelled = This approval request was cancelled. Check for update
 
 portal-approvalContact = Clinic approval needs to be checked. Contact your clinic for next steps.
 
-portal-approvalExpired = This approval request expired. Check for updates before starting a new request.
+portal-approvalExpired = This approval request expired. To ask again for this device, go to Security, under Clinic documents.
 
 portal-approvalMissing = Your saved approval request was not found on the portal. Send the saved request again.
 
@@ -1464,11 +1464,11 @@ portal-errorUnavailable = Portal linking is not available on this device yet.
 
 portal-fingerprint = Full device fingerprint
 
-portal-incomplete = Link incomplete. Check Linked devices in the portal before trying again.
+portal-incomplete = This saved attempt is incomplete. Check linked devices in the portal or contact your clinic before connecting again. This app cannot resume this attempt.
 
 portal-intro = Link myCarlos using the address and code shown in your patient portal.
 
-portal-link = Link to clinic
+portal-link = Connect and request approval
 
 portal-matchPerson = Match the document details
 
@@ -1490,8 +1490,6 @@ portal-serviceDate = Service date: { $date }
 
 portal-serviceDateLabel = Service date
 
-portal-sourceVerified = From { $clinic } · Verified
-
 portal-title = Clinic documents
 
 rename-help-profile = This changes only the displayed folder name. The person's folders and documents stay where they are.
@@ -1506,6 +1504,55 @@ rename-profile-saved = Folder name changed to { $name }.
 
 rename-title-profile = Rename person's folder
 
+portal-connectConsent = This connects this device and sends an approval request. Your clinic must approve the device before it can receive documents.
+
+portal-connected = Device linked. Its approval status is shown in Security, under Clinic documents.
+
+portal-connecting = Connecting and requesting clinic approval…
+
+portal-errorBusy = Another clinic operation is running. Wait for it to finish, then try again.
+
+portal-linkedApprovalIssue = Device linked. Its approval status in Security, under Clinic documents, says what to do next.
+
+portal-retryApproval = Retry saved approval request
+
+portal-working = Clinic operation in progress…
+
+portal-approvalExpiredCard = This approval request expired. To ask again for this same device, choose Start a new approval request. Your documents and this device's link stay as they are.
+
+portal-approvalPickedUp = Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.
+
+portal-approvalReplyInvalid = The clinic portal's answer about this request could not be verified, so it was not used. Contact your clinic.
+
+portal-approvalStillOpen = This approval request is still open on the clinic portal. Wait until it ends before starting a new one.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Time left for this request: about { $count } minute.
+    *[other] Time left for this request: about { $count } minutes.
+    }
+
+portal-approvalTimeOver = The time for this request has run out.
+
+portal-approvalTimeOverRestart = The time for this request has run out. If your clinic has not approved this device, choose { $button }.
+
+portal-approvalTimeUp = The time for this request has run out. Checking with your clinic…
+
+portal-approvalUnanswered = myCarlos could not get this request's status from the clinic portal.
+
+portal-approvalUnreachable = myCarlos could not reach the clinic portal, so this request's status is not known yet.
+
+portal-approvalWait = The clinic portal asked myCarlos to check less often.
+
+portal-autoChecking = While this page is open, myCarlos checks for your clinic's answer automatically.
+
+portal-autoCheckStopped = Automatic checks have stopped. To check again, choose { $button }.
+
+portal-awaitingClinic = Your clinic has the approval request. Waiting for clinic staff to approve this device.
+
+portal-deviceRemoved = This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.
+
+portal-errorRateLimited = The clinic portal asked myCarlos to wait before trying again.
 hidden-backToSecurity = Back to Security
 
 interface-history-appVersion = myCarlos version
@@ -1668,6 +1715,32 @@ interface-history-to = To
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos also keeps a history: when the vault was opened; when its passphrase or recovery key was set or changed, and when a backup was saved or restored; when each patient profile was added and each folder made, renamed or moved; and when each document was added, renamed, moved, hidden, restored or saved outside myCarlos, and where. It is encrypted with everything else. You can read it here; myCarlos never changes or removes it.
 
+portal-checkAgain = To check again, choose { $button }.
+
+portal-unlockCheckConsent = After each unlock, myCarlos contacts linked clinic portals to check for approval updates and new documents when the clinic has approved the device or an approval request is still open.
+
+portal-unlockChecked = Checked for new clinic documents after unlocking.
+
+portal-unlockCheckIncomplete = myCarlos could not finish checking for new clinic documents after unlocking.
+
+portal-unlockCheckNotRun = myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running.
+
+portal-unlockCheckWaiting = myCarlos did not check for new clinic documents after unlocking, because the clinic portal asked it to wait.
+
+portal-unlockRefused =
+    { $count ->
+    [one] { $count } clinic document could not be verified, so it was not added. Contact your clinic.
+    *[other] { $count } clinic documents could not be verified, so they were not added. Contact your clinic.
+    }
+
+library-source-clinic = From { $clinic }
+
+library-source-manualImport = Manual import
+
+library-status-unverified = Unverified
+
+library-status-verified = Verified
+
 ai-summary-button = Summary
 
 ai-summary-title = Summary in plain words
@@ -1676,9 +1749,9 @@ ai-explain-title = Explain a term
 
 ai-notInstalled-title = The AI helper isn't on this computer yet
 
-ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Preferences you can download the model or add a model file you already have.
+ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Settings, under AI helper, you can download the model or add a model file you already have.
 
-ai-notInstalled-openPreferences = Open Preferences
+ai-notInstalled-openPreferences = Open AI helper settings
 
 aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
@@ -1698,9 +1771,11 @@ ai-explain-submit = Explain
 
 ai-preferences-title = AI helper
 
-ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.
+ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. Download one of the models below, or add a matching file you already have. Models stay on this computer.
 
 ai-preferences-notInstalled = Not installed
+
+ai-settings-subtitle = How the AI helper works on this computer
 
 ai-model-add = Add a model file…
 
@@ -1730,7 +1805,7 @@ ai-model-unsupportedCpu = This computer’s processor is not supported by the AI
 
 ai-model-unsupportedPlatform = The AI helper is not available on this kind of computer yet.
 
-ai-model-refusedList = This is not a file myCarlos accepts. Choose the model file listed above.
+ai-model-refusedList = This is not a file myCarlos accepts. Choose one of the model files listed above.
 
 ai-model-refusedHash = This is not the file we expect. Download it again and add the new copy.
 
@@ -1748,6 +1823,14 @@ ai-model-downloadNote = Downloads one file ({ $size } MB), once, from { $host },
 
 ai-model-downloading = Downloading and checking… { $done } of { $total } MB
 
+ai-model-progressName = Model download
+
+ai-model-progressValue = { $percent }, { $done } of { $total } MB
+
+ai-model-stillDownloading = The model is still downloading.
+
+ai-model-stillChecking = The model file is still being checked.
+
 ai-model-refusedNetwork = The download did not finish. Check your internet connection and try again.
 
 ai-model-refusedUnavailable = The model is not available at its address right now. Try again later, or add a file you already have.
@@ -1755,6 +1838,14 @@ ai-model-refusedUnavailable = The model is not available at its address right no
 native-filter-models = Model files
 
 ai-working = The AI helper is working…
+
+ai-workingLong = This can take several minutes for a long document.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Working for { $minutes } minute so far.
+    *[other] Working for { $minutes } minutes so far.
+    }
 
 ai-summary-ready = The summary is ready.
 
@@ -1966,12 +2057,53 @@ notifications-error = This setting could not be saved. Notices are off for this 
 notifications-unavailable = Document notices are unavailable. Open myCarlos normally to check your documents.
 notifications-helpAutomatic = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
 notifications-autoAllow = Check for clinic documents automatically while unlocked
+notifications-autoNeedsNotices = Allow document arrival notices first to turn this on.
 notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
 notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
+noticesStep-title = Notices from your clinic
+noticesStep-intro = Your clinic is linked. myCarlos can let you know when a new document arrives. Nothing is turned on unless you tick it.
+noticesStep-later = You can change these any time in { $settings }, under { $preferences }: { $notices }.
+noticesStep-done = Done
+noticesStep-notNow = Not now
 
 ai-summary-again = Summarize again
 
 ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
 
 ai-keepFull = This document already keeps the most AI answers it can. New answers are shown but not kept.
+
+# Catalog model list (#276A).
+
+ai-models-title = Models on this computer
+
+ai-models-group = Model in use
+
+ai-models-inUse = In use
+
+ai-models-installed = Installed
+
+ai-models-addedByYou = Added by you
+
+ai-models-notDownloaded = Not downloaded
+
+ai-models-downloading = Downloading
+ai-models-installing = Installing
+
+ai-models-download = Download
+
+ai-models-remove = Remove
+
+ai-models-help = The model marked In use writes summaries and explanations. Choosing another model stops the answer being written.
+
+ai-models-loading = Reading the model list…
+
+ai-models-loadFailed = The model list could not be read. Try again.
+
+ai-models-retry = Read the model list again
+
+ai-models-starting = Starting the download…
+
+ai-models-picking = Choose a model file to add.
+
+ai-models-changed = Model in use changed

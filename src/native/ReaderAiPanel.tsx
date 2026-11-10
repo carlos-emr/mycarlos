@@ -33,6 +33,8 @@ export interface ReaderAi {
 }
 
 const NOT_INSTALLED: ModelStatus = { state: "notInstalled" };
+// How often the minutes an answer has been working for are counted again.
+const WORKING_TICK_MS = 15_000;
 /** The longest term to explain, typed or selected: the native side refuses
  * a longer one (AGREEMENT.md). */
 export const TERM_MAX = 200;
@@ -64,6 +66,11 @@ export function ReaderAiPanel({
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
+  // The tool whose answer the model just wrote, to say so once (#253). A
+  // summary read back from the vault is not new: the panel is made again
+  // each time a tool opens, and coming back to Summary shows the kept one,
+  // which is not read out as "ready" again.
+  const [readyFor, setReadyFor] = useState<"summary" | "explain" | null>(null);
   const [term, setTerm] = useState(initialTerm);
   // Whether the summary shown is one the vault kept, and whether keeping
   // the latest answer failed (it is still shown).
@@ -73,6 +80,21 @@ export function ReaderAiPanel({
     "ai.keepFailed" | "ai.keepFull" | null
   >(null);
   const [again, setAgain] = useState(0);
+  // Whole minutes the answer has been working for, shown from the first
+  // (#72: a long document's summary may take up to 20 minutes).
+  const [workingMinutes, setWorkingMinutes] = useState(0);
+  useEffect(() => {
+    if (!working) return;
+    const started = Date.now();
+    const timer = window.setInterval(
+      () => setWorkingMinutes(Math.floor((Date.now() - started) / 60_000)),
+      WORKING_TICK_MS,
+    );
+    return () => {
+      window.clearInterval(timer);
+      setWorkingMinutes(0);
+    };
+  }, [working]);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -202,6 +224,7 @@ export function ReaderAiPanel({
         if (!live.current) return;
         setFromKept(false);
         setSummary(result);
+        setReadyFor("summary");
         await keep(result);
       })
       .catch(stopped)
@@ -229,6 +252,7 @@ export function ReaderAiPanel({
       .then(async (result) => {
         if (!live.current) return;
         setExplained(result);
+        setReadyFor("explain");
         await keep(result);
       })
       .catch(stopped)
@@ -285,12 +309,22 @@ export function ReaderAiPanel({
       <p className={working ? "native-dialog-status" : "sr-only"} role="status">
         {working
           ? t("ai.working")
-          : !failed && tool === "summary" && summary
+          : !failed && readyFor === tool && tool === "summary" && summary
             ? t("ai.summary.ready")
-            : !failed && tool === "explain" && explained
+            : !failed && readyFor === tool && tool === "explain" && explained
               ? t("ai.explain.ready")
               : ""}
       </p>
+      {/* Not in the status above, so a screen reader is not told each
+          minute; read with the panel. */}
+      {working && tool === "summary" && (
+        <p className="native-reader-ai-wait">{t("ai.workingLong")}</p>
+      )}
+      {working && workingMinutes > 0 && (
+        <p className="native-reader-ai-wait">
+          {t("ai.workingFor", { minutes: workingMinutes })}
+        </p>
+      )}
       {failed && <p role="alert">{t("ai.failed")}</p>}
       {noText && <p>{t("ai.summary.noText")}</p>}
       {summary && (

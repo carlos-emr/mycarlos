@@ -1280,7 +1280,7 @@ portal-approvalCancelled = 此批准请求已取消。请先检查最新状态�
 
 portal-approvalContact = 需要核实诊所的批准状态。请联系诊所了解后续步骤。
 
-portal-approvalExpired = 此批准请求已过期。请先检查最新状态，再发起新的请求。
+portal-approvalExpired = 此批准请求已过期。若要为此设备再次申请，请前往「安全」中的「诊所文档」。
 
 portal-approvalMissing = 门户网站上找不到您已保存的批准请求。请重新发送已保存的请求。
 
@@ -1336,11 +1336,11 @@ portal-errorUnavailable = 此设备尚不能使用门户网站关联功能。
 
 portal-fingerprint = 完整设备指纹
 
-portal-incomplete = 关联未完成。请先在门户网站的「Linked devices」（已关联的设备）页面查看，再重试。
+portal-incomplete = 此已保存的尝试未完成。重新连接前，请在门户网站查看已关联的设备（「Linked devices」页面），或联系诊所。此应用无法继续这次尝试。
 
 portal-intro = 请使用患者门户网站上显示的网址和关联码来关联 myCarlos。
 
-portal-link = 关联诊所
+portal-link = 连接并申请批准
 
 portal-matchPerson = 依文档上的资料匹配
 
@@ -1362,8 +1362,6 @@ portal-serviceDate = 服务日期：{ $date }
 
 portal-serviceDateLabel = 服务日期
 
-portal-sourceVerified = 来自 { $clinic } · 已验证
-
 portal-title = 诊所文档
 
 rename-help-profile = 这只会变更显示的文件夹名称。此人的文件夹和文档仍会留在原处。
@@ -1378,6 +1376,51 @@ rename-profile-saved = 文件夹名称已变更为「{ $name }」。
 
 rename-title-profile = 重命名此人的文件夹
 
+portal-connectConsent = 此操作会连接此设备并发送批准请求。诊所必须先批准此设备，设备才能接收文档。
+
+portal-connected = 设备已关联。可在「安全」的「诊所文档」下查看其批准状态。
+
+portal-connecting = 正在连接并申请诊所批准…
+
+portal-errorBusy = 另一项诊所操作正在进行。请等其完成后重试。
+
+portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「诊所文档」下的批准状态，了解下一步操作。
+
+portal-retryApproval = 重试已保存的批准请求
+
+portal-working = 正在处理诊所操作…
+
+portal-approvalExpiredCard = 此批准请求已过期。若要为同一设备再次申请，请选择「发起新的批准请求」。您的文档和此设备的关联保持不变。
+
+portal-approvalPickedUp = 诊所的病历系统已接收此请求。正在等待诊所工作人员批准此设备。
+
+portal-approvalReplyInvalid = 无法验证诊所门户网站对此请求的答复，因此未采用。请联系诊所。
+
+portal-approvalStillOpen = 此批准请求在诊所门户网站上仍未结束。请等它结束后再发起新的请求。
+
+portal-approvalTimeLeft = 此请求剩余时间：约 { $count } 分钟。
+
+portal-approvalTimeOver = 此请求的时间已用完。
+
+portal-approvalTimeOverRestart = 此请求的时间已用完。如果诊所尚未批准此设备，请选择「{ $button }」。
+
+portal-approvalTimeUp = 此请求的时间已用完。正在向诊所查询…
+
+portal-approvalUnanswered = myCarlos 无法从诊所门户网站获取此请求的状态。
+
+portal-approvalUnreachable = myCarlos 无法连接诊所门户网站，因此目前还不知道此请求的状态。
+
+portal-approvalWait = 诊所门户网站要求 myCarlos 降低检查频率。
+
+portal-autoChecking = 此页面打开期间，myCarlos 会自动检查诊所的答复。
+
+portal-autoCheckStopped = 自动检查已停止。若要再次检查，请选择「{ $button }」。
+
+portal-awaitingClinic = 诊所已收到批准请求。正在等待诊所工作人员批准此设备。
+
+portal-deviceRemoved = 此设备已从您的诊所门户网站账户中移除。若要再次使用，请使用患者门户网站提供的新关联码重新连接。
+
+portal-errorRateLimited = 诊所门户网站要求 myCarlos 稍候再试。
 hidden-backToSecurity = 返回「安全」
 
 interface-history-appVersion = myCarlos 版本
@@ -1532,6 +1575,28 @@ interface-history-to = 目标
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也会保存操作记录：保险库何时打开；密码短语或恢复密钥何时设置或变更；备份何时保存或还原；各患者档案何时添加，以及各文件夹何时创建、重命名或移动；每份文档何时添加、重命名、移动、隐藏、还原或保存在 myCarlos 外部，以及保存位置。这些记录会和其他内容一起加密。您可以在此查看这些记录；myCarlos 绝不会变更或移除它们。
 
+portal-checkAgain = 若要再次检查，请选择「{ $button }」。
+
+portal-unlockCheckConsent = 每次解锁后，如果诊所已批准该设备，或批准请求仍未结束，myCarlos 就会联系已关联的诊所门户网站，检查批准状态更新和新文档。
+
+portal-unlockChecked = 解锁后已检查新的诊所文档。
+
+portal-unlockCheckIncomplete = myCarlos 无法在解锁后完成新诊所文档的检查。
+
+portal-unlockCheckNotRun = 由于另一项诊所操作正在进行，myCarlos 在解锁后未检查新的诊所文档。
+
+portal-unlockCheckWaiting = 由于诊所门户网站要求稍候，myCarlos 在解锁后未检查新的诊所文档。
+
+portal-unlockRefused = { $count } 份诊所文档无法验证，因此未添加。请联系诊所。
+
+library-source-clinic = 来自 { $clinic }
+
+library-source-manualImport = 手动导入
+
+library-status-unverified = 未验证
+
+library-status-verified = 已验证
+
 ai-summary-button = 摘要
 
 ai-summary-title = 通俗易懂的摘要
@@ -1540,9 +1605,9 @@ ai-explain-title = 解释术语
 
 ai-notInstalled-title = 此电脑上尚未安装 AI 助手
 
-ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“偏好设置”中下载模型，或添加您已有的模型文件。
+ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“设置”中的“AI 助手”里下载模型，或添加您已有的模型文件。
 
-ai-notInstalled-openPreferences = 打开偏好设置
+ai-notInstalled-openPreferences = 打开 AI 助手设置
 
 aiHelper-resultLabel = 由 AI 撰写，可能有误。请向您的医生核实。
 
@@ -1562,9 +1627,11 @@ ai-explain-submit = 解释
 
 ai-preferences-title = AI 助手
 
-ai-preferences-body = 使用在此电脑上运行的 AI 模型，以通俗易懂的文字解释您的文档。您可以下载模型，或添加您已有的模型文件；模型保存在此电脑上。
+ai-preferences-body = 使用在这台电脑上运行的 AI 模型，以通俗的语言解释你的文档。下载下列某个模型，或添加你已有的对应文件。模型保留在这台电脑上。
 
 ai-preferences-notInstalled = 未安装
+
+ai-settings-subtitle = AI 助手在此电脑上的运行方式
 
 ai-model-add = 添加模型文件…
 
@@ -1594,7 +1661,7 @@ ai-model-unsupportedCpu = 此电脑的处理器不支持 AI 助手。
 
 ai-model-unsupportedPlatform = 此类电脑暂不支持 AI 助手。
 
-ai-model-refusedList = myCarlos 不接受此文件。请选择上方列出的模型文件。
+ai-model-refusedList = myCarlos 不接受此文件。请选择上方列出的某个模型文件。
 
 ai-model-refusedHash = 这不是预期的文件。请重新下载，然后添加新的副本。
 
@@ -1612,6 +1679,14 @@ ai-model-downloadNote = 仅一次，且仅在您点击时，从 { $host } 下载
 
 ai-model-downloading = 正在下载并检查… { $done } / { $total } MB
 
+ai-model-progressName = 模型下载
+
+ai-model-progressValue = { $percent }，{ $done } / { $total } MB
+
+ai-model-stillDownloading = 模型仍在下载。
+
+ai-model-stillChecking = 仍在检查模型文件。
+
 ai-model-refusedNetwork = 下载未完成。请检查您的网络连接，然后重试。
 
 ai-model-refusedUnavailable = 该模型目前无法从其地址获取。请稍后重试，或添加您已有的文件。
@@ -1619,6 +1694,10 @@ ai-model-refusedUnavailable = 该模型目前无法从其地址获取。请稍�
 native-filter-models = 模型文件
 
 ai-working = AI 助手正在处理…
+
+ai-workingLong = 文档较长时，可能需要几分钟。
+
+ai-workingFor = 已处理 { $minutes } 分钟。
 
 ai-summary-ready = 摘要已生成。
 
@@ -1827,12 +1906,53 @@ notifications-error = 无法保存此设置。本次会话的通知已关闭。
 notifications-unavailable = 文档通知不可用。请按通常方式打开 myCarlos 查看文档。
 notifications-helpAutomatic = 保存诊所文档后，Windows 可以显示不含具体内容的通知。请照常打开 myCarlos 阅读文档。
 notifications-autoAllow = 保险库解锁时自动检查诊所文档
+notifications-autoNeedsNotices = 请先允许文档到达通知，才能开启此选项。
 notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
 notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
 notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。
+noticesStep-title = 来自诊所的通知
+noticesStep-intro = 您的诊所已关联。myCarlos 可以在新文档到达时通知您。除非您勾选，否则不会开启任何选项。
+noticesStep-later = 您随时可以在 { $settings } 的 { $preferences } 中变更这些设置：{ $notices }。
+noticesStep-done = 完成
+noticesStep-notNow = 暂不
 
 ai-summary-again = 重新生成摘要
 
 ai-keepFailed = myCarlos 无法将此回答与文档一起保存。此处仍会显示该回答。
 
 ai-keepFull = 此文档保存的 AI 回答已达上限。新的回答会显示，但不会保存。
+
+# Catalog model list (#276A).
+
+ai-models-title = 这台电脑上的模型
+
+ai-models-group = 正在使用的模型
+
+ai-models-inUse = 正在使用
+
+ai-models-installed = 已安装
+
+ai-models-addedByYou = 由你添加
+
+ai-models-notDownloaded = 尚未下载
+
+ai-models-downloading = 正在下载
+ai-models-installing = 正在安装
+
+ai-models-download = 下载
+
+ai-models-remove = 移除
+
+ai-models-help = 标为“正在使用”的模型用于生成摘要和解释。选择其他模型会停止正在生成的回答。
+
+ai-models-loading = 正在读取模型列表…
+
+ai-models-loadFailed = 无法读取模型列表。请重试。
+
+ai-models-retry = 重新读取模型列表
+
+ai-models-starting = 正在开始下载…
+
+ai-models-picking = 请选择要添加的模型文件。
+
+ai-models-changed = 已更改正在使用的模型

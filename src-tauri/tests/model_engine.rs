@@ -213,6 +213,81 @@ fn model_file(dir: &std::path::Path, bytes: &[u8]) -> std::path::PathBuf {
 }
 
 #[test]
+fn the_real_engine_reads_an_instruction_prefix_once_and_puts_it_back_after() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = model_file(dir.path(), &tiny_model());
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    runner.override_threads(Some(1));
+    let summarize = |lang: &str, text: &str| {
+        runner.summarize(lang, &[(0, text)]).unwrap();
+        runner.last_prefix().unwrap()
+    };
+    let explain = |lang: &str| {
+        runner
+            .explain(lang, "blood test", "FAKE: a blood test was done.")
+            .unwrap();
+        runner.last_prefix().unwrap()
+    };
+    // Read the first time, and kept.
+    let (prefix_len, hit, bytes) = summarize("en", "FAKE: a blood test was done.");
+    assert!(
+        prefix_len > 0 && !hit && bytes > 0,
+        "{prefix_len} {hit} {bytes}"
+    );
+    let cold_hash = runner.last_answer_hash().unwrap();
+    // The same request on another document: put back.
+    assert_eq!(
+        summarize("en", "FAKE: another document, other words."),
+        (prefix_len, true, bytes)
+    );
+    // The tiny model writes the same whatever it reads: token for token, put back or not.
+    assert_eq!(runner.last_answer_hash(), Some(cold_hash));
+    // Another language, or an explanation: another prefix, read.
+    assert!(!summarize("fr", "FAKE: a blood test was done.").1);
+    assert!(!explain("en").1);
+    assert!(explain("en").1);
+    // Two are kept: the English summary's went when the others came.
+    assert!(!summarize("en", "FAKE: a blood test was done.").1);
+    runner.stop();
+}
+
+#[test]
+fn the_real_engine_writes_an_answer_on_the_threads_it_is_given() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = model_file(dir.path(), &tiny_model());
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let pages = [(0, "FAKE: a blood test was done.")];
+    runner.override_threads(Some(1));
+    runner.summarize("en", &pages).unwrap();
+    let (threads, batch) = runner.last_threads().unwrap();
+    assert_eq!(threads, 1);
+    assert!(batch >= 1);
+    // The prefix is kept for the next summary on as many threads...
+    runner.summarize("en", &pages).unwrap();
+    assert_eq!(runner.last_threads(), Some((1, batch)));
+    assert!(runner.last_prefix().unwrap().1);
+    // ...and goes with the context when it is made again.
+    if batch > 1 {
+        runner.override_threads(Some(batch));
+        runner.summarize("en", &pages).unwrap();
+        assert!(!runner.last_prefix().unwrap().1);
+    }
+    // As many as the prompt's again: the context is made again, inside the sandbox.
+    runner.override_threads(Some(batch));
+    runner
+        .explain("en", "blood test", "FAKE: a blood test was done.")
+        .unwrap();
+    assert_eq!(runner.last_threads(), Some((batch, batch)));
+    // Chosen from the computer's load: never more than the prompt's.
+    runner.override_threads(None);
+    runner.summarize("en", &pages).unwrap();
+    assert!(runner
+        .last_threads()
+        .is_some_and(|(threads, read_on)| (1..=batch).contains(&threads) && read_on == batch));
+    runner.stop();
+}
+
+#[test]
 fn the_real_engine_loads_the_model_as_handed_over_and_summarizes_under_the_grammar() {
     let dir = tempfile::tempdir().unwrap();
     let model = model_file(dir.path(), &tiny_model());
@@ -252,7 +327,8 @@ fn a_model_file_that_is_not_a_model_ends_the_helper_before_it_greets() {
 /// A real model from the environment over FAKE documents, for trying a model by hand:
 /// `MYCARLOS_TEST_MODEL` names a GGUF file, `MYCARLOS_TEST_DOCS` a folder of FAKE `.txt`
 /// documents, `MYCARLOS_TEST_LANG` the summaries' language (default `en`), `MYCARLOS_TEST_CHAT_FORMAT` the model's chat
-/// format (`builtin`, the default, or `gemma4`). Prints each answer
+/// format (`builtin`, the default, or `gemma4`), and `MYCARLOS_TEST_THREADS` a fixed number of
+/// threads to write the answers on (default: chosen from the load). Prints each answer
 /// and its time. Never in CI: run with `--ignored --nocapture`.
 #[test]
 #[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
@@ -272,6 +348,14 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
     let runner = ModelRunner::start_with(executable(), &model, &format)
         .unwrap_or_else(|error| panic!("{error}"));
     println!("started in {:.1} s", started.elapsed().as_secs_f64());
+    // MYCARLOS_TEST_THREADS: write every answer on that many threads, whatever the load.
+    if let Some(threads) = std::env::var("MYCARLOS_TEST_THREADS")
+        .ok()
+        .and_then(|n| n.parse().ok())
+    {
+        runner.override_threads(Some(threads));
+        println!("answers on {threads} threads");
+    }
     let mut names: Vec<_> = std::fs::read_dir(&docs)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -312,4 +396,59 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
     );
     println!("  stats: {}", runner.last_stats());
     runner.stop();
+}
+
+/// By hand, with a real model (`MYCARLOS_TEST_MODEL`): an answer read from a put-back prefix
+/// after another document is word for word the answer a fresh helper gives, for a summary and
+/// for an explanation after it, so nothing of the first document carries over. Never in CI:
+/// run with `--ignored --nocapture`.
+#[test]
+#[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
+fn a_real_model_answers_the_same_after_another_document_as_fresh() {
+    let model = std::path::PathBuf::from(
+        std::env::var_os("MYCARLOS_TEST_MODEL").expect("MYCARLOS_TEST_MODEL"),
+    );
+    let first = "FAKE-MARKER-Q7 Rowan Testwood: potassium 6.9 mmol/L, start spironolactone \
+                 25 mg daily, see Dr. Fakeham in 3 days.";
+    let second = "FAKE lab report. Potassium is mildly high (5.3 mmol/L). The A1c of 8.1% is \
+                  above the usual target. Repeat the potassium within 1 week.";
+    let (term, context) = ("A1c", "The A1c of 8.1% is above the usual target.");
+    let warm = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    warm.summarize("en", &[(0, first)]).unwrap();
+    let warm_summary = warm.summarize("en", &[(0, second)]).unwrap();
+    let warm_summary_hash = warm.last_answer_hash().unwrap();
+    assert!(warm.last_prefix().unwrap().1, "the prefix was put back");
+    let warm_explained = warm.explain("en", term, context).unwrap();
+    let warm_explained_hash = warm.last_answer_hash().unwrap();
+    warm.explain("en", term, first).unwrap();
+    let warm_again = warm.explain("en", term, context).unwrap();
+    let warm_again_hash = warm.last_answer_hash().unwrap();
+    assert!(warm.last_prefix().unwrap().1, "the prefix was put back");
+    warm.stop();
+    let cold = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let cold_summary = cold.summarize("en", &[(0, second)]).unwrap();
+    let cold_summary_hash = cold.last_answer_hash().unwrap();
+    assert!(
+        !cold.last_prefix().unwrap().1,
+        "a fresh helper reads the prefix"
+    );
+    let cold_explained = cold.explain("en", term, context).unwrap();
+    let cold_explained_hash = cold.last_answer_hash().unwrap();
+    cold.stop();
+    println!("summary: {warm_summary:?}\nexplain: {warm_explained:?}");
+    println!(
+        "token hashes: summary {warm_summary_hash:016x} / {cold_summary_hash:016x}, explain \
+         {warm_explained_hash:016x} / {cold_explained_hash:016x}"
+    );
+    // Token for token the same: what the model wrote, not only what was read from it.
+    assert_eq!(warm_summary_hash, cold_summary_hash);
+    assert_eq!(warm_explained_hash, cold_explained_hash);
+    assert_eq!(warm_again_hash, cold_explained_hash);
+    assert_eq!(warm_summary, cold_summary);
+    assert_eq!(warm_explained, cold_explained);
+    assert_eq!(warm_again, cold_explained);
+    for (text, quote) in &warm_summary.0 {
+        assert!(!text.contains("FAKE-MARKER") && !quote.contains("FAKE-MARKER"));
+    }
+    assert!(!warm_explained.contains("FAKE-MARKER"));
 }

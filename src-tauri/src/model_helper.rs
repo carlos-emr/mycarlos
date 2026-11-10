@@ -294,12 +294,18 @@ enum Request {
         lang: String,
         pages: Vec<Page>,
         max_sentences: usize,
+        /// The threads to write the answer on (see `Engine::use_threads`); none keeps them.
+        #[serde(default)]
+        threads: Option<u32>,
     },
+    #[serde(rename_all = "camelCase")]
     Explain {
         id: u64,
         term: String,
         context: String,
         lang: String,
+        #[serde(default)]
+        threads: Option<u32>,
     },
     /// Test builds only: reports what the sandbox lets it do (see `stub`).
     #[cfg(feature = "ai-helper-stub")]
@@ -336,7 +342,7 @@ struct TextAnswer {
 /// writing the answer, whether it stopped at its cap, and how often the grammar had to look at
 /// the whole vocabulary. Counts and times only, never words.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub(crate) struct Stats {
     pub(crate) prompt_tokens: u32,
     pub(crate) answer_tokens: u32,
@@ -344,6 +350,28 @@ pub(crate) struct Stats {
     pub(crate) answer_ms: u64,
     pub(crate) capped: bool,
     pub(crate) grammar_scans: u32,
+    /// The prompt's instruction prefix, in tokens (in `prompt_tokens`), whether its state was
+    /// put back rather than read, and the size of that kept state.
+    pub(crate) prefix_len: u32,
+    pub(crate) cache_hit: bool,
+    pub(crate) snapshot_bytes: u64,
+    /// A hash of the token ids the answer was written in (FNV-1a over each id's bytes), so
+    /// that two answers can be compared exactly, token for token, without their words.
+    pub(crate) answer_hash: u64,
+    /// The threads the answer was written on, and the prompt read on.
+    pub(crate) threads: u32,
+    pub(crate) batch_threads: u32,
+}
+
+/// FNV-1a's starting value and step (64-bit).
+pub(crate) const ANSWER_HASH_START: u64 = 0xcbf2_9ce4_8422_2325;
+const ANSWER_HASH_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+/// `hash` with one more token id in it.
+pub(crate) fn answer_hash(hash: u64, token: i32) -> u64 {
+    token.to_le_bytes().iter().fold(hash, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(ANSWER_HASH_PRIME)
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -656,7 +684,11 @@ fn serve_model(settings: &Settings) -> i32 {
                 lang,
                 pages,
                 max_sentences,
-            }) => match engine.summarize(&lang, &pages, max_sentences) {
+                threads,
+            }) => match engine
+                .use_threads(threads)
+                .and_then(|()| engine.summarize(&lang, &pages, max_sentences))
+            {
                 Ok((sentences, fit)) => serde_json::to_string(&SummaryAnswer {
                     id,
                     sentences,
@@ -671,7 +703,11 @@ fn serve_model(settings: &Settings) -> i32 {
                 term,
                 context,
                 lang,
-            }) => match engine.explain(&term, &context, &lang) {
+                threads,
+            }) => match engine
+                .use_threads(threads)
+                .and_then(|()| engine.explain(&term, &context, &lang))
+            {
                 Ok(text) => serde_json::to_string(&TextAnswer {
                     id,
                     text,
@@ -690,6 +726,11 @@ fn serve_model(settings: &Settings) -> i32 {
         match answer {
             Ok(line) if send(&mut output, &line) => {}
             _ => return exit::OUTPUT,
+        }
+        // Its context could not be made again: the helper ends, and the next request starts
+        // a new one.
+        if !engine.has_context() {
+            return exit::NO_MODEL;
         }
     }
 }
@@ -1041,6 +1082,39 @@ mod tests {
                 },
             ])
         );
+    }
+
+    #[test]
+    fn an_answer_hash_tells_token_ids_and_their_order_apart() {
+        let of = |ids: &[i32]| {
+            ids.iter()
+                .fold(ANSWER_HASH_START, |hash, id| answer_hash(hash, *id))
+        };
+        assert_eq!(of(&[1, 2, 3]), of(&[1, 2, 3]));
+        assert_ne!(of(&[1, 2, 3]), of(&[3, 2, 1]));
+        assert_ne!(of(&[1, 2]), of(&[1, 2, 0]));
+        assert_ne!(of(&[256]), of(&[1]));
+        assert_eq!(of(&[]), ANSWER_HASH_START);
+    }
+
+    #[test]
+    fn a_request_may_say_how_many_threads_to_write_its_answer_on() {
+        let summary =
+            r#"{"tool":"summary","id":1,"lang":"en","pages":[],"maxSentences":6,"threads":2}"#;
+        assert!(matches!(
+            serde_json::from_str::<Request>(summary),
+            Ok(Request::Summary {
+                threads: Some(2),
+                ..
+            })
+        ));
+        let explain = r#"{"tool":"explain","id":2,"term":"a","context":"b","lang":"en"}"#;
+        assert!(matches!(
+            serde_json::from_str::<Request>(explain),
+            Ok(Request::Explain { threads: None, .. })
+        ));
+        let unknown = r#"{"tool":"explain","id":2,"term":"a","context":"b","lang":"en","x":1}"#;
+        assert!(serde_json::from_str::<Request>(unknown).is_err());
     }
 
     #[test]

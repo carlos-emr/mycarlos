@@ -129,7 +129,8 @@ test("with no model, Summary and Explain say so and lead to Preferences, and not
   await expect(explainPanel).toContainText(en("ai.notInstalled.title"));
   await expect(explainPanel.getByRole("textbox")).toHaveCount(0);
 
-  // Open Preferences: the reader closes, and the AI helper's row says why.
+  // Open the AI helper's settings: the reader closes, and the helper's own
+  // page says why.
   await explainPanel
     .getByRole("button", {
       name: en("ai.notInstalled.openPreferences"),
@@ -137,6 +138,9 @@ test("with no model, Summary and Explain say so and lead to Preferences, and not
     })
     .click();
   await expect(reader).toBeHidden();
+  await expect(
+    page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
+  ).toBeVisible();
   const row = page.getByRole("heading", {
     name: `${en("ai.preferences.title")} ${en("ai.preferences.notInstalled")}`,
     exact: true,
