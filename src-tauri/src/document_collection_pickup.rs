@@ -452,7 +452,12 @@ where
                     if reply.status != 200 {
                         // A portal that removed this device says so (#128, as
                         // the manual check reads it); any other answer is not
-                        // one this check can use.
+                        // one this check can use. A "not found" for the list is
+                        // a network failure here on purpose: the manual check's
+                        // rule (another device of this vault answered by the
+                        // same portal) is not applied. A device a reset portal
+                        // deleted is asked again until a manual or after-unlock
+                        // check marks it gone, which happens at the next unlock.
                         return Err(VaultError::Portal(
                             if crate::portal_approval::device_removed(&reply) {
                                 LinkError::DeviceRemoved
