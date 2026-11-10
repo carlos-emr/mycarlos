@@ -564,6 +564,16 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** Where the span `start..end` (UTF-16 units) of page `page`'s readable
+   * text, which holds `quoted`, is drawn on the page picture (#292). Exact or
+   * nothing: `rects` is empty, with the reason, when the helper cannot tie
+   * every character of the span to the glyph that draws it. Computers only. */
+  pageBoxes?(
+    recordId: string,
+    page: number,
+    span: { start: number; end: number; quoted: string },
+    password?: string,
+  ): Promise<PageBoxes>;
   /** Whether the AI helper (#72) has a model on this computer. */
   aiModelStatus(): Promise<ModelStatus>;
   /** A plain-words summary of a document's pages, written by the model on
@@ -863,6 +873,15 @@ export interface ViewedPage {
   readableText?: string;
 }
 
+/** Where a quoted span is on a page picture (#292): one rectangle per line
+ * run, as fractions of the picture's width and height from its top left
+ * ([left, top, right, bottom]), or none, with why. */
+export interface PageBoxes {
+  rects: [number, number, number, number][];
+  /** Why there is no box, for tests and support; never shown as such. */
+  absent?: string;
+}
+
 /** True when the native side refused with `code`. */
 export function hasVaultErrorCode(error: unknown, code: string): boolean {
   return hasErrorCode(error, code);
@@ -1071,6 +1090,10 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, page, width, password: password ?? null },
       });
     },
+    pageBoxes: (recordId, page, span, password) =>
+      invoke<PageBoxes>("vault_page_boxes", {
+        request: { recordId, page, ...span, password: password ?? null },
+      }),
     cancelView: () => {
       viewGeneration += 1;
       // No newer page can start while this is pending, so one cancellation
