@@ -110,10 +110,9 @@ test("a wrong passphrase, then the wait after wrong tries, are said by the Passp
 
   // Locked again, the screen says so, and nothing of the earlier refusals.
   await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.unlockedLockNow"),
-      exact: true,
-    })
+    // The window's own Lock now, named by its words (#121).
+    .locator(".titlebar")
+    .getByRole("button", { name: en("security.lockNow"), exact: true })
     .click();
   await expect(heading).toBeVisible();
   await expect(passphrase).toHaveAccessibleDescription(
