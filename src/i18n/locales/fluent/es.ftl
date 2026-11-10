@@ -1404,6 +1404,16 @@ personDetails-futureDate = La fecha de nacimiento no puede ser futura.
 
 personDetails-help = Se guardan en esta bóveda cifrada para sugerir a quién pertenece un documento compartido. Estos datos no verifican el origen de un documento.
 
+personDetails-setup = Nombre completo y fecha de nacimiento
+
+personDetails-later = Agregarlos más tarde
+
+personDetails-reminder = Agregue el nombre completo y la fecha de nacimiento de { $name }. Ayudan a myCarlos a saber para quién es un documento.
+
+personDetails-notNow = Ahora no
+
+personDetails-notSaved = La bóveda está lista, pero el nombre completo y la fecha de nacimiento no se guardaron. Agréguelos en Editar datos.
+
 personDetails-invalidDate = Introduzca una fecha de nacimiento válida: año, mes y día.
 
 personDetails-list = Datos de las personas
