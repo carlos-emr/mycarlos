@@ -791,6 +791,7 @@
   "library.source.manualImport",
   "library.status.unverified",
   "library.status.verified",
+  "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
   "ai.explain.title",

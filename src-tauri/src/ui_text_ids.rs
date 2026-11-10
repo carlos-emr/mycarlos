@@ -363,6 +363,7 @@ pub enum MessageId {
     InterfaceHistoryDamagedAll,
     InterfaceHistoryDamagedBefore,
     InterfaceHistoryDamagedBetween,
+    InterfaceHistoryDamagedStorageOnly,
     InterfaceHistoryEmpty,
     InterfaceHistoryErrorUnverified,
     InterfaceHistoryEventAiResultSaved,
@@ -1325,6 +1326,7 @@ impl MessageId {
         Self::InterfaceHistoryDamagedAll,
         Self::InterfaceHistoryDamagedBefore,
         Self::InterfaceHistoryDamagedBetween,
+        Self::InterfaceHistoryDamagedStorageOnly,
         Self::InterfaceHistoryEmpty,
         Self::InterfaceHistoryErrorUnverified,
         Self::InterfaceHistoryEventAiResultSaved,
@@ -2505,6 +2507,7 @@ impl MessageId {
             Self::InterfaceHistoryDamagedAll => "interface-history-damagedAll",
             Self::InterfaceHistoryDamagedBefore => "interface-history-damagedBefore",
             Self::InterfaceHistoryDamagedBetween => "interface-history-damagedBetween",
+            Self::InterfaceHistoryDamagedStorageOnly => "interface-history-damagedStorageOnly",
             Self::InterfaceHistoryEmpty => "interface-history-empty",
             Self::InterfaceHistoryErrorUnverified => "interface-history-error-unverified",
             Self::InterfaceHistoryEventAiResultSaved => "interface-history-event-aiResultSaved",
@@ -4218,6 +4221,9 @@ impl MessageId {
             "library.source.manualImport" => Some(Self::LibrarySourceManualImport),
             "library.status.unverified" => Some(Self::LibraryStatusUnverified),
             "library.status.verified" => Some(Self::LibraryStatusVerified),
+            "interface.history.damagedStorageOnly" => {
+                Some(Self::InterfaceHistoryDamagedStorageOnly)
+            }
             "ai.summary.button" => Some(Self::AiSummaryButton),
             "ai.summary.title" => Some(Self::AiSummaryTitle),
             "ai.explain.title" => Some(Self::AiExplainTitle),
