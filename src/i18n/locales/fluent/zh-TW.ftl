@@ -860,8 +860,6 @@ readingAid-unavailable = 無法安全顯示此閱讀輔助。請改為開啟原�
 
 record-kind-document = 文件
 
-record-source-manual = 手動匯入 — 未驗證
-
 recover-intro = 使用復原金鑰開啟保險庫並選擇新密語。
 
 recover-key-format = 共 28 個英文字母和數字，分成 7 組、每組 4 個字元，如同復原套件上的內容或您抄下的內容。連字號、空格和其他標點符號不影響輸入。
@@ -1491,6 +1489,8 @@ interface-history-event-imported = 文件已新增
 
 interface-history-event-moved = 文件已移動
 
+interface-history-event-other = 其他事件
+
 interface-history-event-passphraseChanged = 密語已變更
 
 interface-history-event-portalLinkStarted = 已開始連結診所
@@ -1538,6 +1538,8 @@ interface-history-how-movedFromShared = 從「與我分享」移出
 interface-history-how-passphrase = 密語
 
 interface-history-how-patient = 由您隱藏
+
+interface-history-how-personFolder = 某人的資料夾
 
 interface-history-how-picked = 從所選檔案匯入
 

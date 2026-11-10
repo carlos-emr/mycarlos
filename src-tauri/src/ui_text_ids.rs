@@ -407,6 +407,7 @@ pub enum MessageId {
     InterfaceHistoryEventHistoryStarted,
     InterfaceHistoryEventImported,
     InterfaceHistoryEventMoved,
+    InterfaceHistoryEventOther,
     InterfaceHistoryEventPassphraseChanged,
     InterfaceHistoryEventPortalLinkStarted,
     InterfaceHistoryEventPortalLinked,
@@ -431,6 +432,7 @@ pub enum MessageId {
     InterfaceHistoryHowMovedFromShared,
     InterfaceHistoryHowPassphrase,
     InterfaceHistoryHowPatient,
+    InterfaceHistoryHowPersonFolder,
     InterfaceHistoryHowPicked,
     InterfaceHistoryHowRecoveryKey,
     InterfaceHistoryHowReplaced,
@@ -815,7 +817,6 @@ pub enum MessageId {
     ReadingAidTitle,
     ReadingAidUnavailable,
     RecordKindDocument,
-    RecordSourceManual,
     RecoverIntro,
     RecoverKeyFormat,
     RecoverKeyLabel,
@@ -1408,6 +1409,7 @@ impl MessageId {
         Self::InterfaceHistoryEventHistoryStarted,
         Self::InterfaceHistoryEventImported,
         Self::InterfaceHistoryEventMoved,
+        Self::InterfaceHistoryEventOther,
         Self::InterfaceHistoryEventPassphraseChanged,
         Self::InterfaceHistoryEventPortalLinkStarted,
         Self::InterfaceHistoryEventPortalLinked,
@@ -1432,6 +1434,7 @@ impl MessageId {
         Self::InterfaceHistoryHowMovedFromShared,
         Self::InterfaceHistoryHowPassphrase,
         Self::InterfaceHistoryHowPatient,
+        Self::InterfaceHistoryHowPersonFolder,
         Self::InterfaceHistoryHowPicked,
         Self::InterfaceHistoryHowRecoveryKey,
         Self::InterfaceHistoryHowReplaced,
@@ -1816,7 +1819,6 @@ impl MessageId {
         Self::ReadingAidTitle,
         Self::ReadingAidUnavailable,
         Self::RecordKindDocument,
-        Self::RecordSourceManual,
         Self::RecoverIntro,
         Self::RecoverKeyFormat,
         Self::RecoverKeyLabel,
@@ -2637,6 +2639,7 @@ impl MessageId {
             Self::InterfaceHistoryEventHistoryStarted => "interface-history-event-historyStarted",
             Self::InterfaceHistoryEventImported => "interface-history-event-imported",
             Self::InterfaceHistoryEventMoved => "interface-history-event-moved",
+            Self::InterfaceHistoryEventOther => "interface-history-event-other",
             Self::InterfaceHistoryEventPassphraseChanged => {
                 "interface-history-event-passphraseChanged"
             }
@@ -2667,6 +2670,7 @@ impl MessageId {
             Self::InterfaceHistoryHowMovedFromShared => "interface-history-how-movedFromShared",
             Self::InterfaceHistoryHowPassphrase => "interface-history-how-passphrase",
             Self::InterfaceHistoryHowPatient => "interface-history-how-patient",
+            Self::InterfaceHistoryHowPersonFolder => "interface-history-how-personFolder",
             Self::InterfaceHistoryHowPicked => "interface-history-how-picked",
             Self::InterfaceHistoryHowRecoveryKey => "interface-history-how-recoveryKey",
             Self::InterfaceHistoryHowReplaced => "interface-history-how-replaced",
@@ -3093,7 +3097,6 @@ impl MessageId {
             Self::ReadingAidTitle => "readingAid-title",
             Self::ReadingAidUnavailable => "readingAid-unavailable",
             Self::RecordKindDocument => "record-kind-document",
-            Self::RecordSourceManual => "record-source-manual",
             Self::RecoverIntro => "recover-intro",
             Self::RecoverKeyFormat => "recover-key-format",
             Self::RecoverKeyLabel => "recover-key-label",
@@ -3915,7 +3918,6 @@ impl MessageId {
             "readingAid.title" => Some(Self::ReadingAidTitle),
             "readingAid.unavailable" => Some(Self::ReadingAidUnavailable),
             "record.kind.document" => Some(Self::RecordKindDocument),
-            "record.source.manual" => Some(Self::RecordSourceManual),
             "recover.intro" => Some(Self::RecoverIntro),
             "recover.key.format" => Some(Self::RecoverKeyFormat),
             "recover.key.label" => Some(Self::RecoverKeyLabel),
@@ -4207,6 +4209,8 @@ impl MessageId {
             "interface.history.event.deliveryReceiptSettled" => {
                 Some(Self::InterfaceHistoryEventDeliveryReceiptSettled)
             }
+            "interface.history.event.other" => Some(Self::InterfaceHistoryEventOther),
+            "interface.history.how.personFolder" => Some(Self::InterfaceHistoryHowPersonFolder),
             "interface.history.event.deviceApprovalRequestRestarted" => {
                 Some(Self::InterfaceHistoryEventDeviceApprovalRequestRestarted)
             }

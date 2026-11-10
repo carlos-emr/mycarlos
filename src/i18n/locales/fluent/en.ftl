@@ -952,8 +952,6 @@ readingAid-unavailable = This reading aid cannot be shown safely. Open the origi
 
 record-kind-document = Document
 
-record-source-manual = Manual import — unverified
-
 recover-intro = Use your recovery key to open the vault and choose a new passphrase.
 
 recover-key-format = 28 letters and digits, in 7 groups of 4, as on your kit or as you wrote it down. Dashes, spaces and other punctuation do not matter.
@@ -1623,6 +1621,8 @@ interface-history-event-imported = Document added
 
 interface-history-event-moved = Document moved
 
+interface-history-event-other = Other event
+
 interface-history-event-passphraseChanged = Passphrase changed
 
 interface-history-event-portalLinkStarted = Clinic link started
@@ -1674,6 +1674,8 @@ interface-history-how-movedFromShared = Moved from Shared with me
 interface-history-how-passphrase = Passphrase
 
 interface-history-how-patient = Hidden by you
+
+interface-history-how-personFolder = A person's folder
 
 interface-history-how-picked = Imported from a chosen file
 
