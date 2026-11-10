@@ -120,7 +120,7 @@ fn prompt_tokens(fixed: u32, text_bytes: usize) -> u32 {
 
 /// The helper's own words around a summary's pages, and around a term and its sentence, in
 /// tokens, with room to spare (about 450 and 300 today).
-const SUMMARY_PROMPT_TOKENS: u32 = 750;
+pub(crate) const SUMMARY_PROMPT_TOKENS: u32 = 750;
 const EXPLAIN_PROMPT_TOKENS: u32 = 400;
 /// The answer a summary's limit allows for: about 53 tokens a sentence were measured (5 Nov
 /// 2026), so six sentences run to about 320; its cap (`SUMMARY_TOKENS`) stops it anyway,
