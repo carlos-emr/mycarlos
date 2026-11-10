@@ -452,3 +452,260 @@ fn a_real_model_answers_the_same_after_another_document_as_fresh() {
     }
     assert!(!warm_explained.contains("FAKE-MARKER"));
 }
+
+/// The evaluation run's measured summary, on the tiny model: each sentence with its quote and
+/// whether it was found, the fit, the stats, the runner's time limit, and the model file's hash.
+#[test]
+fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
+    use sha2::{Digest, Sha256};
+    let dir = tempfile::tempdir().unwrap();
+    let bytes = tiny_model();
+    let model = model_file(dir.path(), &bytes);
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let pages = [
+        (0, "FAKE: a blood test was done."),
+        (1, "FAKE: a second page."),
+    ];
+    let measured = runner.summarize_measured("en", &pages).unwrap();
+    assert_eq!((measured.last_page, measured.last_page_cut), (1, false));
+    assert_eq!(measured.sentences.len(), 6, "{measured:?}");
+    for sentence in &measured.sentences {
+        assert_eq!(
+            (sentence.text.as_str(), sentence.quote.as_str()),
+            ("a", "a")
+        );
+        assert!(sentence.located);
+    }
+    let stats = measured.stats.as_ref().expect("stats");
+    assert!(stats["promptTokens"].as_u64().unwrap() > 0, "{stats}");
+    assert!(stats["answerTokens"].as_u64().unwrap() > 0, "{stats}");
+    // The runner's own limit: 30 s + 150 ms for each of 750 + 48 bytes / 3 prompt tokens,
+    // + 600 ms for each of the 400 answer tokens allowed.
+    assert_eq!(
+        measured.answer_limit_ms,
+        30_000 + 150 * (750 + 16) + 600 * 400
+    );
+    let (sha256, size) = runner.model_file();
+    assert_eq!(size, bytes.len() as u64);
+    assert_eq!(sha256, format!("{:x}", Sha256::digest(&bytes)));
+    runner.stop();
+}
+
+/// A build's summary fingerprint covers its prompt, grammar and caps, per language.
+#[test]
+fn a_summary_build_names_its_prompt_grammar_and_caps_by_one_fingerprint() {
+    use mycarlos_tauri_poc_lib::model_engine_testing::summary_build;
+    let en = summary_build("en").unwrap();
+    assert_eq!(en, summary_build("en").unwrap());
+    assert_eq!(en["fingerprint"].as_str().unwrap().len(), 64);
+    assert_ne!(
+        en["fingerprint"],
+        summary_build("fr").unwrap()["fingerprint"]
+    );
+    let cap = en["caps"]["maxSentences"].as_u64().unwrap();
+    assert!(en["summaryPrompt"]
+        .as_str()
+        .unwrap()
+        .contains(&format!("in English, in at most {cap} short")));
+    assert!(en["grammar"]
+        .as_str()
+        .unwrap()
+        .contains(&format!("{{0,{}}}", cap - 1)));
+    assert!(summary_build("xx").is_err());
+}
+
+/// By hand, never in CI: one evaluation run of the AI summary over FAKE documents
+/// (`scripts/summary-evaluation/HARNESS.md`). A real model (`MYCARLOS_TEST_MODEL`) summarizes
+/// each document in `MYCARLOS_EVAL_DOCS` (`<id>.json`: `{"id","lang","pages":[{"index","text"}]}`)
+/// in `MYCARLOS_TEST_LANG` (default `en`), through the app's own helper and sandbox. Each answer is
+/// appended to `MYCARLOS_EVAL_OUT` as one JSON line, written and synced before the next document,
+/// after a first line naming the run: `MYCARLOS_EVAL_VARIANT`, `MYCARLOS_EVAL_COMMIT`, this build's
+/// summary fingerprint (prompt, grammar, caps) and the model file's SHA-256 as it was handed over.
+/// `MYCARLOS_EVAL_EXPECT_SHA256`, when set, refuses any other model file. A run stopped part way is
+/// resumed: documents already in the file are skipped, if its first line names the same build,
+/// model, language and threads. `MYCARLOS_TEST_THREADS` and `MYCARLOS_TEST_CHAT_FORMAT` as above.
+#[test]
+#[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
+fn a_real_model_evaluation_run() {
+    use mycarlos_tauri_poc_lib::model_engine_testing::summary_build;
+    use serde_json::{json, Value};
+    use sha2::{Digest, Sha256};
+    use std::io::{BufRead, Write};
+    use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+    let variable = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name}"));
+    let optional = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+    let model = std::path::PathBuf::from(variable("MYCARLOS_TEST_MODEL"));
+    let docs = std::path::PathBuf::from(variable("MYCARLOS_EVAL_DOCS"));
+    let out = std::path::PathBuf::from(variable("MYCARLOS_EVAL_OUT"));
+    let lang = optional("MYCARLOS_TEST_LANG").unwrap_or_else(|| "en".to_owned());
+    let format = optional("MYCARLOS_TEST_CHAT_FORMAT").unwrap_or_else(|| "builtin".to_owned());
+    let threads: Option<u32> = optional("MYCARLOS_TEST_THREADS").map(|n| n.parse().unwrap());
+    let now = || {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    };
+    let build = summary_build(&lang).unwrap();
+
+    let mut documents: Vec<(String, Value)> = std::fs::read_dir(&docs)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .map(|path| {
+            let document: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            let id = document["id"].as_str().expect("document id").to_owned();
+            (id, document)
+        })
+        .collect();
+    documents.sort_by(|a, b| a.0.cmp(&b.0));
+    assert!(
+        !documents.is_empty(),
+        "no <id>.json documents in {}",
+        docs.display()
+    );
+
+    let started = Instant::now();
+    let runner = ModelRunner::start_with(executable(), &model, &format)
+        .unwrap_or_else(|error| panic!("{error}"));
+    let start_ms = started.elapsed().as_millis() as u64;
+    let (model_sha256, model_bytes) = runner.model_file();
+    if let Some(expected) = optional("MYCARLOS_EVAL_EXPECT_SHA256") {
+        assert_eq!(model_sha256, expected, "not the expected model file");
+    }
+    if let Some(threads) = threads {
+        runner.override_threads(Some(threads));
+    }
+    let run = json!({
+        "kind": "run",
+        "variant": optional("MYCARLOS_EVAL_VARIANT").unwrap_or_default(),
+        "commit": optional("MYCARLOS_EVAL_COMMIT").unwrap_or_default(),
+        "build": build,
+        "model": {
+            "file": model.file_name().map(|name| name.to_string_lossy().into_owned()),
+            "sha256": model_sha256,
+            "bytes": model_bytes,
+            "chatFormat": format,
+        },
+        "lang": lang,
+        "threads": threads,
+        "startMs": start_ms,
+        "startedAt": now(),
+    });
+
+    // Resume only the same build, model, language and threads.
+    let mut done = std::collections::BTreeSet::new();
+    if out.exists() {
+        let file = std::io::BufReader::new(std::fs::File::open(&out).unwrap());
+        let mut lines = file
+            .lines()
+            .map(Result::unwrap)
+            .filter(|line| !line.trim().is_empty());
+        let first: Value = serde_json::from_str(&lines.next().expect("a first line")).unwrap();
+        for key in ["build", "lang", "threads"] {
+            assert_eq!(
+                first[key],
+                run[key],
+                "{} names another {key}",
+                out.display()
+            );
+        }
+        assert_eq!(
+            first["model"]["sha256"], run["model"]["sha256"],
+            "another model file"
+        );
+        for line in lines {
+            let entry: Value = serde_json::from_str(&line).unwrap();
+            if entry["kind"] == "document" {
+                done.insert(entry["id"].as_str().unwrap().to_owned());
+            }
+        }
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&out)
+        .unwrap();
+    let mut append = |entry: &Value| {
+        writeln!(file, "{entry}").unwrap();
+        file.sync_data().unwrap();
+    };
+    if done.is_empty() && std::fs::metadata(&out).unwrap().len() == 0 {
+        append(&run);
+    }
+    println!(
+        "run {} on {} ({} documents, {} done)",
+        run["variant"],
+        lang,
+        documents.len(),
+        done.len()
+    );
+
+    let mut answered = 0usize;
+    for (id, document) in &documents {
+        if done.contains(id) {
+            continue;
+        }
+        let pages: Vec<(u32, String)> = document["pages"]
+            .as_array()
+            .expect("pages")
+            .iter()
+            .map(|page| {
+                (
+                    page["index"].as_u64().expect("page index") as u32,
+                    page["text"].as_str().expect("page text").to_owned(),
+                )
+            })
+            .collect();
+        let borrowed: Vec<(u32, &str)> = pages
+            .iter()
+            .map(|(index, text)| (*index, text.as_str()))
+            .collect();
+        let mut hash = Sha256::new();
+        for (index, text) in &pages {
+            hash.update(index.to_le_bytes());
+            hash.update((text.len() as u64).to_le_bytes());
+            hash.update(text.as_bytes());
+        }
+        let asked = Instant::now();
+        let answer = runner.summarize_measured(&lang, &borrowed);
+        let wall_ms = asked.elapsed().as_millis() as u64;
+        let mut entry = json!({
+            "kind": "document",
+            "id": id,
+            "docLang": document["lang"],
+            "pagesSha256": format!("{:x}", hash.finalize()),
+            "pages": pages.len(),
+            "textBytes": pages.iter().map(|(_, text)| text.len()).sum::<usize>(),
+            "wallMs": wall_ms,
+        });
+        match &answer {
+            Ok(measured) => {
+                entry["result"] = serde_json::to_value(measured).unwrap();
+                println!(
+                    "{id}: {:.1} s, {} sentences, {} located{}",
+                    wall_ms as f64 / 1000.0,
+                    measured.sentences.len(),
+                    measured
+                        .sentences
+                        .iter()
+                        .filter(|sentence| sentence.located)
+                        .count(),
+                    if measured.last_page_cut { ", cut" } else { "" }
+                );
+            }
+            Err(error) => {
+                entry["error"] = json!(error);
+                println!(
+                    "{id}: failed after {:.1} s: {error}",
+                    wall_ms as f64 / 1000.0
+                );
+            }
+        }
+        append(&entry);
+        answered += 1;
+    }
+    append(&json!({"kind": "end", "answered": answered, "finishedAt": now()}));
+    runner.stop();
+}

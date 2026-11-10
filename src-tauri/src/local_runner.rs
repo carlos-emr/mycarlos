@@ -127,6 +127,15 @@ const EXPLAIN_PROMPT_TOKENS: u32 = 400;
 /// keeping the sentences it finished.
 const SUMMARY_ANSWER_TOKENS: u32 = 400;
 
+/// The size a summary's limit is reckoned from, for `text_bytes` of pages: its prompt's
+/// estimated tokens and the answer tokens it allows (`AnswerLimit::for_request`).
+pub(crate) fn summary_request_size(text_bytes: usize) -> (u32, u32) {
+    (
+        prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
+        SUMMARY_ANSWER_TOKENS,
+    )
+}
+
 /// What a runner starts and how much it may use.
 #[derive(Debug, Clone)]
 pub(crate) struct RunnerConfig {
@@ -828,10 +837,7 @@ impl Runner {
             ticket,
             "summary",
             request_json,
-            (
-                prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
-                SUMMARY_ANSWER_TOKENS,
-            ),
+            summary_request_size(text_bytes),
         )?;
         let Some(sentences) = answer.sentences else {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
