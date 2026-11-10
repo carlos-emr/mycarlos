@@ -1699,6 +1699,8 @@ ai-model-add = 新增模型檔案…
 
 ai-model-accepted = { $name }，{ $size } MB。授權：{ $licence }。
 
+ai-model-reads = 每次約可讀 { $pages } 頁（約 { $characters } 個英文字元）。表格和某些語言會更少。
+
 ai-model-where = 在哪裡取得檔案
 
 ai-model-copy = 複製網址

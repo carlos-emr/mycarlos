@@ -950,6 +950,7 @@ export const MESSAGE_KEYS = [
   "native.notice.arrival",
   "ai.model.add",
   "ai.model.accepted",
+  "ai.model.reads",
   "ai.model.where",
   "ai.model.copy",
   "ai.model.copied",
@@ -2158,6 +2159,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.notice.arrival": "native-notice-arrival",
   "ai.model.add": "ai-model-add",
   "ai.model.accepted": "ai-model-accepted",
+  "ai.model.reads": "ai-model-reads",
   "ai.model.where": "ai-model-where",
   "ai.model.copy": "ai-model-copy",
   "ai.model.copied": "ai-model-copied",
@@ -3278,6 +3280,7 @@ export interface MessageArgsByKey {
     name: FluentArgument;
     size: FluentArgument;
   };
+  "ai.model.reads": { characters: FluentArgument; pages: FluentArgument };
   "ai.model.where": undefined;
   "ai.model.copy": undefined;
   "ai.model.copied": undefined;

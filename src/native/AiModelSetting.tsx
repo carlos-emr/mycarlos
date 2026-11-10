@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { useI18n } from "../i18n";
 import type { ModelRow, ModelAddOutcome, ModelStatus } from "../ai/types";
+import { capacityInPages } from "../ai/capacity";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 const MB = 1_000_000;
@@ -621,7 +622,11 @@ export function AiModelSetting({
                     checked={row.inUse}
                     disabled={row.state !== "installed" || unsupported}
                     aria-disabled={busy}
-                    aria-describedby={`${prefix}-details ${prefix}-state`}
+                    aria-describedby={
+                      row.model.capacity
+                        ? `${prefix}-details ${prefix}-reads ${prefix}-state`
+                        : `${prefix}-details ${prefix}-state`
+                    }
                     onChange={() =>
                       !busy && void mutate("ai_model_use", row.index)
                     }
@@ -679,6 +684,13 @@ export function AiModelSetting({
                   licence: row.model.licence,
                 })}
               </p>
+              {/* How much of a document it reads at a time (#301), pages
+                  first: an estimate, rounded down (capacity.ts). */}
+              {row.model.capacity && (
+                <p id={`${prefix}-reads`}>
+                  {t("ai.model.reads", capacityInPages(row.model.capacity))}
+                </p>
+              )}
               <p id={`${prefix}-state`}>
                 {copyIndex === row.index
                   ? copyPhase
