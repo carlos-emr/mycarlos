@@ -29,7 +29,7 @@ pub(crate) const MAX_CONTEXT_CHARS: usize = 2_000;
 /// The longest wait for the helper's hello once started: loading 2 to 4 GB.
 pub(crate) const START_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long one answer may take (#72), scaled to its prompt: the prompt read at about 6.7
-/// tokens a second and an answer of up to 400 tokens for a summary (an explanation's 220-token
+/// tokens a second and an answer of up to 600 tokens for a summary (an explanation's 220-token
 /// cap) at about 1.7 a second, after 30 s. Never under 5 minutes, never over 20. Measured on a
 /// 4-core test computer with other builds running (5 Nov 2026), Qwen3.5 4B read 8.5 to 12
 /// prompt tokens a second and wrote 2.1 to 3.0; the prompt estimate also runs long, so the

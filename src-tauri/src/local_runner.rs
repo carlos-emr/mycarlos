@@ -123,9 +123,9 @@ fn prompt_tokens(fixed: u32, text_bytes: usize) -> u32 {
 const SUMMARY_PROMPT_TOKENS: u32 = 750;
 const EXPLAIN_PROMPT_TOKENS: u32 = 400;
 /// The answer a summary's limit allows for: about 53 tokens a sentence were measured (5 Nov
-/// 2026), so six sentences run to about 320; its cap (`SUMMARY_TOKENS`) stops it anyway,
-/// keeping the sentences it finished.
-const SUMMARY_ANSWER_TOKENS: u32 = 400;
+/// 2026), so ten sentences (`MAX_SENTENCES`) run to about 530; its cap (`SUMMARY_TOKENS`, 900)
+/// stops it anyway, keeping the sentences it finished.
+const SUMMARY_ANSWER_TOKENS: u32 = 600;
 
 /// The size a summary's limit is reckoned from, for `text_bytes` of pages: its prompt's
 /// estimated tokens and the answer tokens it allows (`AnswerLimit::for_request`).

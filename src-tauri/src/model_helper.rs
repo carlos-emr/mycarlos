@@ -72,7 +72,7 @@ pub(crate) const SUMMARY_TOKENS: usize = 900;
 pub(crate) const EXPLAIN_TOKENS: usize = 220;
 /// At most this many summary sentences, each part at most so many characters (the grammar
 /// holds the model to them).
-pub(crate) const MAX_SENTENCES: usize = 6;
+pub(crate) const MAX_SENTENCES: usize = 10;
 pub(crate) const MAX_TEXT_CHARS: usize = 300;
 pub(crate) const MAX_QUOTE_CHARS: usize = 240;
 /// The longest request line the helper reads: 1 MiB of text, escaped.
@@ -1121,9 +1121,10 @@ mod tests {
     fn the_grammar_bounds_the_sentences_and_their_parts() {
         let grammar = summary_grammar(6);
         assert!(grammar.contains(r#"("," sentence){0,5}"#));
+        assert!(summary_grammar(MAX_SENTENCES).contains(r#"("," sentence){0,9}"#));
         assert!(grammar.contains("char{1,300}"));
         assert!(grammar.contains("char{1,240}"));
-        assert!(summary_grammar(40).contains("{0,5}"));
+        assert!(summary_grammar(40).contains("{0,9}"));
         assert!(summary_grammar(0).contains("{0,0}"));
     }
 

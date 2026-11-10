@@ -234,9 +234,14 @@ fn within(text: &str, max_chars: usize) -> bool {
     text.chars().count() <= max_chars
 }
 
+/// The most sentences a kept summary may have. Above the helper's own cap (`MAX_SENTENCES`) and
+/// separate from it, so that lowering that cap later never makes kept answers unreadable.
+pub(crate) const MAX_KEPT_SENTENCES: usize = 20;
+const _: () = assert!(crate::model_helper::MAX_SENTENCES <= MAX_KEPT_SENTENCES);
+
 /// Refuses an answer to keep unless its bytes are a summary or an
 /// explanation as the reader writes them, within the helper's caps (its
-/// constants: `MAX_SENTENCES` sentences of `MAX_TEXT_CHARS` and quotes of
+/// constants: up to `MAX_KEPT_SENTENCES` sentences of `MAX_TEXT_CHARS` and quotes of
 /// `MAX_QUOTE_CHARS` each; an explanation within `MAX_SENTENCE_CHARS`), for the same tool, language and term as `input`,
 /// and from the model that last answered on this computer (`answered`: its
 /// name and hash). Page code chooses the bytes, so none of this is trusted.
@@ -246,7 +251,7 @@ pub fn check_answer(
     answered: Option<(&str, &str)>,
 ) -> Result<(), VaultError> {
     use crate::local_runner::MAX_SENTENCE_CHARS;
-    use crate::model_helper::{MAX_QUOTE_CHARS, MAX_SENTENCES, MAX_TEXT_CHARS};
+    use crate::model_helper::{MAX_QUOTE_CHARS, MAX_TEXT_CHARS};
     use crate::model_runtime::{MAX_CONTEXT_CHARS, MAX_PAGES, MAX_PAGE_BYTES};
     let Some((name, sha256)) = answered else {
         return Err(VaultError::Invalid);
@@ -264,7 +269,7 @@ pub fn check_answer(
                 && summary.tool == AiTool::Summary
                 && summary.lang == input.lang
                 && same_model(&summary.model)
-                && (1..=MAX_SENTENCES).contains(&summary.sentences.len())
+                && (1..=MAX_KEPT_SENTENCES).contains(&summary.sentences.len())
                 && summary.last_page as usize <= MAX_PAGES
                 && summary.sentences.iter().all(|sentence| {
                     !sentence.text.trim().is_empty()
@@ -630,6 +635,19 @@ mod tests {
     }
 
     #[test]
+    fn a_kept_summary_may_have_more_sentences_than_the_helper_writes_now() {
+        // Kept answers have their own cap, so a lower helper cap later never makes them unreadable.
+        let mut longest = kept_summary();
+        longest["sentences"] = serde_json::Value::Array(
+            (0..MAX_KEPT_SENTENCES)
+                .map(|_| serde_json::json!({"text": "FAKE.", "quote": "", "source": null}))
+                .collect(),
+        );
+        assert!(crate::model_helper::MAX_SENTENCES < MAX_KEPT_SENTENCES);
+        assert!(checked(&summary("en"), &longest).is_ok());
+    }
+
+    #[test]
     fn an_answer_no_model_gave_here_or_another_model_gave_is_refused() {
         let content = kept_summary().to_string();
         // No model has answered on this computer.
@@ -665,12 +683,12 @@ mod tests {
             edit(&mut value);
             (summary("en"), value)
         };
-        let seven = serde_json::Value::Array(
-            (0..7)
+        let too_many = serde_json::Value::Array(
+            (0..=MAX_KEPT_SENTENCES)
                 .map(|_| serde_json::json!({"text": "FAKE.", "quote": "", "source": null}))
                 .collect(),
         );
-        cases.push(summary_with(&|v| v["sentences"] = seven.clone()));
+        cases.push(summary_with(&|v| v["sentences"] = too_many.clone()));
         cases.push(summary_with(&|v| v["sentences"] = serde_json::json!([])));
         cases.push(summary_with(&|v| {
             v["sentences"][0]["text"] = "x".repeat(301).into()
