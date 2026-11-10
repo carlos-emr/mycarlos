@@ -53,9 +53,19 @@ type AiCommand = (typeof AI_COMMANDS)[keyof typeof AI_COMMANDS];
 /** The model the fake has, when one is installed. */
 export const FAKE_MODEL = { name: "FAKE test model", sha256: "test-only" };
 
+/** How much of a document a model reads at a time (#301), as the native side
+ * says it. */
+export interface FakeCapacity {
+  contextTokens: number;
+  documentTokens: number;
+}
 export type FakeModelStatus =
   | { state: "notInstalled" }
-  | { state: "installed"; model: { name: string; sha256: string } }
+  | {
+      state: "installed";
+      model: { name: string; sha256: string };
+      capacity?: FakeCapacity | null;
+    }
   | { state: "unsupported"; reason: "ram" | "cpu" | "platform" }
   | { state: "damaged" };
 
@@ -104,6 +114,9 @@ export interface FakeAiSetup {
   };
   /** What the model says it explains a term as. */
   explanation?: string;
+  /** The last page a summary reads, by its index, as the helper's own fit
+   * would (#301). Default: every page. */
+  readUpTo?: number;
   /** The one accepted model, as ai_model_catalog lists it: by default a
    * FAKE entry; a spec can give the real model's name, size and licence. */
   catalog?: Partial<FakeCatalogEntry>;
@@ -118,6 +131,8 @@ export interface FakeCatalogEntry {
   licence: string;
   notices: string[];
   sourceUrl: string;
+  /** How much of a document it reads at a time (#301). */
+  capacity?: FakeCapacity;
 }
 
 /** How the PDF helper read a document's text (see `FakeAiSetup.readAs`). */
@@ -191,6 +206,10 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             : {
                 state: "installed",
                 model: { name: chosen.model.name, sha256: chosen.model.sha256 },
+                // As native: the in-use catalogue entry's capacity (#301).
+                ...(chosen.model.capacity
+                  ? { capacity: structuredClone(chosen.model.capacity) }
+                  : {}),
               };
         persistModels();
         return model;
@@ -541,9 +560,13 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
               index: number;
               text: string;
             }[];
-            // One sentence per page with text, quoting its first line.
+            // One sentence per page with text it read, quoting its first line.
             const sentences = pages
-              .filter((page) => page.text.trim())
+              .filter(
+                (page) =>
+                  page.text.trim() &&
+                  (setup.readUpTo === null || page.index <= setup.readUpTo),
+              )
               .map((page) => {
                 const line = page.text.trim().split("\n")[0].trim();
                 return {
@@ -551,10 +574,11 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
                   quote: line,
                 };
               });
+            const last = pages.at(-1)?.index ?? 0;
             return {
               sentences,
               model: structuredClone(model.model),
-              lastPage: pages.at(-1)?.index ?? 0,
+              lastPage: Math.min(last, setup.readUpTo ?? last),
               lastPageCut: false,
             };
           }
@@ -776,6 +800,7 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       ),
       knownDetails: setup.knownDetails ?? {},
       explanation: setup.explanation ?? null,
+      readUpTo: setup.readUpTo ?? null,
       pickId: fakeUuid(1100),
       progressEvent: "ai-model-add-progress",
       // As ai_model_catalog lists the one accepted model. FAKE: no file.
