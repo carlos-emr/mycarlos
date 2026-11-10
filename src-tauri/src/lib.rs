@@ -33,6 +33,7 @@ mod model_acl;
 mod model_download;
 mod model_helper;
 mod model_runtime;
+mod page_boxes;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;

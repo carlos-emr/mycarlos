@@ -13,6 +13,7 @@
 //! One page is drawn at a time: each request takes a `ViewTicket`, and a newer request, a lock
 //! or the reader closing (`cancel_views`) stops the helper still drawing an older one.
 
+use crate::page_boxes;
 use crate::pdf_unlock::{self, Refusal, Request};
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -24,6 +25,9 @@ use zeroize::Zeroizing;
 /// The latest page request; an older one still drawing is stopped.
 static VIEW_GENERATION: AtomicU64 = AtomicU64::new(0);
 static IDENTITY_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// The latest request for a quote's boxes on the picture (#292): a newer one stops an older
+/// one, and it never stops a page being drawn.
+static BOXES_GENERATION: AtomicU64 = AtomicU64::new(0);
 /// The whole-document text reads (#72, AI-10).
 static TEXT_READS: TextReads = TextReads::new();
 
@@ -87,6 +91,7 @@ enum TicketKind {
     View,
     Identity,
     Text,
+    Boxes,
 }
 
 /// One page request. It stays current until a newer request, a lock or the reader closing.
@@ -115,11 +120,21 @@ impl ViewTicket {
         Self(TEXT_READS.begin(reader), TicketKind::Text)
     }
 
+    /// Where a quote is on a page's picture (#292): ended by a newer such request, a lock or
+    /// the reader closing, never by a page request.
+    pub(crate) fn boxes() -> Self {
+        Self(
+            BOXES_GENERATION.fetch_add(1, Ordering::SeqCst) + 1,
+            TicketKind::Boxes,
+        )
+    }
+
     pub(crate) fn is_current(&self) -> bool {
         match self.1 {
             TicketKind::View => VIEW_GENERATION.load(Ordering::SeqCst) == self.0,
             TicketKind::Identity => IDENTITY_GENERATION.load(Ordering::SeqCst) == self.0,
             TicketKind::Text => TEXT_READS.is_current(self.0),
+            TicketKind::Boxes => BOXES_GENERATION.load(Ordering::SeqCst) == self.0,
         }
     }
 }
@@ -128,6 +143,7 @@ impl ViewTicket {
 pub(crate) fn cancel_views() {
     IDENTITY_GENERATION.fetch_add(1, Ordering::SeqCst);
     VIEW_GENERATION.fetch_add(1, Ordering::SeqCst);
+    BOXES_GENERATION.fetch_add(1, Ordering::SeqCst);
 }
 
 /// Stops any whole-document text read: when the vault locks.
@@ -592,6 +608,233 @@ pub(crate) fn view_in_helper(
     }
 }
 
+/// The request that asks the helper where a quote is on a page's picture (#292).
+pub(crate) const BOXES_MAGIC: &[u8; 8] = b"MCPDFBX1";
+const BOXES_RESPONSE_MAGIC: &[u8; 8] = b"MCPDFBR1";
+
+/// Where a quote is on a page's picture, as asked of the helper.
+#[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
+pub(crate) enum BoxesOutcome {
+    /// One rectangle per line run of the quote, in `page_boxes::UNIT`s of the picture.
+    Found(Vec<page_boxes::Rect16>),
+    /// The quote cannot be placed exactly, so it gets no box (and why).
+    Absent(page_boxes::Absent),
+    Refused(Refusal),
+    #[cfg_attr(desktop, allow(dead_code))]
+    Unavailable,
+    Failed,
+    NoSandbox,
+    Cancelled,
+}
+
+/// In the helper: the rectangles of the span `start..end` (UTF-16 units) of page `index`'s
+/// `readable_text`, which must hold `quoted` there (`page_boxes::span_boxes`).
+pub(crate) fn boxes(
+    pdf: &[u8],
+    password: &str,
+    index: u32,
+    start: u32,
+    end: u32,
+    quoted: &str,
+) -> Result<Result<Vec<page_boxes::Rect16>, page_boxes::Absent>, Refusal> {
+    use hayro::hayro_syntax::Pdf;
+    let unlocked;
+    let bytes: &[u8] = match pdf_unlock::unlock(pdf, password) {
+        Ok(open) => {
+            unlocked = open;
+            &unlocked
+        }
+        Err(Refusal::NotEncrypted) => pdf,
+        Err(refusal) => return Err(refusal),
+    };
+    let document = Pdf::new(bytes.to_vec()).map_err(|_| Refusal::Damaged)?;
+    let pages = document.pages();
+    let page = pages.get(index as usize).ok_or(Refusal::NoSuchPage)?;
+    // The same text the page view and the AI helper's document text read.
+    let text = page_text(bytes, index);
+    let readable_text = readable_page_text(bytes, index, &text);
+    Ok(page_boxes::span_boxes(
+        page,
+        &readable_text,
+        start as usize,
+        end as usize,
+        quoted,
+    ))
+}
+
+#[cfg(any(desktop, test))]
+fn write_boxes_request(
+    out: &mut impl Write,
+    pdf: &[u8],
+    password: &str,
+    index: u32,
+    start: u32,
+    end: u32,
+    quoted: &str,
+) -> io::Result<()> {
+    if password.len() > pdf_unlock::MAX_PASSWORD_BYTES
+        || quoted.len() > page_boxes::MAX_SPAN_TEXT_BYTES
+    {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    out.write_all(BOXES_MAGIC)?;
+    pdf_unlock::write_password_and_pdf(out, password.as_bytes(), pdf)?;
+    for number in [index, start, end] {
+        out.write_all(&number.to_le_bytes())?;
+    }
+    out.write_all(&(quoted.len() as u64).to_le_bytes())?;
+    out.write_all(quoted.as_bytes())
+}
+
+/// Answers one boxes request in the helper, after `BOXES_MAGIC` was read. Returns the exit
+/// code.
+pub(crate) fn answer_boxes(input: &mut impl Read, out: &mut impl Write) -> i32 {
+    let result = match pdf_unlock::read_password_and_pdf(input) {
+        Ok(Request::Read { password, pdf }) => {
+            let mut numbers = [0u8; 12];
+            if input.read_exact(&mut numbers).is_err() {
+                return 3;
+            }
+            let number = |at: usize| u32::from_le_bytes(numbers[at..at + 4].try_into().unwrap());
+            let Some(quoted) = read_sized(input, page_boxes::MAX_SPAN_TEXT_BYTES)
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+            else {
+                return 3;
+            };
+            boxes(&pdf, &password, number(0), number(4), number(8), &quoted)
+        }
+        Ok(Request::TooLarge) => Err(Refusal::TooLarge),
+        Ok(Request::Malformed) | Err(_) => return 3,
+    };
+    match write_boxes_response(out, &result) {
+        Ok(()) => 0,
+        Err(_) => 4,
+    }
+}
+
+fn write_boxes_response(
+    out: &mut impl Write,
+    result: &Result<Result<Vec<page_boxes::Rect16>, page_boxes::Absent>, Refusal>,
+) -> io::Result<()> {
+    out.write_all(BOXES_RESPONSE_MAGIC)?;
+    match result {
+        Ok(Ok(rects)) => {
+            if rects.is_empty() || rects.len() > page_boxes::MAX_LINES {
+                return Err(io::ErrorKind::InvalidInput.into());
+            }
+            out.write_all(&[0, 0])?;
+            out.write_all(&(rects.len() as u32).to_le_bytes())?;
+            for rect in rects {
+                for side in rect {
+                    out.write_all(&side.to_le_bytes())?;
+                }
+            }
+        }
+        Ok(Err(absent)) => out.write_all(&[0, absent.code()])?,
+        Err(refusal) => out.write_all(&[refusal.code()])?,
+    }
+    out.flush()
+}
+
+/// The helper's answer to a boxes request, or `None` when it is not one: each rectangle
+/// non-empty, their number within `MAX_LINES`, nothing after.
+#[cfg(any(desktop, test))]
+fn read_boxes_response(input: &mut impl Read) -> Option<BoxesOutcome> {
+    let mut head = [0u8; 9];
+    input.read_exact(&mut head).ok()?;
+    if &head[..8] != BOXES_RESPONSE_MAGIC {
+        return None;
+    }
+    let answer = if head[8] != 0 {
+        BoxesOutcome::Refused(Refusal::from_code(head[8])?)
+    } else {
+        let mut kind = [0u8; 1];
+        input.read_exact(&mut kind).ok()?;
+        if kind[0] != 0 {
+            BoxesOutcome::Absent(page_boxes::Absent::from_code(kind[0])?)
+        } else {
+            let mut count = [0u8; 4];
+            input.read_exact(&mut count).ok()?;
+            let count = u32::from_le_bytes(count) as usize;
+            if count == 0 || count > page_boxes::MAX_LINES {
+                return None;
+            }
+            let mut rects = Vec::with_capacity(count);
+            for _ in 0..count {
+                let mut sides = [0u8; 8];
+                input.read_exact(&mut sides).ok()?;
+                let side = |at: usize| u16::from_le_bytes([sides[at], sides[at + 1]]);
+                let rect = [side(0), side(2), side(4), side(6)];
+                if rect[0] >= rect[2] || rect[1] >= rect[3] {
+                    return None;
+                }
+                rects.push(rect);
+            }
+            BoxesOutcome::Found(rects)
+        }
+    };
+    let mut extra = [0u8; 1];
+    matches!(input.read(&mut extra), Ok(0)).then_some(answer)
+}
+
+/// Where the span `start..end` of page `index`'s text, holding `quoted`, is on the page's
+/// picture, through the helper, unless `ticket` stops being current. Phones cannot start it:
+/// `Unavailable`.
+pub(crate) fn boxes_in_helper(
+    pdf: &[u8],
+    password: &str,
+    index: u32,
+    (start, end): (u32, u32),
+    quoted: &str,
+    ticket: &ViewTicket,
+) -> BoxesOutcome {
+    #[cfg(desktop)]
+    {
+        if !ticket.is_current() {
+            return BoxesOutcome::Cancelled;
+        }
+        if password.len() > pdf_unlock::MAX_PASSWORD_BYTES
+            || quoted.len() > page_boxes::MAX_SPAN_TEXT_BYTES
+        {
+            return BoxesOutcome::Failed;
+        }
+        if pdf.len() > pdf_unlock::MAX_LOCKED_PDF_BYTES {
+            return BoxesOutcome::Refused(Refusal::TooLarge);
+        }
+        let Ok(executable) = std::env::current_exe() else {
+            return BoxesOutcome::Failed;
+        };
+        let command = pdf_unlock::helper_command(&executable);
+        let mut request = Zeroizing::new(Vec::with_capacity(
+            pdf.len() + password.len() + quoted.len() + 48,
+        ));
+        if write_boxes_request(&mut *request, pdf, password, index, start, end, quoted).is_err() {
+            return BoxesOutcome::Failed;
+        }
+        let answer = pdf_unlock::exchange(
+            command,
+            request,
+            pdf_unlock::HELPER_TIME_LIMIT,
+            read_boxes_response,
+            &|| !ticket.is_current(),
+        );
+        if !ticket.is_current() {
+            return BoxesOutcome::Cancelled;
+        }
+        match answer {
+            Ok(outcome) => outcome,
+            Err(_) if !ticket.is_current() => BoxesOutcome::Cancelled,
+            Err(pdf_unlock::Unanswered::NoSandbox) => BoxesOutcome::NoSandbox,
+            Err(pdf_unlock::Unanswered::Failed) => BoxesOutcome::Failed,
+        }
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (pdf, password, index, start, end, quoted, ticket);
+        BoxesOutcome::Unavailable
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1017,5 +1260,476 @@ mod tests {
             read_view_response(&mut &out[..]).unwrap(),
             Err(Refusal::Damaged)
         );
+    }
+
+    /// Where a quote is drawn on the page picture (#292). FAKE documents only.
+    mod boxes {
+        use super::*;
+        use crate::page_boxes::{Absent, Rect16, UNIT};
+        use lopdf::{dictionary, Dictionary, Document, Object, Stream};
+
+        /// One 612 x 792 page with Helvetica as F1, `extra` more resources and page entries.
+        fn page(content: &str, extra: impl FnOnce(&mut Document) -> Dictionary) -> Vec<u8> {
+            let mut document = Document::with_version("1.5");
+            let pages = document.new_object_id();
+            let helvetica = document.add_object(dictionary! {
+                "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+                "Encoding" => "WinAnsiEncoding"
+            });
+            let mut resources = extra(&mut document);
+            let mut fonts = resources
+                .get(b"Font")
+                .ok()
+                .and_then(|fonts| fonts.as_dict().ok().cloned())
+                .unwrap_or_default();
+            fonts.set("F1", helvetica);
+            resources.set("Font", fonts);
+            let resources = document.add_object(resources);
+            let content =
+                document.add_object(Stream::new(dictionary! {}, content.as_bytes().to_vec()));
+            let page = document.add_object(dictionary! {
+                "Type" => "Page", "Parent" => pages, "Resources" => resources,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Contents" => content
+            });
+            document.objects.insert(
+                pages,
+                Object::Dictionary(dictionary! {
+                    "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1
+                }),
+            );
+            let catalog =
+                document.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+            document.trailer.set("Root", catalog);
+            let mut pdf = Vec::new();
+            document.save_to(&mut pdf).unwrap();
+            pdf
+        }
+
+        /// The same document with `key` set to `value` on every page.
+        fn with_page_entry(pdf: &[u8], key: &str, value: Object) -> Vec<u8> {
+            let mut document = Document::load_mem(pdf).unwrap();
+            let ids: Vec<_> = document.get_pages().values().copied().collect();
+            for id in ids {
+                document
+                    .get_dictionary_mut(id)
+                    .unwrap()
+                    .set(key, value.clone());
+            }
+            let mut out = Vec::new();
+            document.save_to(&mut out).unwrap();
+            out
+        }
+
+        const LETTER: &str =
+            "BT /F1 12 Tf 72 700 Td (FAKE clinic letter for software testing only.) Tj \
+            0 -18 Td (The patient reports tiredness and bloating after meals.) Tj \
+            0 -18 Td (Ferritin was 6 ug/L and hemoglobin 104 g/L on 9 October.) Tj ET";
+
+        fn text_of(pdf: &[u8], index: u32) -> String {
+            readable_page_text(pdf, index, &page_text(pdf, index))
+        }
+
+        /// The UTF-16 span of the first `quoted` in page `index`'s text.
+        fn span(pdf: &[u8], index: u32, quoted: &str) -> (u32, u32) {
+            let text = text_of(pdf, index);
+            let at = text
+                .find(quoted)
+                .unwrap_or_else(|| panic!("{quoted:?} in {text:?}"));
+            let start = text[..at].encode_utf16().count() as u32;
+            (start, start + quoted.encode_utf16().count() as u32)
+        }
+
+        fn place(pdf: &[u8], index: u32, quoted: &str) -> Result<Vec<Rect16>, Absent> {
+            let (start, end) = span(pdf, index, quoted);
+            boxes(pdf, "", index, start, end, quoted).unwrap()
+        }
+
+        /// As fractions of the picture, for comparing.
+        fn fractions(rect: Rect16) -> [f64; 4] {
+            rect.map(|side| f64::from(side) / UNIT)
+        }
+
+        fn close(a: [f64; 4], b: [f64; 4]) -> bool {
+            a.iter().zip(b).all(|(x, y)| (x - y).abs() < 2.5 / UNIT)
+        }
+
+        #[test]
+        fn a_quote_is_boxed_where_the_page_draws_it() {
+            let pdf = page(LETTER, |_| dictionary! {});
+            let rects = place(&pdf, 0, "The patient reports tiredness").unwrap();
+            assert_eq!(rects.len(), 1);
+            let [x0, y0, x1, y1] = fractions(rects[0]);
+            // Set at x 72, baseline 682 (from the bottom), 12 points: the box runs from the
+            // descender to the ascender, as fractions of 612 x 792 from the top left.
+            assert!((x0 - 72.0 / 612.0).abs() < 0.002, "{x0}");
+            assert!((y0 - (792.0 - 682.0 - 9.6) / 792.0).abs() < 0.002, "{y0}");
+            assert!((y1 - (792.0 - 682.0 + 2.64) / 792.0).abs() < 0.002, "{y1}");
+            assert!(x1 > x0 + 0.2 && x1 < 0.6, "{x1}");
+        }
+
+        #[test]
+        fn a_quote_over_two_lines_takes_one_box_per_line() {
+            let pdf = page(LETTER, |_| dictionary! {});
+            let text = text_of(&pdf, 0);
+            let start = text.find("bloating").unwrap();
+            let end = text.find(" and hemoglobin").unwrap();
+            let quoted = &text[start..end];
+            assert!(quoted.contains('\n'), "{quoted:?}");
+            let rects = place(&pdf, 0, quoted).unwrap();
+            assert_eq!(rects.len(), 2);
+            assert!(
+                rects[1][1] >= rects[0][3],
+                "the second line is below the first"
+            );
+            assert!(rects[1][0] < rects[0][0], "and starts at the left margin");
+        }
+
+        #[test]
+        fn a_turned_page_turns_its_boxes_with_it() {
+            let pdf = page(LETTER, |_| dictionary! {});
+            let quoted = "Ferritin was 6 ug/L";
+            let upright = fractions(place(&pdf, 0, quoted).unwrap()[0]);
+            let [x0, y0, x1, y1] = upright;
+            // /Rotate turns the page clockwise for display.
+            for (degrees, expected) in [
+                (90, [1.0 - y1, x0, 1.0 - y0, x1]),
+                (180, [1.0 - x1, 1.0 - y1, 1.0 - x0, 1.0 - y0]),
+                (270, [y0, 1.0 - x1, y1, 1.0 - x0]),
+            ] {
+                let turned = with_page_entry(&pdf, "Rotate", Object::Integer(degrees));
+                let rects = place(&turned, 0, quoted).unwrap();
+                assert_eq!(rects.len(), 1, "{degrees}");
+                assert!(
+                    close(fractions(rects[0]), expected),
+                    "{degrees}: {:?} vs {expected:?}",
+                    fractions(rects[0])
+                );
+            }
+        }
+
+        #[test]
+        fn a_crop_box_moves_the_boxes_to_the_part_shown() {
+            let pdf = page(LETTER, |_| dictionary! {});
+            let quoted = "The patient reports tiredness";
+            let [x0, y0, x1, y1] = fractions(place(&pdf, 0, quoted).unwrap()[0]);
+            let cropped = with_page_entry(
+                &pdf,
+                "CropBox",
+                vec![30.into(), 50.into(), 552.into(), 752.into()].into(),
+            );
+            let rects = place(&cropped, 0, quoted).unwrap();
+            // In points from the top left of the media box, then of the crop box (522 x 702,
+            // its top 40 points below the media box's).
+            let x = |f: f64| (f * 612.0 - 30.0) / 522.0;
+            let y = |f: f64| (f * 792.0 - 40.0) / 702.0;
+            let expected = [x(x0), y(y0), x(x1), y(y1)];
+            let got = fractions(rects[0]);
+            assert!(
+                got.iter()
+                    .zip(expected)
+                    .all(|(a, b)| (a - b).abs() < 4.0 / UNIT),
+                "{got:?} vs {expected:?}"
+            );
+        }
+
+        #[test]
+        fn text_the_picture_draws_but_the_page_text_leaves_out_never_takes_a_quotes_box() {
+            // A header drawn from a form XObject: hayro draws it, lopdf's page text skips it.
+            // Its "FAKE" and "c" would otherwise line up with the letter's first words.
+            let pdf = page(&format!("q /Hdr Do Q {LETTER}"), |document| {
+                let font = document.add_object(dictionary! {
+                    "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+                    "Encoding" => "WinAnsiEncoding"
+                });
+                let header = document.add_object(Stream::new(
+                    dictionary! {
+                        "Type" => "XObject", "Subtype" => "Form",
+                        "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                        "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } }
+                    },
+                    b"BT /F1 9 Tf 72 760 Td (FAKE Test Clinic header - page 1 of 1) Tj ET".to_vec(),
+                ));
+                dictionary! { "XObject" => dictionary! { "Hdr" => header } }
+            });
+            assert!(!text_of(&pdf, 0).contains("header"));
+            assert_eq!(
+                place(&pdf, 0, "FAKE clinic letter for software testing only."),
+                Err(Absent::Unaligned)
+            );
+            // Words the header does not repeat still get their box, on the body line.
+            let rects = place(&pdf, 0, "The patient reports tiredness").unwrap();
+            assert!(fractions(rects[0])[1] > 0.1);
+        }
+
+        #[test]
+        fn text_set_at_an_angle_gets_no_box() {
+            let pdf = page(
+                "BT /F1 12 Tf 0.866 0.5 -0.5 0.866 150 300 Tm (FAKE stamp reviewed by the clinic) Tj ET \
+                 BT /F1 12 Tf 72 700 Td (A straight line of FAKE text.) Tj ET",
+                |_| dictionary! {},
+            );
+            assert_eq!(place(&pdf, 0, "FAKE stamp reviewed"), Err(Absent::Skewed));
+            assert!(place(&pdf, 0, "A straight line of FAKE text").is_ok());
+        }
+
+        #[test]
+        fn text_the_crop_box_cuts_gets_no_box() {
+            let pdf = page(
+                "BT /F1 12 Tf 72 700 Td (Inside the FAKE page, fully shown.) Tj ET \
+                 BT /F1 12 Tf 560 400 Td (Cut off at the FAKE edge here.) Tj ET",
+                |_| dictionary! {},
+            );
+            assert!(place(&pdf, 0, "Inside the FAKE page").is_ok());
+            assert_eq!(
+                place(&pdf, 0, "Cut off at the FAKE edge"),
+                Err(Absent::OutsidePage)
+            );
+        }
+
+        #[test]
+        fn a_type3_font_the_two_readers_name_differently_gets_no_box() {
+            let pdf = page("BT /F3 24 Tf 72 700 Td (ABCD BAD) Tj ET", |document| {
+                let mut procs = Dictionary::new();
+                for name in ["a", "b", "c", "d"] {
+                    let glyph = document.add_object(Stream::new(
+                        dictionary! {},
+                        b"600 0 50 0 550 700 d1 50 0 500 700 re f".to_vec(),
+                    ));
+                    procs.set(name, glyph);
+                }
+                let to_unicode = document.add_object(Stream::new(
+                    dictionary! {},
+                    b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap \
+                      /CMapName /FAKE-UCS def /CMapType 2 def 1 begincodespacerange <00> <FF> \
+                      endcodespacerange 4 beginbfchar <41> <0046> <42> <0041> <43> <004B> \
+                      <44> <0045> endbfchar endcmap CMapName currentdict /CMap defineresource \
+                      pop end end"
+                        .to_vec(),
+                ));
+                let font = document.add_object(dictionary! {
+                    "Type" => "Font", "Subtype" => "Type3",
+                    "FontBBox" => vec![0.into(), 0.into(), 600.into(), 700.into()],
+                    "FontMatrix" => vec![0.001.into(), 0.into(), 0.into(), 0.001.into(), 0.into(), 0.into()],
+                    "CharProcs" => procs,
+                    "Encoding" => dictionary! { "Type" => "Encoding", "Differences" => vec![
+                        65.into(), Object::Name(b"a".to_vec()), Object::Name(b"b".to_vec()),
+                        Object::Name(b"c".to_vec()), Object::Name(b"d".to_vec())] },
+                    "FirstChar" => 65, "LastChar" => 68,
+                    "Widths" => vec![600.into(), 600.into(), 600.into(), 600.into()],
+                    "ToUnicode" => to_unicode,
+                });
+                dictionary! { "Font" => dictionary! { "F3" => font } }
+            });
+            let text = text_of(&pdf, 0);
+            let quoted = text.trim();
+            assert!(!quoted.is_empty());
+            assert_eq!(place(&pdf, 0, quoted), Err(Absent::Unaligned));
+        }
+
+        #[test]
+        fn the_quote_must_be_the_text_at_its_span() {
+            let pdf = page(LETTER, |_| dictionary! {});
+            let (start, end) = span(&pdf, 0, "The patient reports");
+            assert_eq!(
+                boxes(&pdf, "", 0, start, end, "The patient REPORTS").unwrap(),
+                Err(Absent::TextDiffers)
+            );
+            assert_eq!(
+                boxes(&pdf, "", 0, end, start, "").unwrap(),
+                Err(Absent::TextDiffers)
+            );
+            assert_eq!(
+                boxes(&pdf, "", 0, start, 1_000_000, "x").unwrap(),
+                Err(Absent::TextDiffers)
+            );
+            let text = text_of(&pdf, 0);
+            let space = text.find(' ').unwrap() as u32;
+            assert_eq!(
+                boxes(&pdf, "", 0, space, space + 1, " ").unwrap(),
+                Err(Absent::Empty)
+            );
+            assert_eq!(boxes(&pdf, "", 3, 0, 1, "F"), Err(Refusal::NoSuchPage));
+        }
+
+        #[test]
+        fn a_page_without_text_has_nothing_to_box() {
+            // Drawing only, as a scan without a text layer is.
+            let pdf = page("0.85 g 60 600 500 120 re f", |_| dictionary! {});
+            assert_eq!(text_of(&pdf, 0).trim(), "");
+            assert_eq!(boxes(&pdf, "", 0, 0, 1, "x").unwrap(), Err(Absent::NoText));
+        }
+
+        #[test]
+        fn a_locked_document_is_boxed_after_its_password_opens_it() {
+            let original = fixture("text-original.pdf");
+            let text = text_of(&original, 1);
+            let line = text
+                .lines()
+                .find(|line| line.trim().len() > 12)
+                .unwrap()
+                .trim();
+            let (start, end) = span(&original, 1, line);
+            let open = boxes(&original, "", 1, start, end, line).unwrap().unwrap();
+            let locked = fixture("text-aes256.pdf");
+            assert_eq!(
+                boxes(&locked, PASSWORD, 1, start, end, line)
+                    .unwrap()
+                    .unwrap(),
+                open
+            );
+            assert_eq!(
+                boxes(&locked, "FAKE-wrong", 1, start, end, line),
+                Err(Refusal::WrongPassword)
+            );
+        }
+
+        /// Every line of the repository's FAKE documents gets its box, upright and turned.
+        #[test]
+        fn every_line_of_the_fake_documents_is_boxed() {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+            let mut documents: Vec<(String, Vec<u8>)> = ["text-original.pdf", "form-original.pdf"]
+                .into_iter()
+                .map(|name| (name.to_owned(), fixture(name)))
+                .collect();
+            for name in [
+                "FAKE_Avery_Patient_Bloodwork.pdf",
+                "FAKE_Avery_Patient_Cardiology_Letter.pdf",
+                "FAKE_Morgan_Patient_Imaging_Report.pdf",
+                "FAKE_Morgan_Patient_Prescription.pdf",
+            ] {
+                documents.push((
+                    name.to_owned(),
+                    std::fs::read(root.join("../dev-data").join(name)).unwrap(),
+                ));
+            }
+            let turned = with_page_entry(&documents[2].1, "Rotate", Object::Integer(90));
+            documents.push(("turned".to_owned(), turned));
+            let mut lines = 0;
+            for (name, pdf) in &documents {
+                let before = lines;
+                let pages = lopdf::Document::load_mem(pdf).unwrap().get_pages().len() as u32;
+                for index in 0..pages {
+                    let text = text_of(pdf, index);
+                    let mut at = 0;
+                    for line in text.split('\n') {
+                        let start = text[..at].encode_utf16().count() as u32;
+                        at += line.len() + 1;
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        let end = start + line.encode_utf16().count() as u32;
+                        let found = boxes(pdf, "", index, start, end, line).unwrap();
+                        assert!(found.is_ok(), "{name} page {index}: {line:?}: {found:?}");
+                        lines += 1;
+                    }
+                }
+                assert!(lines > before, "{name} has lines");
+            }
+            assert!(lines >= 30, "{lines}");
+        }
+
+        #[test]
+        fn boxes_go_through_the_helper_protocol_unchanged() {
+            let pdf = page(LETTER, |_| dictionary! {});
+            let quoted = "The patient reports tiredness";
+            let (start, end) = span(&pdf, 0, quoted);
+            let mut request = Vec::new();
+            write_boxes_request(&mut request, &pdf, "", 0, start, end, quoted).unwrap();
+            assert_eq!(&request[..8], BOXES_MAGIC);
+            let mut out = Vec::new();
+            assert_eq!(answer_boxes(&mut &request[8..], &mut out), 0);
+            let Some(BoxesOutcome::Found(rects)) = read_boxes_response(&mut &out[..]) else {
+                panic!("no boxes");
+            };
+            assert_eq!(rects, place(&pdf, 0, quoted).unwrap());
+            // An absent box and a refusal come back as such.
+            let mut request = Vec::new();
+            write_boxes_request(&mut request, &pdf, "", 0, start, end, "FAKE other words").unwrap();
+            let mut out = Vec::new();
+            answer_boxes(&mut &request[8..], &mut out);
+            assert!(matches!(
+                read_boxes_response(&mut &out[..]),
+                Some(BoxesOutcome::Absent(Absent::TextDiffers))
+            ));
+            let mut request = Vec::new();
+            write_boxes_request(&mut request, &pdf, "", 9, start, end, quoted).unwrap();
+            let mut out = Vec::new();
+            answer_boxes(&mut &request[8..], &mut out);
+            assert!(matches!(
+                read_boxes_response(&mut &out[..]),
+                Some(BoxesOutcome::Refused(Refusal::NoSuchPage))
+            ));
+        }
+
+        #[test]
+        fn a_quote_too_long_to_send_is_not_sent() {
+            let quoted = "a".repeat(crate::page_boxes::MAX_SPAN_TEXT_BYTES + 1);
+            assert!(write_boxes_request(&mut Vec::new(), b"%PDF", "", 0, 0, 1, &quoted).is_err());
+            // Nor is one the helper would have to read past its limit.
+            let mut request = Vec::new();
+            write_boxes_request(&mut request, b"%PDF", "", 0, 0, 1, "a").unwrap();
+            let length_at = request.len() - 1 - 8;
+            request[length_at..length_at + 8].copy_from_slice(
+                &((crate::page_boxes::MAX_SPAN_TEXT_BYTES + 1) as u64).to_le_bytes(),
+            );
+            assert_eq!(answer_boxes(&mut &request[8..], &mut Vec::new()), 3);
+        }
+
+        #[test]
+        fn a_malformed_boxes_answer_is_refused() {
+            let found = |count: u32, rects: &[[u16; 4]]| {
+                let mut out = BOXES_RESPONSE_MAGIC.to_vec();
+                out.extend([0, 0]);
+                out.extend(count.to_le_bytes());
+                for rect in rects {
+                    for side in rect {
+                        out.extend(side.to_le_bytes());
+                    }
+                }
+                out
+            };
+            let good = found(1, &[[1, 2, 3, 4]]);
+            assert!(matches!(
+                read_boxes_response(&mut &good[..]),
+                Some(BoxesOutcome::Found(_))
+            ));
+            let mut trailing = good.clone();
+            trailing.push(0);
+            let mut wrong_magic = good.clone();
+            wrong_magic[7] = b'9';
+            let too_many = found(257, &vec![[1, 2, 3, 4]; 257]);
+            for bad in [
+                trailing,
+                wrong_magic,
+                found(0, &[]),
+                too_many,
+                found(1, &[[3, 2, 3, 4]]),
+                found(1, &[[1, 4, 3, 4]]),
+                found(2, &[[1, 2, 3, 4]]),
+                [BOXES_RESPONSE_MAGIC.as_slice(), &[0, 99]].concat(),
+                [BOXES_RESPONSE_MAGIC.as_slice(), &[77]].concat(),
+            ] {
+                assert!(read_boxes_response(&mut &bad[..]).is_none(), "{bad:?}");
+            }
+            let mut out = Vec::new();
+            assert!(write_boxes_response(&mut out, &Ok(Ok(vec![]))).is_err());
+        }
+
+        #[test]
+        fn a_newer_boxes_request_or_closing_the_reader_stops_one() {
+            // Only what other tests in this binary cannot disturb: the shared counters move
+            // on, never back. (A page request moves the views' counter, not this one.)
+            let older = ViewTicket::boxes();
+            let newer = ViewTicket::boxes();
+            assert!(!older.is_current());
+            cancel_views();
+            assert!(!newer.is_current());
+            // A request already stopped never starts the helper.
+            assert!(matches!(
+                boxes_in_helper(&fixture("text-original.pdf"), "", 0, (0, 1), "F", &newer),
+                BoxesOutcome::Cancelled
+            ));
+        }
     }
 }
