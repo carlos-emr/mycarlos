@@ -170,6 +170,12 @@ function measure(page: Page) {
             button.scrollHeight > button.clientHeight + 1,
         )
         .map((button) => button.textContent),
+      // The shortest button, above the page and in the bar.
+      lowest: Math.min(
+        ...[...above, ...buttons].map(
+          (button) => button.getBoundingClientRect().height,
+        ),
+      ),
       small: [...above, ...buttons]
         .filter((button) => {
           const { width, height } = button.getBoundingClientRect();
@@ -214,6 +220,9 @@ const FITS = [
     narrow: true,
     scale: 2,
   },
+  // A phone (Pixel 7's width) and the 560px window Ben looked at (10 Nov).
+  { label: "412-text100", width: 412, height: 915, font: 16, narrow: true },
+  { label: "560-text100", width: 560, height: 900, font: 16, narrow: true },
 ] as const;
 
 async function readerAt(
@@ -244,6 +253,9 @@ for (const [fit, locale] of [
   ...FITS.map((fit) => [fit, "en"] as const),
   [FITS[3], "pl"] as const,
   [FITS[0], "pl"] as const,
+  [FITS[3], "fr"] as const,
+  [FITS[5], "fr"] as const,
+  [FITS[6], "fr"] as const,
 ])
   test(`keeps the page bar at the reader's foot at ${fit.label} (${locale})`, async ({
     browser,
@@ -274,8 +286,10 @@ for (const [fit, locale] of [
       expect(at.bar.bottom).toBeLessThanOrEqual(at.reader.bottom + 1);
       expect(at.reader.bottom - at.bar.bottom).toBeLessThanOrEqual(2);
       expect(at.bar.bottom).toBeLessThanOrEqual(at.viewportHeight);
-      // The zoom at the top left, above the page.
-      expect(at.zoom.left - at.reader.left).toBeLessThanOrEqual(24);
+      // The size buttons above the page: at the top left on a wide reader,
+      // centred on a narrow one (checked with the bar below).
+      if (!fit.narrow)
+        expect(at.zoom.left - at.reader.left).toBeLessThanOrEqual(24);
       expect(at.zoom.bottom).toBeLessThanOrEqual(at.area.top + 1);
       // The page keeps room to be read: at least min(16em, 40vh).
       expect(at.area.height).toBeGreaterThanOrEqual(
@@ -290,28 +304,31 @@ for (const [fit, locale] of [
       const [first, previous, where, next, last] = at.parts;
       if (fit.narrow) {
         expect(at.display).toBe("grid");
-        expect(previous.middle).toBe(first.middle);
-        expect(where.middle).toBeGreaterThan(first.middle);
-        expect(next.middle).toBeGreaterThan(where.middle);
-        expect(last.middle).toBe(next.middle);
-        expect(next.left).toBe(first.left);
-        expect(last.left).toBe(previous.left);
-        // Above the page, the size buttons (and the AI helper's, where it is
-        // offered) fill the same width as the page bar: their rows start at
-        // its left edge and end at its right edge.
+        // The count on top, then Previous | Next, then First | Last (Ben,
+        // 10 Nov); read out and tabbed through as First, Previous, the
+        // count, Next, Last (the words checked above).
+        expect(previous.middle).toBeGreaterThan(where.middle);
+        expect(next.middle).toBe(previous.middle);
+        expect(first.middle).toBeGreaterThan(previous.middle);
+        expect(last.middle).toBe(first.middle);
+        expect(first.left).toBe(previous.left);
+        expect(last.left).toBe(next.left);
+        // Every row above the page (the size buttons, and the AI helper's
+        // where it is offered) is centred on the bar's centre line.
+        const centre = (previous.left + next.right) / 2;
         expect(at.groups.map((group) => group.name)).toContain(
           "native-reader-zoom",
         );
         for (const group of at.groups) {
-          expect(group.left, `${group.name} left edge`).toBeCloseTo(
-            first.left,
-            0,
-          );
-          expect(group.right, `${group.name} right edge`).toBeCloseTo(
-            previous.right,
-            0,
-          );
+          expect(
+            Math.abs((group.left + group.right) / 2 - centre),
+            `${group.name} centred`,
+          ).toBeLessThanOrEqual(1);
+          expect(group.left).toBeGreaterThanOrEqual(at.reader.left);
+          expect(group.right).toBeLessThanOrEqual(at.reader.right);
         }
+        // Buttons a finger can press: at least 44px tall.
+        expect(at.lowest, "a button under 44px").toBeGreaterThanOrEqual(44);
       } else {
         expect(at.display).toBe("flex");
         expect(new Set(at.parts.map((part) => part.middle)).size).toBe(1);

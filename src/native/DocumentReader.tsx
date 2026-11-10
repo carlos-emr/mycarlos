@@ -790,8 +790,9 @@ function ReadingDocument({
               />
             )}
             {/* D144: the page bar, kept in view at the reader's foot, after
-                everything it turns. In words, not arrows; two by two on a
-                narrow reader (styles.css). */}
+                everything it turns. In words, not arrows. On a narrow reader
+                the count is on top, then Previous | Next, then First | Last
+                (styles.css); the order read out stays this one. */}
             {hasBar && (
               <div
                 ref={barRef}

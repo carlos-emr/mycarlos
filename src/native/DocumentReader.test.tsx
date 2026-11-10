@@ -1660,7 +1660,7 @@ describe("the reader's page bar", () => {
     expect(viewPage).toHaveBeenCalledTimes(1);
   });
 
-  it("puts the buttons two by two on a narrow reader, with the count between", async () => {
+  it("puts the count on top on a narrow reader, then Previous and Next, then First and Last, in centred rows", async () => {
     renderReader(pagesOf(5));
     await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
     // A phone's width: the reader is measured, not the window.
@@ -1676,14 +1676,31 @@ describe("the reader's page bar", () => {
       next,
       last,
     ]);
-    expect(previousRow).toBe(firstRow);
-    expect(lastRow).toBe(nextRow);
-    expect(whereRow).toBeGreaterThan(firstRow);
-    expect(nextRow).toBeGreaterThan(whereRow);
-    const left = (element: Element) => element.getBoundingClientRect().left;
-    expect(left(first)).toBe(left(next));
-    expect(left(previous)).toBe(left(last));
-    expect(left(previous)).toBeGreaterThan(left(first));
+    // On screen: the count, then Previous | Next, then First | Last.
+    expect(nextRow).toBe(previousRow);
+    expect(lastRow).toBe(firstRow);
+    expect(previousRow).toBeGreaterThan(whereRow);
+    expect(firstRow).toBeGreaterThan(previousRow);
+    const box = (element: Element) => element.getBoundingClientRect();
+    expect(box(previous).left).toBe(box(first).left);
+    expect(box(next).left).toBe(box(last).left);
+    expect(box(next).left).toBeGreaterThan(box(previous).left);
+    // Centred: as much room on each side of the buttons.
+    const outer = box(bar());
+    expect(
+      Math.abs(
+        box(previous).left - outer.left - (outer.right - box(next).right),
+      ),
+    ).toBeLessThanOrEqual(1);
+    // At least 44px tall, to be pressed with a finger.
+    for (const button of [first, previous, next, last])
+      expect(box(button).height).toBeGreaterThanOrEqual(44);
+    // Read out and tabbed through in this order still.
+    expect(
+      Array.from(bar().querySelectorAll("button"), (button) =>
+        visibleText(button.textContent ?? ""),
+      ),
+    ).toEqual(["First page", "Previous page", "Next page", "Last page"]);
     // Nothing runs off the reader's edge.
     expect(bar().scrollWidth).toBeLessThanOrEqual(bar().clientWidth);
   });
