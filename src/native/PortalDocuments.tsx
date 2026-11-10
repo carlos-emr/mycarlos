@@ -265,6 +265,24 @@ export function PortalDocuments({
   const linkAnotherRef = useRef<HTMLButtonElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
   const returnToLinkAnother = useRef(false);
+  // From the moment a link is sent until the work ends, its form (or the
+  // dialog's opener) is disabled. Focus that was there waits on the panel's
+  // heading, not on the page, and counts as lost when the work ends: it then
+  // goes to the new clinic. If no link came of it, focus sent from the
+  // panel's form stays on the heading, so the reason (the app's status line)
+  // is heard rather than cut off by a focus move, and the form is the next
+  // stop. Sent from the dialog, it goes back to Link another clinic (#145),
+  // which is not the next stop from the heading.
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const [linking, setLinking] = useState(false);
+  const parked = () => {
+    const active = document.activeElement;
+    return (
+      active === null ||
+      active === document.body ||
+      active.id === "portal-title"
+    );
+  };
   // The code each device's clinic emailed, as typed, and what the last try
   // with it found (#141). The code is cleared once it has been sent.
   const [approvalCodes, setApprovalCodes] = useState<Record<string, string>>(
@@ -319,7 +337,7 @@ export function PortalDocuments({
       document.getElementById(`portal-link-title-${focusLink}`) ??
       (saved ? document.getElementById("portal-earlier-toggle") : null);
     if (!target) return;
-    if (document.activeElement === document.body) target.focus();
+    if (parked()) target.focus();
     returnToLinkAnother.current = false;
     setFocusLink(null);
   }, [connecting, focusLink, snapshot.portalLinks]);
@@ -358,10 +376,18 @@ export function PortalDocuments({
     // `connecting` ends; wait until it can take focus again.
     if (linkAnotherRef.current?.disabled) return;
     returnToLinkAnother.current = false;
-    const active = document.activeElement;
-    if (active === null || active === document.body)
-      linkAnotherRef.current?.focus();
+    if (parked()) linkAnotherRef.current?.focus();
   }, [connecting, focusLink, busy, working, readOnly]);
+  useEffect(() => {
+    if (!linking && !connecting) return;
+    const active = document.activeElement;
+    if (
+      active === null ||
+      active === document.body ||
+      (sectionRef.current?.contains(active) && active.matches(":disabled"))
+    )
+      document.getElementById("portal-title")?.focus();
+  }, [linking, connecting, busy, working, readOnly]);
   // In the language now in use, also when read again later (deferred text).
   const stateText = (state: CardState) =>
     "key" in state ? translateNow(state.key) : vaultErrorMessage(state.failed);
@@ -446,12 +472,14 @@ export function PortalDocuments({
     focusDevice(linkId);
   });
   // The control in a code form that had focus when its code was sent
-  // (#141). While the clinic work runs it is disabled, and focus falls to the
-  // page. Once the work is over, focus goes back to it, or, if the form has
-  // gone (the code was taken, or no more are), to its device's heading.
-  // Never while focus is somewhere the patient put it.
+  // (#141), `from`. While the clinic work runs it is disabled, and focus falls
+  // to the page. Once the work is over, focus goes to `control`: back to
+  // `from`, or, for a code to correct, to the code's field, which says why.
+  // If the form has gone (the code was taken, or no more are), it goes to its
+  // device's heading. Never while focus is somewhere the patient put it.
   const codeFocus = useRef<{
     linkId: string;
+    from: HTMLElement;
     control: HTMLElement;
     done: boolean;
   } | null>(null);
@@ -460,8 +488,11 @@ export function PortalDocuments({
     const pending = codeFocus.current;
     if (!pending) return;
     const active = document.activeElement;
+    // Still on the control that sent the code (the browser may move focus
+    // off a disabled control only later) counts as not moved by the patient.
     const lost = active === document.body || active === null;
-    if (!lost && active !== pending.control) {
+    const stayed = active === pending.from || active === pending.control;
+    if (!lost && !stayed) {
       codeFocus.current = null;
       return;
     }
@@ -469,7 +500,7 @@ export function PortalDocuments({
     const { control, linkId } = pending;
     if (control.isConnected && control.matches(":disabled")) return;
     codeFocus.current = null;
-    if (!lost) return;
+    if (!lost && active === control) return;
     if (control.isConnected) control.focus();
     else focusDevice(linkId);
   });
@@ -535,6 +566,7 @@ export function PortalDocuments({
     )
       return false;
     submitting.current = true;
+    setLinking(true);
     const revision = codeRevision.current;
     const previousIds = new Set(links.map((link) => link.id));
     polling.hold();
@@ -595,7 +627,10 @@ export function PortalDocuments({
       }
     }).finally(() => {
       submitting.current = false;
-      if (shown.current) setConnecting(false);
+      if (shown.current) {
+        setConnecting(false);
+        setLinking(false);
+      }
       polling.restart(known);
     });
     return true;
@@ -640,7 +675,7 @@ export function PortalDocuments({
     codeFocus.current =
       active instanceof HTMLElement &&
       document.getElementById(`portal-code-form-${link.id}`)?.contains(active)
-        ? { linkId: link.id, control: active, done: false }
+        ? { linkId: link.id, from: active, control: active, done: false }
         : null;
     polling.hold();
     let known: LiveApproval | undefined;
@@ -670,6 +705,12 @@ export function PortalDocuments({
             ...issues,
             [link.id]: deferredText(() => vaultErrorMessage(error)),
           }));
+          // A code to correct: focus goes back to its field, which the
+          // error describes, rather than to Confirm code, so the reason is
+          // heard however the code was sent.
+          const field = document.getElementById(`portal-code-${link.id}`);
+          if (retry && field && codeFocus.current?.linkId === link.id)
+            codeFocus.current.control = field;
           if (final) {
             // The form may go with the next state: also said in the panel.
             setApprovalCodes((codes) => ({ ...codes, [link.id]: "" }));
@@ -771,6 +812,9 @@ export function PortalDocuments({
     const removed =
       live?.kind === "failed" &&
       hasVaultErrorCode(live.error, "portal_device_removed");
+    // Each card has the same buttons and fields: each says whose clinic
+    // it is for, by the card's heading, as its description.
+    const whose = `portal-link-title-${link.id}`;
     return (
       <div className="portal-link" id={`portal-link-${link.id}`} key={link.id}>
         <h3 id={`portal-link-title-${link.id}`} tabIndex={-1}>
@@ -823,6 +867,7 @@ export function PortalDocuments({
               <label>
                 {t("portal.codeLabel")}
                 <input
+                  id={`portal-code-${link.id}`}
                   className="portal-code-input"
                   type="text"
                   inputMode="numeric"
@@ -852,7 +897,12 @@ export function PortalDocuments({
                 />
               </label>
               <p id={`portal-code-hint-${link.id}`}>{t("portal.codeHint")}</p>
-              <button className="button" type="submit" disabled={disabled}>
+              <button
+                className="button"
+                type="submit"
+                disabled={disabled}
+                aria-describedby={whose}
+              >
                 {t("portal.codeSubmit")}
               </button>
               <p id={`portal-code-issue-${link.id}`} aria-live="polite">
@@ -883,6 +933,7 @@ export function PortalDocuments({
             {t("portal.deviceCode")}
             <input
               readOnly
+              aria-describedby={whose}
               value={link.deviceKeyId}
               spellCheck={false}
               onFocus={(event) => event.currentTarget.select()}
@@ -893,6 +944,7 @@ export function PortalDocuments({
             className="button"
             type="button"
             disabled={disabled}
+            aria-describedby={whose}
             onClick={() => {
               void navigator.clipboard
                 ?.writeText(link.deviceKeyId)
@@ -910,6 +962,7 @@ export function PortalDocuments({
             {t("portal.fingerprint")}
             <textarea
               readOnly
+              aria-describedby={whose}
               value={link.deviceFingerprint}
               rows={4}
               spellCheck={false}
@@ -923,6 +976,7 @@ export function PortalDocuments({
             <button
               className="button"
               type="button"
+              aria-describedby={whose}
               disabled={
                 disabled ||
                 removed ||
@@ -943,6 +997,7 @@ export function PortalDocuments({
               <button
                 className="button"
                 type="button"
+                aria-describedby={whose}
                 disabled={disabled || removed || !bridge.restartDeviceApproval}
                 onClick={() =>
                   requestAction(link, bridge.restartDeviceApproval!)
@@ -974,10 +1029,19 @@ export function PortalDocuments({
     (link) => link.incomplete || removedNow(link),
   );
   return (
-    <section className="portal-documents" aria-labelledby="portal-title">
+    <section
+      className="portal-documents"
+      aria-labelledby="portal-title"
+      ref={sectionRef}
+    >
       {/* Focusable for the check after unlocking, which may disable the
           control that had focus (#128). */}
-      <h2 id="portal-title" tabIndex={-1}>
+      <h2
+        id="portal-title"
+        tabIndex={-1}
+        // Where focus waits while a link is made: it says what is happening.
+        aria-describedby={linking || connecting ? "portal-status" : undefined}
+      >
         {t("portal.title")}
       </h2>
       {!linked && <p className="section-intro">{t("portal.intro")}</p>}
@@ -1023,7 +1087,7 @@ export function PortalDocuments({
           </div>
         </>
       )}
-      <p role="status">
+      <p role="status" id="portal-status">
         {connecting ? (
           t("portal.connecting")
         ) : working ? (
