@@ -165,14 +165,23 @@ debug = false
 opt-level = 3
 
 # Every other dependency is optimized in debug builds too, since the evaluation installers are
-# debug builds: the PDF reader's rasterizer (hayro), its PNG encoding and decoding, lopdf and the
-# vault's decryption otherwise run unoptimized on every page and zoom. myCarlos's own crate stays
-# unoptimized and debuggable; the overrides above still apply (a named package wins over "*");
-# debug assertions and overflow checks are unchanged (opt-level alone sets neither).
+# debug builds: the PDF reader's rasterizer (hayro), its PNG encoding and decoding and lopdf
+# otherwise run unoptimized on every page and zoom. The overrides above still apply (a named
+# package wins over "*"); debug assertions and overflow checks are unchanged (opt-level alone sets
+# neither).
 [profile.dev.package."*"]
 opt-level = 3
 # No debug info for dependencies: a shorter cold build and smaller artifacts (as measured).
 debug = false
+
+# myCarlos's own crate at opt-level 1 in debug builds. Every page view decrypts the whole document,
+# and the AEAD (XChaCha20-Poly1305) is generic code, which Rust compiles in the crate that uses it:
+# here, so the dependencies' opt-level does not reach it. Unoptimized, an 11 MiB document took
+# about 2.1 s per page view, at opt-level 1 about 90 ms (vault read_for_view, median of 3). Debug
+# info, debug assertions and overflow checks stay on; a debugger may show some locals as optimized
+# out.
+[profile.dev.package.mycarlos-tauri-poc]
+opt-level = 1
 
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
