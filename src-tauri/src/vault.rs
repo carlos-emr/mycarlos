@@ -3046,7 +3046,12 @@ impl VaultStore {
         // the one before, ending at the pinned count and head. Each hash covers
         // the whole entry (`old_name` and `how` too), and the count and head are
         // in the authenticated manifest, so these are exactly the pinned events.
-        // It does not rely on the manifest's per-piece entry counts.
+        // A gap needs no per-piece count to be caught: a missing event breaks
+        // the chain. There are no linked events beyond the pinned count either:
+        // `validate_history` makes the pieces with events add up to the count,
+        // with the padding last, and each piece read must hold its stated count.
+        // So with every piece read the flag equals `complete`; it differs only
+        // when the damaged pieces are padding.
         if !(view.complete || view.every_event_shown) {
             return Err(VaultError::Corrupt);
         }
@@ -9167,8 +9172,10 @@ mod tests {
                 crate::text_recheck::identifier_hits(token, &known.names, &known.birth_dates);
             assert_eq!(hits.len(), 1);
         }
-        // Only padding damaged, but the shown events do not end at the pinned head or
-        // count: refused.
+        // Only padding damaged, but the shown events do not end at the pinned head:
+        // refused. A lowered count is refused through the head too (the chain cut
+        // to that count ends at another hash); a valid manifest can't pin more
+        // events than its pieces hold (`validate_history`).
         let history = store.session().as_ref().unwrap().manifest.history.clone();
         store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
         assert!(matches!(
