@@ -12773,7 +12773,9 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       // Keep both originating-view cases; Shared now owns the one manual control.
       if (action === "header check")
         await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
-      await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
+      await click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
       const check = screen.getByRole("button", {
         name: "Check for new documents",
       });
