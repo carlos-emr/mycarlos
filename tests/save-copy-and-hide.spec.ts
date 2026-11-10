@@ -136,10 +136,9 @@ test("Hide takes a document out of view, Security > Hidden keeps it across a rel
   // vault's state, not the page's. (The folders show that My records has been
   // drawn from the vault again.)
   await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.unlockedLockNow"),
-      exact: true,
-    })
+    // The window's own Lock now, named by its words (#121).
+    .locator(".titlebar")
+    .getByRole("button", { name: en("security.lockNow"), exact: true })
     .click();
   await page.reload();
   await page

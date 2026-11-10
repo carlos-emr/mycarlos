@@ -37,7 +37,7 @@ export function AiSettings({
                 </>
               )}
             </h2>
-            <p>{t("ai.preferences.body")}</p>
+            <p className="section-intro">{t("ai.preferences.body")}</p>
             {aiStatus && (
               <AiModelSetting status={aiStatus} onStatus={onAiStatus} />
             )}

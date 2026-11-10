@@ -794,7 +794,7 @@ export function PortalDocuments({
       >
         {t("portal.title")}
       </h2>
-      {!linked && <p>{t("portal.intro")}</p>}
+      {!linked && <p className="section-intro">{t("portal.intro")}</p>}
       {!linked && <p>{t("portal.connectConsent")}</p>}
       <p>{t("portal.unlockCheckConsent")}</p>
       {!linked && (
@@ -1040,9 +1040,11 @@ export function PortalDocuments({
           : linkDialogShown)}
       {offerNotices && (
         <NoticesAfterLink
-          onClose={() => {
+          onClose={(wasShown) => {
             const linked = offerNotices;
             setOfferNotices(null);
+            // Nothing was shown: the focus stays where the patient put it.
+            if (!wasShown) return;
             // Then to the new clinic's heading, where the panel has one: the
             // control that made the link may be gone once a clinic is linked.
             requestAnimationFrame(() =>
