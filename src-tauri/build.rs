@@ -115,6 +115,7 @@ fn main() {
             "vault_portal_link",
             "vault_portal_connect",
             "vault_check_documents",
+            "vault_forget_refused_deliveries",
             "vault_notification_status",
             "vault_set_notifications",
             "vault_set_automatic_document_checks",

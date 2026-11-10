@@ -1685,6 +1685,10 @@ interface-history-event-copySaved = Zapisano czytelną kopię
 
 interface-history-event-created = Utworzono sejf
 
+interface-history-event-deliveryRefusalsCleared = Wybrano „Spróbuj ponownie” dla niezweryfikowanych dokumentów z przychodni
+
+interface-history-event-deliveryRefused = Nie zweryfikowano dokumentu z przychodni
+
 interface-history-event-deliveryFiled = Zapisano dokument z przychodni
 
 interface-history-event-deliveryReceiptSettled = Zamknięto potwierdzenie odbioru
@@ -1866,6 +1870,18 @@ portal-codeRefused = Portal przychodni nie przyjął kodu. Proszę spróbować p
 portal-codeSubmit = Potwierdź kod
 
 portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, proszę ponowić prośbę.
+
+portal-refusedDocuments =
+    { $count ->
+    [one] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    [few] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    [many] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    *[other] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    }
+
+portal-tryAgain = Spróbuj ponownie
+
+portal-tryAgainFor = Spróbuj ponownie: { $clinic }
 
 ai-summary-button = Podsumowanie
 

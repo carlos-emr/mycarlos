@@ -396,6 +396,8 @@ pub enum MessageId {
     InterfaceHistoryEventCreated,
     InterfaceHistoryEventDeliveryFiled,
     InterfaceHistoryEventDeliveryReceiptSettled,
+    InterfaceHistoryEventDeliveryRefusalsCleared,
+    InterfaceHistoryEventDeliveryRefused,
     InterfaceHistoryEventDeviceApprovalRequestRestarted,
     InterfaceHistoryEventDeviceApprovalRequested,
     InterfaceHistoryEventDeviceApprovalStatusChanged,
@@ -799,6 +801,7 @@ pub enum MessageId {
     PortalNotRequested,
     PortalPartialResult,
     PortalPerson,
+    PortalRefusedDocuments,
     PortalRequestApproval,
     PortalRestartApproval,
     PortalResult,
@@ -807,6 +810,8 @@ pub enum MessageId {
     PortalServiceDate,
     PortalServiceDateLabel,
     PortalTitle,
+    PortalTryAgain,
+    PortalTryAgainFor,
     PortalUnlockCheckConsent,
     PortalUnlockCheckIncomplete,
     PortalUnlockCheckNotRun,
@@ -1406,6 +1411,8 @@ impl MessageId {
         Self::InterfaceHistoryEventCreated,
         Self::InterfaceHistoryEventDeliveryFiled,
         Self::InterfaceHistoryEventDeliveryReceiptSettled,
+        Self::InterfaceHistoryEventDeliveryRefusalsCleared,
+        Self::InterfaceHistoryEventDeliveryRefused,
         Self::InterfaceHistoryEventDeviceApprovalRequestRestarted,
         Self::InterfaceHistoryEventDeviceApprovalRequested,
         Self::InterfaceHistoryEventDeviceApprovalStatusChanged,
@@ -1809,6 +1816,7 @@ impl MessageId {
         Self::PortalNotRequested,
         Self::PortalPartialResult,
         Self::PortalPerson,
+        Self::PortalRefusedDocuments,
         Self::PortalRequestApproval,
         Self::PortalRestartApproval,
         Self::PortalResult,
@@ -1817,6 +1825,8 @@ impl MessageId {
         Self::PortalServiceDate,
         Self::PortalServiceDateLabel,
         Self::PortalTitle,
+        Self::PortalTryAgain,
+        Self::PortalTryAgainFor,
         Self::PortalUnlockCheckConsent,
         Self::PortalUnlockCheckIncomplete,
         Self::PortalUnlockCheckNotRun,
@@ -2636,6 +2646,10 @@ impl MessageId {
             Self::InterfaceHistoryEventDeliveryReceiptSettled => {
                 "interface-history-event-deliveryReceiptSettled"
             }
+            Self::InterfaceHistoryEventDeliveryRefusalsCleared => {
+                "interface-history-event-deliveryRefusalsCleared"
+            }
+            Self::InterfaceHistoryEventDeliveryRefused => "interface-history-event-deliveryRefused",
             Self::InterfaceHistoryEventDeviceApprovalRequestRestarted => {
                 "interface-history-event-deviceApprovalRequestRestarted"
             }
@@ -3095,6 +3109,7 @@ impl MessageId {
             Self::PortalNotRequested => "portal-notRequested",
             Self::PortalPartialResult => "portal-partialResult",
             Self::PortalPerson => "portal-person",
+            Self::PortalRefusedDocuments => "portal-refusedDocuments",
             Self::PortalRequestApproval => "portal-requestApproval",
             Self::PortalRestartApproval => "portal-restartApproval",
             Self::PortalResult => "portal-result",
@@ -3103,6 +3118,8 @@ impl MessageId {
             Self::PortalServiceDate => "portal-serviceDate",
             Self::PortalServiceDateLabel => "portal-serviceDateLabel",
             Self::PortalTitle => "portal-title",
+            Self::PortalTryAgain => "portal-tryAgain",
+            Self::PortalTryAgainFor => "portal-tryAgainFor",
             Self::PortalUnlockCheckConsent => "portal-unlockCheckConsent",
             Self::PortalUnlockCheckIncomplete => "portal-unlockCheckIncomplete",
             Self::PortalUnlockCheckNotRun => "portal-unlockCheckNotRun",
@@ -4231,6 +4248,12 @@ impl MessageId {
             "interface.history.event.backupSaved" => Some(Self::InterfaceHistoryEventBackupSaved),
             "interface.history.event.copySaved" => Some(Self::InterfaceHistoryEventCopySaved),
             "interface.history.event.created" => Some(Self::InterfaceHistoryEventCreated),
+            "interface.history.event.deliveryRefusalsCleared" => {
+                Some(Self::InterfaceHistoryEventDeliveryRefusalsCleared)
+            }
+            "interface.history.event.deliveryRefused" => {
+                Some(Self::InterfaceHistoryEventDeliveryRefused)
+            }
             "interface.history.event.deliveryFiled" => {
                 Some(Self::InterfaceHistoryEventDeliveryFiled)
             }
@@ -4378,6 +4401,9 @@ impl MessageId {
             "portal.codeRefused" => Some(Self::PortalCodeRefused),
             "portal.codeSubmit" => Some(Self::PortalCodeSubmit),
             "portal.codeSubmitted" => Some(Self::PortalCodeSubmitted),
+            "portal.refusedDocuments" => Some(Self::PortalRefusedDocuments),
+            "portal.tryAgain" => Some(Self::PortalTryAgain),
+            "portal.tryAgainFor" => Some(Self::PortalTryAgainFor),
             "interface.history.damagedStorageOnly" => {
                 Some(Self::InterfaceHistoryDamagedStorageOnly)
             }

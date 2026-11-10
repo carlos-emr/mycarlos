@@ -29,6 +29,7 @@ import {
   type PollApproval,
   type PortalWaits,
 } from "./useApprovalPolling";
+import { RefusedDeliveries } from "./RefusedDeliveries";
 
 interface Props {
   bridge: VaultBridge;
@@ -183,6 +184,19 @@ export function PortalDocuments({
   }, [snapshot.capture.epoch, snapshot.capture.sequence, statusHeardOnly]);
   const [connecting, setConnecting] = useState(false);
   const [focusLink, setFocusLink] = useState<string | null>(null);
+  // After Try again (#143), focus goes back to the button, or to the
+  // clinic's name once its documents verified and the button is gone.
+  const [focusAfterRetry, setFocusAfterRetry] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusAfterRetry || busy || working) return;
+    if (document.activeElement === document.body) {
+      (
+        document.getElementById(`portal-try-again-${focusAfterRetry}`) ??
+        document.getElementById(`portal-link-title-${focusAfterRetry}`)
+      )?.focus();
+    }
+    setFocusAfterRetry(null);
+  }, [focusAfterRetry, busy, working, snapshot.portalLinks]);
   // The code each device's clinic emailed, as typed, and what the last try
   // with it found (#141). The code is cleared once it has been sent.
   const [approvalCodes, setApprovalCodes] = useState<Record<string, string>>(
@@ -378,12 +392,17 @@ export function PortalDocuments({
       link.approvalStatus ?? "",
     );
   const disabled = busy || readOnly || connecting || working;
-  const check = () => {
+  /** Checks every clinic; `first` runs before, in the same operation, and
+   * `after` once it has ended. */
+  const check = (first?: () => Promise<void>, after?: () => void) => {
     polling.hold();
     // What this check found for each open request: the portal has it,
     // unless the check names a problem with that device's clinic.
     let known: Record<string, LiveApproval | undefined> = {};
     void run(async () => {
+      // Only Try again has a first step. A plain check starts at once, in the
+      // same turn as the press, as before.
+      if (first) await first();
       const { result, vault: next } = await checkClinicDocuments({
         bridge,
         links,
@@ -401,14 +420,17 @@ export function PortalDocuments({
       );
       // Reported after leaving this view too, as for connecting.
       setNotice(deferredText(() => documentCheckText(result)));
-    }).finally(() => polling.restart(known));
+    }).finally(() => {
+      polling.restart(known);
+      after?.();
+    });
   };
   const checkButton = (
     <button
       className="button"
       type="button"
       disabled={disabled || !links.some((link) => !link.incomplete)}
-      onClick={check}
+      onClick={() => check()}
     >
       {t(working && compact ? "portal.working" : "portal.check")}
     </button>
@@ -582,6 +604,19 @@ export function PortalDocuments({
         </h3>
         <p className="portal-address">{link.portalBase}</p>
         <p>{stateText(cardState(link, live))}</p>
+        <RefusedDeliveries
+          link={link}
+          disabled={disabled}
+          onTryAgain={
+            readOnly || !bridge.forgetRefusedDeliveries
+              ? undefined
+              : () =>
+                  check(
+                    () => bridge.forgetRefusedDeliveries!(link.id),
+                    () => setFocusAfterRetry(link.id),
+                  )
+          }
+        />
         {left !== null && (
           <p>
             {left > 0
