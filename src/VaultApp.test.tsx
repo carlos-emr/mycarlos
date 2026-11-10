@@ -11864,15 +11864,16 @@ describe("clinic connection operations", () => {
       ),
     ).toBeVisible();
     // The result can render before clinic admission is released. Wait for
-    // the next attempt to be usable before typing its code.
+    // the next attempt to be usable before typing its code: a clinic is
+    // linked now, so it starts from "Link another clinic" (#145).
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Connect and request approval" }),
+        screen.getByRole("button", { name: "Link another clinic" }),
       ).toBeEnabled(),
     );
     // An error that arrives while a picker is open waits for its result.
-    // A clinic is linked now: the form opens from "Link another clinic"
-    // (#145), empty for the next clinic's address.
+    // The form opens from "Link another clinic", empty for the next clinic's
+    // address.
     await user.click(
       screen.getByRole("button", { name: "Link another clinic" }),
     );
