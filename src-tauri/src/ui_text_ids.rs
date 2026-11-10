@@ -5,6 +5,7 @@ pub const FORMATTING_FAILURE_EN: &str =
 pub enum MessageId {
     AiErrorBusy,
     AiErrorMemory,
+    AiErrorStorage,
     AiExplainBox,
     AiExplainHint,
     AiExplainReady,
@@ -385,6 +386,7 @@ pub enum MessageId {
     InterfaceHistoryDamagedAll,
     InterfaceHistoryDamagedBefore,
     InterfaceHistoryDamagedBetween,
+    InterfaceHistoryDamagedStorageOnly,
     InterfaceHistoryEmpty,
     InterfaceHistoryErrorUnverified,
     InterfaceHistoryEventAiResultSaved,
@@ -992,6 +994,7 @@ impl MessageId {
     pub const ALL: &'static [Self] = &[
         Self::AiErrorBusy,
         Self::AiErrorMemory,
+        Self::AiErrorStorage,
         Self::AiExplainBox,
         Self::AiExplainHint,
         Self::AiExplainReady,
@@ -1372,6 +1375,7 @@ impl MessageId {
         Self::InterfaceHistoryDamagedAll,
         Self::InterfaceHistoryDamagedBefore,
         Self::InterfaceHistoryDamagedBetween,
+        Self::InterfaceHistoryDamagedStorageOnly,
         Self::InterfaceHistoryEmpty,
         Self::InterfaceHistoryErrorUnverified,
         Self::InterfaceHistoryEventAiResultSaved,
@@ -1979,6 +1983,7 @@ impl MessageId {
         match self {
             Self::AiErrorBusy => "ai-error-busy",
             Self::AiErrorMemory => "ai-error-memory",
+            Self::AiErrorStorage => "ai-error-storage",
             Self::AiExplainBox => "ai-explain-box",
             Self::AiExplainHint => "ai-explain-hint",
             Self::AiExplainReady => "ai-explain-ready",
@@ -2577,6 +2582,7 @@ impl MessageId {
             Self::InterfaceHistoryDamagedAll => "interface-history-damagedAll",
             Self::InterfaceHistoryDamagedBefore => "interface-history-damagedBefore",
             Self::InterfaceHistoryDamagedBetween => "interface-history-damagedBetween",
+            Self::InterfaceHistoryDamagedStorageOnly => "interface-history-damagedStorageOnly",
             Self::InterfaceHistoryEmpty => "interface-history-empty",
             Self::InterfaceHistoryErrorUnverified => "interface-history-error-unverified",
             Self::InterfaceHistoryEventAiResultSaved => "interface-history-event-aiResultSaved",
@@ -4293,6 +4299,9 @@ impl MessageId {
             "library.source.manualImport" => Some(Self::LibrarySourceManualImport),
             "library.status.unverified" => Some(Self::LibraryStatusUnverified),
             "library.status.verified" => Some(Self::LibraryStatusVerified),
+            "interface.history.damagedStorageOnly" => {
+                Some(Self::InterfaceHistoryDamagedStorageOnly)
+            }
             "ai.summary.button" => Some(Self::AiSummaryButton),
             "ai.summary.title" => Some(Self::AiSummaryTitle),
             "ai.explain.title" => Some(Self::AiExplainTitle),
@@ -4318,6 +4327,7 @@ impl MessageId {
             "ai.failed" => Some(Self::AiFailed),
             "ai.error.memory" => Some(Self::AiErrorMemory),
             "ai.error.busy" => Some(Self::AiErrorBusy),
+            "ai.error.storage" => Some(Self::AiErrorStorage),
             "ai.summary.pagesMissing" => Some(Self::AiSummaryPagesMissing),
             "ai.summary.noSource" => Some(Self::AiSummaryNoSource),
             "aiHelper.notice.title" => Some(Self::AiHelperNoticeTitle),
