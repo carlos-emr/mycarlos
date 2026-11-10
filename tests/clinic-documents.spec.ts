@@ -34,17 +34,31 @@ async function fakeNative(page: Page, locale: string, linked = true) {
       portalLinkingEnabled: true,
       portalLinks: linked ? [link] : [],
     };
+    // Every snapshot names the native capture it came from.
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const unexpected: string[] = [];
     Reflect.set(window, "__FAKE_UNEXPECTED__", unexpected);
     Reflect.set(window, "__TAURI_INTERNALS__", {
+      metadata: { currentWindow: { label: "main" } },
       invoke: async (command: string) => {
         if (command === "vault_status") return "unlocked";
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform: "windows" };
-        if (command === "vault_touch" || command === "vault_set_auto_lock")
+        // The app tells the window its theme at start (as in appearance.spec.ts).
+        if (
+          command === "vault_touch" ||
+          command === "vault_set_auto_lock" ||
+          command === "plugin:window|set_theme"
+        )
           return;
         // Files shared to myCarlos are looked for on focus (#49): none.
-        if (command === "received_list") return [];
+        if (command === "received_list")
+          return { files: [], notice: { dropped: 0, refusedShares: 0 } };
         unexpected.push(command);
         throw new Error(`Unexpected IPC command: ${command}`);
       },
