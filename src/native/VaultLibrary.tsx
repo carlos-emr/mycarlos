@@ -38,6 +38,7 @@ import {
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
+import { AiSettings } from "./AiSettings";
 import { PortalDocuments } from "./PortalDocuments";
 import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
@@ -77,7 +78,8 @@ type NativeSection =
   | "hidden"
   | "history"
   | "security"
-  | "preferences";
+  | "preferences"
+  | "ai";
 /** The phone's tabs. Records holds the people and Shared with me, as the
  * sidebar's top-level folders do on a computer (Ben, 21 Oct). */
 const PHONE_TABS: ReadonlyArray<[NativeSection, MessageKey]> = [
@@ -85,6 +87,9 @@ const PHONE_TABS: ReadonlyArray<[NativeSection, MessageKey]> = [
   ["security", "security.title"],
   ["preferences", "sidebar.preferences"],
 ];
+/** Where the AI helper can run (a computer), its settings have a tab too, for
+ * narrow windows, where the sidebar is hidden (#72). */
+const AI_TAB: [NativeSection, MessageKey] = ["ai", "ai.preferences.title"];
 
 /** The people a vault keeps records for: every profile but Shared with me's
  * (#61). */
@@ -250,7 +255,7 @@ export function VaultLibrary({
   const localModel = useMemo(() => nativeLocalModel(bridge), [bridge]);
   const [aiStatus, setAiStatus] = useState<ModelStatus | null>(null);
   useEffect(() => {
-    if (section !== "preferences" || !computer) return;
+    if (section !== "ai" || !computer) return;
     let current = true;
     localModel.status().then(
       (found) => current && setAiStatus(found),
@@ -320,6 +325,11 @@ export function VaultLibrary({
   };
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Security's profile dialogs (Ben, 29 Oct): drawn in this host, beside the
+  // other dialogs, and the page behind them is inert.
+  const [profileDialogHost, setProfileDialogHost] =
+    useState<HTMLElement | null>(null);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
   // shown: it is fetched for the photo view and dropped when that closes.
   const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
@@ -808,7 +818,8 @@ export function VaultLibrary({
         cameraOpen ||
         confirmation ||
         confirmHideDamaged ||
-        recoverySetup,
+        recoverySetup ||
+        profileDialogOpen,
     ),
     `${section}:${profileId}:${currentFolderId ?? ""}`,
   );
@@ -838,6 +849,7 @@ export function VaultLibrary({
       confirmation ||
       confirmHideDamaged ||
       recoverySetup ||
+      profileDialogOpen ||
       busy
     )
       return;
@@ -869,6 +881,7 @@ export function VaultLibrary({
     notice,
     profileId,
     dialogResult,
+    profileDialogOpen,
     recoverySetup,
     renameTarget,
     cameraOpen,
@@ -1332,11 +1345,15 @@ export function VaultLibrary({
         : bridge.createProfile(name));
       created = true;
       await refresh();
-      setNotice(
-        deferredText(() =>
+      // Said once the Add profile dialog has closed and the status line is
+      // live again (see dialogResult above): set now, it is never read out.
+      setNotice("");
+      setDialogResult({
+        message: deferredText(() =>
           translateNow("interface.notice.personAdded", { name }),
         ),
-      );
+        recordId: null,
+      });
     }, ["box.profileName"]);
     return created;
   };
@@ -1366,11 +1383,14 @@ export function VaultLibrary({
       await bridge.updateProfileDetails!(id, details);
       saved = true;
       await refresh();
-      setNotice(
-        message("personDetails.saved", {
+      // After the Edit details dialog closes, as Add profile's.
+      setNotice("");
+      setDialogResult({
+        message: message("personDetails.saved", {
           name: people.find((p) => p.id === id)?.displayName ?? "",
         }),
-      );
+        recordId: null,
+      });
     });
     return saved;
   };
@@ -1552,6 +1572,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1581,36 +1602,39 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
           >
-            {PHONE_TABS.map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-current={
-                  section === value ||
-                  (value === "records" && inShared) ||
-                  (value === "security" &&
-                    (section === "hidden" || section === "history"))
-                    ? "page"
-                    : undefined
-                }
-                onClick={() =>
-                  value === "security" ? openSecurity() : setSection(value)
-                }
-              >
-                {value === "records" && sharedNew
-                  ? translateNow("interface.tab.withNew", {
-                      section: translateNow(label),
-                      new: translateNow("interface.count.new", {
-                        count: sharedNew,
-                      }),
-                    })
-                  : translateNow(label)}
-              </button>
-            ))}
+            {(computer ? [...PHONE_TABS, AI_TAB] : PHONE_TABS).map(
+              ([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-current={
+                    section === value ||
+                    (value === "records" && inShared) ||
+                    (value === "security" &&
+                      (section === "hidden" || section === "history"))
+                      ? "page"
+                      : undefined
+                  }
+                  onClick={() =>
+                    value === "security" ? openSecurity() : setSection(value)
+                  }
+                >
+                  {value === "records" && sharedNew
+                    ? translateNow("interface.tab.withNew", {
+                        section: translateNow(label),
+                        new: translateNow("interface.count.new", {
+                          count: sharedNew,
+                        }),
+                      })
+                    : translateNow(label)}
+                </button>
+              ),
+            )}
           </nav>
 
           <div
@@ -1619,6 +1643,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1659,6 +1684,7 @@ export function VaultLibrary({
               }}
               onOpenSecurity={openSecurity}
               onOpenPreferences={() => setSection("preferences")}
+              onOpenAi={computer ? () => setSection("ai") : undefined}
             />
 
             {(section === "records" || inShared) && (
@@ -2077,36 +2103,42 @@ export function VaultLibrary({
                   </div>
                 )}
 
-                <PortalDocuments
-                  compact
-                  bridge={bridge}
-                  snapshot={snapshot}
-                  busy={busy || portalBusy}
-                  working={portalBusy}
-                  readOnly={readOnly}
-                  run={runPortal}
-                  waits={approvalWaits}
-                  refresh={refresh}
-                  setNotice={setPortalNotice}
-                />
-                <label className="search">
-                  <Icon name="search" />
-                  <span className="sr-only">{searchLabel}</span>
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setQuery(value);
-                      setSearchRequest(
-                        value.trim() || query.trim()
-                          ? { query: value, location: searchLocation }
-                          : null,
-                      );
-                    }}
-                    placeholder={searchLabel}
-                  />
-                </label>
+                {/* Check for new documents sits to the right of the search box when the row
+                    has room; otherwise it goes under the box (#84 large text). */}
+                <div className="library-search-row">
+                  <label className="search">
+                    <Icon name="search" />
+                    <span className="sr-only">{searchLabel}</span>
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setQuery(value);
+                        setSearchRequest(
+                          value.trim() || query.trim()
+                            ? { query: value, location: searchLocation }
+                            : null,
+                        );
+                      }}
+                      placeholder={searchLabel}
+                    />
+                  </label>
+                  {inShared && (
+                    <PortalDocuments
+                      compact
+                      bridge={bridge}
+                      snapshot={snapshot}
+                      busy={busy || portalBusy}
+                      working={portalBusy}
+                      readOnly={readOnly}
+                      run={runPortal}
+                      waits={approvalWaits}
+                      refresh={refresh}
+                      setNotice={setPortalNotice}
+                    />
+                  )}
+                </div>
                 <div className="viewbar">
                   <span className="native-location-chip">
                     {currentFolder
@@ -2305,17 +2337,17 @@ export function VaultLibrary({
               />
             )}
 
-            {section === "preferences" && (
-              <PreferencesSettings
-                aiStatus={computer ? aiStatus : undefined}
-                onAiStatus={setAiStatus}
-              />
+            {section === "preferences" && <PreferencesSettings />}
+
+            {section === "ai" && computer && (
+              <AiSettings aiStatus={aiStatus} onAiStatus={setAiStatus} />
             )}
 
             {section === "security" && (
               <SecuritySettings
                 clinicDocuments={
                   <PortalDocuments
+                    showCheck={false}
                     bridge={bridge}
                     snapshot={snapshot}
                     busy={busy || portalBusy}
@@ -2336,6 +2368,8 @@ export function VaultLibrary({
                 onLock={lockAndConceal}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
+                dialogHost={profileDialogHost}
+                onDialogChange={setProfileDialogOpen}
                 hiddenCount={hiddenRecords.length}
                 focusHiddenEntry={returnFocusToHidden}
                 focusAuditEntry={returnFocusToHistory}
@@ -2657,9 +2691,10 @@ export function VaultLibrary({
                         save: (keptId, sources) =>
                           bridge.saveAiResult(readerRecord.id, keptId, sources),
                       },
+                      // The model is added on the AI helper's own page.
                       onOpenPreferences: () => {
                         setReaderRecordId(null);
-                        setSection("preferences");
+                        setSection("ai");
                       },
                       beforeFirstUse: beforeFirstAiUse,
                     }
@@ -2739,6 +2774,7 @@ export function VaultLibrary({
               </p>
             </ConfirmDialog>
           )}
+          <div ref={setProfileDialogHost} />
         </section>
       </div>
     </div>

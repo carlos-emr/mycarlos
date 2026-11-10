@@ -1843,9 +1843,9 @@ ai-explain-title = Wyjaśnij termin
 
 ai-notInstalled-title = Asystenta AI nie ma jeszcze na tym komputerze
 
-ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. W Preferencjach można pobrać model albo dodać posiadany plik modelu.
+ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. W Ustawieniach, w sekcji Asystent AI, można pobrać model albo dodać posiadany plik modelu.
 
-ai-notInstalled-openPreferences = Otwórz Preferencje
+ai-notInstalled-openPreferences = Otwórz ustawienia asystenta AI
 
 aiHelper-resultLabel = Napisane przez AI, może zawierać błędy. Proszę skonsultować się z lekarzem.
 
@@ -1865,9 +1865,11 @@ ai-explain-submit = Wyjaśnij
 
 ai-preferences-title = Asystent AI
 
-ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Można pobrać model albo dodać posiadany plik modelu; pozostaje on na tym komputerze.
+ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Pobierz jeden z poniższych modeli lub dodaj pasujący plik, który już masz. Modele pozostają na tym komputerze.
 
 ai-preferences-notInstalled = Nie zainstalowano
+
+ai-settings-subtitle = Działanie asystenta AI na tym komputerze
 
 ai-model-add = Dodaj plik modelu…
 
@@ -1897,7 +1899,7 @@ ai-model-unsupportedCpu = Procesor tego komputera nie jest obsługiwany przez as
 
 ai-model-unsupportedPlatform = Asystent AI nie jest jeszcze dostępny na tym rodzaju komputera.
 
-ai-model-refusedList = myCarlos nie akceptuje tego pliku. Proszę wybrać plik modelu podany powyżej.
+ai-model-refusedList = myCarlos nie akceptuje tego pliku. Wybierz jeden z plików modeli wymienionych powyżej.
 
 ai-model-refusedHash = To nie jest oczekiwany plik. Proszę pobrać go ponownie i dodać nową kopię.
 
@@ -1915,6 +1917,14 @@ ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $hos
 
 ai-model-downloading = Pobieranie i sprawdzanie… { $done } z { $total } MB
 
+ai-model-progressName = Pobieranie modelu
+
+ai-model-progressValue = { $percent }, { $done } z { $total } MB
+
+ai-model-stillDownloading = Model nadal się pobiera.
+
+ai-model-stillChecking = Plik modelu jest nadal sprawdzany.
+
 ai-model-refusedNetwork = Pobieranie nie zostało ukończone. Proszę sprawdzić połączenie z internetem i spróbować ponownie.
 
 ai-model-refusedUnavailable = Model jest teraz niedostępny pod swoim adresem. Proszę spróbować później albo dodać posiadany plik.
@@ -1922,6 +1932,16 @@ ai-model-refusedUnavailable = Model jest teraz niedostępny pod swoim adresem. P
 native-filter-models = Pliki modeli
 
 ai-working = Asystent AI pracuje…
+
+ai-workingLong = W przypadku długiego dokumentu może to potrwać kilka minut.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Trwa to już { $minutes } minutę.
+    [few] Trwa to już { $minutes } minuty.
+    [many] Trwa to już { $minutes } minut.
+    *[other] Trwa to już { $minutes } minuty.
+    }
 
 ai-summary-ready = Podsumowanie jest gotowe.
 
@@ -2135,12 +2155,53 @@ notifications-error = Nie można zapisać tego ustawienia. Powiadomienia są wy�
 notifications-unavailable = Powiadomienia o dokumentach są niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
 notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
 notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy sejf jest odblokowany
+notifications-autoNeedsNotices = Aby to włączyć, najpierw należy zezwolić na powiadomienia o nowych dokumentach.
 notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Sprawdzanie może trwać, gdy Windows blokuje powiadomienia. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie.
 notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Dokumenty z przychodni” i wybrać „Sprawdź nowe dokumenty”.
 notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za chwilę ponownie wybrać „Sprawdź nowe dokumenty”.
+noticesStep-title = Powiadomienia z przychodni
+noticesStep-intro = Przychodnia jest połączona. myCarlos może powiadamiać o nowych dokumentach. Nic nie zostanie włączone bez zaznaczenia.
+noticesStep-later = Można je zmienić w każdej chwili w sekcji „{ $settings }”, w części „{ $preferences }”: „{ $notices }”.
+noticesStep-done = Gotowe
+noticesStep-notNow = Nie teraz
 
 ai-summary-again = Podsumuj ponownie
 
 ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.
 
 ai-keepFull = Ten dokument przechowuje już maksymalną liczbę odpowiedzi AI. Nowe odpowiedzi są wyświetlane, ale nie są zachowywane.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modele na tym komputerze
+
+ai-models-group = Używany model
+
+ai-models-inUse = W użyciu
+
+ai-models-installed = Zainstalowany
+
+ai-models-addedByYou = Dodany przez Ciebie
+
+ai-models-notDownloaded = Niepobrany
+
+ai-models-downloading = Pobieranie
+ai-models-installing = Instalowanie
+
+ai-models-download = Pobierz
+
+ai-models-remove = Usuń
+
+ai-models-help = Model oznaczony jako W użyciu tworzy podsumowania i wyjaśnienia. Wybranie innego modelu zatrzymuje tworzoną odpowiedź.
+
+ai-models-loading = Odczytywanie listy modeli…
+
+ai-models-loadFailed = Nie udało się odczytać listy modeli. Spróbuj ponownie.
+
+ai-models-retry = Odczytaj ponownie listę modeli
+
+ai-models-starting = Rozpoczynanie pobierania…
+
+ai-models-picking = Wybierz plik modelu do dodania.
+
+ai-models-changed = Zmieniono używany model

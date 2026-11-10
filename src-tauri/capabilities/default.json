@@ -11,6 +11,7 @@
     "allow-ai-model-use",
     "allow-ai-model-add-picked",
     "allow-ai-model-add-cancel",
+    "allow-ai-model-add-active",
     "allow-ai-model-download",
     "allow-ai-model-remove",
     "allow-ai-summarize",

@@ -1,5 +1,6 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type {
   AiTool,
   ModelExplanation,
@@ -576,6 +577,7 @@ export interface VaultBridge {
     pages: DocumentPageText[],
     lang: string,
     keep?: { recordId: string; ticket: string },
+    answerId?: string,
   ): Promise<ModelSummary>;
   /** A term explained in plain words, with the sentence it is in. With
    * `recordId`, kept natively for that document's save, as a summary is. */
@@ -584,9 +586,16 @@ export interface VaultBridge {
     context: string,
     lang: string,
     recordId?: string,
+    answerId?: string,
   ): Promise<ModelExplanation>;
   /** Stops the model's answer in flight, if any. */
   aiCancel(): Promise<void>;
+  /** Calls `handler` with an answer's own time limit, in milliseconds, as
+   * the model is asked it: the automatic lock waits that long at most for
+   * it (D19). Returns the way to stop listening. */
+  onAiAnswerStarted?(
+    handler: (answer: { answerId: string; limitMs: number }) => void,
+  ): () => void;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -1080,15 +1089,30 @@ export function createVaultBridge(): VaultBridge {
       return cancellation;
     },
     aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
-    aiSummarize: (pages, lang, keep) =>
+    aiSummarize: (pages, lang, keep, answerId = crypto.randomUUID()) =>
       invoke<ModelSummary>("ai_summarize", {
+        answerId,
         request: { pages, lang, ...keep },
       }),
-    aiExplain: (term, context, lang, recordId) =>
+    aiExplain: (
+      term,
+      context,
+      lang,
+      recordId,
+      answerId = crypto.randomUUID(),
+    ) =>
       invoke<ModelExplanation>("ai_explain", {
+        answerId,
         request: { term, context, lang, ...(recordId ? { recordId } : {}) },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
+    onAiAnswerStarted: (handler) => {
+      const stop = listen<{ answerId: string; limitMs: number }>(
+        "ai-answer-started",
+        (event) => handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
     documentText: (recordId, readId, password) =>
       invoke<DocumentText>("vault_document_text", {
         request: { recordId, readId, password: password ?? null },

@@ -1627,9 +1627,9 @@ ai-explain-title = 解释术语
 
 ai-notInstalled-title = 此电脑上尚未安装 AI 助手
 
-ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“偏好设置”中下载模型，或添加您已有的模型文件。
+ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“设置”中的“AI 助手”里下载模型，或添加您已有的模型文件。
 
-ai-notInstalled-openPreferences = 打开偏好设置
+ai-notInstalled-openPreferences = 打开 AI 助手设置
 
 aiHelper-resultLabel = 由 AI 撰写，可能有误。请向您的医生核实。
 
@@ -1649,9 +1649,11 @@ ai-explain-submit = 解释
 
 ai-preferences-title = AI 助手
 
-ai-preferences-body = 使用在此电脑上运行的 AI 模型，以通俗易懂的文字解释您的文档。您可以下载模型，或添加您已有的模型文件；模型保存在此电脑上。
+ai-preferences-body = 使用在这台电脑上运行的 AI 模型，以通俗的语言解释你的文档。下载下列某个模型，或添加你已有的对应文件。模型保留在这台电脑上。
 
 ai-preferences-notInstalled = 未安装
+
+ai-settings-subtitle = AI 助手在此电脑上的运行方式
 
 ai-model-add = 添加模型文件…
 
@@ -1681,7 +1683,7 @@ ai-model-unsupportedCpu = 此电脑的处理器不支持 AI 助手。
 
 ai-model-unsupportedPlatform = 此类电脑暂不支持 AI 助手。
 
-ai-model-refusedList = myCarlos 不接受此文件。请选择上方列出的模型文件。
+ai-model-refusedList = myCarlos 不接受此文件。请选择上方列出的某个模型文件。
 
 ai-model-refusedHash = 这不是预期的文件。请重新下载，然后添加新的副本。
 
@@ -1699,6 +1701,14 @@ ai-model-downloadNote = 仅一次，且仅在您点击时，从 { $host } 下载
 
 ai-model-downloading = 正在下载并检查… { $done } / { $total } MB
 
+ai-model-progressName = 模型下载
+
+ai-model-progressValue = { $percent }，{ $done } / { $total } MB
+
+ai-model-stillDownloading = 模型仍在下载。
+
+ai-model-stillChecking = 仍在检查模型文件。
+
 ai-model-refusedNetwork = 下载未完成。请检查您的网络连接，然后重试。
 
 ai-model-refusedUnavailable = 该模型目前无法从其地址获取。请稍后重试，或添加您已有的文件。
@@ -1706,6 +1716,10 @@ ai-model-refusedUnavailable = 该模型目前无法从其地址获取。请稍�
 native-filter-models = 模型文件
 
 ai-working = AI 助手正在处理…
+
+ai-workingLong = 文档较长时，可能需要几分钟。
+
+ai-workingFor = 已处理 { $minutes } 分钟。
 
 ai-summary-ready = 摘要已生成。
 
@@ -1914,12 +1928,53 @@ notifications-error = 无法保存此设置。本次会话的通知已关闭。
 notifications-unavailable = 文档通知不可用。请按通常方式打开 myCarlos 查看文档。
 notifications-helpAutomatic = 保存诊所文档后，Windows 可以显示不含具体内容的通知。请照常打开 myCarlos 阅读文档。
 notifications-autoAllow = 保险库解锁时自动检查诊所文档
+notifications-autoNeedsNotices = 请先允许文档到达通知，才能开启此选项。
 notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
 notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
 notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。
+noticesStep-title = 来自诊所的通知
+noticesStep-intro = 您的诊所已关联。myCarlos 可以在新文档到达时通知您。除非您勾选，否则不会开启任何选项。
+noticesStep-later = 您随时可以在 { $settings } 的 { $preferences } 中变更这些设置：{ $notices }。
+noticesStep-done = 完成
+noticesStep-notNow = 暂不
 
 ai-summary-again = 重新生成摘要
 
 ai-keepFailed = myCarlos 无法将此回答与文档一起保存。此处仍会显示该回答。
 
 ai-keepFull = 此文档保存的 AI 回答已达上限。新的回答会显示，但不会保存。
+
+# Catalog model list (#276A).
+
+ai-models-title = 这台电脑上的模型
+
+ai-models-group = 正在使用的模型
+
+ai-models-inUse = 正在使用
+
+ai-models-installed = 已安装
+
+ai-models-addedByYou = 由你添加
+
+ai-models-notDownloaded = 尚未下载
+
+ai-models-downloading = 正在下载
+ai-models-installing = 正在安装
+
+ai-models-download = 下载
+
+ai-models-remove = 移除
+
+ai-models-help = 标为“正在使用”的模型用于生成摘要和解释。选择其他模型会停止正在生成的回答。
+
+ai-models-loading = 正在读取模型列表…
+
+ai-models-loadFailed = 无法读取模型列表。请重试。
+
+ai-models-retry = 重新读取模型列表
+
+ai-models-starting = 正在开始下载…
+
+ai-models-picking = 请选择要添加的模型文件。
+
+ai-models-changed = 已更改正在使用的模型

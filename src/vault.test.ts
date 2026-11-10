@@ -146,19 +146,29 @@ describe("native idle deadline bridge", () => {
       lastPage: 2,
       lastPageCut: false,
     });
-    await bridge.aiSummarize(pages, "fr");
+    await bridge.aiSummarize(pages, "fr", undefined, "summary-id");
     invoke.mockResolvedValue({
       text: "FAKE",
       model: { name: "FAKE", sha256: "test-only" },
     });
-    await bridge.aiExplain("potassium", "Potassium 5.4.", "pl");
+    await bridge.aiExplain(
+      "potassium",
+      "Potassium 5.4.",
+      "pl",
+      undefined,
+      "explain-id",
+    );
     invoke.mockResolvedValue(null);
     await bridge.aiCancel();
     expect(invoke.mock.calls).toEqual([
-      ["ai_summarize", { request: { pages, lang: "fr" } }],
+      [
+        "ai_summarize",
+        { answerId: "summary-id", request: { pages, lang: "fr" } },
+      ],
       [
         "ai_explain",
         {
+          answerId: "explain-id",
           request: { term: "potassium", context: "Potassium 5.4.", lang: "pl" },
         },
       ],
@@ -177,7 +187,12 @@ describe("native idle deadline bridge", () => {
       keptId: "kept-1",
     });
     await expect(
-      bridge.aiSummarize(pages, "fr", { recordId: "rec", ticket: "t-1" }),
+      bridge.aiSummarize(
+        pages,
+        "fr",
+        { recordId: "rec", ticket: "t-1" },
+        "summary-id",
+      ),
     ).resolves.toMatchObject({ keptId: "kept-1" });
     invoke.mockResolvedValueOnce({
       text: "FAKE",
@@ -185,16 +200,26 @@ describe("native idle deadline bridge", () => {
       keptId: "kept-2",
     });
     await expect(
-      bridge.aiExplain("potassium", "Potassium 5.4.", "pl", "rec"),
+      bridge.aiExplain(
+        "potassium",
+        "Potassium 5.4.",
+        "pl",
+        "rec",
+        "explain-id",
+      ),
     ).resolves.toMatchObject({ keptId: "kept-2" });
     expect(invoke.mock.calls).toEqual([
       [
         "ai_summarize",
-        { request: { pages, lang: "fr", recordId: "rec", ticket: "t-1" } },
+        {
+          answerId: "summary-id",
+          request: { pages, lang: "fr", recordId: "rec", ticket: "t-1" },
+        },
       ],
       [
         "ai_explain",
         {
+          answerId: "explain-id",
           request: {
             term: "potassium",
             context: "Potassium 5.4.",
