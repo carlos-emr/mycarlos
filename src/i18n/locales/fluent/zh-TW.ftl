@@ -1491,6 +1491,8 @@ interface-history-event-imported = 文件已新增
 
 interface-history-event-moved = 文件已移動
 
+interface-history-event-other = 其他事件
+
 interface-history-event-passphraseChanged = 密語已變更
 
 interface-history-event-portalLinkStarted = 已開始連結診所
@@ -1538,6 +1540,8 @@ interface-history-how-movedFromShared = 從「與我分享」移出
 interface-history-how-passphrase = 密語
 
 interface-history-how-patient = 由您隱藏
+
+interface-history-how-personFolder = 某人的資料夾
 
 interface-history-how-picked = 從所選檔案匯入
 
@@ -1624,10 +1628,6 @@ portal-codeRefused = 診所入口網站未接受此驗證碼。請幾分鐘後�
 portal-codeSubmit = 確認驗證碼
 
 portal-codeSubmitted = 驗證碼已送出。正在等待診所確認此裝置。如果 10 分鐘內仍未確認，請重新申請。
-
-interface-history-event-other = 其他事件
-
-interface-history-how-personFolder = 某人的資料夾
 
 ai-summary-button = 摘要
 

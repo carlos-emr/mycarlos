@@ -1491,6 +1491,8 @@ interface-history-event-imported = 文档已添加
 
 interface-history-event-moved = 文档已移动
 
+interface-history-event-other = 其他事件
+
 interface-history-event-passphraseChanged = 密码短语已变更
 
 interface-history-event-portalLinkStarted = 已开始关联诊所
@@ -1538,6 +1540,8 @@ interface-history-how-movedFromShared = 从「与我分享」移出
 interface-history-how-passphrase = 密码短语
 
 interface-history-how-patient = 由您隐藏
+
+interface-history-how-personFolder = 某人的文件夹
 
 interface-history-how-picked = 从所选文件导入
 
@@ -1624,10 +1628,6 @@ portal-codeRefused = 诊所门户网站未接受此验证码。请几分钟后�
 portal-codeSubmit = 确认验证码
 
 portal-codeSubmitted = 验证码已发送。正在等待诊所确认此设备。如果 10 分钟内仍未确认，请重新申请。
-
-interface-history-event-other = 其他事件
-
-interface-history-how-personFolder = 某人的文件夹
 
 ai-summary-button = 摘要
 

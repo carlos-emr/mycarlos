@@ -1656,6 +1656,8 @@ interface-history-event-imported = Document ajouté
 
 interface-history-event-moved = Document déplacé
 
+interface-history-event-other = Autre événement
+
 interface-history-event-passphraseChanged = Phrase secrète modifiée
 
 interface-history-event-portalLinkStarted = Liaison avec la clinique commencée
@@ -1708,6 +1710,8 @@ interface-history-how-movedFromShared = Déplacé depuis Partagé avec moi
 interface-history-how-passphrase = Phrase secrète
 
 interface-history-how-patient = Masqué par vous
+
+interface-history-how-personFolder = Dossier d’une personne
 
 interface-history-how-picked = Importé depuis un fichier choisi
 
@@ -1804,10 +1808,6 @@ portal-codeRefused = Le portail de la clinique n’a pas accepté le code. Rées
 portal-codeSubmit = Confirmer le code
 
 portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
-
-interface-history-event-other = Autre événement
-
-interface-history-how-personFolder = Dossier d’une personne
 
 ai-summary-button = Résumé
 

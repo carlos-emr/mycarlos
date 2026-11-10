@@ -1656,6 +1656,8 @@ interface-history-event-imported = Documento adicionado
 
 interface-history-event-moved = Documento movido
 
+interface-history-event-other = Outro evento
+
 interface-history-event-passphraseChanged = Frase-senha alterada
 
 interface-history-event-portalLinkStarted = Vinculação com a clínica iniciada
@@ -1708,6 +1710,8 @@ interface-history-how-movedFromShared = Movido de Compartilhado comigo
 interface-history-how-passphrase = Frase-senha
 
 interface-history-how-patient = Ocultado por você
+
+interface-history-how-personFolder = Pasta de uma pessoa
 
 interface-history-how-picked = Importado de um arquivo escolhido
 
@@ -1804,10 +1808,6 @@ portal-codeRefused = O portal da clínica não aceitou o código. Tente novament
 portal-codeSubmit = Confirmar código
 
 portal-codeSubmitted = Código enviado. Aguardando sua clínica confirmar este dispositivo. Se ele não for confirmado em 10 minutos, peça novamente.
-
-interface-history-event-other = Outro evento
-
-interface-history-how-personFolder = Pasta de uma pessoa
 
 ai-summary-button = Resumo
 

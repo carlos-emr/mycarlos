@@ -1623,6 +1623,8 @@ interface-history-event-imported = Document added
 
 interface-history-event-moved = Document moved
 
+interface-history-event-other = Other event
+
 interface-history-event-passphraseChanged = Passphrase changed
 
 interface-history-event-portalLinkStarted = Clinic link started
@@ -1674,6 +1676,8 @@ interface-history-how-movedFromShared = Moved from Shared with me
 interface-history-how-passphrase = Passphrase
 
 interface-history-how-patient = Hidden by you
+
+interface-history-how-personFolder = A person's folder
 
 interface-history-how-picked = Imported from a chosen file
 
@@ -1768,10 +1772,6 @@ portal-codeRefused = The clinic portal didn't take the code. Try again in a few 
 portal-codeSubmit = Confirm code
 
 portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
-
-interface-history-event-other = Other event
-
-interface-history-how-personFolder = A person's folder
 
 ai-summary-button = Summary
 

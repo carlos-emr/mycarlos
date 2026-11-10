@@ -1689,6 +1689,8 @@ interface-history-event-imported = Dodano dokument
 
 interface-history-event-moved = Przeniesiono dokument
 
+interface-history-event-other = Inne zdarzenie
+
 interface-history-event-passphraseChanged = Zmieniono hasło
 
 interface-history-event-portalLinkStarted = Rozpoczęto łączenie z przychodnią
@@ -1742,6 +1744,8 @@ interface-history-how-movedFromShared = Przeniesiono z Udostępnione mi
 interface-history-how-passphrase = Hasło
 
 interface-history-how-patient = Ukryto ręcznie
+
+interface-history-how-personFolder = Folder osoby
 
 interface-history-how-picked = Zaimportowano z wybranego pliku
 
@@ -1840,10 +1844,6 @@ portal-codeRefused = Portal przychodni nie przyjął kodu. Spróbuj ponownie za 
 portal-codeSubmit = Potwierdź kod
 
 portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, poproś ponownie.
-
-interface-history-event-other = Inne zdarzenie
-
-interface-history-how-personFolder = Folder osoby
 
 ai-summary-button = Podsumowanie
 
