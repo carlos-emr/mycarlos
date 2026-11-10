@@ -31,10 +31,10 @@ fn check_tracing_receipts(
         }
     }
     let _running = Running(&store.portal_check_running);
-    crate::portal_pickup::check_using(
+    crate::portal_pickup::check_asking_using(
         store,
         session,
-        &crate::portal_approval::ApprovalHttp,
+        &crate::portal_approval::ApprovalHttp::default(),
         |link, method, suffix, body, anchor, max, cancelled| {
             let receipt_post = method == "POST" && suffix.ends_with("/receipt");
             if let Some(target) = drop_delivery_id {

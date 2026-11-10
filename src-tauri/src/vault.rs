@@ -1,5 +1,5 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
-use crate::idle::IdleDeadline;
+use crate::idle::{AnswerHold, AnswerOrigin, IdleDeadline};
 use crate::portal_link::{self, LinkSummary, StoredLink};
 use crate::ui_text_ids::MessageId;
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -273,6 +273,8 @@ pub enum VaultError {
     ApprovalRequestMissing,
     #[error("clinic approval needs review before another request")]
     ApprovalNeedsClinic,
+    #[error("the clinic portal still has the approval request open")]
+    ApprovalStillOpen,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("a document check is stopping; please try again")]
@@ -902,6 +904,7 @@ pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
     collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
+    approval_poll_progress: Mutex<HashMap<Uuid, delivery::ApprovalPollProgress>>,
     notifications: std::sync::OnceLock<Arc<crate::document_notification_runtime::Runtime>>,
     unlocked: Mutex<Option<UnlockedVault>>,
     snapshot_epoch: Uuid,
@@ -910,6 +913,7 @@ pub struct VaultStore {
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
     portal_session: Arc<AtomicU64>,
+    /// Shared admission for linking, approval requests and document checks.
     portal_check_running: AtomicBool,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
@@ -932,6 +936,7 @@ impl VaultStore {
             root,
             collection: crate::document_collection::Controller::new(Instant::now()),
             collection_resume: Mutex::new(None),
+            approval_poll_progress: Mutex::new(HashMap::new()),
             notifications: std::sync::OnceLock::new(),
             unlocked: Mutex::new(None),
             snapshot_epoch: Uuid::new_v4(),
@@ -968,7 +973,20 @@ impl VaultStore {
                 .unwrap_or_else(|p| p.into_inner()) = None;
         }
     }
+    fn approval_poll_progress(
+        &self,
+    ) -> MutexGuard<'_, HashMap<Uuid, delivery::ApprovalPollProgress>> {
+        self.approval_poll_progress
+            .lock()
+            .unwrap_or_else(|poisoned| {
+                let mut progress = poisoned.into_inner();
+                progress.clear();
+                self.approval_poll_progress.clear_poison();
+                progress
+            })
+    }
     fn invalidate_collection_cache(&self) {
+        self.approval_poll_progress().clear();
         self.collection.invalidate_cache();
         self.drop_idle_collection_cache();
     }
@@ -1129,7 +1147,7 @@ impl VaultStore {
             session,
             &control,
             &mut cache,
-            &crate::portal_approval::ApprovalHttp,
+            &crate::portal_approval::ApprovalHttp::default(),
             crate::portal_client::api,
         );
         // Manual preemption preserves progress. Consent/session invalidation
@@ -1190,6 +1208,25 @@ impl VaultStore {
     /// The session's idle deadline, which the app's native timer checks.
     pub fn idle(&self) -> &Arc<IdleDeadline> {
         &self.idle
+    }
+
+    /// Capture before asynchronous command validation. Lock ordering remains
+    /// session then idle, the same as opening and locking a vault.
+    pub(crate) fn answer_origin(&self) -> Option<AnswerOrigin> {
+        let guard = self.session();
+        guard.as_ref()?;
+        self.idle.answer_origin()
+    }
+
+    pub(crate) fn admit_answer<T>(
+        &self,
+        origin: AnswerOrigin,
+        cap: Duration,
+        reserve: impl FnOnce() -> T,
+    ) -> Option<(AnswerHold, T)> {
+        let guard = self.session();
+        guard.as_ref()?;
+        self.idle.admit_answer(origin, cap, reserve)
     }
 
     /// Takes the session mutex. A panic while it was held may have left the
@@ -1843,6 +1880,7 @@ impl VaultStore {
         now_ms: u64,
         session: u64,
     ) -> Result<LinkSummary, VaultError> {
+        let _running = self.start_portal_work()?;
         self.link_portal_using(
             portal,
             code,
@@ -1851,6 +1889,44 @@ impl VaultStore {
             (now_ms, session),
             |request, device, cancelled| crate::portal_client::link(request, device, cancelled),
         )
+    }
+
+    pub fn connect_portal(
+        &self,
+        portal: &str,
+        code: &str,
+        device_name: &str,
+        profile_id: Option<Uuid>,
+        now_ms: u64,
+        session: u64,
+    ) -> Result<(LinkSummary, Option<VaultError>), VaultError> {
+        self.connect_portal_using(
+            session,
+            || {
+                self.link_portal_using(
+                    portal,
+                    code,
+                    device_name,
+                    profile_id,
+                    (now_ms, session),
+                    |request, device, cancelled| {
+                        crate::portal_client::link(request, device, cancelled)
+                    },
+                )
+            },
+            &crate::portal_approval::ApprovalHttp::default(),
+        )
+    }
+
+    /// A read-only check of one linked device's approval status, for the
+    /// clinic view's automatic refresh (#131): it reads the portal and saves
+    /// the clinic's answer, and never sends or starts a request.
+    pub(crate) fn refresh_device_approval(
+        &self,
+        link_id: Uuid,
+        session: u64,
+    ) -> Result<delivery::ApprovalCheck, VaultError> {
+        self.poll_staff_approval(link_id, session)
     }
 
     fn link_portal_using(

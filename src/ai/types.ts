@@ -75,6 +75,15 @@ export interface AcceptedModel {
   sourceUrl: string;
 }
 
+/** One native catalog row, keyed by its stable catalog index (#276A). */
+export interface ModelRow {
+  index: number;
+  model: AcceptedModel;
+  state: "notDownloaded" | "installed" | "damaged";
+  addedByYou: boolean;
+  inUse: boolean;
+}
+
 /** How `ai_model_add_picked` ended. `added` carries the new status; the
  * others are refusals, except `cancelled`, which is silent. */
 export type ModelAddOutcome =

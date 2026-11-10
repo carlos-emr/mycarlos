@@ -370,6 +370,8 @@ mod tests {
         Ok(ApiResponse {
             status,
             body: zeroize::Zeroizing::new(serde_json::to_vec(&body).unwrap()),
+            date: None,
+            retry_after: None,
         })
     }
 

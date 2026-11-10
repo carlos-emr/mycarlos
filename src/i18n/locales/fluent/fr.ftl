@@ -1450,7 +1450,7 @@ portal-approvalCancelled = Cette demande d’approbation a été annulée. Véri
 
 portal-approvalContact = L’approbation de la clinique doit être vérifiée. Contactez votre clinique pour connaître les prochaines étapes.
 
-portal-approvalExpired = Cette demande d’approbation a expiré. Vérifiez les mises à jour avant de créer une nouvelle demande.
+portal-approvalExpired = Cette demande d’approbation a expiré. Pour en faire une autre pour cet appareil, allez sur la page Sécurité, section Documents de la clinique.
 
 portal-approvalMissing = Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.
 
@@ -1506,11 +1506,11 @@ portal-errorUnavailable = L’association au portail n’est pas encore disponib
 
 portal-fingerprint = Empreinte complète de l’appareil
 
-portal-incomplete = Association incomplète. Consultez les appareils associés dans le portail avant de réessayer.
+portal-incomplete = Cette tentative enregistrée est incomplète. Vérifiez les appareils associés dans le portail ou contactez votre clinique avant d’associer l’appareil à nouveau. Cette application ne peut pas reprendre cette tentative.
 
 portal-intro = Associez myCarlos avec l’adresse et le code affichés dans votre portail patient.
 
-portal-link = Associer à la clinique
+portal-link = Connecter et demander l’approbation
 
 portal-matchPerson = Utiliser les renseignements du document
 
@@ -1532,8 +1532,6 @@ portal-serviceDate = Date du service : { $date }
 
 portal-serviceDateLabel = Date du service
 
-portal-sourceVerified = De { $clinic } · Vérifié
-
 portal-title = Documents de la clinique
 
 rename-help-profile = Cela change uniquement le nom affiché du dossier. Les dossiers et les documents de la personne restent à leur place.
@@ -1548,6 +1546,56 @@ rename-profile-saved = Le dossier s’appelle maintenant { $name }.
 
 rename-title-profile = Renommer le dossier de la personne
 
+portal-connectConsent = Cette action associe cet appareil à votre clinique et envoie une demande d’approbation. Votre clinique doit approuver l’appareil avant qu’il puisse recevoir des documents.
+
+portal-connected = Appareil associé. Son état d’approbation est indiqué sur la page Sécurité, section Documents de la clinique.
+
+portal-connecting = Connexion et demande d’approbation à la clinique en cours…
+
+portal-errorBusy = Une autre opération avec la clinique est en cours. Attendez qu’elle se termine, puis réessayez.
+
+portal-linkedApprovalIssue = Appareil associé. L’état de son approbation, sur la page Sécurité, section Documents de la clinique, indique la marche à suivre.
+
+portal-retryApproval = Réessayer la demande d’approbation enregistrée
+
+portal-working = Opération avec la clinique en cours…
+
+portal-approvalExpiredCard = Cette demande d’approbation a expiré. Pour en faire une autre pour ce même appareil, choisissez Créer une nouvelle demande d’approbation. Vos documents et le lien de cet appareil restent tels quels.
+
+portal-approvalPickedUp = Le système de dossiers de votre clinique a pris en charge cette demande. En attente de l’approbation de cet appareil par le personnel de la clinique.
+
+portal-approvalReplyInvalid = La réponse du portail de la clinique au sujet de cette demande n’a pas pu être vérifiée. Elle n’a donc pas été utilisée. Communiquez avec votre clinique.
+
+portal-approvalStillOpen = Cette demande d’approbation est toujours ouverte sur le portail de la clinique. Attendez qu’elle prenne fin avant d’en créer une nouvelle.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Temps restant pour cette demande : environ { $count } minute.
+    [many] Temps restant pour cette demande : environ { $count } de minutes.
+    *[other] Temps restant pour cette demande : environ { $count } minutes.
+    }
+
+portal-approvalTimeOver = Le délai de cette demande est écoulé.
+
+portal-approvalTimeOverRestart = Le délai de cette demande est écoulé. Si votre clinique n’a pas approuvé cet appareil, choisissez { $button }.
+
+portal-approvalTimeUp = Le délai de cette demande est écoulé. Vérification auprès de votre clinique…
+
+portal-approvalUnanswered = myCarlos n’a pas pu obtenir l’état de cette demande auprès du portail de la clinique.
+
+portal-approvalUnreachable = myCarlos n’a pas pu joindre le portail de la clinique : l’état de cette demande n’est donc pas encore connu.
+
+portal-approvalWait = Le portail de la clinique a demandé à myCarlos de vérifier moins souvent.
+
+portal-autoChecking = Tant que cette page est ouverte, myCarlos vérifie automatiquement si votre clinique a répondu.
+
+portal-autoCheckStopped = Les vérifications automatiques sont arrêtées. Pour vérifier de nouveau, choisissez { $button }.
+
+portal-awaitingClinic = Votre clinique a reçu la demande d’approbation. En attente de l’approbation de cet appareil par le personnel de la clinique.
+
+portal-deviceRemoved = Cet appareil a été retiré de votre compte du portail de la clinique. Pour l’utiliser de nouveau, associez-le de nouveau avec un nouveau code d’association de votre portail patient.
+
+portal-errorRateLimited = Le portail de la clinique a demandé à myCarlos d’attendre avant de réessayer.
 hidden-backToSecurity = Retour à la sécurité
 
 interface-history-appVersion = Version de myCarlos
@@ -1712,6 +1760,33 @@ interface-history-to = Vers
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos conserve aussi un historique : les ouvertures du coffre-fort; la définition ou la modification de sa phrase secrète ou de sa clé de récupération, ainsi que l’enregistrement ou la restauration d’une sauvegarde; l’ajout de chaque profil patient et la création, le changement de nom ou le déplacement de chaque dossier; l’ajout, le changement de nom, le déplacement, le masquage ou la restauration de chaque document, ainsi que son enregistrement en dehors de myCarlos et l’emplacement choisi. Cet historique est chiffré avec le reste. Vous pouvez le consulter ici ; myCarlos ne le modifie et ne le supprime jamais.
 
+portal-checkAgain = Pour vérifier de nouveau, choisissez { $button }.
+
+portal-unlockCheckConsent = Après chaque déverrouillage, myCarlos communique avec les portails des cliniques associées pour vérifier les mises à jour de l’approbation et rechercher de nouveaux documents si la clinique a approuvé l’appareil ou si une demande d’approbation est encore en cours.
+
+portal-unlockChecked = Recherche de nouveaux documents de la clinique effectuée après le déverrouillage.
+
+portal-unlockCheckIncomplete = myCarlos n’a pas pu terminer la recherche de nouveaux documents de la clinique après le déverrouillage.
+
+portal-unlockCheckNotRun = myCarlos n’a pas recherché de nouveaux documents de la clinique après le déverrouillage, car une autre opération avec la clinique était en cours.
+
+portal-unlockCheckWaiting = myCarlos n’a pas recherché de nouveaux documents de la clinique après le déverrouillage, car le portail de la clinique lui a demandé d’attendre.
+
+portal-unlockRefused =
+    { $count ->
+    [one] { $count } document de la clinique n’a pas pu être vérifié, il n’a donc pas été ajouté. Communiquez avec votre clinique.
+    [many] { $count } de documents de la clinique n’ont pas pu être vérifiés, ils n’ont donc pas été ajoutés. Communiquez avec votre clinique.
+    *[other] { $count } documents de la clinique n’ont pas pu être vérifiés, ils n’ont donc pas été ajoutés. Communiquez avec votre clinique.
+    }
+
+library-source-clinic = De { $clinic }
+
+library-source-manualImport = Importation manuelle
+
+library-status-unverified = Non vérifié
+
+library-status-verified = Vérifié
+
 ai-summary-button = Résumé
 
 ai-summary-title = Résumé en mots simples
@@ -1720,9 +1795,9 @@ ai-explain-title = Expliquer un terme
 
 ai-notInstalled-title = L’assistant IA n’est pas encore sur cet ordinateur
 
-ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Dans Préférences, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
+ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Dans Paramètres, sous Assistant IA, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
 
-ai-notInstalled-openPreferences = Ouvrir les Préférences
+ai-notInstalled-openPreferences = Ouvrir les paramètres de l’assistant IA
 
 aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.
 
@@ -1742,9 +1817,11 @@ ai-explain-submit = Expliquer
 
 ai-preferences-title = Assistant IA
 
-ai-preferences-body = Explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà ; il reste sur cet ordinateur.
+ai-preferences-body = Explique vos documents en termes simples avec un modèle d’IA qui fonctionne sur cet ordinateur. Téléchargez un des modèles ci-dessous ou ajoutez un fichier correspondant que vous possédez déjà. Les modèles restent sur cet ordinateur.
 
 ai-preferences-notInstalled = Non installé
+
+ai-settings-subtitle = Le fonctionnement de l’assistant IA sur cet ordinateur
 
 ai-model-add = Ajouter un fichier de modèle…
 
@@ -1774,7 +1851,7 @@ ai-model-unsupportedCpu = Le processeur de cet ordinateur n’est pas pris en ch
 
 ai-model-unsupportedPlatform = L’assistant IA n’est pas encore disponible sur ce type d’ordinateur.
 
-ai-model-refusedList = Ce fichier n’est pas accepté par myCarlos. Choisissez le fichier de modèle indiqué ci-dessus.
+ai-model-refusedList = Ce fichier n’est pas accepté par myCarlos. Choisissez un des fichiers de modèle indiqués ci-dessus.
 
 ai-model-refusedHash = Ce n’est pas le fichier attendu. Téléchargez-le de nouveau et ajoutez la nouvelle copie.
 
@@ -1792,6 +1869,14 @@ ai-model-downloadNote = Télécharge un fichier ({ $size } Mo), une seule fois, 
 
 ai-model-downloading = Téléchargement et vérification… { $done } sur { $total } Mo
 
+ai-model-progressName = Téléchargement du modèle
+
+ai-model-progressValue = { $percent }, { $done } sur { $total } Mo
+
+ai-model-stillDownloading = Le modèle est encore en cours de téléchargement.
+
+ai-model-stillChecking = Le fichier du modèle est encore en cours de vérification.
+
 ai-model-refusedNetwork = Le téléchargement n’a pas abouti. Vérifiez votre connexion Internet et réessayez.
 
 ai-model-refusedUnavailable = Le modèle n’est pas disponible à son adresse pour le moment. Réessayez plus tard ou ajoutez un fichier que vous avez déjà.
@@ -1799,6 +1884,15 @@ ai-model-refusedUnavailable = Le modèle n’est pas disponible à son adresse p
 native-filter-models = Fichiers de modèle
 
 ai-working = L’assistant IA travaille…
+
+ai-workingLong = Pour un long document, cela peut prendre plusieurs minutes.
+
+ai-workingFor =
+    { $minutes ->
+    [one] En cours depuis { $minutes } minute.
+    [many] En cours depuis { $minutes } de minutes.
+    *[other] En cours depuis { $minutes } minutes.
+    }
 
 ai-summary-ready = Le résumé est prêt.
 
@@ -2010,12 +2104,53 @@ notifications-error = Ce réglage n’a pas pu être enregistré. Les avis sont 
 notifications-unavailable = Les avis de documents ne sont pas disponibles. Ouvrez myCarlos normalement pour consulter vos documents.
 notifications-helpAutomatic = Windows peut afficher un avis générique après l’enregistrement d’un document de la clinique. Ouvrez myCarlos normalement pour le lire.
 notifications-autoAllow = Vérifier automatiquement les documents des cliniques lorsque le coffre est déverrouillé
+notifications-autoNeedsNotices = Autorisez d’abord les avis d’arrivée de documents pour activer cette option.
 notifications-autoHelp = Avec votre accord, myCarlos vérifie les liens enregistrés et approuvés des cliniques lorsque cette application est ouverte et le coffre déverrouillé, avec au moins deux minutes entre les tentatives. Les vérifications peuvent continuer si Windows bloque les avis. Verrouiller le coffre ou fermer l’application arrête les vérifications suivantes.
 notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Documents de la clinique et choisissez Rechercher de nouveaux documents.
 notifications-checkBusy = Une vérification de documents est en cours d’arrêt. Choisissez à nouveau Rechercher de nouveaux documents dans un instant.
+noticesStep-title = Avis de votre clinique
+noticesStep-intro = Votre clinique est associée. myCarlos peut vous avertir quand un nouveau document arrive. Rien n’est activé à moins que vous ne le cochiez.
+noticesStep-later = Vous pouvez les modifier à tout moment dans { $settings }, sous { $preferences } : { $notices }.
+noticesStep-done = Terminé
+noticesStep-notNow = Pas maintenant
 
 ai-summary-again = Résumer à nouveau
 
 ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.
 
 ai-keepFull = Ce document conserve déjà le nombre maximal de réponses de l’IA. Les nouvelles réponses s’affichent, mais ne sont pas conservées.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modèles sur cet ordinateur
+
+ai-models-group = Modèle utilisé
+
+ai-models-inUse = Utilisé
+
+ai-models-installed = Installé
+
+ai-models-addedByYou = Ajouté par vous
+
+ai-models-notDownloaded = Non téléchargé
+
+ai-models-downloading = Téléchargement en cours
+ai-models-installing = Installation en cours
+
+ai-models-download = Télécharger
+
+ai-models-remove = Supprimer
+
+ai-models-help = Le modèle marqué Utilisé rédige les résumés et les explications. Choisir un autre modèle arrête la réponse en cours de rédaction.
+
+ai-models-loading = Lecture de la liste des modèles…
+
+ai-models-loadFailed = La liste des modèles n’a pas pu être lue. Réessayez.
+
+ai-models-retry = Relire la liste des modèles
+
+ai-models-starting = Démarrage du téléchargement…
+
+ai-models-picking = Choisissez un fichier de modèle à ajouter.
+
+ai-models-changed = Le modèle utilisé a été changé
