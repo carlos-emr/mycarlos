@@ -1441,6 +1441,8 @@ interface-history-damaged = 此紀錄有部分已損毀。{ $date } 之後的事
 
 interface-history-damagedAll = 此紀錄有部分已損毀。其中的事件無法檢查，因此全部不顯示。
 
+interface-history-damagedStorageOnly = 此紀錄的部分儲存內容已損毀，但所有事件均通過檢查，並全部顯示。
+
 interface-history-damagedBefore = 此紀錄有部分已損毀。{ $date } 之前的事件無法檢查，因此不顯示。
 
 interface-history-damagedBetween = 此紀錄有部分已損毀。{ $from } 至 { $to } 之間的事件無法檢查，因此不顯示。
@@ -1734,6 +1736,8 @@ ai-failed = AI 助理未能完成。請重試。
 ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關閉其他程式後重試。
 
 ai-error-busy = 正在新增或移除 AI 助理的模型。請在完成後重試。
+
+ai-error-storage = 無法從此電腦讀取 AI 助理的模型。請重試。如果問題持續，請在「設定」中的「AI 助理」裡移除模型，然後重新新增。
 
 ai-summary-pagesMissing = 部分頁面未能完整讀取，因此此摘要可能遺漏部分內容。
 
