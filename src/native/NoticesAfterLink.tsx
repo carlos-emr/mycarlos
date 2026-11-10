@@ -18,8 +18,13 @@ type NoticeStatus = {
  * setting itself, so each is the same consent, the same native command and the
  * same stored setting as in Settings › Preferences; "Not now" changes nothing.
  * Shown only where notices are supported and not already on.
+ * `onClose` says whether the dialog was shown: one never shown had no focus.
  */
-export function NoticesAfterLink({ onClose }: { onClose: () => void }) {
+export function NoticesAfterLink({
+  onClose,
+}: {
+  onClose: (shown: boolean) => void;
+}) {
   const { t, locale } = useI18n();
   const [offer, setOffer] = useState<"checking" | "offer" | "none">("checking");
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -27,7 +32,7 @@ export function NoticesAfterLink({ onClose }: { onClose: () => void }) {
   const [changed, setChanged] = useState(false);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  const close = () => closeRef.current();
+  const close = () => closeRef.current(true);
   const firstLocale = useRef(locale);
   useEffect(() => {
     let live = true;
@@ -51,7 +56,7 @@ export function NoticesAfterLink({ onClose }: { onClose: () => void }) {
     };
   }, []);
   useEffect(() => {
-    if (offer === "none") closeRef.current();
+    if (offer === "none") closeRef.current(false);
   }, [offer]);
   // The dialog itself takes the first focus, so its title and intro are read
   // before the choices; Escape is "Not now".
