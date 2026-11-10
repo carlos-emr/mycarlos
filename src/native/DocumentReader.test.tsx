@@ -252,7 +252,7 @@ describe("the document reader", () => {
       const larger = screen.getByRole("button", { name: humanText("Larger") });
       larger.focus();
       for (let i = 0; i < 3; i++) await click(larger);
-      expect(larger).toBeEnabled();
+      expect(larger).toHaveAttribute("aria-disabled", "false");
       expect(larger).toHaveFocus();
       expect(screen.getByText(humanText("195%"))).toBeVisible();
       expect(parseFloat(picture.style.width)).toBe(
@@ -280,7 +280,7 @@ describe("the document reader", () => {
         ),
         undefined,
       );
-      expect(larger).toBeEnabled();
+      expect(larger).toHaveAttribute("aria-disabled", "false");
       await act(async () => {
         finish({ ...page(0), text: "FAKE latest sharp page" });
       });
@@ -608,7 +608,7 @@ describe("the document reader", () => {
         "FAKE pdf_view_failed",
       );
       const fit = screen.getByRole("button", { name: humanText("Fit width") });
-      expect(fit).toBeEnabled();
+      expect(fit).toHaveAttribute("aria-disabled", "false");
       await click(fit);
       expect(screen.queryByRole("alert")).toBeNull();
       expect(
@@ -681,7 +681,7 @@ describe("the document reader", () => {
         expect(
           screen.queryByLabelText(humanText("Document password")),
         ).toBeNull();
-        expect(larger).toBeEnabled();
+        expect(larger).toHaveAttribute("aria-disabled", "false");
         await click(screen.getByText(humanText("Text on this page")));
         expect(
           screen.getByText(humanText("FAKE latest successful zoom")),
@@ -774,8 +774,8 @@ describe("the document reader", () => {
       });
       for (let i = 0; i < 20; i++) await click(larger);
       expect(screen.getByText(humanText("400%"))).toBeVisible();
-      expect(larger).toBeDisabled();
-      expect(smaller).toBeEnabled();
+      expect(larger).toHaveAttribute("aria-disabled", "true");
+      expect(smaller).toHaveAttribute("aria-disabled", "false");
       expect(parseFloat(picture.style.width)).toBe(Math.round(fittedWidth * 4));
       expect(viewPage).toHaveBeenCalledTimes(1);
       await act(async () => {
@@ -792,8 +792,8 @@ describe("the document reader", () => {
       );
       for (let i = 0; i < 20; i++) await click(smaller);
       expect(screen.getByText(humanText("50%"))).toBeVisible();
-      expect(smaller).toBeDisabled();
-      expect(larger).toBeEnabled();
+      expect(smaller).toHaveAttribute("aria-disabled", "true");
+      expect(larger).toHaveAttribute("aria-disabled", "false");
       expect(parseFloat(picture.style.width)).toBe(
         Math.round(fittedWidth * 0.5),
       );
