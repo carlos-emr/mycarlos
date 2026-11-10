@@ -1,9 +1,11 @@
+import { missingDetails } from "./PersonDetails";
 import {
   useTextState,
   deferredText,
   useI18n,
   t as translateNow,
   message,
+  joinText,
   UiError,
   type UiText,
   type MessageKey,
@@ -12,7 +14,14 @@ import type { PersonDetails } from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Icon } from "../Icon";
 import {
   isLockedError,
@@ -38,7 +47,9 @@ import {
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
+import { AiSettings } from "./AiSettings";
 import { PortalDocuments } from "./PortalDocuments";
+import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
@@ -76,7 +87,8 @@ type NativeSection =
   | "hidden"
   | "history"
   | "security"
-  | "preferences";
+  | "preferences"
+  | "ai";
 /** The phone's tabs. Records holds the people and Shared with me, as the
  * sidebar's top-level folders do on a computer (Ben, 21 Oct). */
 const PHONE_TABS: ReadonlyArray<[NativeSection, MessageKey]> = [
@@ -84,6 +96,9 @@ const PHONE_TABS: ReadonlyArray<[NativeSection, MessageKey]> = [
   ["security", "security.title"],
   ["preferences", "sidebar.preferences"],
 ];
+/** Where the AI helper can run (a computer), its settings have a tab too, for
+ * narrow windows, where the sidebar is hidden (#72). */
+const AI_TAB: [NativeSection, MessageKey] = ["ai", "ai.preferences.title"];
 
 /** The people a vault keeps records for: every profile but Shared with me's
  * (#61). */
@@ -98,6 +113,14 @@ const SORT_CHOICES: ReadonlyArray<[NativeSort, MessageKey]> = [
   ["name", "interface.VaultLibrary.nameAZ"],
 ];
 
+/** Where the reader is: a section, a person and a folder. Search results and
+ * focus are kept per place, and opening a place asks for its heading (#121). */
+const placeKey = (
+  section: NativeSection,
+  person: string,
+  folderId: string | null,
+) => `${section}:${person}:${folderId ?? ""}`;
+
 export function VaultLibrary({
   bridge,
   snapshot,
@@ -105,6 +128,12 @@ export function VaultLibrary({
   notice,
   setNotice,
   run,
+  portalBusy = false,
+  runPortal = run,
+  pollApproval,
+  approvalWaits,
+  setPortalNotice = setNotice,
+  onPhotoNoticePending,
   refresh,
   onLock,
   onRequestLock,
@@ -112,6 +141,7 @@ export function VaultLibrary({
   onAutoLockMinutes,
   openingRecoverySetup = null,
   onOpeningRecoverySetupShown,
+  onOfferClosed,
   onUnfinishedRecoveryKey,
   canPrint = false,
   keyboardHints = true,
@@ -131,6 +161,15 @@ export function VaultLibrary({
   setNotice: (value: UiText) => void;
   /** Runs a vault operation; `boxes` names what was typed for it. */
   run: (operation: () => Promise<void>, boxes?: BoxKey[]) => Promise<void>;
+  portalBusy?: boolean;
+  runPortal?: (operation: () => Promise<void>) => Promise<void>;
+  /** The clinic view's automatic approval status check (#131). */
+  pollApproval?: PollApproval;
+  /** The session's per-portal waits for those checks (#131). */
+  approvalWaits?: PortalWaits;
+  setPortalNotice?: (value: UiText) => void;
+  /** Clinic results wait until a saved photo's delayed result is settled. */
+  onPhotoNoticePending?: (pending: boolean) => void;
   /** Reloads the snapshot and resolves to it, so a caller can report the
    * state it produced rather than the state it hoped for. */
   /** Shows the vault as it is now: `known` if a command just returned it,
@@ -144,6 +183,8 @@ export function VaultLibrary({
    * new vault's key, to set up first, or the offer of one at unlock. */
   openingRecoverySetup?: OpeningRecoverySetup | null;
   onOpeningRecoverySetupShown?: () => void;
+  /** The recovery key offer the library opened on at unlock has closed. */
+  onOfferClosed?: () => void;
   /** Whether a recovery key setup has shown a key and not ended: a lock then
    * ends it, and the patient is told after the next unlock. */
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
@@ -231,7 +272,7 @@ export function VaultLibrary({
   const localModel = useMemo(() => nativeLocalModel(bridge), [bridge]);
   const [aiStatus, setAiStatus] = useState<ModelStatus | null>(null);
   useEffect(() => {
-    if (section !== "preferences" || !computer) return;
+    if (section !== "ai" || !computer) return;
     let current = true;
     localModel.status().then(
       (found) => current && setAiStatus(found),
@@ -301,6 +342,17 @@ export function VaultLibrary({
   };
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Security's profile dialogs (Ben, 29 Oct): drawn in this host, beside the
+  // other dialogs, and the page behind them is inert.
+  const [profileDialogHost, setProfileDialogHost] =
+    useState<HTMLElement | null>(null);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  // "Link another clinic" in Security (#145): its dialog is drawn in this
+  // host, beside the other dialogs, and the page behind it is inert.
+  const [clinicDialogHost, setClinicDialogHost] = useState<HTMLElement | null>(
+    null,
+  );
+  const [clinicDialogOpen, setClinicDialogOpen] = useState(false);
   // The open document, when its file is a photo, and the photo while it is
   // shown: it is fetched for the photo view and dropped when that closes.
   const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
@@ -315,7 +367,26 @@ export function VaultLibrary({
   const [dialogResult, setDialogResult] = useState<{
     message: UiText;
     recordId: string | null;
+    photoProfileId?: string;
   } | null>(null);
+  const photoNoticePendingRef = useRef(false);
+  const photoNoticeCallbackRef = useRef(onPhotoNoticePending);
+  photoNoticeCallbackRef.current = onPhotoNoticePending;
+  const releasePhotoNotice = () => {
+    if (!photoNoticePendingRef.current) return;
+    photoNoticePendingRef.current = false;
+    photoNoticeCallbackRef.current?.(false);
+  };
+  useEffect(
+    () => () => {
+      // An ended library cannot keep a clinic result reserved for its photo.
+      if (photoNoticePendingRef.current) {
+        photoNoticePendingRef.current = false;
+        photoNoticeCallbackRef.current?.(false);
+      }
+    },
+    [],
+  );
   // Bound to one record so a stale prompt can never apply to a different document.
   const [confirmation, setConfirmation] = useState<{
     action: "export";
@@ -330,11 +401,18 @@ export function VaultLibrary({
     initialKey?: string;
     required: boolean;
     offered?: boolean;
+    detailsNotSaved?: boolean;
   } | null>(() =>
     !openingRecoverySetup
       ? null
       : openingRecoverySetup.vault === "created"
-        ? { initialKey: openingRecoverySetup.key, required: true }
+        ? {
+            initialKey: openingRecoverySetup.key,
+            required: true,
+            ...(openingRecoverySetup.detailsNotSaved && {
+              detailsNotSaved: true,
+            }),
+          }
         : { required: false, offered: true },
   );
   useEffect(() => {
@@ -348,6 +426,17 @@ export function VaultLibrary({
   // Shared with me is a reserved profile, shown as a folder (#61): with one
   // person, inside their records; with several, outside everyone's.
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
+  const [detailsFor, setDetailsFor] = useState<{ profileId: string } | null>(
+    null,
+  );
+  // The reminder's Edit details opens that person's dialog once. Security
+  // mounts again on each visit, so leaving it forgets the request: a later
+  // visit (Back from Audit history, say) does not open the dialog again.
+  useEffect(() => {
+    if (section !== "security") setDetailsFor(null);
+  }, [section]);
+  // People whose reminder was put off until the vault next opens.
+  const [detailsNotNow, setDetailsNotNow] = useState<string[]>([]);
   const sharedProfileId = snapshot.sharedProfileId;
   // Everything the people hold, for the sidebar's tree: not Shared with me's.
   const peopleFolders = useMemo(
@@ -522,6 +611,21 @@ export function VaultLibrary({
       ? confirmation.action
       : null;
   const readOnly = snapshot.recovery !== null;
+  // A person whose full name and birth date wait to be added (#234): the open
+  // person first. Not where details cannot be edited (recovery mode).
+  const detailsReminder =
+    readOnly || !bridge.updateProfileDetails
+      ? undefined
+      : (people.find(
+          (person) =>
+            person.id === profileId &&
+            missingDetails(person) &&
+            !detailsNotNow.includes(person.id),
+        ) ??
+        people.find(
+          (person) =>
+            missingDetails(person) && !detailsNotNow.includes(person.id),
+        ));
   const sharedRecords = useMemo(
     () =>
       snapshot.records.filter(
@@ -539,7 +643,7 @@ export function VaultLibrary({
       (view === "grid" && !activeRecordId) ||
       Boolean(readerRecordId),
   );
-  const searchLocation = `${section}:${profileId}:${currentFolderId ?? ""}`;
+  const searchLocation = placeKey(section, profileId, currentFolderId);
   const searchBlocked = Boolean(
     covered ||
       busy ||
@@ -726,6 +830,7 @@ export function VaultLibrary({
   }, [profileId]);
   /** Opens a person's top-level folder, or one of their folders. */
   const openPerson = (person: string, folderId: string | null = null) => {
+    openedPlace(placeKey("records", person, folderId));
     setSection("records");
     if (person === profileId) {
       setCurrentFolderId(folderId);
@@ -754,10 +859,16 @@ export function VaultLibrary({
   // gone by then (the banner that offered the setup, the Create screen), focus
   // would be left on nothing: put it on the page's heading.
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const locationSummaryId = useId();
+  const locationCountId = useId();
+  // Rename keeps the whole page behind it from a screen reader: the parts
+  // inert for every dialog, and the banner as well (#121).
+  const renaming = Boolean(renameTarget);
+  const sortLabelId = useId();
   const libraryRef = useRef<HTMLDivElement | null>(null);
   // Library actions put focus back only after keyboard use. The recovery key
   // setup asks for it however it was closed, as its opener may be gone.
-  const focusPageIfLost = useLibraryFocus(
+  const { recover: focusPageIfLost, openedPlace } = useLibraryFocus(
     libraryRef,
     pageHeadingRef,
     Boolean(
@@ -770,12 +881,30 @@ export function VaultLibrary({
         cameraOpen ||
         confirmation ||
         confirmHideDamaged ||
-        recoverySetup,
+        recoverySetup ||
+        profileDialogOpen,
     ),
-    `${section}:${profileId}:${currentFolderId ?? ""}`,
+    searchLocation,
   );
+  /** Opens Shared with me, from the sidebar or a phone's row of places. */
+  const openShared = () => {
+    openedPlace(placeKey("shared", profileId, null));
+    setSection("shared");
+    setCurrentFolderId(null);
+  };
   const setNoticeRef = useRef(setNotice);
   setNoticeRef.current = setNotice;
+  // The recovery key offer the library opened on has closed: the app is
+  // told once that dialog's message is on the line, or was dropped for a
+  // newer one, so that what it says next comes after it (#128).
+  const offerClosingRef = useRef(false);
+  const onOfferClosedRef = useRef(onOfferClosed);
+  onOfferClosedRef.current = onOfferClosed;
+  const offerSettled = () => {
+    if (!offerClosingRef.current) return;
+    offerClosingRef.current = false;
+    onOfferClosedRef.current?.();
+  };
   useEffect(() => {
     // Any dialog open, such as a confirmation opened straight away, hides the
     // status line too: wait until it closes.
@@ -789,6 +918,8 @@ export function VaultLibrary({
       confirmation ||
       confirmHideDamaged ||
       recoverySetup ||
+      profileDialogOpen ||
+      clinicDialogOpen ||
       busy
     )
       return;
@@ -796,14 +927,20 @@ export function VaultLibrary({
     // opened meanwhile are not where it belongs.
     if (
       notice ||
+      (dialogResult.photoProfileId !== undefined &&
+        dialogResult.photoProfileId !== profileId) ||
       (activeRecordId !== null && activeRecordId !== dialogResult.recordId)
     ) {
       setDialogResult(null);
+      releasePhotoNotice();
+      offerSettled();
       return;
     }
     const timer = window.setTimeout(() => {
       setNoticeRef.current(dialogResult.message);
       setDialogResult(null);
+      releasePhotoNotice();
+      offerSettled();
     }, ANNOUNCE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [
@@ -812,7 +949,10 @@ export function VaultLibrary({
     confirmation,
     confirmHideDamaged,
     notice,
+    profileId,
     dialogResult,
+    profileDialogOpen,
+    clinicDialogOpen,
     recoverySetup,
     renameTarget,
     cameraOpen,
@@ -875,6 +1015,26 @@ export function VaultLibrary({
   // A shared file an add refused as not a PDF, marked in the list.
   // Said politely when files are added to Shared with me (#61).
   const [sharedAnnouncement, setSharedAnnouncement] = useTextState();
+  // News for the polite line waits while Rename is open, and a moment after
+  // it closes: until then the line is outside the dialog's modal tree, and
+  // then focus returning is read out first (see announce.ts). What the line
+  // said as Rename opened is kept, so it is not read out again (#121).
+  const [holdingNews, setHoldingNews] = useState(false);
+  useEffect(() => {
+    if (renaming) {
+      setHoldingNews(true);
+      return;
+    }
+    if (!holdingNews) return;
+    const timer = window.setTimeout(
+      () => setHoldingNews(false),
+      ANNOUNCE_DELAY_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [renaming, holdingNews]);
+  const holdNews = renaming || holdingNews;
+  const announcedBeforeRename = useRef(sharedAnnouncement);
+  if (!holdNews) announcedBeforeRename.current = sharedAnnouncement;
   const sharedSeen = useRef(0);
   useEffect(() => {
     const added = sharedNew - sharedSeen.current;
@@ -964,11 +1124,18 @@ export function VaultLibrary({
       setActiveRecordId(saved.id);
       // Cleared now, so that the result is a change even when it repeats.
       setNotice("");
+      if (mountedRef.current) {
+        // Reserve synchronously, before run() ends. Clinic work may finish
+        // during the save or during the announcement's following delay.
+        photoNoticePendingRef.current = true;
+        photoNoticeCallbackRef.current?.(true);
+      }
       setDialogResult({
         message: message("interface.notice.photoSaved", {
           name: saved.displayName,
         }),
         recordId: saved.id,
+        photoProfileId: saved.profileId,
       });
     });
 
@@ -1269,11 +1436,15 @@ export function VaultLibrary({
         : bridge.createProfile(name));
       created = true;
       await refresh();
-      setNotice(
-        deferredText(() =>
+      // Said once the Add profile dialog has closed and the status line is
+      // live again (see dialogResult above): set now, it is never read out.
+      setNotice("");
+      setDialogResult({
+        message: deferredText(() =>
           translateNow("interface.notice.personAdded", { name }),
         ),
-      );
+        recordId: null,
+      });
     }, ["box.profileName"]);
     return created;
   };
@@ -1303,11 +1474,14 @@ export function VaultLibrary({
       await bridge.updateProfileDetails!(id, details);
       saved = true;
       await refresh();
-      setNotice(
-        message("personDetails.saved", {
+      // After the Edit details dialog closes, as Add profile's.
+      setNotice("");
+      setDialogResult({
+        message: message("personDetails.saved", {
           name: people.find((p) => p.id === id)?.displayName ?? "",
         }),
-      );
+        recordId: null,
+      });
     });
     return saved;
   };
@@ -1452,6 +1626,27 @@ export function VaultLibrary({
   const locationTitle = inShared
     ? rootLocationTitle
     : (currentFolder?.name ?? rootLocationTitle);
+  // Read with the heading when it takes focus: where the reader is, with what
+  // the place holds, in words a screen reader says plainly (#121).
+  const documentCount = translateNow("interface.count.documents", {
+    count: visibleRecords.length,
+  });
+  const locationSummary = inShared
+    ? translateNow("library.location.documents", {
+        place: rootLocationTitle,
+        documents: documentCount,
+      })
+    : translateNow("library.location.summary", {
+        place: folderPath(
+          folderById,
+          currentFolder?.id ?? null,
+          rootLocationTitle,
+        ),
+        folders: translateNow("interface.count.folders", {
+          count: visibleFolders.length,
+        }),
+        documents: documentCount,
+      });
   const searchLabel = inShared
     ? translateNow("interface.VaultLibrary.searchSharedWithMe")
     : currentFolder
@@ -1464,11 +1659,18 @@ export function VaultLibrary({
       className="evaluation-page native-vault-page"
       inert={covered}
     >
-      {/* Polite, but not a second status line: the library has one. */}
+      {/* Polite, but not a second status line: the library has one. While
+          Rename is open it keeps what it said: news is not about the dialog,
+          and is read out a moment after Rename closes (#121). */}
       <p className="sr-only" aria-live="polite">
-        {sharedAnnouncement}
+        {holdNews ? announcedBeforeRename.current : sharedAnnouncement}
       </p>
-      <div className="evaluation-banner" role="note">
+      <div
+        className="evaluation-banner"
+        role="note"
+        inert={renaming}
+        aria-hidden={renaming || undefined}
+      >
         <strong>{translateNow("frame.banner.title")}</strong>
         <span>
           {translateNow(
@@ -1485,10 +1687,13 @@ export function VaultLibrary({
         >
           <header
             className="titlebar"
+            aria-hidden={renaming || undefined}
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
+                clinicDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1505,7 +1710,15 @@ export function VaultLibrary({
               onClick={() => void lockAndConceal()}
             >
               <Icon name="lock-open" />
-              {translateNow("interface.VaultLibrary.unlockedLockNow")}
+              {/* Named by its words "Lock now", so voice control's "click
+                  Lock now" works in every language (WCAG 2.5.3); the state
+                  before them is not read out with the button (#121). */}
+              <span>
+                <span aria-hidden="true">
+                  {translateNow("library.lock.unlocked")} ·{" "}
+                </span>
+                {translateNow("security.lockNow")}
+              </span>
             </button>
           </header>
 
@@ -1514,48 +1727,62 @@ export function VaultLibrary({
           <nav
             className="mobile-section-picker native-section-tabs"
             aria-label={translateNow("interface.VaultLibrary.section")}
+            aria-hidden={renaming || undefined}
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
+                clinicDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
           >
-            {PHONE_TABS.map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-current={
-                  section === value ||
-                  (value === "records" && inShared) ||
-                  (value === "security" &&
-                    (section === "hidden" || section === "history"))
-                    ? "page"
-                    : undefined
-                }
-                onClick={() =>
-                  value === "security" ? openSecurity() : setSection(value)
-                }
-              >
-                {value === "records" && sharedNew
-                  ? translateNow("interface.tab.withNew", {
-                      section: translateNow(label),
-                      new: translateNow("interface.count.new", {
-                        count: sharedNew,
-                      }),
-                    })
-                  : translateNow(label)}
-              </button>
-            ))}
+            {(computer ? [...PHONE_TABS, AI_TAB] : PHONE_TABS).map(
+              ([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-current={
+                    section === value ||
+                    (value === "records" && inShared) ||
+                    (value === "security" &&
+                      (section === "hidden" || section === "history"))
+                      ? "page"
+                      : undefined
+                  }
+                  onClick={() => {
+                    if (value === "security") return openSecurity();
+                    // The records are a place: their heading takes focus (#121).
+                    if (value === "records")
+                      openedPlace(
+                        placeKey("records", profileId, currentFolderId),
+                      );
+                    setSection(value);
+                  }}
+                >
+                  {value === "records" && sharedNew
+                    ? translateNow("interface.tab.withNew", {
+                        section: translateNow(label),
+                        new: translateNow("interface.count.new", {
+                          count: sharedNew,
+                        }),
+                      })
+                    : translateNow(label)}
+                </button>
+              ),
+            )}
           </nav>
 
           <div
             className="app-body"
+            aria-hidden={renaming || undefined}
             inert={Boolean(
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                profileDialogOpen ||
+                clinicDialogOpen ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -1590,12 +1817,10 @@ export function VaultLibrary({
                   .length,
                 folders: snapshot.folders.length,
               }}
-              onOpenShared={() => {
-                setSection("shared");
-                setCurrentFolderId(null);
-              }}
+              onOpenShared={openShared}
               onOpenSecurity={openSecurity}
               onOpenPreferences={() => setSection("preferences")}
+              onOpenAi={computer ? () => setSection("ai") : undefined}
             />
 
             {(section === "records" || inShared) && (
@@ -1626,6 +1851,39 @@ export function VaultLibrary({
                 >
                   {searchAnnouncement}
                 </p>
+                {!inShared && detailsReminder && (
+                  <div
+                    className="native-details-reminder"
+                    role="note"
+                    aria-label={translateNow("personDetails.setup")}
+                  >
+                    <p>
+                      {translateNow("personDetails.reminder", {
+                        name: detailsReminder.displayName,
+                      })}
+                    </p>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setDetailsFor({ profileId: detailsReminder.id });
+                        openSecurity();
+                      }}
+                    >
+                      {translateNow("personDetails.edit")}
+                    </button>
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={() =>
+                        setDetailsNotNow((ids) => [...ids, detailsReminder.id])
+                      }
+                    >
+                      {translateNow("personDetails.notNow")}
+                    </button>
+                  </div>
+                )}
                 <div className="native-profile-row">
                   {/* Shared with me is no one's: no person's path above it. */}
                   {inShared ? (
@@ -1644,10 +1902,7 @@ export function VaultLibrary({
                           dragOver(event, "breadcrumb:root")
                         }
                         onDrop={(event) => dropInto(event, null)}
-                        onClick={() => {
-                          setSection("records");
-                          setCurrentFolderId(null);
-                        }}
+                        onClick={() => openPerson(profileId, null)}
                       >
                         {profile ? personFolderName(profile, people) : ""}
                       </button>
@@ -1685,10 +1940,7 @@ export function VaultLibrary({
                       className="button"
                       type="button"
                       aria-current={inShared ? "page" : undefined}
-                      onClick={() => {
-                        setSection("shared");
-                        setCurrentFolderId(null);
-                      }}
+                      onClick={openShared}
                     >
                       <Icon name="letter" />
                       {translateNow("interface.LibrarySidebar.sharedWithMe")}
@@ -1703,10 +1955,27 @@ export function VaultLibrary({
                 </div>
                 <div className="main-head">
                   <div>
-                    <h1 ref={pageHeadingRef} tabIndex={-1}>
+                    <h1
+                      ref={pageHeadingRef}
+                      tabIndex={-1}
+                      // While a search is on, the line under it, which counts
+                      // what was found, not what the place holds.
+                      aria-describedby={
+                        normalizedQuery ? locationCountId : locationSummaryId
+                      }
+                    >
                       {locationTitle}
                     </h1>
-                    <p>
+                    {/* Only the heading's description: the line under it
+                        shows the same counts. */}
+                    <p
+                      className="sr-only"
+                      id={locationSummaryId}
+                      aria-hidden="true"
+                    >
+                      {locationSummary}
+                    </p>
+                    <p id={locationCountId}>
                       {inShared
                         ? normalizedQuery
                           ? translateNow("interface.count.found", {
@@ -2014,34 +2283,42 @@ export function VaultLibrary({
                   </div>
                 )}
 
-                <PortalDocuments
-                  compact
-                  bridge={bridge}
-                  snapshot={snapshot}
-                  busy={busy}
-                  readOnly={readOnly}
-                  run={run}
-                  refresh={refresh}
-                  setNotice={setNotice}
-                />
-                <label className="search">
-                  <Icon name="search" />
-                  <span className="sr-only">{searchLabel}</span>
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setQuery(value);
-                      setSearchRequest(
-                        value.trim() || query.trim()
-                          ? { query: value, location: searchLocation }
-                          : null,
-                      );
-                    }}
-                    placeholder={searchLabel}
-                  />
-                </label>
+                {/* Check for new documents sits to the right of the search box when the row
+                    has room; otherwise it goes under the box (#84 large text). */}
+                <div className="library-search-row">
+                  <label className="search">
+                    <Icon name="search" />
+                    <span className="sr-only">{searchLabel}</span>
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setQuery(value);
+                        setSearchRequest(
+                          value.trim() || query.trim()
+                            ? { query: value, location: searchLocation }
+                            : null,
+                        );
+                      }}
+                      placeholder={searchLabel}
+                    />
+                  </label>
+                  {inShared && (
+                    <PortalDocuments
+                      compact
+                      bridge={bridge}
+                      snapshot={snapshot}
+                      busy={busy || portalBusy}
+                      working={portalBusy}
+                      readOnly={readOnly}
+                      run={runPortal}
+                      waits={approvalWaits}
+                      refresh={refresh}
+                      setNotice={setPortalNotice}
+                    />
+                  )}
+                </div>
                 <div className="viewbar">
                   <span className="native-location-chip">
                     {currentFolder
@@ -2054,24 +2331,31 @@ export function VaultLibrary({
                     )}
                   </span>
                   <div className="view-controls">
-                    {/* Both choices in view, with words (#67). */}
-                    <fieldset className="native-sort-choice">
-                      <legend>
+                    {/* Both choices in view, with words (#67), each its own
+                        Tab stop under a label that stays in view and names
+                        the group (#121). */}
+                    <div
+                      className="native-sort-choice"
+                      role="group"
+                      aria-labelledby={sortLabelId}
+                    >
+                      <span className="native-sort-label" id={sortLabelId}>
                         {translateNow("interface.VaultLibrary.sortBy")}
-                      </legend>
-                      {SORT_CHOICES.map(([value, label]) => (
-                        <label key={value}>
-                          <input
-                            type="radio"
-                            name="native-sort"
-                            value={value}
-                            checked={sort === value}
-                            onChange={() => setSort(value)}
-                          />
-                          {translateNow(label)}
-                        </label>
-                      ))}
-                    </fieldset>
+                      </span>
+                      <span className="segment native-sort-segment">
+                        {SORT_CHOICES.map(([value, label]) => (
+                          <button
+                            className={sort === value ? "selected" : ""}
+                            type="button"
+                            key={value}
+                            aria-pressed={sort === value}
+                            onClick={() => setSort(value)}
+                          >
+                            {translateNow(label)}
+                          </button>
+                        ))}
+                      </span>
+                    </div>
                     <span
                       className="segment native-view-segment"
                       aria-label={translateNow(
@@ -2205,7 +2489,7 @@ export function VaultLibrary({
                   drag={drag}
                   recordDragItem={recordDragItem}
                   folderCount={folderCount}
-                  onOpenFolder={setCurrentFolderId}
+                  onOpenFolder={(folderId) => openPerson(profileId, folderId)}
                   onOpenRecord={(recordId) => {
                     // The details dialog repeats the notice. One left over from
                     // an earlier operation would read as being about this record.
@@ -2240,24 +2524,29 @@ export function VaultLibrary({
               />
             )}
 
-            {section === "preferences" && (
-              <PreferencesSettings
-                aiStatus={computer ? aiStatus : undefined}
-                onAiStatus={setAiStatus}
-              />
+            {section === "preferences" && <PreferencesSettings />}
+
+            {section === "ai" && computer && (
+              <AiSettings aiStatus={aiStatus} onAiStatus={setAiStatus} />
             )}
 
             {section === "security" && (
               <SecuritySettings
                 clinicDocuments={
                   <PortalDocuments
+                    showCheck={false}
                     bridge={bridge}
                     snapshot={snapshot}
-                    busy={busy}
+                    busy={busy || portalBusy}
+                    working={portalBusy}
                     readOnly={readOnly}
-                    run={run}
+                    run={runPortal}
+                    poll={pollApproval}
+                    waits={approvalWaits}
                     refresh={refresh}
-                    setNotice={setNotice}
+                    setNotice={setPortalNotice}
+                    dialogHost={clinicDialogHost}
+                    onDialogChange={setClinicDialogOpen}
                   />
                 }
                 busy={busy}
@@ -2268,6 +2557,8 @@ export function VaultLibrary({
                 onLock={lockAndConceal}
                 onChangePassphrase={changePassphrase}
                 onCreateProfile={createProfile}
+                dialogHost={profileDialogHost}
+                onDialogChange={setProfileDialogOpen}
                 hiddenCount={hiddenRecords.length}
                 focusHiddenEntry={returnFocusToHidden}
                 focusAuditEntry={returnFocusToHistory}
@@ -2284,6 +2575,7 @@ export function VaultLibrary({
                 onUpdateProfileDetails={
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
                 }
+                detailsFor={detailsFor}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}
@@ -2330,6 +2622,7 @@ export function VaultLibrary({
                   : message(
                       "interface.VaultLibrary.recoveryKeySavedKeepYourKitSomewhere",
                     );
+                if (recoverySetup.offered) offerClosingRef.current = true;
                 setRecoverySetup(null);
                 setNotice("");
                 // The setup is finished once the patient is told so. Until
@@ -2340,15 +2633,21 @@ export function VaultLibrary({
                   onUnfinishedRecoveryKey?.(null);
                   setDialogResult({ message, recordId: activeRecordId });
                 };
+                // Details typed at setup but not saved are said with it: the
+                // dialog hid the vault's own notice.
+                const said = recoverySetup.detailsNotSaved
+                  ? joinText(saved, message("personDetails.notSaved"))
+                  : saved;
                 // As the confirmation returned it: so that what this screen
                 // shows, and the next setup's record of the key it would
                 // replace, is the vault with this key.
-                void refresh(stored).then(() => tell(saved));
+                void refresh(stored).then(() => tell(said));
                 focusPageIfLost();
               }}
               onClose={(keyShown) => {
                 onUnfinishedRecoveryKey?.(null);
                 const offered = recoverySetup.offered;
+                if (offered) offerClosingRef.current = true;
                 setRecoverySetup(null);
                 // An offer that was left before any key was shown: the
                 // unlock's own result, which waited for the dialog.
@@ -2587,9 +2886,10 @@ export function VaultLibrary({
                         save: (keptId, sources) =>
                           bridge.saveAiResult(readerRecord.id, keptId, sources),
                       },
+                      // The model is added on the AI helper's own page.
                       onOpenPreferences: () => {
                         setReaderRecordId(null);
-                        setSection("preferences");
+                        setSection("ai");
                       },
                       beforeFirstUse: beforeFirstAiUse,
                     }
@@ -2669,6 +2969,8 @@ export function VaultLibrary({
               </p>
             </ConfirmDialog>
           )}
+          <div ref={setProfileDialogHost} />
+          <div ref={setClinicDialogHost} />
         </section>
       </div>
     </div>

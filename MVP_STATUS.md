@@ -118,7 +118,10 @@ privacy, accessibility, or clinical review.
       the last activity it hears of, so the vault's keys are dropped even if the webview crashes or
       hangs, or is suspended while the app keeps running. Commands, user input the renderer
       reports, open pickers, opening what was chosen in them, and a transfer making progress count
-      as activity. A picker counts for at most 15 minutes from when it opened. A transfer counts
+      as activity. A picker counts for at most 15 minutes from when it opened. An AI answer being
+      written counts until it ends, for at most its own limit (5 to 20 minutes) from when the model
+      is asked it, and 20 minutes while the helper starts for it (D19); the renderer's deadline
+      waits the same way, and **Lock now** still stops it at once. A transfer counts
       for as long as it makes progress, however slowly, so a large one on a slow computer or
       connection is not cut off; one that stalls locks after the delay. An automatic or background
       lock that falls during a transfer hides the library and waits for the transfer to finish; its
@@ -188,6 +191,9 @@ privacy, accessibility, or clinical review.
 - [ ] Implement E2EE synchronization, device enrollment, rollback protection, immediate deletion,
       and resurrection-prevention tombstones.
 - [ ] Implement signed CARLOS/portal provenance, recipient binding, and explicit encrypted sharing.
+      myCarlos implements clinic code v1 (#141; THREAT_MODEL DEL-07): it checks the signed challenge
+      and public check digits before submission; only a separately verified signed clinic acceptance
+      approves the device. Portal/EMR enforcement and independent email delivery remain separate gates.
 - [ ] Complete accessibility, privacy, PHIPA/PIPEDA, and clinical-safety review.
 - [ ] Add signing, notarization, app-store packaging, updater security, and release operations,
       with the app-store licence review in [`LICENSE_NOTES.md`](LICENSE_NOTES.md) and the licence

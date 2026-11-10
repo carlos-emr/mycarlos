@@ -277,3 +277,219 @@ describe("a citation is not a Polish street (#252 review)", () => {
     expect(send("Adres: al. Testowa 45 m. 3")).not.toContain("Testowa 45");
   });
 });
+
+describe("clinicians named by role, with no title, in es/pt/pl", () => {
+  it.each([
+    ["La médica Inés Ficticia Peral revisó el caso.", "Peral"],
+    ["El médico de familia Julián Prueba Soto llamó.", "Soto"],
+    ["La trabajadora social Carmen Ejemplar Ruiz visitó el domicilio.", "Ruiz"],
+    ["La psicóloga Elena Prueba Vidal hizo la valoración.", "Vidal"],
+    ["La nutricionista Marta Ficticia Gil ajustó la dieta.", "Gil"],
+    ["La matrona Rosa Ejemplar Campos atendió el parto.", "Campos"],
+    ["El técnico de radiología Pablo Prueba Ortiz hizo la placa.", "Ortiz"],
+    ["La auxiliar de enfermería Lucía Ficticia Mora ayudó.", "Mora"],
+    ["El terapeuta ocupacional Daniel Prueba Gil valoró.", "Gil"],
+    ["A médica Helena Teste Souza examinou.", "Souza"],
+    ["O médico Paulo Fictício Herrera prescreveu.", "Herrera"],
+    ["A assistente social Carla Exemplo Lima ligou.", "Lima"],
+    ["A psicóloga Joana Teste Prado avaliou.", "Prado"],
+    ["A técnica de enfermagem Rita Exemplo Costa aferiu a pressão.", "Costa"],
+    ["A fonoaudióloga Bia Teste Lobo atendeu.", "Lobo"],
+    ["A nutricionista Ana Fictícia Moura orientou.", "Moura"],
+    ["O terapeuta ocupacional Davi Teste Rocha avaliou.", "Rocha"],
+    ["Lekarz Jan Testowy zbadał pacjenta.", "Testowy"],
+    ["Lekarka Ewa Przykładowa zleciła badania.", "Przykładowa"],
+    ["Psycholog Anna Testowa przeprowadziła rozmowę.", "Testowa"],
+    ["Dietetyk Marek Przykładny ułożył dietę.", "Przykładny"],
+    ["Położna Zofia Testowska odebrała poród.", "Testowska"],
+    ["Ratownik medyczny Piotr Testowy przywiózł pacjenta.", "Testowy"],
+    ["Logopeda Iwona Przykładowa prowadzi terapię.", "Przykładowa"],
+    ["Terapeuta zajęciowy Adam Testowy prowadzi zajęcia.", "Testowy"],
+    ["Pielęgniarka Katarzyna Przykładowa zmieniła opatrunek.", "Przykładowa"],
+    ["Fizjoterapeuta Michał Testowy prowadzi rehabilitację.", "Testowy"],
+    ["Badanie wykonał mgr Tomasz Przykładny.", "Przykładny"],
+    ["Konsultował dr n. med. Paweł Testowy.", "Testowy"],
+    ["Wypisał lek. dent. Ewa Testowska.", "Testowska"],
+  ])("%s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "El médico Residente de guardia llamó.",
+    "La técnica Superior Sanitaria revisó.",
+    "El médico de Atención Primaria lo derivó.",
+    "A médica Responsável Técnica assinou.",
+    "Lekarz Prowadzący zlecił badania.",
+    "La terapeuta Ocupacional Infantil vino.",
+    "El técnico de Rayos X informó.",
+    "La auxiliar Administrativa llamó.",
+    // "médica" and "técnica" are also "medical" and "technique" (#262 review).
+    "Historia Médica Completa Del Paciente",
+    "Licencia Médica Temporal Prolongada",
+    "Junta Médica Evaluadora Regional",
+    "Evaluación Médica Inicial Completa",
+    "Atestado Médico Ocupacional Padrão",
+    "Equipe Médica Plantonista Noturna",
+    "Se usó la técnica Seldinger Modificada.",
+  ])("leaves a role and its qualifier: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
+
+describe("more Polish titles (#262 review)", () => {
+  it.each([
+    ["Konsultował dr hab. n. med. Paweł Testowy.", "Testowy"],
+    ["Opinię wydał prof. dr hab. n. med. Jan Przykładny.", "Przykładny"],
+    ["Lek wydała mgr farm. Ewa Testowska.", "Testowska"],
+    ["Sprzęt sprawdził mgr inż. Adam Przykładny.", "Przykładny"],
+    ["Lek. med. Anna Testowa zbadała pacjenta.", "Testowa"],
+  ])("%s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+});
+
+describe("roles and titles after the #262 review", () => {
+  it.each([
+    ["Atendido por médico Julián Prueba Soto.", "Soto"],
+    ["Consulta com médica Joana Teste Prado.", "Prado"],
+    ["Mgr Anna Testowa przeprowadziła badanie.", "Testowa"],
+    ["Lek. med. Anna Testowa zbadała.", "Testowa"],
+    ["Zbadał lek. Marek Przykładny.", "Przykładny"],
+    ["Konsultował dr hab. n. med. Paweł Testowy.", "Testowy"],
+    ["Revisado con médica Ana Ficticia Ruiz.", "Ruiz"],
+  ])("removes the clinician: %s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Lekarz Kierujący Oddziałem zatwierdził plan.",
+    "Technik Elektroradiologii Medycznej wykonał zdjęcie.",
+    "Médico Interno Residente de guardia.",
+    "Przyjmuje jeden lek. Następnie Wizyta Kontrolna.",
+    "Nowy lek. Polopiryna Forte 500 mg.",
+    "Lek. Polopiryna Forte podano.",
+    "Ten lek. Kolejna Dawka jutro.",
+    "Historia por Médica Completa.",
+  ])("leaves a qualifier or the word for a medicine: %s", (text) => {
+    expect(send(text)).not.toMatch(/\[(NAME|DOCTOR)/);
+  });
+});
+
+describe("roles after a preposition, and Polish qualifiers (#271 review)", () => {
+  it.each([
+    ["Pielęgniarka oddziałowa Maria Testowa zmieniła opatrunek.", "Testowa"],
+    ["Pielęgniarka dyplomowana Ewa Testowska podała lek.", "Testowska"],
+    ["pielęgniarka koordynująca Anna Testowa", "Testowa"],
+    ["Położna naczelna Zofia Testowska.", "Testowska"],
+    ["Lekarz prowadzący Jan Przykładny wypisał.", "Przykładny"],
+    ["Atendido por el Médico Julián Prueba Soto.", "Soto"],
+    ["Consulta com a Médica Joana Teste Prado.", "Prado"],
+    ["Revisado sin médico Julián Prueba Soto presente.", "Soto"],
+    ["La Médica Inés Ficticia Peral firmó.", "Peral"],
+  ])("removes the clinician: %s", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  it.each([
+    "Licencia por Médica Laboral Temporal.",
+    "Certificado para Médico Forense Oficial.",
+    "Consulta para Médica Ocupacional Anual.",
+    "Atestado com Médico Perito Oficial.",
+    "Opiekun Medyczny Oddziału Geriatrii.",
+    "Lekarz prowadzący Oddziału Chirurgii nieobecny.",
+    "Pielęgniarka oddziałowa zatwierdziła grafik.",
+    "Pielęgniarka oddziałowa: brak uwag.",
+    "Zgłoszono do Pielęgniarki Naczelnej Szpitala.",
+  ])("leaves a title-case role or a ward word: %s", (text) => {
+    expect(send(text)).toBe(text);
+  });
+});
+
+describe("a run right before an identity label", () => {
+  // The label tells a person's line, not who the words before it are.
+  it.each([
+    "Karta informacyjna: Oddział Chorób Wewnętrznych    PESEL: 41031412345",
+    "Oddział Chorób Wewnętrznych PESEL 41031412345",
+    "Oddział Ratunkowy    Nr księgi 12345/2026",
+    "Zapalenie Płuc    PESEL 41031412345",
+    "Servicio de Cardiología    DNI 12345678Z",
+    "Medicina Interna    NHC 4471829",
+    "Neumonía Adquirida    NHC 4471829",
+    "Informe de alta: Neumonía Adquirida    NHC 4471829",
+    "Insuficiencia Renal Crónica, DNI 12345678Z",
+    "Consulta Externa    CNS 123456789012345",
+    "Atención Primaria, Tarjeta sanitaria BBBB123456",
+    "Unidade Coronariana    CPF 987.654.321-00",
+    "Resumo de alta: Pneumonia Comunitária    CPF 987.654.321-00",
+  ])("leaves a ward, a service or a diagnosis: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+  });
+
+  it.each([
+    ["Tomás Prueba Iglesias, DNI 12345678Z", "Iglesias"],
+    ["Zuzanna Wierzbicka    PESEL 58031412345", "Wierzbicka"],
+    ["Bożena Kwiatkowska, PESEL 50060212345", "Kwiatkowska"],
+    ["Tomé Vasconcelos Brito, CPF 987.654.321-00", "Brito"],
+    ["Inés Valcárcel Pruneda    NHC 4471829", "Pruneda"],
+    ["Remedios Falcón Ibarra, Tarjeta sanitaria BBBB123456", "Ibarra"],
+    ["Firmado: Lucía Prueba Sanz, DNI 12345678Z", "Sanz"],
+    ["Atendemos a Lucía Prueba Sanz, DNI 12345678Z", "Sanz"],
+    [
+      "Karta informacyjna — WIERZBICKA, Zuzanna    PESEL 58031412345",
+      "Zuzanna",
+    ],
+  ])("removes the person: %j", (text, part) => {
+    expect(send(text)).not.toContain(part);
+  });
+
+  // The stated cost, as for a header line: a document heading's "Given Surname" subject stays
+  // when the person is unknown, even with an identity number beside it.
+  it("keeps a heading's Given Surname unless the person is known", () => {
+    const text = "Informe de alta — Lucía Prueba Sanz    NHC 4471829";
+    expect(send(text)).toContain("Lucía Prueba Sanz");
+    expect(
+      deidentify(text, { knownNames: ["Lucía Prueba Sanz"] }).toSend,
+    ).not.toContain("Sanz");
+  });
+});
+
+describe("identity labels after the review", () => {
+  it.each([
+    "Pronto Socorro Adulto    CNS 123456789012345",
+    "Ambulatório de Cardiologia    CPF 987.654.321-00",
+    "Pain Clinic    NHC 4471829",
+    "FRACTURE, Displaced    DNI 12345678Z",
+  ])("leaves a unit or a condition: %j", (text) => {
+    expect(send(text)).not.toMatch(/\[NAME/);
+  });
+
+  it.each([
+    ["WIERZBICKA, Zuzanna    PESEL 58031412345", "Zuzanna"],
+    ["PRUEBA SANZ, Lucía, DNI 12345678Z", "Lucía"],
+    ["Rana Khan, DNI 12345678Z", "Khan"],
+    ["Summer Hand, PESEL 58031412345", "Hand"],
+  ])(
+    "removes a name, also written SURNAME, Given or with a word that is a name: %j",
+    (text, part) => {
+      expect(send(text)).not.toContain(part);
+    },
+  );
+
+  // An identity label in capitals is never a word of the name before it.
+  it.each([
+    ["Pacjentka: WIERZBICKA, Zuzanna    PESEL 58031412345", "PESEL", "Zuzanna"],
+    ["Nombre: Lucía Prueba Sanz    DNI 12345678Z", "DNI", "Sanz"],
+  ])("keeps the label after the name: %j", (text, label, part) => {
+    const sent = send(text);
+    expect(sent).toContain(label);
+    expect(sent).not.toContain(part);
+  });
+
+  // "NAM" is a label in Quebec and a given name too: it stays part of a name.
+  it.each([
+    ["Patient: NGUYEN, Van Nam", "Patient: [NAME 1]"],
+    ["Patient: TRAN VAN NAM", "Patient: [NAME 1]"],
+  ])("removes a name with Nam in it whole: %j", (text, sent) => {
+    expect(send(text)).toBe(sent);
+  });
+});

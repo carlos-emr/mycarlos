@@ -256,6 +256,13 @@ on 29 October 2026 that the helper uses no cloud provider, so:
   [Vulnerability intake and response](#vulnerability-intake-and-response)): a release removes its
   entry, and the app then refuses that file. With no updater yet (MASVS CODE-2), that reaches only
   patients who update.
+- **The automatic lock during an answer (D19, 6 November 2026):** while the model writes an
+  answer, the automatic lock waits (the renderer's deadline and the native one), for at most that
+  answer's own time limit, 5 to 20 minutes, from when the model is asked it (THREAT_MODEL AI-07,
+  UI-03); while the helper starts for it, at most 20 minutes. The delay then runs from the
+  answer's end. So a computer left during a summary stays unlocked for up to the answer's limit
+  plus the lock delay (at most 20 + 15 minutes, plus the start). **Lock now** still locks at once
+  and stops the model; hiding the app still locks it at once, which ends the answer.
 - **Advisories:** the runtime is llama.cpp through `llama-cpp-2` and `llama-cpp-sys-2`, pinned
   =0.1.160 (#218). RustSec does not cover its C/C++ code, so ggml and llama.cpp advisories are
   watched by hand; the vendored revision is recorded in DEPENDENCY_REVIEW.md, and the crates in the

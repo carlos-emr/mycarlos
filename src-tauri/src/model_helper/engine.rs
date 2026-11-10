@@ -2,10 +2,10 @@
 //! one thing at a time, each from a fresh cache. Only the helper process runs this.
 
 use super::{
-    document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
+    answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
     read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, BATCH_TOKENS, CONTEXT_TOKENS,
-    EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
+    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -28,13 +28,20 @@ const MAP_FILE: bool = cfg!(windows);
 /// The loaded model and its one context. Both live as long as the helper: leaked on purpose,
 /// since the process ends when it is done.
 pub(super) struct Engine {
+    backend: &'static LlamaBackend,
     model: &'static LlamaModel,
-    context: LlamaContext<'static>,
+    /// The context. Missing only while it is made again (see [`Engine::use_threads`]); the
+    /// helper ends when it cannot be made at all.
+    context: Option<LlamaContext<'static>>,
     /// The model's own template, for [`ChatFormat::Builtin`] only.
     template: Option<LlamaChatTemplate>,
     chat_format: ChatFormat,
     /// The instruction prefixes read so far, the latest first (see [`Prefix`]).
     prefixes: Vec<Prefix>,
+    /// The threads answers are written on now, and the prompt is read on (the helper's
+    /// `--threads`, the most it uses).
+    threads: i32,
+    batch_threads: i32,
     /// How the last answer was made.
     stats: Stats,
 }
@@ -83,6 +90,17 @@ fn assemble<T>(
     Some((tokens, prefix_len))
 }
 
+/// The context: the model's whole window, prompts read in batches, answers written on
+/// `threads` threads and prompts read on `batch_threads`.
+fn context_params(threads: i32, batch_threads: i32) -> LlamaContextParams {
+    LlamaContextParams::default()
+        .with_n_ctx(NonZeroU32::new(CONTEXT_TOKENS))
+        .with_n_batch(BATCH_TOKENS)
+        .with_n_ubatch(BATCH_TOKENS)
+        .with_n_threads(threads)
+        .with_n_threads_batch(batch_threads)
+}
+
 /// Why a request got no answer, as the helper's error line says it: short, fixed words.
 type Failure = String;
 
@@ -117,23 +135,80 @@ impl Engine {
             ChatFormat::Gemma4 => None,
         };
         let threads = i32::try_from(settings.threads).map_err(|_| failed("threads"))?;
-        let params = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(CONTEXT_TOKENS))
-            .with_n_batch(BATCH_TOKENS)
-            .with_n_ubatch(BATCH_TOKENS)
-            .with_n_threads(threads)
-            .with_n_threads_batch(threads);
         let context = model
-            .new_context(backend, params)
+            .new_context(backend, context_params(threads, threads))
             .map_err(|_| failed("context"))?;
         Ok(Self {
+            backend,
             model,
-            context,
+            context: Some(context),
             template,
             chat_format: settings.chat_format,
             prefixes: Vec::new(),
+            threads,
+            batch_threads: threads,
             stats: Stats::default(),
         })
+    }
+
+    /// Answers from now on are written on `threads` threads (between one and the prompt's),
+    /// as the app chose from the computer's load; none keeps them as they are. Prompts are
+    /// always read on all of the helper's. The context is made again when the number changes:
+    /// each answer starts from an empty cache, so only the time to make it is spent.
+    pub(super) fn use_threads(&mut self, threads: Option<u32>) -> Result<(), Failure> {
+        let Some(threads) = threads else {
+            return Ok(());
+        };
+        let threads = i32::try_from(threads)
+            .unwrap_or(i32::MAX)
+            .clamp(1, self.batch_threads);
+        if threads == self.threads {
+            return Ok(());
+        }
+        // The old context goes first: with the real model's weights, two at once would not fit
+        // the helper's memory cap. Its kept prefixes go with it.
+        self.prefixes.clear();
+        // Zeroed, then dropped: nothing of the last answer stays in the memory it frees.
+        if let Some(context) = self.context.as_mut() {
+            context.clear_kv_cache();
+        }
+        self.context = None;
+        let made = |threads| {
+            self.model
+                .new_context(self.backend, context_params(threads, self.batch_threads))
+                .ok()
+        };
+        if let Some(context) = made(threads) {
+            self.context = Some(context);
+            self.threads = threads;
+            return Ok(());
+        }
+        // Back to the threads it had, and this answer is written on them; with no context at
+        // all, the request fails and the helper ends after answering.
+        self.context = made(self.threads);
+        if self.context.is_some() {
+            Ok(())
+        } else {
+            Err(failed("context"))
+        }
+    }
+
+    /// Whether the engine still has its context (see [`Engine::use_threads`]).
+    pub(super) fn has_context(&self) -> bool {
+        self.context.is_some()
+    }
+
+    /// The context: always there between requests (see [`Engine::use_threads`]).
+    fn ctx(&self) -> &LlamaContext<'static> {
+        self.context
+            .as_ref()
+            .expect("the context is there between requests")
+    }
+
+    fn ctx_mut(&mut self) -> &mut LlamaContext<'static> {
+        self.context
+            .as_mut()
+            .expect("the context is there between requests")
     }
 
     /// How the last answer was made (counts and times only).
@@ -228,11 +303,14 @@ impl Engine {
         };
         // Every answer starts from a cleared cache: the buffers are zeroed too
         // (llama_memory_clear with data), so nothing of the last document is left in it.
-        self.context.clear_kv_cache();
+        self.ctx_mut().clear_kv_cache();
         let started = std::time::Instant::now();
         self.stats = Stats {
             prompt_tokens: tokens.len() as u32,
             prefix_len: prefix_len as u32,
+            answer_hash: ANSWER_HASH_START,
+            threads: self.threads as u32,
+            batch_threads: self.batch_threads as u32,
             ..Stats::default()
         };
         let mut grammar = match grammar {
@@ -267,6 +345,7 @@ impl Engine {
                 return Ok((String::from_utf8_lossy(&written).into_owned(), false));
             }
             self.stats.answer_tokens += 1;
+            self.stats.answer_hash = answer_hash(self.stats.answer_hash, token.0);
             if let Some(grammar) = grammar.as_mut() {
                 grammar.accept(token);
             }
@@ -275,7 +354,7 @@ impl Engine {
             batch
                 .add(token, position as i32, &[0], true)
                 .map_err(|_| failed("batch"))?;
-            self.context
+            self.ctx_mut()
                 .decode(&mut batch)
                 .map_err(|_| failed("decode"))?;
         }
@@ -301,7 +380,7 @@ impl Engine {
                     .add(*token, position as i32, &[0], position == last)
                     .map_err(|_| failed("batch"))?;
             }
-            self.context.decode(batch).map_err(|_| failed("decode"))?;
+            self.ctx_mut().decode(batch).map_err(|_| failed("decode"))?;
         }
         Ok(())
     }
@@ -313,8 +392,8 @@ impl Engine {
             return false;
         };
         let kept = self.prefixes.remove(at);
-        if self.context.state_seq_set(&kept.state, 0).is_err() {
-            self.context.clear_kv_cache();
+        if self.ctx_mut().state_seq_set(&kept.state, 0).is_err() {
+            self.ctx_mut().clear_kv_cache();
             return false;
         }
         self.stats.snapshot_bytes = kept.state.byte_len() as u64;
@@ -325,11 +404,11 @@ impl Engine {
     /// Keeps the state after `prefix`, read just now into a cleared context and nothing else.
     fn keep_prefix(&mut self, prefix: &[LlamaToken]) {
         let flags = LlamaStateSeqFlags::empty();
-        let size = self.context.state_seq_get_size_ext(0, flags);
+        let size = self.ctx().state_seq_get_size_ext(0, flags);
         if size == 0 || size > MAX_PREFIX_BYTES {
             return;
         }
-        let Ok(state) = self.context.state_seq_get(0, flags) else {
+        let Ok(state) = self.ctx().state_seq_get(0, flags) else {
             return;
         };
         self.stats.snapshot_bytes = state.byte_len() as u64;
@@ -351,7 +430,7 @@ impl Engine {
     /// sampler gives them.
     /// Also says whether the whole vocabulary had to be looked at.
     fn pick(&self, index: i32, grammar: Option<&mut LlamaSampler>) -> (LlamaToken, bool) {
-        let logits = self.context.get_logits_ith(index);
+        let logits = self.ctx().get_logits_ith(index);
         let Some((best, score)) = first_best(
             logits
                 .iter()
@@ -373,7 +452,7 @@ impl Engine {
         {
             return (best, false);
         }
-        let mut all = self.context.token_data_array_ith(index);
+        let mut all = self.ctx().token_data_array_ith(index);
         all.apply_sampler(grammar);
         first_best(
             all.data

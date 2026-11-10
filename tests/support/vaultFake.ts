@@ -266,7 +266,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         displayName: string;
         sourceLabel: string;
         mediaType: string;
-        sourceKind?: "manual";
         plaintextSize: number;
         importedAtMs: number;
         available: boolean;
@@ -459,7 +458,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [setup.ids.folder],
             displayName: "FAKE Bloodwork.pdf",
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 2048,
             importedAtMs: Date.UTC(2026, 9, 2, 12),
@@ -471,7 +469,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [],
             displayName: "FAKE Letter.pdf",
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 1024,
             importedAtMs: Date.UTC(2026, 9, 3, 12),
@@ -507,7 +504,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [],
             displayName: "FAKE Locked.pdf",
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 3072,
             importedAtMs: Date.UTC(2026, 9, 4, 12),
@@ -524,7 +520,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [],
             displayName: name,
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             // As the vault stores a photo: bytes it does not name.
             mediaType: "application/octet-stream",
             plaintextSize: 1234,
@@ -718,7 +713,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         folderIds,
         displayName,
         sourceLabel: "Manual import — unverified",
-        sourceKind: "manual",
         mediaType: "application/pdf",
         plaintextSize: 1024,
         importedAtMs: Date.now(),
@@ -905,8 +899,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // Preferences on a computer asks whether an AI model is installed (#72).
           case "ai_model_status":
             return { state: "notInstalled" };
+          case "ai_models":
           case "ai_model_catalog":
             return [];
+          // No add or download running when the row opens (#275).
+          case "ai_model_add_active":
+            return null;
           case "vault_status":
             return state.status;
           case "vault_notification_status":
@@ -1273,6 +1271,22 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             links.push(made);
             return copy(made);
           }
+          // #136: links this device and asks the clinic to approve it in one
+          // native call. Not modelled yet: an approval request that fails
+          // after the link was made (native answers the new link with
+          // `approvalError` beside it).
+          case "vault_portal_connect": {
+            const links = (snapshot.portalLinks ??= []);
+            const made = {
+              ...link(links.length + 1, request.portalBase ?? "", false),
+              deviceName: request.deviceName ?? "",
+              profileId: request.profileId ?? null,
+              approvalRequested: true,
+              approvalStatus: "pending",
+            };
+            links.push(made);
+            return { link: copy(made), approvalError: null };
+          }
           case "vault_request_device_approval": {
             const found = snapshot.portalLinks?.find(
               (candidate) => candidate.id === args.linkId,
@@ -1304,6 +1318,23 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             found.approvalReason = null;
             found.approvalCanRestart = false;
             return;
+          }
+          // #137: the clinic view's read-only status check of one device. It
+          // finds what the fake knows: an open request is still waiting for
+          // the clinic, with the ten minutes a request lasts; it never sends
+          // or starts a request.
+          case "vault_refresh_device_approval": {
+            const found = snapshot.portalLinks?.find(
+              (candidate) => candidate.id === args.linkId,
+            );
+            if (!found) throw refuse("not_found", "native.error.18");
+            return {
+              capture: captured().capture,
+              link: copy(found),
+              expiresInMs: 10 * 60_000,
+              issue: null,
+              recovery: false,
+            };
           }
           case "vault_check_documents":
             state.checks += 1;
@@ -1720,6 +1751,13 @@ export async function fakeSnapshot(page: Page) {
         snapshot: () => {
           recoveryKeySetAtMs: number | null;
           recoveryKeyLabel: string | null;
+          sharedProfileId?: string;
+          profiles: {
+            id: string;
+            displayName: string;
+            fullName?: string;
+            birthDate?: string;
+          }[];
           records: {
             id: string;
             displayName: string;

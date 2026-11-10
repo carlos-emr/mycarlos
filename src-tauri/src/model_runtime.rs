@@ -8,8 +8,8 @@
 //! their sizes, the term and its sentence, and the language.
 
 use crate::local_runner::{
-    self, check_budget, Budget, MemoryProbe, ModelInfo, Page, Runner, RunnerConfig, RunnerError,
-    Sentence, SummaryRequest,
+    self, check_budget, AnswerLimit, AnswerWatch, Budget, MemoryProbe, ModelInfo, Page, Runner,
+    RunnerConfig, RunnerError, Sentence, SummaryRequest,
 };
 use crate::model_helper;
 use crate::vault::{AiResultInput, AiTool};
@@ -28,8 +28,19 @@ pub(crate) const MAX_TERM_CHARS: usize = 200;
 pub(crate) const MAX_CONTEXT_CHARS: usize = 2_000;
 /// The longest wait for the helper's hello once started: loading 2 to 4 GB.
 pub(crate) const START_TIMEOUT: Duration = Duration::from_secs(120);
-/// The longest wait for one answer.
-pub(crate) const ANSWER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// How long one answer may take (#72), scaled to its prompt: the prompt read at about 6.7
+/// tokens a second and an answer of up to 400 tokens for a summary (an explanation's 220-token
+/// cap) at about 1.7 a second, after 30 s. Never under 5 minutes, never over 20. Measured on a
+/// 4-core test computer with other builds running (5 Nov 2026), Qwen3.5 4B read 8.5 to 12
+/// prompt tokens a second and wrote 2.1 to 3.0; the prompt estimate also runs long, so the
+/// limit was about twice the time taken.
+pub(crate) const ANSWER_LIMIT: AnswerLimit = AnswerLimit {
+    fixed: Duration::from_secs(30),
+    per_prompt_token: Duration::from_millis(150),
+    per_answer_token: Duration::from_millis(600),
+    floor: Duration::from_secs(5 * 60),
+    ceiling: Duration::from_secs(20 * 60),
+};
 /// Above the model's own size: its cache at the context used, and the runtime's memory.
 const WORKING_BYTES: u64 = 3 * 512 * 1024 * 1024;
 /// The helper's memory limit above the model's size.
@@ -274,6 +285,8 @@ pub(crate) enum AiError {
     Memory,
     /// The model is being added or removed.
     Busy,
+    /// The model's file could not be read from this computer's disk.
+    Storage,
     /// The vault locked, or the reader left: nothing to show.
     Cancelled,
     /// Anything else: the helper could not start, answer, or answer in time, or the request
@@ -288,6 +301,7 @@ impl AiError {
             Self::Damaged => "aiDamaged",
             Self::Memory => "aiMemory",
             Self::Busy => "aiBusy",
+            Self::Storage => "aiStorage",
             Self::Cancelled => "aiCancelled",
             Self::Failed => "aiFailed",
         }
@@ -391,7 +405,7 @@ impl ModelRuntime {
 
     /// Starts the helper if it is not running: the memory first, from the model's listed size,
     /// then the model verified again, then the start.
-    fn start(&self) -> Result<(), AiError> {
+    fn start(&self, ticket: crate::local_runner::Ticket) -> Result<(), AiError> {
         let mut unavailable = None;
         let prepare = || {
             let size = self.source.installed_size().ok_or_else(|| {
@@ -413,7 +427,8 @@ impl ModelRuntime {
                 unavailable = Some(match reason {
                     Unavailable::NotInstalled => AiError::NotInstalled,
                     Unavailable::Damaged => AiError::Damaged,
-                    Unavailable::Unsupported | Unavailable::Storage => AiError::Failed,
+                    Unavailable::Unsupported => AiError::Failed,
+                    Unavailable::Storage => AiError::Storage,
                     Unavailable::Busy => AiError::Busy,
                     Unavailable::Memory => AiError::Memory,
                 });
@@ -424,7 +439,7 @@ impl ModelRuntime {
                 RunnerError::NotRunning
             })
         };
-        let started = self.runner.start_with(&*self.probe, prepare);
+        let started = self.runner.start_for(ticket, &*self.probe, prepare);
         match (started, unavailable) {
             (Ok(_), _) => Ok(()),
             (Err(_), Some(error)) => Err(error),
@@ -432,12 +447,30 @@ impl ModelRuntime {
         }
     }
 
-    /// A summary of the pages that fit, in the language asked.
-    pub(crate) fn summarize(&self, request: SummarizeRequest) -> Result<SummaryResult, AiError> {
+    /// A summary of the pages that fit, in the language asked. `watch` is told the answer's
+    /// own time limit as it is asked.
+    #[cfg(test)]
+    pub(crate) fn summarize(
+        &self,
+        request: SummarizeRequest,
+        watch: AnswerWatch,
+    ) -> Result<SummaryResult, AiError> {
+        self.summarize_for(self.reserve_answer(), request, watch)
+    }
+
+    pub(crate) fn reserve_answer(&self) -> crate::local_runner::Ticket {
+        self.runner.ticket()
+    }
+
+    pub(crate) fn summarize_for(
+        &self,
+        ticket: crate::local_runner::Ticket,
+        request: SummarizeRequest,
+        watch: AnswerWatch,
+    ) -> Result<SummaryResult, AiError> {
         check_summary(&request)?;
-        // A newer request ends an older one still running.
-        let ticket = self.runner.ticket();
-        self.start()?;
+        self.runner.watch_answer(ticket, watch);
+        self.start(ticket)?;
         let summary = self
             .runner
             .summarize(
@@ -458,11 +491,17 @@ impl ModelRuntime {
         })
     }
 
-    /// What a term means in its sentence, in the language asked.
-    pub(crate) fn explain(&self, request: ExplainRequest) -> Result<ExplainResult, AiError> {
+    /// What a term means in its sentence, in the language asked. `watch` is told the answer's
+    /// own time limit as it is asked.
+    pub(crate) fn explain_for(
+        &self,
+        ticket: crate::local_runner::Ticket,
+        request: ExplainRequest,
+        watch: AnswerWatch,
+    ) -> Result<ExplainResult, AiError> {
         check_explain(&request)?;
-        let ticket = self.runner.ticket();
-        self.start()?;
+        self.runner.watch_answer(ticket, watch);
+        self.start(ticket)?;
         let (text, model) = self
             .runner
             .explain(ticket, request.term.trim(), &request.context, &request.lang)
@@ -502,11 +541,12 @@ fn idle_config() -> RunnerConfig {
         args: Vec::new(),
         needed_bytes: u64::MAX,
         start_timeout: START_TIMEOUT,
-        answer_timeout: ANSWER_TIMEOUT,
+        answer_limit: ANSWER_LIMIT,
         memory_limit_bytes: None,
         expected_model: None,
         model_file: None,
         sandboxed: true,
+        generation_threads: None,
     }
 }
 
@@ -532,9 +572,10 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
     } else {
         model_helper::ModelFile::Descriptor(model_helper::MODEL_FD)
     };
+    let threads = threads();
     let args = model_helper::arguments(&model_helper::Settings {
         chat_format: verified.chat_format,
-        threads: threads(),
+        threads,
         model,
         name: verified.info.name.clone(),
         sha256: verified.info.sha256.clone(),
@@ -544,11 +585,12 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
         args,
         needed_bytes: needed_after_verifying(verified.size_bytes),
         start_timeout: START_TIMEOUT,
-        answer_timeout: ANSWER_TIMEOUT,
+        answer_limit: ANSWER_LIMIT,
         memory_limit_bytes: Some(verified.size_bytes.saturating_add(LIMIT_BYTES)),
         expected_model: Some(verified.info.clone()),
         model_file: Some(Arc::new(file)),
         sandboxed: true,
+        generation_threads: Some(threads),
     })
 }
 
@@ -672,6 +714,20 @@ mod tests {
         ] {
             assert_eq!(check_explain(&request), Err(AiError::Failed));
         }
+    }
+
+    #[test]
+    fn an_answer_may_take_five_minutes_at_least_twenty_at_most_and_longer_for_a_longer_prompt() {
+        assert_eq!(ANSWER_LIMIT.for_request(0, 0), Duration::from_secs(5 * 60));
+        // The FAKE discharge summary (3,563 bytes): about 1,938 prompt tokens, estimated long.
+        assert_eq!(
+            ANSWER_LIMIT.for_request(1_938, 400),
+            Duration::from_millis(30_000 + 1_938 * 150 + 400 * 600)
+        );
+        assert_eq!(
+            ANSWER_LIMIT.for_request(model_helper::CONTEXT_TOKENS, 400),
+            Duration::from_secs(20 * 60)
+        );
     }
 
     #[test]
@@ -957,19 +1013,19 @@ mod tests {
         let request = || summary(vec![page(0, "FAKE text")], "en");
         let (none, _) = fake(None, Err(Unavailable::NotInstalled));
         assert_eq!(
-            runtime(none, Some(64 * GIB)).summarize(request()),
+            runtime(none, Some(64 * GIB)).summarize(request(), Box::new(|_| ())),
             Err(AiError::NotInstalled)
         );
         // Too little memory: the model is not even verified (no copy of it is made).
         let (small, asked) = fake(Some(4 * GIB), Ok(()));
         assert_eq!(
-            runtime(small, Some(GIB)).summarize(request()),
+            runtime(small, Some(GIB)).summarize(request(), Box::new(|_| ())),
             Err(AiError::Memory)
         );
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
         let (unknown, _) = fake(Some(GIB), Ok(()));
         assert_eq!(
-            runtime(unknown, None).summarize(request()),
+            runtime(unknown, None).summarize(request(), Box::new(|_| ())),
             Err(AiError::Memory)
         );
         for (reason, error) in [
@@ -977,12 +1033,12 @@ mod tests {
             (Unavailable::Busy, AiError::Busy),
             (Unavailable::NotInstalled, AiError::NotInstalled),
             (Unavailable::Memory, AiError::Memory),
-            (Unavailable::Storage, AiError::Failed),
+            (Unavailable::Storage, AiError::Storage),
             (Unavailable::Unsupported, AiError::Failed),
         ] {
             let (bad, asked) = fake(Some(GIB), Err(reason));
             assert_eq!(
-                runtime(bad, Some(64 * GIB)).summarize(request()),
+                runtime(bad, Some(64 * GIB)).summarize(request(), Box::new(|_| ())),
                 Err(error)
             );
             assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -990,7 +1046,7 @@ mod tests {
         // An invalid request is refused before any of it.
         let (never, asked) = fake(Some(GIB), Ok(()));
         assert_eq!(
-            runtime(never, Some(64 * GIB)).summarize(summary(vec![], "en")),
+            runtime(never, Some(64 * GIB)).summarize(summary(vec![], "en"), Box::new(|_| ())),
             Err(AiError::Failed)
         );
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
@@ -1002,7 +1058,7 @@ mod tests {
         let runtime = runtime(bad, Some(64 * GIB));
         assert_eq!(runtime.answered_model(), None);
         assert!(runtime
-            .summarize(summary(vec![page(0, "FAKE text")], "en"))
+            .summarize(summary(vec![page(0, "FAKE text")], "en"), Box::new(|_| ()))
             .is_err());
         assert_eq!(runtime.answered_model(), None);
     }
@@ -1066,7 +1122,7 @@ pub mod testing {
                 ],
                 needed_bytes: 0,
                 start_timeout: Duration::from_secs(30),
-                answer_timeout,
+                answer_limit: crate::local_runner::AnswerLimit::fixed(answer_timeout),
                 memory_limit_bytes: Some(1024 * 1024 * 1024),
                 expected_model: Some(ModelInfo {
                     name: model_helper::STUB_NAME.to_owned(),
@@ -1074,6 +1130,7 @@ pub mod testing {
                 }),
                 model_file: None,
                 sandboxed: true,
+                generation_threads: None,
             };
             Self {
                 runner: Arc::new(Runner::new(config)),
@@ -1211,9 +1268,15 @@ pub mod engine_testing {
             };
             let config = launch_at(executable.to_owned(), &verified)
                 .map_err(|error| format!("{error:?}"))?;
-            let runner = Arc::new(Runner::new(config));
+            // The runner keeps no model file of its own: this one start hands the sealed copy
+            // over and lets it go once the helper has greeted, as the app does. So a test holds
+            // the model once, in the helper, not twice (Linux: a 3 GB memfd beside the weights).
+            let runner = Arc::new(Runner::new(RunnerConfig {
+                model_file: None,
+                ..config.clone()
+            }));
             runner
-                .start(&Plenty)
+                .start_with(&Plenty, move || Ok(config))
                 .map_err(|error| format!("{error:?}"))?;
             Ok(Self {
                 runner,
@@ -1265,16 +1328,18 @@ pub mod engine_testing {
                 || "no stats".to_owned(),
                 |s| {
                     format!(
-                        "prompt {} tokens {:.1} s (prefix {} tokens, {}, {} bytes), answer {} \
-                         tokens {:.1} s{}, {} grammar scans",
+                        "prompt {} tokens {:.1} s on {} threads (prefix {} tokens, {}, {} bytes), \
+                         answer {} tokens {:.1} s{} on {} threads, {} grammar scans",
                         s.prompt_tokens,
                         s.prompt_ms as f64 / 1000.0,
+                        s.batch_threads,
                         s.prefix_len,
                         if s.cache_hit { "put back" } else { "read" },
                         s.snapshot_bytes,
                         s.answer_tokens,
                         s.answer_ms as f64 / 1000.0,
                         if s.capped { " (capped)" } else { "" },
+                        s.threads,
                         s.grammar_scans
                     )
                 },
@@ -1287,6 +1352,24 @@ pub mod engine_testing {
             self.runner
                 .last_stats()
                 .map(|stats| (stats.prefix_len, stats.cache_hit, stats.snapshot_bytes))
+        }
+
+        /// The hash of the token ids the last answer was written in (see `Stats::answer_hash`).
+        pub fn last_answer_hash(&self) -> Option<u64> {
+            self.runner.last_stats().map(|stats| stats.answer_hash)
+        }
+
+        /// The threads the last answer was written on, and its prompt read on.
+        pub fn last_threads(&self) -> Option<(u32, u32)> {
+            self.runner
+                .last_stats()
+                .map(|stats| (stats.threads, stats.batch_threads))
+        }
+
+        /// Answers are written on `threads` threads from now on, whatever the computer's load;
+        /// `None` chooses from the load again.
+        pub fn override_threads(&self, threads: Option<u32>) {
+            self.runner.override_threads(threads);
         }
 
         /// What `term` means in `context`, in `lang`.

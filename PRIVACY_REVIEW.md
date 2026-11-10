@@ -36,7 +36,7 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 | What             | Examples                                                                                                                                                                                                   | Kept encrypted?                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer or a phone), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person), including documents the patient has **hidden** | Yes, each with its own key        |
-| Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in                                                                                          | Yes                               |
+| Document details | Name (the patient can rename it), size, date added, the stored label "Manual import — unverified" (stored unchanged; the app shows it as the status "Unverified", then "Manual import", or, when the vault has checked a clinic's signature, as "Verified", then "From {clinic}"), which folder it is in | Yes                               |
 | AI answers       | What the AI helper wrote about a document on this computer (#72): a plain-words summary or a term explained, with the tool, language, model and date. Kept encrypted with the document. Asking again shows the new answer and hides the older one, which stays in the vault, never deleted (#71, D3); nothing leaves the device | Yes                               |
 | Profiles         | A display name for each person the patient keeps records for                                                                                                                                               | Yes                               |
 | Folders          | Folder names and how they nest                                                                                                                                                                             | Yes                               |
@@ -323,7 +323,9 @@ backups. Where the OS has no credential store, there are no tray notices. Detail
 - Passphrases must be at least 15 characters, and a check on the device refuses ones that are easy
   to guess (see section 5 for how strong that makes them).
 - The app locks after 1 to 15 minutes without use (5 by default); a file window, or the system
-  window confirming a new recovery key, that it opened extends that by up to 15 more minutes. When
+  window confirming a new recovery key, that it opened extends that by up to 15 more minutes, and
+  an AI answer being written by the time it takes, up to that answer's own limit (5 to 20
+  minutes; 20 at most while the AI helper starts). When
   its window is minimised or, on a phone, when it goes to the background, it hides its content at
   once and locks as soon as any import, save or backup under way has finished (see section 4 for the
   details).
@@ -351,7 +353,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
   release.
 - **Lost or stolen device.** There is no remote lock or wipe. What protects the vault is the
   device's own lock, the app's automatic lock (up to 15 minutes after last use, or up to 15 more
-  while a file window it opened is showing) and the passphrase.
+  while a file window it opened is showing, or, while an AI answer is written, up to its limit of
+  at most 20 minutes plus the AI helper's start) and the passphrase.
 - **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place,
   vaults set aside included, and some app files, such as the lock-delay setting; the app's
   instructions say to delete the vault's folder by hand. On

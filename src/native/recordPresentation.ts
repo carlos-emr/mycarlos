@@ -25,15 +25,6 @@ export function formatFileSize(value: number, in1024s: boolean): string {
   return `${formatNumber(value / 1_000_000, undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB, ${exact}`;
 }
 
-/** Native supplies this presentation identity separately from stored metadata. */
-export const recordSource = (record: {
-  sourceLabel: string;
-  sourceKind?: "manual";
-}) =>
-  record.sourceKind === "manual"
-    ? translateNow("record.source.manual")
-    : record.sourceLabel;
-
 // A kind is only a hint drawn from the file name, so it must not fire on a
 // fragment of another word: "Latest" is not a test, "Collaboration" is not a lab
 // and "Prescan" is not a scan. Words are compared from their start, which still
