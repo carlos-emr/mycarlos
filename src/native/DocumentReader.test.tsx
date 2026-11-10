@@ -1191,6 +1191,43 @@ const rowsOf = (elements: Element[]) =>
 // D144 (Ben, 28 Oct): the page buttons in a bar at the reader's foot, in
 // words, with First and Last; the zoom alone at the top left.
 describe("the reader's page bar", () => {
+  it("is not shown over the clinic's reading aid, and the page keys leave the aid alone", async () => {
+    const viewPage = pagesOf(5);
+    renderReader(viewPage, {
+      ...record,
+      readingAid: {
+        deliveryId: "aid-1",
+        language: "en",
+        reviewedAtMs: 1_792_450_680_000,
+        notice: {
+          version: "carlos-5537-en-1",
+          heading: "FAKE notice heading",
+          body: "FAKE notice body: this was produced by software.",
+        },
+        overview: "FAKE overview of the report.",
+        points: [{ text: "FAKE point one.", evidence: ["FAKE quote."] }],
+      },
+    });
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    expect(bar()).toBeVisible();
+    await click(
+      screen.getByRole("button", { name: humanText("Read the reading aid") }),
+    );
+    expect(screen.getByRole("note")).toBeVisible();
+    expect(document.querySelector(".native-reader-pages")).toBeNull();
+    // End in the aid is the aid's own (it scrolls): no page turns behind it.
+    expect(fireEvent.keyDown(screen.getByRole("dialog"), { key: "End" })).toBe(
+      true,
+    );
+    await click(
+      screen.getByRole("button", {
+        name: humanText("Open the original document"),
+      }),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
+    expect(bar()).toHaveHumanTextContent("Page 1 of 5");
+  });
+
   it("is at the foot, in words and in reading order, with the zoom alone at the top left", async () => {
     renderReader(pagesOf(5));
     const picture = await screen.findByRole("img", {
