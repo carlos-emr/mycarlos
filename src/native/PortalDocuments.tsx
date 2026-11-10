@@ -784,7 +784,7 @@ export function PortalDocuments({
       <h2 id="portal-title" tabIndex={-1}>
         {t("portal.title")}
       </h2>
-      <p>{t("portal.intro")}</p>
+      <p className="section-intro">{t("portal.intro")}</p>
       <p>{t("portal.connectConsent")}</p>
       <p>{t("portal.unlockCheckConsent")}</p>
       <form className="native-inline-form" onSubmit={submit}>
@@ -884,9 +884,11 @@ export function PortalDocuments({
       {showCheck && checkButton}
       {offerNotices && (
         <NoticesAfterLink
-          onClose={() => {
+          onClose={(wasShown) => {
             const linked = offerNotices;
             setOfferNotices(null);
+            // Nothing was shown: the focus stays where the patient put it.
+            if (!wasShown) return;
             // Then to the new clinic's heading, where the panel has one: the
             // control that made the link may be gone once a clinic is linked.
             requestAnimationFrame(() =>

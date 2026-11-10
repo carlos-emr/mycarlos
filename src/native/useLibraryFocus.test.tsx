@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLibraryFocus } from "./useLibraryFocus";
 
 let focusIfLost = () => {};
+let openedPlace: (next: string) => void = () => {};
 
 function Library({
   busy = false,
@@ -20,12 +21,12 @@ function Library({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  focusIfLost = useLibraryFocus(
+  ({ recover: focusIfLost, openedPlace } = useLibraryFocus(
     root,
     heading,
     busy || covered || modal,
     location,
-  );
+  ));
   return (
     <>
       <button>Elsewhere</button>
@@ -34,6 +35,7 @@ function Library({
           {location}
         </h1>
         {showTrigger && <button disabled={busy}>Import</button>}
+        <button>Path</button>
         {modal && (
           <section role="dialog" aria-modal="true" aria-label="Recovery setup">
             <button>Continue setup</button>
@@ -219,6 +221,153 @@ describe("library focus recovery", () => {
     rerender(<Library />);
     frame();
     expect(screen.getByRole("heading")).toHaveFocus();
+  });
+
+  it("takes focus to an opened place's heading after a pointer press, over the control that opened it (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    const trigger = screen.getByRole("button", { name: "Import" });
+    // Chromium focuses a clicked button; the press is still a pointer's.
+    trigger.focus();
+    trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(
+      screen.getByRole("heading", { name: "Second folder" }),
+    ).toHaveFocus();
+  });
+
+  it("waits for the place asked for when another location shows first (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    const trigger = screen.getByRole("button", { name: "Import" });
+    trigger.focus();
+    openedPlace("A person's folder");
+    // The person opens first, then their folder.
+    rerender(<Library location="The person's top level" />);
+    frame();
+    expect(trigger).toHaveFocus();
+    rerender(<Library location="A person's folder" />);
+    frame();
+    expect(screen.getByRole("heading")).toHaveFocus();
+  });
+
+  it("leaves focus alone when the place opened is the one shown (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    const trigger = screen.getByRole("button", { name: "Import" });
+    trigger.focus();
+    openedPlace("First folder");
+    rerender(<Library />);
+    frame();
+    expect(trigger).toHaveFocus();
+    // Nor is the request kept for a later navigation it did not ask for,
+    // even one back to the same place.
+    trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(trigger).toHaveFocus();
+    rerender(<Library />);
+    frame();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("does not take focus from a dialog open over an opened place, nor from where it returns focus (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" modal />);
+    const setup = screen.getByRole("button", { name: "Continue setup" });
+    setup.focus();
+    frame();
+    expect(setup).toHaveFocus();
+    // The dialog closes and puts focus back where it came from.
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+    elsewhere.focus();
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(elsewhere).toHaveFocus();
+  });
+
+  it("leaves focus the reader moved while the library was busy as the opened place came (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    // The reader goes on to something else before the operation ends.
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+    elsewhere.focus();
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(elsewhere).toHaveFocus();
+  });
+
+  it("takes a late opened place to its heading when focus is still on the control that opened it (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    // A control that stays enabled while the library is busy, as the
+    // sidebar's places do.
+    const opener = screen.getByRole("button", { name: "Elsewhere" });
+    opener.focus();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(
+      screen.getByRole("heading", { name: "Second folder" }),
+    ).toHaveFocus();
+  });
+
+  it("keeps a late opened place's request when the reader presses again while busy (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    const opener = screen.getByRole("button", { name: "Elsewhere" });
+    opener.focus();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    // Nothing is said yet, so the reader presses the place again.
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(
+      screen.getByRole("heading", { name: "Second folder" }),
+    ).toHaveFocus();
+  });
+
+  it("keeps a late opened place's request when the second press comes from another control (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    screen.getByRole("button", { name: "Elsewhere" }).focus();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    // The same place again, from the path this time.
+    screen.getByRole("button", { name: "Path" }).focus();
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(
+      screen.getByRole("heading", { name: "Second folder" }),
+    ).toHaveFocus();
+  });
+
+  it("takes a late opened place to its heading when nothing has focus by then (#121)", () => {
+    const { rerender } = render(<Library />);
+    frame();
+    // A pointer user's press: no keyboard use to recover after.
+    webkitPress(screen.getByRole("button", { name: "Import" }));
+    openedPlace("Second folder");
+    rerender(<Library location="Second folder" busy />);
+    frame();
+    rerender(<Library location="Second folder" />);
+    frame();
+    expect(
+      screen.getByRole("heading", { name: "Second folder" }),
+    ).toHaveFocus();
   });
 
   it("cancels a pending recovery when locking unmounts the library", () => {
