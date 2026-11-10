@@ -24,6 +24,7 @@ for (const mode of [
     test(`${mode}: ${phase} keeps the row busy and counts below the bar`, async ({
       page,
       baseURL,
+      isMobile,
     }) => {
       expect(baseURL).toBeTruthy();
       const allowedOrigin = new URL(baseURL!).origin;
@@ -79,7 +80,10 @@ for (const mode of [
         },
       );
       await expect.poll(() => aiHeld(page)).toEqual([AI_COMMANDS.download]);
-      await sidebar(page)
+      const navigation = isMobile
+        ? page.getByRole("navigation", { name: "Section", exact: true })
+        : sidebar(page);
+      await navigation
         .getByRole("button", { name: "AI helper", exact: true })
         .click();
       const row = page.getByRole("region", {
