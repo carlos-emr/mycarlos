@@ -555,6 +555,9 @@ pub(crate) struct Store {
     /// the app ends the helper that holds it. A new run cannot start meanwhile
     /// (its use-check finds the lock taken and answers busy).
     before_replace: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// Per-instance unit-test barrier at the cancellable placement boundary.
+    #[cfg(test)]
+    after_placement_lock: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Runs holding the model now (see [`VerifiedModel`]).
     uses: Arc<AtomicUsize>,
     /// Asked to stop the add in progress.
@@ -582,6 +585,8 @@ impl Store {
             busy: Mutex::new(()),
             adding: Mutex::new(()),
             before_replace: Mutex::new(None),
+            #[cfg(test)]
+            after_placement_lock: Mutex::new(None),
             uses: Arc::new(AtomicUsize::new(0)),
             cancel_add: AtomicBool::new(false),
         }
@@ -777,6 +782,16 @@ impl Store {
         // when the file arrives stays in use; with none, this one becomes it. The helper ends
         // only when the file it holds is the one replaced.
         let _placing = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+        #[cfg(test)]
+        if let Some(hook) = self.after_placement_lock.lock().unwrap().as_ref() {
+            hook();
+        }
+        // Cancel can arrive while verification holds the placement lock. It still
+        // wins before the staged file replaces anything or the choice changes.
+        if self.cancel_add.load(Ordering::SeqCst) {
+            let _ = remove_model_file(&part);
+            return Err(ModelError::Cancelled);
+        }
         let in_use_before = self.in_use().map(|(_, used)| used);
         let replacing_in_use = in_use_before.is_some_and(|used| used.file_name == model.file_name);
         if replacing_in_use {
@@ -851,13 +866,27 @@ impl Store {
         }) {
             return Err(ModelError::NotEnoughDisk);
         }
+        // Publish the accepted download before waiting for the connection or its headers.
+        // A row reopened meanwhile can attach, and a Busy second call never reaches here.
+        progress(have, model.size_bytes);
         let cancelled = || self.cancel_add.load(Ordering::SeqCst);
-        let mut opened = opener
-            .open(model, have, &cancelled)
-            .map_err(|error| match error {
-                OpenerError::Denied | OpenerError::Gone => ModelError::Unavailable,
-                OpenerError::Network | OpenerError::BadRedirect => ModelError::Network,
-            })?;
+        let cancelled_error = || {
+            let _ = remove_model_file(&part);
+            ModelError::Cancelled
+        };
+        if cancelled() {
+            return Err(cancelled_error());
+        }
+        let mut opened = opener.open(model, have, &cancelled).map_err(|error| {
+            if cancelled() {
+                cancelled_error()
+            } else {
+                match error {
+                    OpenerError::Denied | OpenerError::Gone => ModelError::Unavailable,
+                    OpenerError::Network | OpenerError::BadRedirect => ModelError::Network,
+                }
+            }
+        })?;
         if opened.start != have {
             // The server sent the file from its start (or from somewhere
             // else): start the `.part` again from nothing.
@@ -1235,7 +1264,9 @@ fn copy_checked(
     let mut hasher = Sha256::new();
     let mut buffer = vec![0u8; BUFFER_BYTES];
     let mut done = 0u64;
-    progress(0, model.size_bytes);
+    // Retained bytes count as downloaded while they are checked again. A server that
+    // restarts from zero passes have=0, so that real restart is still shown.
+    progress(have, model.size_bytes);
     let mut output = if have > 0 {
         // Resuming: hash what is already there, from its start, then append.
         let mut kept = OpenOptions::new()
@@ -1257,7 +1288,7 @@ fn copy_checked(
             }
             hasher.update(&buffer[..n]);
             done += n as u64;
-            progress(done, model.size_bytes);
+            progress(have, model.size_bytes);
         }
         kept.seek(SeekFrom::End(0))
             .map_err(|_| ModelError::Storage)?;
@@ -1442,6 +1473,161 @@ mod tests {
         let rows = store.models();
         let row = rows.iter().find(|row| row.index == index).unwrap();
         (row.state, row.added_by_you, row.in_use)
+    }
+
+    #[test]
+    fn catalog_changes_cancel_only_the_answer_owned_by_the_model_in_use() {
+        use crate::local_runner::{AnswerLimit, Runner, RunnerConfig, RunnerError, SummaryRequest};
+        use std::time::Duration;
+
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        let runner = Arc::new(Runner::new(RunnerConfig {
+            command: temp.path().join("NEVER-EXECUTED-FAKE-HELPER"),
+            args: vec![],
+            needed_bytes: 1,
+            start_timeout: Duration::from_secs(1),
+            answer_limit: AnswerLimit::fixed(Duration::from_secs(1)),
+            memory_limit_bytes: None,
+            expected_model: None,
+            model_file: None,
+            sandboxed: false,
+            generation_threads: None,
+        }));
+        let stopping = Arc::clone(&runner);
+        store.set_before_replace(Box::new(move || {
+            stopping.cancel_all();
+            stopping.stop();
+        }));
+        let old = runner.ticket();
+        store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
+        assert!(
+            runner.is_current(old),
+            "adding an inactive file keeps the answer"
+        );
+        store.remove(Some(1)).unwrap();
+        assert!(
+            runner.is_current(old),
+            "removing an inactive file keeps the answer"
+        );
+        store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
+        store.use_model(0).unwrap();
+        assert!(
+            runner.is_current(old),
+            "reselecting In use keeps the answer"
+        );
+        store.use_model(1).unwrap();
+        assert!(
+            !runner.is_current(old),
+            "switching cancels the previous answer"
+        );
+        let request = SummaryRequest {
+            lang: "en".into(),
+            pages: vec![],
+            max_sentences: 1,
+        };
+        assert!(matches!(
+            runner.summarize(old, &request),
+            Err(RunnerError::Cancelled)
+        ));
+        let next = runner.ticket();
+        store.remove(Some(0)).unwrap();
+        assert!(
+            runner.is_current(next),
+            "old-file removal cannot cancel the new answer"
+        );
+        assert!(!runner.is_running());
+        assert_eq!(runner.last_stats(), None);
+        store.remove(Some(1)).unwrap();
+        assert!(
+            !runner.is_current(next),
+            "removing In use cancels its answer"
+        );
+        assert!(matches!(
+            runner.summarize(next, &request),
+            Err(RunnerError::Cancelled)
+        ));
+        assert_eq!(store.status(&good()), ModelStatus::NotInstalled);
+    }
+
+    #[test]
+    fn the_chosen_catalog_file_is_reverified_without_falling_back_to_another_model() {
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
+        store.use_model(1).unwrap();
+        let mut changed = b;
+        changed[0] ^= 1;
+        fs::write(store.dir.join("b.gguf"), changed).unwrap();
+        assert_eq!(store.verified_model().err(), Some(ModelError::Damaged));
+        assert_eq!(store.status(&good()), ModelStatus::Damaged);
+        assert_eq!(row(&store, 1), (RowState::Damaged, true, true));
+        assert_eq!(row(&store, 0), (RowState::Installed, true, false));
+        assert!(store.installed_size().is_some());
+        store.use_model(0).unwrap();
+        let mut verified = store.verified_model().unwrap();
+        let mut bytes = vec![];
+        verified.file.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, a);
+        assert_eq!(verified.info.sha256, store.catalog[0].sha256);
+    }
+
+    #[test]
+    fn cancel_after_the_placement_lock_leaves_no_model_or_choice_change() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        let choice_before = fs::read(store.choice_path()).unwrap();
+        let picked_b = temp.path().join("picked-b.gguf");
+        fs::write(&picked_b, &b).unwrap();
+        let stopped = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&stopped);
+        store.set_before_replace(Box::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        }));
+        let (placed, at_placement) = mpsc::channel();
+        let (release, wait_release) = mpsc::channel();
+        let wait_release = Mutex::new(wait_release);
+        *store.after_placement_lock.lock().unwrap() = Some(Box::new(move || {
+            // Copy, hash, sync and lock acquisition are complete. Pause before
+            // the cancellation check; a pre-lock-only check cannot pass this test.
+            placed.send(()).unwrap();
+            wait_release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap();
+        }));
+        let store = Arc::new(store);
+        let (copied, at_copy_end) = mpsc::channel();
+        let busy = store.busy.lock().unwrap();
+        let adding = {
+            let worker = Arc::clone(&store);
+            std::thread::spawn(move || {
+                let mut reported = false;
+                worker.add(&picked_b, &good(), |done, total| {
+                    if done == total && !reported {
+                        reported = true;
+                        copied.send(()).unwrap();
+                    }
+                })
+            })
+        };
+        // A concurrent verification may own this lock during the entire copy.
+        at_copy_end.recv_timeout(Duration::from_secs(10)).unwrap();
+        drop(busy);
+        at_placement.recv_timeout(Duration::from_secs(10)).unwrap();
+        store.cancel_add();
+        release.send(()).unwrap();
+        assert_eq!(adding.join().unwrap().unwrap_err(), ModelError::Cancelled);
+        assert_eq!(folder_names(&store), ["a.gguf"]);
+        assert_eq!(fs::read(store.choice_path()).unwrap(), choice_before);
+        assert_eq!(fs::read(store.dir.join("a.gguf")).unwrap(), a);
+        assert_eq!(row(&store, 0), (RowState::Installed, true, true));
+        assert_eq!(row(&store, 1), (RowState::NotDownloaded, false, false));
+        assert_eq!(stopped.load(Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -1933,6 +2119,7 @@ mod tests {
         asked: std::cell::RefCell<Vec<u64>>,
         /// The next body ends after this many bytes, as a lost connection does.
         cut_once: std::cell::Cell<Option<usize>>,
+        body_reads: Arc<AtomicUsize>,
     }
     impl Fake {
         fn serving(bytes: &[u8]) -> Self {
@@ -1944,7 +2131,18 @@ mod tests {
                 ranges: true,
                 asked: std::cell::RefCell::new(Vec::new()),
                 cut_once: std::cell::Cell::new(None),
+                body_reads: Arc::new(AtomicUsize::new(0)),
             }
+        }
+    }
+    struct FakeBody {
+        bytes: std::io::Cursor<Vec<u8>>,
+        reads: Arc<AtomicUsize>,
+    }
+    impl Read for FakeBody {
+        fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            self.bytes.read(into)
         }
     }
     impl Opener for Fake {
@@ -1967,9 +2165,80 @@ mod tests {
             Ok(Opened {
                 size: self.announce,
                 start,
-                reader: Box::new(std::io::Cursor::new(body)),
+                reader: Box::new(FakeBody {
+                    bytes: std::io::Cursor::new(body),
+                    reads: Arc::clone(&self.body_reads),
+                }),
             })
         }
+    }
+
+    #[test]
+    fn a_download_reports_its_retained_bytes_while_connecting_and_busy_calls_leave_it_alone() {
+        struct Waiting {
+            opened: std::sync::mpsc::Sender<()>,
+            release: std::sync::mpsc::Receiver<()>,
+        }
+        impl Opener for Waiting {
+            fn open<'a>(
+                &self,
+                _: &Accepted,
+                _: u64,
+                cancelled: &'a dyn Fn() -> bool,
+            ) -> Result<Opened<'a>, OpenerError> {
+                self.opened.send(()).unwrap();
+                self.release
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .unwrap();
+                assert!(cancelled(), "Cancel is available while waiting for headers");
+                Err(OpenerError::Network)
+            }
+        }
+
+        let (_temp, bytes, store) = setup(3 << 20);
+        store.prepare_dir().unwrap();
+        let retained = 1 << 20;
+        fs::write(store.dir.join("fake.gguf.part"), &bytes[..retained]).unwrap();
+        let store = Arc::new(store);
+        let progress = Arc::new(Mutex::new(Vec::new()));
+        let (opened, wait_opened) = std::sync::mpsc::channel();
+        let (release, wait_release) = std::sync::mpsc::channel();
+        let downloading = {
+            let worker = Arc::clone(&store);
+            let counts = Arc::clone(&progress);
+            std::thread::spawn(move || {
+                worker.download(
+                    0,
+                    &Waiting {
+                        opened,
+                        release: wait_release,
+                    },
+                    &good(),
+                    |done, total| counts.lock().unwrap().push((done, total)),
+                )
+            })
+        };
+        wait_opened
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        // The command's report is already visible before the opener can return a body.
+        assert_eq!(*progress.lock().unwrap(), [(retained as u64, 3 << 20)]);
+        assert_eq!(
+            store
+                .download(0, &Fake::serving(&bytes), &good(), |_, _| {
+                    panic!("a Busy call must not replace the active report")
+                })
+                .unwrap_err(),
+            ModelError::Busy
+        );
+        assert_eq!(*progress.lock().unwrap(), [(retained as u64, 3 << 20)]);
+        store.cancel_add();
+        release.send(()).unwrap();
+        assert_eq!(
+            downloading.join().unwrap().unwrap_err(),
+            ModelError::Cancelled
+        );
+        assert!(folder_names(&store).is_empty());
     }
 
     #[test]
@@ -2007,12 +2276,15 @@ mod tests {
         // The server announces another length: refused before a byte is read.
         let mut net = Fake::serving(&bytes);
         net.announce = Some(2 << 20);
+        let mut progress = Vec::new();
         assert_eq!(
             store
-                .download(0, &net, &good(), |_, _| panic!("read"))
+                .download(0, &net, &good(), |done, total| progress.push((done, total)))
                 .unwrap_err(),
             ModelError::Network
         );
+        assert_eq!(progress, [(0, 1 << 20)]);
+        assert_eq!(net.body_reads.load(Ordering::SeqCst), 0);
         // Silent about the length. Too long: refused, cleaned. Cut short: refused,
         // and what arrived is kept to resume.
         let mut net = Fake::serving(&[bytes.as_slice(), b"x"].concat());
@@ -2114,18 +2386,23 @@ mod tests {
         let (_temp, bytes, store) = setup(4 << 20);
         let store = Arc::new(store);
         let net = Fake::serving(&bytes);
-        assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
+        assert_eq!(cut_short(&store, &net, 2 << 20), ModelError::Network);
         // What it had is kept, short of the whole.
         let kept = fs::metadata(store.dir.join("fake.gguf.part"))
             .unwrap()
             .len();
         assert!(kept > 0 && kept < 4 << 20, "{kept}");
-        let mut last = (0, 0);
+        let mut progress = Vec::new();
         store
-            .download(0, &net, &good(), |d, t| last = (d, t))
+            .download(0, &net, &good(), |d, t| progress.push((d, t)))
             .unwrap();
         assert_eq!(*net.asked.borrow(), [0, kept]);
-        assert_eq!(last, (4 << 20, 4 << 20));
+        assert_eq!(progress.first(), Some(&(kept, 4 << 20)));
+        assert_eq!(progress.last(), Some(&(4 << 20, 4 << 20)));
+        assert!(progress
+            .iter()
+            .all(|&(done, total)| done >= kept && total == 4 << 20));
+        assert!(progress.windows(2).all(|pair| pair[0].0 <= pair[1].0));
         assert_eq!(folder_names(&store), ["fake.gguf"]);
         let mut verified = store.verified_model_with(&Free(Some(100 << 30))).unwrap();
         let mut read = Vec::new();
@@ -2163,7 +2440,14 @@ mod tests {
         let mut net = Fake::serving(&bytes);
         net.ranges = false;
         assert_eq!(cut_short(&store, &net, 1 << 20), ModelError::Network);
-        store.download(0, &net, &good(), |_, _| {}).unwrap();
+        let mut progress = Vec::new();
+        store
+            .download(0, &net, &good(), |done, _| progress.push(done))
+            .unwrap();
+        // Start with the retained position, then show the server's genuine restart.
+        assert_eq!(progress[0], 1 << 20);
+        assert_eq!(progress[1], 0);
+        assert_eq!(progress.last(), Some(&(3 << 20)));
         assert_eq!(folder_names(&store), ["fake.gguf"]);
         store.verified_model_with(&Free(Some(100 << 30))).unwrap();
     }
