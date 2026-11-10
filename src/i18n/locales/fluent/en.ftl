@@ -1512,7 +1512,7 @@ portal-connecting = Connecting and requesting clinic approval…
 
 portal-errorBusy = Another clinic operation is running. Wait for it to finish, then try again.
 
-portal-linkedApprovalIssue = Device linked, but the approval request could not be confirmed. Its status in Security, under Clinic documents, says what to do next.
+portal-linkedApprovalIssue = Device linked. Its approval status in Security, under Clinic documents, says what to do next.
 
 portal-retryApproval = Retry saved approval request
 
@@ -1717,7 +1717,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos also keep
 
 portal-checkAgain = To check again, choose { $button }.
 
-portal-unlockCheckConsent = Each time you unlock your vault, myCarlos contacts the clinic portal of each linked device to check for approval updates and new documents.
+portal-unlockCheckConsent = After each unlock, myCarlos contacts linked clinic portals to check for approval updates and new documents when the clinic has approved the device or an approval request is still open.
 
 portal-unlockChecked = Checked for new clinic documents after unlocking.
 
@@ -1775,9 +1775,9 @@ ai-explain-title = Explain a term
 
 ai-notInstalled-title = The AI helper isn't on this computer yet
 
-ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Preferences you can download the model or add a model file you already have.
+ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Settings, under AI helper, you can download the model or add a model file you already have.
 
-ai-notInstalled-openPreferences = Open Preferences
+ai-notInstalled-openPreferences = Open AI helper settings
 
 aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
@@ -1797,9 +1797,11 @@ ai-explain-submit = Explain
 
 ai-preferences-title = AI helper
 
-ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.
+ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. Download one of the models below, or add a matching file you already have. Models stay on this computer.
 
 ai-preferences-notInstalled = Not installed
+
+ai-settings-subtitle = How the AI helper works on this computer
 
 ai-model-add = Add a model file…
 
@@ -1829,7 +1831,7 @@ ai-model-unsupportedCpu = This computer’s processor is not supported by the AI
 
 ai-model-unsupportedPlatform = The AI helper is not available on this kind of computer yet.
 
-ai-model-refusedList = This is not a file myCarlos accepts. Choose the model file listed above.
+ai-model-refusedList = This is not a file myCarlos accepts. Choose one of the model files listed above.
 
 ai-model-refusedHash = This is not the file we expect. Download it again and add the new copy.
 
@@ -1847,6 +1849,14 @@ ai-model-downloadNote = Downloads one file ({ $size } MB), once, from { $host },
 
 ai-model-downloading = Downloading and checking… { $done } of { $total } MB
 
+ai-model-progressName = Model download
+
+ai-model-progressValue = { $percent }, { $done } of { $total } MB
+
+ai-model-stillDownloading = The model is still downloading.
+
+ai-model-stillChecking = The model file is still being checked.
+
 ai-model-refusedNetwork = The download did not finish. Check your internet connection and try again.
 
 ai-model-refusedUnavailable = The model is not available at its address right now. Try again later, or add a file you already have.
@@ -1854,6 +1864,14 @@ ai-model-refusedUnavailable = The model is not available at its address right no
 native-filter-models = Model files
 
 ai-working = The AI helper is working…
+
+ai-workingLong = This can take several minutes for a long document.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Working for { $minutes } minute so far.
+    *[other] Working for { $minutes } minutes so far.
+    }
 
 ai-summary-ready = The summary is ready.
 
@@ -2065,12 +2083,53 @@ notifications-error = This setting could not be saved. Notices are off for this 
 notifications-unavailable = Document notices are unavailable. Open myCarlos normally to check your documents.
 notifications-helpAutomatic = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
 notifications-autoAllow = Check for clinic documents automatically while unlocked
+notifications-autoNeedsNotices = Allow document arrival notices first to turn this on.
 notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
 notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
+noticesStep-title = Notices from your clinic
+noticesStep-intro = Your clinic is linked. myCarlos can let you know when a new document arrives. Nothing is turned on unless you tick it.
+noticesStep-later = You can change these any time in { $settings }, under { $preferences }: { $notices }.
+noticesStep-done = Done
+noticesStep-notNow = Not now
 
 ai-summary-again = Summarize again
 
 ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
 
 ai-keepFull = This document already keeps the most AI answers it can. New answers are shown but not kept.
+
+# Catalog model list (#276A).
+
+ai-models-title = Models on this computer
+
+ai-models-group = Model in use
+
+ai-models-inUse = In use
+
+ai-models-installed = Installed
+
+ai-models-addedByYou = Added by you
+
+ai-models-notDownloaded = Not downloaded
+
+ai-models-downloading = Downloading
+ai-models-installing = Installing
+
+ai-models-download = Download
+
+ai-models-remove = Remove
+
+ai-models-help = The model marked In use writes summaries and explanations. Choosing another model stops the answer being written.
+
+ai-models-loading = Reading the model list…
+
+ai-models-loadFailed = The model list could not be read. Try again.
+
+ai-models-retry = Read the model list again
+
+ai-models-starting = Starting the download…
+
+ai-models-picking = Choose a model file to add.
+
+ai-models-changed = Model in use changed

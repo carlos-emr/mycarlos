@@ -1741,6 +1741,37 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
     models.status(&local_model::Here)
 }
 
+/// Every model the app offers, and any other accepted one on this computer, with its state,
+/// whether it was added from a file, and whether it is the one in use (#276).
+#[tauri::command]
+fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::ModelRow> {
+    models.models()
+}
+
+/// Which catalog entry a model command is about (`ai_models`' `index`).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModelIndexRequest {
+    index: usize,
+}
+
+/// Makes an installed model the one in use (#276). The helper holding the old one ends first,
+/// as at a lock, so an answer being written stops; the choice is kept on this computer,
+/// outside the vault. Returns the status of the model now in use.
+#[tauri::command]
+async fn ai_model_use(
+    models: State<'_, Arc<local_model::Store>>,
+    request: ModelIndexRequest,
+) -> Result<local_model::ModelStatus, ModelFailure> {
+    let models = Arc::clone(models.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        models.use_model(request.index)?;
+        Ok(models.status(&local_model::Here))
+    })
+    .await
+    .map_err(|_| local_model::ModelError::Storage)?
+}
+
 /// Why adding or removing a model was refused, as a word for the renderer.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1766,6 +1797,111 @@ impl From<local_model::ModelError> for ModelFailure {
 struct ModelAddProgress {
     done: u64,
     total: u64,
+    /// Catalog row for a download; picked-file checks stay global.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
+}
+
+/// The model add or download running now, and how far it is (#275). A row
+/// that opens again while one runs asks for it (`ai_model_add_active`): it
+/// did not hear the progress sent while it was away.
+#[derive(Default)]
+struct ModelAddActive {
+    now: Mutex<Option<ModelAddNow>>,
+    // Store operations release their lock before the command reports completion.
+    // Keep the next command out until that completion has been emitted too.
+    admission: Mutex<()>,
+}
+
+#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ModelAddNow {
+    /// `download` for a catalog model's download and its check; `check`
+    /// for a picked file's.
+    kind: &'static str,
+    done: u64,
+    total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
+}
+
+impl ModelAddActive {
+    fn get(&self) -> Option<ModelAddNow> {
+        *self.now.lock().unwrap_or_else(|e| e.into_inner())
+    }
+    fn set(&self, now: Option<ModelAddNow>) {
+        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = now;
+    }
+
+    /// Called inside the blocking worker: no admission guard crosses an await.
+    /// Both progress cleanup and completion emission belong to this admission.
+    fn run(
+        &self,
+        kind: &'static str,
+        work: impl FnOnce(&mut ModelAddReport<'_>) -> ModelAddOutcome,
+        ended: impl FnOnce(&ModelAddOutcome),
+    ) -> ModelAddOutcome {
+        let _admission = match self.admission.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return ModelAddOutcome::of(local_model::ModelError::Busy);
+            }
+        };
+        let mut report = ModelAddReport::new(self, kind);
+        let outcome = work(&mut report);
+        let reported = report.reported;
+        drop(report);
+        if reported {
+            ended(&outcome);
+        }
+        outcome
+    }
+}
+
+/// One add's report into `ModelAddActive`. Only a run that has reported
+/// progress clears it when it ends, so a click refused as busy never touches
+/// the run in progress.
+struct ModelAddReport<'a> {
+    active: &'a ModelAddActive,
+    kind: &'static str,
+    index: Option<usize>,
+    reported: bool,
+}
+
+impl<'a> ModelAddReport<'a> {
+    fn new(active: &'a ModelAddActive, kind: &'static str) -> Self {
+        Self {
+            active,
+            kind,
+            index: None,
+            reported: false,
+        }
+    }
+    fn progress(&mut self, done: u64, total: u64) {
+        self.reported = true;
+        self.active.set(Some(ModelAddNow {
+            kind: self.kind,
+            done,
+            total,
+            index: self.index,
+        }));
+    }
+}
+
+impl Drop for ModelAddReport<'_> {
+    fn drop(&mut self) {
+        if self.reported {
+            self.active.set(None);
+        }
+    }
+}
+
+/// The model add or download running now, if any, and how far it is
+/// (#275), for a row that opens while one runs.
+#[tauri::command]
+fn ai_model_add_active(active: State<'_, Arc<ModelAddActive>>) -> Option<ModelAddNow> {
+    active.get()
 }
 
 /// How an add ended, always as a value: `outcome` is `added` (with the new
@@ -1803,6 +1939,7 @@ async fn ai_model_add_picked(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
+    active: State<'_, Arc<ModelAddActive>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<ModelAddOutcome> {
     use tauri::Emitter;
@@ -1833,33 +1970,49 @@ async fn ai_model_add_picked(
         return Ok(ModelAddOutcome::of(local_model::ModelError::Unreadable));
     };
     let models = Arc::clone(models.inner());
-    let worker = Arc::clone(&models);
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        // About every 8 MiB, and at the start and the end.
-        let mut shown = u64::MAX;
-        worker.add(&source, &local_model::Here, |done, total| {
-            let step = done / (8 * 1024 * 1024);
-            if done == 0 || done == total || step != shown {
-                shown = step;
-                let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
-            }
-        })
+    let active = Arc::clone(active.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        active.run(
+            "check",
+            |report| {
+                // About every 8 MiB, and at the start and the end.
+                let mut shown = u64::MAX;
+                let result = models.add(&source, &local_model::Here, |done, total| {
+                    let step = done / (8 * 1024 * 1024);
+                    if done == 0 || done == total || step != shown {
+                        shown = step;
+                        report.progress(done, total);
+                        let _ = app.emit(
+                            "ai-model-add-progress",
+                            ModelAddProgress {
+                                done,
+                                total,
+                                index: None,
+                            },
+                        );
+                    }
+                });
+                match result {
+                    Ok(_) => ModelAddOutcome {
+                        outcome: "added",
+                        status: Some(models.status(&local_model::Here)),
+                        reason: None,
+                    },
+                    Err(error) => ModelAddOutcome::of(error),
+                }
+            },
+            |ended| {
+                // For a row that opened again meanwhile: how this run ended.
+                let _ = app.emit("ai-model-add-ended", ended);
+            },
+        )
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?;
-    Ok(match result {
-        Ok(_) => ModelAddOutcome {
-            outcome: "added",
-            status: Some(models.status(&local_model::Here)),
-            reason: None,
-        },
-        Err(local_model::ModelError::Cancelled) => outcome("cancelled"),
-        Err(error) => ModelAddOutcome::of(error),
-    })
+    .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
-/// Downloads the default model (the catalog's first entry) from its pinned
-/// address, only because the patient clicked. Native code makes the request
+/// Downloads a model (catalog entry `index`; the default, the first, without one) from its
+/// pinned address, only because the patient clicked. Native code makes the request
 /// and nothing about the patient or a document is sent. The same checks as
 /// a picked file; the same progress event and `ai_model_add_cancel`. Returns
 /// the same outcomes, plus `network` and `unavailable`.
@@ -1868,41 +2021,57 @@ async fn ai_model_download(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
+    active: State<'_, Arc<ModelAddActive>>,
+    request: Option<ModelIndexRequest>,
 ) -> CommandResult<ModelAddOutcome> {
+    let index = request.map_or(0, |request| request.index);
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
     let models = Arc::clone(models.inner());
-    let worker = Arc::clone(&models);
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut shown = u64::MAX;
-        worker.download(
-            0,
-            &model_download::Https,
-            &local_model::Here,
-            |done, total| {
-                let step = done / (8 * 1024 * 1024);
-                if done == 0 || done == total || step != shown {
-                    shown = step;
-                    let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+    let active = Arc::clone(active.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        active.run(
+            "download",
+            |report| {
+                report.index = Some(index);
+                let mut shown = u64::MAX;
+                let result = models.download(
+                    index,
+                    &model_download::Https,
+                    &local_model::Here,
+                    |done, total| {
+                        let step = done / (8 * 1024 * 1024);
+                        if done == 0 || done == total || step != shown {
+                            shown = step;
+                            report.progress(done, total);
+                            let _ = app.emit(
+                                "ai-model-add-progress",
+                                ModelAddProgress {
+                                    done,
+                                    total,
+                                    index: Some(index),
+                                },
+                            );
+                        }
+                    },
+                );
+                match result {
+                    Ok(_) => ModelAddOutcome {
+                        outcome: "added",
+                        status: Some(models.status(&local_model::Here)),
+                        reason: None,
+                    },
+                    Err(error) => ModelAddOutcome::of(error),
                 }
+            },
+            |ended| {
+                // For a row that opened again meanwhile: how this run ended.
+                let _ = app.emit("ai-model-add-ended", ended);
             },
         )
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?;
-    Ok(match result {
-        Ok(_) => ModelAddOutcome {
-            outcome: "added",
-            status: Some(models.status(&local_model::Here)),
-            reason: None,
-        },
-        Err(local_model::ModelError::Cancelled) => ModelAddOutcome {
-            outcome: "cancelled",
-            status: None,
-            reason: None,
-        },
-        Err(error) => ModelAddOutcome::of(error),
-    })
+    .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
 /// Stops the add in progress; it ends with the failure `cancelled` and
@@ -1912,15 +2081,17 @@ fn ai_model_add_cancel(models: State<'_, Arc<local_model::Store>>) {
     models.cancel_add();
 }
 
-/// Deletes the model (and any half-copied file). The folder holds nothing of
-/// the patient's, so nothing else is kept.
+/// Deletes a model (catalog entry `index`; the one in use without one) and its half-copied
+/// file. The folder holds nothing of the patient's, so nothing else is kept. When it was the
+/// one in use, In use moves to another installed model, or to none.
 #[tauri::command]
 async fn ai_model_remove(
     models: State<'_, Arc<local_model::Store>>,
+    request: Option<ModelIndexRequest>,
 ) -> Result<local_model::ModelStatus, ModelFailure> {
     let models = Arc::clone(models.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        models.remove()?;
+        models.remove(request.map(|request| request.index))?;
         Ok(models.status(&local_model::Here))
     })
     .await
@@ -1936,10 +2107,17 @@ async fn ai_model_remove(
 /// and the pages must be the ones that text read gave, unchanged.
 #[tauri::command]
 async fn ai_summarize(
+    app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
     request: model_runtime::SummarizeRequest,
+    answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
+    // Capture the actual unlocked session before validation can yield.
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let session = picks.session();
     let kept_for = match (request.record_id, request.ticket) {
         (Some(record_id), Some(ticket)) => {
             let text = picks.peek_text(ticket, record_id)?;
@@ -1958,9 +2136,14 @@ async fn ai_summarize(
         (None, None) => None,
         _ => return Err(ai_error(model_runtime::AiError::Failed)),
     };
-    let session = picks.session();
     let lang = request.lang.clone();
-    let result = run_ai(store.inner(), move |runtime| runtime.summarize(request)).await?;
+    let result = run_ai(
+        store.inner(),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch),
+    )
+    .await?;
     let kept_id = kept_for.map(|(record_id, text)| {
         picks.keep_ai_answer(
             session,
@@ -1992,21 +2175,38 @@ async fn ai_summarize(
 /// document, which must be a readable PDF, the answer is also kept for that document's save.
 #[tauri::command]
 async fn ai_explain(
+    app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
     request: model_runtime::ExplainRequest,
+    answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
+    // Capture the actual unlocked session before validation can yield.
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let session = picks.session();
     let kept_for = request.record_id;
     if let Some(record_id) = kept_for {
-        run_blocking(store.inner(), move |store| readable_pdf(store, record_id)).await?;
+        // Validation may outlive its originating session. It must not count
+        // as unowned activity in whichever session is open when it returns.
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || readable_pdf(&store, record_id))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))??;
     }
-    let session = picks.session();
     let (term, context, lang) = (
         request.term.trim().to_owned(),
         request.context.clone(),
         request.lang.clone(),
     );
-    let result = run_ai(store.inner(), move |runtime| runtime.explain(request)).await?;
+    let result = run_ai(
+        store.inner(),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch| runtime.explain_for(ticket, request, watch),
+    )
+    .await?;
     let kept_id = kept_for.map(|record_id| {
         picks.keep_ai_answer(
             session,
@@ -2054,11 +2254,20 @@ fn ai_cancel() {
 }
 
 /// Runs `work` on the app's model runtime away from the IPC thread, only while the vault is
-/// unlocked, as activity for the idle lock when it starts and ends.
-async fn run_ai<T, F>(store: &Arc<VaultStore>, work: F) -> CommandResult<T>
+/// unlocked, held as activity for the idle lock until it ends (`held_for_answer`).
+async fn run_ai<T, F>(
+    store: &Arc<VaultStore>,
+    origin: idle::AnswerOrigin,
+    announce: impl FnOnce(Duration) + Send + 'static,
+    work: F,
+) -> CommandResult<T>
 where
     T: Send + 'static,
-    F: FnOnce(&'static model_runtime::ModelRuntime) -> Result<T, model_runtime::AiError>
+    F: FnOnce(
+            &'static model_runtime::ModelRuntime,
+            local_runner::Ticket,
+            local_runner::AnswerWatch,
+        ) -> Result<T, model_runtime::AiError>
         + Send
         + 'static,
 {
@@ -2066,18 +2275,67 @@ where
     if !cfg!(desktop) {
         return Err(ai_error(AiError::NotInstalled));
     }
-    if !matches!(store.status(), Ok(VaultStatus::Unlocked)) {
-        return Err(ai_error(AiError::Cancelled));
-    }
-    let idle = Arc::clone(store.idle());
-    idle.touch(Instant::now());
-    let result = tauri::async_runtime::spawn_blocking(move || work(model_runtime::app()))
+    let runtime = model_runtime::app();
+    let (hold, ticket) = store
+        .admit_answer(origin, model_runtime::ANSWER_LIMIT.ceiling, || {
+            runtime.reserve_answer()
+        })
+        .ok_or_else(|| ai_error(AiError::Cancelled))?;
+    held_for_answer(hold, announce, move |watch| work(runtime, ticket, watch))
         .await
-        .map_err(|_| ai_error(AiError::Failed))?;
-    if !matches!(result, Err(AiError::Cancelled)) {
-        idle.touch(Instant::now());
+        .map_err(ai_error)
+}
+
+/// The renderer's word that an answer was asked, with its own time limit: the renderer's
+/// automatic lock waits for it that long at most, as the native one does (D19).
+const AI_ANSWER_STARTED: &str = "ai-answer-started";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiAnswerStarted {
+    answer_id: Uuid,
+    limit_ms: u64,
+}
+
+fn announce_answer(
+    app: tauri::AppHandle,
+    answer_id: Uuid,
+) -> impl FnOnce(Duration) + Send + 'static {
+    move |limit| {
+        use tauri::Emitter;
+        let limit_ms = u64::try_from(limit.as_millis()).unwrap_or(u64::MAX);
+        let _ = app.emit(
+            AI_ANSWER_STARTED,
+            AiAnswerStarted {
+                answer_id,
+                limit_ms,
+            },
+        );
     }
-    result.map_err(ai_error)
+}
+
+/// Runs an AI answer's `work` off the IPC thread as activity for the idle lock (D19): touched
+/// when it starts and when it ends, and held in between, however it ends (an answer, an
+/// error, a cancel, the limit). Until the answer is asked (the helper may be starting), for
+/// at most the longest answer limit; from then on, for at most that answer's own limit, which
+/// `announce` is told too. A lock still locks at once: it stops the answer and drops the hold.
+async fn held_for_answer<T: Send + 'static>(
+    hold: idle::AnswerHold,
+    announce: impl FnOnce(Duration) + Send + 'static,
+    work: impl FnOnce(local_runner::AnswerWatch) -> Result<T, model_runtime::AiError> + Send + 'static,
+) -> Result<T, model_runtime::AiError> {
+    use model_runtime::AiError;
+    if !hold.is_current() {
+        return Err(AiError::Cancelled);
+    }
+    let watch = hold.watch(announce);
+    let result = tauri::async_runtime::spawn_blocking(move || work(watch))
+        .await
+        .map_err(|_| AiError::Failed)?;
+    if !hold.finish(!matches!(result, Err(AiError::Cancelled))) {
+        return Err(AiError::Cancelled);
+    }
+    result
 }
 
 /// An AI run's failure for the renderer: its code says which; the words are the panel's.
@@ -2343,20 +2601,28 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
     locked
 }
 
-/// Counts time in a native picker as activity until it closes, capped by the
-/// grace, on every path.
-struct ActivityHold<'a>(&'a IdleDeadline);
+/// Counts time as activity until it is dropped, on every path, for at most
+/// its cap: a native picker until it closes (the grace), or an AI answer
+/// until it ends (its time limit).
+struct ActivityHold<'a> {
+    idle: &'a IdleDeadline,
+    id: idle::HoldId,
+}
 
 impl<'a> ActivityHold<'a> {
     fn new(idle: &'a IdleDeadline) -> Self {
-        idle.hold_started(Instant::now());
-        Self(idle)
+        Self::capped(idle, idle::GRACE)
+    }
+
+    fn capped(idle: &'a IdleDeadline, cap: Duration) -> Self {
+        let id = idle.hold_started(Instant::now(), cap);
+        Self { idle, id }
     }
 }
 
 impl Drop for ActivityHold<'_> {
     fn drop(&mut self) {
-        self.0.hold_ended(Instant::now());
+        self.idle.hold_ended(self.id, Instant::now());
     }
 }
 
@@ -2530,6 +2796,7 @@ struct PortalConnectResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DeviceApprovalCheck {
+    capture: vault::SnapshotCapture,
     link: portal_link::LinkSummary,
     expires_in_ms: Option<u64>,
     issue: Option<PublicError>,
@@ -2593,6 +2860,7 @@ async fn vault_refresh_device_approval(
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
         .map(|check| DeviceApprovalCheck {
+            capture: check.capture,
             link: check.link,
             expires_in_ms: check.expires_in_ms,
             issue: check.issue.map(approval_check_issue),
@@ -4893,6 +5161,7 @@ pub fn run() {
                 Box::new(local_model::SystemMemory),
             );
             app.manage(models);
+            app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
             app.manage(Arc::new(ReceivedFiles::default()));
             // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
@@ -4916,8 +5185,11 @@ pub fn run() {
             runtime_info,
             ai_model_catalog,
             ai_model_status,
+            ai_models,
+            ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,
+            ai_model_add_active,
             ai_model_download,
             ai_model_remove,
             ai_summarize,
@@ -6198,6 +6470,218 @@ mod tests {
         assert!(idle.is_due(idle_past(Instant::now())));
     }
 
+    fn held_test_answer<T: Send + 'static>(
+        idle: &Arc<IdleDeadline>,
+        announce: impl FnOnce(Duration) + Send + 'static,
+        work: impl FnOnce(local_runner::AnswerWatch) -> Result<T, model_runtime::AiError>
+            + Send
+            + 'static,
+    ) -> impl std::future::Future<Output = Result<T, model_runtime::AiError>> {
+        let origin = idle.answer_origin();
+        let idle = Arc::clone(idle);
+        async move {
+            let origin = origin.ok_or(model_runtime::AiError::Cancelled)?;
+            let (hold, ()) = idle
+                .admit_answer(origin, model_runtime::ANSWER_LIMIT.ceiling, || ())
+                .ok_or(model_runtime::AiError::Cancelled)?;
+            held_for_answer(hold, announce, work).await
+        }
+    }
+
+    #[test]
+    fn ownership_a_vault_origin_cannot_admit_after_reunlock() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let old = store.answer_origin().unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(store
+            .admit_answer(old, model_runtime::ANSWER_LIMIT.ceiling, || panic!(
+                "old command reserved a new ticket"
+            ))
+            .is_none());
+        let current = store.answer_origin().unwrap();
+        let (hold, reserved) = store
+            .admit_answer(current, model_runtime::ANSWER_LIMIT.ceiling, || 7)
+            .unwrap();
+        assert_eq!(reserved, 7);
+        assert!(hold.is_current());
+        assert!(hold.finish(true));
+    }
+
+    #[test]
+    fn ownership_a_delayed_old_admission_cannot_hold_a_new_session() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let inside = Arc::clone(&idle);
+        // The old command passed its unlocked check, then waited before admission.
+        let old = held_test_answer(
+            &idle,
+            |_| (),
+            move |_watch| {
+                assert!(
+                    inside.is_due(idle_past(Instant::now())),
+                    "old admission must not hold the new session"
+                );
+                Ok(())
+            },
+        );
+        idle.disarm();
+        idle.arm(start);
+        assert!(matches!(
+            tauri::async_runtime::block_on(old),
+            Err(model_runtime::AiError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn ownership_old_watch_and_completion_cannot_touch_a_new_session() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let inside = Arc::clone(&idle);
+        let announced = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let heard = Arc::clone(&announced);
+        let result = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            move |_| {
+                heard.store(true, Ordering::SeqCst);
+            },
+            move |watch| {
+                inside.disarm();
+                inside.arm(start);
+                std::thread::sleep(Duration::from_millis(2));
+                watch(model_runtime::ANSWER_LIMIT.ceiling);
+                assert!(
+                    inside.is_due(idle_past(start)),
+                    "old watch must not postpone the new session"
+                );
+                Ok(())
+            },
+        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
+        assert!(
+            !announced.load(Ordering::SeqCst),
+            "old watch must not announce into a new session"
+        );
+        assert!(
+            idle.is_due(idle_past(start)),
+            "old completion must not restart the new deadline"
+        );
+    }
+
+    #[test]
+    fn ownership_a_new_answer_retires_the_old_answer_but_not_a_picker() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let _picker = ActivityHold::new(&idle);
+        let inside = Arc::clone(&idle);
+        let result = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            |_| (),
+            move |old_watch| {
+                tauri::async_runtime::block_on(held_test_answer(
+                    &inside,
+                    |_| (),
+                    |_new_watch| Ok(()),
+                ))
+                .unwrap();
+                old_watch(model_runtime::ANSWER_LIMIT.ceiling);
+                assert!(
+                    !inside.is_due(idle_past(start + Duration::from_secs(10 * 60))),
+                    "the picker must remain held"
+                );
+                assert!(
+                    inside.is_due(idle_past(start + idle::GRACE + Duration::from_secs(1))),
+                    "the superseded answer must not extend the picker cap"
+                );
+                Ok(())
+            },
+        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
+    }
+
+    #[test]
+    fn an_answer_holds_the_idle_lock_until_it_ends_never_past_its_own_limit() {
+        let armed_at = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(armed_at));
+        idle.arm(armed_at);
+        let (told, heard) = std::sync::mpsc::channel();
+        let inside = Arc::clone(&idle);
+        let limit = Duration::from_secs(6 * 60);
+        let answered = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            move |limit| told.send(limit).unwrap(),
+            move |watch| {
+                // While the helper starts: held, for at most the longest limit.
+                let starting = Instant::now();
+                assert!(!inside.is_due(idle_past(starting)));
+                assert!(inside.is_due(idle_past(starting + model_runtime::ANSWER_LIMIT.ceiling)));
+                // Asked, with its own limit: held for at most that long.
+                watch(limit);
+                let asked = Instant::now();
+                assert!(!inside.is_due(idle_past(asked)));
+                assert!(inside.is_due(idle_past(asked + limit)));
+                Ok("FAKE answer")
+            },
+        ));
+        assert_eq!(answered, Ok("FAKE answer"));
+        // The renderer is told the same limit, for its own deadline.
+        assert_eq!(heard.try_recv(), Ok(limit));
+        // Ended just now: the delay runs from here, and nothing holds it.
+        let ended = Instant::now();
+        assert!(!idle.is_due(ended + Duration::from_secs(15 * 60)));
+        assert!(idle.is_due(idle_past(ended)));
+    }
+
+    #[test]
+    fn an_answers_hold_ends_however_the_answer_ends() {
+        use model_runtime::AiError;
+        // An answer; a refusal; a cancel (the panel closed, a newer request);
+        // and a failure, as an answer stopped at its limit ends.
+        for ending in [
+            Ok(()),
+            Err(AiError::Memory),
+            Err(AiError::Cancelled),
+            Err(AiError::Failed),
+        ] {
+            let armed_at = Instant::now();
+            let idle = Arc::new(IdleDeadline::new(armed_at));
+            idle.arm(armed_at);
+            let result = tauri::async_runtime::block_on(held_test_answer(
+                &idle,
+                |_| (),
+                move |watch| {
+                    watch(model_runtime::ANSWER_LIMIT.ceiling);
+                    ending
+                },
+            ));
+            assert_eq!(result, ending);
+            assert!(idle.is_due(idle_past(Instant::now())), "{ending:?}");
+        }
+        // Before the answer is asked (a failed start), and a run that panics.
+        let armed_at = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(armed_at));
+        idle.arm(armed_at);
+        let refused = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            |_| panic!("no answer was asked"),
+            |_watch| Err::<(), _>(AiError::NotInstalled),
+        ));
+        assert_eq!(refused, Err(AiError::NotInstalled));
+        assert!(idle.is_due(idle_past(Instant::now())));
+        let panicked = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            |_| (),
+            |_watch| -> Result<(), AiError> { panic!("FAKE helper failure") },
+        ));
+        assert_eq!(panicked, Err(AiError::Failed));
+        assert!(idle.is_due(idle_past(Instant::now())));
+    }
+
     #[test]
     fn a_pick_is_used_once_and_cleared_by_a_lock() {
         let picks = PendingPicks::default();
@@ -6547,6 +7031,185 @@ mod tests {
             );
             assert!(build_script.contains(&format!("\"{command}\"")));
         }
+    }
+
+    #[test]
+    fn a_model_add_report_clears_only_the_run_it_reported() {
+        let active = Arc::new(ModelAddActive::default());
+        let mut running = ModelAddReport::new(&active, "download");
+        running.progress(5, 10);
+        // A second click, refused as busy before any progress, leaves it be.
+        drop(ModelAddReport::new(&active, "download"));
+        assert_eq!(
+            active.get(),
+            Some(ModelAddNow {
+                kind: "download",
+                done: 5,
+                index: None,
+                total: 10
+            })
+        );
+        drop(running);
+        assert_eq!(active.get(), None);
+    }
+
+    #[test]
+    fn model_selection_accepts_only_an_index_without_paths_or_unknown_fields() {
+        let chosen: ModelIndexRequest =
+            serde_json::from_value(serde_json::json!({"index": 1})).unwrap();
+        assert_eq!(chosen.index, 1);
+        for value in [
+            serde_json::json!({"index": -1}),
+            serde_json::json!({"index": 0.5}),
+            serde_json::json!({"index": "1"}),
+            serde_json::json!({"path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "sha256": "arbitrary"}),
+        ] {
+            assert!(serde_json::from_value::<ModelIndexRequest>(value).is_err());
+        }
+    }
+
+    #[test]
+    fn model_add_metadata_keeps_the_download_row_but_picker_checks_stay_global() {
+        let active = ModelAddActive::default();
+        let mut report = ModelAddReport::new(&active, "download");
+        report.index = Some(1);
+        report.progress(5, 10);
+        let snapshot = active.get().unwrap();
+        assert_eq!(snapshot.index, Some(1));
+        let encoded = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(encoded["index"], 1);
+        assert_eq!(encoded["done"], 5);
+        drop(ModelAddReport::new(&active, "check"));
+        assert_eq!(active.get(), Some(snapshot));
+        drop(report);
+        assert_eq!(active.get(), None);
+
+        let mut picked = ModelAddReport::new(&active, "check");
+        picked.progress(2, 20);
+        let check = serde_json::to_value(active.get().unwrap()).unwrap();
+        assert!(check.get("index").is_none());
+        let legacy = serde_json::to_value(ModelAddProgress {
+            done: 2,
+            total: 20,
+            index: None,
+        })
+        .unwrap();
+        assert_eq!(legacy, serde_json::json!({"done": 2, "total": 20}));
+        let indexed = serde_json::to_value(ModelAddProgress {
+            done: 5,
+            total: 10,
+            index: Some(1),
+        })
+        .unwrap();
+        assert_eq!(
+            indexed,
+            serde_json::json!({"done": 5, "total": 10, "index": 1})
+        );
+    }
+
+    #[test]
+    fn model_add_admission_stays_held_until_completion_is_emitted() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let active = Arc::new(ModelAddActive::default());
+        let (progress_tx, progress_rx) = mpsc::channel();
+        let (finish_work_tx, finish_work_rx) = mpsc::channel();
+        let (ending_tx, ending_rx) = mpsc::channel();
+        let (finish_emit_tx, finish_emit_rx) = mpsc::channel();
+        let worker_active = Arc::clone(&active);
+        let worker = std::thread::spawn(move || {
+            worker_active.run(
+                "download",
+                |report| {
+                    report.progress(5, 10);
+                    progress_tx.send(()).unwrap();
+                    finish_work_rx
+                        .recv_timeout(Duration::from_secs(10))
+                        .unwrap();
+                    ModelAddOutcome::of(local_model::ModelError::Network)
+                },
+                |ended| {
+                    assert_eq!(ended.outcome, "network");
+                    // Store::download has returned and the report has dropped,
+                    // but the old completion has not finished being emitted.
+                    assert_eq!(worker_active.get(), None);
+                    ending_tx.send(()).unwrap();
+                    finish_emit_rx
+                        .recv_timeout(Duration::from_secs(10))
+                        .unwrap();
+                },
+            )
+        });
+
+        progress_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        let progress = active.get();
+        assert_eq!(
+            active
+                .run(
+                    "check",
+                    |_| panic!("a Busy attempt must not start work or publish progress"),
+                    |_| panic!("a Busy attempt must not emit completion"),
+                )
+                .outcome,
+            "busy"
+        );
+        assert_eq!(active.get(), progress);
+
+        finish_work_tx.send(()).unwrap();
+        ending_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(
+            active
+                .run(
+                    "check",
+                    |_| panic!("the old completion must be emitted before a new add"),
+                    |_| panic!("a Busy attempt must not emit completion"),
+                )
+                .outcome,
+            "busy"
+        );
+        assert_eq!(active.get(), None);
+        finish_emit_tx.send(()).unwrap();
+        assert_eq!(worker.join().unwrap().outcome, "network");
+
+        let mut completed = false;
+        let next = active.run(
+            "check",
+            |report| {
+                report.progress(2, 20);
+                assert_eq!(
+                    active.get(),
+                    Some(ModelAddNow {
+                        kind: "check",
+                        index: None,
+                        done: 2,
+                        total: 20,
+                    })
+                );
+                ModelAddOutcome::of(local_model::ModelError::Cancelled)
+            },
+            |ended| {
+                assert_eq!(active.get(), None);
+                assert_eq!(ended.outcome, "cancelled");
+                completed = true;
+            },
+        );
+        assert_eq!(next.outcome, "cancelled");
+        assert!(completed);
+    }
+
+    #[test]
+    fn model_add_refused_before_progress_emits_no_completion() {
+        let active = ModelAddActive::default();
+        let outcome = active.run(
+            "download",
+            |_| ModelAddOutcome::of(local_model::ModelError::Busy),
+            |_| panic!("a store refusal before progress must not emit completion"),
+        );
+        assert_eq!(outcome.outcome, "busy");
+        assert_eq!(active.get(), None);
     }
 
     proptest! {
