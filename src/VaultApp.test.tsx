@@ -11722,9 +11722,19 @@ describe("clinic connection operations", () => {
         "Device linked. Its approval status is shown in Security, under Clinic documents.",
       ),
     ).toBeVisible();
+    // The result can render before clinic admission is released. Wait for
+    // the next attempt to be usable before typing its code.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Connect and request approval" }),
+      ).toBeEnabled(),
+    );
     // An error that arrives while a picker is open waits for its result.
     await user.type(
       screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    expect(screen.getByLabelText("Linking code")).toHaveValue(
       "01234567-89ABCDEFGK",
     );
     await act(async () => {
@@ -11734,6 +11744,8 @@ describe("clinic connection operations", () => {
           .closest("form")!,
       );
     });
+    // The third request must have entered before the picker is opened.
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(3));
     await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
     await user.click(
       screen.getByRole("button", { name: "Choose files to import" }),
