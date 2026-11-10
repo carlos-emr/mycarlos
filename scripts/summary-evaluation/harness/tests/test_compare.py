@@ -216,6 +216,16 @@ class RunTest(unittest.TestCase):
         self.assertEqual(decisions[1]["verdict"], "FAIL")
         self.assertEqual(decisions[1]["new_failures"], ["fake-letter"])
 
+    def test_a_last_page_read_after_a_gap_is_not_cut_but_marked(self):
+        doc = dict(fake_doc(), pages=[dict(index=i, text=TEXT if i == 0 else f"FAKE page {i}.") for i in range(4)])
+        entry = run_lines("E4", BASE)[1]
+        entry["result"].update(lastPage=1, tailPage=3)
+        scored = compare.score_document(doc, entry, "en")
+        self.assertEqual((scored["cut"], scored["gap"], scored["tail_page"]), (False, True, 3))
+        entry["result"].update(lastPage=1, tailPage=None)
+        scored = compare.score_document(doc, entry, "en")
+        self.assertEqual((scored["cut"], scored["gap"]), (True, False))
+
     def test_the_review_sheet_is_never_overwritten(self):
         _, out = self.score(run_lines("E1", BETTER))
         sheet = out / "review.csv"

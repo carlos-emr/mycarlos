@@ -265,6 +265,7 @@ def score_document(doc, entry, run_lang):
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
     flagged = [dict(index=i, flags=screen(s, run_lang, doc.get("facts", []))) for i, s in enumerate(sentences)]
     stats = (answer or {}).get("stats") or {}
+    last_index = max(p["index"] for p in doc["pages"])
     result.update(
         sentences=len(sentences),
         located=sum(1 for s in sentences if s.get("located")),
@@ -282,8 +283,13 @@ def score_document(doc, entry, run_lang):
         capped=stats.get("capped"),
         answer_hash=stats.get("answerHash"),
         last_page=(answer or {}).get("lastPage"),
-        cut=bool(answer and (answer.get("lastPageCut")
-                              or answer.get("lastPage") != max(p["index"] for p in doc["pages"]))),
+        tail_page=(answer or {}).get("tailPage"),
+        # The end was read: the pages ran to the last one, or the last one was read after a gap
+        # (a variant that keeps room for it). "cut": the end, or the start of page 1 only.
+        cut=bool(answer and (answer.get("lastPageCut") or last_index not in
+                              (answer.get("lastPage"), answer.get("tailPage")))),
+        gap=bool(answer and answer.get("tailPage") is not None
+                 and answer.get("tailPage") != answer.get("lastPage")),
         answer_limit_ms=(answer or {}).get("answerLimitMs"),
     )
     return result
@@ -336,6 +342,7 @@ def summarize_run(scores, wrong):
         located_pct=round(100 * sum(s["located"] for s in present) / sentences, 1) if sentences else None,
         sentences=sentences, flags=sum(s["flag_count"] for s in present),
         capped=sum(1 for s in present if s.get("capped")), cut=sum(1 for s in present if s.get("cut")),
+        gap=sum(1 for s in present if s.get("gap")),
         median_wall_ms=statistics.median(walls) if walls else None,
         reviewed_wrong=wrong,
     )
@@ -383,21 +390,23 @@ def table(labels, docs, all_scores, summaries, decisions):
                 cells.append("failed" + (" (time)" if s.get("timed_out") else ""))
             else:
                 action = f" · act {s['action_found']}/{s['action_total']}" if s["action_total"] else ""
-                marks = (" · capped" if s.get("capped") else "") + (" · cut" if s.get("cut") else "")
+                marks = ((" · capped" if s.get("capped") else "") + (" · cut" if s.get("cut") else "")
+                         + (" · gap" if s.get("gap") else ""))
                 cells.append(f"{s['required_found']}/{s['required_total']}{action} · {s['sentences']} s · "
                              f"{s['located']} q · {s['flag_count']} fl · {(s['wall_ms'] or 0) / 1000:.0f} s{marks}")
         lines.append(f"| {doc_id} | " + " | ".join(cells) + " |")
     lines.append("")
-    lines.append("Cells: must-haves found/total · patient actions found/total · sentences · quotes found · flags · seconds.")
+    lines.append("Cells: must-haves found/total · patient actions found/total · sentences · quotes found · flags · seconds"
+                 " (capped: stopped at the token cap; cut: the end was not read; gap: the last page read after a gap).")
     lines.append("")
-    lines.append("| Run | must-haves | actions | quotes found | flags | median s | capped | cut | failed | reviewed wrong | verdict |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Run | must-haves | actions | quotes found | flags | median s | capped | cut | gap | failed | reviewed wrong | verdict |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for label, summary, decision in zip(labels, summaries, decisions):
         wrong = "not reviewed" if summary["reviewed_wrong"] is None else summary["reviewed_wrong"]
         median = "" if summary["median_wall_ms"] is None else f"{summary['median_wall_ms'] / 1000:.0f}"
         lines.append(f"| {label} | {summary['required_found']}/{summary['required_total']} | "
                      f"{summary['action_found']}/{summary['action_total']} | {summary['located_pct']}% | "
-                     f"{summary['flags']} | {median} | {summary['capped']} | {summary['cut']} | "
+                     f"{summary['flags']} | {median} | {summary['capped']} | {summary['cut']} | {summary['gap']} | "
                      f"{summary['failed']} | {wrong} | {decision['verdict'] if decision else 'baseline'} |")
     for label, decision in zip(labels, decisions):
         if decision:
