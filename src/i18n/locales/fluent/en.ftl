@@ -1793,6 +1793,8 @@ portal-codeSubmit = Confirm code
 
 portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
 
+portal-linkAnother = Link another clinic
+
 ai-summary-button = Summary
 
 ai-summary-title = Summary in plain words

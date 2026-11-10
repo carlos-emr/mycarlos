@@ -1645,6 +1645,8 @@ portal-codeSubmit = 確認驗證碼
 
 portal-codeSubmitted = 驗證碼已送出。正在等待診所確認此裝置。如果 10 分鐘內仍未確認，請重新申請。
 
+portal-linkAnother = 連結另一家診所
+
 ai-summary-button = 摘要
 
 ai-summary-title = 淺白易懂的摘要

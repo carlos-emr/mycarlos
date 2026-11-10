@@ -370,6 +370,13 @@ describe("Notices after the first clinic link", () => {
       );
       linkForm([], [link]);
       const user = await submitLink();
+      // A clinic is linked now: the form opens from Link another clinic
+      // (#145), once the link work has ended.
+      const linkAnother = await screen.findByRole("button", {
+        name: "Link another clinic",
+      });
+      await waitFor(() => expect(linkAnother).toBeEnabled());
+      await user.click(linkAnother);
       const box = screen.getByLabelText(humanText("Linking code"));
       await waitFor(() => expect(box).toBeEnabled());
       await waitFor(() =>
@@ -383,7 +390,15 @@ describe("Notices after the first clinic link", () => {
       // A frame for any focus move the closing asked for.
       await new Promise((resolve) => requestAnimationFrame(resolve));
       await user.keyboard("-CODE");
-      expect(screen.queryByRole("dialog")).toBeNull();
+      // No notices dialog; the patient's own Link another clinic stays open.
+      expect(
+        screen.queryByRole("dialog", {
+          name: humanText("Notices from your clinic"),
+        }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("dialog", { name: "Link another clinic" }),
+      ).toBeVisible();
       expect(document.activeElement).toBe(box);
       expect(box).toHaveValue("FAKE-CODE");
     },
@@ -392,6 +407,11 @@ describe("Notices after the first clinic link", () => {
   it("is not offered for a second clinic, nor when the link fails", async () => {
     const second = { ...link, id: "fake-link-2", clinicName: "FAKE Clinic 2" };
     linkForm([link], [link, second]);
+    // A clinic is linked: the form opens from Link another clinic (#145), and
+    // sending closes that dialog.
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Link another clinic" }));
     await submitLink();
     expect(screen.queryByRole("dialog")).toBeNull();
     document.body.innerHTML = "";

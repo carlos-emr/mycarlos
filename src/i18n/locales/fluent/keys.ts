@@ -810,6 +810,7 @@ export const MESSAGE_KEYS = [
   "portal.codeRefused",
   "portal.codeSubmit",
   "portal.codeSubmitted",
+  "portal.linkAnother",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
@@ -1953,6 +1954,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.codeRefused": "portal-codeRefused",
   "portal.codeSubmit": "portal-codeSubmit",
   "portal.codeSubmitted": "portal-codeSubmitted",
+  "portal.linkAnother": "portal-linkAnother",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
   "ai.summary.button": "ai-summary-button",
@@ -3113,6 +3115,7 @@ export interface MessageArgsByKey {
   "portal.codeRefused": undefined;
   "portal.codeSubmit": undefined;
   "portal.codeSubmitted": undefined;
+  "portal.linkAnother": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;

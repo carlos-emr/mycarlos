@@ -1829,6 +1829,8 @@ portal-codeSubmit = Confirmer le code
 
 portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
 
+portal-linkAnother = Associer une autre clinique
+
 ai-summary-button = Résumé
 
 ai-summary-title = Résumé en mots simples

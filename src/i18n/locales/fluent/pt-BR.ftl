@@ -1829,6 +1829,8 @@ portal-codeSubmit = Confirmar código
 
 portal-codeSubmitted = Código enviado. Aguardando sua clínica confirmar este dispositivo. Se ele não for confirmado em 10 minutos, peça novamente.
 
+portal-linkAnother = Vincular outra clínica
+
 ai-summary-button = Resumo
 
 ai-summary-title = Resumo em palavras simples
