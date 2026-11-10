@@ -285,6 +285,8 @@ pub(crate) enum AiError {
     Memory,
     /// The model is being added or removed.
     Busy,
+    /// The model's file could not be read from this computer's disk.
+    Storage,
     /// The vault locked, or the reader left: nothing to show.
     Cancelled,
     /// Anything else: the helper could not start, answer, or answer in time, or the request
@@ -299,6 +301,7 @@ impl AiError {
             Self::Damaged => "aiDamaged",
             Self::Memory => "aiMemory",
             Self::Busy => "aiBusy",
+            Self::Storage => "aiStorage",
             Self::Cancelled => "aiCancelled",
             Self::Failed => "aiFailed",
         }
@@ -424,7 +427,8 @@ impl ModelRuntime {
                 unavailable = Some(match reason {
                     Unavailable::NotInstalled => AiError::NotInstalled,
                     Unavailable::Damaged => AiError::Damaged,
-                    Unavailable::Unsupported | Unavailable::Storage => AiError::Failed,
+                    Unavailable::Unsupported => AiError::Failed,
+                    Unavailable::Storage => AiError::Storage,
                     Unavailable::Busy => AiError::Busy,
                     Unavailable::Memory => AiError::Memory,
                 });
@@ -1029,7 +1033,7 @@ mod tests {
             (Unavailable::Busy, AiError::Busy),
             (Unavailable::NotInstalled, AiError::NotInstalled),
             (Unavailable::Memory, AiError::Memory),
-            (Unavailable::Storage, AiError::Failed),
+            (Unavailable::Storage, AiError::Storage),
             (Unavailable::Unsupported, AiError::Failed),
         ] {
             let (bad, asked) = fake(Some(GIB), Err(reason));
