@@ -9,10 +9,11 @@ import { AiSettings } from "./AiSettings";
 import type { ReaderAi } from "./ReaderAiPanel";
 import type { KeptAnswers } from "../ai/kept";
 import type { SourceSpan } from "../documentText";
-import { notInstalledModel } from "../ai/localModel";
+import { nativeLocalModel, notInstalledModel } from "../ai/localModel";
 import { LOCALES, translate } from "../i18n";
 import { ModelCancelled, type LocalModel } from "../ai/types";
 import {
+  FAKE_MODEL,
   fakeDocumentText,
   fakeLocalModel,
   type FakeLocalModel,
@@ -963,6 +964,82 @@ describe("the reader's AI helper", () => {
       "The AI helper could not finish. Try again.",
     );
   });
+
+  // Refused as the native side refuses (lib.rs ai_error): a code and the key
+  // of its words, passed on by the real bridge.
+  const refusingModel = (code: string, messageKey: string) => {
+    const refusal = { code, messageKey, message: "FAKE native words" };
+    return nativeLocalModel({
+      aiModelStatus: async () => ({ state: "installed", model: FAKE_MODEL }),
+      aiSummarize: () => Promise.reject(refusal),
+      aiExplain: () => Promise.reject(refusal),
+      aiCancel: async () => undefined,
+    });
+  };
+  const OWN_WORDS = [
+    [
+      "aiStorage",
+      "ai.error.storage",
+      "The AI helper's model could not be read from this computer. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.",
+    ],
+    [
+      "aiMemory",
+      "ai.error.memory",
+      "There isn't enough free memory for the AI helper right now. Close some other programs, then try again.",
+    ],
+    [
+      "aiBusy",
+      "ai.error.busy",
+      "The AI helper's model is being added or removed. Try again when that is done.",
+    ],
+  ] as const;
+
+  it.each(OWN_WORDS)(
+    "says what stopped a summary refused with %s, in its own words",
+    async (code, messageKey, words) => {
+      renderReader(refusingModel(code, messageKey));
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      expect((await screen.findByRole("alert")).textContent).toBe(words);
+    },
+  );
+
+  it.each(OWN_WORDS)(
+    "says what stopped an explanation refused with %s, in its own words",
+    async (code, messageKey, words) => {
+      renderReader(refusingModel(code, messageKey));
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Explain a term" }));
+      await user.type(
+        screen.getByRole("textbox", { name: "Word or phrase" }),
+        "eGFR",
+      );
+      await user.click(screen.getByRole("button", { name: "Explain" }));
+      expect((await screen.findByRole("alert")).textContent).toBe(words);
+    },
+  );
+
+  // Only these codes choose the words: any other refusal, even one naming
+  // other words, says the helper could not finish.
+  it.each([
+    ["aiFailed", "ai.failed"],
+    ["invalid", "ai.error.storage"],
+  ])(
+    "says the helper could not finish when refused with %s",
+    async (code, messageKey) => {
+      renderReader(refusingModel(code, messageKey));
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      expect((await screen.findByRole("alert")).textContent).toBe(
+        "The AI helper could not finish. Try again.",
+      );
+    },
+  );
 
   it("explains words selected in the page text, with their sentence", async () => {
     const model = fakeLocalModel({ explanation: "FAKE: a salt in the blood." });
