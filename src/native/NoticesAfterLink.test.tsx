@@ -342,9 +342,17 @@ describe("Notices after the first clinic link", () => {
     await waitFor(() => expect(document.activeElement).toBe(heading));
   });
 
-  it.each([
-    ["notices are unsupported", true],
-    ["their status cannot be read", false],
+  it.each<[string, Status | null]>([
+    [
+      "notices are unsupported",
+      { ...offStatus, supported: false, permission: "unavailable" },
+    ],
+    [
+      "both are already on",
+      { ...offStatus, enabled: true, automaticChecksEnabled: true },
+    ],
+    // No answer: the status cannot be read.
+    ["their status cannot be read", null],
   ])(
     "leaves the focus where the patient put it when nothing is offered, as when %s",
     async (_why, answered) => {
@@ -356,11 +364,7 @@ describe("Notices after the first clinic link", () => {
             if (command !== "vault_notification_status") return resolve({});
             answer = () =>
               answered
-                ? resolve({
-                    ...offStatus,
-                    supported: false,
-                    permission: "unavailable",
-                  })
+                ? resolve({ ...answered })
                 : reject(new Error("FAKE no native side"));
           }),
       );

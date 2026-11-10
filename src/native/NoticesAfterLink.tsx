@@ -23,7 +23,7 @@ type NoticeStatus = {
 export function NoticesAfterLink({
   onClose,
 }: {
-  onClose: (shown: boolean) => void;
+  onClose: (wasShown: boolean) => void;
 }) {
   const { t, locale } = useI18n();
   const [offer, setOffer] = useState<"checking" | "offer" | "none">("checking");
