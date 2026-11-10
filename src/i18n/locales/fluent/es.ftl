@@ -1556,7 +1556,7 @@ portal-connecting = Conectando y solicitando la aprobación de la clínica…
 
 portal-errorBusy = Hay otra operación con la clínica en curso. Espere a que termine y vuelva a intentarlo.
 
-portal-linkedApprovalIssue = Dispositivo vinculado, pero no se pudo confirmar la solicitud de aprobación. El estado del dispositivo, en la página Seguridad, sección Documentos de la clínica, indica qué hacer a continuación.
+portal-linkedApprovalIssue = Dispositivo vinculado. Su estado de aprobación, en la página Seguridad, sección Documentos de la clínica, indica qué hacer a continuación.
 
 portal-retryApproval = Reintentar la solicitud de aprobación guardada
 
@@ -1764,7 +1764,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos también 
 
 portal-checkAgain = Para buscar de nuevo, elija { $button }.
 
-portal-unlockCheckConsent = Cada vez que desbloquee su bóveda, myCarlos se comunica con el portal de la clínica de cada dispositivo vinculado para consultar novedades sobre la aprobación y buscar documentos nuevos.
+portal-unlockCheckConsent = Después de cada desbloqueo, myCarlos se comunica con los portales de las clínicas vinculadas para consultar novedades sobre la aprobación y buscar documentos nuevos si la clínica ha aprobado el dispositivo o una solicitud de aprobación sigue abierta.
 
 portal-unlockChecked = Se buscaron documentos nuevos de la clínica tras desbloquear la bóveda.
 
@@ -1819,9 +1819,9 @@ ai-explain-title = Explicar un término
 
 ai-notInstalled-title = El asistente de IA todavía no está en este equipo
 
-ai-notInstalled-body = Cuando esté instalado, le explicará sus documentos en palabras sencillas con un modelo de IA que funciona en este equipo. En Preferencias puede descargar el modelo o agregar un archivo de modelo que ya tenga.
+ai-notInstalled-body = Cuando esté instalado, le explicará sus documentos en palabras sencillas con un modelo de IA que funciona en este equipo. En Configuración, en Asistente de IA, puede descargar el modelo o agregar un archivo de modelo que ya tenga.
 
-ai-notInstalled-openPreferences = Abrir Preferencias
+ai-notInstalled-openPreferences = Abrir la configuración del asistente de IA
 
 aiHelper-resultLabel = Escrito por IA; puede contener errores. Consulte con su médico.
 
@@ -1841,9 +1841,11 @@ ai-explain-submit = Explicar
 
 ai-preferences-title = Asistente de IA
 
-ai-preferences-body = Explica sus documentos en palabras sencillas con un modelo de IA que funciona en este equipo. Puede descargar el modelo o agregar un archivo de modelo que ya tenga; permanece en este equipo.
+ai-preferences-body = Explica tus documentos con palabras sencillas mediante un modelo de IA que funciona en este equipo. Descarga uno de los modelos de abajo o añade un archivo correspondiente que ya tengas. Los modelos se quedan en este equipo.
 
 ai-preferences-notInstalled = No instalado
+
+ai-settings-subtitle = Cómo funciona el asistente de IA en este equipo
 
 ai-model-add = Agregar un archivo de modelo…
 
@@ -1873,7 +1875,7 @@ ai-model-unsupportedCpu = El procesador de este equipo no es compatible con el a
 
 ai-model-unsupportedPlatform = El asistente de IA todavía no está disponible en este tipo de equipo.
 
-ai-model-refusedList = Este archivo no es uno que myCarlos acepte. Elija el archivo de modelo indicado arriba.
+ai-model-refusedList = myCarlos no acepta este archivo. Elige uno de los archivos de modelo indicados arriba.
 
 ai-model-refusedHash = Este no es el archivo esperado. Descárguelo de nuevo y agregue la copia nueva.
 
@@ -1891,6 +1893,14 @@ ai-model-downloadNote = Descarga un archivo ({ $size } MB), una sola vez, desde 
 
 ai-model-downloading = Descargando y comprobando… { $done } de { $total } MB
 
+ai-model-progressName = Descarga del modelo
+
+ai-model-progressValue = { $percent }, { $done } de { $total } MB
+
+ai-model-stillDownloading = El modelo todavía se está descargando.
+
+ai-model-stillChecking = El archivo del modelo todavía se está comprobando.
+
 ai-model-refusedNetwork = La descarga no terminó. Compruebe su conexión a internet e inténtelo de nuevo.
 
 ai-model-refusedUnavailable = El modelo no está disponible ahora en su dirección. Inténtelo más tarde o agregue un archivo que ya tenga.
@@ -1898,6 +1908,15 @@ ai-model-refusedUnavailable = El modelo no está disponible ahora en su direcci�
 native-filter-models = Archivos de modelo
 
 ai-working = El asistente de IA está trabajando…
+
+ai-workingLong = Con un documento largo, esto puede tardar varios minutos.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Lleva { $minutes } minuto trabajando.
+    [many] Lleva { $minutes } de minutos trabajando.
+    *[other] Lleva { $minutes } minutos trabajando.
+    }
 
 ai-summary-ready = El resumen está listo.
 
@@ -2109,12 +2128,53 @@ notifications-error = No se pudo guardar este ajuste. Los avisos están desactiv
 notifications-unavailable = Los avisos de documentos no están disponibles. Abra myCarlos normalmente para consultar sus documentos.
 notifications-helpAutomatic = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
 notifications-autoAllow = Buscar documentos de las clínicas automáticamente mientras la bóveda esté desbloqueada
+notifications-autoNeedsNotices = Primero permita los avisos de llegada de documentos para activar esta opción.
 notifications-autoHelp = Con su permiso, myCarlos consulta los enlaces guardados y aprobados de las clínicas mientras esta aplicación está abierta y la bóveda está desbloqueada, con al menos dos minutos entre intentos. Las consultas pueden continuar si Windows bloquea los avisos. Bloquear la bóveda o cerrar la aplicación detiene las consultas posteriores.
 notifications-autoPaused = Se necesita una consulta manual para continuar las consultas automáticas. Abra Documentos de la clínica y elija Buscar documentos nuevos.
 notifications-checkBusy = Se está deteniendo una consulta de documentos. Vuelva a elegir Buscar documentos nuevos dentro de un momento.
+noticesStep-title = Avisos de su clínica
+noticesStep-intro = Su clínica está vinculada. myCarlos puede avisarle cuando llegue un documento nuevo. No se activa nada a menos que usted lo marque.
+noticesStep-later = Puede cambiarlos cuando quiera en { $settings }, en { $preferences }: { $notices }.
+noticesStep-done = Listo
+noticesStep-notNow = Ahora no
 
 ai-summary-again = Resumir de nuevo
 
 ai-keepFailed = myCarlos no pudo guardar esta respuesta con el documento. Se sigue mostrando aquí.
 
 ai-keepFull = Este documento ya guarda el máximo de respuestas de la IA. Las respuestas nuevas se muestran, pero no se guardan.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modelos en este equipo
+
+ai-models-group = Modelo en uso
+
+ai-models-inUse = En uso
+
+ai-models-installed = Instalado
+
+ai-models-addedByYou = Añadido por ti
+
+ai-models-notDownloaded = Sin descargar
+
+ai-models-downloading = Descargando
+ai-models-installing = Instalando
+
+ai-models-download = Descargar
+
+ai-models-remove = Eliminar
+
+ai-models-help = El modelo marcado En uso redacta los resúmenes y las explicaciones. Elegir otro modelo detiene la respuesta que se está escribiendo.
+
+ai-models-loading = Leyendo la lista de modelos…
+
+ai-models-loadFailed = No se pudo leer la lista de modelos. Inténtalo de nuevo.
+
+ai-models-retry = Volver a leer la lista de modelos
+
+ai-models-starting = Iniciando la descarga…
+
+ai-models-picking = Elige un archivo de modelo para añadir.
+
+ai-models-changed = Se cambió el modelo en uso
