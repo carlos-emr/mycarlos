@@ -3886,6 +3886,21 @@ button:disabled,
   overflow-wrap: anywhere;
   font-family: monospace;
 }
+/* Clinic documents lists working links only; earlier attempts and each card's device code and
+   fingerprint wait behind a button and a disclosure. */
+.portal-device-details {
+  margin-block: 0.75rem;
+}
+.portal-device-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.portal-device-details[open] > summary {
+  margin-bottom: 0.5rem;
+}
+.portal-earlier-toggle {
+  margin-block: 0.25rem 1rem;
+}
 .portal-address {
   overflow-wrap: anywhere;
 }
