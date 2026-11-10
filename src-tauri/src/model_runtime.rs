@@ -8,10 +8,11 @@
 //! their sizes, the term and its sentence, and the language.
 
 use crate::local_runner::{
-    self, check_budget, Budget, MemoryProbe, ModelInfo, Page, Runner, RunnerConfig, RunnerError,
-    Sentence, SummaryRequest,
+    self, check_budget, AnswerLimit, AnswerWatch, Budget, MemoryProbe, ModelInfo, Page, Runner,
+    RunnerConfig, RunnerError, Sentence, SummaryRequest,
 };
 use crate::model_helper;
+use crate::vault::{AiResultInput, AiTool};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
@@ -27,8 +28,19 @@ pub(crate) const MAX_TERM_CHARS: usize = 200;
 pub(crate) const MAX_CONTEXT_CHARS: usize = 2_000;
 /// The longest wait for the helper's hello once started: loading 2 to 4 GB.
 pub(crate) const START_TIMEOUT: Duration = Duration::from_secs(120);
-/// The longest wait for one answer.
-pub(crate) const ANSWER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// How long one answer may take (#72), scaled to its prompt: the prompt read at about 6.7
+/// tokens a second and an answer of up to 400 tokens for a summary (an explanation's 220-token
+/// cap) at about 1.7 a second, after 30 s. Never under 5 minutes, never over 20. Measured on a
+/// 4-core test computer with other builds running (5 Nov 2026), Qwen3.5 4B read 8.5 to 12
+/// prompt tokens a second and wrote 2.1 to 3.0; the prompt estimate also runs long, so the
+/// limit was about twice the time taken.
+pub(crate) const ANSWER_LIMIT: AnswerLimit = AnswerLimit {
+    fixed: Duration::from_secs(30),
+    per_prompt_token: Duration::from_millis(150),
+    per_answer_token: Duration::from_millis(600),
+    floor: Duration::from_secs(5 * 60),
+    ceiling: Duration::from_secs(20 * 60),
+};
 /// Above the model's own size: its cache at the context used, and the runtime's memory.
 const WORKING_BYTES: u64 = 3 * 512 * 1024 * 1024;
 /// The helper's memory limit above the model's size.
@@ -42,6 +54,8 @@ pub(crate) struct Verified {
     pub(crate) path: PathBuf,
     pub(crate) info: ModelInfo,
     pub(crate) size_bytes: u64,
+    /// How the helper puts the conversation to this model (from the model's list entry).
+    pub(crate) chat_format: model_helper::ChatFormat,
 }
 
 /// Why no model can be had now.
@@ -90,6 +104,13 @@ impl ModelSource for NoModel {
 pub(crate) struct SummarizeRequest {
     pub(crate) pages: Vec<Page>,
     pub(crate) lang: String,
+    /// The document, and the text ticket its pages came with (`vault_document_text`). With
+    /// both, the answer is kept natively for that document's save (D2); with neither, it is
+    /// only returned.
+    #[serde(default)]
+    pub(crate) record_id: Option<uuid::Uuid>,
+    #[serde(default)]
+    pub(crate) ticket: Option<uuid::Uuid>,
 }
 
 /// An explain request from the renderer.
@@ -99,6 +120,145 @@ pub(crate) struct ExplainRequest {
     pub(crate) term: String,
     pub(crate) context: String,
     pub(crate) lang: String,
+    /// The document the term is in: with it, the answer is kept for that document's save.
+    #[serde(default)]
+    pub(crate) record_id: Option<uuid::Uuid>,
+}
+
+/// A summary sentence's place in the document, as the reader found its quote (`SourceSpan` in
+/// src/ai/types.ts): the page's index and the span on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SourceSpan {
+    pub(crate) page: u32,
+    pub(crate) start: u32,
+    pub(crate) end: u32,
+}
+
+/// An answer as the runtime gave it, kept natively for the document's save (#212). The save
+/// names it by document, tool, language and term; page code adds only a summary's source
+/// places, so the words, the model and the flags the vault keeps are the runtime's own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum KeptAnswer {
+    Summary {
+        sentences: Vec<Sentence>,
+        /// The last page read, by its number from 1 (0 when none was), as the reader says it.
+        last_page: u32,
+        /// The index (from 0) of the last page the model read: no source lies past it.
+        last_index: u32,
+        /// The summary covers only part of the document: pages were left out of the text,
+        /// the model read fewer than were sent, or only the start of the last one.
+        partial: bool,
+        /// Some page had no text, or was cut or refused when the text was read.
+        pages_missing: bool,
+        model: ModelInfo,
+        lang: String,
+        /// When it was written, in ms since the epoch.
+        created_at: u64,
+    },
+    Explain {
+        /// The term as asked, trimmed.
+        term: String,
+        /// The sentence the term was found in, as the reader sent it.
+        context: String,
+        text: String,
+        model: ModelInfo,
+        lang: String,
+        created_at: u64,
+    },
+}
+
+impl KeptAnswer {
+    /// What the vault is told about this answer, and its bytes as the reader keeps them
+    /// (`SummaryResult` / `ExplainResult` in src/ai/types.ts, as src/ai/localModel.ts builds
+    /// them), with `sources` for a summary's sentences. None when the sources do not fit the
+    /// answer: a summary needs one per sentence (a place or none), each on a page the model
+    /// read; an explanation takes none.
+    pub(crate) fn content(
+        &self,
+        sources: Option<&[Option<SourceSpan>]>,
+    ) -> Option<(AiResultInput, String)> {
+        let (input, value) = match self {
+            KeptAnswer::Summary {
+                sentences,
+                last_page,
+                last_index,
+                partial,
+                pages_missing,
+                model,
+                lang,
+                created_at,
+            } => {
+                let sources = sources?;
+                if sources.len() != sentences.len()
+                    || sources.iter().flatten().any(|span| span.page > *last_index)
+                {
+                    return None;
+                }
+                let sentences: Vec<_> = sentences
+                    .iter()
+                    .zip(sources)
+                    .map(|(sentence, source)| {
+                        serde_json::json!({
+                            "text": sentence.text,
+                            "quote": sentence.quote,
+                            "source": source,
+                        })
+                    })
+                    .collect();
+                (
+                    AiResultInput {
+                        tool: AiTool::Summary,
+                        lang: lang.clone(),
+                        term: None,
+                        model_name: model.name.clone(),
+                        model_sha256: model.sha256.clone(),
+                    },
+                    serde_json::json!({
+                        "tool": "summary",
+                        "sentences": sentences,
+                        "model": model,
+                        "lang": lang,
+                        "createdAt": created_at,
+                        "partial": partial,
+                        "lastPage": last_page,
+                        "pagesMissing": pages_missing,
+                    }),
+                )
+            }
+            KeptAnswer::Explain {
+                term,
+                context,
+                text,
+                model,
+                lang,
+                created_at,
+            } => {
+                if sources.is_some() {
+                    return None;
+                }
+                (
+                    AiResultInput {
+                        tool: AiTool::Explain,
+                        lang: lang.clone(),
+                        term: Some(term.clone()),
+                        model_name: model.name.clone(),
+                        model_sha256: model.sha256.clone(),
+                    },
+                    serde_json::json!({
+                        "tool": "explain",
+                        "term": term,
+                        "context": context,
+                        "text": text,
+                        "model": model,
+                        "lang": lang,
+                        "createdAt": created_at,
+                    }),
+                )
+            }
+        };
+        Some((input, value.to_string()))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -242,7 +402,7 @@ impl ModelRuntime {
 
     /// Starts the helper if it is not running: the memory first, from the model's listed size,
     /// then the model verified again, then the start.
-    fn start(&self) -> Result<(), AiError> {
+    fn start(&self, ticket: crate::local_runner::Ticket) -> Result<(), AiError> {
         let mut unavailable = None;
         let prepare = || {
             let size = self.source.installed_size().ok_or_else(|| {
@@ -275,7 +435,7 @@ impl ModelRuntime {
                 RunnerError::NotRunning
             })
         };
-        let started = self.runner.start_with(&*self.probe, prepare);
+        let started = self.runner.start_for(ticket, &*self.probe, prepare);
         match (started, unavailable) {
             (Ok(_), _) => Ok(()),
             (Err(_), Some(error)) => Err(error),
@@ -283,12 +443,30 @@ impl ModelRuntime {
         }
     }
 
-    /// A summary of the pages that fit, in the language asked.
-    pub(crate) fn summarize(&self, request: SummarizeRequest) -> Result<SummaryResult, AiError> {
+    /// A summary of the pages that fit, in the language asked. `watch` is told the answer's
+    /// own time limit as it is asked.
+    #[cfg(test)]
+    pub(crate) fn summarize(
+        &self,
+        request: SummarizeRequest,
+        watch: AnswerWatch,
+    ) -> Result<SummaryResult, AiError> {
+        self.summarize_for(self.reserve_answer(), request, watch)
+    }
+
+    pub(crate) fn reserve_answer(&self) -> crate::local_runner::Ticket {
+        self.runner.ticket()
+    }
+
+    pub(crate) fn summarize_for(
+        &self,
+        ticket: crate::local_runner::Ticket,
+        request: SummarizeRequest,
+        watch: AnswerWatch,
+    ) -> Result<SummaryResult, AiError> {
         check_summary(&request)?;
-        // A newer request ends an older one still running.
-        let ticket = self.runner.ticket();
-        self.start()?;
+        self.runner.watch_answer(ticket, watch);
+        self.start(ticket)?;
         let summary = self
             .runner
             .summarize(
@@ -309,11 +487,17 @@ impl ModelRuntime {
         })
     }
 
-    /// What a term means in its sentence, in the language asked.
-    pub(crate) fn explain(&self, request: ExplainRequest) -> Result<ExplainResult, AiError> {
+    /// What a term means in its sentence, in the language asked. `watch` is told the answer's
+    /// own time limit as it is asked.
+    pub(crate) fn explain_for(
+        &self,
+        ticket: crate::local_runner::Ticket,
+        request: ExplainRequest,
+        watch: AnswerWatch,
+    ) -> Result<ExplainResult, AiError> {
         check_explain(&request)?;
-        let ticket = self.runner.ticket();
-        self.start()?;
+        self.runner.watch_answer(ticket, watch);
+        self.start(ticket)?;
         let (text, model) = self
             .runner
             .explain(ticket, request.term.trim(), &request.context, &request.lang)
@@ -353,11 +537,12 @@ fn idle_config() -> RunnerConfig {
         args: Vec::new(),
         needed_bytes: u64::MAX,
         start_timeout: START_TIMEOUT,
-        answer_timeout: ANSWER_TIMEOUT,
+        answer_limit: ANSWER_LIMIT,
         memory_limit_bytes: None,
         expected_model: None,
         model_file: None,
         sandboxed: true,
+        generation_threads: None,
     }
 }
 
@@ -383,8 +568,10 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
     } else {
         model_helper::ModelFile::Descriptor(model_helper::MODEL_FD)
     };
+    let threads = threads();
     let args = model_helper::arguments(&model_helper::Settings {
-        threads: threads(),
+        chat_format: verified.chat_format,
+        threads,
         model,
         name: verified.info.name.clone(),
         sha256: verified.info.sha256.clone(),
@@ -394,11 +581,12 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
         args,
         needed_bytes: needed_after_verifying(verified.size_bytes),
         start_timeout: START_TIMEOUT,
-        answer_timeout: ANSWER_TIMEOUT,
+        answer_limit: ANSWER_LIMIT,
         memory_limit_bytes: Some(verified.size_bytes.saturating_add(LIMIT_BYTES)),
         expected_model: Some(verified.info.clone()),
         model_file: Some(Arc::new(file)),
         sandboxed: true,
+        generation_threads: Some(threads),
     })
 }
 
@@ -465,6 +653,8 @@ mod tests {
         SummarizeRequest {
             pages,
             lang: lang.to_owned(),
+            record_id: None,
+            ticket: None,
         }
     }
 
@@ -505,6 +695,7 @@ mod tests {
             term: term.to_owned(),
             context: context.to_owned(),
             lang: lang.to_owned(),
+            record_id: None,
         };
         assert_eq!(
             check_explain(&explain("HbA1c", "FAKE HbA1c 6.1%", "pl")),
@@ -519,6 +710,151 @@ mod tests {
         ] {
             assert_eq!(check_explain(&request), Err(AiError::Failed));
         }
+    }
+
+    #[test]
+    fn an_answer_may_take_five_minutes_at_least_twenty_at_most_and_longer_for_a_longer_prompt() {
+        assert_eq!(ANSWER_LIMIT.for_request(0, 0), Duration::from_secs(5 * 60));
+        // The FAKE discharge summary (3,563 bytes): about 1,938 prompt tokens, estimated long.
+        assert_eq!(
+            ANSWER_LIMIT.for_request(1_938, 400),
+            Duration::from_millis(30_000 + 1_938 * 150 + 400 * 600)
+        );
+        assert_eq!(
+            ANSWER_LIMIT.for_request(model_helper::CONTEXT_TOKENS, 400),
+            Duration::from_secs(20 * 60)
+        );
+    }
+
+    #[test]
+    fn the_requests_may_name_their_document_for_the_answer_to_be_kept() {
+        let id = uuid::Uuid::nil().to_string();
+        let summary: SummarizeRequest = serde_json::from_value(serde_json::json!({
+            "pages": [{"index": 0, "text": "a"}], "lang": "en", "recordId": id, "ticket": id
+        }))
+        .unwrap();
+        assert_eq!(summary.record_id, Some(uuid::Uuid::nil()));
+        assert_eq!(summary.ticket, Some(uuid::Uuid::nil()));
+        let explain: ExplainRequest = serde_json::from_value(serde_json::json!({
+            "term": "a", "context": "b", "lang": "en", "recordId": id
+        }))
+        .unwrap();
+        assert_eq!(explain.record_id, Some(uuid::Uuid::nil()));
+        assert!(serde_json::from_value::<ExplainRequest>(serde_json::json!({
+            "term": "a", "context": "b", "lang": "en", "ticket": id
+        }))
+        .is_err());
+    }
+
+    fn kept_summary() -> KeptAnswer {
+        KeptAnswer::Summary {
+            sentences: vec![
+                Sentence {
+                    text: "FAKE first".to_owned(),
+                    quote: "FAKE quote one".to_owned(),
+                },
+                Sentence {
+                    text: "FAKE second".to_owned(),
+                    quote: String::new(),
+                },
+            ],
+            last_page: 2,
+            last_index: 1,
+            partial: true,
+            pages_missing: false,
+            model: ModelInfo {
+                name: "FAKE model".to_owned(),
+                sha256: "0".repeat(64),
+            },
+            lang: "fr".to_owned(),
+            created_at: 7,
+        }
+    }
+
+    #[test]
+    fn a_kept_summary_is_kept_as_the_reader_keeps_one_with_its_source_places() {
+        let span = SourceSpan {
+            page: 1,
+            start: 3,
+            end: 17,
+        };
+        let (input, content) = kept_summary().content(Some(&[Some(span), None])).unwrap();
+        assert_eq!(
+            (input.tool, input.lang.as_str(), input.term.as_deref()),
+            (AiTool::Summary, "fr", None)
+        );
+        assert_eq!(
+            (input.model_name.as_str(), input.model_sha256.len()),
+            ("FAKE model", 64)
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&content).unwrap(),
+            serde_json::json!({
+                "tool": "summary",
+                "sentences": [
+                    {"text": "FAKE first", "quote": "FAKE quote one",
+                     "source": {"page": 1, "start": 3, "end": 17}},
+                    {"text": "FAKE second", "quote": "", "source": null}
+                ],
+                "model": {"name": "FAKE model", "sha256": "0".repeat(64)},
+                "lang": "fr", "createdAt": 7, "partial": true, "lastPage": 2,
+                "pagesMissing": false
+            })
+        );
+        // The vault's own check takes it, under the model that gave it.
+        assert!(crate::vault::check_ai_answer(
+            &input,
+            content.as_bytes(),
+            Some(("FAKE model", &"0".repeat(64)))
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn a_kept_answer_takes_only_sources_that_fit_it() {
+        let span = |page| SourceSpan {
+            page,
+            start: 0,
+            end: 1,
+        };
+        // One per sentence, no more and no fewer, and none for a summary is refused.
+        assert!(kept_summary().content(Some(&[None])).is_none());
+        assert!(kept_summary().content(Some(&[None, None, None])).is_none());
+        assert!(kept_summary().content(None).is_none());
+        // Never past the last page the model read.
+        assert!(kept_summary()
+            .content(Some(&[Some(span(2)), None]))
+            .is_none());
+        assert!(kept_summary()
+            .content(Some(&[Some(span(0)), Some(span(1))]))
+            .is_some());
+        // An explanation has no source places.
+        let explained = KeptAnswer::Explain {
+            term: "HbA1c".to_owned(),
+            context: "FAKE HbA1c 6.1%".to_owned(),
+            text: "FAKE text".to_owned(),
+            model: ModelInfo {
+                name: "FAKE model".to_owned(),
+                sha256: "0".repeat(64),
+            },
+            lang: "en".to_owned(),
+            created_at: 7,
+        };
+        assert!(explained.content(Some(&[])).is_none());
+        let (input, content) = explained.content(None).unwrap();
+        assert_eq!(
+            (input.tool, input.term.as_deref()),
+            (AiTool::Explain, Some("HbA1c"))
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&content).unwrap(),
+            serde_json::json!({
+                "tool": "explain", "term": "HbA1c", "context": "FAKE HbA1c 6.1%",
+                "text": "FAKE text",
+                "model": {"name": "FAKE model", "sha256": "0".repeat(64)},
+                "lang": "en", "createdAt": 7
+            })
+        );
     }
 
     #[test]
@@ -638,6 +974,7 @@ mod tests {
                     sha256: "ab".repeat(32),
                 },
                 size_bytes: 1024,
+                chat_format: model_helper::ChatFormat::Builtin,
             })
         }
     }
@@ -672,19 +1009,19 @@ mod tests {
         let request = || summary(vec![page(0, "FAKE text")], "en");
         let (none, _) = fake(None, Err(Unavailable::NotInstalled));
         assert_eq!(
-            runtime(none, Some(64 * GIB)).summarize(request()),
+            runtime(none, Some(64 * GIB)).summarize(request(), Box::new(|_| ())),
             Err(AiError::NotInstalled)
         );
         // Too little memory: the model is not even verified (no copy of it is made).
         let (small, asked) = fake(Some(4 * GIB), Ok(()));
         assert_eq!(
-            runtime(small, Some(GIB)).summarize(request()),
+            runtime(small, Some(GIB)).summarize(request(), Box::new(|_| ())),
             Err(AiError::Memory)
         );
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
         let (unknown, _) = fake(Some(GIB), Ok(()));
         assert_eq!(
-            runtime(unknown, None).summarize(request()),
+            runtime(unknown, None).summarize(request(), Box::new(|_| ())),
             Err(AiError::Memory)
         );
         for (reason, error) in [
@@ -697,7 +1034,7 @@ mod tests {
         ] {
             let (bad, asked) = fake(Some(GIB), Err(reason));
             assert_eq!(
-                runtime(bad, Some(64 * GIB)).summarize(request()),
+                runtime(bad, Some(64 * GIB)).summarize(request(), Box::new(|_| ())),
                 Err(error)
             );
             assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -705,7 +1042,7 @@ mod tests {
         // An invalid request is refused before any of it.
         let (never, asked) = fake(Some(GIB), Ok(()));
         assert_eq!(
-            runtime(never, Some(64 * GIB)).summarize(summary(vec![], "en")),
+            runtime(never, Some(64 * GIB)).summarize(summary(vec![], "en"), Box::new(|_| ())),
             Err(AiError::Failed)
         );
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
@@ -717,7 +1054,7 @@ mod tests {
         let runtime = runtime(bad, Some(64 * GIB));
         assert_eq!(runtime.answered_model(), None);
         assert!(runtime
-            .summarize(summary(vec![page(0, "FAKE text")], "en"))
+            .summarize(summary(vec![page(0, "FAKE text")], "en"), Box::new(|_| ()))
             .is_err());
         assert_eq!(runtime.answered_model(), None);
     }
@@ -734,6 +1071,7 @@ mod tests {
                 sha256: "ab".repeat(32),
             },
             size_bytes: 1024,
+            chat_format: model_helper::ChatFormat::Builtin,
         };
         assert_eq!(helper_launch(&verified).err(), Some(AiError::Damaged));
     }
@@ -780,7 +1118,7 @@ pub mod testing {
                 ],
                 needed_bytes: 0,
                 start_timeout: Duration::from_secs(30),
-                answer_timeout,
+                answer_limit: crate::local_runner::AnswerLimit::fixed(answer_timeout),
                 memory_limit_bytes: Some(1024 * 1024 * 1024),
                 expected_model: Some(ModelInfo {
                     name: model_helper::STUB_NAME.to_owned(),
@@ -788,6 +1126,7 @@ pub mod testing {
                 }),
                 model_file: None,
                 sandboxed: true,
+                generation_threads: None,
             };
             Self {
                 runner: Arc::new(Runner::new(config)),
@@ -889,6 +1228,8 @@ pub mod engine_testing {
 
     pub struct ModelRunner {
         runner: Arc<Runner>,
+        /// The quotes the last summary had that were not in the pages read.
+        unlocated: std::sync::Mutex<Vec<String>>,
     }
 
     impl ModelRunner {
@@ -896,6 +1237,20 @@ pub mod engine_testing {
         /// sealed memfd as it is hashed, on Windows held open with writers denied (the file must
         /// be readable by AppContainers). The reason, when it does not start.
         pub fn start(executable: &std::path::Path, path: &std::path::Path) -> Result<Self, String> {
+            Self::start_with(executable, path, "builtin")
+        }
+
+        /// As [`Self::start`], with the model's chat format by its word (`builtin`, `gemma4`).
+        pub fn start_with(
+            executable: &std::path::Path,
+            path: &std::path::Path,
+            chat_format: &str,
+        ) -> Result<Self, String> {
+            let chat_format = match chat_format {
+                "builtin" => model_helper::ChatFormat::Builtin,
+                "gemma4" => model_helper::ChatFormat::Gemma4,
+                other => return Err(format!("unknown chat format {other}")),
+            };
             let (file, sha256, size_bytes) = handed_over(path)?;
             let verified = Verified {
                 file,
@@ -905,14 +1260,24 @@ pub mod engine_testing {
                     sha256,
                 },
                 size_bytes,
+                chat_format,
             };
             let config = launch_at(executable.to_owned(), &verified)
                 .map_err(|error| format!("{error:?}"))?;
-            let runner = Arc::new(Runner::new(config));
+            // The runner keeps no model file of its own: this one start hands the sealed copy
+            // over and lets it go once the helper has greeted, as the app does. So a test holds
+            // the model once, in the helper, not twice (Linux: a 3 GB memfd beside the weights).
+            let runner = Arc::new(Runner::new(RunnerConfig {
+                model_file: None,
+                ..config.clone()
+            }));
             runner
-                .start(&Plenty)
+                .start_with(&Plenty, move || Ok(config))
                 .map_err(|error| format!("{error:?}"))?;
-            Ok(Self { runner })
+            Ok(Self {
+                runner,
+                unlocated: std::sync::Mutex::default(),
+            })
         }
 
         /// A summary of `pages` (index, text) in `lang`: sentences (text, quote), last page.
@@ -935,6 +1300,7 @@ pub mod engine_testing {
             self.runner
                 .summarize(self.runner.ticket(), &request)
                 .map(|summary| {
+                    *self.unlocated.lock().unwrap() = summary.unlocated_quotes;
                     (
                         summary
                             .sentences
@@ -945,6 +1311,61 @@ pub mod engine_testing {
                     )
                 })
                 .map_err(|error| format!("{error:?}"))
+        }
+
+        /// What the last summary's quotes said where they were not in the pages read.
+        pub fn last_unlocated(&self) -> Vec<String> {
+            self.unlocated.lock().unwrap().clone()
+        }
+
+        /// How the last answer was made: prompt and answer tokens, and their times.
+        pub fn last_stats(&self) -> String {
+            self.runner.last_stats().map_or_else(
+                || "no stats".to_owned(),
+                |s| {
+                    format!(
+                        "prompt {} tokens {:.1} s on {} threads (prefix {} tokens, {}, {} bytes), \
+                         answer {} tokens {:.1} s{} on {} threads, {} grammar scans",
+                        s.prompt_tokens,
+                        s.prompt_ms as f64 / 1000.0,
+                        s.batch_threads,
+                        s.prefix_len,
+                        if s.cache_hit { "put back" } else { "read" },
+                        s.snapshot_bytes,
+                        s.answer_tokens,
+                        s.answer_ms as f64 / 1000.0,
+                        if s.capped { " (capped)" } else { "" },
+                        s.threads,
+                        s.grammar_scans
+                    )
+                },
+            )
+        }
+
+        /// The last answer's instruction prefix: its length in tokens, whether its state was put
+        /// back rather than read, and the size of that kept state.
+        pub fn last_prefix(&self) -> Option<(u32, bool, u64)> {
+            self.runner
+                .last_stats()
+                .map(|stats| (stats.prefix_len, stats.cache_hit, stats.snapshot_bytes))
+        }
+
+        /// The hash of the token ids the last answer was written in (see `Stats::answer_hash`).
+        pub fn last_answer_hash(&self) -> Option<u64> {
+            self.runner.last_stats().map(|stats| stats.answer_hash)
+        }
+
+        /// The threads the last answer was written on, and its prompt read on.
+        pub fn last_threads(&self) -> Option<(u32, u32)> {
+            self.runner
+                .last_stats()
+                .map(|stats| (stats.threads, stats.batch_threads))
+        }
+
+        /// Answers are written on `threads` threads from now on, whatever the computer's load;
+        /// `None` chooses from the load again.
+        pub fn override_threads(&self, threads: Option<u32>) {
+            self.runner.override_threads(threads);
         }
 
         /// What `term` means in `context`, in `lang`.

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { formatDate, getLocale, t as translateNow, useI18n } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
-import { keptInput, keptSummary, type KeptAnswers } from "../ai/kept";
+import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
 import {
   ModelCancelled,
   ModelNotInstalled,
@@ -33,6 +33,8 @@ export interface ReaderAi {
 }
 
 const NOT_INSTALLED: ModelStatus = { state: "notInstalled" };
+// How often the minutes an answer has been working for are counted again.
+const WORKING_TICK_MS = 15_000;
 /** The longest term to explain, typed or selected: the native side refuses
  * a longer one (AGREEMENT.md). */
 export const TERM_MAX = 200;
@@ -64,6 +66,11 @@ export function ReaderAiPanel({
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
+  // The tool whose answer the model just wrote, to say so once (#253). A
+  // summary read back from the vault is not new: the panel is made again
+  // each time a tool opens, and coming back to Summary shows the kept one,
+  // which is not read out as "ready" again.
+  const [readyFor, setReadyFor] = useState<"summary" | "explain" | null>(null);
   const [term, setTerm] = useState(initialTerm);
   // Whether the summary shown is one the vault kept, and whether keeping
   // the latest answer failed (it is still shown).
@@ -73,6 +80,21 @@ export function ReaderAiPanel({
     "ai.keepFailed" | "ai.keepFull" | null
   >(null);
   const [again, setAgain] = useState(0);
+  // Whole minutes the answer has been working for, shown from the first
+  // (#72: a long document's summary may take up to 20 minutes).
+  const [workingMinutes, setWorkingMinutes] = useState(0);
+  useEffect(() => {
+    if (!working) return;
+    const started = Date.now();
+    const timer = window.setInterval(
+      () => setWorkingMinutes(Math.floor((Date.now() - started) / 60_000)),
+      WORKING_TICK_MS,
+    );
+    return () => {
+      window.clearInterval(timer);
+      setWorkingMinutes(0);
+    };
+  }, [working]);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -129,13 +151,15 @@ export function ReaderAiPanel({
     else setFailed(true);
   };
 
-  // Keeps an answer with the document; a failure is said, not hidden, and
-  // the answer stays on screen.
+  // Keeps an answer with the document: the one the native side kept for it
+  // (`keptId`), with a summary's source places. A failure is said, not
+  // hidden, and the answer stays on screen.
   const keep = async (result: SummaryResult | ExplainResult) => {
     const kept = aiRef.current.kept;
     if (!kept) return;
     try {
-      await kept.save(keptInput(result), JSON.stringify(result));
+      if (!result.keptId) throw new Error("not kept natively");
+      await kept.save(result.keptId, keptSources(result));
     } catch (failure) {
       // A document full of kept answers (32, hidden ones included: nothing
       // is deleted, D3) says so; any other failure is the general one.
@@ -189,11 +213,18 @@ export function ReaderAiPanel({
           return;
         }
         const result = await asModel(() =>
-          summarizeDocument(aiRef.current.model, document, lang),
+          summarizeDocument(
+            aiRef.current.model,
+            document,
+            lang,
+            Date.now,
+            aiRef.current.kept?.recordId,
+          ),
         );
         if (!live.current) return;
         setFromKept(false);
         setSummary(result);
+        setReadyFor("summary");
         await keep(result);
       })
       .catch(stopped)
@@ -209,11 +240,19 @@ export function ReaderAiPanel({
     setFailed(false);
     setKeepFailed(null);
     asModel(() =>
-      explainTerm(aiRef.current.model, asked, contextFor(asked), lang),
+      explainTerm(
+        aiRef.current.model,
+        asked,
+        contextFor(asked),
+        lang,
+        Date.now,
+        aiRef.current.kept?.recordId,
+      ),
     )
       .then(async (result) => {
         if (!live.current) return;
         setExplained(result);
+        setReadyFor("explain");
         await keep(result);
       })
       .catch(stopped)
@@ -264,9 +303,28 @@ export function ReaderAiPanel({
           </button>
         </form>
       )}
+      {/* Read out as it changes: the work, then that the answer came. A run
+          that failed says so in its alert, never "ready" for an earlier
+          answer. */}
       <p className={working ? "native-dialog-status" : "sr-only"} role="status">
-        {working ? t("ai.working") : ""}
+        {working
+          ? t("ai.working")
+          : !failed && readyFor === tool && tool === "summary" && summary
+            ? t("ai.summary.ready")
+            : !failed && readyFor === tool && tool === "explain" && explained
+              ? t("ai.explain.ready")
+              : ""}
       </p>
+      {/* Not in the status above, so a screen reader is not told each
+          minute; read with the panel. */}
+      {working && tool === "summary" && (
+        <p className="native-reader-ai-wait">{t("ai.workingLong")}</p>
+      )}
+      {working && workingMinutes > 0 && (
+        <p className="native-reader-ai-wait">
+          {t("ai.workingFor", { minutes: workingMinutes })}
+        </p>
+      )}
       {failed && <p role="alert">{t("ai.failed")}</p>}
       {noText && <p>{t("ai.summary.noText")}</p>}
       {summary && (

@@ -287,6 +287,9 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         // Preferences on a computer asks whether an AI model is installed (#72).
         if (command === "ai_model_status") return { state: "notInstalled" };
         if (command === "ai_model_catalog") return [];
+        if (command === "ai_models") return [];
+        // No add or download running when the row opens (#275).
+        if (command === "ai_model_add_active") return null;
         // The setup checklist asks which rules a passphrase meets (#76).
         if (command === "vault_passphrase_rules")
           return { longEnough: false, notAName: true, hardToGuess: false };
@@ -421,6 +424,12 @@ async function walkTheVault(large: LargeText) {
     page.getByRole("heading", { name: "Preferences" }),
   ).toBeVisible();
   await expectNoViolations(page, "Preferences", large.cutOff);
+  await openSection(page, "ai", "AI helper");
+  await expect(
+    page.getByRole("heading", { name: "AI helper", level: 1 }),
+  ).toBeVisible();
+  await expect(page.getByText("Not installed", { exact: true })).toBeVisible();
+  await expectNoViolations(page, "AI helper, the model's row", large.cutOff);
   await expectOnlyMockedCommands(page);
 }
 

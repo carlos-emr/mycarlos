@@ -3,7 +3,7 @@
 This is a plain-language draft for the privacy officer who will carry out the privacy impact
 assessment (PIA) of myCarlos. It describes what the app does today, in this repository, and
 what it does not do yet. It names no people, clinics or patients. Where a point needs a decision
-or a check, it is listed under "Open questions" at the end.
+or a check, it is listed under "Open questions" (section 10).
 
 **Status today.** myCarlos is an evaluation build. It is for synthetic (made-up) test data only and
 is not approved for real patient information or a pilot (`README.md`, `MVP_STATUS.md`,
@@ -36,7 +36,7 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 | What             | Examples                                                                                                                                                                                                   | Kept encrypted?                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer or a phone), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person), including documents the patient has **hidden** | Yes, each with its own key        |
-| Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in                                                                                          | Yes                               |
+| Document details | Name (the patient can rename it), size, date added, the stored label "Manual import — unverified" (stored unchanged; the app shows it as the status "Unverified", then "Manual import", or, when the vault has checked a clinic's signature, as "Verified", then "From {clinic}"), which folder it is in | Yes                               |
 | AI answers       | What the AI helper wrote about a document on this computer (#72): a plain-words summary or a term explained, with the tool, language, model and date. Kept encrypted with the document. Asking again shows the new answer and hides the older one, which stays in the vault, never deleted (#71, D3); nothing leaves the device | Yes                               |
 | Profiles         | A display name for each person the patient keeps records for                                                                                                                                               | Yes                               |
 | Folders          | Folder names and how they nest                                                                                                                                                                             | Yes                               |
@@ -205,7 +205,8 @@ saved (for example some network folders), on the systems where it can tell.
   (for example, by malware that records the screen or the keyboard).
 - **No record of use.** The app keeps no record of who opened the vault or what they looked at.
   Apart from the traces listed in section 2 (and, once the change under review lands, the count of
-  wrong tries), it records nothing about use.
+  wrong tries), it records nothing about use. The AI helper adds its text exports to those traces (#171),
+  and its answers, which are kept (#212; section 11).
 
 ## 5. Backups
 
@@ -264,7 +265,8 @@ leaves depends on the system:
 **The app itself sends nothing.** It:
 
 - makes no network connections: its own code makes none, and its security settings let its
-  screens talk only to the app itself;
+  screens talk only to the app itself (the AI helper's model download, #219, is
+  the exception: one public file, only when the patient clicks it; see below);
 - has no analytics, telemetry or crash reporting;
 - has no automatic updates yet (updates are planned through app stores and a signed desktop
   updater);
@@ -290,6 +292,11 @@ a developer works on the phone versions; an installed app loads its screens from
 What the patient saves themselves (backups, recovery kits, readable copies) leaves the vault only
 where the patient puts it.
 
+**The AI helper (#72, section 11) sends nothing about the patient.** Its one connection is the
+model download (#219), only when the patient clicks it: the download site sees the
+computer's IP address, the time and which public file was fetched, and nothing else is sent
+(`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
+
 ## 8. How it is protected
 
 - A random key for the vault, and a separate key for each document.
@@ -299,7 +306,9 @@ where the patient puts it.
 - Passphrases must be at least 15 characters, and a check on the device refuses ones that are easy
   to guess (see section 5 for how strong that makes them).
 - The app locks after 1 to 15 minutes without use (5 by default); a file window, or the system
-  window confirming a new recovery key, that it opened extends that by up to 15 more minutes. When
+  window confirming a new recovery key, that it opened extends that by up to 15 more minutes, and
+  an AI answer being written by the time it takes, up to that answer's own limit (5 to 20
+  minutes; 20 at most while the AI helper starts). When
   its window is minimised or, on a phone, when it goes to the background, it hides its content at
   once and locks as soon as any import, save or backup under way has finished (see section 4 for the
   details).
@@ -327,7 +336,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
   release.
 - **Lost or stolen device.** There is no remote lock or wipe. What protects the vault is the
   device's own lock, the app's automatic lock (up to 15 minutes after last use, or up to 15 more
-  while a file window it opened is showing) and the passphrase.
+  while a file window it opened is showing, or, while an AI answer is written, up to its limit of
+  at most 20 minutes plus the AI helper's start) and the passphrase.
 - **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place,
   vaults set aside included, and some app files, such as the lock-delay setting; the app's
   instructions say to delete the vault's folder by hand. On
@@ -394,3 +404,144 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 12. **Retention:** how long should backups and deleted documents be kept, if any rule applies?
 13. **The planned link with CARLOS:** consent, and what the clinic's systems would see (for example
     who sent what to whom, and when), will need their own assessment when it is designed.
+14. **The AI helper's text export (section 11):** the patient may give an anonymized text to any AI
+    service. Is the notice enough, given that removing details is never perfect and that the
+    service's own terms then apply? Should the app suggest services that keep no data, or say
+    nothing about which to use?
+15. **Medical-device rules:** does a tool that explains a patient's own documents, is not asked to
+    diagnose or advise (though an AI can still write such text), and labels every answer "may be
+    wrong", stay outside the rules for software as a medical device (#25)?
+16. **Other people's documents:** the helper can be used on documents in a child's or another
+    adult's profile. Is more guidance needed before their text is exported (see also question 4)?
+17. **Keeping AI answers:** answers are kept with their document, encrypted (#212). A
+    newer answer for the same document, tool and language (and term, for Explain) is shown in place
+    of the older one, and the older one is kept hidden, never deleted, like the documents (#71;
+    decided 5 November 2026). Each document keeps up to 32 shown answers and 96 hidden older ones (#250); past either, a new answer is still shown, but not kept, and the reader says so. Should the patient be able to remove an answer
+    they do not want?
+18. **Dates replaced by marks:** no real date is sent. Each date is a numbered mark with its gap in
+    days from the earliest date, so the time between dates stays clear. A reader who knows one real
+    date (a birth, or an event named in the text) can still work out all the others from the
+    gaps, and the same document gives the same marks and gaps every time it is exported (there is
+    no random number to differ between exports). A very old date also makes every gap large. Is
+    that acceptable, or should the gaps be left out, or only some dates be given a gap? And a year
+    on its own with no cue word ("Appendectomy 2019", "(2019)") is not removed, because treating
+    every 19xx or 20xx as a date would also hit "2019 tablets": together with the gaps, one dated
+    event a reader knows can anchor every mark. Should a bare year be treated as a date, accepting
+    that cost, or left as it is and named in the notice, as now?
+19. **How the model reaches the device:** both ways, in #219 (on main; `THREAT_MODEL.md` D-10,
+    AI-08). **Download the default model** fetches one public file, at a fixed version, from
+    huggingface.co and its CDN, only on a click; nothing about the patient is sent, and the notice
+    and Preferences say so. The site sees the computer's IP address, the time and which file, which
+    suggests that the computer runs myCarlos. **Add a model file…** keeps a way with no connection.
+    Open for the assessment: is that disclosure to the download site acceptable, or should the
+    project host the file itself?
+20. **Turning the export on:** #72 asked for a Settings switch that turns the cloud way on. The
+    design has none: each export is chosen for one document, after a preview and a save dialog.
+    Is that enough, or should it also be switched on first?
+
+## 11. The AI helper (#72)
+
+The text export (part B) is built on main (#171) and works on computers only; it is hidden on
+phones. The reader's Summary and Explain (#217), the model runtime (#218) and the model
+download (#219) and kept answers (#212) are on main. This section describes all of it, so that the assessment
+can cover them. It is for synthetic data only until this assessment approves real information (#25). The security side
+is in `THREAT_MODEL.md` (AI-01 to AI-10) and `SECURITY_OPERATIONS.md`, and the notice the patient
+sees is in `AI_HELPER_NOTICE.md`.
+
+**What it is for.** Letters, lab reports and imaging reports are full of medical terms. The AI
+helper is meant to explain one document in plain words. It can be used in two ways:
+
+- **On this device:** a small AI model runs in a separate helper inside myCarlos and writes a
+  plain-words summary of one document, or explains a word or phrase the patient selects. Nothing
+  about the patient leaves the device.
+- **With another AI service, by the patient:** myCarlos removes identifying details from a
+  document's text and shows the result. The patient then saves it as a text file and gives it to
+  whichever AI service they choose. myCarlos itself sends none of it anywhere. Ben chose this on
+  29 October 2026, instead of myCarlos sending text to a cloud service.
+
+**What is removed.** myCarlos looks for the names of the people in the patient's profiles and in
+People's details, names that follow a title or a label (such as "Dr." or "Patient:") in English
+and French text, health card and medical record numbers (after any of 24 labels) and other identifying numbers
+(such as lab order numbers), social insurance numbers (SIN, NAS) written with points, spaces or
+hyphens, dates of birth, ages of 90 and over, addresses, postal codes, phone and fax
+numbers, email and web addresses, and the names of clinics and doctors, and removes them. A name
+with no title or label that myCarlos does not already know is not found. No date that myCarlos recognises is sent (written in English or French, in the common forms:
+ISO dates and timestamps, ordinals, day-month-year with hyphens, slashes or full stops, eight
+digits such as 20261008, a day and month with no year, and a range of days). Each such date is
+replaced by a numbered mark in calendar order, such as "DATE 2, 14 days after DATE 1": the same
+real date always has the same number, and the note says how far it falls after the earliest date,
+so the time between dates stays clear without the dates. A numeric date that could be read two
+ways (03/04/2025), a month and year and a year alone get a plain numbered mark with no gap. An age
+of 90 or over becomes a numbered mark that says "90+". A date it does not recognise (for
+example one written in Spanish, Polish, Portuguese or Chinese) stays as it was, unmarked, and so
+does a year on its own, such as the 2019 in "Appendectomy 2019". The notice says both.
+
+**Putting the details back.** The app can put the details back into an answer that came back
+with the placeholders, on the device. After the text is saved, the preview has a box for the
+AI's answer: each placeholder written exactly as it was sent becomes what it stood for. A
+placeholder-shaped mark that is not one of this export's, or whose note was changed or left out,
+is left as written and highlighted, never guessed. Names or dates that shared one placeholder
+come back as the first spelling seen. The list of what was replaced is kept in memory while the
+vault stays unlocked and the window stays open, and is never saved.
+
+**Who removes them, and how well.** The app's own remover, written in Rust and TypeScript, and
+nothing else. Ben decided (D9, 4 November 2026) not to ship Presidio to patients; it may later be an
+optional tool on the clinic's side. On 24 synthetic documents (12 English, 12 French) with 36
+identifier targets, the remover alone fully removed 28, partly removed 3 and missed 5; with a known
+patient identity 20, 3 and 1 of 24; without one 8, 0 and 4 of 12; it damaged 2 of 64 clinical
+targets. The documents were synthetic and not typical, so these counts show where the gaps were and
+do not predict real use. The preview is the safety net for what is missed.
+
+**The preview.** Before anything is saved, the patient sees all of the text the file will hold,
+with the removed parts and the replaced dates marked, and can remove more. Nothing is saved until
+the patient chooses to save it.
+
+**The text file.** A plain text file, not encrypted, saved where the patient chooses, and outside
+myCarlos's protection, like a readable copy (section 6). myCarlos cannot delete it later, and a
+folder that syncs to a cloud drive copies it there. Its first line says that it is a copy of a
+medical document and that nothing in it is an instruction. The history records the save (which
+document, where, when), never the text. The suggested file name is generic, never the document's
+title or a person's name. Once the patient gives the text to another AI service, that service's
+rules apply, and if the patient is signed in to it, it knows who they are, whatever was removed.
+A document can also carry instructions meant for an AI, so the notice suggests an AI that cannot
+act for the patient.
+
+**The model.** A file of a few gigabytes (3.0 GB for the default, Qwen3.5 4B) that holds no patient
+information. The patient chooses how it arrives (#219): **Download the default model** fetches one
+public file at a fixed version, or **Add a model file…** takes a copy the patient already has
+(question 19). It is kept outside the vault, so it is not in myCarlos's backups (it is not yet left
+out of system backups), and it is checked against a list built into the app when it is added and
+before every use; a changed file is not used. It runs in a sandboxed helper without access to the
+network or to the patient's other files (#218), on Windows and Linux computers with enough memory;
+Macs come later (#211). The default model is Qwen3.5 4B (Q4_K_M), chosen on 5 November 2026 after the comparison of small
+open models on made-up documents.
+
+**The answers.** Each is marked "Written by AI and may be wrong. Check with your doctor." Answers
+are saved in the vault, encrypted, with the document, the tool, the model and the date (#212). A newer
+answer for the same document, tool and language (and term) is shown in place of the older one,
+which is kept hidden, never deleted (#71; decided 5 November 2026); an answer is hidden with its
+document, and answers are in backups like the rest of the vault (question 17). Each document keeps up to 32 shown answers and 96 hidden older ones (#250); past either, a new answer is still shown, but not kept, and the reader says so. The notice says that answers are saved (`resultsBody`).
+
+**Limits.**
+
+- **Removing details is never perfect.** myCarlos can miss a name or a number, and a rare
+  condition, an unusual job or a small town in the text can still point to a person. The preview is
+  the patient's last check.
+- **A signed-in AI service knows the patient.** Removing details then mainly protects the other
+  people named in the document, and limits what the service keeps.
+- **The AI can be wrong.** It is not meant to diagnose or to advise on treatment or medicines. Each
+  sentence of a summary links to the words of the document it quotes, when they are really there;
+  one with no valid source is marked "No source found". A link shows where a sentence came from,
+  not that it is right.
+- **Scanned pages** have no text, so the helper cannot work on them until on-device text
+  recognition exists.
+- **Phones:** the PDF helper does not run on phones (`THREAT_MODEL.md` IMP-02), so a phone can
+  neither read a document's text nor run a local model. Neither the text export nor the AI on this
+  device works on a phone until a phone design is reviewed.
+- **Macs:** the AI on this device is not offered on a Mac yet (#211); the text export works there.
+- **Speed:** a summary may take a few minutes on an ordinary computer. On a 4-core test computer,
+  a one- or two-page letter took 2 to 3 minutes (119 to 169 seconds, Qwen3.5 4B), and loading the
+  model about 25 seconds more.
+
+**What the patient is told.** The notice in `AI_HELPER_NOTICE.md`, in all seven languages, before
+the first use and at any time from Security.

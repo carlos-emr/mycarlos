@@ -12,6 +12,8 @@ interface SaveCall {
 
 async function fakeVault(page: Page) {
   await page.addInitScript(() => {
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const snapshot = {
       profiles: [
         {
@@ -54,8 +56,14 @@ async function fakeVault(page: Page) {
       invoke: async (command: string, args?: unknown) => {
         calls.push({ command, args });
         if (command === "vault_status") return "unlocked";
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform: "linux" };
+        if (command === "received_list")
+          return { files: [], notice: { dropped: 0, refusedShares: 0 } };
         if (command === "vault_document_text")
           return {
             pageCount: 1,
@@ -187,8 +195,23 @@ test("prepares a document's text for an AI with the keyboard, at 200% text", asy
     ).request;
     expect(request.ticket).toBe("FAKE-ticket");
     expect(request.pickId).toBe("FAKE-pick");
-    expect(request.text).not.toMatch(/Avery|Example|1961/);
+    expect(request.text).not.toMatch(/Avery|Example|1961|2026-10-08/);
+    expect(request.text).toContain("Seen [DATE 1] by");
     expect(request.text).toContain("Ramipril 5 mg daily.");
+
+    // The AI's answer is pasted back: the details return exactly, and a mark
+    // that is not this export's is highlighted, never guessed.
+    await preview
+      .getByLabel("The AI's answer")
+      .fill("Seen [DATE 1] by [DOCTOR 1]; [NAME 1]; also [DATE 9].");
+    await preview.getByRole("button", { name: "Put details back" }).click();
+    const back = preview.getByRole("region", {
+      name: "The answer with the details put back",
+    });
+    await expect(back).toContainText(
+      "Seen 2026-10-08 by Ward; Avery Example; also [DATE 9]",
+    );
+    await expect(back.locator("mark")).toHaveCount(1);
     // The read came before the pick, and the pick before the write.
     const order = saved.order;
     expect(order.indexOf("vault_document_text")).toBeLessThan(

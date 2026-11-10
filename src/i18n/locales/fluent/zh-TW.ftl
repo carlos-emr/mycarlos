@@ -1280,7 +1280,7 @@ portal-approvalCancelled = 此核准請求已取消。請先檢查最新狀態�
 
 portal-approvalContact = 需要確認診所的核准狀態。請聯絡診所了解後續步驟。
 
-portal-approvalExpired = 此核准請求已過期。請先檢查最新狀態，再提出新的請求。
+portal-approvalExpired = 此核准請求已過期。若要為此裝置再次申請，請前往「安全性」中的「診所文件」。
 
 portal-approvalMissing = 入口網站上找不到您已儲存的核准請求。請重新傳送已儲存的請求。
 
@@ -1336,11 +1336,11 @@ portal-errorUnavailable = 此裝置尚不能使用入口網站連結功能。
 
 portal-fingerprint = 完整裝置指紋
 
-portal-incomplete = 連結未完成。請先在入口網站的「Linked devices」（已連結的裝置）頁面查看，再重試。
+portal-incomplete = 此已儲存的嘗試未完成。重新連線前，請在入口網站查看已連結的裝置（「Linked devices」頁面），或聯絡診所。此 App 無法繼續這次嘗試。
 
 portal-intro = 請使用病患入口網站上顯示的網址和連結碼來連結 myCarlos。
 
-portal-link = 連結診所
+portal-link = 連線並申請核准
 
 portal-matchPerson = 依文件上的資料比對
 
@@ -1362,8 +1362,6 @@ portal-serviceDate = 服務日期：{ $date }
 
 portal-serviceDateLabel = 服務日期
 
-portal-sourceVerified = 來自 { $clinic } · 已驗證
-
 portal-title = 診所文件
 
 rename-help-profile = 這只會變更顯示的資料夾名稱。此人的資料夾和文件仍會留在原處。
@@ -1378,6 +1376,51 @@ rename-profile-saved = 資料夾名稱已變更為「{ $name }」。
 
 rename-title-profile = 重新命名此人的資料夾
 
+portal-connectConsent = 此操作會連線此裝置並傳送核准請求。診所必須先核准此裝置，裝置才能接收文件。
+
+portal-connected = 裝置已連結。可在「安全性」的「診所文件」下查看其核准狀態。
+
+portal-connecting = 正在連線並申請診所核准…
+
+portal-errorBusy = 另一項診所作業正在進行。請等其完成後重試。
+
+portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「診所文件」下的核准狀態，了解下一步操作。
+
+portal-retryApproval = 重試已儲存的核准請求
+
+portal-working = 正在處理診所作業…
+
+portal-approvalExpiredCard = 此核准請求已過期。若要為同一裝置再次申請，請選擇「提出新的核准請求」。您的文件和此裝置的連結保持不變。
+
+portal-approvalPickedUp = 診所的病歷系統已接收此請求。正在等待診所人員核准此裝置。
+
+portal-approvalReplyInvalid = 無法驗證診所入口網站對此請求的回覆，因此未採用。請聯絡診所。
+
+portal-approvalStillOpen = 此核准請求在診所入口網站上仍未結束。請等它結束後再提出新的請求。
+
+portal-approvalTimeLeft = 此請求剩餘時間：約 { $count } 分鐘。
+
+portal-approvalTimeOver = 此請求的時間已用完。
+
+portal-approvalTimeOverRestart = 此請求的時間已用完。如果診所尚未核准此裝置，請選擇「{ $button }」。
+
+portal-approvalTimeUp = 此請求的時間已用完。正在向診所查詢…
+
+portal-approvalUnanswered = myCarlos 無法從診所入口網站取得此請求的狀態。
+
+portal-approvalUnreachable = myCarlos 無法連線至診所入口網站，因此目前還不知道此請求的狀態。
+
+portal-approvalWait = 診所入口網站要求 myCarlos 降低檢查頻率。
+
+portal-autoChecking = 此頁面開啟期間，myCarlos 會自動檢查診所的回覆。
+
+portal-autoCheckStopped = 自動檢查已停止。若要再次檢查，請選擇「{ $button }」。
+
+portal-awaitingClinic = 診所已收到核准請求。正在等待診所人員核准此裝置。
+
+portal-deviceRemoved = 此裝置已從您的診所入口網站帳戶中移除。若要再次使用，請使用病患入口網站提供的新連結碼重新連線。
+
+portal-errorRateLimited = 診所入口網站要求 myCarlos 稍候再試。
 hidden-backToSecurity = 返回「安全性」
 
 interface-history-appVersion = myCarlos 版本
@@ -1532,6 +1575,28 @@ interface-history-to = 目標
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也會保存操作紀錄：保險庫何時開啟；密語或復原金鑰何時設定或變更；備份何時儲存或還原；各病患檔案何時新增，以及各資料夾何時建立、重新命名或移動；每份文件何時新增、重新命名、移動、隱藏、還原或儲存在 myCarlos 外部，以及儲存位置。這些紀錄會和其他內容一起加密。您可以在此查看這些紀錄；myCarlos 絕不會變更或移除它們。
 
+portal-checkAgain = 若要再次檢查，請選擇「{ $button }」。
+
+portal-unlockCheckConsent = 每次解鎖後，如果診所已核准該裝置，或核准請求仍未結束，myCarlos 就會聯絡已連結的診所入口網站，檢查核准狀態更新和新文件。
+
+portal-unlockChecked = 解鎖後已檢查新的診所文件。
+
+portal-unlockCheckIncomplete = myCarlos 無法在解鎖後完成新診所文件的檢查。
+
+portal-unlockCheckNotRun = 由於另一項診所作業正在進行，myCarlos 在解鎖後未檢查新的診所文件。
+
+portal-unlockCheckWaiting = 由於診所入口網站要求稍候，myCarlos 在解鎖後未檢查新的診所文件。
+
+portal-unlockRefused = { $count } 份診所文件無法驗證，因此未新增。請聯絡診所。
+
+library-source-clinic = 來自 { $clinic }
+
+library-source-manualImport = 手動匯入
+
+library-status-unverified = 未驗證
+
+library-status-verified = 已驗證
+
 ai-summary-button = 摘要
 
 ai-summary-title = 淺白易懂的摘要
@@ -1540,9 +1605,9 @@ ai-explain-title = 解釋術語
 
 ai-notInstalled-title = 此電腦上尚未安裝 AI 助理
 
-ai-notInstalled-body = 安裝後，它會使用在此電腦上執行的 AI 模型，以淺白易懂的文字為您解釋文件。您可以在「偏好設定」中下載模型，或新增您已有的模型檔案。
+ai-notInstalled-body = 安裝後，它會使用在此電腦上執行的 AI 模型，以淺白易懂的文字為您解釋文件。您可以在「設定」中的「AI 助理」裡下載模型，或新增您已有的模型檔案。
 
-ai-notInstalled-openPreferences = 開啟偏好設定
+ai-notInstalled-openPreferences = 開啟 AI 助理設定
 
 aiHelper-resultLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認。
 
@@ -1562,9 +1627,11 @@ ai-explain-submit = 解釋
 
 ai-preferences-title = AI 助理
 
-ai-preferences-body = 使用在此電腦上執行的 AI 模型，以淺白易懂的文字解釋您的文件。您可以下載模型，或新增您已有的模型檔案；模型儲存在此電腦上。
+ai-preferences-body = 使用在這台電腦上執行的 AI 模型，以淺白的語言解釋你的文件。下載下列某個模型，或新增你已有的對應檔案。模型保留在這台電腦上。
 
 ai-preferences-notInstalled = 未安裝
+
+ai-settings-subtitle = AI 助理在此電腦上的運作方式
 
 ai-model-add = 新增模型檔案…
 
@@ -1594,7 +1661,7 @@ ai-model-unsupportedCpu = 此電腦的處理器不支援 AI 助理。
 
 ai-model-unsupportedPlatform = 此類電腦暫不支援 AI 助理。
 
-ai-model-refusedList = myCarlos 不接受此檔案。請選擇上方列出的模型檔案。
+ai-model-refusedList = myCarlos 不接受此檔案。請選擇上方列出的某個模型檔案。
 
 ai-model-refusedHash = 這不是預期的檔案。請重新下載，然後新增新的副本。
 
@@ -1612,6 +1679,14 @@ ai-model-downloadNote = 僅一次，且僅在您點擊時，從 { $host } 下載
 
 ai-model-downloading = 正在下載並檢查… { $done } / { $total } MB
 
+ai-model-progressName = 模型下載
+
+ai-model-progressValue = { $percent }，{ $done } / { $total } MB
+
+ai-model-stillDownloading = 模型仍在下載。
+
+ai-model-stillChecking = 仍在檢查模型檔案。
+
 ai-model-refusedNetwork = 下載未完成。請檢查您的網路連線，然後再試一次。
 
 ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍後再試，或新增您已有的檔案。
@@ -1619,6 +1694,14 @@ ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍�
 native-filter-models = 模型檔案
 
 ai-working = AI 助理正在處理…
+
+ai-workingLong = 文件較長時，可能需要幾分鐘。
+
+ai-workingFor = 已處理 { $minutes } 分鐘。
+
+ai-summary-ready = 摘要已產生。
+
+ai-explain-ready = 解釋已產生。
 
 ai-failed = AI 助理未能完成。請重試。
 
@@ -1639,15 +1722,15 @@ aiHelper-notice-testBuild = 此開發版本僅供合成（虛構）檔案使用�
 
 aiHelper-notice-shareHeading = 為其他 AI 服務儲存文字
 
-aiHelper-notice-shareBody = myCarlos 可以在移除身分資訊後儲存文件的文字，讓您提供給您選擇的 AI 服務。它會尋找您的病患檔案與「個人資料」中各人的姓名，以及稱謂或標籤（例如「Dr.」）後面的姓名；也會尋找健康卡號與病歷號碼、出生日期、90 歲及以上的年齡、地址、郵遞區號、電話與傳真號碼、電子郵件地址與網址、診所名稱與醫師姓名，以及檢驗單號等其他識別號碼，並移除找到的內容。其他日期會統一提前相同的天數，因此日期之間的間隔不變。
+aiHelper-notice-shareBody = myCarlos 可以在移除身分資訊後儲存文件的文字，讓您提供給您選擇的 AI 服務。它會尋找您的病患檔案與「個人資料」中各人的姓名，以及稱謂或標籤（例如「Dr.」）後面的姓名；也會尋找健康卡號與病歷號碼、出生日期、90 歲及以上的年齡、地址、郵遞區號、電話與傳真號碼、電子郵件地址與網址、診所名稱與醫師姓名，以及檢驗單號等其他識別號碼，並移除找到的內容。它辨識出的日期不會被傳送。每個日期都會換成附編號的標記，例如「日期 2, 日期 1 之後 14 天」，這樣不用真實日期也能看清日期之間的間隔。90 歲及以上的年齡會換成附編號的標記，並註明「90+」。
 
-aiHelper-notice-previewBody = 您會先看到文字，已移除的部分和已移動的日期都會標示出來，您也可以再移除更多內容。未標示的日期沒有被移動。預覽會顯示檔案將包含的全部文字，包括文件中隱藏的文字。在您選擇儲存之前，不會儲存任何內容。
+aiHelper-notice-previewBody = 您會先看到文字，已移除的部分和已替換的日期都會標示出來，您也可以再移除更多內容。未標示的日期沒有被辨識，仍留在文字中。預覽會顯示檔案將包含的全部文字，包括文件中隱藏的文字。在您選擇儲存之前，不會儲存任何內容。
 
-aiHelper-notice-limitsBody = 移除身分資訊永遠無法做到完美。myCarlos 只能找到它已知的姓名，以及英文或法文中稱謂或標籤後面的姓名，因此其他姓名可能會保留。它也可能漏掉號碼，或以其他寫法、其他語言書寫的日期。罕見疾病、少見的職業或小鎮仍可能讓人認出您或其他人。儲存前請閱讀全部文字。
+aiHelper-notice-limitsBody = 移除身分資訊永遠無法做到完美。myCarlos 只能找到它已知的姓名，以及英文或法文中稱謂或標籤後面的姓名，因此其他姓名可能會保留。它也可能漏掉號碼，或以其他寫法、其他語言書寫的日期。單獨出現的年份（例如「闌尾切除術 2019」）不會被移除。罕見疾病、少見的職業或小鎮仍可能讓人認出您或其他人。儲存前請閱讀全部文字。
 
 aiHelper-notice-fileBody = 文字會儲存為純文字檔，儲存位置由您選擇。此檔案未加密，myCarlos 之後無法清除它。如果該位置是會同步到雲端硬碟的資料夾，檔案也會被複製到那裡。此次儲存會記錄在操作紀錄中。
 
-aiHelper-notice-serviceBody = 您將文字交給其他服務後，如何處理由該服務決定。如果您登入了該服務，即使移除了身分資訊，它也知道您是誰；即使不登入，它也能看到您的 IP 位址。myCarlos 移動過的日期在其回答中仍是移動後的日期。文件中也可能含有寫給 AI 的指令，因此請使用無法代您操作（傳送訊息、開啟連結或讀取您的檔案）的 AI，或關閉這些功能。
+aiHelper-notice-serviceBody = 您將文字交給其他服務後，如何處理由該服務決定。如果您登入了該服務，即使移除了身分資訊，它也知道您是誰；即使不登入，它也能看到您的 IP 位址。它的回答會使用這些標記，例如「日期 2」，而不是真實日期。只要此視窗保持開啟，您就可以在 myCarlos 中貼上它的回答，把真實資訊放回去。文件中也可能含有寫給 AI 的指令，因此請使用無法代您操作（傳送訊息、開啟連結或讀取您的檔案）的 AI，或關閉這些功能。
 
 aiHelper-notice-adviceBody = AI 撰寫的回答可能有誤。請勿將其視為診斷或治療、用藥方面的建議，也不要因為 AI 的說法而更改用藥或治療。請詢問您的醫師。
 
@@ -1690,13 +1773,13 @@ interface-AnonymizePreview-replaced = { $count } 個無法讀取的符號已取�
 
 interface-AnonymizePreview-headerNote = 檔案將以這一行開頭：
 
-interface-AnonymizePreview-howMarked = 已移除的資訊會被標記並註明類型。被移動的日期也會標記；未標記的日期沒有被移動。
+interface-AnonymizePreview-howMarked = 已移除的資訊和已替換的日期會被標示並註明類型。未標示的日期沒有被辨識，仍留在文字中。
 
 interface-AnonymizePreview-textRegion = 將要儲存的文字
 
 interface-AnonymizePreview-removedKind = 已移除：{ $kind }
 
-interface-AnonymizePreview-movedDate = 日期已移動
+interface-AnonymizePreview-movedDate = 日期已替換
 
 interface-AnonymizePreview-kind-name = 姓名
 
@@ -1758,6 +1841,26 @@ interface-AnonymizePreview-placeholder-unclearDate = 日期
 
 interface-AnonymizePreview-placeholder-manual = 已移除
 
+interface-AnonymizePreview-note-daysAfter = { $label } { $number } 之後 { $days } 天
+
+interface-AnonymizePreview-note-ageOver90 = 90+
+
+interface-AnonymizePreview-pasteTitle = 放回資訊
+
+interface-AnonymizePreview-pasteHelp = 請在下方貼上 AI 的回答。myCarlos 會把它替換掉的姓名、日期和號碼放回去。替換清單只保存在記憶體中，僅在保險庫保持解鎖、此視窗保持開啟時有效。不會儲存任何內容。
+
+interface-AnonymizePreview-pasteLabel = AI 的回答
+
+interface-AnonymizePreview-pasteButton = 放回資訊
+
+interface-AnonymizePreview-pasteResult = 已放回資訊的回答
+
+interface-AnonymizePreview-pasteFlagged = 無法對應到此文字或已被更動的標記已醒目標示（{ $count } 處）。請與原文核對。
+
+interface-AnonymizePreview-pasteAllMatched = 所有標記都已辨識並放回。
+
+interface-AnonymizePreview-pasteFlaggedSr = （請與原文核對）
+
 interface-AnonymizePreview-possibleNames = 可能是姓名的詞
 
 interface-AnonymizePreview-removeWord = 移除「{ $word }」
@@ -1803,12 +1906,53 @@ notifications-error = 無法儲存此設定。本次工作階段的通知已關�
 notifications-unavailable = 文件通知無法使用。請依平常方式開啟 myCarlos 查看文件。
 notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。
 notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
+notifications-autoNeedsNotices = 請先允許文件送達通知，才能開啟此選項。
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
 notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
+noticesStep-title = 來自診所的通知
+noticesStep-intro = 您的診所已連結。myCarlos 可以在新文件送達時通知您。除非您勾選，否則不會開啟任何選項。
+noticesStep-later = 您隨時可以在 { $settings } 的 { $preferences } 中變更這些設定：{ $notices }。
+noticesStep-done = 完成
+noticesStep-notNow = 暫不
 
 ai-summary-again = 重新產生摘要
 
 ai-keepFailed = myCarlos 無法將此回答與文件一起保存。此處仍會顯示該回答。
 
 ai-keepFull = 此文件保存的 AI 回答已達上限。新的回答會顯示，但不會保存。
+
+# Catalog model list (#276A).
+
+ai-models-title = 這台電腦上的模型
+
+ai-models-group = 正在使用的模型
+
+ai-models-inUse = 正在使用
+
+ai-models-installed = 已安裝
+
+ai-models-addedByYou = 由你新增
+
+ai-models-notDownloaded = 尚未下載
+
+ai-models-downloading = 正在下載
+ai-models-installing = 正在安裝
+
+ai-models-download = 下載
+
+ai-models-remove = 移除
+
+ai-models-help = 標為「正在使用」的模型用於產生摘要和解釋。選擇其他模型會停止正在產生的回答。
+
+ai-models-loading = 正在讀取模型清單…
+
+ai-models-loadFailed = 無法讀取模型清單。請再試一次。
+
+ai-models-retry = 重新讀取模型清單
+
+ai-models-starting = 正在開始下載…
+
+ai-models-picking = 請選擇要新增的模型檔案。
+
+ai-models-changed = 已變更正在使用的模型

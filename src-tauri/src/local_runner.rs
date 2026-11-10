@@ -73,6 +73,60 @@ pub(crate) struct ModelInfo {
     pub(crate) sha256: String,
 }
 
+/// How long one answer may take, from the size of its request: a fixed part, a cost for each
+/// prompt token (reading the prompt is most of an answer's time on a computer's processor) and
+/// for each answer token allowed, kept between a floor and a ceiling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AnswerLimit {
+    pub(crate) fixed: Duration,
+    pub(crate) per_prompt_token: Duration,
+    pub(crate) per_answer_token: Duration,
+    pub(crate) floor: Duration,
+    pub(crate) ceiling: Duration,
+}
+
+impl AnswerLimit {
+    /// The same limit whatever the request.
+    #[allow(dead_code)] // Tests' runners, and the runtime's test helpers.
+    pub(crate) const fn fixed(limit: Duration) -> Self {
+        Self {
+            fixed: limit,
+            per_prompt_token: Duration::ZERO,
+            per_answer_token: Duration::ZERO,
+            floor: limit,
+            ceiling: limit,
+        }
+    }
+
+    /// The limit for a request whose prompt is about `prompt_tokens` and whose answer may run
+    /// to `answer_tokens`.
+    pub(crate) fn for_request(&self, prompt_tokens: u32, answer_tokens: u32) -> Duration {
+        self.fixed
+            .saturating_add(self.per_prompt_token.saturating_mul(prompt_tokens))
+            .saturating_add(self.per_answer_token.saturating_mul(answer_tokens))
+            .max(self.floor)
+            .min(self.ceiling)
+    }
+}
+
+/// About how many tokens a prompt is: the helper's own words (`fixed`: system text,
+/// instructions, the answer's shape) and `text_bytes` of the document's or the term's words at
+/// three bytes a token. That is a cautious rate (English runs about 4.5, accented and CJK text
+/// fewer), so the estimate errs long, and so does the limit. At most the model's context.
+fn prompt_tokens(fixed: u32, text_bytes: usize) -> u32 {
+    let tokens = u64::from(fixed).saturating_add((text_bytes as u64).div_ceil(3));
+    tokens.min(u64::from(crate::model_helper::CONTEXT_TOKENS)) as u32
+}
+
+/// The helper's own words around a summary's pages, and around a term and its sentence, in
+/// tokens, with room to spare (about 450 and 300 today).
+const SUMMARY_PROMPT_TOKENS: u32 = 750;
+const EXPLAIN_PROMPT_TOKENS: u32 = 400;
+/// The answer a summary's limit allows for: about 53 tokens a sentence were measured (5 Nov
+/// 2026), so six sentences run to about 320; its cap (`SUMMARY_TOKENS`) stops it anyway,
+/// keeping the sentences it finished.
+const SUMMARY_ANSWER_TOKENS: u32 = 400;
+
 /// What a runner starts and how much it may use.
 #[derive(Debug, Clone)]
 pub(crate) struct RunnerConfig {
@@ -85,8 +139,8 @@ pub(crate) struct RunnerConfig {
     pub(crate) needed_bytes: u64,
     /// The longest wait for the hello line after the start.
     pub(crate) start_timeout: Duration,
-    /// The longest wait for one answer.
-    pub(crate) answer_timeout: Duration,
+    /// The longest wait for one answer, from the size of its request.
+    pub(crate) answer_limit: AnswerLimit,
     /// The most data memory the process may take (Linux, `RLIMIT_DATA`):
     /// above it, allocations fail and the model ends instead of taking the
     /// computer down. `None` sets no limit. Other platforms do not enforce it.
@@ -106,6 +160,117 @@ pub(crate) struct RunnerConfig {
     /// Started through the helpers' launcher (Windows: its own AppContainer and a job that
     /// caps its memory at `memory_limit_bytes`); on unix the helper sandboxes itself.
     pub(crate) sandboxed: bool,
+    /// The most threads the model writes an answer on (the helper's `--threads`). With it, each
+    /// answer is sent with a number chosen from the computer's load at the time
+    /// ([`generation_threads`]); `None` sends none (fakes, and the stub's tests).
+    pub(crate) generation_threads: Option<u32>,
+}
+
+// --- Threads from the computer's load --------------------------------------------------
+
+/// How long the computer's processor use is sampled before an answer.
+const LOAD_SAMPLE: Duration = Duration::from_millis(250);
+/// The threads an answer is written on when the rest of the computer is busy.
+const BUSY_THREADS: u32 = 2;
+
+/// The computer's processor time so far, busy and in all, in one unit (all cores together).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CpuTimes {
+    pub(crate) busy: u64,
+    pub(crate) total: u64,
+}
+
+/// `/proc/stat`'s first line in clock ticks: busy is all of it but idle and waiting for I/O
+/// (guest time is already in user time, so it is not counted twice).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))] // Linux reads it; tests everywhere.
+fn parse_proc_stat(text: &str) -> Option<CpuTimes> {
+    let line = text.lines().next()?;
+    let mut fields = line.split_whitespace();
+    if fields.next()? != "cpu" {
+        return None;
+    }
+    let ticks: Vec<u64> = fields
+        .take(8)
+        .map(|field| field.parse().ok())
+        .collect::<Option<_>>()?;
+    let [user, nice, system, idle, iowait, irq, softirq, steal] = ticks[..] else {
+        return None;
+    };
+    let busy = user + nice + system + irq + softirq + steal;
+    Some(CpuTimes {
+        busy,
+        total: busy + idle + iowait,
+    })
+}
+
+/// The computer's processor time so far, where it can be read.
+fn cpu_times() -> Option<CpuTimes> {
+    #[cfg(target_os = "linux")]
+    {
+        parse_proc_stat(&std::fs::read_to_string("/proc/stat").ok()?)
+    }
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::FILETIME;
+        use windows::Win32::System::Threading::GetSystemTimes;
+        let (mut idle, mut kernel, mut user) = (
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+        );
+        // SAFETY: three FILETIMEs of ours for the call to fill.
+        unsafe {
+            GetSystemTimes(
+                Some(std::ptr::addr_of_mut!(idle)),
+                Some(std::ptr::addr_of_mut!(kernel)),
+                Some(std::ptr::addr_of_mut!(user)),
+            )
+        }
+        .ok()?;
+        let ticks =
+            |time: FILETIME| (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
+        // Kernel time includes the idle time.
+        let total = ticks(kernel) + ticks(user);
+        Some(CpuTimes {
+            busy: total.saturating_sub(ticks(idle)),
+            total,
+        })
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        None
+    }
+}
+
+/// The share of the computer's processor time that was busy between two samples (0 to 1).
+pub(crate) fn busy_share(before: CpuTimes, after: CpuTimes) -> Option<f64> {
+    let total = after.total.checked_sub(before.total)?;
+    let busy = after.busy.checked_sub(before.busy)?;
+    (total > 0).then(|| busy.min(total) as f64 / total as f64)
+}
+
+/// How busy the computer is now, over [`LOAD_SAMPLE`], as a share of all its processors (the
+/// counters are the whole computer's). Between answers the model's own threads rest, so this
+/// is the rest of the computer's work.
+fn sample_busy_share() -> Option<f64> {
+    let before = cpu_times()?;
+    std::thread::sleep(LOAD_SAMPLE);
+    busy_share(before, cpu_times()?)
+}
+
+/// The threads to write an answer on: all of `most` when, of the `cores` this process may use,
+/// that many and half a core more are free, else [`BUSY_THREADS`]. The computer's `busy` share
+/// is taken to hold on these cores too, so a process kept to some of the computer's cores
+/// compares like with like. An answer is written a token at a time, and each token waits for
+/// its slowest thread: on a busy computer, threads that have to share cores make it 2 to 4 times
+/// slower than fewer threads (measured 5 Nov 2026). Unknown load counts as quiet.
+pub(crate) fn generation_threads(most: u32, cores: usize, busy: Option<f64>) -> u32 {
+    match busy {
+        Some(busy) if (1.0 - busy.clamp(0.0, 1.0)) * (cores as f64) < f64::from(most) + 0.5 => {
+            most.min(BUSY_THREADS)
+        }
+        _ => most,
+    }
 }
 
 /// Reads how much memory this device has free for a model.
@@ -253,6 +418,9 @@ pub(crate) struct Summary {
     pub(crate) last_page_cut: bool,
     /// How many quotes were not in the pages read, and were emptied.
     pub(crate) unlocated: usize,
+    /// What those quotes said, for measuring a model's quoting (tests print them); never shown.
+    #[allow(dead_code)]
+    pub(crate) unlocated_quotes: Vec<String>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -302,7 +470,8 @@ struct Sidecar {
     lines: Receiver<std::io::Result<String>>,
     model: ModelInfo,
     next_id: u64,
-    answer_timeout: Duration,
+    answer_limit: AnswerLimit,
+    generation_threads: Option<u32>,
     /// The model file while the process may still read it (see `RunnerConfig::model_file`).
     model_file: Option<Arc<std::fs::File>>,
 }
@@ -366,7 +535,17 @@ pub(crate) struct Runner {
     status: Mutex<RunnerStatus>,
     /// The generation of requests still wanted from this runner.
     generation: AtomicU64,
+    /// How the last answer was made, when the model said.
+    last_stats: Mutex<Option<crate::model_helper::Stats>>,
+    /// Told the time limit of the answer asked under its ticket, as it is asked.
+    answer_watch: Mutex<Option<(Ticket, AnswerWatch)>>,
+    /// Threads to write answers on whatever the load (measuring by hand: `engine_testing`).
+    threads_override: Mutex<Option<u32>>,
 }
+
+/// What is told an answer's own time limit as the answer is asked: the idle lock's hold on
+/// the answer, and the renderer's (D19).
+pub(crate) type AnswerWatch = Box<dyn FnOnce(Duration) + Send>;
 
 #[derive(Deserialize)]
 struct Hello {
@@ -388,6 +567,9 @@ struct Answer {
     text: Option<String>,
     #[serde(default)]
     error: Option<String>,
+    /// How the helper made it (counts and times), for measuring.
+    #[serde(default)]
+    stats: Option<crate::model_helper::Stats>,
 }
 
 const HELLO: &str = crate::model_helper::CONTRACT;
@@ -403,7 +585,29 @@ impl Runner {
             sidecar: Mutex::new(None),
             status: Mutex::new(RunnerStatus::NotInstalled),
             generation: AtomicU64::new(0),
+            last_stats: Mutex::new(None),
+            answer_watch: Mutex::new(None),
+            threads_override: Mutex::new(None),
         }
+    }
+
+    /// Tells `watch` the time limit of the answer asked under `ticket`, as it is asked; never,
+    /// if none is (a failed start, a cancel first). Takes the place of an earlier watch.
+    pub(crate) fn watch_answer(&self, ticket: Ticket, watch: AnswerWatch) {
+        let mut slot = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
+        if self.is_current(ticket) {
+            *slot = Some((ticket, watch));
+        }
+    }
+
+    /// Answers are written on `threads` threads from now on, whatever the computer's load;
+    /// `None` chooses from the load again. For measuring by hand.
+    #[allow(dead_code)] // `engine_testing` only.
+    pub(crate) fn override_threads(&self, threads: Option<u32>) {
+        *self
+            .threads_override
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = threads;
     }
 
     pub(crate) fn status(&self) -> RunnerStatus {
@@ -421,13 +625,14 @@ impl Runner {
     /// takes one when it asks for a document, and the old document's request
     /// is cancelled by it.
     pub(crate) fn ticket(&self) -> Ticket {
+        let _watch = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
         Ticket {
             runner: self as *const Self as usize,
             generation: self.generation.fetch_add(1, Ordering::SeqCst) + 1,
         }
     }
 
-    fn is_current(&self, ticket: Ticket) -> bool {
+    pub(crate) fn is_current(&self, ticket: Ticket) -> bool {
         ticket.runner == self as *const Self as usize
             && self.generation.load(Ordering::SeqCst) == ticket.generation
     }
@@ -435,6 +640,7 @@ impl Runner {
     /// Ends every request in flight on this runner: when the vault locks,
     /// and when the reader closes the panel.
     pub(crate) fn cancel_all(&self) {
+        let _watch = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
         self.generation.fetch_add(1, Ordering::SeqCst);
     }
 
@@ -456,9 +662,29 @@ impl Runner {
         probe: &dyn MemoryProbe,
         prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
     ) -> Result<ModelInfo, RunnerError> {
-        let generation = self.generation.load(Ordering::SeqCst);
-        let wanted = || self.generation.load(Ordering::SeqCst) == generation;
+        self.start_for(
+            Ticket {
+                runner: self as *const Self as usize,
+                generation: self.generation.load(Ordering::SeqCst),
+            },
+            probe,
+            prepare,
+        )
+    }
+
+    /// An answer's ticket is reserved at admission, never when its worker resumes.
+    pub(crate) fn start_for(
+        &self,
+        ticket: Ticket,
+        probe: &dyn MemoryProbe,
+        prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
+    ) -> Result<ModelInfo, RunnerError> {
+        let wanted = || self.is_current(ticket);
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
+        // Before inspecting or changing the resident helper, status or config.
+        if !wanted() {
+            return Err(RunnerError::Cancelled);
+        }
         if let Some(running) = slot.as_mut() {
             if running.process.running() {
                 return Ok(running.model.clone());
@@ -551,6 +777,12 @@ impl Runner {
         });
     }
 
+    /// How the last answer was made, when the model said (counts and times only).
+    #[allow(dead_code)] // For measuring: the real-model test prints it.
+    pub(crate) fn last_stats(&self) -> Option<crate::model_helper::Stats> {
+        *self.last_stats.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Stops the model process now if nothing holds it; otherwise as soon as its
     /// holder lets go (a start or a request, which a cancel has ended by then), on
     /// a thread of its own. A lock calls this, and must never wait for a model.
@@ -591,7 +823,16 @@ impl Runner {
     ) -> Result<Summary, RunnerError> {
         let request_json = serde_json::to_value(request)
             .map_err(|error| RunnerError::Protocol(error.to_string()))?;
-        let (answer, model) = self.ask(ticket, "summary", request_json)?;
+        let text_bytes = request.pages.iter().map(|page| page.text.len()).sum();
+        let (answer, model) = self.ask(
+            ticket,
+            "summary",
+            request_json,
+            (
+                prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
+                SUMMARY_ANSWER_TOKENS,
+            ),
+        )?;
         let Some(sentences) = answer.sentences else {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
         };
@@ -619,14 +860,13 @@ impl Runner {
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
-        let mut unlocated = 0;
+        let mut unlocated_quotes = Vec::new();
         let sentences = sentences
             .into_iter()
             .take(request.max_sentences)
             .map(|mut sentence| {
-                if !quote_in(&text, &sentence.quote) {
-                    sentence.quote = String::new();
-                    unlocated += 1;
+                if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
+                    unlocated_quotes.push(std::mem::take(&mut sentence.quote));
                 }
                 sentence
             })
@@ -636,7 +876,8 @@ impl Runner {
             model,
             last_page,
             last_page_cut: answer.last_page_cut,
-            unlocated,
+            unlocated: unlocated_quotes.len(),
+            unlocated_quotes,
         })
     }
 
@@ -653,6 +894,10 @@ impl Runner {
             ticket,
             "explain",
             serde_json::json!({ "term": term, "context": context, "lang": lang }),
+            (
+                prompt_tokens(EXPLAIN_PROMPT_TOKENS, term.len() + context.len()),
+                crate::model_helper::EXPLAIN_TOKENS as u32,
+            ),
         )?;
         let text = answer
             .text
@@ -666,25 +911,62 @@ impl Runner {
     /// Test builds only: asks the stub helper what its sandbox allows (`model_helper`).
     #[cfg(all(feature = "ai-helper-stub", any(target_os = "linux", windows)))]
     pub(crate) fn probe(&self, ticket: Ticket, what: &str) -> Result<String, RunnerError> {
-        let (answer, _model) = self.ask(ticket, "probe", serde_json::json!({ "what": what }))?;
+        let (answer, _model) =
+            self.ask(ticket, "probe", serde_json::json!({ "what": what }), (0, 0))?;
         answer
             .text
             .ok_or_else(|| RunnerError::Protocol("no text".to_owned()))
     }
 
-    /// One request, one answer, bounded by `answer_timeout` and by the
-    /// ticket. Holds the process for the whole exchange; the answer comes
-    /// with the model it is attributed to.
+    /// One request, one answer, bounded by the answer limit for its `size` (prompt tokens,
+    /// answer tokens allowed) and by the ticket. Holds the process for the whole exchange; the
+    /// answer comes with the model it is attributed to.
     fn ask(
         &self,
         ticket: Ticket,
         tool: &str,
+        request: serde_json::Value,
+        size: (u32, u32),
+    ) -> Result<(Answer, ModelInfo), RunnerError> {
+        self.ask_with_sampler(ticket, tool, request, size, sample_busy_share)
+    }
+
+    /// Keep sampling outside the process lock; a per-call sampler also lets tests
+    /// control cancellation during that interval without a shared timing hook.
+    fn ask_with_sampler(
+        &self,
+        ticket: Ticket,
+        tool: &str,
         mut request: serde_json::Value,
+        size: (u32, u32),
+        sample: impl FnOnce() -> Option<f64>,
     ) -> Result<(Answer, ModelInfo), RunnerError> {
         if !self.is_current(ticket) {
             return Err(RunnerError::Cancelled);
         }
+        // The computer's load, sampled before the process is held, so that a cancel, a stop or
+        // a lock never waits for it.
+        let forced = *self
+            .threads_override
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let chooses = matches!(tool, "summary" | "explain")
+            && forced.is_none()
+            && self
+                .sidecar
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .is_some_and(|running| running.generation_threads.is_some());
+        let busy = if chooses { sample() } else { None };
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
+        // A newer request may have reused this helper while sampling ran. The
+        // stale caller must not send to it, change its status, or drop it.
+        if !self.is_current(ticket) {
+            return Err(RunnerError::Cancelled);
+        }
+        // A failed answer leaves none: never the stats of the one before.
+        *self.last_stats.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let Some(running) = slot.as_mut() else {
             return Err(RunnerError::NotRunning);
         };
@@ -693,12 +975,34 @@ impl Runner {
         if let Some(object) = request.as_object_mut() {
             object.insert("id".to_owned(), serde_json::json!(id));
             object.insert("tool".to_owned(), serde_json::json!(tool));
+            // The threads to write this answer on, from the computer's load now.
+            if let (Some(most), "summary" | "explain") = (running.generation_threads, tool) {
+                let threads = forced.unwrap_or_else(|| {
+                    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+                    generation_threads(most, cores, busy)
+                });
+                object.insert("threads".to_owned(), serde_json::json!(threads));
+            }
         }
         let model = running.model.clone();
         self.set_status(RunnerStatus::Working {
             model: model.clone(),
         });
-        let answer_timeout = running.answer_timeout;
+        let answer_timeout = running.answer_limit.for_request(size.0, size.1);
+        // Only this ticket's watch: a newer request's waits for its own answer.
+        let watch = {
+            let mut slot = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
+            match slot.take() {
+                Some((watched, watch)) if watched == ticket => Some(watch),
+                other => {
+                    *slot = other;
+                    None
+                }
+            }
+        };
+        if let Some(watch) = watch {
+            watch(answer_timeout);
+        }
         let mut outcome = exchange(
             running,
             || self.is_current(ticket),
@@ -710,6 +1014,9 @@ impl Runner {
         // and the answer belongs to nobody.
         if outcome.is_ok() && !self.is_current(ticket) {
             outcome = Err(RunnerError::Cancelled);
+        }
+        if let Ok(answer) = &outcome {
+            *self.last_stats.lock().unwrap_or_else(|e| e.into_inner()) = answer.stats;
         }
         match &outcome {
             Ok(_) => self.set_status(RunnerStatus::Ready {
@@ -759,7 +1066,8 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
             sha256: String::new(),
         },
         next_id: 1,
-        answer_timeout: config.answer_timeout,
+        answer_limit: config.answer_limit,
+        generation_threads: config.generation_threads,
         model_file: config.model_file.clone(),
     };
     let deadline = Instant::now() + config.start_timeout;
@@ -1026,13 +1334,90 @@ fn cut(text: &str, chars: usize) -> String {
     text.chars().take(chars).collect()
 }
 
-/// Whether the document contains the quote, word for word: whitespace runs
-/// count as one. The renderer places it exactly (locateQuote); here a quote
-/// that is not there at all is enough to drop the sentence.
+/// What a quote may start or end with that is not part of it, as the reader
+/// trims it (`locateQuote`): quotation marks, straight or curly, and `.,;:`.
+const QUOTE_ENDS: &[char] = &[
+    '"', '\'', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '.', ',', ';', ':',
+];
+
+/// Whether the document contains the quote, word for word, as the reader
+/// matches one (`locateQuote`): whitespace runs count as one, case does not
+/// count, and spaces and [`QUOTE_ENDS`] at either end of the quote are not
+/// part of it. A model often copies the colon of a "Label: value" line
+/// (": Admitted: 2026-10-01"). The renderer places it exactly; here a quote
+/// that is not there at all is enough to empty it.
 fn quote_in(text: &str, quote: &str) -> bool {
-    let fold = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-    let quote = fold(quote);
+    let quote = folded(quote);
     !quote.is_empty() && fold(text).contains(&quote)
+}
+
+/// At most this many words make a heading (see [`quote_is_heading`]).
+const HEADING_WORDS: usize = 4;
+
+/// Whether the quote is a heading of the pages rather than something they say: a whole line
+/// on its own, of at most [`HEADING_WORDS`] words and no digit, that reads as a heading. A
+/// line reads as one when it ends with a colon ("Follow-up:"), is in capitals ("DISCHARGE
+/// SUMMARY"), or has a list or table under it: its next line with words is indented further
+/// than it, a bullet or numbered ("Medications at discharge" over the medicines). A quote must support its
+/// sentence, and a heading only names a part of the document; the reader would link the
+/// sentence to it. A short finding on a line of its own ("No known allergies", "Non-smoker",
+/// "Allergies: none") is no heading, nor is a line with a value in it ("Admitted:
+/// 2026-10-01") or a sentence ("Hypertension is treated.").
+fn quote_is_heading(text: &str, quote: &str) -> bool {
+    let quote = folded(quote);
+    if quote.is_empty()
+        || quote.split(' ').count() > HEADING_WORDS
+        || quote.chars().any(char::is_numeric)
+    {
+        return false;
+    }
+    let lines: Vec<&str> = text.lines().collect();
+    lines.iter().enumerate().any(|(at, line)| {
+        let next = lines[at + 1..].iter().find(|next| !next.trim().is_empty());
+        folded(line) == quote && reads_as_heading(line, next.copied())
+    })
+}
+
+/// Whether a short line reads as a heading, from its own shape and from the line with words
+/// after it (see [`quote_is_heading`]).
+fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
+    // In characters, so that any kind of space counts as one (a no-break space is 2 bytes).
+    let indent = |text: &str| text.chars().take_while(|c| c.is_whitespace()).count();
+    let line_indent = indent(line);
+    let line = line.trim();
+    if line.ends_with(['.', '!', '?']) {
+        // A sentence on a line of its own says something.
+        return false;
+    }
+    let in_capitals =
+        line.chars().any(char::is_alphabetic) && !line.chars().any(char::is_lowercase);
+    let over_a_list = next.is_some_and(|next| {
+        let item = next.trim_start();
+        let numbered = item
+            .trim_start_matches(|c: char| c.is_ascii_digit())
+            .starts_with(['.', ')'])
+            && item.starts_with(|c: char| c.is_ascii_digit());
+        // PDF text often indents ordinary lines too: only a line indented further than this
+        // one is under it.
+        indent(next) > line_indent
+            || item.starts_with(['-', '*', '\u{2022}', '\u{2013}'])
+            || numbered
+    });
+    line.ends_with(':') || in_capitals || over_a_list
+}
+
+/// Whitespace runs as one space, in lower case.
+fn fold(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// A quote, or a line, as quotes are compared: folded, without [`QUOTE_ENDS`] or spaces at
+/// either end.
+fn folded(text: &str) -> String {
+    fold(text.trim_matches(|c: char| c.is_whitespace() || QUOTE_ENDS.contains(&c)))
 }
 
 #[cfg(test)]
@@ -1116,6 +1501,186 @@ mod tests {
         assert!(quote_in("The  blood\ntest was normal.", "blood test was"));
         assert!(!quote_in("The blood test was normal.", "blood work"));
         assert!(!quote_in("Anything.", "   "));
+        // As the reader matches: the ends' punctuation and the case do not count.
+        let letter = "Admitted: 2026-10-01\nIt lasts 3 to 5 minutes and settles with rest.";
+        assert!(quote_in(letter, ": Admitted: 2026-10-01"));
+        assert!(quote_in(
+            letter,
+            "\"it lasts 3 to 5 minutes and settles with rest\""
+        ));
+        assert!(quote_in(letter, "settles with rest.;"));
+        assert!(quote_in(letter, "“Admitted: 2026-10-01”"));
+        assert!(!quote_in(letter, ": Discharged: 2026-10-01"));
+        assert!(!quote_in(letter, " :.;'\" "));
+        // Inside the quote, the words still have to be there as written.
+        assert!(!quote_in(letter, "lasts 3 to 6 minutes"));
+    }
+
+    #[test]
+    fn a_quote_that_is_only_a_heading_is_one_and_a_line_with_a_value_is_not() {
+        let summary = "DISCHARGE SUMMARY\n\nMedications at discharge\n\n  Ticagrelor  90 mg twice daily  NEW\n\
+                       Follow-up:\nBlood tests in 1 week.\nAdmitted: 2026-10-01\n\
+                       Instructions to the patient\n- Weigh yourself every morning.\n\
+                       Diagnoses\n1. Heart attack\nHypertension is treated.";
+        // Indented itself, a heading still has its table under it when that is deeper.
+        let indented = "  Medications at discharge\n      Ticagrelor  90 mg twice daily  NEW";
+        assert!(quote_is_heading(indented, "Medications at discharge"));
+        assert!(!quote_is_heading(
+            "  Medications at discharge\n  Ticagrelor  90 mg twice daily  NEW",
+            "Medications at discharge"
+        ));
+        for heading in [
+            "Discharge summary",
+            "Medications at discharge",
+            "medications at discharge:",
+            "Follow-up",
+            "\u{201C}Instructions to the patient\u{201D}",
+            "Diagnoses",
+        ] {
+            assert!(quote_is_heading(summary, heading), "{heading}");
+        }
+        for content in [
+            // A value, words of a longer line, or a sentence.
+            ": Admitted: 2026-10-01",
+            "Ticagrelor 90 mg twice daily",
+            "Medications",
+            "Hypertension is treated.",
+            "Blood tests in 1 week.",
+            "",
+        ] {
+            assert!(!quote_is_heading(summary, content), "{content}");
+        }
+    }
+
+    #[test]
+    fn a_short_finding_on_a_line_of_its_own_keeps_its_quote() {
+        // Each finding as its own line, then as its own paragraph, and over a sentence.
+        let findings = [
+            "No known allergies",
+            "Allergies: none",
+            "Lives alone",
+            "Non-smoker",
+            "Normal sinus rhythm",
+            "No acute distress",
+        ];
+        let lines = format!(
+            "Social history\n{}\nPlan as discussed.",
+            findings.join("\n")
+        );
+        let paragraphs = format!("{}\n\nPlan as discussed.", findings.join("\n\n"));
+        // PDF text often indents every line alike: one as deep as the line before is not under it.
+        let indented = format!(
+            "  Social history\n  {}\n  Plan as discussed.",
+            findings.join("\n  ")
+        );
+        // Spaces of other kinds count as one each: a no-break or ideographic space under a
+        // plain one is no deeper.
+        let mixed = format!(
+            " {}\n\u{a0}Lives alone\n  Non-smoker\n\u{3000}Plan as discussed.",
+            findings[0]
+        );
+        assert!(!quote_is_heading(&mixed, findings[0]));
+        assert!(!quote_is_heading(&mixed, "Non-smoker"));
+        for text in [&lines, &paragraphs, &indented] {
+            for finding in findings {
+                assert!(quote_in(text, finding), "{finding}");
+                assert!(!quote_is_heading(text, finding), "{finding} in {text:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_answer_limit_grows_with_its_request_between_its_floor_and_ceiling() {
+        let fixed = AnswerLimit::fixed(Duration::from_secs(7));
+        assert_eq!(fixed.for_request(0, 0), Duration::from_secs(7));
+        assert_eq!(
+            fixed.for_request(u32::MAX, u32::MAX),
+            Duration::from_secs(7)
+        );
+        let scaled = AnswerLimit {
+            fixed: Duration::from_secs(30),
+            per_prompt_token: Duration::from_millis(150),
+            per_answer_token: Duration::from_millis(600),
+            floor: Duration::from_secs(300),
+            ceiling: Duration::from_secs(1200),
+        };
+        assert_eq!(scaled.for_request(0, 0), Duration::from_secs(300));
+        assert_eq!(
+            scaled.for_request(2_000, 350),
+            Duration::from_secs(30 + 300 + 210)
+        );
+        // No overflow: the ceiling.
+        assert_eq!(
+            scaled.for_request(u32::MAX, u32::MAX),
+            Duration::from_secs(1200)
+        );
+    }
+
+    #[test]
+    fn a_prompt_is_estimated_long_from_its_bytes_and_never_past_the_context() {
+        assert_eq!(prompt_tokens(750, 0), 750);
+        assert_eq!(prompt_tokens(750, 3_563), 750 + 1_188);
+        assert_eq!(
+            prompt_tokens(750, usize::MAX),
+            crate::model_helper::CONTEXT_TOKENS
+        );
+    }
+
+    #[test]
+    fn a_new_request_forgets_the_last_answers_stats() {
+        let runner = Runner::new(idle_config());
+        *runner.last_stats.lock().unwrap() = Some(crate::model_helper::Stats::default());
+        // Not running: the request fails, and leaves no stats from the one before.
+        assert!(matches!(
+            runner.explain(runner.ticket(), "FAKE", "FAKE context", "en"),
+            Err(RunnerError::NotRunning)
+        ));
+        assert_eq!(runner.last_stats(), None);
+    }
+
+    #[test]
+    fn proc_stat_gives_busy_and_all_processor_time() {
+        let stat = "cpu  100 5 50 800 20 3 2 0 0 0\ncpu0 50 2 25 400 10 1 1 0 0 0\nintr 1\n";
+        assert_eq!(
+            parse_proc_stat(stat),
+            Some(CpuTimes {
+                busy: 100 + 5 + 50 + 3 + 2,
+                total: 100 + 5 + 50 + 3 + 2 + 800 + 20
+            })
+        );
+        assert_eq!(parse_proc_stat("cpu0 1 2 3 4 5 6 7 8"), None);
+        assert_eq!(parse_proc_stat("cpu 1 2 3"), None);
+        assert_eq!(parse_proc_stat("cpu 1 2 x 4 5 6 7 8"), None);
+        assert_eq!(parse_proc_stat(""), None);
+    }
+
+    #[test]
+    fn the_busy_share_comes_from_two_samples() {
+        let at = |busy, total| CpuTimes { busy, total };
+        assert_eq!(busy_share(at(100, 1_000), at(400, 1_600)), Some(0.5));
+        assert_eq!(busy_share(at(100, 1_000), at(100, 1_600)), Some(0.0));
+        // Nothing elapsed, or a counter that went back: unknown.
+        assert_eq!(busy_share(at(100, 1_000), at(100, 1_000)), None);
+        assert_eq!(busy_share(at(400, 1_600), at(100, 1_000)), None);
+        #[cfg(any(target_os = "linux", windows))]
+        assert!(sample_busy_share().is_some_and(|busy| (0.0..=1.0).contains(&busy)));
+    }
+
+    #[test]
+    fn an_answer_is_written_on_fewer_threads_when_the_computer_is_busy() {
+        // Six cores, at most four threads: four while a quarter of the computer is busy.
+        assert_eq!(generation_threads(4, 6, None), 4);
+        assert_eq!(generation_threads(4, 6, Some(0.1)), 4);
+        assert_eq!(generation_threads(4, 6, Some(0.25)), 4);
+        assert_eq!(generation_threads(4, 6, Some(0.26)), 2);
+        assert_eq!(generation_threads(4, 6, Some(1.0)), 2);
+        // Kept to four of the computer's cores, at most three: the same share counts on them.
+        assert_eq!(generation_threads(3, 4, Some(0.1)), 3);
+        assert_eq!(generation_threads(3, 4, Some(0.15)), 2);
+        // Never more than the most; a share out of range is taken at its bound.
+        assert_eq!(generation_threads(1, 2, Some(0.95)), 1);
+        assert_eq!(generation_threads(4, 6, Some(-1.0)), 4);
+        assert_eq!(generation_threads(4, 6, Some(7.0)), 2);
     }
 
     fn idle_config() -> RunnerConfig {
@@ -1124,11 +1689,12 @@ mod tests {
             args: Vec::new(),
             needed_bytes: GIB,
             start_timeout: Duration::from_secs(1),
-            answer_timeout: Duration::from_secs(1),
+            answer_limit: AnswerLimit::fixed(Duration::from_secs(1)),
             memory_limit_bytes: None,
             expected_model: None,
             model_file: None,
             sandboxed: false,
+            generation_threads: None,
         }
     }
 
@@ -1201,11 +1767,12 @@ mod tests {
                 args,
                 needed_bytes,
                 start_timeout: Duration::from_secs(10),
-                answer_timeout: Duration::from_secs(10),
+                answer_limit: AnswerLimit::fixed(Duration::from_secs(10)),
                 memory_limit_bytes: None,
                 expected_model: None,
                 model_file: None,
                 sandboxed: false,
+                generation_threads: None,
             }
         }
 
@@ -1284,6 +1851,179 @@ mod tests {
         }
 
         #[test]
+        fn ownership_an_admitted_old_worker_cannot_change_a_new_answers_helper() {
+            // Pause A after admission, before start, then admit B either in
+            // the same session or after locking and unlocking. Resume A only
+            // after B has a resident helper, stats and its own waiting watch.
+            for next_session in [false, true] {
+                let runner = Arc::new(Runner::new(config(&[], GIB)));
+                let idle = Arc::new(crate::idle::IdleDeadline::new(Instant::now()));
+                idle.arm(Instant::now());
+                let origin = idle.answer_origin().unwrap();
+                let (old_hold, old_ticket) = idle
+                    .admit_answer(origin, Duration::from_secs(1200), || runner.ticket())
+                    .unwrap();
+                let (release, resume) = mpsc::channel();
+                let worker = Arc::clone(&runner);
+                let old = std::thread::spawn(move || {
+                    resume.recv_timeout(Duration::from_secs(10)).unwrap();
+                    let announced = old_hold.watch(|_| panic!("old answer announced"));
+                    worker.watch_answer(old_ticket, announced);
+                    let start = worker.start_for(old_ticket, &Fixed(Some(8 * GIB)), || {
+                        panic!("old worker prepared a model")
+                    });
+                    assert_eq!(start, Err(RunnerError::Cancelled));
+                    assert_eq!(
+                        worker.summarize(old_ticket, &request()),
+                        Err(RunnerError::Cancelled)
+                    );
+                    assert!(!old_hold.finish(true));
+                });
+                if next_session {
+                    runner.cancel_all();
+                    idle.disarm();
+                    idle.arm(Instant::now());
+                }
+                let origin = idle.answer_origin().unwrap();
+                let (new_hold, new_ticket) = idle
+                    .admit_answer(origin, Duration::from_secs(300), || runner.ticket())
+                    .unwrap();
+                runner
+                    .start_for(new_ticket, &Fixed(Some(8 * GIB)), || {
+                        Ok(runner.config.clone())
+                    })
+                    .unwrap();
+                runner.summarize(new_ticket, &request()).unwrap();
+                let (told, heard) = mpsc::channel();
+                runner.watch_answer(new_ticket, Box::new(move |limit| told.send(limit).unwrap()));
+                let state = || {
+                    let slot = runner.sidecar.lock().unwrap();
+                    let running = slot.as_ref().unwrap();
+                    let Process::Plain(child) = &running.process;
+                    (
+                        child.id(),
+                        running.next_id,
+                        runner.status(),
+                        serde_json::to_value(runner.last_stats()).unwrap(),
+                    )
+                };
+                let before = state();
+                release.send(()).unwrap();
+                old.join().unwrap();
+                assert_eq!(state(), before, "new session: {next_session}");
+                assert!(new_hold.is_current());
+                assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Empty));
+                runner.summarize(new_ticket, &request()).unwrap();
+                assert!(heard.try_recv().is_ok(), "B retained its watch");
+                assert!(new_hold.finish(true));
+                runner.stop();
+            }
+        }
+
+        #[test]
+        fn a_ticket_cancelled_while_sampling_leaves_the_newer_requests_helper_alone() {
+            use std::sync::atomic::AtomicUsize;
+            use std::sync::mpsc;
+
+            struct CountWrites {
+                input: Box<dyn Write + Send>,
+                bytes: Arc<AtomicUsize>,
+            }
+
+            impl Write for CountWrites {
+                fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                    let written = self.input.write(bytes)?;
+                    self.bytes.fetch_add(written, Ordering::SeqCst);
+                    Ok(written)
+                }
+
+                fn flush(&mut self) -> std::io::Result<()> {
+                    self.input.flush()
+                }
+            }
+
+            let mut adaptive = config(&[], GIB);
+            adaptive.generation_threads = Some(4);
+            let runner = Arc::new(Runner::new(adaptive));
+            let model = runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let written = Arc::new(AtomicUsize::new(0));
+            {
+                let mut slot = runner.sidecar.lock().unwrap();
+                let running = slot.as_mut().unwrap();
+                let input = std::mem::replace(&mut running.input, Box::new(std::io::sink()));
+                running.input = Box::new(CountWrites {
+                    input,
+                    bytes: Arc::clone(&written),
+                });
+            }
+            let helper_state = || {
+                let slot = runner.sidecar.lock().unwrap();
+                let running = slot.as_ref().expect("the resident helper must remain");
+                let Process::Plain(child) = &running.process;
+                (child.id(), running.next_id)
+            };
+            let (pid, next_id) = helper_state();
+            assert_eq!(next_id, 1);
+
+            let launch = |ticket, term: &'static str| {
+                let (sampled_tx, sampled_rx) = mpsc::channel();
+                let (release_tx, release_rx) = mpsc::channel();
+                let worker = Arc::clone(&runner);
+                let asked = std::thread::spawn(move || {
+                    worker.ask_with_sampler(
+                        ticket,
+                        "explain",
+                        serde_json::json!({ "term": term, "context": TEXT, "lang": "en" }),
+                        (
+                            prompt_tokens(EXPLAIN_PROMPT_TOKENS, term.len() + TEXT.len()),
+                            crate::model_helper::EXPLAIN_TOKENS as u32,
+                        ),
+                        || {
+                            sampled_tx.send(()).unwrap();
+                            release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                            Some(0.0)
+                        },
+                    )
+                });
+                // Both requests must actually enter the adaptive sampling path.
+                sampled_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                (release_tx, asked)
+            };
+
+            let (release_old, old) = launch(runner.ticket(), "older");
+            let newer = runner.ticket();
+            // As the runtime does before its new request: keep the resident helper.
+            assert_eq!(runner.start(&Fixed(Some(8 * GIB))).unwrap(), model);
+            assert_eq!(helper_state(), (pid, 1));
+            let (release_new, new) = launch(newer, "newer");
+
+            // Finish the stale sample first, with the newer request still sampling.
+            release_old.send(()).unwrap();
+            assert!(matches!(old.join().unwrap(), Err(RunnerError::Cancelled)));
+            assert_eq!(written.load(Ordering::SeqCst), 0);
+            assert_eq!(helper_state(), (pid, 1));
+            assert!(runner.is_running());
+            assert_eq!(
+                runner.status(),
+                RunnerStatus::Ready {
+                    model: model.clone()
+                }
+            );
+
+            release_new.send(()).unwrap();
+            let (answer, attributed) = new.join().unwrap().unwrap();
+            assert_eq!(
+                answer.text.as_deref(),
+                Some("FAKE: newer means something plain.")
+            );
+            assert_eq!(attributed, model);
+            assert!(written.load(Ordering::SeqCst) > 0);
+            assert_eq!(helper_state(), (pid, 2));
+            assert!(runner.is_running());
+            runner.stop();
+        }
+
+        #[test]
         fn a_lock_cancels_the_request_in_flight_and_stops_the_model() {
             let runner = Arc::new(Runner::new(config(&["--slow", "30"], GIB)));
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
@@ -1302,6 +2042,111 @@ mod tests {
             assert!(locked_at.elapsed() < Duration::from_secs(5));
             assert!(!runner.is_running());
             assert!(matches!(runner.status(), RunnerStatus::Installed { .. }));
+        }
+
+        #[test]
+        fn a_watch_is_told_its_own_answers_limit_once_as_it_is_asked() {
+            let limit = AnswerLimit {
+                fixed: Duration::from_secs(2),
+                per_prompt_token: Duration::from_millis(1),
+                per_answer_token: Duration::from_millis(1),
+                floor: Duration::from_secs(1),
+                ceiling: Duration::from_secs(60),
+            };
+            let runner = Runner::new(RunnerConfig {
+                answer_limit: limit,
+                ..config(&[], GIB)
+            });
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let text_bytes = request().pages.iter().map(|page| page.text.len()).sum();
+            let own = limit.for_request(
+                prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
+                SUMMARY_ANSWER_TOKENS,
+            );
+            let (told, heard) = mpsc::channel();
+            let ticket = runner.ticket();
+            runner.watch_answer(ticket, Box::new(move |limit| told.send(limit).unwrap()));
+            runner.summarize(ticket, &request()).unwrap();
+            assert_eq!(heard.try_recv(), Ok(own));
+            // Told once: the watch is used up.
+            runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Disconnected));
+
+            // A watch for an older request is not told a newer one's limit.
+            let (told, heard) = mpsc::channel();
+            let older = runner.ticket();
+            runner.watch_answer(older, Box::new(move |limit| told.send(limit).unwrap()));
+            runner
+                .explain(runner.ticket(), "tablet", "Take one tablet.", "en")
+                .unwrap();
+            assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Empty));
+            // Nor is a request cancelled before it was asked.
+            assert_eq!(
+                runner.summarize(older, &request()),
+                Err(RunnerError::Cancelled)
+            );
+            assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Empty));
+            runner.stop();
+        }
+
+        #[test]
+        fn lock_now_during_a_held_answer_stops_it_at_once_and_ends_the_hold() {
+            use crate::idle::{IdleDeadline, MARGIN};
+            use crate::model_runtime::AiError;
+            let runner = Arc::new(Runner::new(config(&["--slow", "30"], GIB)));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let armed_at = Instant::now();
+            let idle = Arc::new(IdleDeadline::new(armed_at));
+            idle.arm(armed_at);
+            let (told, asked) = mpsc::channel();
+            let answering = {
+                let (runner, idle) = (runner.clone(), idle.clone());
+                std::thread::spawn(move || {
+                    let origin = idle.answer_origin().unwrap();
+                    let (hold, ticket) = idle
+                        .admit_answer(origin, crate::model_runtime::ANSWER_LIMIT.ceiling, || {
+                            runner.ticket()
+                        })
+                        .unwrap();
+                    tauri::async_runtime::block_on(crate::held_for_answer(
+                        hold,
+                        move |limit| told.send(limit).unwrap(),
+                        move |watch| {
+                            runner.watch_answer(ticket, watch);
+                            match runner.summarize(ticket, &request()) {
+                                Ok(_) => Ok(()),
+                                Err(RunnerError::Cancelled) => Err(AiError::Cancelled),
+                                Err(_) => Err(AiError::Failed),
+                            }
+                        },
+                    ))
+                })
+            };
+            // The answer is being written, under its limit (10 s here), and
+            // the idle lock waits for it.
+            assert_eq!(
+                asked.recv_timeout(Duration::from_secs(5)),
+                Ok(Duration::from_secs(10))
+            );
+            // Unheld, the delay would have run out a second past this.
+            let heard_at = Instant::now();
+            assert!(!idle
+                .is_due(heard_at + Duration::from_secs(15 * 60) + MARGIN + Duration::from_secs(1)));
+            // Lock now, as vault_lock does it: the model stops, and the vault
+            // locks, which ends every hold.
+            install(runner.clone());
+            let locked_at = Instant::now();
+            on_lock();
+            idle.disarm();
+            assert!(locked_at.elapsed() < Duration::from_millis(200));
+            uninstall();
+            assert_eq!(answering.join().unwrap(), Err(AiError::Cancelled));
+            assert!(locked_at.elapsed() < Duration::from_secs(5));
+            assert!(!runner.is_running());
+            // The next session's delay runs from its unlock.
+            let unlocked_at = Instant::now();
+            idle.arm(unlocked_at);
+            assert!(idle.is_due(unlocked_at + Duration::from_secs(15 * 60) + MARGIN));
         }
 
         #[test]
