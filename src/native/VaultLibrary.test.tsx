@@ -1,6 +1,7 @@
 import { humanText, humanValue, visibleText } from "../test/humanText";
 import { resolveText } from "../i18n";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,9 +9,10 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { ANNOUNCE_DELAY_MS } from "./announce";
 import { page } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
-import type { VaultBridge, VaultSnapshot } from "../vault";
+import type { PortalLinkSummary, VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 import type { ModelStatus } from "../ai/types";
 import { FAKE_MODEL, fakeDocumentText } from "../test/fakeLocalModel";
@@ -57,7 +59,13 @@ const snapshot: VaultSnapshot = {
   recovery: null,
 };
 
-function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
+function renderLibrary(
+  shown: VaultSnapshot = snapshot,
+  sharedNew = 0,
+  bridgeExtras: Record<string, unknown> = {},
+  computer = true,
+  activity: { busy?: boolean; portalBusy?: boolean } = {},
+) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
     updateFolder: vi.fn().mockResolvedValue(undefined),
@@ -96,13 +104,15 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       createdAtMs: 1,
       size: 2,
     })),
+    ...bridgeExtras,
   } as unknown as VaultBridge;
   const setNotice = vi.fn();
-  render(
+  const library = (current: VaultSnapshot) => (
     <VaultLibrary
       bridge={bridge}
-      snapshot={shown}
-      busy={false}
+      snapshot={current}
+      busy={activity.busy ?? false}
+      portalBusy={activity.portalBusy ?? false}
       notice=""
       setNotice={setNotice}
       run={async (operation) => operation()}
@@ -111,9 +121,15 @@ function renderLibrary(shown: VaultSnapshot = snapshot, sharedNew = 0) {
       autoLockMinutes={5}
       onAutoLockMinutes={vi.fn()}
       sharedNew={sharedNew}
-    />,
+      computer={computer}
+    />
   );
-  return { bridge, setNotice };
+  const view = render(library(shown));
+  return {
+    bridge,
+    setNotice,
+    rerenderSnapshot: (next: VaultSnapshot) => view.rerender(library(next)),
+  };
 }
 
 function dragFolder(from: Element, to: Element) {
@@ -1009,10 +1025,12 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       const tabs = within(sections).getAllByRole("button");
       // Records holds the people and Shared with me (Ben, 21 Oct); it says
       // how many shared files are new (#61).
+      // On a computer the AI helper's settings are a tab too (#72).
       expect(humanValue(tabs.map((tab) => tab.textContent))).toEqual([
         "Records (2 new)",
         "Security",
         "Preferences",
+        "AI helper",
       ]);
       expect(tabs[0]).toHaveAttribute("aria-current", "page");
       // The sidebar is hidden here; the same top-level folders sit under
@@ -1053,6 +1071,240 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     } finally {
       await page.viewport(1100, 760);
     }
+  });
+});
+
+describe("Settings > AI helper (#72)", () => {
+  it("is its own page on a computer, beside Security and Preferences, and Preferences no longer holds it", async () => {
+    renderLibrary();
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: humanText("AI helper") }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: humanText("AI helper"),
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(humanText("How the AI helper works on this computer")),
+    ).toBeVisible();
+    // The model's row, as Preferences had it: not installed here.
+    expect(await screen.findByText(humanText("Not installed"))).toBeVisible();
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: humanText("Preferences") }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: humanText("Preferences"),
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: humanText(/AI helper/) }),
+    ).toBeNull();
+  });
+
+  it("is not offered on a phone, where the helper cannot run", () => {
+    renderLibrary(snapshot, 0, {}, false);
+    expect(
+      screen.queryByRole("button", { name: humanText("AI helper") }),
+    ).toBeNull();
+  });
+});
+
+describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
+  // A clinic this vault is linked to (FAKE), so the library shows its
+  // compact Check for new documents.
+  const link: PortalLinkSummary = {
+    id: "fake-link",
+    portalBase: "https://portal.example.test/patient",
+    deviceName: "myCarlos on Windows",
+    profileId: null,
+    clinicName: "FAKE Clinic",
+    fingerprints: [],
+    incomplete: false,
+    deviceKeyId: "fake-device",
+    deviceFingerprint: "11".repeat(32),
+    approvalRequested: true,
+    clinicApproved: true,
+  };
+  // The clinic-approval chain (#136 → #142) links with connectPortal; the
+  // panel, and its compact Check, are offered only with it.
+  const portal = {
+    connectPortal: vi.fn(),
+    checkDocuments: vi
+      .fn()
+      .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+  };
+  const linked: VaultSnapshot = {
+    ...snapshot,
+    portalLinkingEnabled: true,
+    portalLinks: [link],
+    sharedProfileId: "shared",
+    profiles: [
+      ...snapshot.profiles,
+      { id: "profile-2", displayName: "FAKE Blake", createdAtMs: 2 },
+      { id: "shared", displayName: "Shared with me", createdAtMs: 3 },
+    ],
+  };
+  const box = (element: Element) => element.getBoundingClientRect();
+
+  it("sits to the right of the search box, and under it on a narrow window", async () => {
+    renderLibrary(linked, 0, portal);
+    openFolder(/^Shared with me/);
+    const search = screen.getByRole("searchbox").closest("label")!;
+    const check = screen.getByRole("button", {
+      name: humanText("Check for new documents"),
+    });
+    // After the search box in reading and Tab order, in the same row.
+    expect(
+      search.compareDocumentPosition(check) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(check.parentElement).toBe(search.parentElement);
+    try {
+      await page.viewport(1100, 760);
+      expect(box(check).left).toBeGreaterThanOrEqual(box(search).right);
+      expect(box(check).top).toBeLessThan(box(search).bottom);
+      // Narrow (a phone, or large text): the box keeps its width and the
+      // button goes under it.
+      await page.viewport(360, 800);
+      expect(box(check).top).toBeGreaterThanOrEqual(box(search).bottom);
+    } finally {
+      await page.viewport(1100, 760);
+    }
+  });
+
+  it("leaves the search box the whole row when there is no clinic link", () => {
+    renderLibrary({ ...snapshot, portalLinkingEnabled: true }, 0, portal);
+    const search = screen.getByRole("searchbox").closest("label")!;
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeNull();
+    expect(box(search).width).toBeCloseTo(box(search.parentElement!).width, 0);
+  });
+  it("only offers Check in actual Shared with me through folder and settings transitions", () => {
+    renderLibrary(linked, 0, portal);
+    const absent = () =>
+      expect(
+        screen.queryByRole("button", {
+          name: humanText("Check for new documents"),
+        }),
+      ).toBeNull();
+    absent();
+    openFolder(/^FAKE Letters/);
+    absent();
+    openFolder(/^Shared with me/);
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeEnabled();
+    search("Search Shared with me", "FAKE");
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeVisible();
+    openFolder(/^FAKE Blake/);
+    absent();
+    openFolder(/^Shared with me/);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    absent();
+    expect(
+      screen.getByRole("heading", { name: "Clinic documents" }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
+    absent();
+    openFolder(/^Shared with me/);
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeEnabled();
+    expect(portal.checkDocuments).not.toHaveBeenCalled();
+  });
+
+  it("does not treat an ordinary folder named Shared with me as the reserved view", () => {
+    renderLibrary(
+      {
+        ...linked,
+        folders: [
+          ...linked.folders,
+          {
+            id: "decoy",
+            profileId: "profile-1",
+            parentId: null,
+            name: "Shared with me",
+            createdAtMs: 4,
+          },
+        ],
+      },
+      0,
+      portal,
+    );
+    openFolder(/^Shared with me \(FAKE Avery\)/);
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeNull();
+  });
+
+  it.each(["busy", "portalBusy"] as const)(
+    "retains the %s check disable contract inside Shared with me",
+    (key) => {
+      renderLibrary(linked, 0, portal, true, { [key]: true });
+      openFolder(/^Shared with me/);
+      const name =
+        key === "portalBusy"
+          ? "Clinic operation in progress…"
+          : "Check for new documents";
+      expect(
+        screen.getByRole("button", { name: humanText(name) }),
+      ).toBeDisabled();
+    },
+  );
+
+  it("keeps a started check's result announcement after leaving Shared with me", async () => {
+    let finish: (value: {
+      added: number;
+      refused: number;
+      receiptsPending: number;
+    }) => void = () => undefined;
+    const checkDocuments = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { setNotice } = renderLibrary(linked, 0, {
+      ...portal,
+      checkDocuments,
+    });
+    openFolder(/^Shared with me/);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    );
+    expect(checkDocuments).toHaveBeenCalledExactlyOnceWith();
+    openFolder(/^FAKE Letters/);
+    finish({ added: 2, refused: 0, receiptsPending: 0 });
+    await waitFor(() => expect(setNotice).toHaveBeenCalled());
+    expect(visibleText(resolveText(setNotice.mock.calls.at(-1)![0]))).toContain(
+      "New documents saved: 2.",
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Check for new documents"),
+      }),
+    ).toBeNull();
   });
 });
 
@@ -1110,6 +1362,225 @@ describe("Audit history keeps Security's Hidden location", () => {
       ).not.toBeInTheDocument();
     },
   );
+});
+
+describe("VaultLibrary person dialogs (Ben, 29 Oct)", () => {
+  // A status line reads out only text that changes while it is on the page,
+  // and a dialog makes the page behind it inert: each result is given once
+  // the dialog has closed.
+  function watchNotices(setNotice: ReturnType<typeof vi.fn>) {
+    const said: { text: string; dialogOpen: boolean }[] = [];
+    setNotice.mockImplementation((notice) => {
+      const text = humanValue(resolveText(notice));
+      if (text)
+        said.push({ text, dialogOpen: screen.queryByRole("dialog") !== null });
+    });
+    return said;
+  }
+
+  for (const dismissal of ["Cancel", "Escape"] as const) {
+    it(`dismisses Edit details after a read-only recovery transition by ${dismissal}`, async () => {
+      const shown: VaultSnapshot = {
+        ...snapshot,
+        profiles: [
+          {
+            ...snapshot.profiles[0],
+            fullName: "FAKE Avery Example",
+            birthDate: "1980-01-02",
+          },
+        ],
+      };
+      const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
+      const { rerenderSnapshot } = renderLibrary(shown, 0, {
+        updateProfileDetails,
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      const opener = screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Avery"),
+      });
+      opener.focus();
+      fireEvent.click(opener);
+      const dialog = screen.getByRole("dialog", {
+        name: humanText("Edit details"),
+      });
+      expect(opener.closest("[inert]")).not.toBeNull();
+      const line = opener.parentElement!.querySelector("span")!;
+      const name = within(dialog).getByLabelText(
+        humanText("Full name, as on clinic documents"),
+      );
+      fireEvent.change(name, { target: { value: "FAKE retained draft" } });
+      rerenderSnapshot({ ...shown, recovery: "writeFailed" });
+      expect(name).toHaveValue("FAKE retained draft");
+      expect(name).toBeDisabled();
+      expect(
+        within(dialog).getByRole("button", { name: humanText("Save details") }),
+      ).toBeDisabled();
+      fireEvent.submit(dialog.querySelector("form")!);
+      expect(updateProfileDetails).not.toHaveBeenCalled();
+      const cancel = within(dialog).getByRole("button", {
+        name: humanText("Cancel"),
+      });
+      expect(cancel).toBeEnabled();
+      if (dismissal === "Cancel") fireEvent.click(cancel);
+      else fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(opener.closest("[inert]")).toBeNull();
+      expect(opener).toBeDisabled();
+      expect(line).toHaveFocus();
+      expect(updateProfileDetails).not.toHaveBeenCalled();
+    });
+  }
+
+  it("says a person's details were saved once the Edit details dialog has closed", async () => {
+    const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
+    const { setNotice } = renderLibrary(
+      {
+        ...snapshot,
+        profiles: [
+          {
+            id: "profile-1",
+            displayName: "FAKE Avery",
+            createdAtMs: 1,
+            fullName: "FAKE-EXAMPLE, Avery",
+            birthDate: "1980-01-02",
+          },
+        ],
+      },
+      0,
+      { updateProfileDetails },
+    );
+    const said = watchNotices(setNotice as ReturnType<typeof vi.fn>);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Avery"),
+      }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Edit details"),
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Save details") }),
+    );
+    await vi.waitFor(() => expect(updateProfileDetails).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(said).toEqual([
+        { text: "Details for FAKE Avery saved.", dialogOpen: false },
+      ]),
+    );
+  });
+
+  it("says a profile was added once the Add profile dialog has closed", async () => {
+    const createProfile = vi.fn().mockResolvedValue("profile-2");
+    const { setNotice } = renderLibrary(snapshot, 0, { createProfile });
+    const said = watchNotices(setNotice as ReturnType<typeof vi.fn>);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
+    fireEvent.change(
+      within(dialog).getByLabelText(humanText("New profile name")),
+      { target: { value: "FAKE Riley" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
+    await vi.waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(said).toEqual([
+        { text: "FAKE Riley was added.", dialogOpen: false },
+      ]),
+    );
+  });
+
+  it("holds a profile's result while Link another clinic, opened at once, is on screen (#145)", async () => {
+    // A linked clinic (FAKE), so Security's clinic panel offers Link another
+    // clinic.
+    const linked: VaultSnapshot = {
+      ...snapshot,
+      portalLinkingEnabled: true,
+      portalLinks: [
+        {
+          id: "fake-link",
+          portalBase: "https://portal.example.test/patient",
+          deviceName: "myCarlos on Windows",
+          profileId: null,
+          clinicName: "FAKE Clinic",
+          fingerprints: [],
+          incomplete: false,
+          deviceKeyId: "fake-device",
+          deviceFingerprint: "11".repeat(32),
+          approvalRequested: true,
+          clinicApproved: true,
+        },
+      ],
+    };
+    let added: (id: string) => void = () => {};
+    const createProfile = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          added = resolve;
+        }),
+    );
+    const { setNotice } = renderLibrary(linked, 0, {
+      createProfile,
+      connectPortal: vi.fn(),
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+    });
+    const said = watchNotices(setNotice as ReturnType<typeof vi.fn>);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
+    fireEvent.change(
+      within(dialog).getByLabelText(humanText("New profile name")),
+      { target: { value: "FAKE Riley" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
+    await vi.waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
+    vi.useFakeTimers();
+    try {
+      await act(async () => added("profile-2"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      // Link another clinic opens before the result is due.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: humanText("Link another clinic"),
+          }),
+        );
+      });
+      const clinic = screen.getByRole("dialog", {
+        name: humanText("Link another clinic"),
+      });
+      await act(async () => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS * 2));
+      // Not said while it is open: the page behind it, with the status
+      // line, is inert.
+      expect(said).toEqual([]);
+      await act(async () => {
+        fireEvent.click(
+          within(clinic).getByRole("button", { name: humanText("Cancel") }),
+        );
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await act(async () => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+      expect(said).toEqual([
+        { text: "FAKE Riley was added.", dialogOpen: false },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("reading aid button in document details", () => {

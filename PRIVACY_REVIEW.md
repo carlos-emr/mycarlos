@@ -306,7 +306,9 @@ computer's IP address, the time and which public file was fetched, and nothing e
 - Passphrases must be at least 15 characters, and a check on the device refuses ones that are easy
   to guess (see section 5 for how strong that makes them).
 - The app locks after 1 to 15 minutes without use (5 by default); a file window, or the system
-  window confirming a new recovery key, that it opened extends that by up to 15 more minutes. When
+  window confirming a new recovery key, that it opened extends that by up to 15 more minutes, and
+  an AI answer being written by the time it takes, up to that answer's own limit (5 to 20
+  minutes; 20 at most while the AI helper starts). When
   its window is minimised or, on a phone, when it goes to the background, it hides its content at
   once and locks as soon as any import, save or backup under way has finished (see section 4 for the
   details).
@@ -334,7 +336,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
   release.
 - **Lost or stolen device.** There is no remote lock or wipe. What protects the vault is the
   device's own lock, the app's automatic lock (up to 15 minutes after last use, or up to 15 more
-  while a file window it opened is showing) and the passphrase.
+  while a file window it opened is showing, or, while an AI answer is written, up to its limit of
+  at most 20 minutes plus the AI helper's start) and the passphrase.
 - **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place,
   vaults set aside included, and some app files, such as the lock-delay setting; the app's
   instructions say to delete the vault's folder by hand. On

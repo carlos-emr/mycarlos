@@ -1384,7 +1384,7 @@ portal-connecting = 正在連線並申請診所核准…
 
 portal-errorBusy = 另一項診所作業正在進行。請等其完成後重試。
 
-portal-linkedApprovalIssue = 裝置已連結，但無法確認核准請求。請查看「安全性」的「診所文件」下的狀態，了解下一步操作。
+portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「診所文件」下的核准狀態，了解下一步操作。
 
 portal-retryApproval = 重試已儲存的核准請求
 
@@ -1440,6 +1440,8 @@ interface-history-approval-refused = 診所已拒絕
 interface-history-damaged = 此紀錄有部分已損毀。{ $date } 之後的事件無法檢查，因此不顯示。
 
 interface-history-damagedAll = 此紀錄有部分已損毀。其中的事件無法檢查，因此全部不顯示。
+
+interface-history-damagedStorageOnly = 此紀錄的部分儲存內容已損毀，但所有事件均通過檢查，並全部顯示。
 
 interface-history-damagedBefore = 此紀錄有部分已損毀。{ $date } 之前的事件無法檢查，因此不顯示。
 
@@ -1577,7 +1579,7 @@ interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos 也會保
 
 portal-checkAgain = 若要再次檢查，請選擇「{ $button }」。
 
-portal-unlockCheckConsent = 每次解鎖保險庫時，myCarlos 都會聯絡每個已連結裝置所對應的診所入口網站，檢查核准狀態更新和新文件。
+portal-unlockCheckConsent = 每次解鎖後，如果診所已核准該裝置，或核准請求仍未結束，myCarlos 就會聯絡已連結的診所入口網站，檢查核准狀態更新和新文件。
 
 portal-unlockChecked = 解鎖後已檢查新的診所文件。
 
@@ -1629,9 +1631,9 @@ ai-explain-title = 解釋術語
 
 ai-notInstalled-title = 此電腦上尚未安裝 AI 助理
 
-ai-notInstalled-body = 安裝後，它會使用在此電腦上執行的 AI 模型，以淺白易懂的文字為您解釋文件。您可以在「偏好設定」中下載模型，或新增您已有的模型檔案。
+ai-notInstalled-body = 安裝後，它會使用在此電腦上執行的 AI 模型，以淺白易懂的文字為您解釋文件。您可以在「設定」中的「AI 助理」裡下載模型，或新增您已有的模型檔案。
 
-ai-notInstalled-openPreferences = 開啟偏好設定
+ai-notInstalled-openPreferences = 開啟 AI 助理設定
 
 aiHelper-resultLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認。
 
@@ -1651,9 +1653,11 @@ ai-explain-submit = 解釋
 
 ai-preferences-title = AI 助理
 
-ai-preferences-body = 使用在此電腦上執行的 AI 模型，以淺白易懂的文字解釋您的文件。您可以下載模型，或新增您已有的模型檔案；模型儲存在此電腦上。
+ai-preferences-body = 使用在這台電腦上執行的 AI 模型，以淺白的語言解釋你的文件。下載下列某個模型，或新增你已有的對應檔案。模型保留在這台電腦上。
 
 ai-preferences-notInstalled = 未安裝
+
+ai-settings-subtitle = AI 助理在此電腦上的運作方式
 
 ai-model-add = 新增模型檔案…
 
@@ -1683,7 +1687,7 @@ ai-model-unsupportedCpu = 此電腦的處理器不支援 AI 助理。
 
 ai-model-unsupportedPlatform = 此類電腦暫不支援 AI 助理。
 
-ai-model-refusedList = myCarlos 不接受此檔案。請選擇上方列出的模型檔案。
+ai-model-refusedList = myCarlos 不接受此檔案。請選擇上方列出的某個模型檔案。
 
 ai-model-refusedHash = 這不是預期的檔案。請重新下載，然後新增新的副本。
 
@@ -1701,6 +1705,14 @@ ai-model-downloadNote = 僅一次，且僅在您點擊時，從 { $host } 下載
 
 ai-model-downloading = 正在下載並檢查… { $done } / { $total } MB
 
+ai-model-progressName = 模型下載
+
+ai-model-progressValue = { $percent }，{ $done } / { $total } MB
+
+ai-model-stillDownloading = 模型仍在下載。
+
+ai-model-stillChecking = 仍在檢查模型檔案。
+
 ai-model-refusedNetwork = 下載未完成。請檢查您的網路連線，然後再試一次。
 
 ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍後再試，或新增您已有的檔案。
@@ -1708,6 +1720,10 @@ ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍�
 native-filter-models = 模型檔案
 
 ai-working = AI 助理正在處理…
+
+ai-workingLong = 文件較長時，可能需要幾分鐘。
+
+ai-workingFor = 已處理 { $minutes } 分鐘。
 
 ai-summary-ready = 摘要已產生。
 
@@ -1718,6 +1734,8 @@ ai-failed = AI 助理未能完成。請重試。
 ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關閉其他程式後重試。
 
 ai-error-busy = 正在新增或移除 AI 助理的模型。請在完成後重試。
+
+ai-error-storage = 無法從此電腦讀取 AI 助理的模型。請重試。如果問題持續，請在「設定」中的「AI 助理」裡移除模型，然後重新新增。
 
 ai-summary-pagesMissing = 部分頁面未能完整讀取，因此此摘要可能遺漏部分內容。
 
@@ -1916,12 +1934,53 @@ notifications-error = 無法儲存此設定。本次工作階段的通知已關�
 notifications-unavailable = 文件通知無法使用。請依平常方式開啟 myCarlos 查看文件。
 notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。
 notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
+notifications-autoNeedsNotices = 請先允許文件送達通知，才能開啟此選項。
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
 notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
+noticesStep-title = 來自診所的通知
+noticesStep-intro = 您的診所已連結。myCarlos 可以在新文件送達時通知您。除非您勾選，否則不會開啟任何選項。
+noticesStep-later = 您隨時可以在 { $settings } 的 { $preferences } 中變更這些設定：{ $notices }。
+noticesStep-done = 完成
+noticesStep-notNow = 暫不
 
 ai-summary-again = 重新產生摘要
 
 ai-keepFailed = myCarlos 無法將此回答與文件一起保存。此處仍會顯示該回答。
 
 ai-keepFull = 此文件保存的 AI 回答已達上限。新的回答會顯示，但不會保存。
+
+# Catalog model list (#276A).
+
+ai-models-title = 這台電腦上的模型
+
+ai-models-group = 正在使用的模型
+
+ai-models-inUse = 正在使用
+
+ai-models-installed = 已安裝
+
+ai-models-addedByYou = 由你新增
+
+ai-models-notDownloaded = 尚未下載
+
+ai-models-downloading = 正在下載
+ai-models-installing = 正在安裝
+
+ai-models-download = 下載
+
+ai-models-remove = 移除
+
+ai-models-help = 標為「正在使用」的模型用於產生摘要和解釋。選擇其他模型會停止正在產生的回答。
+
+ai-models-loading = 正在讀取模型清單…
+
+ai-models-loadFailed = 無法讀取模型清單。請再試一次。
+
+ai-models-retry = 重新讀取模型清單
+
+ai-models-starting = 正在開始下載…
+
+ai-models-picking = 請選擇要新增的模型檔案。
+
+ai-models-changed = 已變更正在使用的模型

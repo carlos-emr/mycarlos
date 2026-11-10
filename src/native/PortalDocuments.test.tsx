@@ -209,7 +209,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(noticeCalls(props.setNotice)).toContainEqual([
-        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked, but the approval request could not be confirmed. Its status in Security, under Clinic documents, says what to do next.",
+        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked. Its approval status in Security, under Clinic documents, says what to do next.",
       ]),
     );
     await userEvent
@@ -223,6 +223,85 @@ describe("native clinic document controls", () => {
     expect(bridge.linkPortal).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
   });
+
+  it.each([
+    [
+      "approval_refused",
+      "The clinic refused this device approval request. Contact your clinic for next steps.",
+      "portal.approvalRefused",
+    ],
+    [
+      "approval_contact_clinic",
+      "Clinic approval needs to be checked. Contact your clinic for next steps.",
+      "portal.approvalContact",
+    ],
+    [
+      "approval_expired",
+      "This approval request expired. To ask again for this device, go to Security, under Clinic documents.",
+      "portal.approvalExpired",
+    ],
+    [
+      "approval_cancelled",
+      "This approval request was cancelled. Check for updates before starting a new request.",
+      "portal.approvalCancelled",
+    ],
+    [
+      "portal_link_incomplete",
+      "The portal request could not be completed. Check your connection and device clock, then try again.",
+      "portal.errorIncomplete",
+    ],
+    ["FAKE_unknown_approval", "FAKE approval outcome", null],
+  ] as const)(
+    "keeps the specific %s reason before matching saved-link guidance",
+    async (code, reason, reasonKey) => {
+      const initial = { ...snapshot, portalLinks: [] };
+      const savedLink: PortalLinkSummary = {
+        ...link,
+        approvalStatus:
+          code === "approval_expired"
+            ? "expired"
+            : code === "approval_cancelled"
+              ? "cancelled"
+              : code === "portal_link_incomplete" ||
+                  code === "FAKE_unknown_approval"
+                ? "pending"
+                : "refused",
+      };
+      const next = { ...snapshot, portalLinks: [savedLink] };
+      const { bridge, props, rerender } = fixture({ snapshot: initial });
+      vi.mocked(bridge.connectPortal!).mockResolvedValue({
+        link: savedLink,
+        approvalError: { code, message: "FAKE approval outcome" },
+      });
+      vi.mocked(props.refresh).mockImplementation(async () => {
+        rerender(<PortalDocuments {...props} snapshot={next} />);
+        return next;
+      });
+      const form = await fillConnectForm();
+      await act(async () => fireEvent.submit(form));
+      const guidance =
+        "Device linked. Its approval status in Security, under Clinic documents, says what to do next.";
+      await waitFor(() =>
+        expect(noticeCalls(props.setNotice)).toContainEqual([
+          `${reason} ${guidance}`,
+        ]),
+      );
+      expect(bridge.connectPortal).toHaveBeenCalledOnce();
+      expect(bridge.linkPortal).not.toHaveBeenCalled();
+      expect(screen.getByLabelText("Device code")).toHaveValue(deviceCode);
+      try {
+        for (const locale of LOCALES) {
+          act(() => setLocaleOverride(locale));
+          const notice = vi.mocked(props.setNotice).mock.calls.at(-1)![0];
+          expect(resolveText(notice)).toBe(
+            `${reasonKey ? translate(locale, reasonKey) : reason} ${translate(locale, "portal.linkedApprovalIssue")}`,
+          );
+        }
+      } finally {
+        act(() => setLocaleOverride("en"));
+      }
+    },
+  );
 
   it("keeps initial link loss visibly incomplete without pretending that it can resume", async () => {
     const initial = { ...snapshot, portalLinks: [] };
@@ -859,11 +938,18 @@ describe("automatic approval status checks (#131)", () => {
     ...snapshot,
     portalLinks: [shown],
   });
+  let approvalCaptureSequence = snapshot.capture.sequence;
   const reply = (
     shown: PortalLinkSummary,
     extra: Partial<PortalApprovalCheck> = {},
   ): ApprovalPoll => ({
-    check: { link: shown, expiresInMs: null, issue: null, ...extra },
+    check: {
+      capture: { ...snapshot.capture, sequence: ++approvalCaptureSequence },
+      link: shown,
+      expiresInMs: null,
+      issue: null,
+      ...extra,
+    },
   });
   const AWAITING =
     "Your clinic has the approval request. Waiting for clinic staff to approve this device.";
@@ -1843,6 +1929,58 @@ describe("the code a clinic emails (#141)", () => {
     await user.type(codeBox()!, "482193644");
     await user.click(screen.getByRole("button", { name: "Confirm code" }));
     await waitFor(() => expect(failures).toEqual([offline]));
+  });
+
+  it("says what a code met in the app's language, also after it changes", async () => {
+    const { bridge } = fixture({ snapshot: showing() });
+    const user = userEvent.setup();
+    const confirm = () => screen.getByRole("button", { name: "Confirm code" });
+    try {
+      // Sent: the panel's status line.
+      await user.type(codeBox()!, "482193644");
+      await user.click(confirm());
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(
+          translate("en", "portal.codeSubmitted"),
+        ),
+      );
+      act(() => setLocaleOverride("fr"));
+      expect(screen.getByRole("status")).toHaveTextContent(
+        translate("fr", "portal.codeSubmitted"),
+      );
+      expect(screen.getByRole("status")).not.toHaveTextContent(
+        translate("en", "portal.codeSubmitted"),
+      );
+      act(() => setLocaleOverride("en"));
+      // Not this clinic's code: the message beside the field.
+      vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
+        code: "approval_code_mismatch",
+      });
+      await user.type(codeBox()!, "482193645");
+      await user.click(confirm());
+      await screen.findByText(mismatch);
+      act(() => setLocaleOverride("fr"));
+      expect(
+        screen.getByText(translate("fr", "portal.codeMismatch")),
+      ).toBeVisible();
+      expect(screen.queryByText(mismatch)).not.toBeInTheDocument();
+      act(() => setLocaleOverride("en"));
+      // No more codes taken: the panel's status line again.
+      vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
+        code: "approval_code_locked",
+      });
+      await user.click(confirm());
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(locked),
+      );
+      act(() => setLocaleOverride("fr"));
+      expect(screen.getByRole("status")).toHaveTextContent(
+        translate("fr", "portal.codeLocked"),
+      );
+      expect(screen.getByRole("status")).not.toHaveTextContent(locked);
+    } finally {
+      act(() => setLocaleOverride("en"));
+    }
   });
 
   it("fits a 360 px window at 200% text, message included", async () => {
