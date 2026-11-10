@@ -1901,6 +1901,24 @@ ai-summary-showWhole = Pokaż całe podsumowanie
 
 ai-summary-partial = To podsumowanie obejmuje tylko początek dokumentu: strony od 1 do { $last }.
 
+ai-summary-tooLong =
+    { $last ->
+    [one] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej stronę 1 z { $total }.
+   *[other] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej strony od 1 do { $last } z { $total }.
+    }
+
+ai-summary-tooLongStart = Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej tylko początek strony 1.
+
+ai-summary-tooLongAfter = Podsumowanie poda, które strony zostały przeczytane.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Podsumuj stronę 1
+   *[other] Podsumuj strony od 1 do { $last }
+    }
+
+ai-summary-readStart = Podsumuj początek strony 1
+
 ai-summary-noText = Nie udało się odczytać żadnego tekstu w tym dokumencie, więc nie można go podsumować. To może być skan.
 
 ai-explain-box = Słowo lub wyrażenie

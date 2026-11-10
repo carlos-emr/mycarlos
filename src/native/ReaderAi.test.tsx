@@ -1145,6 +1145,221 @@ describe("the reader's AI helper", () => {
   });
 });
 
+describe("a document longer than the model reads at a time (#301)", () => {
+  // Five FAKE pages of 3,150 bytes and a digit: 1,051 tokens each
+  // (capacity.ts), so two fit a room of 2,200 and none fits 500 whole.
+  const longPages = Array.from(
+    { length: 5 },
+    (_, index) => "FAKE long page text. ".repeat(150) + index,
+  );
+  const long = async () => fakeDocumentText(longPages);
+  const withRoom = (documentTokens: number) =>
+    fakeLocalModel({
+      status: {
+        state: "installed",
+        model: FAKE_MODEL,
+        capacity: { contextTokens: 8192, documentTokens },
+      },
+      // As the helper fits: two whole pages.
+      lastPage: () => 1,
+    });
+  const warning = humanText(
+    "This document is probably too long for the AI helper to read at once. It can read about pages 1 to 2 of 5.",
+  );
+
+  it("asks before the model starts, with the focus on its first answer, and summarizes the pages it can read on request", async () => {
+    const model = withRoom(2200);
+    renderReader(model, { loadText: long });
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByText(warning)).toBeVisible();
+    expect(
+      screen.getByText("The summary will say which pages it read."),
+    ).toBeVisible();
+    expect(model.calls).toHaveLength(0);
+    // The first answer takes the focus, and is described by the question, so
+    // a screen reader reads both.
+    const read = screen.getByRole("button", {
+      name: humanText("Summarize pages 1 to 2"),
+    });
+    await waitFor(() => expect(read).toHaveFocus());
+    const description = (read.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    expect(visibleText(description)).toBe(
+      "This document is probably too long for the AI helper to read at once. It can read about pages 1 to 2 of 5. The summary will say which pages it read.",
+    );
+    // Tab reaches Cancel next, and back.
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(read).toHaveFocus();
+    await user.keyboard("{Enter}");
+    // The question goes; the focus goes back to Summary.
+    expect(screen.queryByText(warning)).toBeNull();
+    expect(screen.getByRole("button", { name: "Summary" })).toHaveFocus();
+    expect(model.calls).toHaveLength(1);
+    // The whole text goes to the native side, which fits the pages itself;
+    // the answer says the pages it read, as before.
+    expect(model.calls[0].input).toContain(longPages[4]);
+    expect(
+      await screen.findByText(
+        humanText(
+          "This summary covers only the start of the document: pages 1 to 2.",
+        ),
+      ),
+    ).toBeVisible();
+  });
+
+  it("closes the panel on Cancel, asks no model, and puts the focus back on Summary", async () => {
+    const model = withRoom(2200);
+    renderReader(model, { loadText: long });
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText(warning);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(warning)).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Summary in plain words" }),
+    ).toBeNull();
+    const summary = screen.getByRole("button", { name: "Summary" });
+    expect(summary).toHaveFocus();
+    expect(summary).toHaveAttribute("aria-expanded", "false");
+    expect(model.calls).toHaveLength(0);
+  });
+
+  it("says when only the start of the first page fits", async () => {
+    const model = withRoom(500);
+    renderReader(model, { loadText: long });
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(
+      await screen.findByText(
+        "This document is probably too long for the AI helper to read at once. It can read only about the start of page 1.",
+      ),
+    ).toBeVisible();
+    const read = screen.getByRole("button", {
+      name: "Summarize the start of page 1",
+    });
+    await waitFor(() => expect(read).toHaveFocus());
+    await user.click(read);
+    expect(model.calls).toHaveLength(1);
+  });
+
+  it("asks nothing when the document fits, nor when the room is not known", async () => {
+    for (const status of [
+      {
+        state: "installed" as const,
+        model: FAKE_MODEL,
+        capacity: { contextTokens: 8192, documentTokens: 6510 },
+      },
+      { state: "installed" as const, model: FAKE_MODEL, capacity: null },
+    ]) {
+      const model = fakeLocalModel({ status });
+      const { unmount } = renderReader(model, {
+        loadText:
+          status.capacity === null
+            ? long
+            : async () => fakeDocumentText(pageTexts),
+      });
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      await screen.findByText(AI_LABEL);
+      expect(screen.queryByText(/probably too long/)).toBeNull();
+      expect(model.calls).toHaveLength(1);
+      unmount();
+    }
+  });
+
+  it("shows a kept summary without asking, and reads no text for it", async () => {
+    const model = withRoom(2200);
+    const { kept } = fakeKept(
+      [
+        {
+          input: { tool: "summary", lang: "en" },
+          content: JSON.stringify({
+            tool: "summary",
+            sentences: [
+              { text: "FAKE: kept earlier.", quote: "FAKE", source: null },
+            ],
+            model: FAKE_MODEL,
+            lang: "en",
+            createdAt: Date.UTC(2026, 9, 1),
+            partial: true,
+            lastPage: 2,
+            pagesMissing: false,
+          }),
+        },
+      ],
+      model,
+    );
+    const { loadText } = renderReader(model, { loadText: long, kept });
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByText("FAKE: kept earlier.")).toBeVisible();
+    expect(screen.queryByText(/probably too long/)).toBeNull();
+    expect(loadText).not.toHaveBeenCalled();
+    expect(model.calls).toHaveLength(0);
+    // Summarizing again is a new run: it asks.
+    await user.click(screen.getByRole("button", { name: "Summarize again" }));
+    expect(await screen.findByText(warning)).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: humanText("Summarize pages 1 to 2"),
+        }),
+      ).toHaveFocus(),
+    );
+    expect(model.calls).toHaveLength(0);
+  });
+
+  it("asks after the notice about the AI helper, the first time", async () => {
+    const model = withRoom(2200);
+    let release: () => void = () => undefined;
+    renderReader(model, {
+      loadText: long,
+      beforeFirstUse: (open) => {
+        release = open;
+      },
+    });
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(screen.queryByText(warning)).toBeNull();
+    act(() => release());
+    expect(await screen.findByText(warning)).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: humanText("Summarize pages 1 to 2"),
+        }),
+      ).toHaveFocus(),
+    );
+    expect(model.calls).toHaveLength(0);
+  });
+
+  it("asks in every language the app speaks", async () => {
+    for (const locale of LOCALES) {
+      expect(
+        translate(locale, "ai.summary.tooLong", { last: 2, total: 5 }),
+        locale,
+      ).toMatch(/2[^]*5/);
+      expect(
+        translate(locale, "ai.summary.readPages", { last: 2 }),
+        locale,
+      ).toMatch(/2/);
+    }
+  });
+});
+
 describe("sentenceAround", () => {
   it("cuts the sentence a term is in, case aside", () => {
     const text =

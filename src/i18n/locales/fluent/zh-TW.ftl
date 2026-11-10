@@ -1679,6 +1679,24 @@ ai-summary-showWhole = 顯示完整摘要
 
 ai-summary-partial = 此摘要僅涵蓋文件開頭部分：第 1 頁至第 { $last } 頁。
 
+ai-summary-tooLong =
+    { $last ->
+    [1] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁（共 { $total } 頁）。
+   *[other] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁至第 { $last } 頁（共 { $total } 頁）。
+    }
+
+ai-summary-tooLongStart = 這份文件可能太長，AI 助理無法一次讀完。它大約只能讀第 1 頁的開頭部分。
+
+ai-summary-tooLongAfter = 摘要會說明讀了哪些頁。
+
+ai-summary-readPages =
+    { $last ->
+    [1] 為第 1 頁產生摘要
+   *[other] 為第 1 頁至第 { $last } 頁產生摘要
+    }
+
+ai-summary-readStart = 為第 1 頁的開頭部分產生摘要
+
 ai-summary-noText = myCarlos 無法讀取此文件中的任何文字，因此無法產生摘要。這可能是掃描檔。
 
 ai-explain-box = 字詞或片語

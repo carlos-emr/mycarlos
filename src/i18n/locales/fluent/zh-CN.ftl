@@ -1679,6 +1679,24 @@ ai-summary-showWhole = 显示完整摘要
 
 ai-summary-partial = 此摘要仅涵盖文档开头部分：第 1 页至第 { $last } 页。
 
+ai-summary-tooLong =
+    { $last ->
+    [1] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页（共 { $total } 页）。
+   *[other] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页至第 { $last } 页（共 { $total } 页）。
+    }
+
+ai-summary-tooLongStart = 这份文档可能太长，AI 助手无法一次读完。它大约只能读第 1 页的开头部分。
+
+ai-summary-tooLongAfter = 摘要会说明读了哪些页。
+
+ai-summary-readPages =
+    { $last ->
+    [1] 为第 1 页生成摘要
+   *[other] 为第 1 页至第 { $last } 页生成摘要
+    }
+
+ai-summary-readStart = 为第 1 页的开头部分生成摘要
+
 ai-summary-noText = myCarlos 无法读取此文档中的任何文本，因此无法生成摘要。这可能是扫描件。
 
 ai-explain-box = 字词或短语

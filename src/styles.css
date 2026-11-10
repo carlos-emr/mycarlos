@@ -533,6 +533,8 @@ h1, h2, p { margin: 0; }
 .native-reader-ai-fold { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .native-reader-ai .native-reader-ai-fold p { flex: 1 1 14em; margin: 0; }
 .native-reader-ai .native-reader-ai-wait { color: var(--ink-soft); font-size: 0.875rem; }
+/* #301: the choice before summarizing a document too long to read at once. */
+.native-reader-ai-choice-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .native-reader-ai-explain { display: grid; gap: 6px; max-width: 420px; }
 .native-reader-ai-explain input { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); font: inherit; }
 .native-reader-ai-result ol { display: grid; gap: 6px; margin: 6px 0; padding-left: 1.4em; }

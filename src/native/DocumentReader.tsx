@@ -239,6 +239,7 @@ function ReadingDocument({
   const [textOpen, setTextOpen] = useState(false);
   const [highlight, setHighlight] = useState<SourceSpan | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
+  const summaryButtonRef = useRef<HTMLButtonElement | null>(null);
   const markRef = useRef<HTMLElement | null>(null);
   // The quote's boxes on the picture (#292), for the highlight they were
   // asked for: `boxes` is empty when the helper could not place every word.
@@ -694,6 +695,7 @@ function ReadingDocument({
                   <button
                     className="button"
                     type="button"
+                    ref={summaryButtonRef}
                     aria-expanded={aiTool === "summary"}
                     aria-controls={
                       aiTool === "summary" ? "reader-ai-panel" : undefined
@@ -881,6 +883,13 @@ function ReadingDocument({
                 contextFor={(term) => sentenceAround(pageText, term)}
                 onShowSource={showSource}
                 quoteShown={marked !== null}
+                // Not summarizing a document too long to read at once
+                // closes the panel, back on the button that opened it.
+                onCancel={() => {
+                  setAiTool(null);
+                  summaryButtonRef.current?.focus();
+                }}
+                onReturnFocus={() => summaryButtonRef.current?.focus()}
               />
             )}
             {/* D144: the page bar, kept in view at the reader's foot, after
