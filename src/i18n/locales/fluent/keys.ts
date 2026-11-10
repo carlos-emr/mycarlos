@@ -651,6 +651,10 @@ export const MESSAGE_KEYS = [
   "portal.dateNotRecorded",
   "portal.deviceCode",
   "portal.deviceName",
+  "portal.deviceDetailsShow",
+  "portal.deviceDetailsHide",
+  "portal.earlierShow",
+  "portal.earlierHide",
   "portal.errorAddress",
   "portal.errorCancelled",
   "portal.errorCode",
@@ -1769,6 +1773,10 @@ const FLUENT_IDS_BY_KEY = {
   "portal.dateNotRecorded": "portal-dateNotRecorded",
   "portal.deviceCode": "portal-deviceCode",
   "portal.deviceName": "portal-deviceName",
+  "portal.deviceDetailsShow": "portal-deviceDetailsShow",
+  "portal.deviceDetailsHide": "portal-deviceDetailsHide",
+  "portal.earlierShow": "portal-earlierShow",
+  "portal.earlierHide": "portal-earlierHide",
   "portal.errorAddress": "portal-errorAddress",
   "portal.errorCancelled": "portal-errorCancelled",
   "portal.errorCode": "portal-errorCode",
@@ -2955,6 +2963,10 @@ export interface MessageArgsByKey {
   "portal.dateNotRecorded": undefined;
   "portal.deviceCode": undefined;
   "portal.deviceName": undefined;
+  "portal.deviceDetailsShow": undefined;
+  "portal.deviceDetailsHide": undefined;
+  "portal.earlierShow": { count: FluentArgument };
+  "portal.earlierHide": undefined;
   "portal.errorAddress": undefined;
   "portal.errorCancelled": undefined;
   "portal.errorCode": undefined;
