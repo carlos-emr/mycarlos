@@ -364,7 +364,9 @@ export async function testNativeDialogs(
           .getByRole("button", { name: "Close document details", exact: true })
           .click();
         await page
-          .getByRole("button", { name: "Unlocked · Lock now", exact: true })
+          // The window's own Lock now, named by its words (#121).
+          .locator(".titlebar")
+          .getByRole("button", { name: "Lock now", exact: true })
           .click();
         await expect(
           page.getByRole("heading", { name: "Unlock your vault", exact: true }),
@@ -986,7 +988,9 @@ export async function testNativeDialogs(
           page.getByRole("button", { name: photoName, exact: true }),
         ).toBeVisible();
         await page
-          .getByRole("button", { name: "Unlocked · Lock now", exact: true })
+          // The window's own Lock now, named by its words (#121).
+          .locator(".titlebar")
+          .getByRole("button", { name: "Lock now", exact: true })
           .click();
         await expect(
           page.getByRole("heading", { name: "Unlock your vault", exact: true }),
