@@ -74,13 +74,34 @@ fn main() {
             "The camera must be declared (not required, and no microphone) with `npm run android:secure` before every Android build"
         );
     }
+    let windows_msvc = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
+    let mut attributes = tauri_build::Attributes::new();
+    if windows_msvc {
+        // The linker supplies the manifest for both the app and lib-unit tests.
+        // Keep Tauri's icon/version resource without a second RT_MANIFEST.
+        attributes = attributes
+            .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest());
+    }
     // Without an app manifest Tauri allows every app command from any window and
     // origin, and capabilities/default.json would only gate plugin commands.
     // Declaring the commands makes that capability file authoritative for them.
     // Keep this list in step with `generate_handler!` in src/lib.rs.
-    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
-        tauri_build::AppManifest::new().commands(&[
+    tauri_build::try_build(
+        attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
             "runtime_info",
+            "ai_model_catalog",
+            "ai_model_status",
+            "ai_models",
+            "ai_model_use",
+            "ai_model_add_picked",
+            "ai_model_add_cancel",
+            "ai_model_add_active",
+            "ai_model_download",
+            "ai_model_remove",
+            "ai_summarize",
+            "ai_explain",
+            "ai_cancel",
             "kdf_benchmark",
             "vault_status",
             "vault_passphrase_rules",
@@ -90,10 +111,16 @@ fn main() {
             "vault_touch",
             "vault_set_auto_lock",
             "vault_snapshot",
+            "vault_history",
             "vault_portal_link",
+            "vault_portal_connect",
             "vault_check_documents",
+            "vault_notification_status",
+            "vault_set_notifications",
+            "vault_set_automatic_document_checks",
             "vault_request_device_approval",
             "vault_restart_device_approval",
+            "vault_refresh_device_approval",
             "vault_change_passphrase",
             "vault_recovery_key_begin",
             "vault_recovery_key_confirm",
@@ -124,6 +151,11 @@ fn main() {
             "vault_unlock_pdf",
             "vault_view_page",
             "vault_view_cancel",
+            "vault_document_text",
+            "vault_document_text_cancel",
+            "vault_record_known_details",
+            "vault_export_text_pick",
+            "vault_export_text_picked",
             "vault_export_pick",
             "vault_export_picked",
             "vault_save_photo",
@@ -131,9 +163,25 @@ fn main() {
             "vault_view_photo",
             "vault_hide_record",
             "vault_unhide_record",
+            "vault_ai_result_save",
+            "vault_ai_results",
+            "vault_ai_result_read",
             "vault_hide_unavailable_records",
             "vault_reset",
-        ]),
-    ))
+        ])),
+    )
     .expect("failed to run tauri-build");
+
+    if windows_msvc {
+        // A lib-unit test that retains GUI code needs Common Controls v6
+        // before main, just as the app does. Use a single linker-generated
+        // manifest alongside Tauri's icon/version resource for both targets.
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!(concat!(
+            "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:",
+            "type='win32' name='Microsoft.Windows.Common-Controls' ",
+            "version='6.0.0.0' processorArchitecture='*' ",
+            "publicKeyToken='6595b64144ccf1df' language='*'"
+        ));
+    }
 }

@@ -2,7 +2,8 @@
 
 > **Synthetic-data development only — do not use real patient files.** The native app now includes
 > an encrypted durable-vault vertical slice, but it has not passed the security, privacy, signing,
-> physical-device, or release gates required for PHI. It is not connected to CARLOS EMR.
+> physical-device, or release gates required for PHI. It can link to a clinic's patient portal to
+> receive documents (test portals only) and never connects to CARLOS EMR itself.
 
 **[Download the Windows evaluation build](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Apush)**
 — open the newest run with a successful **Windows native build** job and select
@@ -123,7 +124,7 @@ observed. Physical-device, lifecycle, and backup/restore checks are tracked in
 - An encrypted history records each unlock, each passphrase change, each profile added, each
   folder made, renamed or moved, each vault set aside, and what happens to each document (added,
   renamed, moved, hidden, restored, saved outside the vault), hash-chained so that a changed or
-  missing entry shows. It is never shown in the app and stays on the device, with no export (#71).
+  missing entry shows. Security shows it read-only; it stays on the device, with no export (#71).
 - Abrupt-termination tests exercise recovery after chunk writes, staging, object rename, redundant
   manifest commits, and each hiding boundary. Corruption tests cover bit flips, truncation,
   ciphertext swapping, exact chunk boundaries, structured semantic manifest mutations,

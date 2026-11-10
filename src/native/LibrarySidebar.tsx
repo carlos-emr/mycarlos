@@ -14,7 +14,14 @@ interface LibrarySidebarProps {
   people: PatientProfile[];
   /** The open person, while their records are shown. */
   profileId: string;
-  section: "records" | "shared" | "hidden" | "security" | "preferences";
+  section:
+    | "records"
+    | "shared"
+    | "hidden"
+    | "history"
+    | "security"
+    | "preferences"
+    | "ai";
   /** Files added to Shared with me since the vault was unlocked, until it
    * is opened (#61). */
   sharedNew: number;
@@ -31,13 +38,13 @@ interface LibrarySidebarProps {
   drag: VaultDragDrop;
   onOpenPerson: (profileId: string) => void;
   onOpenFolder: (profileId: string, folderId: string) => void;
-  /** Hidden documents at the current location (#71). */
-  hiddenCount: number;
   /** Hidden can be opened from Shared with me; keep its whole-vault footer. */
   hiddenFromShared?: boolean;
-  onOpenHidden: () => void;
   onOpenSecurity: () => void;
   onOpenPreferences: () => void;
+  /** The AI helper's settings (#72): given only where the helper can run,
+   * on a computer. */
+  onOpenAi?: () => void;
 }
 
 /** A person's folders in tree order, with their depth below the person. */
@@ -87,11 +94,10 @@ export function LibrarySidebar({
   sharedNew,
   onOpenShared,
   vaultTotals,
-  hiddenCount,
   hiddenFromShared = false,
-  onOpenHidden,
   onOpenSecurity,
   onOpenPreferences,
+  onOpenAi,
 }: LibrarySidebarProps) {
   useI18n();
   const { startDrag, dragOver, dropInto, dragEnd, dragClass, dropClass } = drag;
@@ -190,10 +196,14 @@ export function LibrarySidebar({
                     type="button"
                     key={folder.id}
                     aria-current={here ? "page" : undefined}
-                    // Two people can each have a "Lab results": say whose.
+                    // Two people can each have a "Lab results": say whose,
+                    // with each language's own brackets.
                     aria-label={
                       several
-                        ? `${folder.name} (${person.displayName}) ${formatNumber(counts.byFolder.get(folder.id) ?? 0)}`
+                        ? `${translateNow("sidebar.folderOfPerson", {
+                            folder: folder.name,
+                            person: person.displayName,
+                          })} ${formatNumber(counts.byFolder.get(folder.id) ?? 0)}`
                         : undefined
                     }
                     draggable={movable || undefined}
@@ -256,7 +266,20 @@ export function LibrarySidebar({
         </button>
         <span className="nav-label">{translateNow("sidebar.settings")}</span>
         <button
-          className={section === "security" ? "selected" : ""}
+          className={
+            section === "security" ||
+            section === "hidden" ||
+            section === "history"
+              ? "selected"
+              : ""
+          }
+          aria-current={
+            section === "security" ||
+            section === "hidden" ||
+            section === "history"
+              ? "page"
+              : undefined
+          }
           type="button"
           onClick={onOpenSecurity}
         >
@@ -269,27 +292,18 @@ export function LibrarySidebar({
         >
           <Icon name="settings" /> {translateNow("sidebar.preferences")}
         </button>
-        {/* At the bottom of the sidebar, set apart, like the mocks' Trash
-            (#71): out of view, not a folder or a setting. */}
-        <button
-          className={`native-hidden-nav ${section === "hidden" ? "selected" : ""}`.trim()}
-          type="button"
-          onClick={onOpenHidden}
-        >
-          <Icon name="hidden" />
-          {translateNow("interface.HiddenDocuments.hidden")}{" "}
-          <span className="nav-count">{formatNumber(hiddenCount)}</span>
-        </button>
+        {onOpenAi && (
+          <button
+            className={section === "ai" ? "selected" : ""}
+            type="button"
+            onClick={onOpenAi}
+          >
+            <Icon name="sparkle" /> {translateNow("ai.preferences.title")}
+          </button>
+        )}
       </nav>
       <div className="storage">
         <span>{translateNow("sidebar.storage")}</span>
-        <div className="storage-meter">
-          <span
-            style={{
-              width: `${Math.min(100, Math.max(8, totals.documents * 4))}%`,
-            }}
-          />
-        </div>
         <small>
           {translateNow("sidebar.documents", { count: totals.documents })} ·{" "}
           {translateNow("sidebar.folderCount", { count: totals.folders })}

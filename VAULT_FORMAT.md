@@ -509,6 +509,12 @@ right after that unlock's entry, in the same commit). No passphrase or key is ev
 `toTotal`; a place longer than 256 characters is cut there and `placeSha256` holds the SHA-256 of
 the whole, so that no entry can outgrow a segment.
 
+The AI helper's text export (#72 part B) is `copySaved` with `how: "anonymizedText"`, the
+document's `recordId` and `name`, and the `place` the text file was saved, cut and hashed
+as for any copy. Never the text or the details removed. (The anonymized text keeps no
+date, so there is no day count to record; the list of what was replaced stays in memory
+for the open window only and is never written.) Older readers show it as a copy saved, with its method as written.
+
 - `hash(entry) = SHA-256("mycarlos/history/v1" ‖ 0x00 ‖ canonical JSON)`, in lower-case hex.
 - `prev` is the previous entry's hash. The first entry's is the genesis value,
   `SHA-256("mycarlos/history/genesis/v1" ‖ the vault id's 16 bytes)`.
@@ -551,10 +557,33 @@ earlier build becomes format 3 there and starts its history). Whether the vault 
 "differs from the backup" leaves the history and the format out of the comparison, since every
 unlock, and every backup saved, adds to the history.
 
-**Never shown, and kept on the device.** No command returns the history to the app's screens, and
-nothing saves it outside the vault on its own: Ben chose (#71, 19 October) a history that is
-recorded automatically and tamper-evident on the device only, with no auditor export. A backup
-carries it only as part of the encrypted vault.
+**Verified read-only view, kept on the device.** While the vault is unlocked, the Security
+screen can request the history. Native code reads every encrypted segment in order and returns
+display rows over IPC only for entries it has authenticated from one of the chain's two pinned
+ends. From the start: entries before the first segment that is missing or does not authenticate,
+while each follows the one before from the genesis value, and never past the manifest's count.
+From the end (Ben's D146): entries after the last such segment, walking back from the manifest's
+pinned head while each is the `prev` of the one after it with the number before it, so that the
+last is number `count - 1` and its hash is the head; none is shown twice. With the rows it returns
+`complete`, true only when the rows from the start are the whole chain the manifest pins (its
+count and head). When it is false, Security shows a notice dated from the native fields: "Part of
+this history is damaged. Events between <date> and <date> can't be checked and aren't shown." (or
+"after <date>", "before <date>", or that none are shown), with a marker in the list where the gap
+is (Ben's D129 and D146, mycarlos#120). The notice follows those fields only; the renderer never
+works it out. Its dates are the entries' recorded times, so after the device clock was set back
+the first can read later than the second; the order shown is always the chain's. A damaged
+segment is never opened or shown.
+Those rows include recorded names, folder labels, times, methods, session notes and saved
+locations (including file paths or provider addresses). Native record/profile/folder identifiers,
+chain hashes, wrapped keys and object paths are not returned. Some entries lack person context;
+folder labels are not complete paths and saved locations can be shortened. A lock request
+cancels the read; the renderer conceals content while confirming the lock and ignores late
+responses from an earlier view or session.
+
+The view never edits entries or saves a separate history file: Ben chose (#71, 19 October) a
+history recorded automatically and tamper-evident on the device, with no auditor export. A backup
+carries it only as part of the encrypted vault. The view does not overcome rollback of a complete
+vault or an inaccurate device clock; those limits and the outside-anchor follow-up remain.
 
 ### Manifest format 4: optional profile identity details
 
@@ -862,8 +891,8 @@ need implementation, and no full #55 or platform claim follows from these edits.
 
 Format 6 prevents older writers from discarding delivery or approval evidence.
 Writable unlock upgrades formats 1–5 before adding it. Header and object formats
-are unchanged. Default builds still disable all portal network commands, and
-can open and back up this encrypted evidence without enabling network access.
+are unchanged. Opening and backing up this encrypted evidence needs no network
+access, so a build that cannot link (Android today) still can.
 
 A received record's optional `delivery` contains its saved link UUID, complete
 outer identity, authenticated delivery manifest and exact compact signature,
@@ -938,3 +967,153 @@ issues while independent links continue. Global lock, cancellation, corruption,
 recovery or storage failures still stop the operation. Saved documents with an
 unconfirmed receipt remain pending and preserve the exact compact bytes for the
 next check; pending count and clinic guidance are shown together with progress.
+
+#### Format 8: reading aids kept with their original
+
+Format 8 adds one optional field to a
+record, `readingAid`: the clinician-approved reading aid paired with that
+record's clinic delivery (carlos-portal delivery contract, "Reading aids"). It
+holds the aid's outer record (`kind` "reading-aid/1"), the signed compact
+manifest, the aid's JSON exactly as hashed, when it was checked, the anchored
+history head, the receipt signed at filing and the receipt outcome once the
+portal answers. An older build refuses a format 8 vault, so none can drop the
+field and with it an unsent receipt. A record can hold a reading aid only in
+format 8 or later, only with a clinic delivery, and only when the aid's pair
+claims name that delivery and the PDF hash of its original.
+
+A reading aid is filed only while its original is filed, in one commit with a
+`readingAidFiled` history event. An aid whose original is not filed yet is kept
+in the manifest's `waitingAids` list (format 8, at most 32) by its delivery ID
+and ciphertext hash, with no receipt: the same copy is never downloaded again, a
+different copy under that ID is replayed, and the kept copy is checked again
+after each original is filed. It holds the verified manifest and JSON, not the
+sealed copy, and is deleted silently once it is past its expiry and the
+device's 24 hour skew. A kept aid shares the one delivery-ID space with filed
+deliveries.
+
+A record holds one aid. A second aid for the same original replaces the held one
+only when it is greater by (`approval.reviewed_at`, `approval.id`): the later
+review, and within the same second the larger approval ID compared byte by byte,
+so two devices always keep the same aid. The summary version is an opaque hash
+and cannot be ordered. The replacement is one commit whose `readingAidFiled`
+entry has `how` "replaced". A lesser or equal aid (the same approval under
+another delivery ID is equal) is not filed: it is answered with its own signed receipt, sent once and
+not kept, so the portal stops offering it.
+Its receipt is retried like an original's, only while the original's saved file
+reads back. The check names `accept=reading-aid/1` in every listing, and files
+aids after the originals of the same check. Header, object and original-PDF
+formats are unchanged, and the aid adds no object file.
+
+##### Format numbers are taken at merge
+
+Format numbers are assigned when a branch merges, not when it is written. Each
+branch takes main's next number when it merges, with no gap, and renumbers in
+the same change:
+
+1. set `VAULT_FORMAT` and its section heading to the new number;
+2. set each gate it wrote for its own field to that number (`format_version < 8`
+   for `readingAid` and `waitingAids`), so a field's gate always equals the
+   format that introduced it and an older build that accepts a newer number can
+   never drop a field it does not know;
+3. update any hand-written format lists in the test matrices; the upgrade
+   checks iterate `VAULT_FORMAT` symbolically, so nothing else changes;
+4. keep the unsupported-newer check (`VAULT_FORMAT + 1` is refused) passing.
+
+Other open branches that also need a format (remembered refused deliveries,
+#161, the AI summary branches, and remote notices below) take the numbers after
+this one, in the order they merge. A vault written at the new number is refused by an older build,
+which is intended.
+
+#### Format 9: remote notice consent and push destinations
+
+Format 9 adds one optional manifest field, `remoteNotices` (#192): whether the
+patient turned on notices while myCarlos is closed, the push destinations this
+vault holds, and the revocations still to send. It is kept in the manifest, so it
+is encrypted like everything else there. Nothing outside the vault, including the
+plain notice file beside the settings, says which clinics a vault is linked to,
+or how many.
+
+- `optedIn`: the patient's own choice. It is set only by that choice, never at
+  startup or by a timer. The OS notification permission is observed in each run
+  and never saved, so a saved observation cannot grant permission after a
+  restart.
+- `active`: at most one destination per completed link (16 in all). Each holds
+  the link's id and its current device key id (`owner`), a destination id the
+  device made itself, the push service (`android_fcm`, `ios_apns`, `macos_apns`
+  or `windows_wns`) and, once the portal has enrolled it, the portal's
+  `subscriptionId`. A destination is saved before the portal is asked to enrol
+  it, and an active destination must name a completed link of this vault by its
+  current device key.
+- `revocations`: destinations that were active when the patient turned the
+  notices off or the OS permission was denied. Each is sent to the portal
+  (`POST /api/mycarlos/availability/revocations`) until the portal gives a final
+  answer, after each opening of the vault as well. Active destinations and
+  revocations share 64 places, so turning the notices off never needs more
+  room.
+
+No provider token, notice token, subscription epoch or sequence is kept: a push
+carries only an opaque token, which myCarlos never decodes. A push received while
+the vault is open runs the normal document check; one received while it is locked
+leaves a single check owed, in memory only, for the next opening.
+
+An older build refuses a format 9 vault, so none can drop the field and with it
+an unsent revocation. A manifest below format 9 with this field is refused. An
+absent field reads as nothing saved, which is how every vault starts. Erasing or
+resetting the vault removes the field with it: its destinations stay enrolled at
+the portal until the device is removed there (the device keys that would sign a
+revocation are gone too).
+
+#### Format 10: the AI helper's answers (#72 part D)
+
+Format 10 adds one optional list to each record, `aiResults`: what the AI helper wrote
+about the document, a plain-words summary or the explanation of a term. Each
+answer is an encrypted object of its own beside the document's, in the same
+envelope, under a random key wrapped with the vault's object-wrap key and the
+answer's id, so backup, restore, orphan cleanup and the hidden state carry it
+with the document (a record's `objects()` lists it). The manifest names, for
+each answer: its id, the tool (`summary` or `explain`), the language, the term
+explained (explain only), the model's name and the SHA-256 of its file, when it
+was written, and its object's name, size and wrapped key. The bytes are the
+renderer's own JSON (sentences with their quotes, or an explanation), at most
+64 KiB; the vault stores and returns them as they are and never logs them.
+
+Nothing is deleted (#71; Ben's D3, 5 Nov). One answer is shown per question
+(tool, language, term), the one kept last. A new summary in the same language
+hides the older one: the older answer gets `superseded: true` and stays in the
+vault with its object, in every backup, for as long as the document does. A
+hidden answer is never listed or read again, and nothing removes it. A record
+keeps at most 32 answers, hidden ones included; past that, a new answer is
+refused and none is dropped. An answer cannot be
+saved for a hidden document or in recovery mode. Each save is recorded in the
+history as `aiResultSaved` with the document's name and the tool as `how`,
+never the text. A manifest below format 10 that holds answers is corrupt, as is
+an answer with a nil or repeated id, an object name another object has, a
+malformed key, language, term, model name or hash, a size of zero or over
+64 KiB, or two shown answers to one question (hidden ones may share it).
+
+A format 1–9 vault opens with no answers and is upgraded to format 10 at its
+next writable unlock, in a commit of its own, as for every earlier format. An
+older myCarlos then refuses the vault as newer: there is no downgrade. Header
+and object formats are unchanged.
+
+#### Format 11: hidden AI answers have a cap of their own (D13)
+
+Format 11 changes only how a record's `aiResults` are counted. A record shows
+at most **32** answers, one per question, and keeps at most **96** hidden
+(`superseded`) ones besides. Asking a question again hides the answer before,
+so it counts against the hidden cap; a new question counts against the shown
+cap. Past either cap a new answer is refused (`ai_results_full`, "This document
+already keeps the most AI answers it can."), and none is dropped: nothing is
+deleted (#71, D3).
+
+The hidden cap is kept to three per shown answer because every answer, shown or
+hidden, is a manifest entry of about 0.5 KB (0.8 KB at most), and the manifest
+is capped for the whole vault at 16 MiB: a vault can hold about 170 documents
+with both caps full before its manifest is.
+
+A format 11 manifest with more than 32 shown or 96 hidden answers on a record
+is corrupt. A format 10 manifest keeps its own rule, at most 32 answers in all.
+A format 1–10 vault is upgraded to format 11 at its next writable unlock, in a
+commit of its own, with nothing else changed. An older myCarlos then refuses
+the vault as newer rather than reading a record with more than 32 answers as
+damaged. Header and object formats are unchanged.

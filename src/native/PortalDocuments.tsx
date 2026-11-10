@@ -1,35 +1,176 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useI18n } from "../i18n";
-import { vaultErrorMessage } from "../vault";
-import type { VaultBridge, VaultSnapshot, PortalLinkSummary } from "../vault";
+import {
+  useI18n,
+  useTextState,
+  message,
+  deferredText,
+  t as translateNow,
+  type MessageKey,
+  type UiText,
+} from "../i18n";
+import { NoticesAfterLink } from "./NoticesAfterLink";
+import { hasVaultErrorCode, vaultErrorMessage } from "../vault";
+import type {
+  VaultBridge,
+  VaultSnapshot,
+  PortalLinkSummary,
+  SnapshotCapture,
+} from "../vault";
+import { checkClinicDocuments, documentCheckText } from "./documentCheck";
+import {
+  isAwaitingApproval,
+  isRateLimited,
+  timeLeft,
+  useApprovalPolling,
+  waitingNow,
+  type CheckChange,
+  type LiveApproval,
+  type PollApproval,
+  type PortalWaits,
+} from "./useApprovalPolling";
 
 interface Props {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
   busy: boolean;
+  working?: boolean;
   readOnly: boolean;
   run: (operation: () => Promise<void>) => Promise<void>;
+  /** Checks a device's approval status quietly; given to the clinic setup
+   * view only, which then refreshes it automatically while open (#131). */
+  poll?: PollApproval;
+  /** The session's per-portal waits after a portal asked to wait (#131). */
+  waits?: PortalWaits;
   refresh: () => Promise<VaultSnapshot>;
-  setNotice: (text: string) => void;
+  setNotice: (text: UiText) => void;
   compact?: boolean;
+  showCheck?: boolean;
+}
+
+/** The first link that has finished linking (an incomplete one has not).
+ * From the snapshot only, on purpose: a link the portal later says was removed
+ * still counts, so live state alone never makes a vault look newly linked. */
+const workingLink = (links: PortalLinkSummary[] | undefined) =>
+  (links ?? []).find((link) => !link.incomplete) ?? null;
+/** What a device's card says about its approval: a message, or the error
+ * an automatic check failed with. Only the saved, verified state says the
+ * clinic approved it; what the latest automatic check found (`live`) only
+ * describes a request that is still open. */
+type CardState = { key: MessageKey } | { failed: unknown };
+function cardState(link: PortalLinkSummary, live?: LiveApproval): CardState {
+  const say = (key: MessageKey) => ({ key });
+  if (link.incomplete) return say("portal.incomplete");
+  if (link.clinicApproved) return say("portal.approved");
+  if (link.approvalRequestLimitReached) return say("portal.approvalContact");
+  if (link.approvalStatus === "expired")
+    return say("portal.approvalExpiredCard");
+  if (link.approvalStatus === "cancelled")
+    return say("portal.approvalCancelled");
+  if (
+    link.approvalStatus === "accepted" ||
+    ["staff_required", "no_accepted_approver"].includes(
+      link.approvalReason ?? "",
+    )
+  )
+    return say("portal.approvalContact");
+  if (link.approvalStatus === "refused") return say("portal.approvalRefused");
+  if (!link.approvalRequested) return say("portal.notRequested");
+  // A check that failed says why; a network failure or a portal asking to
+  // wait says only that the state is not known: never that the request
+  // expired or was refused.
+  if (live?.kind === "failed") return { failed: live.error };
+  if (live?.kind === "missing") return say("portal.approvalMissing");
+  if (live?.kind === "unreachable") return say("portal.approvalUnreachable");
+  if (live?.kind === "refused") return say("portal.approvalUnanswered");
+  if (live?.kind === "wait") return say("portal.approvalWait");
+  if (link.approvalStatus === "challenge_ready")
+    return say("portal.approvalPickedUp");
+  if (live?.kind === "waiting") return say("portal.awaitingClinic");
+  return say("portal.awaiting");
+}
+/** Two card states are the same when they say the same thing. */
+function sameState(a: CardState, b: CardState): boolean {
+  if ("key" in a || "key" in b)
+    return "key" in a && "key" in b && a.key === b.key;
+  const code = (value: unknown) =>
+    typeof value === "object" && value !== null
+      ? (value as { code?: unknown }).code
+      : value;
+  return code(a.failed) === code(b.failed);
 }
 
 export function PortalDocuments({
   bridge,
   snapshot,
   busy,
+  working = false,
   readOnly,
   run,
+  poll,
+  waits,
   refresh,
   setNotice,
   compact = false,
+  showCheck = true,
 }: Props) {
   const { t } = useI18n();
   const [address, setAddress] = useState("");
   const [code, setCode] = useState("");
   const [device, setDevice] = useState("myCarlos");
   const [person, setPerson] = useState("");
-  const [copyState, setCopyState] = useState("");
+  // The link the notices step follows, while it is offered.
+  const [offerNotices, setOfferNotices] = useState<string | null>(null);
+  // The first working clinic link (#235): when the vault, open here, goes from
+  // no working link to one, document notices are offered once. Watching the
+  // vault rather than one button keeps it right whichever action made the link.
+  // Only the full panel offers it, so a compact copy never opens a second one.
+  // Links not known yet (linking off, or no list in this snapshot) are not
+  // "no link": an already linked vault must not look newly linked at unlock.
+  const firstWorking =
+    snapshot.portalLinkingEnabled === true && snapshot.portalLinks !== undefined
+      ? (workingLink(snapshot.portalLinks)?.id ?? "")
+      : null;
+  const hasWorkingLink = firstWorking === null ? null : firstWorking !== "";
+  const hadWorkingLink = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (compact || hasWorkingLink === null) return;
+    if (hadWorkingLink.current === false && hasWorkingLink && firstWorking)
+      setOfferNotices(firstWorking);
+    hadWorkingLink.current = hasWorkingLink;
+  }, [hasWorkingLink, firstWorking, compact]);
+  // The panel's own status line: a copy result, or what an automatic check
+  // found that changed. Read out politely; nothing here takes focus. A
+  // check's change is already on the device's card, so it is only heard.
+  // Its text follows the app's language after it is set (main's text state).
+  const [statusText, setStatusText] = useTextState();
+  const [statusHeardOnly, setStatusHeardOnly] = useState(false);
+  const statusLine = { text: statusText, heardOnly: statusHeardOnly };
+  const statusOwnerRef = useRef<{
+    capture: SnapshotCapture;
+    partial: boolean;
+  } | null>(null);
+  const setStatusLine = (next: { text: UiText; heardOnly?: boolean }) => {
+    setStatusText(next.text);
+    setStatusHeardOnly(Boolean(next.heardOnly));
+  };
+  useEffect(() => {
+    const owner = statusOwnerRef.current;
+    if (
+      owner &&
+      (owner.capture.epoch !== snapshot.capture.epoch ||
+        (owner.partial
+          ? owner.capture.sequence <= snapshot.capture.sequence
+          : owner.capture.sequence < snapshot.capture.sequence))
+    ) {
+      statusOwnerRef.current = null;
+      if (statusHeardOnly) setStatusLine({ text: "" });
+    }
+  }, [snapshot.capture.epoch, snapshot.capture.sequence, statusHeardOnly]);
+  const [connecting, setConnecting] = useState(false);
+  const [focusLink, setFocusLink] = useState<string | null>(null);
+  const submitting = useRef(false);
+  const codeRevision = useRef(0);
+  const submittedRevision = useRef<number | null>(null);
   const shown = useRef(true);
   useEffect(() => {
     shown.current = true;
@@ -53,77 +194,141 @@ export function PortalDocuments({
       shown.current = false;
     };
   }, [bridge]);
-  if (
-    !snapshot.portalLinkingEnabled ||
-    !bridge.linkPortal ||
-    !bridge.checkDocuments
-  )
-    return null;
+  useEffect(() => {
+    if (connecting || !focusLink) return;
+    const heading = document.getElementById(`portal-link-title-${focusLink}`);
+    if (!heading) return;
+    if (document.activeElement === document.body) heading.focus();
+    setFocusLink(null);
+  }, [connecting, focusLink, snapshot.portalLinks]);
+  useEffect(() => {
+    // The status line goes back to its own text when clinic work ends; an
+    // earlier "copied", or an earlier check's change, must not be read out
+    // again then.
+    if (connecting || working) setStatusLine({ text: "" });
+  }, [connecting, working]);
+  const available = Boolean(
+    snapshot.portalLinkingEnabled &&
+      bridge.connectPortal &&
+      bridge.checkDocuments,
+  );
   const links = snapshot.portalLinks ?? [];
+  // In the language now in use, also when read again later (deferred text).
+  const stateText = (state: CardState) =>
+    "key" in state ? translateNow(state.key) : vaultErrorMessage(state.failed);
+  // A control an automatic check is about to remove or disable, if it has
+  // focus: focus then goes to its device's heading, not to the page.
+  const checkFocus = useRef<{
+    linkId: string;
+    control: Element;
+    // The check put the vault into read-only recovery: the render that
+    // disables the control comes after the app reads the vault again.
+    untilReadOnly: boolean;
+  } | null>(null);
+  // Said once, when an automatic check changes what a card says (#131). A
+  // check that finds nothing new says nothing; nor does the first check
+  // confirming that the portal has a request the card already calls saved.
+  const said = ({
+    before,
+    after,
+    recovery,
+    capture,
+    afterCapture,
+  }: CheckChange) => {
+    const focused = document.activeElement;
+    if (
+      focused &&
+      document.getElementById(`portal-link-${after.link.id}`)?.contains(focused)
+    )
+      checkFocus.current = {
+        linkId: after.link.id,
+        control: focused,
+        untilReadOnly: recovery === true,
+      };
+    const was = cardState(before.link, before.live);
+    const now = cardState(after.link, after.live);
+    if (
+      sameState(was, now) ||
+      ("key" in was &&
+        "key" in now &&
+        was.key === "portal.awaiting" &&
+        now.key === "portal.awaitingClinic")
+    )
+      return;
+    const several = links.length > 1;
+    statusOwnerRef.current = capture
+      ? { capture, partial: true }
+      : afterCapture
+        ? { capture: afterCapture, partial: false }
+        : null;
+    setStatusLine({
+      text: deferredText(() =>
+        several
+          ? translateNow("portal.clinicIssue", {
+              clinic: after.link.clinicName ?? after.link.portalBase,
+              detail: stateText(now),
+            })
+          : stateText(now),
+      ),
+      heardOnly: true,
+    });
+  };
+  useEffect(() => {
+    // After the render that follows a check: was the focused control removed
+    // or disabled by it? Only then is focus moved, and only to that device.
+    const remembered = checkFocus.current;
+    if (!remembered) return;
+    const { linkId, control, untilReadOnly } = remembered;
+    const active = document.activeElement;
+    if (active !== control && active !== document.body && active !== null) {
+      checkFocus.current = null;
+      return;
+    }
+    if (untilReadOnly && !readOnly) return;
+    checkFocus.current = null;
+    if (control.isConnected && !(control as HTMLButtonElement).disabled) return;
+    document.getElementById(`portal-link-title-${linkId}`)?.focus();
+  });
+  const polling = useApprovalPolling({
+    links,
+    capture: snapshot.capture,
+    poll,
+    waits,
+    enabled: available && !compact && !readOnly,
+    busy: busy || connecting || working,
+    onChange: said,
+  });
+  if (!available) return null;
   const terminal = (link: PortalLinkSummary) =>
     ["refused", "expired", "cancelled", "accepted"].includes(
       link.approvalStatus ?? "",
     );
-  const approvalMessage = (link: PortalLinkSummary) => {
-    if (link.incomplete) return t("portal.incomplete");
-    if (link.clinicApproved) return t("portal.approved");
-    if (link.approvalRequestLimitReached) return t("portal.approvalContact");
-    if (link.approvalStatus === "expired") return t("portal.approvalExpired");
-    if (link.approvalStatus === "cancelled")
-      return t("portal.approvalCancelled");
-    if (
-      link.approvalStatus === "accepted" ||
-      ["staff_required", "no_accepted_approver"].includes(
-        link.approvalReason ?? "",
-      )
-    )
-      return t("portal.approvalContact");
-    if (link.approvalStatus === "refused") return t("portal.approvalRefused");
-    return t(
-      link.approvalRequested ? "portal.awaiting" : "portal.notRequested",
-    );
-  };
-  const disabled = busy || readOnly;
-  const check = () =>
+  const disabled = busy || readOnly || connecting || working;
+  const check = () => {
+    polling.hold();
+    // What this check found for each open request: the portal has it,
+    // unless the check names a problem with that device's clinic.
+    let known: Record<string, LiveApproval | undefined> = {};
     void run(async () => {
-      try {
-        const result = await bridge.checkDocuments!();
-        await refresh();
-        if (shown.current)
-          setNotice(
-            [
-              t(
-                result.issues?.length
-                  ? "portal.partialResult"
-                  : "portal.result",
-                {
-                  added: result.added,
-                  refused: result.refused,
-                },
-              ),
-              ...(result.issues ?? []).map((issue) =>
-                t("portal.clinicIssue", {
-                  clinic: issue.clinicName,
-                  detail: vaultErrorMessage({
-                    code: issue.code,
-                    message: t("portal.errorIncomplete"),
-                  }),
-                }),
-              ),
-              ...(result.receiptsPending > 0
-                ? [
-                    t("portal.confirmationsPending", {
-                      count: result.receiptsPending,
-                    }),
-                  ]
-                : []),
-            ].join(" "),
-          );
-      } catch (error) {
-        await refresh();
-        throw error;
-      }
-    });
+      const { result, vault: next } = await checkClinicDocuments({
+        bridge,
+        links,
+        waits,
+        refresh,
+      });
+      known = Object.fromEntries(
+        (next.portalLinks ?? []).map((link) => [
+          link.id,
+          isAwaitingApproval(link) &&
+          !result.issues?.some((issue) => issue.linkId === link.id)
+            ? waitingNow()
+            : undefined,
+        ]),
+      );
+      // Reported after leaving this view too, as for connecting.
+      setNotice(deferredText(() => documentCheckText(result)));
+    }).finally(() => polling.restart(known));
+  };
   const checkButton = (
     <button
       className="button"
@@ -131,33 +336,113 @@ export function PortalDocuments({
       disabled={disabled || !links.some((link) => !link.incomplete)}
       onClick={check}
     >
-      {t("portal.check")}
+      {t(working && compact ? "portal.working" : "portal.check")}
     </button>
   );
-  if (compact) return links.length > 0 ? checkButton : null;
+  if (compact) return showCheck && links.length > 0 ? checkButton : null;
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (disabled) return;
+    if (
+      disabled ||
+      submitting.current ||
+      !code ||
+      submittedRevision.current === codeRevision.current
+    )
+      return;
+    submitting.current = true;
+    const revision = codeRevision.current;
+    const previousIds = new Set(links.map((link) => link.id));
+    polling.hold();
+    let known: Record<string, LiveApproval | undefined> = {};
     void run(async () => {
+      // A reply after a lock is not the next session's wait (#128).
+      const session = waits?.session();
+      submittedRevision.current = revision;
+      if (shown.current) {
+        setConnecting(true);
+        // Native owns the transient code from this point. A repeated callback
+        // cannot reuse this form attempt, even before React paints the clear.
+        setCode("");
+      }
       try {
-        await bridge.linkPortal!({
+        const result = await bridge.connectPortal!({
           portalBase: address,
           code,
           deviceName: device,
           profileId: person || null,
         });
-        // The one-use code is not retained after this attempt.
-        if (shown.current) setCode("");
+        await refresh();
+        if (shown.current) setFocusLink(result.link.id);
+        // The portal answered the request: it has it open (#131).
+        known = {
+          [result.link.id]: result.approvalError ? undefined : waitingNow(),
+        };
+        if (isRateLimited(result.approvalError))
+          waits?.wait(
+            result.link.portalBase,
+            result.approvalError.retryAfterMs,
+            session,
+          );
+        // Reported even after the patient has left this view: the link exists
+        // whether or not anyone is looking, and the line must not keep an
+        // older error beside it. The setter drops it for a finished session.
+        // A partial result gives the reason first, then where to look: the
+        // reason's "try again" means the saved request, not a new link.
+        const approvalError = result.approvalError;
+        setNotice(
+          deferredText(() =>
+            approvalError
+              ? `${vaultErrorMessage(approvalError)} ${translateNow("portal.linkedApprovalIssue")}`
+              : translateNow("portal.connected"),
+          ),
+        );
+      } catch (error) {
+        const next = await refresh();
+        const attempt = next.portalLinks?.find(
+          (link) => !previousIds.has(link.id),
+        );
+        if (shown.current && attempt) setFocusLink(attempt.id);
+        throw error;
+      }
+    }).finally(() => {
+      submitting.current = false;
+      if (shown.current) setConnecting(false);
+      polling.restart(known);
+    });
+  };
+  // The patient's own request or restart for one device: it finishes before
+  // automatic checks begin again, and an answer from the portal means it has
+  // the request open.
+  const requestAction = (
+    link: PortalLinkSummary,
+    send: (linkId: string) => Promise<void>,
+  ) => {
+    polling.hold();
+    let known: LiveApproval | undefined;
+    void run(async () => {
+      const session = waits?.session();
+      try {
+        await send(link.id);
+        known = waitingNow();
+      } catch (error) {
+        if (isRateLimited(error))
+          waits?.wait(link.portalBase, error.retryAfterMs, session);
+        throw error;
       } finally {
-        if (shown.current) setCode("");
         await refresh();
       }
-    });
+    }).finally(() => polling.restart({ [link.id]: known }));
   };
   return (
     <section className="portal-documents" aria-labelledby="portal-title">
-      <h2 id="portal-title">{t("portal.title")}</h2>
+      {/* Focusable for the check after unlocking, which may disable the
+          control that had focus (#128). */}
+      <h2 id="portal-title" tabIndex={-1}>
+        {t("portal.title")}
+      </h2>
       <p>{t("portal.intro")}</p>
+      <p>{t("portal.connectConsent")}</p>
+      <p>{t("portal.unlockCheckConsent")}</p>
       <form className="native-inline-form" onSubmit={submit}>
         <label>
           {t("portal.address")}
@@ -182,7 +467,10 @@ export function PortalDocuments({
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => {
+              codeRevision.current += 1;
+              setCode(e.target.value);
+            }}
             disabled={disabled}
           />
         </label>
@@ -218,91 +506,166 @@ export function PortalDocuments({
           {t("portal.link")}
         </button>
       </form>
-      {links.map((link) => (
-        <div className="portal-link" key={link.id}>
-          <h3>{link.clinicName ?? link.portalBase}</h3>
-          <p className="portal-address">{link.portalBase}</p>
-          <p>{approvalMessage(link)}</p>
-          <label>
-            {t("portal.deviceCode")}
-            <input
-              readOnly
-              value={link.deviceKeyId}
-              spellCheck={false}
-              onFocus={(event) => event.currentTarget.select()}
-              onClick={(event) => event.currentTarget.select()}
-            />
-          </label>
-          <button
-            className="button"
-            type="button"
-            disabled={disabled}
-            onClick={() => {
-              void navigator.clipboard
-                ?.writeText(link.deviceKeyId)
-                .then(() => setCopyState(t("portal.copied")))
-                .catch(() => setCopyState(t("portal.copyFailed")));
-              if (!navigator.clipboard) setCopyState(t("portal.copyFailed"));
-            }}
+      {links.map((link) => {
+        const live = polling.live[link.id];
+        // By the portal's clock, never this device's (#131).
+        const left = isAwaitingApproval(link)
+          ? timeLeft(live, polling.now)
+          : null;
+        // The latest check says the portal removed this device: neither a
+        // retry nor a new request can work until it is connected again.
+        const removed =
+          live?.kind === "failed" &&
+          hasVaultErrorCode(live.error, "portal_device_removed");
+        return (
+          <div
+            className="portal-link"
+            id={`portal-link-${link.id}`}
+            key={link.id}
           >
-            {t("portal.copy")}
-          </button>
-          <label>
-            {t("portal.fingerprint")}
-            <textarea
-              readOnly
-              value={link.deviceFingerprint}
-              rows={4}
-              spellCheck={false}
-              onFocus={(event) => event.currentTarget.select()}
-              onClick={(event) => event.currentTarget.select()}
-            />
-          </label>
-          {!link.incomplete && !link.clinicApproved && (
-            <>
-              <p>{t("portal.compare")}</p>
-              <button
-                className="button"
-                type="button"
-                disabled={
-                  disabled || terminal(link) || !bridge.requestDeviceApproval
-                }
-                onClick={() =>
-                  void run(async () => {
-                    try {
-                      await bridge.requestDeviceApproval!(link.id);
-                    } finally {
-                      await refresh();
-                    }
-                  })
-                }
-              >
-                {t("portal.requestApproval")}
-              </button>
-              {link.approvalCanRestart && (
+            <h3 id={`portal-link-title-${link.id}`} tabIndex={-1}>
+              {link.clinicName ?? link.portalBase}
+            </h3>
+            <p className="portal-address">{link.portalBase}</p>
+            <p>{stateText(cardState(link, live))}</p>
+            {left !== null && (
+              <p>
+                {left > 0
+                  ? t("portal.approvalTimeLeft", {
+                      count: Math.ceil(left / 60_000),
+                    })
+                  : // A new request may start by the portal's clock;
+                    // otherwise "checking" only while checks run.
+                    link.approvalCanRestart
+                    ? t("portal.approvalTimeOverRestart", {
+                        button: t("portal.restartApproval"),
+                      })
+                    : t(
+                        polling.checking?.has(link.id)
+                          ? "portal.approvalTimeUp"
+                          : "portal.approvalTimeOver",
+                      )}
+              </p>
+            )}
+            {polling.checking?.has(link.id) && (
+              <p>{t("portal.autoChecking")}</p>
+            )}
+            {!readOnly &&
+              isAwaitingApproval(link) &&
+              ((polling.stopped && live?.kind !== "missing") ||
+                (live?.kind === "failed" &&
+                  // Checking again cannot help a removed device.
+                  !hasVaultErrorCode(live.error, "portal_device_removed"))) && (
+                <p>
+                  {t("portal.autoCheckStopped", { button: t("portal.check") })}
+                </p>
+              )}
+            <label>
+              {t("portal.deviceCode")}
+              <input
+                readOnly
+                value={link.deviceKeyId}
+                spellCheck={false}
+                onFocus={(event) => event.currentTarget.select()}
+                onClick={(event) => event.currentTarget.select()}
+              />
+            </label>
+            <button
+              className="button"
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(link.deviceKeyId)
+                  .then(() => setStatusLine({ text: message("portal.copied") }))
+                  .catch(() =>
+                    setStatusLine({ text: message("portal.copyFailed") }),
+                  );
+                if (!navigator.clipboard)
+                  setStatusLine({ text: message("portal.copyFailed") });
+              }}
+            >
+              {t("portal.copy")}
+            </button>
+            <label>
+              {t("portal.fingerprint")}
+              <textarea
+                readOnly
+                value={link.deviceFingerprint}
+                rows={4}
+                spellCheck={false}
+                onFocus={(event) => event.currentTarget.select()}
+                onClick={(event) => event.currentTarget.select()}
+              />
+            </label>
+            {!link.incomplete && !link.clinicApproved && (
+              <>
+                <p>{t("portal.compare")}</p>
                 <button
                   className="button"
                   type="button"
-                  disabled={disabled || !bridge.restartDeviceApproval}
+                  disabled={
+                    disabled ||
+                    removed ||
+                    terminal(link) ||
+                    !bridge.requestDeviceApproval
+                  }
                   onClick={() =>
-                    void run(async () => {
-                      try {
-                        await bridge.restartDeviceApproval!(link.id);
-                      } finally {
-                        await refresh();
-                      }
-                    })
+                    requestAction(link, bridge.requestDeviceApproval!)
                   }
                 >
-                  {t("portal.restartApproval")}
+                  {t(
+                    link.approvalRequested
+                      ? "portal.retryApproval"
+                      : "portal.requestApproval",
+                  )}
                 </button>
-              )}
-            </>
-          )}
-        </div>
-      ))}
-      <p role="status">{copyState}</p>
-      {checkButton}
+                {/* Offered once the request has ended; not while the portal's
+                  clock still gives it time, whatever this device's says. */}
+                {link.approvalCanRestart && !(left !== null && left > 0) && (
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={
+                      disabled || removed || !bridge.restartDeviceApproval
+                    }
+                    onClick={() =>
+                      requestAction(link, bridge.restartDeviceApproval!)
+                    }
+                  >
+                    {t("portal.restartApproval")}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })}
+      <p role="status">
+        {connecting ? (
+          t("portal.connecting")
+        ) : working ? (
+          t("portal.working")
+        ) : statusLine.heardOnly ? (
+          <span className="sr-only">{statusLine.text}</span>
+        ) : (
+          statusLine.text
+        )}
+      </p>
+      {showCheck && checkButton}
+      {offerNotices && (
+        <NoticesAfterLink
+          onClose={() => {
+            const linked = offerNotices;
+            setOfferNotices(null);
+            // Then to the new clinic's heading, where the panel has one: the
+            // control that made the link may be gone once a clinic is linked.
+            requestAnimationFrame(() =>
+              document.getElementById(`portal-link-title-${linked}`)?.focus(),
+            );
+          }}
+        />
+      )}
     </section>
   );
 }

@@ -19,6 +19,7 @@ import { SecuritySettings } from "../native/SecuritySettings";
 import { RecoveryKeySetup } from "../native/RecoveryKeySetup";
 import { AutoLockSetting } from "../native/AutoLockSetting";
 import { LibrarySidebar } from "../native/LibrarySidebar";
+import { humanText } from "../test/humanText";
 import { readTypedZoom } from "../native/zoom";
 import { ComfortSetup } from "../native/ComfortSetup";
 import { LockWarning } from "../native/LockWarning";
@@ -57,6 +58,10 @@ function renderSecurity() {
       onLock={vi.fn().mockResolvedValue(undefined)}
       onChangePassphrase={vi.fn().mockResolvedValue(undefined)}
       onCreateProfile={vi.fn().mockResolvedValue(true)}
+      hiddenCount={0}
+      hiddenScopeName="FAKE Avery"
+      onOpenHidden={vi.fn()}
+      onOpenAuditHistory={vi.fn()}
       recoveryKeySetAtMs={Date.UTC(2026, 9, 1)}
       recoveryKeyLabel="BEAD"
       onSetUpRecoveryKey={vi.fn()}
@@ -260,8 +265,6 @@ describe("the person-folder sidebar in each language", () => {
         } as unknown as VaultDragDrop,
         onOpenPerson: vi.fn(),
         onOpenFolder: vi.fn(),
-        hiddenCount: 0,
-        onOpenHidden: vi.fn(),
         onOpenSecurity: vi.fn(),
         onOpenPreferences: vi.fn(),
       };
@@ -279,9 +282,18 @@ describe("the person-folder sidebar in each language", () => {
           }),
         }),
       ).toHaveAttribute("aria-current", "page");
+      // Whose folder it is, in this language's own brackets (full-width in
+      // Chinese).
       const folder = within(nav).getByRole("button", {
-        name: "FAKE Results (FAKE Blake) 0",
+        name: humanText(
+          `${tr("sidebar.folderOfPerson", { folder: "FAKE Results", person: "FAKE Blake" })} 0`,
+        ),
       });
+      // Pinned as written, so a catalogue change back to ASCII brackets fails.
+      if (locale === "zh-CN")
+        expect(visibleText(folder.getAttribute("aria-label")!)).toBe(
+          "FAKE Results（FAKE Blake） 0",
+        );
       expect(folder).not.toHaveAttribute("draggable", "true");
       await user.click(folder);
       expect(props.onOpenFolder).toHaveBeenCalledWith("p2", "folder-p2");

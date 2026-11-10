@@ -3,6 +3,100 @@ pub const FORMATTING_FAILURE_EN: &str =
     "myCarlos could not display this message correctly. Choose another language or restart the app, then check your records before trying again.";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MessageId {
+    AiErrorBusy,
+    AiErrorMemory,
+    AiExplainBox,
+    AiExplainHint,
+    AiExplainReady,
+    AiExplainSubmit,
+    AiExplainTitle,
+    AiFailed,
+    AiKeepFailed,
+    AiKeepFull,
+    AiModelAccepted,
+    AiModelAdd,
+    AiModelAdded,
+    AiModelChecking,
+    AiModelCopied,
+    AiModelCopy,
+    AiModelDamaged,
+    AiModelDownload,
+    AiModelDownloadNote,
+    AiModelDownloading,
+    AiModelInstalled,
+    AiModelProgressName,
+    AiModelProgressValue,
+    AiModelRefusedBusy,
+    AiModelRefusedDisk,
+    AiModelRefusedHash,
+    AiModelRefusedIncomplete,
+    AiModelRefusedList,
+    AiModelRefusedNetwork,
+    AiModelRefusedStorage,
+    AiModelRefusedUnavailable,
+    AiModelRemove,
+    AiModelRemoveConfirm,
+    AiModelStillChecking,
+    AiModelStillDownloading,
+    AiModelUnsupportedCpu,
+    AiModelUnsupportedPlatform,
+    AiModelUnsupportedRam,
+    AiModelWhere,
+    AiModelsAddedByYou,
+    AiModelsChanged,
+    AiModelsDownload,
+    AiModelsDownloading,
+    AiModelsGroup,
+    AiModelsHelp,
+    AiModelsInUse,
+    AiModelsInstalled,
+    AiModelsInstalling,
+    AiModelsLoadFailed,
+    AiModelsLoading,
+    AiModelsNotDownloaded,
+    AiModelsPicking,
+    AiModelsRemove,
+    AiModelsRetry,
+    AiModelsStarting,
+    AiModelsTitle,
+    AiNotInstalledBody,
+    AiNotInstalledOpenPreferences,
+    AiNotInstalledTitle,
+    AiPreferencesBody,
+    AiPreferencesNotInstalled,
+    AiPreferencesTitle,
+    AiResultMeta,
+    AiSettingsSubtitle,
+    AiSummaryAgain,
+    AiSummaryButton,
+    AiSummaryNoSource,
+    AiSummaryNoText,
+    AiSummaryPagesMissing,
+    AiSummaryPartial,
+    AiSummaryReady,
+    AiSummaryShowInDocument,
+    AiSummaryTitle,
+    AiWorking,
+    AiWorkingFor,
+    AiWorkingLong,
+    AiHelperExportCut,
+    AiHelperExportFileName,
+    AiHelperExportHeader,
+    AiHelperNoticeAdviceBody,
+    AiHelperNoticeFileBody,
+    AiHelperNoticeIntro,
+    AiHelperNoticeIntroShare,
+    AiHelperNoticeLimitsBody,
+    AiHelperNoticeModelBody,
+    AiHelperNoticeModelHeading,
+    AiHelperNoticePreviewBody,
+    AiHelperNoticeResultsBody,
+    AiHelperNoticeServiceBody,
+    AiHelperNoticeShareBody,
+    AiHelperNoticeShareHeading,
+    AiHelperNoticeTestBuild,
+    AiHelperNoticeTitle,
+    AiHelperResultLabel,
     AppearanceDark,
     AppearanceErrorNotRemembered,
     AppearanceErrorUnreadable,
@@ -60,6 +154,77 @@ pub enum MessageId {
     FrameStateOpening,
     FrameStateSettingUp,
     FrameWindowLabel,
+    HiddenBackToSecurity,
+    InterfaceAiHelperNoticeContinue,
+    InterfaceAnonymizePreviewClose,
+    InterfaceAnonymizePreviewConfirmBody,
+    InterfaceAnonymizePreviewConfirmTitle,
+    InterfaceAnonymizePreviewCutPages,
+    InterfaceAnonymizePreviewEmptyPages,
+    InterfaceAnonymizePreviewFailedPages,
+    InterfaceAnonymizePreviewFooterNote,
+    InterfaceAnonymizePreviewHeaderNote,
+    InterfaceAnonymizePreviewHowMarked,
+    InterfaceAnonymizePreviewKindAddress,
+    InterfaceAnonymizePreviewKindAge,
+    InterfaceAnonymizePreviewKindClinic,
+    InterfaceAnonymizePreviewKindDateOfBirth,
+    InterfaceAnonymizePreviewKindDoctor,
+    InterfaceAnonymizePreviewKindEmail,
+    InterfaceAnonymizePreviewKindHealthCard,
+    InterfaceAnonymizePreviewKindManual,
+    InterfaceAnonymizePreviewKindName,
+    InterfaceAnonymizePreviewKindPhone,
+    InterfaceAnonymizePreviewKindPostalCode,
+    InterfaceAnonymizePreviewKindRecordNumber,
+    InterfaceAnonymizePreviewKindSin,
+    InterfaceAnonymizePreviewKindUnclearDate,
+    InterfaceAnonymizePreviewKindWeb,
+    InterfaceAnonymizePreviewMovedDate,
+    InterfaceAnonymizePreviewNoteAgeOver90,
+    InterfaceAnonymizePreviewNoteDaysAfter,
+    InterfaceAnonymizePreviewPasteAllMatched,
+    InterfaceAnonymizePreviewPasteButton,
+    InterfaceAnonymizePreviewPasteFlagged,
+    InterfaceAnonymizePreviewPasteFlaggedSr,
+    InterfaceAnonymizePreviewPasteHelp,
+    InterfaceAnonymizePreviewPasteLabel,
+    InterfaceAnonymizePreviewPasteResult,
+    InterfaceAnonymizePreviewPasteTitle,
+    InterfaceAnonymizePreviewPhrase,
+    InterfaceAnonymizePreviewPhraseNotFound,
+    InterfaceAnonymizePreviewPlaceholderAddress,
+    InterfaceAnonymizePreviewPlaceholderAge,
+    InterfaceAnonymizePreviewPlaceholderClinic,
+    InterfaceAnonymizePreviewPlaceholderDateOfBirth,
+    InterfaceAnonymizePreviewPlaceholderDoctor,
+    InterfaceAnonymizePreviewPlaceholderEmail,
+    InterfaceAnonymizePreviewPlaceholderHealthCard,
+    InterfaceAnonymizePreviewPlaceholderManual,
+    InterfaceAnonymizePreviewPlaceholderName,
+    InterfaceAnonymizePreviewPlaceholderPhone,
+    InterfaceAnonymizePreviewPlaceholderPostalCode,
+    InterfaceAnonymizePreviewPlaceholderRecordNumber,
+    InterfaceAnonymizePreviewPlaceholderSin,
+    InterfaceAnonymizePreviewPlaceholderUnclearDate,
+    InterfaceAnonymizePreviewPlaceholderWeb,
+    InterfaceAnonymizePreviewPossibleNames,
+    InterfaceAnonymizePreviewReadFailed,
+    InterfaceAnonymizePreviewReading,
+    InterfaceAnonymizePreviewRefused,
+    InterfaceAnonymizePreviewRemovePhrase,
+    InterfaceAnonymizePreviewRemoveSelected,
+    InterfaceAnonymizePreviewRemoveWord,
+    InterfaceAnonymizePreviewRemovedKind,
+    InterfaceAnonymizePreviewRemovedPlaces,
+    InterfaceAnonymizePreviewReplaced,
+    InterfaceAnonymizePreviewSave,
+    InterfaceAnonymizePreviewSaveCancelled,
+    InterfaceAnonymizePreviewSaved,
+    InterfaceAnonymizePreviewSelectFirst,
+    InterfaceAnonymizePreviewTextRegion,
+    InterfaceAnonymizePreviewTitle,
+    InterfaceAnonymizePreviewUndo,
     InterfaceCameraDialogCameraReady,
     InterfaceCameraDialogCameraView,
     InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos,
@@ -96,6 +261,7 @@ pub enum MessageId {
     InterfaceHiddenDocumentsWasIn,
     InterfaceLibraryItemsIn,
     InterfaceLibrarySidebarSharedWithMe,
+    InterfaceRecordDetailsAnonymizeText,
     InterfaceRecordDetailsCloseDocumentDetails,
     InterfaceRecordDetailsEncryptedDocument,
     InterfaceRecordDetailsEncryptedDocumentDetails,
@@ -211,6 +377,85 @@ pub enum MessageId {
     InterfaceHiddenRecord,
     InterfaceHiddenRestore,
     InterfaceHideDamagedTitle,
+    InterfaceHistoryAppVersion,
+    InterfaceHistoryApprovalAccepted,
+    InterfaceHistoryApprovalCancelled,
+    InterfaceHistoryApprovalChallengeReady,
+    InterfaceHistoryApprovalExpired,
+    InterfaceHistoryApprovalPending,
+    InterfaceHistoryApprovalRefused,
+    InterfaceHistoryDamaged,
+    InterfaceHistoryDamagedAll,
+    InterfaceHistoryDamagedBefore,
+    InterfaceHistoryDamagedBetween,
+    InterfaceHistoryEmpty,
+    InterfaceHistoryErrorUnverified,
+    InterfaceHistoryEventAiResultSaved,
+    InterfaceHistoryEventBackupRestored,
+    InterfaceHistoryEventBackupSaved,
+    InterfaceHistoryEventCopySaved,
+    InterfaceHistoryEventCreated,
+    InterfaceHistoryEventDeliveryFiled,
+    InterfaceHistoryEventDeliveryReceiptSettled,
+    InterfaceHistoryEventDeviceApprovalRequestRestarted,
+    InterfaceHistoryEventDeviceApprovalRequested,
+    InterfaceHistoryEventDeviceApprovalStatusChanged,
+    InterfaceHistoryEventDeviceApprovalVerified,
+    InterfaceHistoryEventFolderCreated,
+    InterfaceHistoryEventFolderMoved,
+    InterfaceHistoryEventFolderRenamed,
+    InterfaceHistoryEventHidden,
+    InterfaceHistoryEventHistoryStarted,
+    InterfaceHistoryEventImported,
+    InterfaceHistoryEventMoved,
+    InterfaceHistoryEventPassphraseChanged,
+    InterfaceHistoryEventPortalLinkStarted,
+    InterfaceHistoryEventPortalLinked,
+    InterfaceHistoryEventProfileCreated,
+    InterfaceHistoryEventProfileDetailsChanged,
+    InterfaceHistoryEventReadingAidFiled,
+    InterfaceHistoryEventRecoveryKeySet,
+    InterfaceHistoryEventRenamed,
+    InterfaceHistoryEventRestored,
+    InterfaceHistoryEventSetAside,
+    InterfaceHistoryEventUnlocked,
+    InterfaceHistoryEvents,
+    InterfaceHistoryFrom,
+    InterfaceHistoryGap,
+    InterfaceHistoryHow,
+    InterfaceHistoryHowAidReplaced,
+    InterfaceHistoryHowAnonymizedText,
+    InterfaceHistoryHowCamera,
+    InterfaceHistoryHowDamaged,
+    InterfaceHistoryHowExplain,
+    InterfaceHistoryHowImportedShared,
+    InterfaceHistoryHowMovedFromShared,
+    InterfaceHistoryHowPassphrase,
+    InterfaceHistoryHowPatient,
+    InterfaceHistoryHowPicked,
+    InterfaceHistoryHowRecoveryKey,
+    InterfaceHistoryHowReplaced,
+    InterfaceHistoryHowSummary,
+    InterfaceHistoryIntro,
+    InterfaceHistoryLaterSessionNotRecorded,
+    InterfaceHistoryLoading,
+    InterfaceHistoryMoreFolders,
+    InterfaceHistoryName,
+    InterfaceHistoryPersonRootFolder,
+    InterfaceHistoryPlace,
+    InterfaceHistoryPreviousName,
+    InterfaceHistoryPreviousSession,
+    InterfaceHistoryReceiptNotFound,
+    InterfaceHistoryReceiptPickedUp,
+    InterfaceHistoryRootFolder,
+    InterfaceHistoryScopeNote,
+    InterfaceHistorySessionLockedAutomatically,
+    InterfaceHistorySessionLockedByApp,
+    InterfaceHistorySessionLockedByPerson,
+    InterfaceHistorySessionNotRecorded,
+    InterfaceHistoryStatus,
+    InterfaceHistoryTitle,
+    InterfaceHistoryTo,
     InterfaceInLocation,
     InterfaceNoticeAlreadyFiled,
     InterfaceNoticeAlreadyShared,
@@ -307,6 +552,10 @@ pub enum MessageId {
     LibrarySearchCleared,
     LibrarySearchResults,
     LibrarySelect,
+    LibrarySourceClinic,
+    LibrarySourceManualImport,
+    LibraryStatusUnverified,
+    LibraryStatusVerified,
     LockWarningHelp,
     LockWarningKeepOpen,
     LockWarningLeft,
@@ -364,8 +613,10 @@ pub enum MessageId {
     NativeError48,
     NativeErrorSpeedTest,
     NativeFilterBackups,
+    NativeFilterModels,
     NativeFilterPdf,
     NativeKitText,
+    NativeNoticeArrival,
     NativeRecoveryKeep,
     NativeRecoveryReplace,
     NativeRecoveryTitle,
@@ -400,6 +651,24 @@ pub enum MessageId {
     NoticeTransferUnfinished,
     NoticeUnlocked,
     NoticeUnlockedRecovery,
+    NoticesStepDone,
+    NoticesStepIntro,
+    NoticesStepLater,
+    NoticesStepNotNow,
+    NoticesStepTitle,
+    NotificationsAllow,
+    NotificationsAutoAllow,
+    NotificationsAutoHelp,
+    NotificationsAutoNeedsNotices,
+    NotificationsAutoPaused,
+    NotificationsBlocked,
+    NotificationsCheckBusy,
+    NotificationsError,
+    NotificationsHelp,
+    NotificationsHelpAutomatic,
+    NotificationsTitle,
+    NotificationsUnavailable,
+    NotificationsUnknown,
     PassphraseConfirmLabel,
     PassphraseConfirmNewLabel,
     PassphraseLabel,
@@ -450,37 +719,58 @@ pub enum MessageId {
     PortalApprovalCancelled,
     PortalApprovalContact,
     PortalApprovalExpired,
+    PortalApprovalExpiredCard,
     PortalApprovalMissing,
+    PortalApprovalPickedUp,
     PortalApprovalRefused,
+    PortalApprovalReplyInvalid,
+    PortalApprovalStillOpen,
+    PortalApprovalTimeLeft,
+    PortalApprovalTimeOver,
+    PortalApprovalTimeOverRestart,
+    PortalApprovalTimeUp,
+    PortalApprovalUnanswered,
+    PortalApprovalUnreachable,
+    PortalApprovalWait,
     PortalApproved,
+    PortalAutoCheckStopped,
+    PortalAutoChecking,
     PortalAwaiting,
+    PortalAwaitingClinic,
     PortalCheck,
+    PortalCheckAgain,
     PortalClinicIssue,
     PortalCode,
     PortalCompare,
     PortalConfirmationsPending,
+    PortalConnectConsent,
+    PortalConnected,
+    PortalConnecting,
     PortalCopied,
     PortalCopy,
     PortalCopyFailed,
     PortalDateNotRecorded,
     PortalDeviceCode,
     PortalDeviceName,
+    PortalDeviceRemoved,
     PortalErrorAddress,
+    PortalErrorBusy,
     PortalErrorCancelled,
     PortalErrorCode,
     PortalErrorCodeRejected,
     PortalErrorDamaged,
     PortalErrorDeviceName,
-    PortalErrorDisabled,
     PortalErrorExists,
     PortalErrorIncomplete,
     PortalErrorKeys,
+    PortalErrorRateLimited,
     PortalErrorRefused,
     PortalErrorUnavailable,
     PortalFingerprint,
     PortalIncomplete,
     PortalIntro,
     PortalLink,
+    PortalLinkedApprovalIssue,
     PortalMatchPerson,
     PortalNotRequested,
     PortalPartialResult,
@@ -488,12 +778,28 @@ pub enum MessageId {
     PortalRequestApproval,
     PortalRestartApproval,
     PortalResult,
+    PortalRetryApproval,
     PortalRouting,
     PortalServiceDate,
     PortalServiceDateLabel,
-    PortalSourceVerified,
     PortalTitle,
+    PortalUnlockCheckConsent,
+    PortalUnlockCheckIncomplete,
+    PortalUnlockCheckNotRun,
+    PortalUnlockCheckWaiting,
+    PortalUnlockChecked,
+    PortalUnlockRefused,
+    PortalWorking,
     PreferencesSubtitle,
+    ReadingAidAvailable,
+    ReadingAidChecked,
+    ReadingAidEvidence,
+    ReadingAidOpen,
+    ReadingAidOpenOriginal,
+    ReadingAidOverview,
+    ReadingAidPoints,
+    ReadingAidTitle,
+    ReadingAidUnavailable,
     RecordKindDocument,
     RecordSourceManual,
     RecoverIntro,
@@ -653,6 +959,7 @@ pub enum MessageId {
     SecurityTitle,
     SidebarDocuments,
     SidebarFolderCount,
+    SidebarFolderOfPerson,
     SidebarLabel,
     SidebarMyRecords,
     SidebarPreferences,
@@ -683,6 +990,100 @@ pub enum MessageId {
 
 impl MessageId {
     pub const ALL: &'static [Self] = &[
+        Self::AiErrorBusy,
+        Self::AiErrorMemory,
+        Self::AiExplainBox,
+        Self::AiExplainHint,
+        Self::AiExplainReady,
+        Self::AiExplainSubmit,
+        Self::AiExplainTitle,
+        Self::AiFailed,
+        Self::AiKeepFailed,
+        Self::AiKeepFull,
+        Self::AiModelAccepted,
+        Self::AiModelAdd,
+        Self::AiModelAdded,
+        Self::AiModelChecking,
+        Self::AiModelCopied,
+        Self::AiModelCopy,
+        Self::AiModelDamaged,
+        Self::AiModelDownload,
+        Self::AiModelDownloadNote,
+        Self::AiModelDownloading,
+        Self::AiModelInstalled,
+        Self::AiModelProgressName,
+        Self::AiModelProgressValue,
+        Self::AiModelRefusedBusy,
+        Self::AiModelRefusedDisk,
+        Self::AiModelRefusedHash,
+        Self::AiModelRefusedIncomplete,
+        Self::AiModelRefusedList,
+        Self::AiModelRefusedNetwork,
+        Self::AiModelRefusedStorage,
+        Self::AiModelRefusedUnavailable,
+        Self::AiModelRemove,
+        Self::AiModelRemoveConfirm,
+        Self::AiModelStillChecking,
+        Self::AiModelStillDownloading,
+        Self::AiModelUnsupportedCpu,
+        Self::AiModelUnsupportedPlatform,
+        Self::AiModelUnsupportedRam,
+        Self::AiModelWhere,
+        Self::AiModelsAddedByYou,
+        Self::AiModelsChanged,
+        Self::AiModelsDownload,
+        Self::AiModelsDownloading,
+        Self::AiModelsGroup,
+        Self::AiModelsHelp,
+        Self::AiModelsInUse,
+        Self::AiModelsInstalled,
+        Self::AiModelsInstalling,
+        Self::AiModelsLoadFailed,
+        Self::AiModelsLoading,
+        Self::AiModelsNotDownloaded,
+        Self::AiModelsPicking,
+        Self::AiModelsRemove,
+        Self::AiModelsRetry,
+        Self::AiModelsStarting,
+        Self::AiModelsTitle,
+        Self::AiNotInstalledBody,
+        Self::AiNotInstalledOpenPreferences,
+        Self::AiNotInstalledTitle,
+        Self::AiPreferencesBody,
+        Self::AiPreferencesNotInstalled,
+        Self::AiPreferencesTitle,
+        Self::AiResultMeta,
+        Self::AiSettingsSubtitle,
+        Self::AiSummaryAgain,
+        Self::AiSummaryButton,
+        Self::AiSummaryNoSource,
+        Self::AiSummaryNoText,
+        Self::AiSummaryPagesMissing,
+        Self::AiSummaryPartial,
+        Self::AiSummaryReady,
+        Self::AiSummaryShowInDocument,
+        Self::AiSummaryTitle,
+        Self::AiWorking,
+        Self::AiWorkingFor,
+        Self::AiWorkingLong,
+        Self::AiHelperExportCut,
+        Self::AiHelperExportFileName,
+        Self::AiHelperExportHeader,
+        Self::AiHelperNoticeAdviceBody,
+        Self::AiHelperNoticeFileBody,
+        Self::AiHelperNoticeIntro,
+        Self::AiHelperNoticeIntroShare,
+        Self::AiHelperNoticeLimitsBody,
+        Self::AiHelperNoticeModelBody,
+        Self::AiHelperNoticeModelHeading,
+        Self::AiHelperNoticePreviewBody,
+        Self::AiHelperNoticeResultsBody,
+        Self::AiHelperNoticeServiceBody,
+        Self::AiHelperNoticeShareBody,
+        Self::AiHelperNoticeShareHeading,
+        Self::AiHelperNoticeTestBuild,
+        Self::AiHelperNoticeTitle,
+        Self::AiHelperResultLabel,
         Self::AppearanceDark,
         Self::AppearanceErrorNotRemembered,
         Self::AppearanceErrorUnreadable,
@@ -740,6 +1141,77 @@ impl MessageId {
         Self::FrameStateOpening,
         Self::FrameStateSettingUp,
         Self::FrameWindowLabel,
+        Self::HiddenBackToSecurity,
+        Self::InterfaceAiHelperNoticeContinue,
+        Self::InterfaceAnonymizePreviewClose,
+        Self::InterfaceAnonymizePreviewConfirmBody,
+        Self::InterfaceAnonymizePreviewConfirmTitle,
+        Self::InterfaceAnonymizePreviewCutPages,
+        Self::InterfaceAnonymizePreviewEmptyPages,
+        Self::InterfaceAnonymizePreviewFailedPages,
+        Self::InterfaceAnonymizePreviewFooterNote,
+        Self::InterfaceAnonymizePreviewHeaderNote,
+        Self::InterfaceAnonymizePreviewHowMarked,
+        Self::InterfaceAnonymizePreviewKindAddress,
+        Self::InterfaceAnonymizePreviewKindAge,
+        Self::InterfaceAnonymizePreviewKindClinic,
+        Self::InterfaceAnonymizePreviewKindDateOfBirth,
+        Self::InterfaceAnonymizePreviewKindDoctor,
+        Self::InterfaceAnonymizePreviewKindEmail,
+        Self::InterfaceAnonymizePreviewKindHealthCard,
+        Self::InterfaceAnonymizePreviewKindManual,
+        Self::InterfaceAnonymizePreviewKindName,
+        Self::InterfaceAnonymizePreviewKindPhone,
+        Self::InterfaceAnonymizePreviewKindPostalCode,
+        Self::InterfaceAnonymizePreviewKindRecordNumber,
+        Self::InterfaceAnonymizePreviewKindSin,
+        Self::InterfaceAnonymizePreviewKindUnclearDate,
+        Self::InterfaceAnonymizePreviewKindWeb,
+        Self::InterfaceAnonymizePreviewMovedDate,
+        Self::InterfaceAnonymizePreviewNoteAgeOver90,
+        Self::InterfaceAnonymizePreviewNoteDaysAfter,
+        Self::InterfaceAnonymizePreviewPasteAllMatched,
+        Self::InterfaceAnonymizePreviewPasteButton,
+        Self::InterfaceAnonymizePreviewPasteFlagged,
+        Self::InterfaceAnonymizePreviewPasteFlaggedSr,
+        Self::InterfaceAnonymizePreviewPasteHelp,
+        Self::InterfaceAnonymizePreviewPasteLabel,
+        Self::InterfaceAnonymizePreviewPasteResult,
+        Self::InterfaceAnonymizePreviewPasteTitle,
+        Self::InterfaceAnonymizePreviewPhrase,
+        Self::InterfaceAnonymizePreviewPhraseNotFound,
+        Self::InterfaceAnonymizePreviewPlaceholderAddress,
+        Self::InterfaceAnonymizePreviewPlaceholderAge,
+        Self::InterfaceAnonymizePreviewPlaceholderClinic,
+        Self::InterfaceAnonymizePreviewPlaceholderDateOfBirth,
+        Self::InterfaceAnonymizePreviewPlaceholderDoctor,
+        Self::InterfaceAnonymizePreviewPlaceholderEmail,
+        Self::InterfaceAnonymizePreviewPlaceholderHealthCard,
+        Self::InterfaceAnonymizePreviewPlaceholderManual,
+        Self::InterfaceAnonymizePreviewPlaceholderName,
+        Self::InterfaceAnonymizePreviewPlaceholderPhone,
+        Self::InterfaceAnonymizePreviewPlaceholderPostalCode,
+        Self::InterfaceAnonymizePreviewPlaceholderRecordNumber,
+        Self::InterfaceAnonymizePreviewPlaceholderSin,
+        Self::InterfaceAnonymizePreviewPlaceholderUnclearDate,
+        Self::InterfaceAnonymizePreviewPlaceholderWeb,
+        Self::InterfaceAnonymizePreviewPossibleNames,
+        Self::InterfaceAnonymizePreviewReadFailed,
+        Self::InterfaceAnonymizePreviewReading,
+        Self::InterfaceAnonymizePreviewRefused,
+        Self::InterfaceAnonymizePreviewRemovePhrase,
+        Self::InterfaceAnonymizePreviewRemoveSelected,
+        Self::InterfaceAnonymizePreviewRemoveWord,
+        Self::InterfaceAnonymizePreviewRemovedKind,
+        Self::InterfaceAnonymizePreviewRemovedPlaces,
+        Self::InterfaceAnonymizePreviewReplaced,
+        Self::InterfaceAnonymizePreviewSave,
+        Self::InterfaceAnonymizePreviewSaveCancelled,
+        Self::InterfaceAnonymizePreviewSaved,
+        Self::InterfaceAnonymizePreviewSelectFirst,
+        Self::InterfaceAnonymizePreviewTextRegion,
+        Self::InterfaceAnonymizePreviewTitle,
+        Self::InterfaceAnonymizePreviewUndo,
         Self::InterfaceCameraDialogCameraReady,
         Self::InterfaceCameraDialogCameraView,
         Self::InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos,
@@ -776,6 +1248,7 @@ impl MessageId {
         Self::InterfaceHiddenDocumentsWasIn,
         Self::InterfaceLibraryItemsIn,
         Self::InterfaceLibrarySidebarSharedWithMe,
+        Self::InterfaceRecordDetailsAnonymizeText,
         Self::InterfaceRecordDetailsCloseDocumentDetails,
         Self::InterfaceRecordDetailsEncryptedDocument,
         Self::InterfaceRecordDetailsEncryptedDocumentDetails,
@@ -891,6 +1364,85 @@ impl MessageId {
         Self::InterfaceHiddenRecord,
         Self::InterfaceHiddenRestore,
         Self::InterfaceHideDamagedTitle,
+        Self::InterfaceHistoryAppVersion,
+        Self::InterfaceHistoryApprovalAccepted,
+        Self::InterfaceHistoryApprovalCancelled,
+        Self::InterfaceHistoryApprovalChallengeReady,
+        Self::InterfaceHistoryApprovalExpired,
+        Self::InterfaceHistoryApprovalPending,
+        Self::InterfaceHistoryApprovalRefused,
+        Self::InterfaceHistoryDamaged,
+        Self::InterfaceHistoryDamagedAll,
+        Self::InterfaceHistoryDamagedBefore,
+        Self::InterfaceHistoryDamagedBetween,
+        Self::InterfaceHistoryEmpty,
+        Self::InterfaceHistoryErrorUnverified,
+        Self::InterfaceHistoryEventAiResultSaved,
+        Self::InterfaceHistoryEventBackupRestored,
+        Self::InterfaceHistoryEventBackupSaved,
+        Self::InterfaceHistoryEventCopySaved,
+        Self::InterfaceHistoryEventCreated,
+        Self::InterfaceHistoryEventDeliveryFiled,
+        Self::InterfaceHistoryEventDeliveryReceiptSettled,
+        Self::InterfaceHistoryEventDeviceApprovalRequestRestarted,
+        Self::InterfaceHistoryEventDeviceApprovalRequested,
+        Self::InterfaceHistoryEventDeviceApprovalStatusChanged,
+        Self::InterfaceHistoryEventDeviceApprovalVerified,
+        Self::InterfaceHistoryEventFolderCreated,
+        Self::InterfaceHistoryEventFolderMoved,
+        Self::InterfaceHistoryEventFolderRenamed,
+        Self::InterfaceHistoryEventHidden,
+        Self::InterfaceHistoryEventHistoryStarted,
+        Self::InterfaceHistoryEventImported,
+        Self::InterfaceHistoryEventMoved,
+        Self::InterfaceHistoryEventPassphraseChanged,
+        Self::InterfaceHistoryEventPortalLinkStarted,
+        Self::InterfaceHistoryEventPortalLinked,
+        Self::InterfaceHistoryEventProfileCreated,
+        Self::InterfaceHistoryEventProfileDetailsChanged,
+        Self::InterfaceHistoryEventReadingAidFiled,
+        Self::InterfaceHistoryEventRecoveryKeySet,
+        Self::InterfaceHistoryEventRenamed,
+        Self::InterfaceHistoryEventRestored,
+        Self::InterfaceHistoryEventSetAside,
+        Self::InterfaceHistoryEventUnlocked,
+        Self::InterfaceHistoryEvents,
+        Self::InterfaceHistoryFrom,
+        Self::InterfaceHistoryGap,
+        Self::InterfaceHistoryHow,
+        Self::InterfaceHistoryHowAidReplaced,
+        Self::InterfaceHistoryHowAnonymizedText,
+        Self::InterfaceHistoryHowCamera,
+        Self::InterfaceHistoryHowDamaged,
+        Self::InterfaceHistoryHowExplain,
+        Self::InterfaceHistoryHowImportedShared,
+        Self::InterfaceHistoryHowMovedFromShared,
+        Self::InterfaceHistoryHowPassphrase,
+        Self::InterfaceHistoryHowPatient,
+        Self::InterfaceHistoryHowPicked,
+        Self::InterfaceHistoryHowRecoveryKey,
+        Self::InterfaceHistoryHowReplaced,
+        Self::InterfaceHistoryHowSummary,
+        Self::InterfaceHistoryIntro,
+        Self::InterfaceHistoryLaterSessionNotRecorded,
+        Self::InterfaceHistoryLoading,
+        Self::InterfaceHistoryMoreFolders,
+        Self::InterfaceHistoryName,
+        Self::InterfaceHistoryPersonRootFolder,
+        Self::InterfaceHistoryPlace,
+        Self::InterfaceHistoryPreviousName,
+        Self::InterfaceHistoryPreviousSession,
+        Self::InterfaceHistoryReceiptNotFound,
+        Self::InterfaceHistoryReceiptPickedUp,
+        Self::InterfaceHistoryRootFolder,
+        Self::InterfaceHistoryScopeNote,
+        Self::InterfaceHistorySessionLockedAutomatically,
+        Self::InterfaceHistorySessionLockedByApp,
+        Self::InterfaceHistorySessionLockedByPerson,
+        Self::InterfaceHistorySessionNotRecorded,
+        Self::InterfaceHistoryStatus,
+        Self::InterfaceHistoryTitle,
+        Self::InterfaceHistoryTo,
         Self::InterfaceInLocation,
         Self::InterfaceNoticeAlreadyFiled,
         Self::InterfaceNoticeAlreadyShared,
@@ -987,6 +1539,10 @@ impl MessageId {
         Self::LibrarySearchCleared,
         Self::LibrarySearchResults,
         Self::LibrarySelect,
+        Self::LibrarySourceClinic,
+        Self::LibrarySourceManualImport,
+        Self::LibraryStatusUnverified,
+        Self::LibraryStatusVerified,
         Self::LockWarningHelp,
         Self::LockWarningKeepOpen,
         Self::LockWarningLeft,
@@ -1044,8 +1600,10 @@ impl MessageId {
         Self::NativeError48,
         Self::NativeErrorSpeedTest,
         Self::NativeFilterBackups,
+        Self::NativeFilterModels,
         Self::NativeFilterPdf,
         Self::NativeKitText,
+        Self::NativeNoticeArrival,
         Self::NativeRecoveryKeep,
         Self::NativeRecoveryReplace,
         Self::NativeRecoveryTitle,
@@ -1080,6 +1638,24 @@ impl MessageId {
         Self::NoticeTransferUnfinished,
         Self::NoticeUnlocked,
         Self::NoticeUnlockedRecovery,
+        Self::NoticesStepDone,
+        Self::NoticesStepIntro,
+        Self::NoticesStepLater,
+        Self::NoticesStepNotNow,
+        Self::NoticesStepTitle,
+        Self::NotificationsAllow,
+        Self::NotificationsAutoAllow,
+        Self::NotificationsAutoHelp,
+        Self::NotificationsAutoNeedsNotices,
+        Self::NotificationsAutoPaused,
+        Self::NotificationsBlocked,
+        Self::NotificationsCheckBusy,
+        Self::NotificationsError,
+        Self::NotificationsHelp,
+        Self::NotificationsHelpAutomatic,
+        Self::NotificationsTitle,
+        Self::NotificationsUnavailable,
+        Self::NotificationsUnknown,
         Self::PassphraseConfirmLabel,
         Self::PassphraseConfirmNewLabel,
         Self::PassphraseLabel,
@@ -1130,37 +1706,58 @@ impl MessageId {
         Self::PortalApprovalCancelled,
         Self::PortalApprovalContact,
         Self::PortalApprovalExpired,
+        Self::PortalApprovalExpiredCard,
         Self::PortalApprovalMissing,
+        Self::PortalApprovalPickedUp,
         Self::PortalApprovalRefused,
+        Self::PortalApprovalReplyInvalid,
+        Self::PortalApprovalStillOpen,
+        Self::PortalApprovalTimeLeft,
+        Self::PortalApprovalTimeOver,
+        Self::PortalApprovalTimeOverRestart,
+        Self::PortalApprovalTimeUp,
+        Self::PortalApprovalUnanswered,
+        Self::PortalApprovalUnreachable,
+        Self::PortalApprovalWait,
         Self::PortalApproved,
+        Self::PortalAutoCheckStopped,
+        Self::PortalAutoChecking,
         Self::PortalAwaiting,
+        Self::PortalAwaitingClinic,
         Self::PortalCheck,
+        Self::PortalCheckAgain,
         Self::PortalClinicIssue,
         Self::PortalCode,
         Self::PortalCompare,
         Self::PortalConfirmationsPending,
+        Self::PortalConnectConsent,
+        Self::PortalConnected,
+        Self::PortalConnecting,
         Self::PortalCopied,
         Self::PortalCopy,
         Self::PortalCopyFailed,
         Self::PortalDateNotRecorded,
         Self::PortalDeviceCode,
         Self::PortalDeviceName,
+        Self::PortalDeviceRemoved,
         Self::PortalErrorAddress,
+        Self::PortalErrorBusy,
         Self::PortalErrorCancelled,
         Self::PortalErrorCode,
         Self::PortalErrorCodeRejected,
         Self::PortalErrorDamaged,
         Self::PortalErrorDeviceName,
-        Self::PortalErrorDisabled,
         Self::PortalErrorExists,
         Self::PortalErrorIncomplete,
         Self::PortalErrorKeys,
+        Self::PortalErrorRateLimited,
         Self::PortalErrorRefused,
         Self::PortalErrorUnavailable,
         Self::PortalFingerprint,
         Self::PortalIncomplete,
         Self::PortalIntro,
         Self::PortalLink,
+        Self::PortalLinkedApprovalIssue,
         Self::PortalMatchPerson,
         Self::PortalNotRequested,
         Self::PortalPartialResult,
@@ -1168,12 +1765,28 @@ impl MessageId {
         Self::PortalRequestApproval,
         Self::PortalRestartApproval,
         Self::PortalResult,
+        Self::PortalRetryApproval,
         Self::PortalRouting,
         Self::PortalServiceDate,
         Self::PortalServiceDateLabel,
-        Self::PortalSourceVerified,
         Self::PortalTitle,
+        Self::PortalUnlockCheckConsent,
+        Self::PortalUnlockCheckIncomplete,
+        Self::PortalUnlockCheckNotRun,
+        Self::PortalUnlockCheckWaiting,
+        Self::PortalUnlockChecked,
+        Self::PortalUnlockRefused,
+        Self::PortalWorking,
         Self::PreferencesSubtitle,
+        Self::ReadingAidAvailable,
+        Self::ReadingAidChecked,
+        Self::ReadingAidEvidence,
+        Self::ReadingAidOpen,
+        Self::ReadingAidOpenOriginal,
+        Self::ReadingAidOverview,
+        Self::ReadingAidPoints,
+        Self::ReadingAidTitle,
+        Self::ReadingAidUnavailable,
         Self::RecordKindDocument,
         Self::RecordSourceManual,
         Self::RecoverIntro,
@@ -1333,6 +1946,7 @@ impl MessageId {
         Self::SecurityTitle,
         Self::SidebarDocuments,
         Self::SidebarFolderCount,
+        Self::SidebarFolderOfPerson,
         Self::SidebarLabel,
         Self::SidebarMyRecords,
         Self::SidebarPreferences,
@@ -1363,6 +1977,100 @@ impl MessageId {
 
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::AiErrorBusy => "ai-error-busy",
+            Self::AiErrorMemory => "ai-error-memory",
+            Self::AiExplainBox => "ai-explain-box",
+            Self::AiExplainHint => "ai-explain-hint",
+            Self::AiExplainReady => "ai-explain-ready",
+            Self::AiExplainSubmit => "ai-explain-submit",
+            Self::AiExplainTitle => "ai-explain-title",
+            Self::AiFailed => "ai-failed",
+            Self::AiKeepFailed => "ai-keepFailed",
+            Self::AiKeepFull => "ai-keepFull",
+            Self::AiModelAccepted => "ai-model-accepted",
+            Self::AiModelAdd => "ai-model-add",
+            Self::AiModelAdded => "ai-model-added",
+            Self::AiModelChecking => "ai-model-checking",
+            Self::AiModelCopied => "ai-model-copied",
+            Self::AiModelCopy => "ai-model-copy",
+            Self::AiModelDamaged => "ai-model-damaged",
+            Self::AiModelDownload => "ai-model-download",
+            Self::AiModelDownloadNote => "ai-model-downloadNote",
+            Self::AiModelDownloading => "ai-model-downloading",
+            Self::AiModelInstalled => "ai-model-installed",
+            Self::AiModelProgressName => "ai-model-progressName",
+            Self::AiModelProgressValue => "ai-model-progressValue",
+            Self::AiModelRefusedBusy => "ai-model-refusedBusy",
+            Self::AiModelRefusedDisk => "ai-model-refusedDisk",
+            Self::AiModelRefusedHash => "ai-model-refusedHash",
+            Self::AiModelRefusedIncomplete => "ai-model-refusedIncomplete",
+            Self::AiModelRefusedList => "ai-model-refusedList",
+            Self::AiModelRefusedNetwork => "ai-model-refusedNetwork",
+            Self::AiModelRefusedStorage => "ai-model-refusedStorage",
+            Self::AiModelRefusedUnavailable => "ai-model-refusedUnavailable",
+            Self::AiModelRemove => "ai-model-remove",
+            Self::AiModelRemoveConfirm => "ai-model-removeConfirm",
+            Self::AiModelStillChecking => "ai-model-stillChecking",
+            Self::AiModelStillDownloading => "ai-model-stillDownloading",
+            Self::AiModelUnsupportedCpu => "ai-model-unsupportedCpu",
+            Self::AiModelUnsupportedPlatform => "ai-model-unsupportedPlatform",
+            Self::AiModelUnsupportedRam => "ai-model-unsupportedRam",
+            Self::AiModelWhere => "ai-model-where",
+            Self::AiModelsAddedByYou => "ai-models-addedByYou",
+            Self::AiModelsChanged => "ai-models-changed",
+            Self::AiModelsDownload => "ai-models-download",
+            Self::AiModelsDownloading => "ai-models-downloading",
+            Self::AiModelsGroup => "ai-models-group",
+            Self::AiModelsHelp => "ai-models-help",
+            Self::AiModelsInUse => "ai-models-inUse",
+            Self::AiModelsInstalled => "ai-models-installed",
+            Self::AiModelsInstalling => "ai-models-installing",
+            Self::AiModelsLoadFailed => "ai-models-loadFailed",
+            Self::AiModelsLoading => "ai-models-loading",
+            Self::AiModelsNotDownloaded => "ai-models-notDownloaded",
+            Self::AiModelsPicking => "ai-models-picking",
+            Self::AiModelsRemove => "ai-models-remove",
+            Self::AiModelsRetry => "ai-models-retry",
+            Self::AiModelsStarting => "ai-models-starting",
+            Self::AiModelsTitle => "ai-models-title",
+            Self::AiNotInstalledBody => "ai-notInstalled-body",
+            Self::AiNotInstalledOpenPreferences => "ai-notInstalled-openPreferences",
+            Self::AiNotInstalledTitle => "ai-notInstalled-title",
+            Self::AiPreferencesBody => "ai-preferences-body",
+            Self::AiPreferencesNotInstalled => "ai-preferences-notInstalled",
+            Self::AiPreferencesTitle => "ai-preferences-title",
+            Self::AiResultMeta => "ai-result-meta",
+            Self::AiSettingsSubtitle => "ai-settings-subtitle",
+            Self::AiSummaryAgain => "ai-summary-again",
+            Self::AiSummaryButton => "ai-summary-button",
+            Self::AiSummaryNoSource => "ai-summary-noSource",
+            Self::AiSummaryNoText => "ai-summary-noText",
+            Self::AiSummaryPagesMissing => "ai-summary-pagesMissing",
+            Self::AiSummaryPartial => "ai-summary-partial",
+            Self::AiSummaryReady => "ai-summary-ready",
+            Self::AiSummaryShowInDocument => "ai-summary-showInDocument",
+            Self::AiSummaryTitle => "ai-summary-title",
+            Self::AiWorking => "ai-working",
+            Self::AiWorkingFor => "ai-workingFor",
+            Self::AiWorkingLong => "ai-workingLong",
+            Self::AiHelperExportCut => "aiHelper-exportCut",
+            Self::AiHelperExportFileName => "aiHelper-exportFileName",
+            Self::AiHelperExportHeader => "aiHelper-exportHeader",
+            Self::AiHelperNoticeAdviceBody => "aiHelper-notice-adviceBody",
+            Self::AiHelperNoticeFileBody => "aiHelper-notice-fileBody",
+            Self::AiHelperNoticeIntro => "aiHelper-notice-intro",
+            Self::AiHelperNoticeIntroShare => "aiHelper-notice-introShare",
+            Self::AiHelperNoticeLimitsBody => "aiHelper-notice-limitsBody",
+            Self::AiHelperNoticeModelBody => "aiHelper-notice-modelBody",
+            Self::AiHelperNoticeModelHeading => "aiHelper-notice-modelHeading",
+            Self::AiHelperNoticePreviewBody => "aiHelper-notice-previewBody",
+            Self::AiHelperNoticeResultsBody => "aiHelper-notice-resultsBody",
+            Self::AiHelperNoticeServiceBody => "aiHelper-notice-serviceBody",
+            Self::AiHelperNoticeShareBody => "aiHelper-notice-shareBody",
+            Self::AiHelperNoticeShareHeading => "aiHelper-notice-shareHeading",
+            Self::AiHelperNoticeTestBuild => "aiHelper-notice-testBuild",
+            Self::AiHelperNoticeTitle => "aiHelper-notice-title",
+            Self::AiHelperResultLabel => "aiHelper-resultLabel",
             Self::AppearanceDark => "appearance-dark",
             Self::AppearanceErrorNotRemembered => "appearance-error-notRemembered",
             Self::AppearanceErrorUnreadable => "appearance-error-unreadable",
@@ -1420,6 +2128,141 @@ impl MessageId {
             Self::FrameStateOpening => "frame-state-opening",
             Self::FrameStateSettingUp => "frame-state-settingUp",
             Self::FrameWindowLabel => "frame-window-label",
+            Self::HiddenBackToSecurity => "hidden-backToSecurity",
+            Self::InterfaceAiHelperNoticeContinue => "interface-AiHelperNotice-continue",
+            Self::InterfaceAnonymizePreviewClose => "interface-AnonymizePreview-close",
+            Self::InterfaceAnonymizePreviewConfirmBody => "interface-AnonymizePreview-confirmBody",
+            Self::InterfaceAnonymizePreviewConfirmTitle => {
+                "interface-AnonymizePreview-confirmTitle"
+            }
+            Self::InterfaceAnonymizePreviewCutPages => "interface-AnonymizePreview-cutPages",
+            Self::InterfaceAnonymizePreviewEmptyPages => "interface-AnonymizePreview-emptyPages",
+            Self::InterfaceAnonymizePreviewFailedPages => "interface-AnonymizePreview-failedPages",
+            Self::InterfaceAnonymizePreviewFooterNote => "interface-AnonymizePreview-footerNote",
+            Self::InterfaceAnonymizePreviewHeaderNote => "interface-AnonymizePreview-headerNote",
+            Self::InterfaceAnonymizePreviewHowMarked => "interface-AnonymizePreview-howMarked",
+            Self::InterfaceAnonymizePreviewKindAddress => "interface-AnonymizePreview-kind-address",
+            Self::InterfaceAnonymizePreviewKindAge => "interface-AnonymizePreview-kind-age",
+            Self::InterfaceAnonymizePreviewKindClinic => "interface-AnonymizePreview-kind-clinic",
+            Self::InterfaceAnonymizePreviewKindDateOfBirth => {
+                "interface-AnonymizePreview-kind-dateOfBirth"
+            }
+            Self::InterfaceAnonymizePreviewKindDoctor => "interface-AnonymizePreview-kind-doctor",
+            Self::InterfaceAnonymizePreviewKindEmail => "interface-AnonymizePreview-kind-email",
+            Self::InterfaceAnonymizePreviewKindHealthCard => {
+                "interface-AnonymizePreview-kind-healthCard"
+            }
+            Self::InterfaceAnonymizePreviewKindManual => "interface-AnonymizePreview-kind-manual",
+            Self::InterfaceAnonymizePreviewKindName => "interface-AnonymizePreview-kind-name",
+            Self::InterfaceAnonymizePreviewKindPhone => "interface-AnonymizePreview-kind-phone",
+            Self::InterfaceAnonymizePreviewKindPostalCode => {
+                "interface-AnonymizePreview-kind-postalCode"
+            }
+            Self::InterfaceAnonymizePreviewKindRecordNumber => {
+                "interface-AnonymizePreview-kind-recordNumber"
+            }
+            Self::InterfaceAnonymizePreviewKindSin => "interface-AnonymizePreview-kind-sin",
+            Self::InterfaceAnonymizePreviewKindUnclearDate => {
+                "interface-AnonymizePreview-kind-unclearDate"
+            }
+            Self::InterfaceAnonymizePreviewKindWeb => "interface-AnonymizePreview-kind-web",
+            Self::InterfaceAnonymizePreviewMovedDate => "interface-AnonymizePreview-movedDate",
+            Self::InterfaceAnonymizePreviewNoteAgeOver90 => {
+                "interface-AnonymizePreview-note-ageOver90"
+            }
+            Self::InterfaceAnonymizePreviewNoteDaysAfter => {
+                "interface-AnonymizePreview-note-daysAfter"
+            }
+            Self::InterfaceAnonymizePreviewPasteAllMatched => {
+                "interface-AnonymizePreview-pasteAllMatched"
+            }
+            Self::InterfaceAnonymizePreviewPasteButton => "interface-AnonymizePreview-pasteButton",
+            Self::InterfaceAnonymizePreviewPasteFlagged => {
+                "interface-AnonymizePreview-pasteFlagged"
+            }
+            Self::InterfaceAnonymizePreviewPasteFlaggedSr => {
+                "interface-AnonymizePreview-pasteFlaggedSr"
+            }
+            Self::InterfaceAnonymizePreviewPasteHelp => "interface-AnonymizePreview-pasteHelp",
+            Self::InterfaceAnonymizePreviewPasteLabel => "interface-AnonymizePreview-pasteLabel",
+            Self::InterfaceAnonymizePreviewPasteResult => "interface-AnonymizePreview-pasteResult",
+            Self::InterfaceAnonymizePreviewPasteTitle => "interface-AnonymizePreview-pasteTitle",
+            Self::InterfaceAnonymizePreviewPhrase => "interface-AnonymizePreview-phrase",
+            Self::InterfaceAnonymizePreviewPhraseNotFound => {
+                "interface-AnonymizePreview-phraseNotFound"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderAddress => {
+                "interface-AnonymizePreview-placeholder-address"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderAge => {
+                "interface-AnonymizePreview-placeholder-age"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderClinic => {
+                "interface-AnonymizePreview-placeholder-clinic"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderDateOfBirth => {
+                "interface-AnonymizePreview-placeholder-dateOfBirth"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderDoctor => {
+                "interface-AnonymizePreview-placeholder-doctor"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderEmail => {
+                "interface-AnonymizePreview-placeholder-email"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderHealthCard => {
+                "interface-AnonymizePreview-placeholder-healthCard"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderManual => {
+                "interface-AnonymizePreview-placeholder-manual"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderName => {
+                "interface-AnonymizePreview-placeholder-name"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderPhone => {
+                "interface-AnonymizePreview-placeholder-phone"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderPostalCode => {
+                "interface-AnonymizePreview-placeholder-postalCode"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderRecordNumber => {
+                "interface-AnonymizePreview-placeholder-recordNumber"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderSin => {
+                "interface-AnonymizePreview-placeholder-sin"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderUnclearDate => {
+                "interface-AnonymizePreview-placeholder-unclearDate"
+            }
+            Self::InterfaceAnonymizePreviewPlaceholderWeb => {
+                "interface-AnonymizePreview-placeholder-web"
+            }
+            Self::InterfaceAnonymizePreviewPossibleNames => {
+                "interface-AnonymizePreview-possibleNames"
+            }
+            Self::InterfaceAnonymizePreviewReadFailed => "interface-AnonymizePreview-readFailed",
+            Self::InterfaceAnonymizePreviewReading => "interface-AnonymizePreview-reading",
+            Self::InterfaceAnonymizePreviewRefused => "interface-AnonymizePreview-refused",
+            Self::InterfaceAnonymizePreviewRemovePhrase => {
+                "interface-AnonymizePreview-removePhrase"
+            }
+            Self::InterfaceAnonymizePreviewRemoveSelected => {
+                "interface-AnonymizePreview-removeSelected"
+            }
+            Self::InterfaceAnonymizePreviewRemoveWord => "interface-AnonymizePreview-removeWord",
+            Self::InterfaceAnonymizePreviewRemovedKind => "interface-AnonymizePreview-removedKind",
+            Self::InterfaceAnonymizePreviewRemovedPlaces => {
+                "interface-AnonymizePreview-removedPlaces"
+            }
+            Self::InterfaceAnonymizePreviewReplaced => "interface-AnonymizePreview-replaced",
+            Self::InterfaceAnonymizePreviewSave => "interface-AnonymizePreview-save",
+            Self::InterfaceAnonymizePreviewSaveCancelled => {
+                "interface-AnonymizePreview-saveCancelled"
+            }
+            Self::InterfaceAnonymizePreviewSaved => "interface-AnonymizePreview-saved",
+            Self::InterfaceAnonymizePreviewSelectFirst => "interface-AnonymizePreview-selectFirst",
+            Self::InterfaceAnonymizePreviewTextRegion => "interface-AnonymizePreview-textRegion",
+            Self::InterfaceAnonymizePreviewTitle => "interface-AnonymizePreview-title",
+            Self::InterfaceAnonymizePreviewUndo => "interface-AnonymizePreview-undo",
             Self::InterfaceCameraDialogCameraReady => "interface-CameraDialog-cameraReady",
             Self::InterfaceCameraDialogCameraView => "interface-CameraDialog-cameraView",
             Self::InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos => {
@@ -1484,6 +2327,7 @@ impl MessageId {
             Self::InterfaceHiddenDocumentsWasIn => "interface-HiddenDocuments-wasIn",
             Self::InterfaceLibraryItemsIn => "interface-LibraryItems-in",
             Self::InterfaceLibrarySidebarSharedWithMe => "interface-LibrarySidebar-sharedWithMe",
+            Self::InterfaceRecordDetailsAnonymizeText => "interface-RecordDetails-anonymizeText",
             Self::InterfaceRecordDetailsCloseDocumentDetails => {
                 "interface-RecordDetails-closeDocumentDetails"
             }
@@ -1723,6 +2567,109 @@ impl MessageId {
             Self::InterfaceHiddenRecord => "interface-hidden-record",
             Self::InterfaceHiddenRestore => "interface-hidden-restore",
             Self::InterfaceHideDamagedTitle => "interface-hideDamaged-title",
+            Self::InterfaceHistoryAppVersion => "interface-history-appVersion",
+            Self::InterfaceHistoryApprovalAccepted => "interface-history-approval-accepted",
+            Self::InterfaceHistoryApprovalCancelled => "interface-history-approval-cancelled",
+            Self::InterfaceHistoryApprovalChallengeReady => {
+                "interface-history-approval-challengeReady"
+            }
+            Self::InterfaceHistoryApprovalExpired => "interface-history-approval-expired",
+            Self::InterfaceHistoryApprovalPending => "interface-history-approval-pending",
+            Self::InterfaceHistoryApprovalRefused => "interface-history-approval-refused",
+            Self::InterfaceHistoryDamaged => "interface-history-damaged",
+            Self::InterfaceHistoryDamagedAll => "interface-history-damagedAll",
+            Self::InterfaceHistoryDamagedBefore => "interface-history-damagedBefore",
+            Self::InterfaceHistoryDamagedBetween => "interface-history-damagedBetween",
+            Self::InterfaceHistoryEmpty => "interface-history-empty",
+            Self::InterfaceHistoryErrorUnverified => "interface-history-error-unverified",
+            Self::InterfaceHistoryEventAiResultSaved => "interface-history-event-aiResultSaved",
+            Self::InterfaceHistoryEventBackupRestored => "interface-history-event-backupRestored",
+            Self::InterfaceHistoryEventBackupSaved => "interface-history-event-backupSaved",
+            Self::InterfaceHistoryEventCopySaved => "interface-history-event-copySaved",
+            Self::InterfaceHistoryEventCreated => "interface-history-event-created",
+            Self::InterfaceHistoryEventDeliveryFiled => "interface-history-event-deliveryFiled",
+            Self::InterfaceHistoryEventDeliveryReceiptSettled => {
+                "interface-history-event-deliveryReceiptSettled"
+            }
+            Self::InterfaceHistoryEventDeviceApprovalRequestRestarted => {
+                "interface-history-event-deviceApprovalRequestRestarted"
+            }
+            Self::InterfaceHistoryEventDeviceApprovalRequested => {
+                "interface-history-event-deviceApprovalRequested"
+            }
+            Self::InterfaceHistoryEventDeviceApprovalStatusChanged => {
+                "interface-history-event-deviceApprovalStatusChanged"
+            }
+            Self::InterfaceHistoryEventDeviceApprovalVerified => {
+                "interface-history-event-deviceApprovalVerified"
+            }
+            Self::InterfaceHistoryEventFolderCreated => "interface-history-event-folderCreated",
+            Self::InterfaceHistoryEventFolderMoved => "interface-history-event-folderMoved",
+            Self::InterfaceHistoryEventFolderRenamed => "interface-history-event-folderRenamed",
+            Self::InterfaceHistoryEventHidden => "interface-history-event-hidden",
+            Self::InterfaceHistoryEventHistoryStarted => "interface-history-event-historyStarted",
+            Self::InterfaceHistoryEventImported => "interface-history-event-imported",
+            Self::InterfaceHistoryEventMoved => "interface-history-event-moved",
+            Self::InterfaceHistoryEventPassphraseChanged => {
+                "interface-history-event-passphraseChanged"
+            }
+            Self::InterfaceHistoryEventPortalLinkStarted => {
+                "interface-history-event-portalLinkStarted"
+            }
+            Self::InterfaceHistoryEventPortalLinked => "interface-history-event-portalLinked",
+            Self::InterfaceHistoryEventProfileCreated => "interface-history-event-profileCreated",
+            Self::InterfaceHistoryEventProfileDetailsChanged => {
+                "interface-history-event-profileDetailsChanged"
+            }
+            Self::InterfaceHistoryEventReadingAidFiled => "interface-history-event-readingAidFiled",
+            Self::InterfaceHistoryEventRecoveryKeySet => "interface-history-event-recoveryKeySet",
+            Self::InterfaceHistoryEventRenamed => "interface-history-event-renamed",
+            Self::InterfaceHistoryEventRestored => "interface-history-event-restored",
+            Self::InterfaceHistoryEventSetAside => "interface-history-event-setAside",
+            Self::InterfaceHistoryEventUnlocked => "interface-history-event-unlocked",
+            Self::InterfaceHistoryEvents => "interface-history-events",
+            Self::InterfaceHistoryFrom => "interface-history-from",
+            Self::InterfaceHistoryGap => "interface-history-gap",
+            Self::InterfaceHistoryHow => "interface-history-how",
+            Self::InterfaceHistoryHowAidReplaced => "interface-history-how-aidReplaced",
+            Self::InterfaceHistoryHowAnonymizedText => "interface-history-how-anonymizedText",
+            Self::InterfaceHistoryHowCamera => "interface-history-how-camera",
+            Self::InterfaceHistoryHowDamaged => "interface-history-how-damaged",
+            Self::InterfaceHistoryHowExplain => "interface-history-how-explain",
+            Self::InterfaceHistoryHowImportedShared => "interface-history-how-importedShared",
+            Self::InterfaceHistoryHowMovedFromShared => "interface-history-how-movedFromShared",
+            Self::InterfaceHistoryHowPassphrase => "interface-history-how-passphrase",
+            Self::InterfaceHistoryHowPatient => "interface-history-how-patient",
+            Self::InterfaceHistoryHowPicked => "interface-history-how-picked",
+            Self::InterfaceHistoryHowRecoveryKey => "interface-history-how-recoveryKey",
+            Self::InterfaceHistoryHowReplaced => "interface-history-how-replaced",
+            Self::InterfaceHistoryHowSummary => "interface-history-how-summary",
+            Self::InterfaceHistoryIntro => "interface-history-intro",
+            Self::InterfaceHistoryLaterSessionNotRecorded => {
+                "interface-history-laterSessionNotRecorded"
+            }
+            Self::InterfaceHistoryLoading => "interface-history-loading",
+            Self::InterfaceHistoryMoreFolders => "interface-history-moreFolders",
+            Self::InterfaceHistoryName => "interface-history-name",
+            Self::InterfaceHistoryPersonRootFolder => "interface-history-personRootFolder",
+            Self::InterfaceHistoryPlace => "interface-history-place",
+            Self::InterfaceHistoryPreviousName => "interface-history-previousName",
+            Self::InterfaceHistoryPreviousSession => "interface-history-previousSession",
+            Self::InterfaceHistoryReceiptNotFound => "interface-history-receipt-notFound",
+            Self::InterfaceHistoryReceiptPickedUp => "interface-history-receipt-pickedUp",
+            Self::InterfaceHistoryRootFolder => "interface-history-rootFolder",
+            Self::InterfaceHistoryScopeNote => "interface-history-scopeNote",
+            Self::InterfaceHistorySessionLockedAutomatically => {
+                "interface-history-sessionLockedAutomatically"
+            }
+            Self::InterfaceHistorySessionLockedByApp => "interface-history-sessionLockedByApp",
+            Self::InterfaceHistorySessionLockedByPerson => {
+                "interface-history-sessionLockedByPerson"
+            }
+            Self::InterfaceHistorySessionNotRecorded => "interface-history-sessionNotRecorded",
+            Self::InterfaceHistoryStatus => "interface-history-status",
+            Self::InterfaceHistoryTitle => "interface-history-title",
+            Self::InterfaceHistoryTo => "interface-history-to",
             Self::InterfaceInLocation => "interface-inLocation",
             Self::InterfaceNoticeAlreadyFiled => "interface-notice-alreadyFiled",
             Self::InterfaceNoticeAlreadyShared => "interface-notice-alreadyShared",
@@ -1855,6 +2802,10 @@ impl MessageId {
             Self::LibrarySearchCleared => "library-search-cleared",
             Self::LibrarySearchResults => "library-search-results",
             Self::LibrarySelect => "library-select",
+            Self::LibrarySourceClinic => "library-source-clinic",
+            Self::LibrarySourceManualImport => "library-source-manualImport",
+            Self::LibraryStatusUnverified => "library-status-unverified",
+            Self::LibraryStatusVerified => "library-status-verified",
             Self::LockWarningHelp => "lockWarning-help",
             Self::LockWarningKeepOpen => "lockWarning-keepOpen",
             Self::LockWarningLeft => "lockWarning-left",
@@ -1912,8 +2863,10 @@ impl MessageId {
             Self::NativeError48 => "native-error-48",
             Self::NativeErrorSpeedTest => "native-error-speedTest",
             Self::NativeFilterBackups => "native-filter-backups",
+            Self::NativeFilterModels => "native-filter-models",
             Self::NativeFilterPdf => "native-filter-pdf",
             Self::NativeKitText => "native-kit-text",
+            Self::NativeNoticeArrival => "native-notice-arrival",
             Self::NativeRecoveryKeep => "native-recovery-keep",
             Self::NativeRecoveryReplace => "native-recovery-replace",
             Self::NativeRecoveryTitle => "native-recovery-title",
@@ -1948,6 +2901,24 @@ impl MessageId {
             Self::NoticeTransferUnfinished => "notice-transferUnfinished",
             Self::NoticeUnlocked => "notice-unlocked",
             Self::NoticeUnlockedRecovery => "notice-unlockedRecovery",
+            Self::NoticesStepDone => "noticesStep-done",
+            Self::NoticesStepIntro => "noticesStep-intro",
+            Self::NoticesStepLater => "noticesStep-later",
+            Self::NoticesStepNotNow => "noticesStep-notNow",
+            Self::NoticesStepTitle => "noticesStep-title",
+            Self::NotificationsAllow => "notifications-allow",
+            Self::NotificationsAutoAllow => "notifications-autoAllow",
+            Self::NotificationsAutoHelp => "notifications-autoHelp",
+            Self::NotificationsAutoNeedsNotices => "notifications-autoNeedsNotices",
+            Self::NotificationsAutoPaused => "notifications-autoPaused",
+            Self::NotificationsBlocked => "notifications-blocked",
+            Self::NotificationsCheckBusy => "notifications-checkBusy",
+            Self::NotificationsError => "notifications-error",
+            Self::NotificationsHelp => "notifications-help",
+            Self::NotificationsHelpAutomatic => "notifications-helpAutomatic",
+            Self::NotificationsTitle => "notifications-title",
+            Self::NotificationsUnavailable => "notifications-unavailable",
+            Self::NotificationsUnknown => "notifications-unknown",
             Self::PassphraseConfirmLabel => "passphrase-confirm-label",
             Self::PassphraseConfirmNewLabel => "passphrase-confirmNew-label",
             Self::PassphraseLabel => "passphrase-label",
@@ -1998,37 +2969,58 @@ impl MessageId {
             Self::PortalApprovalCancelled => "portal-approvalCancelled",
             Self::PortalApprovalContact => "portal-approvalContact",
             Self::PortalApprovalExpired => "portal-approvalExpired",
+            Self::PortalApprovalExpiredCard => "portal-approvalExpiredCard",
             Self::PortalApprovalMissing => "portal-approvalMissing",
+            Self::PortalApprovalPickedUp => "portal-approvalPickedUp",
             Self::PortalApprovalRefused => "portal-approvalRefused",
+            Self::PortalApprovalReplyInvalid => "portal-approvalReplyInvalid",
+            Self::PortalApprovalStillOpen => "portal-approvalStillOpen",
+            Self::PortalApprovalTimeLeft => "portal-approvalTimeLeft",
+            Self::PortalApprovalTimeOver => "portal-approvalTimeOver",
+            Self::PortalApprovalTimeOverRestart => "portal-approvalTimeOverRestart",
+            Self::PortalApprovalTimeUp => "portal-approvalTimeUp",
+            Self::PortalApprovalUnanswered => "portal-approvalUnanswered",
+            Self::PortalApprovalUnreachable => "portal-approvalUnreachable",
+            Self::PortalApprovalWait => "portal-approvalWait",
             Self::PortalApproved => "portal-approved",
+            Self::PortalAutoCheckStopped => "portal-autoCheckStopped",
+            Self::PortalAutoChecking => "portal-autoChecking",
             Self::PortalAwaiting => "portal-awaiting",
+            Self::PortalAwaitingClinic => "portal-awaitingClinic",
             Self::PortalCheck => "portal-check",
+            Self::PortalCheckAgain => "portal-checkAgain",
             Self::PortalClinicIssue => "portal-clinicIssue",
             Self::PortalCode => "portal-code",
             Self::PortalCompare => "portal-compare",
             Self::PortalConfirmationsPending => "portal-confirmationsPending",
+            Self::PortalConnectConsent => "portal-connectConsent",
+            Self::PortalConnected => "portal-connected",
+            Self::PortalConnecting => "portal-connecting",
             Self::PortalCopied => "portal-copied",
             Self::PortalCopy => "portal-copy",
             Self::PortalCopyFailed => "portal-copyFailed",
             Self::PortalDateNotRecorded => "portal-dateNotRecorded",
             Self::PortalDeviceCode => "portal-deviceCode",
             Self::PortalDeviceName => "portal-deviceName",
+            Self::PortalDeviceRemoved => "portal-deviceRemoved",
             Self::PortalErrorAddress => "portal-errorAddress",
+            Self::PortalErrorBusy => "portal-errorBusy",
             Self::PortalErrorCancelled => "portal-errorCancelled",
             Self::PortalErrorCode => "portal-errorCode",
             Self::PortalErrorCodeRejected => "portal-errorCodeRejected",
             Self::PortalErrorDamaged => "portal-errorDamaged",
             Self::PortalErrorDeviceName => "portal-errorDeviceName",
-            Self::PortalErrorDisabled => "portal-errorDisabled",
             Self::PortalErrorExists => "portal-errorExists",
             Self::PortalErrorIncomplete => "portal-errorIncomplete",
             Self::PortalErrorKeys => "portal-errorKeys",
+            Self::PortalErrorRateLimited => "portal-errorRateLimited",
             Self::PortalErrorRefused => "portal-errorRefused",
             Self::PortalErrorUnavailable => "portal-errorUnavailable",
             Self::PortalFingerprint => "portal-fingerprint",
             Self::PortalIncomplete => "portal-incomplete",
             Self::PortalIntro => "portal-intro",
             Self::PortalLink => "portal-link",
+            Self::PortalLinkedApprovalIssue => "portal-linkedApprovalIssue",
             Self::PortalMatchPerson => "portal-matchPerson",
             Self::PortalNotRequested => "portal-notRequested",
             Self::PortalPartialResult => "portal-partialResult",
@@ -2036,12 +3028,28 @@ impl MessageId {
             Self::PortalRequestApproval => "portal-requestApproval",
             Self::PortalRestartApproval => "portal-restartApproval",
             Self::PortalResult => "portal-result",
+            Self::PortalRetryApproval => "portal-retryApproval",
             Self::PortalRouting => "portal-routing",
             Self::PortalServiceDate => "portal-serviceDate",
             Self::PortalServiceDateLabel => "portal-serviceDateLabel",
-            Self::PortalSourceVerified => "portal-sourceVerified",
             Self::PortalTitle => "portal-title",
+            Self::PortalUnlockCheckConsent => "portal-unlockCheckConsent",
+            Self::PortalUnlockCheckIncomplete => "portal-unlockCheckIncomplete",
+            Self::PortalUnlockCheckNotRun => "portal-unlockCheckNotRun",
+            Self::PortalUnlockCheckWaiting => "portal-unlockCheckWaiting",
+            Self::PortalUnlockChecked => "portal-unlockChecked",
+            Self::PortalUnlockRefused => "portal-unlockRefused",
+            Self::PortalWorking => "portal-working",
             Self::PreferencesSubtitle => "preferences-subtitle",
+            Self::ReadingAidAvailable => "readingAid-available",
+            Self::ReadingAidChecked => "readingAid-checked",
+            Self::ReadingAidEvidence => "readingAid-evidence",
+            Self::ReadingAidOpen => "readingAid-open",
+            Self::ReadingAidOpenOriginal => "readingAid-openOriginal",
+            Self::ReadingAidOverview => "readingAid-overview",
+            Self::ReadingAidPoints => "readingAid-points",
+            Self::ReadingAidTitle => "readingAid-title",
+            Self::ReadingAidUnavailable => "readingAid-unavailable",
             Self::RecordKindDocument => "record-kind-document",
             Self::RecordSourceManual => "record-source-manual",
             Self::RecoverIntro => "recover-intro",
@@ -2201,6 +3209,7 @@ impl MessageId {
             Self::SecurityTitle => "security-title",
             Self::SidebarDocuments => "sidebar-documents",
             Self::SidebarFolderCount => "sidebar-folderCount",
+            Self::SidebarFolderOfPerson => "sidebar-folderOfPerson",
             Self::SidebarLabel => "sidebar-label",
             Self::SidebarMyRecords => "sidebar-myRecords",
             Self::SidebarPreferences => "sidebar-preferences",
@@ -2856,6 +3865,15 @@ impl MessageId {
             "photo.zoomOut" => Some(Self::PhotoZoomOut),
             "photo.zoomed" => Some(Self::PhotoZoomed),
             "preferences.subtitle" => Some(Self::PreferencesSubtitle),
+            "readingAid.available" => Some(Self::ReadingAidAvailable),
+            "readingAid.checked" => Some(Self::ReadingAidChecked),
+            "readingAid.evidence" => Some(Self::ReadingAidEvidence),
+            "readingAid.open" => Some(Self::ReadingAidOpen),
+            "readingAid.openOriginal" => Some(Self::ReadingAidOpenOriginal),
+            "readingAid.overview" => Some(Self::ReadingAidOverview),
+            "readingAid.points" => Some(Self::ReadingAidPoints),
+            "readingAid.title" => Some(Self::ReadingAidTitle),
+            "readingAid.unavailable" => Some(Self::ReadingAidUnavailable),
             "record.kind.document" => Some(Self::RecordKindDocument),
             "record.source.manual" => Some(Self::RecordSourceManual),
             "recover.intro" => Some(Self::RecoverIntro),
@@ -3013,6 +4031,7 @@ impl MessageId {
             "security.title" => Some(Self::SecurityTitle),
             "sidebar.documents" => Some(Self::SidebarDocuments),
             "sidebar.folderCount" => Some(Self::SidebarFolderCount),
+            "sidebar.folderOfPerson" => Some(Self::SidebarFolderOfPerson),
             "sidebar.label" => Some(Self::SidebarLabel),
             "sidebar.myRecords" => Some(Self::SidebarMyRecords),
             "sidebar.preferences" => Some(Self::SidebarPreferences),
@@ -3094,7 +4113,6 @@ impl MessageId {
             "portal.errorCodeRejected" => Some(Self::PortalErrorCodeRejected),
             "portal.errorDamaged" => Some(Self::PortalErrorDamaged),
             "portal.errorDeviceName" => Some(Self::PortalErrorDeviceName),
-            "portal.errorDisabled" => Some(Self::PortalErrorDisabled),
             "portal.errorExists" => Some(Self::PortalErrorExists),
             "portal.errorIncomplete" => Some(Self::PortalErrorIncomplete),
             "portal.errorKeys" => Some(Self::PortalErrorKeys),
@@ -3114,7 +4132,6 @@ impl MessageId {
             "portal.routing" => Some(Self::PortalRouting),
             "portal.serviceDate" => Some(Self::PortalServiceDate),
             "portal.serviceDateLabel" => Some(Self::PortalServiceDateLabel),
-            "portal.sourceVerified" => Some(Self::PortalSourceVerified),
             "portal.title" => Some(Self::PortalTitle),
             "rename.help.profile" => Some(Self::RenameHelpProfile),
             "rename.label.profile" => Some(Self::RenameLabelProfile),
@@ -3122,6 +4139,465 @@ impl MessageId {
             "rename.profile.controls" => Some(Self::RenameProfileControls),
             "rename.profile.saved" => Some(Self::RenameProfileSaved),
             "rename.title.profile" => Some(Self::RenameTitleProfile),
+            "hidden.backToSecurity" => Some(Self::HiddenBackToSecurity),
+            "interface.history.appVersion" => Some(Self::InterfaceHistoryAppVersion),
+            "interface.history.approval.accepted" => Some(Self::InterfaceHistoryApprovalAccepted),
+            "interface.history.approval.cancelled" => Some(Self::InterfaceHistoryApprovalCancelled),
+            "interface.history.approval.challengeReady" => {
+                Some(Self::InterfaceHistoryApprovalChallengeReady)
+            }
+            "interface.history.approval.expired" => Some(Self::InterfaceHistoryApprovalExpired),
+            "interface.history.approval.pending" => Some(Self::InterfaceHistoryApprovalPending),
+            "interface.history.approval.refused" => Some(Self::InterfaceHistoryApprovalRefused),
+            "interface.history.damaged" => Some(Self::InterfaceHistoryDamaged),
+            "interface.history.damagedAll" => Some(Self::InterfaceHistoryDamagedAll),
+            "interface.history.damagedBefore" => Some(Self::InterfaceHistoryDamagedBefore),
+            "interface.history.damagedBetween" => Some(Self::InterfaceHistoryDamagedBetween),
+            "interface.history.empty" => Some(Self::InterfaceHistoryEmpty),
+            "interface.history.error.unverified" => Some(Self::InterfaceHistoryErrorUnverified),
+            "interface.history.event.backupRestored" => {
+                Some(Self::InterfaceHistoryEventBackupRestored)
+            }
+            "interface.history.event.backupSaved" => Some(Self::InterfaceHistoryEventBackupSaved),
+            "interface.history.event.copySaved" => Some(Self::InterfaceHistoryEventCopySaved),
+            "interface.history.event.created" => Some(Self::InterfaceHistoryEventCreated),
+            "interface.history.event.deliveryFiled" => {
+                Some(Self::InterfaceHistoryEventDeliveryFiled)
+            }
+            "interface.history.event.deliveryReceiptSettled" => {
+                Some(Self::InterfaceHistoryEventDeliveryReceiptSettled)
+            }
+            "interface.history.event.deviceApprovalRequestRestarted" => {
+                Some(Self::InterfaceHistoryEventDeviceApprovalRequestRestarted)
+            }
+            "interface.history.event.deviceApprovalRequested" => {
+                Some(Self::InterfaceHistoryEventDeviceApprovalRequested)
+            }
+            "interface.history.event.deviceApprovalStatusChanged" => {
+                Some(Self::InterfaceHistoryEventDeviceApprovalStatusChanged)
+            }
+            "interface.history.event.deviceApprovalVerified" => {
+                Some(Self::InterfaceHistoryEventDeviceApprovalVerified)
+            }
+            "interface.history.event.folderCreated" => {
+                Some(Self::InterfaceHistoryEventFolderCreated)
+            }
+            "interface.history.event.folderMoved" => Some(Self::InterfaceHistoryEventFolderMoved),
+            "interface.history.event.folderRenamed" => {
+                Some(Self::InterfaceHistoryEventFolderRenamed)
+            }
+            "interface.history.event.hidden" => Some(Self::InterfaceHistoryEventHidden),
+            "interface.history.event.historyStarted" => {
+                Some(Self::InterfaceHistoryEventHistoryStarted)
+            }
+            "interface.history.event.imported" => Some(Self::InterfaceHistoryEventImported),
+            "interface.history.event.moved" => Some(Self::InterfaceHistoryEventMoved),
+            "interface.history.event.passphraseChanged" => {
+                Some(Self::InterfaceHistoryEventPassphraseChanged)
+            }
+            "interface.history.event.portalLinkStarted" => {
+                Some(Self::InterfaceHistoryEventPortalLinkStarted)
+            }
+            "interface.history.event.portalLinked" => Some(Self::InterfaceHistoryEventPortalLinked),
+            "interface.history.event.profileCreated" => {
+                Some(Self::InterfaceHistoryEventProfileCreated)
+            }
+            "interface.history.event.profileDetailsChanged" => {
+                Some(Self::InterfaceHistoryEventProfileDetailsChanged)
+            }
+            "interface.history.event.readingAidFiled" => {
+                Some(Self::InterfaceHistoryEventReadingAidFiled)
+            }
+            "interface.history.event.recoveryKeySet" => {
+                Some(Self::InterfaceHistoryEventRecoveryKeySet)
+            }
+            "interface.history.event.renamed" => Some(Self::InterfaceHistoryEventRenamed),
+            "interface.history.event.restored" => Some(Self::InterfaceHistoryEventRestored),
+            "interface.history.event.setAside" => Some(Self::InterfaceHistoryEventSetAside),
+            "interface.history.event.unlocked" => Some(Self::InterfaceHistoryEventUnlocked),
+            "interface.history.events" => Some(Self::InterfaceHistoryEvents),
+            "interface.history.from" => Some(Self::InterfaceHistoryFrom),
+            "interface.history.gap" => Some(Self::InterfaceHistoryGap),
+            "interface.history.how" => Some(Self::InterfaceHistoryHow),
+            "interface.history.how.aidReplaced" => Some(Self::InterfaceHistoryHowAidReplaced),
+            "interface.history.how.camera" => Some(Self::InterfaceHistoryHowCamera),
+            "interface.history.how.damaged" => Some(Self::InterfaceHistoryHowDamaged),
+            "interface.history.how.importedShared" => Some(Self::InterfaceHistoryHowImportedShared),
+            "interface.history.how.movedFromShared" => {
+                Some(Self::InterfaceHistoryHowMovedFromShared)
+            }
+            "interface.history.how.passphrase" => Some(Self::InterfaceHistoryHowPassphrase),
+            "interface.history.how.patient" => Some(Self::InterfaceHistoryHowPatient),
+            "interface.history.how.picked" => Some(Self::InterfaceHistoryHowPicked),
+            "interface.history.how.recoveryKey" => Some(Self::InterfaceHistoryHowRecoveryKey),
+            "interface.history.how.replaced" => Some(Self::InterfaceHistoryHowReplaced),
+            "interface.history.intro" => Some(Self::InterfaceHistoryIntro),
+            "interface.history.laterSessionNotRecorded" => {
+                Some(Self::InterfaceHistoryLaterSessionNotRecorded)
+            }
+            "interface.history.loading" => Some(Self::InterfaceHistoryLoading),
+            "interface.history.moreFolders" => Some(Self::InterfaceHistoryMoreFolders),
+            "interface.history.name" => Some(Self::InterfaceHistoryName),
+            "interface.history.personRootFolder" => Some(Self::InterfaceHistoryPersonRootFolder),
+            "interface.history.place" => Some(Self::InterfaceHistoryPlace),
+            "interface.history.previousName" => Some(Self::InterfaceHistoryPreviousName),
+            "interface.history.previousSession" => Some(Self::InterfaceHistoryPreviousSession),
+            "interface.history.receipt.notFound" => Some(Self::InterfaceHistoryReceiptNotFound),
+            "interface.history.receipt.pickedUp" => Some(Self::InterfaceHistoryReceiptPickedUp),
+            "interface.history.rootFolder" => Some(Self::InterfaceHistoryRootFolder),
+            "interface.history.scopeNote" => Some(Self::InterfaceHistoryScopeNote),
+            "interface.history.sessionLockedAutomatically" => {
+                Some(Self::InterfaceHistorySessionLockedAutomatically)
+            }
+            "interface.history.sessionLockedByApp" => {
+                Some(Self::InterfaceHistorySessionLockedByApp)
+            }
+            "interface.history.sessionLockedByPerson" => {
+                Some(Self::InterfaceHistorySessionLockedByPerson)
+            }
+            "interface.history.sessionNotRecorded" => {
+                Some(Self::InterfaceHistorySessionNotRecorded)
+            }
+            "interface.history.status" => Some(Self::InterfaceHistoryStatus),
+            "interface.history.title" => Some(Self::InterfaceHistoryTitle),
+            "interface.history.to" => Some(Self::InterfaceHistoryTo),
+            "portal.connectConsent" => Some(Self::PortalConnectConsent),
+            "portal.connected" => Some(Self::PortalConnected),
+            "portal.connecting" => Some(Self::PortalConnecting),
+            "portal.errorBusy" => Some(Self::PortalErrorBusy),
+            "portal.linkedApprovalIssue" => Some(Self::PortalLinkedApprovalIssue),
+            "portal.retryApproval" => Some(Self::PortalRetryApproval),
+            "portal.working" => Some(Self::PortalWorking),
+            "portal.approvalExpiredCard" => Some(Self::PortalApprovalExpiredCard),
+            "portal.approvalPickedUp" => Some(Self::PortalApprovalPickedUp),
+            "portal.approvalReplyInvalid" => Some(Self::PortalApprovalReplyInvalid),
+            "portal.approvalStillOpen" => Some(Self::PortalApprovalStillOpen),
+            "portal.approvalTimeLeft" => Some(Self::PortalApprovalTimeLeft),
+            "portal.approvalTimeOver" => Some(Self::PortalApprovalTimeOver),
+            "portal.approvalTimeOverRestart" => Some(Self::PortalApprovalTimeOverRestart),
+            "portal.approvalTimeUp" => Some(Self::PortalApprovalTimeUp),
+            "portal.approvalUnanswered" => Some(Self::PortalApprovalUnanswered),
+            "portal.approvalUnreachable" => Some(Self::PortalApprovalUnreachable),
+            "portal.approvalWait" => Some(Self::PortalApprovalWait),
+            "portal.autoChecking" => Some(Self::PortalAutoChecking),
+            "portal.autoCheckStopped" => Some(Self::PortalAutoCheckStopped),
+            "portal.awaitingClinic" => Some(Self::PortalAwaitingClinic),
+            "portal.deviceRemoved" => Some(Self::PortalDeviceRemoved),
+            "portal.errorRateLimited" => Some(Self::PortalErrorRateLimited),
+            "portal.checkAgain" => Some(Self::PortalCheckAgain),
+            "portal.unlockCheckConsent" => Some(Self::PortalUnlockCheckConsent),
+            "portal.unlockChecked" => Some(Self::PortalUnlockChecked),
+            "portal.unlockCheckIncomplete" => Some(Self::PortalUnlockCheckIncomplete),
+            "portal.unlockCheckNotRun" => Some(Self::PortalUnlockCheckNotRun),
+            "portal.unlockCheckWaiting" => Some(Self::PortalUnlockCheckWaiting),
+            "portal.unlockRefused" => Some(Self::PortalUnlockRefused),
+            "library.source.clinic" => Some(Self::LibrarySourceClinic),
+            "library.source.manualImport" => Some(Self::LibrarySourceManualImport),
+            "library.status.unverified" => Some(Self::LibraryStatusUnverified),
+            "library.status.verified" => Some(Self::LibraryStatusVerified),
+            "ai.summary.button" => Some(Self::AiSummaryButton),
+            "ai.summary.title" => Some(Self::AiSummaryTitle),
+            "ai.explain.title" => Some(Self::AiExplainTitle),
+            "ai.notInstalled.title" => Some(Self::AiNotInstalledTitle),
+            "ai.notInstalled.body" => Some(Self::AiNotInstalledBody),
+            "ai.notInstalled.openPreferences" => Some(Self::AiNotInstalledOpenPreferences),
+            "aiHelper.resultLabel" => Some(Self::AiHelperResultLabel),
+            "ai.result.meta" => Some(Self::AiResultMeta),
+            "ai.summary.showInDocument" => Some(Self::AiSummaryShowInDocument),
+            "ai.summary.partial" => Some(Self::AiSummaryPartial),
+            "ai.summary.noText" => Some(Self::AiSummaryNoText),
+            "ai.explain.box" => Some(Self::AiExplainBox),
+            "ai.explain.hint" => Some(Self::AiExplainHint),
+            "ai.explain.submit" => Some(Self::AiExplainSubmit),
+            "ai.preferences.title" => Some(Self::AiPreferencesTitle),
+            "ai.preferences.body" => Some(Self::AiPreferencesBody),
+            "ai.preferences.notInstalled" => Some(Self::AiPreferencesNotInstalled),
+            "ai.working" => Some(Self::AiWorking),
+            "ai.workingLong" => Some(Self::AiWorkingLong),
+            "ai.workingFor" => Some(Self::AiWorkingFor),
+            "ai.summary.ready" => Some(Self::AiSummaryReady),
+            "ai.explain.ready" => Some(Self::AiExplainReady),
+            "ai.failed" => Some(Self::AiFailed),
+            "ai.error.memory" => Some(Self::AiErrorMemory),
+            "ai.error.busy" => Some(Self::AiErrorBusy),
+            "ai.summary.pagesMissing" => Some(Self::AiSummaryPagesMissing),
+            "ai.summary.noSource" => Some(Self::AiSummaryNoSource),
+            "aiHelper.notice.title" => Some(Self::AiHelperNoticeTitle),
+            "aiHelper.notice.introShare" => Some(Self::AiHelperNoticeIntroShare),
+            "aiHelper.notice.intro" => Some(Self::AiHelperNoticeIntro),
+            "aiHelper.notice.testBuild" => Some(Self::AiHelperNoticeTestBuild),
+            "aiHelper.notice.shareHeading" => Some(Self::AiHelperNoticeShareHeading),
+            "aiHelper.notice.shareBody" => Some(Self::AiHelperNoticeShareBody),
+            "aiHelper.notice.previewBody" => Some(Self::AiHelperNoticePreviewBody),
+            "aiHelper.notice.limitsBody" => Some(Self::AiHelperNoticeLimitsBody),
+            "aiHelper.notice.fileBody" => Some(Self::AiHelperNoticeFileBody),
+            "aiHelper.notice.serviceBody" => Some(Self::AiHelperNoticeServiceBody),
+            "aiHelper.notice.adviceBody" => Some(Self::AiHelperNoticeAdviceBody),
+            "aiHelper.notice.modelHeading" => Some(Self::AiHelperNoticeModelHeading),
+            "aiHelper.notice.modelBody" => Some(Self::AiHelperNoticeModelBody),
+            "aiHelper.notice.resultsBody" => Some(Self::AiHelperNoticeResultsBody),
+            "aiHelper.exportHeader" => Some(Self::AiHelperExportHeader),
+            "aiHelper.exportCut" => Some(Self::AiHelperExportCut),
+            "aiHelper.exportFileName" => Some(Self::AiHelperExportFileName),
+            "interface.history.how.anonymizedText" => Some(Self::InterfaceHistoryHowAnonymizedText),
+            "interface.RecordDetails.anonymizeText" => {
+                Some(Self::InterfaceRecordDetailsAnonymizeText)
+            }
+            "interface.AnonymizePreview.title" => Some(Self::InterfaceAnonymizePreviewTitle),
+            "interface.AnonymizePreview.reading" => Some(Self::InterfaceAnonymizePreviewReading),
+            "interface.AnonymizePreview.readFailed" => {
+                Some(Self::InterfaceAnonymizePreviewReadFailed)
+            }
+            "interface.AnonymizePreview.emptyPages" => {
+                Some(Self::InterfaceAnonymizePreviewEmptyPages)
+            }
+            "interface.AnonymizePreview.cutPages" => Some(Self::InterfaceAnonymizePreviewCutPages),
+            "interface.AnonymizePreview.failedPages" => {
+                Some(Self::InterfaceAnonymizePreviewFailedPages)
+            }
+            "interface.AnonymizePreview.replaced" => Some(Self::InterfaceAnonymizePreviewReplaced),
+            "interface.AnonymizePreview.headerNote" => {
+                Some(Self::InterfaceAnonymizePreviewHeaderNote)
+            }
+            "interface.AnonymizePreview.howMarked" => {
+                Some(Self::InterfaceAnonymizePreviewHowMarked)
+            }
+            "interface.AnonymizePreview.textRegion" => {
+                Some(Self::InterfaceAnonymizePreviewTextRegion)
+            }
+            "interface.AnonymizePreview.removedKind" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedKind)
+            }
+            "interface.AnonymizePreview.movedDate" => {
+                Some(Self::InterfaceAnonymizePreviewMovedDate)
+            }
+            "interface.AnonymizePreview.kind.name" => Some(Self::InterfaceAnonymizePreviewKindName),
+            "interface.AnonymizePreview.kind.doctor" => {
+                Some(Self::InterfaceAnonymizePreviewKindDoctor)
+            }
+            "interface.AnonymizePreview.kind.clinic" => {
+                Some(Self::InterfaceAnonymizePreviewKindClinic)
+            }
+            "interface.AnonymizePreview.kind.healthCard" => {
+                Some(Self::InterfaceAnonymizePreviewKindHealthCard)
+            }
+            "interface.AnonymizePreview.kind.recordNumber" => {
+                Some(Self::InterfaceAnonymizePreviewKindRecordNumber)
+            }
+            "interface.AnonymizePreview.kind.sin" => Some(Self::InterfaceAnonymizePreviewKindSin),
+            "interface.AnonymizePreview.kind.dateOfBirth" => {
+                Some(Self::InterfaceAnonymizePreviewKindDateOfBirth)
+            }
+            "interface.AnonymizePreview.kind.age" => Some(Self::InterfaceAnonymizePreviewKindAge),
+            "interface.AnonymizePreview.kind.address" => {
+                Some(Self::InterfaceAnonymizePreviewKindAddress)
+            }
+            "interface.AnonymizePreview.kind.postalCode" => {
+                Some(Self::InterfaceAnonymizePreviewKindPostalCode)
+            }
+            "interface.AnonymizePreview.kind.phone" => {
+                Some(Self::InterfaceAnonymizePreviewKindPhone)
+            }
+            "interface.AnonymizePreview.kind.email" => {
+                Some(Self::InterfaceAnonymizePreviewKindEmail)
+            }
+            "interface.AnonymizePreview.kind.web" => Some(Self::InterfaceAnonymizePreviewKindWeb),
+            "interface.AnonymizePreview.kind.unclearDate" => {
+                Some(Self::InterfaceAnonymizePreviewKindUnclearDate)
+            }
+            "interface.AnonymizePreview.kind.manual" => {
+                Some(Self::InterfaceAnonymizePreviewKindManual)
+            }
+            "interface.AnonymizePreview.placeholder.name" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderName)
+            }
+            "interface.AnonymizePreview.placeholder.doctor" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderDoctor)
+            }
+            "interface.AnonymizePreview.placeholder.clinic" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderClinic)
+            }
+            "interface.AnonymizePreview.placeholder.healthCard" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderHealthCard)
+            }
+            "interface.AnonymizePreview.placeholder.recordNumber" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderRecordNumber)
+            }
+            "interface.AnonymizePreview.placeholder.sin" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderSin)
+            }
+            "interface.AnonymizePreview.placeholder.dateOfBirth" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderDateOfBirth)
+            }
+            "interface.AnonymizePreview.placeholder.age" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderAge)
+            }
+            "interface.AnonymizePreview.placeholder.address" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderAddress)
+            }
+            "interface.AnonymizePreview.placeholder.postalCode" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderPostalCode)
+            }
+            "interface.AnonymizePreview.placeholder.phone" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderPhone)
+            }
+            "interface.AnonymizePreview.placeholder.email" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderEmail)
+            }
+            "interface.AnonymizePreview.placeholder.web" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderWeb)
+            }
+            "interface.AnonymizePreview.placeholder.unclearDate" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderUnclearDate)
+            }
+            "interface.AnonymizePreview.placeholder.manual" => {
+                Some(Self::InterfaceAnonymizePreviewPlaceholderManual)
+            }
+            "interface.AnonymizePreview.possibleNames" => {
+                Some(Self::InterfaceAnonymizePreviewPossibleNames)
+            }
+            "interface.AnonymizePreview.removeWord" => {
+                Some(Self::InterfaceAnonymizePreviewRemoveWord)
+            }
+            "interface.AnonymizePreview.removeSelected" => {
+                Some(Self::InterfaceAnonymizePreviewRemoveSelected)
+            }
+            "interface.AnonymizePreview.selectFirst" => {
+                Some(Self::InterfaceAnonymizePreviewSelectFirst)
+            }
+            "interface.AnonymizePreview.phrase" => Some(Self::InterfaceAnonymizePreviewPhrase),
+            "interface.AnonymizePreview.removePhrase" => {
+                Some(Self::InterfaceAnonymizePreviewRemovePhrase)
+            }
+            "interface.AnonymizePreview.phraseNotFound" => {
+                Some(Self::InterfaceAnonymizePreviewPhraseNotFound)
+            }
+            "interface.AnonymizePreview.removedPlaces" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedPlaces)
+            }
+            "interface.AnonymizePreview.undo" => Some(Self::InterfaceAnonymizePreviewUndo),
+            "interface.AnonymizePreview.save" => Some(Self::InterfaceAnonymizePreviewSave),
+            "interface.AnonymizePreview.confirmTitle" => {
+                Some(Self::InterfaceAnonymizePreviewConfirmTitle)
+            }
+            "interface.AnonymizePreview.confirmBody" => {
+                Some(Self::InterfaceAnonymizePreviewConfirmBody)
+            }
+            "interface.AnonymizePreview.saved" => Some(Self::InterfaceAnonymizePreviewSaved),
+            "interface.AnonymizePreview.saveCancelled" => {
+                Some(Self::InterfaceAnonymizePreviewSaveCancelled)
+            }
+            "interface.AnonymizePreview.refused" => Some(Self::InterfaceAnonymizePreviewRefused),
+            "interface.AnonymizePreview.close" => Some(Self::InterfaceAnonymizePreviewClose),
+            "interface.AiHelperNotice.continue" => Some(Self::InterfaceAiHelperNoticeContinue),
+            "interface.AnonymizePreview.footerNote" => {
+                Some(Self::InterfaceAnonymizePreviewFooterNote)
+            }
+            "interface.AnonymizePreview.note.daysAfter" => {
+                Some(Self::InterfaceAnonymizePreviewNoteDaysAfter)
+            }
+            "interface.AnonymizePreview.note.ageOver90" => {
+                Some(Self::InterfaceAnonymizePreviewNoteAgeOver90)
+            }
+            "interface.AnonymizePreview.pasteTitle" => {
+                Some(Self::InterfaceAnonymizePreviewPasteTitle)
+            }
+            "interface.AnonymizePreview.pasteHelp" => {
+                Some(Self::InterfaceAnonymizePreviewPasteHelp)
+            }
+            "interface.AnonymizePreview.pasteLabel" => {
+                Some(Self::InterfaceAnonymizePreviewPasteLabel)
+            }
+            "interface.AnonymizePreview.pasteButton" => {
+                Some(Self::InterfaceAnonymizePreviewPasteButton)
+            }
+            "interface.AnonymizePreview.pasteResult" => {
+                Some(Self::InterfaceAnonymizePreviewPasteResult)
+            }
+            "interface.AnonymizePreview.pasteFlagged" => {
+                Some(Self::InterfaceAnonymizePreviewPasteFlagged)
+            }
+            "interface.AnonymizePreview.pasteAllMatched" => {
+                Some(Self::InterfaceAnonymizePreviewPasteAllMatched)
+            }
+            "interface.AnonymizePreview.pasteFlaggedSr" => {
+                Some(Self::InterfaceAnonymizePreviewPasteFlaggedSr)
+            }
+            "notifications.allow" => Some(Self::NotificationsAllow),
+            "notifications.blocked" => Some(Self::NotificationsBlocked),
+            "notifications.error" => Some(Self::NotificationsError),
+            "notifications.help" => Some(Self::NotificationsHelp),
+            "notifications.title" => Some(Self::NotificationsTitle),
+            "notifications.unknown" => Some(Self::NotificationsUnknown),
+            "notifications.unavailable" => Some(Self::NotificationsUnavailable),
+            "notifications.helpAutomatic" => Some(Self::NotificationsHelpAutomatic),
+            "notifications.autoAllow" => Some(Self::NotificationsAutoAllow),
+            "notifications.autoHelp" => Some(Self::NotificationsAutoHelp),
+            "notifications.autoPaused" => Some(Self::NotificationsAutoPaused),
+            "notifications.checkBusy" => Some(Self::NotificationsCheckBusy),
+            "native.notice.arrival" => Some(Self::NativeNoticeArrival),
+            "ai.model.add" => Some(Self::AiModelAdd),
+            "ai.model.accepted" => Some(Self::AiModelAccepted),
+            "ai.model.where" => Some(Self::AiModelWhere),
+            "ai.model.copy" => Some(Self::AiModelCopy),
+            "ai.model.copied" => Some(Self::AiModelCopied),
+            "ai.model.checking" => Some(Self::AiModelChecking),
+            "ai.model.added" => Some(Self::AiModelAdded),
+            "ai.model.installed" => Some(Self::AiModelInstalled),
+            "ai.model.remove" => Some(Self::AiModelRemove),
+            "ai.model.removeConfirm" => Some(Self::AiModelRemoveConfirm),
+            "ai.model.damaged" => Some(Self::AiModelDamaged),
+            "ai.model.unsupportedRam" => Some(Self::AiModelUnsupportedRam),
+            "ai.model.unsupportedCpu" => Some(Self::AiModelUnsupportedCpu),
+            "ai.model.unsupportedPlatform" => Some(Self::AiModelUnsupportedPlatform),
+            "ai.model.refusedList" => Some(Self::AiModelRefusedList),
+            "ai.model.refusedHash" => Some(Self::AiModelRefusedHash),
+            "ai.model.refusedIncomplete" => Some(Self::AiModelRefusedIncomplete),
+            "ai.model.refusedDisk" => Some(Self::AiModelRefusedDisk),
+            "ai.model.refusedStorage" => Some(Self::AiModelRefusedStorage),
+            "ai.model.refusedBusy" => Some(Self::AiModelRefusedBusy),
+            "ai.model.download" => Some(Self::AiModelDownload),
+            "ai.model.downloadNote" => Some(Self::AiModelDownloadNote),
+            "ai.model.downloading" => Some(Self::AiModelDownloading),
+            "ai.model.refusedNetwork" => Some(Self::AiModelRefusedNetwork),
+            "ai.model.refusedUnavailable" => Some(Self::AiModelRefusedUnavailable),
+            "native.filter.models" => Some(Self::NativeFilterModels),
+            "interface.history.event.aiResultSaved" => {
+                Some(Self::InterfaceHistoryEventAiResultSaved)
+            }
+            "interface.history.how.summary" => Some(Self::InterfaceHistoryHowSummary),
+            "interface.history.how.explain" => Some(Self::InterfaceHistoryHowExplain),
+            "ai.summary.again" => Some(Self::AiSummaryAgain),
+            "ai.keepFailed" => Some(Self::AiKeepFailed),
+            "ai.keepFull" => Some(Self::AiKeepFull),
+            "noticesStep.title" => Some(Self::NoticesStepTitle),
+            "noticesStep.intro" => Some(Self::NoticesStepIntro),
+            "noticesStep.later" => Some(Self::NoticesStepLater),
+            "noticesStep.done" => Some(Self::NoticesStepDone),
+            "noticesStep.notNow" => Some(Self::NoticesStepNotNow),
+            "notifications.autoNeedsNotices" => Some(Self::NotificationsAutoNeedsNotices),
+            "ai.settings.subtitle" => Some(Self::AiSettingsSubtitle),
+            "ai.model.progressName" => Some(Self::AiModelProgressName),
+            "ai.model.progressValue" => Some(Self::AiModelProgressValue),
+            "ai.model.stillDownloading" => Some(Self::AiModelStillDownloading),
+            "ai.model.stillChecking" => Some(Self::AiModelStillChecking),
+            "ai.models.title" => Some(Self::AiModelsTitle),
+            "ai.models.group" => Some(Self::AiModelsGroup),
+            "ai.models.inUse" => Some(Self::AiModelsInUse),
+            "ai.models.installed" => Some(Self::AiModelsInstalled),
+            "ai.models.addedByYou" => Some(Self::AiModelsAddedByYou),
+            "ai.models.notDownloaded" => Some(Self::AiModelsNotDownloaded),
+            "ai.models.downloading" => Some(Self::AiModelsDownloading),
+            "ai.models.download" => Some(Self::AiModelsDownload),
+            "ai.models.remove" => Some(Self::AiModelsRemove),
+            "ai.models.help" => Some(Self::AiModelsHelp),
+            "ai.models.loading" => Some(Self::AiModelsLoading),
+            "ai.models.loadFailed" => Some(Self::AiModelsLoadFailed),
+            "ai.models.retry" => Some(Self::AiModelsRetry),
+            "ai.models.starting" => Some(Self::AiModelsStarting),
+            "ai.models.picking" => Some(Self::AiModelsPicking),
+            "ai.models.changed" => Some(Self::AiModelsChanged),
+            "ai.models.installing" => Some(Self::AiModelsInstalling),
             _ => None,
         }
     }
