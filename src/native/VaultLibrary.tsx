@@ -408,6 +408,12 @@ export function VaultLibrary({
   const [detailsFor, setDetailsFor] = useState<{ profileId: string } | null>(
     null,
   );
+  // The reminder's Edit details opens that person's dialog once. Security
+  // mounts again on each visit, so leaving it forgets the request: a later
+  // visit (Back from Audit history, say) does not open the dialog again.
+  useEffect(() => {
+    if (section !== "security") setDetailsFor(null);
+  }, [section]);
   // People whose reminder was put off until the vault next opens.
   const [detailsNotNow, setDetailsNotNow] = useState<string[]>([]);
   const sharedProfileId = snapshot.sharedProfileId;

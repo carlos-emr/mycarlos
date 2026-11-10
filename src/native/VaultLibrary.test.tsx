@@ -1124,6 +1124,27 @@ describe("the reminder to add a person's details (#234)", () => {
     );
   });
 
+  it("opens Edit details once: a later visit to Security does not open it again", async () => {
+    withDetails();
+    fireEvent.click(
+      within(note()!).getByRole("button", { name: humanText("Edit details") }),
+    );
+    const details = () =>
+      screen.queryByRole("form", { name: humanText("Details for FAKE Avery") });
+    await vi.waitFor(() => expect(details()).not.toBeNull());
+    fireEvent.click(
+      within(details()!).getByRole("button", { name: humanText("Cancel") }),
+    );
+    await vi.waitFor(() => expect(details()).toBeNull());
+    // Away to Audit history, and back to Security.
+    fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+    await screen.findByText("There are no history events.");
+    fireEvent.click(screen.getByRole("button", { name: /Back to Security/i }));
+    expect(screen.getByRole("button", { name: "Audit history" })).toBeVisible();
+    expect(details()).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("is not shown once each person has a full name", () => {
     withDetails({
       ...people,
