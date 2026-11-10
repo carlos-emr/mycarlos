@@ -1639,6 +1639,8 @@ interface-history-damaged = Część tej historii jest uszkodzona. Zdarzenia po 
 
 interface-history-damagedAll = Część tej historii jest uszkodzona. Jej zdarzeń nie można zweryfikować, więc nie wyświetlono żadnego z nich.
 
+interface-history-damagedStorageOnly = Część miejsca, w którym zapisano tę historię, jest uszkodzona, ale wszystkie jej zdarzenia zostały zweryfikowane i są wyświetlane.
+
 interface-history-damagedBefore = Część tej historii jest uszkodzona. Zdarzenia sprzed { $date } nie mogą zostać zweryfikowane i nie są wyświetlane.
 
 interface-history-damagedBetween = Część tej historii jest uszkodzona. Zdarzenia między { $from } a { $to } nie mogą zostać zweryfikowane i nie są wyświetlane.
@@ -1952,6 +1954,8 @@ ai-failed = Asystent AI nie zdołał dokończyć. Można spróbować ponownie.
 ai-error-memory = Brakuje teraz wolnej pamięci dla asystenta AI. Można zamknąć inne programy i spróbować ponownie.
 
 ai-error-busy = Model asystenta AI jest właśnie dodawany lub usuwany. Można spróbować ponownie, gdy to się skończy.
+
+ai-error-storage = Nie udało się odczytać modelu asystenta AI z tego komputera. Można spróbować ponownie. Jeśli to się powtarza, można usunąć model w Ustawieniach, w sekcji Asystent AI, i dodać go ponownie.
 
 ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stron, więc w tym podsumowaniu może czegoś brakować.
 
