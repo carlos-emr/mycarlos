@@ -111,7 +111,12 @@ test("links this device to a clinic and asks for approval in one action: a refus
     level: 3,
   });
   await expect(clinic).toBeVisible();
-  await expect(code).toHaveValue("");
+  // Linked: the form leaves the panel for "Link another clinic" (#148),
+  // which opens empty (link-another-clinic.spec.ts), so no code is kept.
+  await expect(code).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: en("portal.linkAnother"), exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(en("portal.errorCodeRejected"), { exact: true }),
   ).toHaveCount(0);
@@ -154,7 +159,9 @@ test("links this device to a clinic and asks for approval in one action: a refus
   expect(await fakeCalls(page, "vault_portal_link")).toEqual([]);
   expect(await fakeCalls(page, "vault_request_device_approval")).toEqual([]);
 
-  // The device code, copied for the clinic's staff.
+  // The device code, copied for the clinic's staff. It waits behind Show
+  // device details (#166).
+  await page.getByText(en("portal.deviceDetailsShow"), { exact: true }).click();
   await page
     .getByRole("button", { name: en("portal.copy"), exact: true })
     .click();
@@ -165,9 +172,18 @@ test("links this device to a clinic and asks for approval in one action: a refus
     FAKE_DEVICE_CODE,
   );
 
-  // Once linked, the library offers the check beside its search.
+  // Once linked, only Shared with me offers the check beside its search.
   await openMyRecords(page);
   await expect(myRecords(page)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: en("portal.check"), exact: true }),
+  ).toHaveCount(0);
+  await sidebar(page)
+    .getByRole("button", {
+      name: en("interface.LibrarySidebar.sharedWithMe"),
+      exact: true,
+    })
+    .click();
   await expect(
     page.getByRole("button", { name: en("portal.check"), exact: true }),
   ).toBeVisible();
@@ -180,6 +196,12 @@ test("Check for new documents brings a clinic's document into Shared with me, an
   await fakeVaultWith(page, { start: "unlocked", portal: "linked" });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
+  await sidebar(page)
+    .getByRole("button", {
+      name: en("interface.LibrarySidebar.sharedWithMe"),
+      exact: true,
+    })
+    .click();
   const check = page.getByRole("button", {
     name: en("portal.check"),
     exact: true,
@@ -211,9 +233,13 @@ test("Check for new documents brings a clinic's document into Shared with me, an
     en("library.source.clinic", { clinic: FAKE_CLINIC }),
   );
 
-  // Back in My records: a second check finds nothing new.
+  // My records has no Check; return to Shared with me for a second check.
   await openMyRecords(page);
   await expect(myRecords(page)).toBeVisible();
+  await expect(check).toHaveCount(0);
+  await sidebar(page)
+    .getByRole("button", { name: shared, exact: true })
+    .click();
   await check.click();
   await expect(
     page.getByText(en("portal.result", { added: 0, refused: 0 }), {

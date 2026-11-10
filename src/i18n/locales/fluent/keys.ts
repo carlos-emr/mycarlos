@@ -188,7 +188,6 @@ export const MESSAGE_KEYS = [
   "interface.VaultLibrary.theyAreInNoOnesRecordsUntil",
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault",
   "interface.VaultLibrary.topLevel",
-  "interface.VaultLibrary.unlockedLockNow",
   "interface.VaultLibrary.working",
   "interface.camera.denied",
   "interface.count.documents",
@@ -293,6 +292,9 @@ export const MESSAGE_KEYS = [
   "library.folder.open",
   "library.folder.rename",
   "library.items",
+  "library.location.documents",
+  "library.location.summary",
+  "library.lock.unlocked",
   "library.noMatch.help",
   "library.noMatch.title",
   "library.rename",
@@ -422,7 +424,6 @@ export const MESSAGE_KEYS = [
   "readingAid.title",
   "readingAid.unavailable",
   "record.kind.document",
-  "record.source.manual",
   "recover.intro",
   "recover.key.format",
   "recover.key.label",
@@ -650,6 +651,10 @@ export const MESSAGE_KEYS = [
   "portal.dateNotRecorded",
   "portal.deviceCode",
   "portal.deviceName",
+  "portal.deviceDetailsShow",
+  "portal.deviceDetailsHide",
+  "portal.earlierShow",
+  "portal.earlierHide",
   "portal.errorAddress",
   "portal.errorCancelled",
   "portal.errorCode",
@@ -702,6 +707,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.created",
   "interface.history.event.deliveryFiled",
   "interface.history.event.deliveryReceiptSettled",
+  "interface.history.event.other",
+  "interface.history.how.personFolder",
   "interface.history.event.deviceApprovalRequestRestarted",
   "interface.history.event.deviceApprovalRequested",
   "interface.history.event.deviceApprovalStatusChanged",
@@ -792,6 +799,19 @@ export const MESSAGE_KEYS = [
   "library.source.manualImport",
   "library.status.unverified",
   "library.status.verified",
+  "portal.approvedByCode",
+  "portal.codeFormat",
+  "portal.codeHint",
+  "portal.codeLabel",
+  "portal.codeLocked",
+  "portal.codeMismatch",
+  "portal.codeNeeded",
+  "portal.codeNotOpen",
+  "portal.codeRefused",
+  "portal.codeSubmit",
+  "portal.codeSubmitted",
+  "portal.linkAnother",
+  "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
   "ai.explain.title",
@@ -810,11 +830,14 @@ export const MESSAGE_KEYS = [
   "ai.preferences.body",
   "ai.preferences.notInstalled",
   "ai.working",
+  "ai.workingLong",
+  "ai.workingFor",
   "ai.summary.ready",
   "ai.explain.ready",
   "ai.failed",
   "ai.error.memory",
   "ai.error.busy",
+  "ai.error.storage",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
   "aiHelper.notice.title",
@@ -957,6 +980,33 @@ export const MESSAGE_KEYS = [
   "noticesStep.done",
   "noticesStep.notNow",
   "notifications.autoNeedsNotices",
+  "ai.settings.subtitle",
+  "ai.model.progressName",
+  "ai.model.progressValue",
+  "ai.model.stillDownloading",
+  "ai.model.stillChecking",
+  "ai.models.title",
+  "ai.models.group",
+  "ai.models.inUse",
+  "ai.models.installed",
+  "ai.models.addedByYou",
+  "ai.models.notDownloaded",
+  "ai.models.downloading",
+  "ai.models.download",
+  "ai.models.remove",
+  "ai.models.help",
+  "ai.models.loading",
+  "ai.models.loadFailed",
+  "ai.models.retry",
+  "ai.models.starting",
+  "ai.models.picking",
+  "ai.models.changed",
+  "ai.models.installing",
+  "personDetails.setup",
+  "personDetails.later",
+  "personDetails.reminder",
+  "personDetails.notNow",
+  "personDetails.notSaved",
   "personDetails.previousTitle",
   "personDetails.previousHelp",
   "personDetails.previousEntry",
@@ -1241,8 +1291,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault":
     "interface-VaultLibrary-thisPhotoIsAlreadyInTheVault",
   "interface.VaultLibrary.topLevel": "interface-VaultLibrary-topLevel",
-  "interface.VaultLibrary.unlockedLockNow":
-    "interface-VaultLibrary-unlockedLockNow",
   "interface.VaultLibrary.working": "interface-VaultLibrary-working",
   "interface.camera.denied": "interface-camera-denied",
   "interface.count.documents": "interface-count-documents",
@@ -1366,6 +1414,9 @@ const FLUENT_IDS_BY_KEY = {
   "library.folder.open": "library-folder-open",
   "library.folder.rename": "library-folder-rename",
   "library.items": "library-items",
+  "library.location.documents": "library-location-documents",
+  "library.location.summary": "library-location-summary",
+  "library.lock.unlocked": "library-lock-unlocked",
   "library.noMatch.help": "library-noMatch-help",
   "library.noMatch.title": "library-noMatch-title",
   "library.rename": "library-rename",
@@ -1495,7 +1546,6 @@ const FLUENT_IDS_BY_KEY = {
   "readingAid.title": "readingAid-title",
   "readingAid.unavailable": "readingAid-unavailable",
   "record.kind.document": "record-kind-document",
-  "record.source.manual": "record-source-manual",
   "recover.intro": "recover-intro",
   "recover.key.format": "recover-key-format",
   "recover.key.label": "recover-key-label",
@@ -1725,6 +1775,10 @@ const FLUENT_IDS_BY_KEY = {
   "portal.dateNotRecorded": "portal-dateNotRecorded",
   "portal.deviceCode": "portal-deviceCode",
   "portal.deviceName": "portal-deviceName",
+  "portal.deviceDetailsShow": "portal-deviceDetailsShow",
+  "portal.deviceDetailsHide": "portal-deviceDetailsHide",
+  "portal.earlierShow": "portal-earlierShow",
+  "portal.earlierHide": "portal-earlierHide",
   "portal.errorAddress": "portal-errorAddress",
   "portal.errorCancelled": "portal-errorCancelled",
   "portal.errorCode": "portal-errorCode",
@@ -1782,6 +1836,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-event-deliveryFiled",
   "interface.history.event.deliveryReceiptSettled":
     "interface-history-event-deliveryReceiptSettled",
+  "interface.history.event.other": "interface-history-event-other",
+  "interface.history.how.personFolder": "interface-history-how-personFolder",
   "interface.history.event.deviceApprovalRequestRestarted":
     "interface-history-event-deviceApprovalRequestRestarted",
   "interface.history.event.deviceApprovalRequested":
@@ -1893,6 +1949,20 @@ const FLUENT_IDS_BY_KEY = {
   "library.source.manualImport": "library-source-manualImport",
   "library.status.unverified": "library-status-unverified",
   "library.status.verified": "library-status-verified",
+  "portal.approvedByCode": "portal-approvedByCode",
+  "portal.codeFormat": "portal-codeFormat",
+  "portal.codeHint": "portal-codeHint",
+  "portal.codeLabel": "portal-codeLabel",
+  "portal.codeLocked": "portal-codeLocked",
+  "portal.codeMismatch": "portal-codeMismatch",
+  "portal.codeNeeded": "portal-codeNeeded",
+  "portal.codeNotOpen": "portal-codeNotOpen",
+  "portal.codeRefused": "portal-codeRefused",
+  "portal.codeSubmit": "portal-codeSubmit",
+  "portal.codeSubmitted": "portal-codeSubmitted",
+  "portal.linkAnother": "portal-linkAnother",
+  "interface.history.damagedStorageOnly":
+    "interface-history-damagedStorageOnly",
   "ai.summary.button": "ai-summary-button",
   "ai.summary.title": "ai-summary-title",
   "ai.explain.title": "ai-explain-title",
@@ -1911,11 +1981,14 @@ const FLUENT_IDS_BY_KEY = {
   "ai.preferences.body": "ai-preferences-body",
   "ai.preferences.notInstalled": "ai-preferences-notInstalled",
   "ai.working": "ai-working",
+  "ai.workingLong": "ai-workingLong",
+  "ai.workingFor": "ai-workingFor",
   "ai.summary.ready": "ai-summary-ready",
   "ai.explain.ready": "ai-explain-ready",
   "ai.failed": "ai-failed",
   "ai.error.memory": "ai-error-memory",
   "ai.error.busy": "ai-error-busy",
+  "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
   "aiHelper.notice.title": "aiHelper-notice-title",
@@ -2117,6 +2190,33 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
   "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
+  "ai.settings.subtitle": "ai-settings-subtitle",
+  "ai.model.progressName": "ai-model-progressName",
+  "ai.model.progressValue": "ai-model-progressValue",
+  "ai.model.stillDownloading": "ai-model-stillDownloading",
+  "ai.model.stillChecking": "ai-model-stillChecking",
+  "ai.models.title": "ai-models-title",
+  "ai.models.group": "ai-models-group",
+  "ai.models.inUse": "ai-models-inUse",
+  "ai.models.installed": "ai-models-installed",
+  "ai.models.addedByYou": "ai-models-addedByYou",
+  "ai.models.notDownloaded": "ai-models-notDownloaded",
+  "ai.models.downloading": "ai-models-downloading",
+  "ai.models.download": "ai-models-download",
+  "ai.models.remove": "ai-models-remove",
+  "ai.models.help": "ai-models-help",
+  "ai.models.loading": "ai-models-loading",
+  "ai.models.loadFailed": "ai-models-loadFailed",
+  "ai.models.retry": "ai-models-retry",
+  "ai.models.starting": "ai-models-starting",
+  "ai.models.picking": "ai-models-picking",
+  "ai.models.changed": "ai-models-changed",
+  "ai.models.installing": "ai-models-installing",
+  "personDetails.setup": "personDetails-setup",
+  "personDetails.later": "personDetails-later",
+  "personDetails.reminder": "personDetails-reminder",
+  "personDetails.notNow": "personDetails-notNow",
+  "personDetails.notSaved": "personDetails-notSaved",
   "personDetails.previousTitle": "personDetails-previousTitle",
   "personDetails.previousHelp": "personDetails-previousHelp",
   "personDetails.previousEntry": "personDetails-previousEntry",
@@ -2329,7 +2429,6 @@ export interface MessageArgsByKey {
   "interface.VaultLibrary.theyAreInNoOnesRecordsUntil": undefined;
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault": undefined;
   "interface.VaultLibrary.topLevel": undefined;
-  "interface.VaultLibrary.unlockedLockNow": undefined;
   "interface.VaultLibrary.working": undefined;
   "interface.camera.denied": { help: FluentArgument };
   "interface.count.documents": { count: FluentArgument };
@@ -2467,6 +2566,16 @@ export interface MessageArgsByKey {
   "library.folder.open": { name: FluentArgument };
   "library.folder.rename": { name: FluentArgument };
   "library.items": { count: FluentArgument };
+  "library.location.documents": {
+    documents: FluentArgument;
+    place: FluentArgument;
+  };
+  "library.location.summary": {
+    documents: FluentArgument;
+    folders: FluentArgument;
+    place: FluentArgument;
+  };
+  "library.lock.unlocked": undefined;
   "library.noMatch.help": undefined;
   "library.noMatch.title": undefined;
   "library.rename": undefined;
@@ -2609,7 +2718,6 @@ export interface MessageArgsByKey {
   "readingAid.title": undefined;
   "readingAid.unavailable": undefined;
   "record.kind.document": undefined;
-  "record.source.manual": undefined;
   "recover.intro": undefined;
   "recover.key.format": undefined;
   "recover.key.label": undefined;
@@ -2857,6 +2965,10 @@ export interface MessageArgsByKey {
   "portal.dateNotRecorded": undefined;
   "portal.deviceCode": undefined;
   "portal.deviceName": undefined;
+  "portal.deviceDetailsShow": undefined;
+  "portal.deviceDetailsHide": undefined;
+  "portal.earlierShow": { count: FluentArgument };
+  "portal.earlierHide": undefined;
   "portal.errorAddress": undefined;
   "portal.errorCancelled": undefined;
   "portal.errorCode": undefined;
@@ -2912,6 +3024,8 @@ export interface MessageArgsByKey {
   "interface.history.event.created": undefined;
   "interface.history.event.deliveryFiled": undefined;
   "interface.history.event.deliveryReceiptSettled": undefined;
+  "interface.history.event.other": undefined;
+  "interface.history.how.personFolder": undefined;
   "interface.history.event.deviceApprovalRequestRestarted": undefined;
   "interface.history.event.deviceApprovalRequested": undefined;
   "interface.history.event.deviceApprovalStatusChanged": undefined;
@@ -3002,6 +3116,19 @@ export interface MessageArgsByKey {
   "library.source.manualImport": undefined;
   "library.status.unverified": undefined;
   "library.status.verified": undefined;
+  "portal.approvedByCode": undefined;
+  "portal.codeFormat": undefined;
+  "portal.codeHint": undefined;
+  "portal.codeLabel": undefined;
+  "portal.codeLocked": undefined;
+  "portal.codeMismatch": undefined;
+  "portal.codeNeeded": undefined;
+  "portal.codeNotOpen": undefined;
+  "portal.codeRefused": undefined;
+  "portal.codeSubmit": undefined;
+  "portal.codeSubmitted": undefined;
+  "portal.linkAnother": undefined;
+  "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;
   "ai.explain.title": undefined;
@@ -3024,11 +3151,14 @@ export interface MessageArgsByKey {
   "ai.preferences.body": undefined;
   "ai.preferences.notInstalled": undefined;
   "ai.working": undefined;
+  "ai.workingLong": undefined;
+  "ai.workingFor": { minutes: FluentArgument };
   "ai.summary.ready": undefined;
   "ai.explain.ready": undefined;
   "ai.failed": undefined;
   "ai.error.memory": undefined;
   "ai.error.busy": undefined;
+  "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
   "aiHelper.notice.title": undefined;
@@ -3183,6 +3313,37 @@ export interface MessageArgsByKey {
   "noticesStep.done": undefined;
   "noticesStep.notNow": undefined;
   "notifications.autoNeedsNotices": undefined;
+  "ai.settings.subtitle": undefined;
+  "ai.model.progressName": undefined;
+  "ai.model.progressValue": {
+    done: FluentArgument;
+    percent: FluentArgument;
+    total: FluentArgument;
+  };
+  "ai.model.stillDownloading": undefined;
+  "ai.model.stillChecking": undefined;
+  "ai.models.title": undefined;
+  "ai.models.group": undefined;
+  "ai.models.inUse": undefined;
+  "ai.models.installed": undefined;
+  "ai.models.addedByYou": undefined;
+  "ai.models.notDownloaded": undefined;
+  "ai.models.downloading": undefined;
+  "ai.models.download": undefined;
+  "ai.models.remove": undefined;
+  "ai.models.help": undefined;
+  "ai.models.loading": undefined;
+  "ai.models.loadFailed": undefined;
+  "ai.models.retry": undefined;
+  "ai.models.starting": undefined;
+  "ai.models.picking": undefined;
+  "ai.models.changed": undefined;
+  "ai.models.installing": undefined;
+  "personDetails.setup": undefined;
+  "personDetails.later": undefined;
+  "personDetails.reminder": { name: FluentArgument };
+  "personDetails.notNow": undefined;
+  "personDetails.notSaved": undefined;
   "personDetails.previousTitle": undefined;
   "personDetails.previousHelp": undefined;
   "personDetails.previousEntry": { number: FluentArgument };

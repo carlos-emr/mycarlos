@@ -37,11 +37,15 @@ export async function checkClinicDocuments({
   const session = waits?.session();
   try {
     const result = await bridge.checkDocuments!();
-    for (const issue of result.issues ?? [])
+    for (const issue of result.issues ?? []) {
       if (isRateLimited(issue)) {
         const asked = links.find((link) => link.id === issue.linkId);
         if (asked) waits?.wait(asked.portalBase, undefined, session);
       }
+      // Clinic documents then lists the device with the earlier attempts.
+      if (issue.code === "portal_device_removed")
+        waits?.deviceRemoved(issue.linkId, session);
+    }
     return { result, vault: await refresh() };
   } catch (error) {
     await refresh();

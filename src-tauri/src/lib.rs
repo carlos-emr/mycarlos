@@ -314,6 +314,10 @@ impl From<VaultError> for PublicText {
                     code: "approval_cancelled",
                     message_key: "portal.approvalCancelled",
                 },
+                _ if reason == Some(portal_approval::ApprovalReason::CodeAttempts) => Self {
+                    code: "approval_code_locked",
+                    message_key: "portal.codeLocked",
+                },
                 _ if reason.is_some_and(|r| r.needs_clinic()) => Self {
                     code: "approval_contact_clinic",
                     message_key: "portal.approvalContact",
@@ -338,6 +342,18 @@ impl From<VaultError> for PublicText {
             VaultError::ApprovalStillOpen => Self {
                 code: "approval_still_open",
                 message_key: "portal.approvalStillOpen",
+            },
+            VaultError::ApprovalCodeMismatch => Self {
+                code: "approval_code_mismatch",
+                message_key: "portal.codeMismatch",
+            },
+            VaultError::ApprovalCodeLocked => Self {
+                code: "approval_code_locked",
+                message_key: "portal.codeLocked",
+            },
+            VaultError::ApprovalCodeNotOpen => Self {
+                code: "approval_code_not_open",
+                message_key: "portal.codeNotOpen",
             },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
@@ -1781,6 +1797,111 @@ impl From<local_model::ModelError> for ModelFailure {
 struct ModelAddProgress {
     done: u64,
     total: u64,
+    /// Catalog row for a download; picked-file checks stay global.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
+}
+
+/// The model add or download running now, and how far it is (#275). A row
+/// that opens again while one runs asks for it (`ai_model_add_active`): it
+/// did not hear the progress sent while it was away.
+#[derive(Default)]
+struct ModelAddActive {
+    now: Mutex<Option<ModelAddNow>>,
+    // Store operations release their lock before the command reports completion.
+    // Keep the next command out until that completion has been emitted too.
+    admission: Mutex<()>,
+}
+
+#[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ModelAddNow {
+    /// `download` for a catalog model's download and its check; `check`
+    /// for a picked file's.
+    kind: &'static str,
+    done: u64,
+    total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    index: Option<usize>,
+}
+
+impl ModelAddActive {
+    fn get(&self) -> Option<ModelAddNow> {
+        *self.now.lock().unwrap_or_else(|e| e.into_inner())
+    }
+    fn set(&self, now: Option<ModelAddNow>) {
+        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = now;
+    }
+
+    /// Called inside the blocking worker: no admission guard crosses an await.
+    /// Both progress cleanup and completion emission belong to this admission.
+    fn run(
+        &self,
+        kind: &'static str,
+        work: impl FnOnce(&mut ModelAddReport<'_>) -> ModelAddOutcome,
+        ended: impl FnOnce(&ModelAddOutcome),
+    ) -> ModelAddOutcome {
+        let _admission = match self.admission.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return ModelAddOutcome::of(local_model::ModelError::Busy);
+            }
+        };
+        let mut report = ModelAddReport::new(self, kind);
+        let outcome = work(&mut report);
+        let reported = report.reported;
+        drop(report);
+        if reported {
+            ended(&outcome);
+        }
+        outcome
+    }
+}
+
+/// One add's report into `ModelAddActive`. Only a run that has reported
+/// progress clears it when it ends, so a click refused as busy never touches
+/// the run in progress.
+struct ModelAddReport<'a> {
+    active: &'a ModelAddActive,
+    kind: &'static str,
+    index: Option<usize>,
+    reported: bool,
+}
+
+impl<'a> ModelAddReport<'a> {
+    fn new(active: &'a ModelAddActive, kind: &'static str) -> Self {
+        Self {
+            active,
+            kind,
+            index: None,
+            reported: false,
+        }
+    }
+    fn progress(&mut self, done: u64, total: u64) {
+        self.reported = true;
+        self.active.set(Some(ModelAddNow {
+            kind: self.kind,
+            done,
+            total,
+            index: self.index,
+        }));
+    }
+}
+
+impl Drop for ModelAddReport<'_> {
+    fn drop(&mut self) {
+        if self.reported {
+            self.active.set(None);
+        }
+    }
+}
+
+/// The model add or download running now, if any, and how far it is
+/// (#275), for a row that opens while one runs.
+#[tauri::command]
+fn ai_model_add_active(active: State<'_, Arc<ModelAddActive>>) -> Option<ModelAddNow> {
+    active.get()
 }
 
 /// How an add ended, always as a value: `outcome` is `added` (with the new
@@ -1818,6 +1939,7 @@ async fn ai_model_add_picked(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
+    active: State<'_, Arc<ModelAddActive>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<ModelAddOutcome> {
     use tauri::Emitter;
@@ -1848,29 +1970,45 @@ async fn ai_model_add_picked(
         return Ok(ModelAddOutcome::of(local_model::ModelError::Unreadable));
     };
     let models = Arc::clone(models.inner());
-    let worker = Arc::clone(&models);
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        // About every 8 MiB, and at the start and the end.
-        let mut shown = u64::MAX;
-        worker.add(&source, &local_model::Here, |done, total| {
-            let step = done / (8 * 1024 * 1024);
-            if done == 0 || done == total || step != shown {
-                shown = step;
-                let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
-            }
-        })
+    let active = Arc::clone(active.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        active.run(
+            "check",
+            |report| {
+                // About every 8 MiB, and at the start and the end.
+                let mut shown = u64::MAX;
+                let result = models.add(&source, &local_model::Here, |done, total| {
+                    let step = done / (8 * 1024 * 1024);
+                    if done == 0 || done == total || step != shown {
+                        shown = step;
+                        report.progress(done, total);
+                        let _ = app.emit(
+                            "ai-model-add-progress",
+                            ModelAddProgress {
+                                done,
+                                total,
+                                index: None,
+                            },
+                        );
+                    }
+                });
+                match result {
+                    Ok(_) => ModelAddOutcome {
+                        outcome: "added",
+                        status: Some(models.status(&local_model::Here)),
+                        reason: None,
+                    },
+                    Err(error) => ModelAddOutcome::of(error),
+                }
+            },
+            |ended| {
+                // For a row that opened again meanwhile: how this run ended.
+                let _ = app.emit("ai-model-add-ended", ended);
+            },
+        )
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?;
-    Ok(match result {
-        Ok(_) => ModelAddOutcome {
-            outcome: "added",
-            status: Some(models.status(&local_model::Here)),
-            reason: None,
-        },
-        Err(local_model::ModelError::Cancelled) => outcome("cancelled"),
-        Err(error) => ModelAddOutcome::of(error),
-    })
+    .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
 /// Downloads a model (catalog entry `index`; the default, the first, without one) from its
@@ -1883,43 +2021,57 @@ async fn ai_model_download(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     models: State<'_, Arc<local_model::Store>>,
+    active: State<'_, Arc<ModelAddActive>>,
     request: Option<ModelIndexRequest>,
 ) -> CommandResult<ModelAddOutcome> {
     let index = request.map_or(0, |request| request.index);
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
     let models = Arc::clone(models.inner());
-    let worker = Arc::clone(&models);
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut shown = u64::MAX;
-        worker.download(
-            index,
-            &model_download::Https,
-            &local_model::Here,
-            |done, total| {
-                let step = done / (8 * 1024 * 1024);
-                if done == 0 || done == total || step != shown {
-                    shown = step;
-                    let _ = app.emit("ai-model-add-progress", ModelAddProgress { done, total });
+    let active = Arc::clone(active.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        active.run(
+            "download",
+            |report| {
+                report.index = Some(index);
+                let mut shown = u64::MAX;
+                let result = models.download(
+                    index,
+                    &model_download::Https,
+                    &local_model::Here,
+                    |done, total| {
+                        let step = done / (8 * 1024 * 1024);
+                        if done == 0 || done == total || step != shown {
+                            shown = step;
+                            report.progress(done, total);
+                            let _ = app.emit(
+                                "ai-model-add-progress",
+                                ModelAddProgress {
+                                    done,
+                                    total,
+                                    index: Some(index),
+                                },
+                            );
+                        }
+                    },
+                );
+                match result {
+                    Ok(_) => ModelAddOutcome {
+                        outcome: "added",
+                        status: Some(models.status(&local_model::Here)),
+                        reason: None,
+                    },
+                    Err(error) => ModelAddOutcome::of(error),
                 }
+            },
+            |ended| {
+                // For a row that opened again meanwhile: how this run ended.
+                let _ = app.emit("ai-model-add-ended", ended);
             },
         )
     })
     .await
-    .map_err(|_| PublicError::from(VaultError::Storage))?;
-    Ok(match result {
-        Ok(_) => ModelAddOutcome {
-            outcome: "added",
-            status: Some(models.status(&local_model::Here)),
-            reason: None,
-        },
-        Err(local_model::ModelError::Cancelled) => ModelAddOutcome {
-            outcome: "cancelled",
-            status: None,
-            reason: None,
-        },
-        Err(error) => ModelAddOutcome::of(error),
-    })
+    .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
 /// Stops the add in progress; it ends with the failure `cancelled` and
@@ -2193,6 +2345,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
         AiError::Memory => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
+        AiError::Storage => "ai.error.storage",
         AiError::Cancelled | AiError::Failed => "ai.failed",
     };
     PublicError {
@@ -2226,6 +2379,8 @@ struct AuditHistory {
     checked_until_ms: Option<u64>,
     /// The time of the first later entry, when there is one.
     checked_from_ms: Option<u64>,
+    /// Every event the manifest pins is shown, even when part of the storage is damaged.
+    every_event_shown: bool,
 }
 
 impl From<vault::HistoryView> for AuditHistory {
@@ -2243,6 +2398,7 @@ impl From<vault::HistoryView> for AuditHistory {
             complete: view.complete,
             checked_until_ms,
             checked_from_ms,
+            every_event_shown: view.every_event_shown,
         }
     }
 }
@@ -2537,6 +2693,8 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 /// none do). `complete` says whether `entries` are the whole chain. When not, `checkedUntilMs` is
 /// the time of the last of `entries` and `checkedFromMs` the time of the first of `laterEntries`
 /// (each null when there is none), so the screen can say which events can't be checked.
+/// `everyEventShown` says the shown entries are still every event the manifest pins (only
+/// pieces without events are damaged), so the screen says so and marks no gap (#120 C1).
 #[tauri::command]
 async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
     audit_history_result(run_blocking(store.inner(), VaultStore::history_view).await)
@@ -2715,6 +2873,49 @@ async fn vault_refresh_device_approval(
             recovery: check.recovery,
         })
         .map_err(Into::into)
+}
+
+/// Why a code the patient typed was not taken (clinic code v1). A code that
+/// is not 9 digits, and a refusal by the portal, are said as such; the rest
+/// as a status check says them.
+fn approval_code_issue(error: VaultError) -> PublicError {
+    use portal_link::LinkError;
+    let (code, message_key) = match &error {
+        VaultError::Invalid => ("approval_code_format", "portal.codeFormat"),
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => {
+            ("approval_code_refused", "portal.codeRefused")
+        }
+        _ => return approval_check_issue(error),
+    };
+    PublicError {
+        code,
+        message_key,
+        record_id: None,
+        note_key: None,
+        retry_after_ms: None,
+    }
+}
+
+/// Takes the code a clinic emailed for a linked device's open request
+/// (clinic code v1). It is checked natively and sent to the portal only if it
+/// matches this clinic; it is never saved or logged, and the typed text is
+/// wiped here once used.
+#[tauri::command]
+async fn vault_submit_approval_code(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+    mut code: String,
+) -> CommandResult<()> {
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = store.submit_approval_code(link_id, &code, session);
+        code.zeroize();
+        result
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(approval_code_issue)
 }
 
 #[tauri::command]
@@ -4400,218 +4601,6 @@ async fn vault_export_text_picked(
     })
 }
 
-#[cfg(test)]
-mod historical_identifier_export_tests {
-    use super::*;
-
-    #[test]
-    fn profile_details_ipc_distinguishes_omission_clear_and_invalid_null() {
-        let profile = Uuid::new_v4();
-        let request = |details| serde_json::json!({"profileId":profile,"details":details,"today":"2026-11-09"});
-        let omitted: ProfileDetailsRequest =
-            serde_json::from_value(request(serde_json::json!({}))).unwrap();
-        assert!(omitted.details.previous_full_names.is_none());
-        let cleared: ProfileDetailsRequest =
-            serde_json::from_value(request(serde_json::json!({"previousFullNames":[]}))).unwrap();
-        assert_eq!(cleared.details.previous_full_names, Some(vec![]));
-        assert!(serde_json::from_value::<ProfileDetailsRequest>(request(
-            serde_json::json!({"previousFullNames":null})
-        ))
-        .is_err());
-    }
-
-    #[test]
-    fn native_text_export_refuses_a_former_name_and_unverifiable_history_without_writing() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("FAKE-vault");
-        let destination = temp.path().join("FAKE-export.txt");
-        let store = Arc::new(VaultStore::new(root.clone()));
-        store
-            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
-            .unwrap();
-        let profile = store.snapshot().unwrap().profiles[0].id;
-        let record = store
-            .import(
-                profile,
-                vec![],
-                vec![vault::ImportSource {
-                    display_name: "FAKE.pdf".to_owned(),
-                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
-                }],
-                2,
-            )
-            .unwrap()
-            .imported[0];
-        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
-        let picks = Arc::new(PendingPicks::default());
-        let ticket = picks.store_text(
-            picks.session(),
-            TextTicket {
-                record_id: record,
-                cut_after_page: None,
-                truncated: false,
-                pages_missing: false,
-                last_index: Some(0),
-                pages_digest: pages_digest([(0, "Zorvana")]),
-            },
-        );
-        let pick_id = picks.store_text_export(
-            picks.session(),
-            record,
-            tauri_plugin_fs::FilePath::Path(destination.clone()),
-        );
-        let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
-            .manage(picks)
-            .build(production_context())
-            .unwrap();
-        let request = || TextExportPickedRequest {
-            record_id: record,
-            ticket,
-            pick_id,
-            text: "Zorvana".to_owned(),
-        };
-        // The current label alone must not reject the unique former token.
-        let current_only = vec!["FAKE Neralis".to_owned()];
-        assert!(text_recheck::identifier_hits("Zorvana", &current_only, &[]).is_empty());
-        assert!(!text_recheck::identifier_hits("Neralis", &current_only, &[]).is_empty());
-        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
-            app.state(),
-            app.state(),
-            request(),
-            None,
-        ))
-        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
-        assert!(!outcome.saved);
-        assert_eq!(outcome.hits.len(), 1);
-        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 7));
-        assert!(!destination.exists());
-
-        // Only this disposable synthetic vault is damaged. The audit view may
-        // retain checked fragments; a privacy check must not certify the gap.
-        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
-            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
-        }
-        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
-            app.state(),
-            app.state(),
-            request(),
-            None,
-        ))
-        .is_err());
-        assert!(!destination.exists());
-    }
-
-    #[test]
-    fn native_text_export_refuses_a_previous_full_name_and_unverifiable_history_without_writing() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("FAKE-vault");
-        let destination = temp.path().join("FAKE-export.txt");
-        let store = Arc::new(VaultStore::new(root.clone()));
-        store
-            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
-            .unwrap();
-        let profile = store.snapshot().unwrap().profiles[0].id;
-        let record = store
-            .import(
-                profile,
-                vec![],
-                vec![vault::ImportSource {
-                    display_name: "FAKE.pdf".to_owned(),
-                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
-                }],
-                2,
-            )
-            .unwrap()
-            .imported[0];
-        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
-        // The baseline uses every authoritative current, historical and delivery
-        // source. This canary must depend only on the explicit previous-name list.
-        let baseline = store.known_identifiers(record).unwrap();
-        assert!(
-            text_recheck::identifier_hits("Velorina", &baseline.names, &baseline.birth_dates)
-                .is_empty()
-        );
-        assert!(
-            !text_recheck::identifier_hits("Neralis", &baseline.names, &baseline.birth_dates)
-                .is_empty()
-        );
-        let now = 1_792_713_600_000;
-        store
-            .update_profile_details(
-                profile,
-                vault::ProfileDetails {
-                    previous_full_names: Some(vec!["FAKE Velorina Tersovan".into()]),
-                    ..Default::default()
-                },
-                &vault::utc_date_text(now),
-                now,
-            )
-            .unwrap();
-        let picks = Arc::new(PendingPicks::default());
-        let ticket = picks.store_text(
-            picks.session(),
-            TextTicket {
-                record_id: record,
-                cut_after_page: None,
-                truncated: false,
-                pages_missing: false,
-                last_index: Some(0),
-                pages_digest: pages_digest([(0, "Velorina")]),
-            },
-        );
-        let pick_id = picks.store_text_export(
-            picks.session(),
-            record,
-            tauri_plugin_fs::FilePath::Path(destination.clone()),
-        );
-        let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
-            .manage(picks)
-            .build(production_context())
-            .unwrap();
-        let request = || TextExportPickedRequest {
-            record_id: record,
-            ticket,
-            pick_id,
-            text: "Velorina".to_owned(),
-        };
-        let with_previous = store.known_identifiers(record).unwrap();
-        let hits = text_recheck::identifier_hits(
-            "Velorina",
-            &with_previous.names,
-            &with_previous.birth_dates,
-        );
-        assert_eq!(hits.len(), 1);
-        assert_eq!((hits[0].start, hits[0].end), (0, 8));
-        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
-            app.state(),
-            app.state(),
-            request(),
-            None,
-        ))
-        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
-        assert!(!outcome.saved);
-        assert_eq!(outcome.hits.len(), 1);
-        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 8));
-        assert!(!destination.exists());
-
-        // Only this disposable synthetic vault is damaged. The audit view may
-        // retain checked fragments; a privacy check must not certify the gap.
-        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
-            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
-        }
-        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
-            app.state(),
-            app.state(),
-            request(),
-            None,
-        ))
-        .is_err());
-        assert!(!destination.exists());
-    }
-}
-
 /// Moves files to another person, into the folders chosen. A file the
 /// person already has stays where it is and is named in the outcome.
 #[tauri::command]
@@ -5178,6 +5167,7 @@ pub fn run() {
                 Box::new(local_model::SystemMemory),
             );
             app.manage(models);
+            app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
             app.manage(Arc::new(ReceivedFiles::default()));
             // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
@@ -5205,6 +5195,7 @@ pub fn run() {
             ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,
+            ai_model_add_active,
             ai_model_download,
             ai_model_remove,
             ai_summarize,
@@ -5229,6 +5220,7 @@ pub fn run() {
             vault_request_device_approval,
             vault_restart_device_approval,
             vault_refresh_device_approval,
+            vault_submit_approval_code,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
@@ -6013,6 +6005,7 @@ mod tests {
             (AiError::Damaged, "aiDamaged", "isn't on this computer"),
             (AiError::Memory, "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
+            (AiError::Storage, "aiStorage", "could not be read"),
             (AiError::Cancelled, "aiCancelled", "could not finish"),
             (AiError::Failed, "aiFailed", "could not finish"),
         ] {
@@ -6176,7 +6169,15 @@ mod tests {
                 .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .collect();
         files.sort();
-        assert_eq!(files, ["appearance.json", "default.json", "zoom.json"]);
+        assert_eq!(
+            files,
+            [
+                "appearance.json",
+                "default.json",
+                "events.json",
+                "zoom.json"
+            ]
+        );
     }
 
     #[test]
@@ -6195,6 +6196,74 @@ mod tests {
             appearance["permissions"],
             serde_json::json!(["core:window:allow-set-theme"])
         );
+    }
+
+    #[test]
+    fn the_page_may_listen_for_the_apps_events_and_nothing_wider() {
+        // The AI helper follows a model download through listen()
+        // ("ai-model-add-progress", "ai-model-add-ended"). Tauri refuses listen()
+        // unless a capability grants it, and a refused listen showed no progress
+        // bar in the built app while every mocked test passed. So: the grant is
+        // there whenever a page file listens, it is listen and unlisten only (the
+        // page never emits), and only the main window on a computer has it.
+        let events: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/events.json")).unwrap();
+        assert_eq!(events["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            events["platforms"],
+            serde_json::json!(["windows", "macOS", "linux"])
+        );
+        assert_eq!(
+            events["permissions"],
+            serde_json::json!(["core:event:allow-listen", "core:event:allow-unlisten"])
+        );
+        fn page_files(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    page_files(&path, found);
+                } else if path.extension().is_some_and(|e| e == "ts" || e == "tsx")
+                    && !path.to_string_lossy().contains(".test.")
+                {
+                    found.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        page_files(
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../src")),
+            &mut files,
+        );
+        let listening: Vec<_> = files
+            .iter()
+            .filter(|path| {
+                std::fs::read_to_string(path)
+                    .unwrap()
+                    .contains("\"@tauri-apps/api/event\"")
+            })
+            .collect();
+        // The grant is only for pages that listen; without one it must go.
+        assert!(!listening.is_empty());
+        // No capability file grants emitting or the whole event or core set.
+        for name in [
+            "appearance.json",
+            "default.json",
+            "events.json",
+            "zoom.json",
+        ] {
+            let text = std::fs::read_to_string(format!(
+                "{}/capabilities/{name}",
+                env!("CARGO_MANIFEST_DIR")
+            ))
+            .unwrap();
+            for wider in [
+                "core:default",
+                "core:event:default",
+                "core:event:allow-emit",
+            ] {
+                assert!(!text.contains(wider), "{name} grants {wider}");
+            }
+        }
     }
 
     #[test]
@@ -6575,10 +6644,7 @@ mod tests {
                 Ok(())
             },
         ));
-        assert!(matches!(
-            result,
-            Ok(()) | Err(model_runtime::AiError::Cancelled)
-        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
         assert!(
             !announced.load(Ordering::SeqCst),
             "old watch must not announce into a new session"
@@ -6618,10 +6684,7 @@ mod tests {
                 Ok(())
             },
         ));
-        assert!(matches!(
-            result,
-            Ok(()) | Err(model_runtime::AiError::Cancelled)
-        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
     }
 
     #[test]
@@ -7053,6 +7116,185 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_model_add_report_clears_only_the_run_it_reported() {
+        let active = Arc::new(ModelAddActive::default());
+        let mut running = ModelAddReport::new(&active, "download");
+        running.progress(5, 10);
+        // A second click, refused as busy before any progress, leaves it be.
+        drop(ModelAddReport::new(&active, "download"));
+        assert_eq!(
+            active.get(),
+            Some(ModelAddNow {
+                kind: "download",
+                done: 5,
+                index: None,
+                total: 10
+            })
+        );
+        drop(running);
+        assert_eq!(active.get(), None);
+    }
+
+    #[test]
+    fn model_selection_accepts_only_an_index_without_paths_or_unknown_fields() {
+        let chosen: ModelIndexRequest =
+            serde_json::from_value(serde_json::json!({"index": 1})).unwrap();
+        assert_eq!(chosen.index, 1);
+        for value in [
+            serde_json::json!({"index": -1}),
+            serde_json::json!({"index": 0.5}),
+            serde_json::json!({"index": "1"}),
+            serde_json::json!({"path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "sha256": "arbitrary"}),
+        ] {
+            assert!(serde_json::from_value::<ModelIndexRequest>(value).is_err());
+        }
+    }
+
+    #[test]
+    fn model_add_metadata_keeps_the_download_row_but_picker_checks_stay_global() {
+        let active = ModelAddActive::default();
+        let mut report = ModelAddReport::new(&active, "download");
+        report.index = Some(1);
+        report.progress(5, 10);
+        let snapshot = active.get().unwrap();
+        assert_eq!(snapshot.index, Some(1));
+        let encoded = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(encoded["index"], 1);
+        assert_eq!(encoded["done"], 5);
+        drop(ModelAddReport::new(&active, "check"));
+        assert_eq!(active.get(), Some(snapshot));
+        drop(report);
+        assert_eq!(active.get(), None);
+
+        let mut picked = ModelAddReport::new(&active, "check");
+        picked.progress(2, 20);
+        let check = serde_json::to_value(active.get().unwrap()).unwrap();
+        assert!(check.get("index").is_none());
+        let legacy = serde_json::to_value(ModelAddProgress {
+            done: 2,
+            total: 20,
+            index: None,
+        })
+        .unwrap();
+        assert_eq!(legacy, serde_json::json!({"done": 2, "total": 20}));
+        let indexed = serde_json::to_value(ModelAddProgress {
+            done: 5,
+            total: 10,
+            index: Some(1),
+        })
+        .unwrap();
+        assert_eq!(
+            indexed,
+            serde_json::json!({"done": 5, "total": 10, "index": 1})
+        );
+    }
+
+    #[test]
+    fn model_add_admission_stays_held_until_completion_is_emitted() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let active = Arc::new(ModelAddActive::default());
+        let (progress_tx, progress_rx) = mpsc::channel();
+        let (finish_work_tx, finish_work_rx) = mpsc::channel();
+        let (ending_tx, ending_rx) = mpsc::channel();
+        let (finish_emit_tx, finish_emit_rx) = mpsc::channel();
+        let worker_active = Arc::clone(&active);
+        let worker = std::thread::spawn(move || {
+            worker_active.run(
+                "download",
+                |report| {
+                    report.progress(5, 10);
+                    progress_tx.send(()).unwrap();
+                    finish_work_rx
+                        .recv_timeout(Duration::from_secs(10))
+                        .unwrap();
+                    ModelAddOutcome::of(local_model::ModelError::Network)
+                },
+                |ended| {
+                    assert_eq!(ended.outcome, "network");
+                    // Store::download has returned and the report has dropped,
+                    // but the old completion has not finished being emitted.
+                    assert_eq!(worker_active.get(), None);
+                    ending_tx.send(()).unwrap();
+                    finish_emit_rx
+                        .recv_timeout(Duration::from_secs(10))
+                        .unwrap();
+                },
+            )
+        });
+
+        progress_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        let progress = active.get();
+        assert_eq!(
+            active
+                .run(
+                    "check",
+                    |_| panic!("a Busy attempt must not start work or publish progress"),
+                    |_| panic!("a Busy attempt must not emit completion"),
+                )
+                .outcome,
+            "busy"
+        );
+        assert_eq!(active.get(), progress);
+
+        finish_work_tx.send(()).unwrap();
+        ending_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(
+            active
+                .run(
+                    "check",
+                    |_| panic!("the old completion must be emitted before a new add"),
+                    |_| panic!("a Busy attempt must not emit completion"),
+                )
+                .outcome,
+            "busy"
+        );
+        assert_eq!(active.get(), None);
+        finish_emit_tx.send(()).unwrap();
+        assert_eq!(worker.join().unwrap().outcome, "network");
+
+        let mut completed = false;
+        let next = active.run(
+            "check",
+            |report| {
+                report.progress(2, 20);
+                assert_eq!(
+                    active.get(),
+                    Some(ModelAddNow {
+                        kind: "check",
+                        index: None,
+                        done: 2,
+                        total: 20,
+                    })
+                );
+                ModelAddOutcome::of(local_model::ModelError::Cancelled)
+            },
+            |ended| {
+                assert_eq!(active.get(), None);
+                assert_eq!(ended.outcome, "cancelled");
+                completed = true;
+            },
+        );
+        assert_eq!(next.outcome, "cancelled");
+        assert!(completed);
+    }
+
+    #[test]
+    fn model_add_refused_before_progress_emits_no_completion() {
+        let active = ModelAddActive::default();
+        let outcome = active.run(
+            "download",
+            |_| ModelAddOutcome::of(local_model::ModelError::Busy),
+            |_| panic!("a store refusal before progress must not emit completion"),
+        );
+        assert_eq!(outcome.outcome, "busy");
+        assert_eq!(active.get(), None);
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(64))]
 
@@ -7085,6 +7327,218 @@ mod tests {
             let _ = serde_json::from_slice::<HideUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
+    }
+}
+
+#[cfg(test)]
+mod historical_identifier_export_tests {
+    use super::*;
+
+    #[test]
+    fn native_text_export_refuses_a_former_name_and_unverifiable_history_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                pages_digest: pages_digest([(0, "Zorvana")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let request = || TextExportPickedRequest {
+            record_id: record,
+            ticket,
+            pick_id,
+            text: "Zorvana".to_owned(),
+        };
+        // The current label alone must not reject the unique former token.
+        let current_only = vec!["FAKE Neralis".to_owned()];
+        assert!(text_recheck::identifier_hits("Zorvana", &current_only, &[]).is_empty());
+        assert!(!text_recheck::identifier_hits("Neralis", &current_only, &[]).is_empty());
+        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
+        assert!(!outcome.saved);
+        assert_eq!(outcome.hits.len(), 1);
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 7));
+        assert!(!destination.exists());
+
+        // Only this disposable synthetic vault is damaged. The audit view may
+        // retain checked fragments; a privacy check must not certify the gap.
+        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .is_err());
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn profile_details_ipc_distinguishes_omission_clear_and_invalid_null() {
+        let profile = Uuid::new_v4();
+        let request = |details| serde_json::json!({"profileId":profile,"details":details,"today":"2026-11-09"});
+        let omitted: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({}))).unwrap();
+        assert!(omitted.details.previous_full_names.is_none());
+        let cleared: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({"previousFullNames":[]}))).unwrap();
+        assert_eq!(cleared.details.previous_full_names, Some(vec![]));
+        assert!(serde_json::from_value::<ProfileDetailsRequest>(request(
+            serde_json::json!({"previousFullNames":null})
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn native_text_export_refuses_a_previous_full_name_and_unverifiable_history_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        // The baseline uses every authoritative current, historical and delivery
+        // source. This canary must depend only on the explicit previous-name list.
+        let baseline = store.known_identifiers(record).unwrap();
+        assert!(
+            text_recheck::identifier_hits("Velorina", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        assert!(
+            !text_recheck::identifier_hits("Neralis", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        let now = 1_792_713_600_000;
+        store
+            .update_profile_details(
+                profile,
+                vault::ProfileDetails {
+                    previous_full_names: Some(vec!["FAKE Velorina Tersovan".into()]),
+                    ..Default::default()
+                },
+                &vault::utc_date_text(now),
+                now,
+            )
+            .unwrap();
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                pages_digest: pages_digest([(0, "Velorina")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let request = || TextExportPickedRequest {
+            record_id: record,
+            ticket,
+            pick_id,
+            text: "Velorina".to_owned(),
+        };
+        let with_previous = store.known_identifiers(record).unwrap();
+        let hits = text_recheck::identifier_hits(
+            "Velorina",
+            &with_previous.names,
+            &with_previous.birth_dates,
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!((hits[0].start, hits[0].end), (0, 8));
+        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
+        assert!(!outcome.saved);
+        assert_eq!(outcome.hits.len(), 1);
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 8));
+        assert!(!destination.exists());
+
+        // Only this disposable synthetic vault is damaged. The audit view may
+        // retain checked fragments; a privacy check must not certify the gap.
+        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .is_err());
+        assert!(!destination.exists());
     }
 }
 
@@ -8168,6 +8622,90 @@ mod native_localization_tests {
 }
 
 #[cfg(test)]
+mod event_permission_ipc_tests {
+    use super::*;
+
+    fn request(cmd: &str, body: serde_json::Value) -> tauri::webview::InvokeRequest {
+        let local = if cfg!(any(windows, target_os = "android")) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        };
+        tauri::webview::InvokeRequest {
+            cmd: cmd.into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: local.parse().unwrap(),
+            body: tauri::ipc::InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.into(),
+        }
+    }
+
+    /// With the real generated capability authority (only the OS runtime is mocked), as the
+    /// built app checks it: the main window may listen for every event the page listens to (the
+    /// model download's, and an AI answer's start for the idle lock) and stop listening, may not
+    /// emit, and no other window may listen.
+    #[test]
+    fn the_main_window_may_listen_for_events_and_may_not_emit() {
+        let app = tauri::test::mock_builder()
+            .build(production_context())
+            .unwrap();
+        let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let other = tauri::WebviewWindowBuilder::new(&app, "FAKE-ungranted", Default::default())
+            .build()
+            .unwrap();
+        let listen = |event: &str| {
+            request(
+                "plugin:event|listen",
+                serde_json::json!({ "event": event, "target": { "kind": "Any" }, "handler": 7 }),
+            )
+        };
+        for event in [
+            "ai-model-add-progress",
+            "ai-model-add-ended",
+            "ai-answer-started",
+        ] {
+            let id = tauri::test::get_ipc_response(&main, listen(event))
+                .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))
+                .deserialize::<serde_json::Value>()
+                .unwrap();
+            tauri::test::get_ipc_response(
+                &main,
+                request(
+                    "plugin:event|unlisten",
+                    serde_json::json!({ "event": event, "eventId": id }),
+                ),
+            )
+            .unwrap_or_else(|refused| panic!("unlisten {event}: {refused}"));
+        }
+        let Err(refused) = tauri::test::get_ipc_response(&other, listen("ai-model-add-progress"))
+        else {
+            panic!("another window must not listen");
+        };
+        assert!(
+            refused.as_str().unwrap().contains("not allowed"),
+            "{refused}"
+        );
+        let Err(refused) = tauri::test::get_ipc_response(
+            &main,
+            request(
+                "plugin:event|emit",
+                serde_json::json!({ "event": "FAKE-page-event", "payload": null }),
+            ),
+        ) else {
+            panic!("the page must not emit");
+        };
+        assert!(
+            refused.as_str().unwrap().contains("not allowed"),
+            "{refused}"
+        );
+    }
+}
+
+#[cfg(test)]
 mod audit_history_ipc_tests {
     use super::*;
 
@@ -8236,6 +8774,7 @@ mod audit_history_ipc_tests {
                 entries,
                 later,
                 complete,
+                every_event_shown: complete,
             })
         };
         let partial = shown(entries(), Vec::new(), false);
@@ -8315,11 +8854,13 @@ mod audit_history_ipc_tests {
                 "checkedUntilMs",
                 "complete",
                 "entries",
+                "everyEventShown",
                 "laterEntries"
             ]
             .into()
         );
         assert_eq!(response["complete"], true);
+        assert_eq!(response["everyEventShown"], true);
         assert!(response["checkedUntilMs"].is_null());
         let rows = &response["entries"];
         assert_eq!(rows[0]["event"], "created");
@@ -8368,7 +8909,8 @@ mod audit_history_ipc_tests {
                 "laterEntries": [],
                 "complete": false,
                 "checkedUntilMs": null,
-                "checkedFromMs": null
+                "checkedFromMs": null,
+                "everyEventShown": false
             })
         );
         store.lock();

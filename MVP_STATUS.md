@@ -191,6 +191,9 @@ privacy, accessibility, or clinical review.
 - [ ] Implement E2EE synchronization, device enrollment, rollback protection, immediate deletion,
       and resurrection-prevention tombstones.
 - [ ] Implement signed CARLOS/portal provenance, recipient binding, and explicit encrypted sharing.
+      myCarlos implements clinic code v1 (#141; THREAT_MODEL DEL-07): it checks the signed challenge
+      and public check digits before submission; only a separately verified signed clinic acceptance
+      approves the device. Portal/EMR enforcement and independent email delivery remain separate gates.
 - [ ] Complete accessibility, privacy, PHIPA/PIPEDA, and clinical-safety review.
 - [ ] Add signing, notarization, app-store packaging, updater security, and release operations,
       with the app-store licence review in [`LICENSE_NOTES.md`](LICENSE_NOTES.md) and the licence

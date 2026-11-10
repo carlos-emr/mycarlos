@@ -373,8 +373,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = 此相片已在保险库�
 
 interface-VaultLibrary-topLevel = 最上层
 
-interface-VaultLibrary-unlockedLockNow = 已解锁 · 立即锁定
-
 interface-VaultLibrary-working = 处理中…
 
 interface-camera-denied = myCarlos 无法使用相机。{ $help } 接着请选择「重试」。
@@ -582,6 +580,12 @@ library-folder-open = 打开 { $name }
 library-folder-rename = 重命名文件夹 { $name }
 
 library-items = { $count } 个可见记录项目
+
+library-location-documents = 位置：{ $place }。{ $documents }。
+
+library-location-summary = 位置：{ $place }。{ $folders }，{ $documents }。
+
+library-lock-unlocked = 已解锁
 
 library-noMatch-help = 请尝试其他搜索内容。
 
@@ -855,8 +859,6 @@ readingAid-title = 诊所提供的阅读辅助
 readingAid-unavailable = 无法安全显示此阅读辅助。请改为打开原始文档。
 
 record-kind-document = 文档
-
-record-source-manual = 手动导入 — 未验证
 
 recover-intro = 使用恢复密钥打开保险库并选择新密码短语。
 
@@ -1242,6 +1244,16 @@ personDetails-futureDate = 出生日期不能是未来的日期。
 
 personDetails-help = 这些资料保存在此加密保险库中，用于提示分享的文档可能属于谁。这些资料不会验证文档的来源。
 
+personDetails-setup = 全名和出生日期
+
+personDetails-later = 稍后添加
+
+personDetails-reminder = 请添加 { $name } 的全名和出生日期。这些资料可帮助 myCarlos 判断文档属于谁。
+
+personDetails-notNow = 暂不
+
+personDetails-notSaved = 保险库已就绪，但全名和出生日期未能保存。请在“编辑资料”中添加。
+
 personDetails-invalidDate = 请按年、月、日输入有效的出生日期。
 
 personDetails-list = 个人资料
@@ -1311,6 +1323,14 @@ portal-dateNotRecorded = 未记录日期
 portal-deviceCode = 设备代码
 
 portal-deviceName = 此设备的名称
+
+portal-deviceDetailsShow = 显示设备详情
+
+portal-deviceDetailsHide = 隐藏设备详情
+
+portal-earlierShow = 显示之前的 { $count } 次尝试
+
+portal-earlierHide = 隐藏之前的尝试
 
 portal-errorAddress = 请输入门户网站的 HTTPS 网址，不要包含用户名、密码、查询参数或片段标识符。
 
@@ -1441,6 +1461,8 @@ interface-history-damaged = 此记录有部分已损毁。{ $date } 之后的事
 
 interface-history-damagedAll = 此记录有部分已损毁。其中的事件无法检查，因此全部不显示。
 
+interface-history-damagedStorageOnly = 此记录的部分存储内容已损毁，但所有事件均通过检查，并全部显示。
+
 interface-history-damagedBefore = 此记录有部分已损毁。{ $date } 之前的事件无法检查，因此不显示。
 
 interface-history-damagedBetween = 此记录有部分已损毁。{ $from } 至 { $to } 之间的事件无法检查，因此不显示。
@@ -1484,6 +1506,8 @@ interface-history-event-historyStarted = 记录已开始
 interface-history-event-imported = 文档已添加
 
 interface-history-event-moved = 文档已移动
+
+interface-history-event-other = 其他事件
 
 interface-history-event-passphraseChanged = 密码短语已变更
 
@@ -1532,6 +1556,8 @@ interface-history-how-movedFromShared = 从「与我分享」移出
 interface-history-how-passphrase = 密码短语
 
 interface-history-how-patient = 由您隐藏
+
+interface-history-how-personFolder = 某人的文件夹
 
 interface-history-how-picked = 从所选文件导入
 
@@ -1597,6 +1623,30 @@ library-status-unverified = 未验证
 
 library-status-verified = 已验证
 
+portal-approvedByCode = 诊所已通过验证码确认此设备。
+
+portal-codeFormat = 请输入诊所电子邮件中验证码的 9 位数字。
+
+portal-codeHint = 请输入诊所通过电子邮件发送给您的 9 位数验证码。切勿使用网站上显示的验证码。
+
+portal-codeLabel = 诊所电子邮件中的验证码
+
+portal-codeLocked = 此请求已尝试过太多验证码，因此 myCarlos 不会再接受新的验证码。请联系诊所。
+
+portal-codeMismatch = 此验证码与此诊所不符。请确认您关联的是诊所真正的门户网站网址，然后重试。
+
+portal-codeNeeded = 诊所已通过电子邮件向您发送确认此设备的验证码。请在下方输入。
+
+portal-codeNotOpen = 此请求目前不需要验证码。myCarlos 下次检查时会显示诊所的答复。
+
+portal-codeRefused = 诊所门户网站未接受此验证码。请几分钟后重试。
+
+portal-codeSubmit = 确认验证码
+
+portal-codeSubmitted = 验证码已发送。正在等待诊所确认此设备。如果 10 分钟内仍未确认，请重新申请。
+
+portal-linkAnother = 关联另一家诊所
+
 ai-summary-button = 摘要
 
 ai-summary-title = 通俗易懂的摘要
@@ -1605,9 +1655,9 @@ ai-explain-title = 解释术语
 
 ai-notInstalled-title = 此电脑上尚未安装 AI 助手
 
-ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“偏好设置”中下载模型，或添加您已有的模型文件。
+ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“设置”中的“AI 助手”里下载模型，或添加您已有的模型文件。
 
-ai-notInstalled-openPreferences = 打开偏好设置
+ai-notInstalled-openPreferences = 打开 AI 助手设置
 
 aiHelper-resultLabel = 由 AI 撰写，可能有误。请向您的医生核实。
 
@@ -1627,9 +1677,11 @@ ai-explain-submit = 解释
 
 ai-preferences-title = AI 助手
 
-ai-preferences-body = 使用在此电脑上运行的 AI 模型，以通俗易懂的文字解释您的文档。您可以下载模型，或添加您已有的模型文件；模型保存在此电脑上。
+ai-preferences-body = 使用在这台电脑上运行的 AI 模型，以通俗的语言解释你的文档。下载下列某个模型，或添加你已有的对应文件。模型保留在这台电脑上。
 
 ai-preferences-notInstalled = 未安装
+
+ai-settings-subtitle = AI 助手在此电脑上的运行方式
 
 ai-model-add = 添加模型文件…
 
@@ -1659,7 +1711,7 @@ ai-model-unsupportedCpu = 此电脑的处理器不支持 AI 助手。
 
 ai-model-unsupportedPlatform = 此类电脑暂不支持 AI 助手。
 
-ai-model-refusedList = myCarlos 不接受此文件。请选择上方列出的模型文件。
+ai-model-refusedList = myCarlos 不接受此文件。请选择上方列出的某个模型文件。
 
 ai-model-refusedHash = 这不是预期的文件。请重新下载，然后添加新的副本。
 
@@ -1677,6 +1729,14 @@ ai-model-downloadNote = 仅一次，且仅在您点击时，从 { $host } 下载
 
 ai-model-downloading = 正在下载并检查… { $done } / { $total } MB
 
+ai-model-progressName = 模型下载
+
+ai-model-progressValue = { $percent }，{ $done } / { $total } MB
+
+ai-model-stillDownloading = 模型仍在下载。
+
+ai-model-stillChecking = 仍在检查模型文件。
+
 ai-model-refusedNetwork = 下载未完成。请检查您的网络连接，然后重试。
 
 ai-model-refusedUnavailable = 该模型目前无法从其地址获取。请稍后重试，或添加您已有的文件。
@@ -1684,6 +1744,10 @@ ai-model-refusedUnavailable = 该模型目前无法从其地址获取。请稍�
 native-filter-models = 模型文件
 
 ai-working = AI 助手正在处理…
+
+ai-workingLong = 文档较长时，可能需要几分钟。
+
+ai-workingFor = 已处理 { $minutes } 分钟。
 
 ai-summary-ready = 摘要已生成。
 
@@ -1694,6 +1758,8 @@ ai-failed = AI 助手未能完成。请重试。
 ai-error-memory = 目前可用内存不足，AI 助手无法运行。请关闭其他程序后重试。
 
 ai-error-busy = 正在添加或移除 AI 助手的模型。请在完成后重试。
+
+ai-error-storage = 无法从此电脑读取 AI 助手的模型。请重试。如果问题持续，请在“设置”中的“AI 助手”里删除模型，然后重新添加。
 
 ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能遗漏部分内容。
 
@@ -1907,6 +1973,41 @@ ai-summary-again = 重新生成摘要
 ai-keepFailed = myCarlos 无法将此回答与文档一起保存。此处仍会显示该回答。
 
 ai-keepFull = 此文档保存的 AI 回答已达上限。新的回答会显示，但不会保存。
+
+# Catalog model list (#276A).
+
+ai-models-title = 这台电脑上的模型
+
+ai-models-group = 正在使用的模型
+
+ai-models-inUse = 正在使用
+
+ai-models-installed = 已安装
+
+ai-models-addedByYou = 由你添加
+
+ai-models-notDownloaded = 尚未下载
+
+ai-models-downloading = 正在下载
+ai-models-installing = 正在安装
+
+ai-models-download = 下载
+
+ai-models-remove = 移除
+
+ai-models-help = 标为“正在使用”的模型用于生成摘要和解释。选择其他模型会停止正在生成的回答。
+
+ai-models-loading = 正在读取模型列表…
+
+ai-models-loadFailed = 无法读取模型列表。请重试。
+
+ai-models-retry = 重新读取模型列表
+
+ai-models-starting = 正在开始下载…
+
+ai-models-picking = 请选择要添加的模型文件。
+
+ai-models-changed = 已更改正在使用的模型
 
 personDetails-previousTitle = 曾用全名
 personDetails-previousHelp = 最多可保存16个曾用全名，以帮助查找身份信息。更改姓名时，原姓名会在此处建议保留；如不想保留，请在保存前移除。移除仅影响此列表条目，其他记录和备份仍可能保留该姓名。

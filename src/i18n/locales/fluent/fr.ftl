@@ -616,8 +616,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = Cette photo est déjà dan
 
 interface-VaultLibrary-topLevel = Niveau supérieur
 
-interface-VaultLibrary-unlockedLockNow = Déverrouillé · Verrouiller maintenant
-
 interface-VaultLibrary-working = Opération en cours…
 
 kit-keep = Conservez-la dans un endroit privé, loin de l’appareil. Toute personne qui a cette clé et une copie de votre coffre-fort peut l’ouvrir. Si vous configurez une nouvelle clé de récupération, celle-ci n’ouvre plus le coffre-fort sur cet appareil.
@@ -677,6 +675,12 @@ library-items =
     [many] { $count } d’éléments visibles dans la bibliothèque
     *[other] { $count } éléments visibles dans la bibliothèque
     }
+
+library-location-documents = Dans { $place } : { $documents }.
+
+library-location-summary = Dans { $place } : { $folders }, { $documents }.
+
+library-lock-unlocked = Déverrouillé
 
 library-noMatch-help = Essayez une autre recherche.
 
@@ -970,8 +974,6 @@ readingAid-title = Aide à la lecture de votre clinique
 readingAid-unavailable = Cette aide à la lecture ne peut pas être affichée en toute sécurité. Ouvrez plutôt le document original.
 
 record-kind-document = Document
-
-record-source-manual = Importation manuelle — non vérifiée
 
 recover-intro = Utilisez votre clé de récupération pour ouvrir le coffre-fort et choisir une nouvelle phrase secrète.
 
@@ -1402,6 +1404,16 @@ personDetails-futureDate = La date de naissance ne peut pas être dans le futur.
 
 personDetails-help = Conservés dans ce coffre chiffré pour suggérer à qui un document partagé est destiné. Ces renseignements ne vérifient pas la source d'un document.
 
+personDetails-setup = Nom complet et date de naissance
+
+personDetails-later = Les ajouter plus tard
+
+personDetails-reminder = Ajoutez le nom complet et la date de naissance de { $name }. Ils aident myCarlos à savoir à qui un document est destiné.
+
+personDetails-notNow = Pas maintenant
+
+personDetails-notSaved = Le coffre-fort est prêt, mais le nom complet et la date de naissance n’ont pas été enregistrés. Ajoutez-les dans Modifier les renseignements.
+
 personDetails-invalidDate = Saisissez une date de naissance valide : année, mois et jour.
 
 personDetails-list = Renseignements des personnes
@@ -1471,6 +1483,18 @@ portal-dateNotRecorded = Date non consignée
 portal-deviceCode = Code de l’appareil
 
 portal-deviceName = Nom de cet appareil
+
+portal-deviceDetailsShow = Afficher les détails de l’appareil
+
+portal-deviceDetailsHide = Masquer les détails de l’appareil
+
+portal-earlierShow =
+    { $count ->
+    [one] Afficher { $count } tentative précédente
+    *[other] Afficher { $count } tentatives précédentes
+    }
+
+portal-earlierHide = Masquer les tentatives précédentes
 
 portal-errorAddress = Saisissez l’adresse HTTPS du portail sans nom d’utilisateur, mot de passe, paramètres de requête ni fragment.
 
@@ -1606,6 +1630,8 @@ interface-history-damaged = Une partie de cet historique est endommagée. Les é
 
 interface-history-damagedAll = Une partie de cet historique est endommagée. Ses événements ne peuvent pas être vérifiés, donc aucun ne s’affiche.
 
+interface-history-damagedStorageOnly = Une partie du stockage de cet historique est endommagée, mais tous ses événements ont été vérifiés et s’affichent.
+
 interface-history-damagedBefore = Une partie de cet historique est endommagée. Les événements avant le { $date } ne peuvent pas être vérifiés et ne s’affichent pas.
 
 interface-history-damagedBetween = Une partie de cet historique est endommagée. Les événements entre le { $from } et le { $to } ne peuvent pas être vérifiés et ne s’affichent pas.
@@ -1649,6 +1675,8 @@ interface-history-event-historyStarted = Historique commencé
 interface-history-event-imported = Document ajouté
 
 interface-history-event-moved = Document déplacé
+
+interface-history-event-other = Autre événement
 
 interface-history-event-passphraseChanged = Phrase secrète modifiée
 
@@ -1702,6 +1730,8 @@ interface-history-how-movedFromShared = Déplacé depuis Partagé avec moi
 interface-history-how-passphrase = Phrase secrète
 
 interface-history-how-patient = Masqué par vous
+
+interface-history-how-personFolder = Dossier d’une personne
 
 interface-history-how-picked = Importé depuis un fichier choisi
 
@@ -1777,6 +1807,30 @@ library-status-unverified = Non vérifié
 
 library-status-verified = Vérifié
 
+portal-approvedByCode = Votre clinique a confirmé cet appareil au moyen d’un code.
+
+portal-codeFormat = Entrez les 9 chiffres du code reçu par courriel de votre clinique.
+
+portal-codeHint = Entrez le code à 9 chiffres que votre clinique vous a envoyé par courriel. N’utilisez jamais un code affiché sur un site Web.
+
+portal-codeLabel = Code reçu par courriel de votre clinique
+
+portal-codeLocked = Trop de codes ont été essayés pour cette demande. myCarlos n’en acceptera plus. Contactez votre clinique.
+
+portal-codeMismatch = Ce code ne correspond pas à cette clinique. Vérifiez que vous avez lié l’adresse réelle du portail de votre clinique, puis réessayez.
+
+portal-codeNeeded = Votre clinique vous a envoyé par courriel un code pour confirmer cet appareil. Entrez-le ci-dessous.
+
+portal-codeNotOpen = Cette demande n’attend pas de code pour le moment. myCarlos affichera la réponse de votre clinique lors de sa prochaine vérification.
+
+portal-codeRefused = Le portail de la clinique n’a pas accepté le code. Réessayez dans quelques minutes.
+
+portal-codeSubmit = Confirmer le code
+
+portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
+
+portal-linkAnother = Associer une autre clinique
+
 ai-summary-button = Résumé
 
 ai-summary-title = Résumé en mots simples
@@ -1785,9 +1839,9 @@ ai-explain-title = Expliquer un terme
 
 ai-notInstalled-title = L’assistant IA n’est pas encore sur cet ordinateur
 
-ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Dans Préférences, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
+ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Dans Paramètres, sous Assistant IA, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
 
-ai-notInstalled-openPreferences = Ouvrir les Préférences
+ai-notInstalled-openPreferences = Ouvrir les paramètres de l’assistant IA
 
 aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.
 
@@ -1807,9 +1861,11 @@ ai-explain-submit = Expliquer
 
 ai-preferences-title = Assistant IA
 
-ai-preferences-body = Explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà ; il reste sur cet ordinateur.
+ai-preferences-body = Explique vos documents en termes simples avec un modèle d’IA qui fonctionne sur cet ordinateur. Téléchargez un des modèles ci-dessous ou ajoutez un fichier correspondant que vous possédez déjà. Les modèles restent sur cet ordinateur.
 
 ai-preferences-notInstalled = Non installé
+
+ai-settings-subtitle = Le fonctionnement de l’assistant IA sur cet ordinateur
 
 ai-model-add = Ajouter un fichier de modèle…
 
@@ -1839,7 +1895,7 @@ ai-model-unsupportedCpu = Le processeur de cet ordinateur n’est pas pris en ch
 
 ai-model-unsupportedPlatform = L’assistant IA n’est pas encore disponible sur ce type d’ordinateur.
 
-ai-model-refusedList = Ce fichier n’est pas accepté par myCarlos. Choisissez le fichier de modèle indiqué ci-dessus.
+ai-model-refusedList = Ce fichier n’est pas accepté par myCarlos. Choisissez un des fichiers de modèle indiqués ci-dessus.
 
 ai-model-refusedHash = Ce n’est pas le fichier attendu. Téléchargez-le de nouveau et ajoutez la nouvelle copie.
 
@@ -1857,6 +1913,14 @@ ai-model-downloadNote = Télécharge un fichier ({ $size } Mo), une seule fois, 
 
 ai-model-downloading = Téléchargement et vérification… { $done } sur { $total } Mo
 
+ai-model-progressName = Téléchargement du modèle
+
+ai-model-progressValue = { $percent }, { $done } sur { $total } Mo
+
+ai-model-stillDownloading = Le modèle est encore en cours de téléchargement.
+
+ai-model-stillChecking = Le fichier du modèle est encore en cours de vérification.
+
 ai-model-refusedNetwork = Le téléchargement n’a pas abouti. Vérifiez votre connexion Internet et réessayez.
 
 ai-model-refusedUnavailable = Le modèle n’est pas disponible à son adresse pour le moment. Réessayez plus tard ou ajoutez un fichier que vous avez déjà.
@@ -1864,6 +1928,15 @@ ai-model-refusedUnavailable = Le modèle n’est pas disponible à son adresse p
 native-filter-models = Fichiers de modèle
 
 ai-working = L’assistant IA travaille…
+
+ai-workingLong = Pour un long document, cela peut prendre plusieurs minutes.
+
+ai-workingFor =
+    { $minutes ->
+    [one] En cours depuis { $minutes } minute.
+    [many] En cours depuis { $minutes } de minutes.
+    *[other] En cours depuis { $minutes } minutes.
+    }
 
 ai-summary-ready = Le résumé est prêt.
 
@@ -1874,6 +1947,8 @@ ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
 ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.
 
 ai-error-busy = Le modèle de l’assistant IA est en cours d’ajout ou de suppression. Réessayez quand ce sera terminé.
+
+ai-error-storage = Le modèle de l’assistant IA n’a pas pu être lu sur cet ordinateur. Réessayez. Si cela continue, supprimez le modèle dans Paramètres, sous Assistant IA, puis ajoutez-le de nouveau.
 
 ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; ce résumé peut donc en omettre des parties.
 
@@ -2090,6 +2165,41 @@ ai-summary-again = Résumer à nouveau
 ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.
 
 ai-keepFull = Ce document conserve déjà le nombre maximal de réponses de l’IA. Les nouvelles réponses s’affichent, mais ne sont pas conservées.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modèles sur cet ordinateur
+
+ai-models-group = Modèle utilisé
+
+ai-models-inUse = Utilisé
+
+ai-models-installed = Installé
+
+ai-models-addedByYou = Ajouté par vous
+
+ai-models-notDownloaded = Non téléchargé
+
+ai-models-downloading = Téléchargement en cours
+ai-models-installing = Installation en cours
+
+ai-models-download = Télécharger
+
+ai-models-remove = Supprimer
+
+ai-models-help = Le modèle marqué Utilisé rédige les résumés et les explications. Choisir un autre modèle arrête la réponse en cours de rédaction.
+
+ai-models-loading = Lecture de la liste des modèles…
+
+ai-models-loadFailed = La liste des modèles n’a pas pu être lue. Réessayez.
+
+ai-models-retry = Relire la liste des modèles
+
+ai-models-starting = Démarrage du téléchargement…
+
+ai-models-picking = Choisissez un fichier de modèle à ajouter.
+
+ai-models-changed = Le modèle utilisé a été changé
 
 personDetails-previousTitle = Anciens noms complets
 personDetails-previousHelp = Jusqu’à 16 anciens noms complets aident à repérer les renseignements identifiants. Un nom modifié est proposé ici ; retirez-le avant d’enregistrer si vous ne souhaitez pas le garder. Le retrait ne supprime que cette entrée ; d’autres dossiers et sauvegardes peuvent la conserver.

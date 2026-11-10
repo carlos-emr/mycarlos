@@ -8,7 +8,7 @@ import {
   deferredText,
 } from "../i18n";
 import {
-  PersonDetailsFields,
+  PersonDetailsOrLater,
   PersonDetailsList,
   PersonDialog,
   detailsProblem,
@@ -59,6 +59,8 @@ interface SecuritySettingsProps {
     id: string,
     details: PersonDetails,
   ) => Promise<boolean>;
+  /** A person whose Edit details opens, from the library's reminder (#234). */
+  detailsFor?: { profileId: string } | null;
   hiddenCount: number;
   focusHiddenEntry?: boolean;
   hiddenScopeName: string;
@@ -174,6 +176,7 @@ export function SecuritySettings({
   onOpenAiHelperNotice,
   people = [],
   onUpdateProfileDetails,
+  detailsFor,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
@@ -237,6 +240,12 @@ export function SecuritySettings({
   const [profileName, setProfileName] = useState("");
   const [profileDetails, setProfileDetails] = useState<PersonDetails>({});
   const [profileBirthDateUnknown, setProfileBirthDateUnknown] = useState(false);
+  // The person's details can wait (#234): the reminder then stays.
+  const [profileLater, setProfileLater] = useState(false);
+  const profileDetailsProblem =
+    Boolean(onUpdateProfileDetails) &&
+    !profileLater &&
+    Boolean(detailsProblem(profileDetails, profileBirthDateUnknown));
   // "Add profile" opens a dialog (Ben, 29 Oct). The library makes the page
   // inert while it is open; it is told in the same event that opens or closes
   // the dialog, so the page is no longer inert when focus goes back.
@@ -249,6 +258,7 @@ export function SecuritySettings({
       setProfileName("");
       setProfileDetails({});
       setProfileBirthDateUnknown(false);
+      setProfileLater(false);
     }
     setAddRefused(false);
     setAddOpen(open);
@@ -295,17 +305,11 @@ export function SecuritySettings({
   const submitProfile = (event: FormEvent) => {
     event.preventDefault();
     // Cleared only once the profile exists, so a refused name can be corrected.
-    if (
-      busy ||
-      readOnly ||
-      (onUpdateProfileDetails &&
-        detailsProblem(profileDetails, profileBirthDateUnknown))
-    )
-      return;
+    if (busy || readOnly || profileDetailsProblem) return;
     const before = new Set(people.map((person) => person.id));
     setAddRefused(false);
     void (
-      onUpdateProfileDetails
+      onUpdateProfileDetails && !profileLater
         ? onCreateProfile(profileName, trimmedDetails(profileDetails))
         : onCreateProfile(profileName)
     ).then((created) => {
@@ -402,7 +406,9 @@ export function SecuritySettings({
         {onOpenAiHelperNotice && (
           <section className="native-setting">
             <h3>{translateNow("aiHelper.notice.title")}</h3>
-            <p>{translateNow("aiHelper.notice.introShare")}</p>
+            <p className="section-intro">
+              {translateNow("aiHelper.notice.introShare")}
+            </p>
             <button
               className="button"
               type="button"
@@ -674,6 +680,7 @@ export function SecuritySettings({
               busy={busy}
               readOnly={readOnly}
               onSave={onUpdateProfileDetails}
+              openFor={detailsFor}
               focusId={focusPersonId}
               onFocusLeft={() => setFocusPersonId(null)}
               dialogHost={dialogHost}
@@ -691,10 +698,7 @@ export function SecuritySettings({
                 submitDisabled={
                   busy ||
                   readOnly ||
-                  Boolean(
-                    onUpdateProfileDetails &&
-                      detailsProblem(profileDetails, profileBirthDateUnknown),
-                  ) ||
+                  profileDetailsProblem ||
                   !profileName.trim() ||
                   nameTooLong(profileName) ||
                   nameIsShared(profileName)
@@ -728,14 +732,28 @@ export function SecuritySettings({
                 )}
                 {onUpdateProfileDetails && (
                   <fieldset disabled={busy || readOnly}>
-                    <PersonDetailsFields
+                    <PersonDetailsOrLater
                       details={profileDetails}
                       onChange={(details) => {
                         setProfileDetails(details);
                         setAddRefused(false);
                       }}
                       birthDateUnknown={profileBirthDateUnknown}
-                      onBirthDateUnknownChange={setProfileBirthDateUnknown}
+                      // Like every other change, a tick clears a refusal.
+                      onBirthDateUnknownChange={(unknown) => {
+                        setProfileBirthDateUnknown(unknown);
+                        setAddRefused(false);
+                      }}
+                      later={profileLater}
+                      onLaterChange={(later) => {
+                        setProfileLater(later);
+                        setAddRefused(false);
+                      }}
+                      otherwiseReady={
+                        Boolean(profileName.trim()) &&
+                        !nameTooLong(profileName) &&
+                        !nameIsShared(profileName)
+                      }
                     />
                   </fieldset>
                 )}

@@ -197,6 +197,114 @@ describe("required profile identity details", () => {
     expect(shown.unknown).toBeChecked();
     expect(shown.date).toBeDisabled();
   });
+  it("opens the person the library's reminder asks for as their own Edit details button does", () => {
+    const people = [
+      { id: "p1", displayName: "FAKE Fresh", createdAtMs: 1 },
+      {
+        id: "p2",
+        displayName: "FAKE Named",
+        createdAtMs: 2,
+        fullName: "FAKE Named Example",
+      },
+      {
+        id: "p3",
+        displayName: "FAKE Dated",
+        createdAtMs: 3,
+        fullName: "FAKE Dated Example",
+        birthDate: "2015-06-01",
+      },
+    ];
+    const list = (openFor: { profileId: string } | null) => (
+      <PersonDetailsList
+        people={people}
+        busy={false}
+        onSave={vi.fn()}
+        openFor={openFor}
+      />
+    );
+    const shown = () => {
+      const dialog = screen.getByRole("dialog", { name: "Edit details" });
+      return {
+        fullName: within(dialog).getByLabelText(
+          humanText("Full name, as on clinic documents"),
+        ),
+        unknown: within(dialog).getByRole("checkbox", {
+          name: "I don't know this person's date of birth",
+        }),
+        date: within(dialog).getByLabelText("Date of birth"),
+        cancel: within(dialog).getByRole("button", { name: "Cancel" }),
+      };
+    };
+    // The reminder's usual person: no full name yet, so the date box is open.
+    const { rerender } = render(list({ profileId: "p1" }));
+    let opened = shown();
+    expect(opened.fullName).toHaveValue("");
+    expect(opened.unknown).not.toBeChecked();
+    expect(opened.date).toBeEnabled();
+    expect(opened.date).toHaveValue("");
+    fireEvent.click(opened.cancel);
+    rerender(list({ profileId: "p2" }));
+    opened = shown();
+    expect(opened.fullName).toHaveValue("FAKE Named Example");
+    expect(opened.unknown).toBeChecked();
+    expect(opened.date).toBeDisabled();
+    fireEvent.click(opened.cancel);
+    rerender(list({ profileId: "p3" }));
+    opened = shown();
+    expect(opened.fullName).toHaveValue("FAKE Dated Example");
+    expect(opened.unknown).not.toBeChecked();
+    expect(opened.date).toHaveValue("2015-06-01");
+    fireEvent.click(opened.cancel);
+    // The same person by their own button: the same dialog.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Named"),
+      }),
+    );
+    opened = shown();
+    expect(opened.fullName).toHaveValue("FAKE Named Example");
+    expect(opened.unknown).toBeChecked();
+    expect(opened.date).toBeDisabled();
+  });
+
+  it("clears a refused save's message once the date's unknown box is unticked", async () => {
+    const save = vi.fn().mockResolvedValue(false);
+    render(
+      <PersonDetailsList
+        people={[
+          {
+            id: "p2",
+            displayName: "FAKE Named",
+            createdAtMs: 2,
+            fullName: "FAKE Named Example",
+          },
+        ]}
+        busy={false}
+        onSave={save}
+        refusalText="FAKE the vault refused these details"
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Named"),
+      }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Edit details" });
+    const refused = () =>
+      within(dialog).queryByText("FAKE the vault refused these details");
+    // A full name with the date unknown can be saved; the vault refuses it.
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save details" }),
+    );
+    await waitFor(() => expect(refused()).not.toBeNull());
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", {
+        name: "I don't know this person's date of birth",
+      }),
+    );
+    expect(refused()).toBeNull();
+  });
+
   it("disables editing while busy or read-only", () => {
     render(
       <PersonDetailsList

@@ -68,11 +68,15 @@ export function PersonDetailsFields({
   onChange,
   birthDateUnknown,
   onBirthDateUnknownChange,
+  showProblem = true,
 }: {
   details: PersonDetails;
   onChange: (details: PersonDetails) => void;
   birthDateUnknown: boolean;
   onBirthDateUnknownChange: (unknown: boolean) => void;
+  /** Whether to say what is missing yet: Edit details always does; where
+   * the details can wait, only once the patient has started on them. */
+  showProblem?: boolean;
 }) {
   const { t } = useI18n();
   const problem = detailsProblem(details, birthDateUnknown);
@@ -111,7 +115,7 @@ export function PersonDetailsFields({
         <span>{t("personDetails.birthDateUnknown")}</span>
       </label>
       <p>{t("personDetails.help")}</p>
-      {problem && <p role="alert">{t(problem)}</p>}
+      {problem && showProblem && <p role="alert">{t(problem)}</p>}
     </>
   );
 }
@@ -194,6 +198,68 @@ function PreviousFullNames({
       </button>
     </section>
   );
+}
+
+/** A person's details where they can wait (#234, Ben's decision): at vault
+ * creation and when a person is added. "Later" leaves them out; a reminder
+ * then stays until they are added (`missingDetails`). */
+export function PersonDetailsOrLater({
+  details,
+  onChange,
+  birthDateUnknown,
+  onBirthDateUnknownChange,
+  later,
+  onLaterChange,
+  otherwiseReady,
+}: {
+  details: PersonDetails;
+  onChange: (details: PersonDetails) => void;
+  birthDateUnknown: boolean;
+  onBirthDateUnknownChange: (unknown: boolean) => void;
+  later: boolean;
+  onLaterChange: (later: boolean) => void;
+  /** The rest of the form is ready, so only these details hold it back:
+   * then what is missing is said even before they are started. */
+  otherwiseReady: boolean;
+}) {
+  const { t } = useI18n();
+  // Nothing in red before the patient starts on the details (they may wait).
+  const [started, setStarted] = useState(false);
+  return (
+    <fieldset className="native-person-details-setup">
+      <legend>{t("personDetails.setup")}</legend>
+      <label className="native-person-date-unknown">
+        <input
+          type="checkbox"
+          checked={later}
+          onChange={(e) => onLaterChange(e.target.checked)}
+        />
+        <span>{t("personDetails.later")}</span>
+      </label>
+      {!later && (
+        <PersonDetailsFields
+          details={details}
+          onChange={(next) => {
+            setStarted(true);
+            onChange(next);
+          }}
+          birthDateUnknown={birthDateUnknown}
+          onBirthDateUnknownChange={(unknown) => {
+            setStarted(true);
+            onBirthDateUnknownChange(unknown);
+          }}
+          showProblem={started || otherwiseReady}
+        />
+      )}
+    </fieldset>
+  );
+}
+
+/** What a person's details still need before the reminder goes (#234): a
+ * full name. A birth date may be marked unknown, which Edit details saves as
+ * no date beside a full name, so a full name alone is complete. */
+export function missingDetails(person: PatientProfile): boolean {
+  return !person.fullName?.trim();
 }
 
 /** Draws a dialog in the library's dialog host, beside its other dialogs and
@@ -282,6 +348,7 @@ export function PersonDetailsList({
   busy,
   readOnly = false,
   onSave,
+  openFor,
   focusId = null,
   onFocusLeft,
   dialogHost,
@@ -292,6 +359,10 @@ export function PersonDetailsList({
   busy: boolean;
   readOnly?: boolean;
   onSave: (profileId: string, details: PersonDetails) => Promise<boolean>;
+  /** Opens this person's form, with the focus in it: the library's reminder
+   * leads here (#234). A new object each time, so the same person can be
+   * asked for again. */
+  openFor?: { profileId: string } | null;
   /** A person just added: focus goes to their line (Ben, 29 Oct). */
   focusId?: string | null;
   onFocusLeft?: () => void;
@@ -327,6 +398,30 @@ export function PersonDetailsList({
     dialogChange.current?.(next !== null);
   };
   useEffect(() => () => dialogChange.current?.(false), []);
+  // A person's Edit details dialog, as their own button and the library's
+  // reminder open it. A person with no details yet (a profile just made)
+  // starts with the date box open; "unknown" is ticked only once a full name
+  // was saved without a date.
+  const showEditFor = (person: PatientProfile) =>
+    showEdit({
+      id: person.id,
+      originalFullName: person.fullName?.trim() ?? "",
+      suggestionDismissed: false,
+      details: {
+        fullName: person.fullName,
+        birthDate: person.birthDate,
+        previousFullNames: [...(person.previousFullNames ?? [])],
+      },
+      birthDateUnknown: !person.birthDate && Boolean(person.fullName),
+    });
+  // The library's reminder opens this person's Edit details dialog (#234),
+  // which puts the focus in its first box.
+  useEffect(() => {
+    const person = people.find((p) => p.id === openFor?.profileId);
+    if (person) showEditFor(person);
+    // `people` only finds the person asked for: a refresh must not reopen it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openFor]);
   useEffect(() => {
     if (!returnTo || busy) return;
     const button = editButtons.current.get(returnTo);
@@ -406,9 +501,13 @@ export function PersonDetailsList({
           details={editing.details}
           onChange={changeDetails}
           birthDateUnknown={editing.birthDateUnknown}
-          onBirthDateUnknownChange={(birthDateUnknown) =>
-            setEditing((current) => current && { ...current, birthDateUnknown })
-          }
+          // A tick is a change too: it clears a refusal, as typing does.
+          onBirthDateUnknownChange={(birthDateUnknown) => {
+            setEditing(
+              (current) => current && { ...current, birthDateUnknown },
+            );
+            setRefused(false);
+          }}
         />
         <PreviousFullNames details={editing.details} onChange={changeDetails} />
       </fieldset>
@@ -451,23 +550,7 @@ export function PersonDetailsList({
                 if (button) editButtons.current.set(person.id, button);
                 else editButtons.current.delete(person.id);
               }}
-              onClick={() =>
-                showEdit({
-                  id: person.id,
-                  originalFullName: person.fullName?.trim() ?? "",
-                  suggestionDismissed: false,
-                  details: {
-                    fullName: person.fullName,
-                    birthDate: person.birthDate,
-                    previousFullNames: [...(person.previousFullNames ?? [])],
-                  },
-                  // A person with no details yet (a profile just made)
-                  // starts with the date box open; "unknown" is ticked
-                  // only once a full name was saved without a date.
-                  birthDateUnknown:
-                    !person.birthDate && Boolean(person.fullName),
-                })
-              }
+              onClick={() => showEditFor(person)}
             >
               {t("personDetails.edit")}
             </button>

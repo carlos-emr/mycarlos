@@ -599,8 +599,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = This photo is already in t
 
 interface-VaultLibrary-topLevel = Top level
 
-interface-VaultLibrary-unlockedLockNow = Unlocked · Lock now
-
 interface-VaultLibrary-working = Working…
 
 kit-keep = Keep it somewhere private and away from the device. Anyone with this key and a copy of your vault can open it. If you set up a new recovery key, this one no longer opens the vault on this device.
@@ -658,6 +656,12 @@ library-items =
     [one] { $count } visible library item
     *[other] { $count } visible library items
     }
+
+library-location-documents = In { $place }: { $documents }.
+
+library-location-summary = In { $place }: { $folders }, { $documents }.
+
+library-lock-unlocked = Unlocked
 
 library-noMatch-help = Try another search.
 
@@ -947,8 +951,6 @@ readingAid-title = Reading aid from your clinic
 readingAid-unavailable = This reading aid cannot be shown safely. Open the original document instead.
 
 record-kind-document = Document
-
-record-source-manual = Manual import — unverified
 
 recover-intro = Use your recovery key to open the vault and choose a new passphrase.
 
@@ -1370,6 +1372,16 @@ personDetails-futureDate = A birth date cannot be in the future.
 
 personDetails-help = Kept in this encrypted vault, to suggest who a shared document is for. These details do not verify a document's source.
 
+personDetails-setup = Full name and date of birth
+
+personDetails-later = Add them later
+
+personDetails-reminder = Add { $name }'s full name and date of birth. They help myCarlos tell who a document is for.
+
+personDetails-notNow = Not now
+
+personDetails-notSaved = The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.
+
 personDetails-invalidDate = Enter a valid birth date as year, month and day.
 
 personDetails-list = People's details
@@ -1439,6 +1451,18 @@ portal-dateNotRecorded = Date not recorded
 portal-deviceCode = Device code
 
 portal-deviceName = Name for this device
+
+portal-deviceDetailsShow = Show device details
+
+portal-deviceDetailsHide = Hide device details
+
+portal-earlierShow =
+    { $count ->
+    [one] Show { $count } earlier attempt
+    *[other] Show { $count } earlier attempts
+    }
+
+portal-earlierHide = Hide earlier attempts
 
 portal-errorAddress = Enter the portal HTTPS address without a username, password, query, or fragment.
 
@@ -1573,6 +1597,8 @@ interface-history-damaged = Part of this history is damaged. Events after { $dat
 
 interface-history-damagedAll = Part of this history is damaged. Its events can't be checked, so none are shown.
 
+interface-history-damagedStorageOnly = Part of the storage for this history is damaged, but every event checks out and is shown.
+
 interface-history-damagedBefore = Part of this history is damaged. Events before { $date } can't be checked and aren't shown.
 
 interface-history-damagedBetween = Part of this history is damaged. Events between { $from } and { $to } can't be checked and aren't shown.
@@ -1616,6 +1642,8 @@ interface-history-event-historyStarted = History started
 interface-history-event-imported = Document added
 
 interface-history-event-moved = Document moved
+
+interface-history-event-other = Other event
 
 interface-history-event-passphraseChanged = Passphrase changed
 
@@ -1668,6 +1696,8 @@ interface-history-how-movedFromShared = Moved from Shared with me
 interface-history-how-passphrase = Passphrase
 
 interface-history-how-patient = Hidden by you
+
+interface-history-how-personFolder = A person's folder
 
 interface-history-how-picked = Imported from a chosen file
 
@@ -1741,6 +1771,30 @@ library-status-unverified = Unverified
 
 library-status-verified = Verified
 
+portal-approvedByCode = Your clinic confirmed this device by code.
+
+portal-codeFormat = Enter the 9 digits of the code from your clinic's email.
+
+portal-codeHint = Enter the 9-digit code your clinic emailed you. Never use a code shown on a website.
+
+portal-codeLabel = Code from your clinic's email
+
+portal-codeLocked = Too many codes were tried for this request, so myCarlos won't take another one. Contact your clinic.
+
+portal-codeMismatch = This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.
+
+portal-codeNeeded = Your clinic emailed you a code to confirm this device. Enter it below.
+
+portal-codeNotOpen = This request isn't waiting for a code now. myCarlos will show your clinic's answer when it next checks.
+
+portal-codeRefused = The clinic portal didn't take the code. Try again in a few minutes.
+
+portal-codeSubmit = Confirm code
+
+portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
+
+portal-linkAnother = Link another clinic
+
 ai-summary-button = Summary
 
 ai-summary-title = Summary in plain words
@@ -1749,9 +1803,9 @@ ai-explain-title = Explain a term
 
 ai-notInstalled-title = The AI helper isn't on this computer yet
 
-ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Preferences you can download the model or add a model file you already have.
+ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Settings, under AI helper, you can download the model or add a model file you already have.
 
-ai-notInstalled-openPreferences = Open Preferences
+ai-notInstalled-openPreferences = Open AI helper settings
 
 aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
@@ -1771,9 +1825,11 @@ ai-explain-submit = Explain
 
 ai-preferences-title = AI helper
 
-ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.
+ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. Download one of the models below, or add a matching file you already have. Models stay on this computer.
 
 ai-preferences-notInstalled = Not installed
+
+ai-settings-subtitle = How the AI helper works on this computer
 
 ai-model-add = Add a model file…
 
@@ -1803,7 +1859,7 @@ ai-model-unsupportedCpu = This computer’s processor is not supported by the AI
 
 ai-model-unsupportedPlatform = The AI helper is not available on this kind of computer yet.
 
-ai-model-refusedList = This is not a file myCarlos accepts. Choose the model file listed above.
+ai-model-refusedList = This is not a file myCarlos accepts. Choose one of the model files listed above.
 
 ai-model-refusedHash = This is not the file we expect. Download it again and add the new copy.
 
@@ -1821,6 +1877,14 @@ ai-model-downloadNote = Downloads one file ({ $size } MB), once, from { $host },
 
 ai-model-downloading = Downloading and checking… { $done } of { $total } MB
 
+ai-model-progressName = Model download
+
+ai-model-progressValue = { $percent }, { $done } of { $total } MB
+
+ai-model-stillDownloading = The model is still downloading.
+
+ai-model-stillChecking = The model file is still being checked.
+
 ai-model-refusedNetwork = The download did not finish. Check your internet connection and try again.
 
 ai-model-refusedUnavailable = The model is not available at its address right now. Try again later, or add a file you already have.
@@ -1828,6 +1892,14 @@ ai-model-refusedUnavailable = The model is not available at its address right no
 native-filter-models = Model files
 
 ai-working = The AI helper is working…
+
+ai-workingLong = This can take several minutes for a long document.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Working for { $minutes } minute so far.
+    *[other] Working for { $minutes } minutes so far.
+    }
 
 ai-summary-ready = The summary is ready.
 
@@ -1838,6 +1910,8 @@ ai-failed = The AI helper could not finish. Try again.
 ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
+
+ai-error-storage = The AI helper's model could not be read from this computer. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.
 
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 
@@ -2054,6 +2128,41 @@ ai-summary-again = Summarize again
 ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
 
 ai-keepFull = This document already keeps the most AI answers it can. New answers are shown but not kept.
+
+# Catalog model list (#276A).
+
+ai-models-title = Models on this computer
+
+ai-models-group = Model in use
+
+ai-models-inUse = In use
+
+ai-models-installed = Installed
+
+ai-models-addedByYou = Added by you
+
+ai-models-notDownloaded = Not downloaded
+
+ai-models-downloading = Downloading
+ai-models-installing = Installing
+
+ai-models-download = Download
+
+ai-models-remove = Remove
+
+ai-models-help = The model marked In use writes summaries and explanations. Choosing another model stops the answer being written.
+
+ai-models-loading = Reading the model list…
+
+ai-models-loadFailed = The model list could not be read. Try again.
+
+ai-models-retry = Read the model list again
+
+ai-models-starting = Starting the download…
+
+ai-models-picking = Choose a model file to add.
+
+ai-models-changed = Model in use changed
 
 personDetails-previousTitle = Previous full names
 personDetails-previousHelp = Up to 16 previous full names help find identifying details. A changed name is suggested here; remove it before saving if you do not want to keep it. Removing a saved name only removes this list entry; other records and backups may retain it.
