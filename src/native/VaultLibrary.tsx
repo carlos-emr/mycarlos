@@ -856,6 +856,7 @@ export function VaultLibrary({
       confirmHideDamaged ||
       recoverySetup ||
       profileDialogOpen ||
+      clinicDialogOpen ||
       busy
     )
       return;
@@ -888,6 +889,7 @@ export function VaultLibrary({
     profileId,
     dialogResult,
     profileDialogOpen,
+    clinicDialogOpen,
     recoverySetup,
     renameTarget,
     cameraOpen,
