@@ -13255,7 +13255,10 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await unlock();
     await pass(ANNOUNCE_DELAY_MS);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    // The check control is in Shared with me (main's c9fea1ed).
+    await openShared();
     expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
+    await openRecords();
     // A saved document opens while the check runs.
     await click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
     expect(
@@ -13276,6 +13279,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(
       said().split("This device was removed from your clinic portal account."),
     ).toHaveLength(4);
+    await openShared();
     expect(
       screen.getByRole("button", { name: "Check for new documents" }),
     ).toBeEnabled();
