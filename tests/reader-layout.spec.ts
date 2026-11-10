@@ -116,15 +116,33 @@ function measure(page: Page) {
       return { top, bottom, left, right, width, height };
     };
     const buttons = Array.from(bar.querySelectorAll("button"));
+    // The size buttons and the AI helper's, above the page.
+    const above = Array.from(
+      reader.querySelectorAll<HTMLElement>(".native-reader-controls button"),
+    );
     return {
       reader: box(reader),
       bar: box(bar),
       zoom: box(reader.querySelector(".native-reader-zoom")!),
       area: box(reader.querySelector(".native-reader-page")!),
       parts: Array.from(bar.children, (child) => {
-        const { top, bottom, left } = child.getBoundingClientRect();
-        return { middle: Math.round((top + bottom) / 2), left };
+        const { top, bottom, left, right } = child.getBoundingClientRect();
+        return { middle: Math.round((top + bottom) / 2), left, right };
       }),
+      // Each group above the page (size, AI helper): where its buttons reach.
+      groups: Array.from(
+        reader.querySelectorAll(".native-reader-controls > span"),
+        (group) => {
+          const parts = Array.from(group.children, (child) =>
+            child.getBoundingClientRect(),
+          );
+          return {
+            name: group.className,
+            left: Math.min(...parts.map((part) => part.left)),
+            right: Math.max(...parts.map((part) => part.right)),
+          };
+        },
+      ),
       words: Array.from(bar.children, (child) =>
         (child.textContent ?? "").replace(/[⁨⁩]/g, ""),
       ),
@@ -145,14 +163,14 @@ function measure(page: Page) {
       })(),
       readerWider: reader.scrollWidth - reader.clientWidth,
       barWider: bar.scrollWidth - bar.clientWidth,
-      cut: buttons
+      cut: [...above, ...buttons]
         .filter(
           (button) =>
             button.scrollWidth > button.clientWidth + 1 ||
             button.scrollHeight > button.clientHeight + 1,
         )
         .map((button) => button.textContent),
-      small: buttons
+      small: [...above, ...buttons]
         .filter((button) => {
           const { width, height } = button.getBoundingClientRect();
           return width < 24 || height < 24;
@@ -278,6 +296,22 @@ for (const [fit, locale] of [
         expect(last.middle).toBe(next.middle);
         expect(next.left).toBe(first.left);
         expect(last.left).toBe(previous.left);
+        // Above the page, the size buttons (and the AI helper's, where it is
+        // offered) fill the same width as the page bar: their rows start at
+        // its left edge and end at its right edge.
+        expect(at.groups.map((group) => group.name)).toContain(
+          "native-reader-zoom",
+        );
+        for (const group of at.groups) {
+          expect(group.left, `${group.name} left edge`).toBeCloseTo(
+            first.left,
+            0,
+          );
+          expect(group.right, `${group.name} right edge`).toBeCloseTo(
+            previous.right,
+            0,
+          );
+        }
       } else {
         expect(at.display).toBe("flex");
         expect(new Set(at.parts.map((part) => part.middle)).size).toBe(1);

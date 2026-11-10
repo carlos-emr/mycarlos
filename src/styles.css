@@ -962,15 +962,41 @@ p {
 @container native-reader (max-width: 52em) {
   .native-reader-pages {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 12em));
-    justify-content: center;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
       "first previous"
       "where where"
       "next last";
     padding-inline: 12px;
   }
-  /* A word too long for its half breaks with a hyphen where the system can, and is never cut. */
+  /* The size buttons at the top left, then the AI helper's: each a row across the reader, as the
+     page bar is, so that the buttons line up above and below the page. A row's buttons share its
+     width equally and keep at least their longest word; a row with no room for that wraps. */
+  .native-reader-controls {
+    display: grid;
+    padding-inline: 12px;
+  }
+  .native-reader-controls .native-reader-zoom,
+  .native-reader-controls .native-reader-ai-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .native-reader-controls .button {
+    flex: 1 1 0;
+    padding-inline: 8px;
+    hyphens: auto;
+  }
+  /* The percentage keeps one width from 50% to 400%, so the buttons beside it never move. */
+  .native-reader-zoom > span {
+    flex: none;
+    align-self: center;
+    min-width: 4ch;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  /* A word too long for its half of the page bar breaks with a hyphen where the system can, and is
+     never cut. */
   .native-reader-pages .button {
     width: 100%;
     padding-inline: 8px;
