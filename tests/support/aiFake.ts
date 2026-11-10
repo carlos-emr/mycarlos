@@ -68,6 +68,7 @@ export type FakeAiRefusal =
   | "aiDamaged"
   | "aiMemory"
   | "aiBusy"
+  | "aiStorage"
   | "aiCancelled"
   | "aiFailed";
 
@@ -202,7 +203,8 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
         total: number;
         index?: number;
       } | null = null;
-      const refusals: Record<string, string[]> = {};
+      const refusals: Record<string, { code: string; messageKey: string }[]> =
+        {};
       let kept: {
         recordId: unknown;
         info: Record<string, unknown>;
@@ -569,11 +571,20 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
 
       Reflect.set(window, "__fakeAi", {
         calls: () => structuredClone(calls),
+        kept: () =>
+          kept.map((entry) => ({
+            recordId: entry.recordId,
+            tool: entry.info.tool,
+            lang: entry.info.lang,
+            term: entry.info.term,
+            hidden: entry.hidden,
+            content: entry.content,
+          })),
         cancelled: () => structuredClone(cancelled),
         held: () => held.map((entry) => entry.command),
         hold: (command: string) => holds.add(command),
-        refuse: (command: string, code: string) =>
-          (refusals[command] ??= []).push(code),
+        refuse: (command: string, code: string, messageKey: string) =>
+          (refusals[command] ??= []).push({ code, messageKey }),
         answer: (command: string, value: unknown) =>
           (answers[command] ??= []).push(value),
         listening: (event: string) =>
@@ -685,13 +696,13 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
         const refused = refusals[command]?.shift();
         if (refused) {
           // A failed check at load: the status says so from then on.
-          if (refused === "aiDamaged") {
+          if (refused.code === "aiDamaged") {
             model = { state: "damaged" };
             const chosen = modelRows.find((row) => row.inUse);
             if (chosen) chosen.state = "damaged";
             persistModels();
           }
-          throw refusal(refused, "ai.failed");
+          throw refusal(refused.code, refused.messageKey);
         }
         return keptFor(command, args, answer(command, args));
       };
@@ -792,6 +803,9 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       messages: {
         "native.error.36": translate("en", "native.error.36"),
         "ai.failed": translate("en", "ai.failed"),
+        "ai.error.storage": translate("en", "ai.error.storage"),
+        "ai.error.memory": translate("en", "ai.error.memory"),
+        "ai.error.busy": translate("en", "ai.error.busy"),
       } as Record<string, string>,
     },
   );
@@ -812,6 +826,33 @@ export async function aiCalls(
   return calls
     .filter((call) => call.command === command)
     .map((call) => call.args as { request?: Record<string, unknown> });
+}
+
+/** Every answer the fake vault keeps, newest first, the hidden ones too. */
+export async function aiKept(page: Page): Promise<
+  {
+    recordId: string;
+    tool: string;
+    lang: string;
+    term?: string;
+    hidden: boolean;
+    content: string;
+  }[]
+> {
+  return page.evaluate(() =>
+    (
+      Reflect.get(window, "__fakeAi") as {
+        kept: () => {
+          recordId: string;
+          tool: string;
+          lang: string;
+          term?: string;
+          hidden: boolean;
+          content: string;
+        }[];
+      }
+    ).kept(),
+  );
 }
 
 /** The next call of `command` stays pending until released or cancelled. */
@@ -856,21 +897,24 @@ export async function aiCancelled(
   );
 }
 
-/** The next call of `command` is refused with `code`, as the native side
- * refuses (an aiDamaged refusal also turns the status to damaged). */
+/** The next call of `command` is refused with `code` and the message key
+ * the native side gives it (by default the general "could not finish"), as
+ * the native side refuses (an aiDamaged refusal also turns the status to
+ * damaged). */
 export async function refuseAi(
   page: Page,
   command: AiCommand,
   code: FakeAiRefusal,
+  messageKey: Parameters<typeof translate>[1] = "ai.failed",
 ) {
   await page.evaluate(
-    ({ command, code }) =>
+    ({ command, code, messageKey }) =>
       (
         Reflect.get(window, "__fakeAi") as {
-          refuse: (command: string, code: string) => void;
+          refuse: (command: string, code: string, messageKey: string) => void;
         }
-      ).refuse(command, code),
-    { command, code },
+      ).refuse(command, code, messageKey),
+    { command, code, messageKey },
   );
 }
 

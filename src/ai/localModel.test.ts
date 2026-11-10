@@ -292,7 +292,7 @@ describe("nativeLocalModel", () => {
     ).rejects.toBeInstanceOf(ModelCancelled);
   });
 
-  it.each(["aiMemory", "aiBusy", "aiFailed"])(
+  it.each(["aiMemory", "aiBusy", "aiStorage", "aiFailed"])(
     "passes %s on as it is",
     async (code) => {
       const failure = refusal(code);

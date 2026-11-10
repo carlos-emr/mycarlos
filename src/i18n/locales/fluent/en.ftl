@@ -1577,6 +1577,8 @@ interface-history-damaged = Part of this history is damaged. Events after { $dat
 
 interface-history-damagedAll = Part of this history is damaged. Its events can't be checked, so none are shown.
 
+interface-history-damagedStorageOnly = Part of the storage for this history is damaged, but every event checks out and is shown.
+
 interface-history-damagedBefore = Part of this history is damaged. Events before { $date } can't be checked and aren't shown.
 
 interface-history-damagedBetween = Part of this history is damaged. Events between { $from } and { $to } can't be checked and aren't shown.
@@ -1745,6 +1747,28 @@ library-status-unverified = Unverified
 
 library-status-verified = Verified
 
+portal-approvedByCode = Your clinic confirmed this device by code.
+
+portal-codeFormat = Enter the 9 digits of the code from your clinic's email.
+
+portal-codeHint = Enter the 9-digit code your clinic emailed you. Never use a code shown on a website.
+
+portal-codeLabel = Code from your clinic's email
+
+portal-codeLocked = Too many codes were tried for this request, so myCarlos won't take another one. Contact your clinic.
+
+portal-codeMismatch = This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.
+
+portal-codeNeeded = Your clinic emailed you a code to confirm this device. Enter it below.
+
+portal-codeNotOpen = This request isn't waiting for a code now. myCarlos will show your clinic's answer when it next checks.
+
+portal-codeRefused = The clinic portal didn't take the code. Try again in a few minutes.
+
+portal-codeSubmit = Confirm code
+
+portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
+
 ai-summary-button = Summary
 
 ai-summary-title = Summary in plain words
@@ -1860,6 +1884,8 @@ ai-failed = The AI helper could not finish. Try again.
 ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
+
+ai-error-storage = The AI helper's model could not be read from this computer. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.
 
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 

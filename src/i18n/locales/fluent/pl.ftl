@@ -1643,6 +1643,8 @@ interface-history-damaged = Część tej historii jest uszkodzona. Zdarzenia po 
 
 interface-history-damagedAll = Część tej historii jest uszkodzona. Jej zdarzeń nie można zweryfikować, więc nie wyświetlono żadnego z nich.
 
+interface-history-damagedStorageOnly = Część miejsca, w którym zapisano tę historię, jest uszkodzona, ale wszystkie jej zdarzenia zostały zweryfikowane i są wyświetlane.
+
 interface-history-damagedBefore = Część tej historii jest uszkodzona. Zdarzenia sprzed { $date } nie mogą zostać zweryfikowane i nie są wyświetlane.
 
 interface-history-damagedBetween = Część tej historii jest uszkodzona. Zdarzenia między { $from } a { $to } nie mogą zostać zweryfikowane i nie są wyświetlane.
@@ -1817,6 +1819,28 @@ library-status-unverified = Nie zweryfikowano
 
 library-status-verified = Zweryfikowano
 
+portal-approvedByCode = Przychodnia potwierdziła to urządzenie kodem.
+
+portal-codeFormat = Wpisz 9 cyfr kodu z e-maila od przychodni.
+
+portal-codeHint = Wpisz 9-cyfrowy kod, który przychodnia wysłała e-mailem. Nigdy nie używaj kodu wyświetlonego na stronie internetowej.
+
+portal-codeLabel = Kod z e-maila od przychodni
+
+portal-codeLocked = Wypróbowano zbyt wiele kodów dla tej prośby, więc myCarlos nie przyjmie kolejnego. Skontaktuj się z przychodnią.
+
+portal-codeMismatch = Ten kod nie pasuje do tej przychodni. Sprawdź, czy urządzenie połączono z prawdziwym adresem portalu przychodni, i spróbuj ponownie.
+
+portal-codeNeeded = Przychodnia wysłała e-mailem kod do potwierdzenia tego urządzenia. Wpisz go poniżej.
+
+portal-codeNotOpen = Ta prośba nie czeka teraz na kod. myCarlos pokaże odpowiedź przychodni przy następnym sprawdzeniu.
+
+portal-codeRefused = Portal przychodni nie przyjął kodu. Spróbuj ponownie za kilka minut.
+
+portal-codeSubmit = Potwierdź kod
+
+portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, poproś ponownie.
+
 ai-summary-button = Podsumowanie
 
 ai-summary-title = Podsumowanie prostymi słowami
@@ -1934,6 +1958,8 @@ ai-failed = Asystent AI nie zdołał dokończyć. Można spróbować ponownie.
 ai-error-memory = Brakuje teraz wolnej pamięci dla asystenta AI. Można zamknąć inne programy i spróbować ponownie.
 
 ai-error-busy = Model asystenta AI jest właśnie dodawany lub usuwany. Można spróbować ponownie, gdy to się skończy.
+
+ai-error-storage = Nie udało się odczytać modelu asystenta AI z tego komputera. Można spróbować ponownie. Jeśli to się powtarza, można usunąć model w Ustawieniach, w sekcji Asystent AI, i dodać go ponownie.
 
 ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stron, więc w tym podsumowaniu może czegoś brakować.
 
