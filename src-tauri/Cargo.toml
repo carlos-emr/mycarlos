@@ -164,6 +164,16 @@ debug = false
 [profile.dev.package.llama-cpp-2]
 opt-level = 3
 
+# Every other dependency is optimized in debug builds too, since the evaluation installers are
+# debug builds: the PDF reader's rasterizer (hayro), its PNG encoding and decoding, lopdf and the
+# vault's decryption otherwise run unoptimized on every page and zoom. myCarlos's own crate stays
+# unoptimized and debuggable; the overrides above still apply (a named package wins over "*");
+# debug assertions and overflow checks are unchanged (opt-level alone sets neither).
+[profile.dev.package."*"]
+opt-level = 3
+# No debug info for dependencies: a shorter cold build and smaller artifacts (as measured).
+debug = false
+
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
