@@ -11,6 +11,7 @@ import {
 } from "./support/aiFake";
 import { translate } from "./support/fluent";
 import {
+  FAKE_IDS,
   FAKE_PAGE_COUNT,
   fakePageText,
   fakeVaultWith,
@@ -109,7 +110,7 @@ test("a kept summary is shown again without the model, and Summarize again hides
   // Kept once, for the letter, as a summary in English.
   await expect.poll(() => aiKept(page)).toHaveLength(1);
   expect(await aiKept(page)).toMatchObject([
-    { tool: "summary", lang: "en", hidden: false },
+    { recordId: FAKE_IDS.letter, tool: "summary", lang: "en", hidden: false },
   ]);
   await close(reader);
 
@@ -124,7 +125,9 @@ test("a kept summary is shown again without the model, and Summarize again hides
   expect(await aiCalls(page, AI_COMMANDS.summarize)).toHaveLength(1);
 
   // Summarize again: the model's newer answer is shown and kept; the older
-  // one stays in the vault, hidden, never deleted.
+  // one stays in the vault, hidden, never deleted. Hiding it is the vault's
+  // rule, which the fake copies; the native one is tested in
+  // src-tauri/src/vault/ai_results.rs.
   await answerAi(page, AI_COMMANDS.summarize, {
     sentences: [
       { text: "FAKE: the newer summary.", quote: fakePageText(LETTER, 1) },
@@ -139,6 +142,10 @@ test("a kept summary is shown again without the model, and Summarize again hides
   await expect.poll(() => aiKept(page)).toHaveLength(2);
   const kept = await aiKept(page);
   expect(kept.map((answer) => answer.hidden)).toEqual([false, true]);
+  expect(kept.map((answer) => answer.recordId)).toEqual([
+    FAKE_IDS.letter,
+    FAKE_IDS.letter,
+  ]);
   expect(
     JSON.parse(kept[1].content).sentences.map((s: { text: string }) => s.text),
   ).toEqual(first);
@@ -178,6 +185,13 @@ test("an explanation is kept under the term as asked, without its spaces", async
     tool: "explain",
     term: "FAKE term",
   });
+  // The app trims the term before asking: the native side refuses a term
+  // with spaces around it, while this fake would trim it.
+  const [asked] = await aiCalls(page, AI_COMMANDS.explain);
+  expect(asked.request).toMatchObject({
+    term: "FAKE term",
+    recordId: FAKE_IDS.letter,
+  });
   await expectOnlyFakedCommands(page);
 });
 
@@ -191,6 +205,11 @@ test("a summary the vault could not keep says so and stays on screen", async ({
   const panel = summaryPanel(reader);
   await expect(sentences(panel)).toHaveCount(FAKE_PAGE_COUNT);
   await expect(panel.getByRole("alert")).toHaveText(en("ai.keepFailed"));
+  // Still on screen once the keep has failed, not only before.
+  await expect(sentences(panel)).toHaveCount(FAKE_PAGE_COUNT);
+  await expect(
+    panel.getByText(en("aiHelper.resultLabel"), { exact: true }),
+  ).toBeVisible();
   expect(await aiKept(page)).toEqual([]);
   await expectOnlyFakedCommands(page);
 });
