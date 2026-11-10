@@ -371,16 +371,22 @@ test.describe("with a model on this computer", () => {
     await expectOnlyFakedCommands(page);
   });
 
-  for (const code of ["aiMemory", "aiBusy", "aiFailed"] as const)
-    test(`a run refused with ${code} says the helper could not finish`, async ({
-      page,
-    }) => {
+  // Each refusal with the message key the native side gives it (lib.rs
+  // ai_error): storage, memory and busy say their own words (#253); any
+  // other failure says the helper could not finish.
+  for (const [code, key] of [
+    ["aiStorage", "ai.error.storage"],
+    ["aiMemory", "ai.error.memory"],
+    ["aiBusy", "ai.error.busy"],
+    ["aiFailed", "ai.failed"],
+  ] as const)
+    test(`a run refused with ${code} says ${key}`, async ({ page }) => {
       const reader = await openReader(page, { model: INSTALLED });
-      await refuseAi(page, AI_COMMANDS.summarize, code);
+      await refuseAi(page, AI_COMMANDS.summarize, code, key);
       await firstUse(page, reader, en("ai.summary.button"));
       await expect(
         panel(reader, en("ai.summary.title")).getByRole("alert"),
-      ).toHaveText(en("ai.failed"));
+      ).toHaveText(en(key));
       await expect(page.getByText(en("aiHelper.resultLabel"))).toHaveCount(0);
       await expectOnlyFakedCommands(page);
     });
