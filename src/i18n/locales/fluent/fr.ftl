@@ -1867,6 +1867,15 @@ native-filter-models = Fichiers de modèle
 
 ai-working = L’assistant IA travaille…
 
+ai-workingLong = Pour un long document, cela peut prendre plusieurs minutes.
+
+ai-workingFor =
+    { $minutes ->
+    [one] En cours depuis { $minutes } minute.
+    [many] En cours depuis { $minutes } de minutes.
+    *[other] En cours depuis { $minutes } minutes.
+    }
+
 ai-summary-ready = Le résumé est prêt.
 
 ai-explain-ready = L’explication est prête.
