@@ -349,6 +349,11 @@ where
     // A saved candidate is insufficient: only a currently signed accepted link
     // is eligible for implicit collection. Explicit manual approval is separate.
     links.retain(crate::portal_approval::currently_approved);
+    // A device this run of the app found gone from its portal (#168; a manual,
+    // after-unlock, status or earlier background check found it) is not asked
+    // again. Left out before the rotation, so it spends none of the cycle's
+    // link visits.
+    links.retain(|link| !store.link_gone(link.id));
     let deferred = cache
         .retry_first
         .take()
@@ -445,7 +450,21 @@ where
                         false,
                     )?;
                     if reply.status != 200 {
-                        return Err(VaultError::Portal(LinkError::Network));
+                        // A portal that removed this device says so (#128, as
+                        // the manual check reads it); any other answer is not
+                        // one this check can use. A "not found" for the list is
+                        // a network failure here on purpose: the manual check's
+                        // rule (another device of this vault answered by the
+                        // same portal) is not applied. A device a reset portal
+                        // deleted is asked again until a manual or after-unlock
+                        // check marks it gone, which happens at the next unlock.
+                        return Err(VaultError::Portal(
+                            if crate::portal_approval::device_removed(&reply) {
+                                LinkError::DeviceRemoved
+                            } else {
+                                LinkError::Network
+                            },
+                        ));
                     }
                     let page: Page = serde_json::from_slice(&reply.body).map_err(|_| {
                         cache.slots[i].as_mut().unwrap().pause();
@@ -581,6 +600,14 @@ where
             }
             if !crate::portal_pickup::is_per_link_failure(&error) {
                 return Err(error);
+            }
+            // The portal said this device was removed: not asked again in
+            // this run of the app (#168).
+            if matches!(
+                error,
+                VaultError::Portal(crate::portal_link::LinkError::DeviceRemoved)
+            ) {
+                store.mark_link_gone(original.id);
             }
         }
     }

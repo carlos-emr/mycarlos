@@ -706,6 +706,8 @@
   "interface.history.event.created",
   "interface.history.event.deliveryFiled",
   "interface.history.event.deliveryReceiptSettled",
+  "interface.history.event.other",
+  "interface.history.how.personFolder",
   "interface.history.event.deviceApprovalRequestRestarted",
   "interface.history.event.deviceApprovalRequested",
   "interface.history.event.deviceApprovalStatusChanged",

@@ -1633,6 +1633,8 @@ interface-history-event-imported = Document added
 
 interface-history-event-moved = Document moved
 
+interface-history-event-other = Other event
+
 interface-history-event-passphraseChanged = Passphrase changed
 
 interface-history-event-portalLinkStarted = Clinic link started
@@ -1684,6 +1686,8 @@ interface-history-how-movedFromShared = Moved from Shared with me
 interface-history-how-passphrase = Passphrase
 
 interface-history-how-patient = Hidden by you
+
+interface-history-how-personFolder = A person's folder
 
 interface-history-how-picked = Imported from a chosen file
 
