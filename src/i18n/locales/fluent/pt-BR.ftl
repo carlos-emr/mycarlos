@@ -1851,6 +1851,24 @@ ai-summary-showInDocument = Ver no documento
 
 ai-summary-partial = Este resumo cobre apenas o início do documento: páginas 1 a { $last }.
 
+ai-summary-tooLong =
+    { $last ->
+    [one] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler mais ou menos a página 1 de { $total }.
+   *[other] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler mais ou menos as páginas 1 a { $last } de { $total }.
+    }
+
+ai-summary-tooLongStart = Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler só mais ou menos o início da página 1.
+
+ai-summary-tooLongAfter = O resumo dirá quais páginas foram lidas.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Resumir a página 1
+   *[other] Resumir as páginas 1 a { $last }
+    }
+
+ai-summary-readStart = Resumir o início da página 1
+
 ai-summary-noText = O myCarlos não conseguiu ler nenhum texto neste documento, então não pode resumi-lo. Ele pode ser uma digitalização.
 
 ai-explain-box = Palavra ou expressão
