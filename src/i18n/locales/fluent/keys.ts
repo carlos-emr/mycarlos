@@ -802,6 +802,7 @@ export const MESSAGE_KEYS = [
   "portal.codeRefused",
   "portal.codeSubmit",
   "portal.codeSubmitted",
+  "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
   "ai.explain.title",
@@ -827,6 +828,7 @@ export const MESSAGE_KEYS = [
   "ai.failed",
   "ai.error.memory",
   "ai.error.busy",
+  "ai.error.storage",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
   "aiHelper.notice.title",
@@ -1931,6 +1933,8 @@ const FLUENT_IDS_BY_KEY = {
   "portal.codeRefused": "portal-codeRefused",
   "portal.codeSubmit": "portal-codeSubmit",
   "portal.codeSubmitted": "portal-codeSubmitted",
+  "interface.history.damagedStorageOnly":
+    "interface-history-damagedStorageOnly",
   "ai.summary.button": "ai-summary-button",
   "ai.summary.title": "ai-summary-title",
   "ai.explain.title": "ai-explain-title",
@@ -1956,6 +1960,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.failed": "ai-failed",
   "ai.error.memory": "ai-error-memory",
   "ai.error.busy": "ai-error-busy",
+  "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
   "aiHelper.notice.title": "aiHelper-notice-title",
@@ -3068,6 +3073,7 @@ export interface MessageArgsByKey {
   "portal.codeRefused": undefined;
   "portal.codeSubmit": undefined;
   "portal.codeSubmitted": undefined;
+  "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;
   "ai.explain.title": undefined;
@@ -3097,6 +3103,7 @@ export interface MessageArgsByKey {
   "ai.failed": undefined;
   "ai.error.memory": undefined;
   "ai.error.busy": undefined;
+  "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
   "aiHelper.notice.title": undefined;

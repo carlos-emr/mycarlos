@@ -1571,6 +1571,8 @@ interface-history-damaged = Part of this history is damaged. Events after { $dat
 
 interface-history-damagedAll = Part of this history is damaged. Its events can't be checked, so none are shown.
 
+interface-history-damagedStorageOnly = Part of the storage for this history is damaged, but every event checks out and is shown.
+
 interface-history-damagedBefore = Part of this history is damaged. Events before { $date } can't be checked and aren't shown.
 
 interface-history-damagedBetween = Part of this history is damaged. Events between { $from } and { $to } can't be checked and aren't shown.
@@ -1876,6 +1878,8 @@ ai-failed = The AI helper could not finish. Try again.
 ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
+
+ai-error-storage = The AI helper's model could not be read from this computer. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.
 
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 
