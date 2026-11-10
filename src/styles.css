@@ -4107,3 +4107,54 @@ button:disabled,
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* The library's reminder to add a person's full name and birth date (#234). */
+.native-details-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-block: 8px 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.native-details-reminder p {
+  flex: 1 1 16rem;
+  margin: 0;
+}
+.native-person-details-setup {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.native-person-details-setup legend {
+  padding-inline: 4px;
+  font-weight: 600;
+}
+/* The tick boxes in the details group sit beside their words, on the Create
+   screen as in Security (#234). */
+.native-person-details-setup .native-person-date-unknown {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.native-person-details-setup .native-person-date-unknown input {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.native-person-details-setup label,
+.native-person-details-setup input {
+  min-width: 0;
+}

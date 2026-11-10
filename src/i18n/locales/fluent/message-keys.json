@@ -995,5 +995,10 @@
   "ai.models.starting",
   "ai.models.picking",
   "ai.models.changed",
-  "ai.models.installing"
+  "ai.models.installing",
+  "personDetails.setup",
+  "personDetails.later",
+  "personDetails.reminder",
+  "personDetails.notNow",
+  "personDetails.notSaved"
 ]

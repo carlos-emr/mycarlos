@@ -1071,6 +1071,96 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
   });
 });
 
+describe("the reminder to add a person's details (#234)", () => {
+  const people: VaultSnapshot = {
+    ...snapshot,
+    profiles: [
+      ...snapshot.profiles,
+      { id: "profile-2", displayName: "FAKE Child", createdAtMs: 2 },
+    ],
+  };
+  const withDetails = (shown: VaultSnapshot = people) =>
+    renderLibrary(shown, 0, {
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+  const note = () =>
+    screen.queryByRole("note", {
+      name: humanText("Full name and date of birth"),
+    });
+
+  it("names the open person first, and Not now waits until the vault opens again", () => {
+    withDetails();
+    expect(note()).toHaveHumanTextContent(
+      "Add FAKE Avery's full name and date of birth.",
+    );
+    fireEvent.click(
+      within(note()!).getByRole("button", { name: humanText("Not now") }),
+    );
+    // The next person without details, then none.
+    expect(note()).toHaveHumanTextContent(
+      "Add FAKE Child's full name and date of birth.",
+    );
+    fireEvent.click(
+      within(note()!).getByRole("button", { name: humanText("Not now") }),
+    );
+    expect(note()).toBeNull();
+  });
+
+  it("leads to Edit details with that person's form open", async () => {
+    withDetails();
+    fireEvent.click(
+      within(note()!).getByRole("button", { name: humanText("Edit details") }),
+    );
+    const form = await screen.findByRole("form", {
+      name: humanText("Details for FAKE Avery"),
+    });
+    await vi.waitFor(() =>
+      expect(
+        within(form).getByLabelText(
+          humanText("Full name, as on clinic documents"),
+        ),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("opens Edit details once: a later visit to Security does not open it again", async () => {
+    withDetails();
+    fireEvent.click(
+      within(note()!).getByRole("button", { name: humanText("Edit details") }),
+    );
+    const details = () =>
+      screen.queryByRole("form", { name: humanText("Details for FAKE Avery") });
+    await vi.waitFor(() => expect(details()).not.toBeNull());
+    fireEvent.click(
+      within(details()!).getByRole("button", { name: humanText("Cancel") }),
+    );
+    await vi.waitFor(() => expect(details()).toBeNull());
+    // Away to Audit history, and back to Security.
+    fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
+    await screen.findByText("There are no history events.");
+    fireEvent.click(screen.getByRole("button", { name: /Back to Security/i }));
+    expect(screen.getByRole("button", { name: "Audit history" })).toBeVisible();
+    expect(details()).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("is not shown once each person has a full name", () => {
+    withDetails({
+      ...people,
+      profiles: people.profiles.map((person) => ({
+        ...person,
+        fullName: `${person.displayName} Example`,
+      })),
+    });
+    expect(note()).toBeNull();
+  });
+
+  it("is not shown where details cannot be edited: recovery mode", () => {
+    withDetails({ ...people, recovery: "lostObjects" });
+    expect(note()).toBeNull();
+  });
+});
+
 describe("Settings > AI helper (#72)", () => {
   it("is its own page on a computer, beside Security and Preferences, and Preferences no longer holds it", async () => {
     renderLibrary();
