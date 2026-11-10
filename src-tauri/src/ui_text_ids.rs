@@ -498,6 +498,8 @@ pub enum MessageId {
     InterfacePhotoTheCameraStoppedCheckThatItIs,
     InterfacePhotoTheCameraStoppedChooseTryAgain,
     InterfacePhotoThisPhonesCameraCouldNotBeFound,
+    InterfaceReaderMarkedInText,
+    InterfaceReaderMarkedOnPage,
     InterfaceReaderOpening,
     InterfaceReaderPage,
     InterfaceReaderTextFollows,
@@ -1509,6 +1511,8 @@ impl MessageId {
         Self::InterfacePhotoTheCameraStoppedCheckThatItIs,
         Self::InterfacePhotoTheCameraStoppedChooseTryAgain,
         Self::InterfacePhotoThisPhonesCameraCouldNotBeFound,
+        Self::InterfaceReaderMarkedInText,
+        Self::InterfaceReaderMarkedOnPage,
         Self::InterfaceReaderOpening,
         Self::InterfaceReaderPage,
         Self::InterfaceReaderTextFollows,
@@ -2788,6 +2792,8 @@ impl MessageId {
             Self::InterfacePhotoThisPhonesCameraCouldNotBeFound => {
                 "interface-photo-thisPhonesCameraCouldNotBeFound"
             }
+            Self::InterfaceReaderMarkedInText => "interface-reader-markedInText",
+            Self::InterfaceReaderMarkedOnPage => "interface-reader-markedOnPage",
             Self::InterfaceReaderOpening => "interface-reader-opening",
             Self::InterfaceReaderPage => "interface-reader-page",
             Self::InterfaceReaderTextFollows => "interface-reader-textFollows",
@@ -3759,6 +3765,8 @@ impl MessageId {
             "interface.reader.page" => Some(Self::InterfaceReaderPage),
             "interface.reader.textFollows" => Some(Self::InterfaceReaderTextFollows),
             "interface.reader.where" => Some(Self::InterfaceReaderWhere),
+            "interface.reader.markedOnPage" => Some(Self::InterfaceReaderMarkedOnPage),
+            "interface.reader.markedInText" => Some(Self::InterfaceReaderMarkedInText),
             "interface.reader.zoom" => Some(Self::InterfaceReaderZoom),
             "interface.receive.dropped" => Some(Self::InterfaceReceiveDropped),
             "interface.receive.refused" => Some(Self::InterfaceReceiveRefused),

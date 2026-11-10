@@ -247,6 +247,8 @@
   "interface.reader.page",
   "interface.reader.textFollows",
   "interface.reader.where",
+  "interface.reader.markedOnPage",
+  "interface.reader.markedInText",
   "interface.reader.zoom",
   "interface.receive.dropped",
   "interface.receive.refused",

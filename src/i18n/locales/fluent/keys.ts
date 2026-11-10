@@ -248,6 +248,8 @@ export const MESSAGE_KEYS = [
   "interface.reader.page",
   "interface.reader.textFollows",
   "interface.reader.where",
+  "interface.reader.markedOnPage",
+  "interface.reader.markedInText",
   "interface.reader.zoom",
   "interface.receive.dropped",
   "interface.receive.refused",
@@ -1359,6 +1361,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.reader.page": "interface-reader-page",
   "interface.reader.textFollows": "interface-reader-textFollows",
   "interface.reader.where": "interface-reader-where",
+  "interface.reader.markedOnPage": "interface-reader-markedOnPage",
+  "interface.reader.markedInText": "interface-reader-markedInText",
   "interface.reader.zoom": "interface-reader-zoom",
   "interface.receive.dropped": "interface-receive-dropped",
   "interface.receive.refused": "interface-receive-refused",
@@ -2499,6 +2503,8 @@ export interface MessageArgsByKey {
     total: FluentArgument;
   };
   "interface.reader.where": { page: FluentArgument; total: FluentArgument };
+  "interface.reader.markedOnPage": { page: FluentArgument };
+  "interface.reader.markedInText": { page: FluentArgument };
   "interface.reader.zoom": { percent: FluentArgument };
   "interface.receive.dropped": { count: FluentArgument };
   "interface.receive.refused": { count: FluentArgument };
