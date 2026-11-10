@@ -32,6 +32,8 @@ import type {
   ViewedPage,
 } from "./vault";
 import { ANNOUNCE_DELAY_MS } from "./native/announce";
+import type { ModelSummary } from "./ai/types";
+import { FAKE_MODEL, fakeDocumentText } from "./test/fakeLocalModel";
 import { setLocaleOverride, translate } from "./i18n";
 
 // One fake native runtime: stamp and clone when data is captured, before delivery.
@@ -2402,15 +2404,21 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: humanText("Security") }),
     );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
     await user.type(
-      screen.getByLabelText(humanText("New profile name")),
+      within(dialog).getByLabelText(humanText("New profile name")),
       " shared WITH me ",
     );
-    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+    expect(within(dialog).getByRole("alert")).toHaveHumanTextContent(
       "Shared with me is where shared files go. Choose another name.",
     );
     expect(
-      screen.getByRole("button", { name: humanText("Add profile") }),
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
     ).toBeDisabled();
     expect(bridge.createProfile).not.toHaveBeenCalled();
   });
@@ -6464,6 +6472,411 @@ describe("durable vault UI", () => {
     }
   });
 
+  describe("while an AI answer is written (D19)", () => {
+    const summary: ModelSummary = {
+      sentences: [{ text: "FAKE: a short summary.", quote: "FAKE results" }],
+      model: FAKE_MODEL,
+      lastPage: 0,
+      lastPageCut: false,
+      keptId: "FAKE-kept-1",
+    };
+    // Opens FAKE_Results.pdf in the reader and asks for its summary, on fake
+    // timers. The answer waits until the test settles it; `started` is what
+    // native says once the model is asked it.
+    async function askForSummary(synchronousLimit?: number) {
+      let settle!: {
+        resolve: (written: ModelSummary) => void;
+        reject: (failure: unknown) => void;
+      };
+      // Every answer asked, oldest first.
+      const settles: (typeof settle)[] = [];
+      let started: (answer: {
+        answerId: string;
+        limitMs: number;
+      }) => void = () => undefined;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+        viewPage: vi.fn().mockResolvedValue({
+          pageCount: 1,
+          width: 800,
+          height: 1035,
+          image:
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+          text: "FAKE results text",
+        }),
+        documentText: vi.fn(async () =>
+          fakeDocumentText(["FAKE results text"]),
+        ),
+        aiModelStatus: vi
+          .fn()
+          .mockResolvedValue({ state: "installed", model: FAKE_MODEL }),
+        aiSummarize: vi.fn((_pages, _lang, _keep, answerId) => {
+          if (synchronousLimit !== undefined)
+            started({ answerId: answerId!, limitMs: synchronousLimit });
+          return new Promise<ModelSummary>((resolve, reject) => {
+            settle = { resolve, reject };
+            settles.push(settle);
+          });
+        }),
+        onAiAnswerStarted: vi.fn(
+          (
+            handler: (answer: { answerId: string; limitMs: number }) => void,
+          ) => {
+            started = handler;
+            return () => undefined;
+          },
+        ),
+      });
+      await act(async () => {
+        render(<VaultApp bridge={bridge} />);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText(humanText("FAKE_Results.pdf")));
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Read") }),
+        );
+      });
+      const reader = screen.getByRole("dialog", {
+        name: humanText("FAKE_Results.pdf"),
+      });
+      await act(async () => {
+        fireEvent.click(
+          within(reader).getByRole("button", { name: humanText("Summary") }),
+        );
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Continue") }),
+        );
+      });
+      // The kept answers looked up, then the text read, then the model asked.
+      for (let flush = 0; flush < 10; flush += 1) {
+        if (vi.mocked(bridge.aiSummarize).mock.calls.length) break;
+        await act(async () => undefined);
+      }
+      expect(bridge.aiSummarize).toHaveBeenCalledOnce();
+      return {
+        bridge,
+        settle: () => settle,
+        settles,
+        started: (limitMs: number, index = settles.length - 1) =>
+          act(async () => {
+            const answerId = vi.mocked(bridge.aiSummarize).mock.calls[index][3];
+            expect(answerId).toMatch(/^[0-9a-f-]{36}$/);
+            started({ answerId: answerId!, limitMs });
+          }),
+      };
+    }
+
+    it("ownership: the token exists before a synchronous started event", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge } = await askForSummary(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(10 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ownership: a failed manual lock keeps the current answer's session", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, started } = await askForSummary();
+        await started(5 * 60 * 1000);
+        vi.mocked(bridge.lock).mockRejectedValueOnce({ code: "storage" });
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", {
+              name: humanText("Unlocked · Lock now"),
+            }),
+          ),
+        );
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    for (const ending of ["pending", "resolve", "reject"] as const) {
+      it(`ownership: an old answer ${ending} cannot postpone the next session`, async () => {
+        vi.useFakeTimers();
+        try {
+          const { bridge, settles } = await askForSummary();
+          await act(async () =>
+            fireEvent.click(
+              screen.getByRole("button", {
+                name: humanText("Unlocked · Lock now"),
+              }),
+            ),
+          );
+          expect(bridge.lock).toHaveBeenCalledOnce();
+          vi.mocked(bridge.unlock).mockImplementation(async () =>
+            captureSnapshot(snapshotWithRecord),
+          );
+          await act(async () => {
+            fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
+              target: { value: "river-azimuth-cobalt-sparrow-934" },
+            });
+            fireEvent.click(
+              screen.getByRole("button", { name: humanText("Unlock") }),
+            );
+          });
+          expect(
+            screen.getByRole("heading", { name: humanText("My records") }),
+          ).toBeVisible();
+          await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+          if (ending !== "pending")
+            await act(async () => {
+              if (ending === "resolve") settles[0].resolve(summary);
+              else settles[0].reject({ code: "aiCancelled" });
+            });
+          await act(async () => vi.advanceTimersByTime(60_000 + 10_000));
+          expect(bridge.lock).toHaveBeenCalledTimes(2);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    }
+
+    it("ownership: a superseded answer's late start and end cannot extend the current answer", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles, started } = await askForSummary();
+        const summaryButton = () =>
+          within(
+            screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+          ).getByRole("button", { name: humanText("Summary") });
+        await act(async () => fireEvent.click(summaryButton()));
+        await act(async () => fireEvent.click(summaryButton()));
+        for (
+          let flush = 0;
+          flush < 10 && vi.mocked(bridge.aiSummarize).mock.calls.length < 2;
+          flush += 1
+        )
+          await act(async () => undefined);
+        expect(bridge.aiSummarize).toHaveBeenCalledTimes(2);
+        await started(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+        await started(20 * 60 * 1000, 0);
+        await act(async () => settles[0].reject({ code: "aiCancelled" }));
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ownership: old delivery cannot retain work after the current answer ends", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles } = await askForSummary();
+        const button = () =>
+          within(
+            screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+          ).getByRole("button", { name: humanText("Summary") });
+        await act(async () => fireEvent.click(button()));
+        await act(async () => fireEvent.click(button()));
+        for (let i = 0; i < 10 && settles.length < 2; i += 1)
+          await act(async () => undefined);
+        expect(settles).toHaveLength(2);
+        await act(async () => vi.advanceTimersByTime(60_000));
+        await act(async () => settles[1].resolve(summary));
+        await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ownership: old started and settled deliveries cannot extend an answer in a new session", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles, started } = await askForSummary();
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", {
+              name: humanText("Unlocked · Lock now"),
+            }),
+          ),
+        );
+        vi.mocked(bridge.unlock).mockImplementation(async () =>
+          captureSnapshot(snapshotWithRecord),
+        );
+        await act(async () => {
+          fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
+            target: { value: "river-azimuth-cobalt-sparrow-934" },
+          });
+          fireEvent.click(
+            screen.getByRole("button", { name: humanText("Unlock") }),
+          );
+        });
+        await act(async () =>
+          fireEvent.click(screen.getByText(humanText("FAKE_Results.pdf"))),
+        );
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", { name: humanText("Read") }),
+          ),
+        );
+        const reader = screen.getByRole("dialog", {
+          name: humanText("FAKE_Results.pdf"),
+        });
+        await act(async () =>
+          fireEvent.click(
+            within(reader).getByRole("button", { name: humanText("Summary") }),
+          ),
+        );
+        const go = screen.queryByRole("button", {
+          name: humanText("Continue"),
+        });
+        if (go) await act(async () => fireEvent.click(go));
+        for (let i = 0; i < 10 && settles.length < 2; i += 1)
+          await act(async () => undefined);
+        expect(settles).toHaveLength(2);
+        await started(5 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(4 * 60 * 1000));
+        await started(20 * 60 * 1000, 0);
+        await act(async () => settles[0].reject({ code: "aiCancelled" }));
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not lock until the answer's own limit and the delay have passed", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, started } = await askForSummary();
+        // Unheld, the five-minute delay would have locked by now.
+        await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        // Asked at 6 minutes with a limit of 7: held until 13, then the delay.
+        await started(7 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(11 * 60 * 1000 + 30_000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(60_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("waits at most 20 minutes for an answer not yet asked, as while the helper starts", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge } = await askForSummary();
+        await act(async () => vi.advanceTimersByTime(20 * 60 * 1000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("counts a limit said to be longer than 20 minutes as 20", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, started } = await askForSummary();
+        await act(async () => vi.advanceTimersByTime(60_000));
+        // Said at 1 minute: held until 21, then the delay.
+        await started(60 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(20 * 60 * 1000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 + 10_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps a newer answer's hold when an older answer's word comes late", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, settles, started } = await askForSummary();
+        // The panel closed and opened again: a newer summary is asked while
+        // the older one is still ending.
+        const summaryButton = () =>
+          within(
+            screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+          ).getByRole("button", { name: humanText("Summary") });
+        await act(async () => fireEvent.click(summaryButton()));
+        await act(async () => fireEvent.click(summaryButton()));
+        for (let flush = 0; flush < 10; flush += 1) {
+          if (vi.mocked(bridge.aiSummarize).mock.calls.length > 1) break;
+          await act(async () => undefined);
+        }
+        expect(bridge.aiSummarize).toHaveBeenCalledTimes(2);
+        // The older answer's limit of 5 minutes arrives now: it must not cut
+        // the newer one's hold short, which would lock at about 10 minutes.
+        await started(5 * 60 * 1000, 0);
+        await act(async () => vi.advanceTimersByTime(10 * 60 * 1000 + 30_000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        // Once the older one has ended, the newer one's own limit counts.
+        await act(async () => settles[0].reject({ code: "aiCancelled" }));
+        await started(7 * 60 * 1000);
+        await act(async () => vi.advanceTimersByTime(11 * 60 * 1000 + 30_000));
+        expect(bridge.lock).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTime(60_000));
+        expect(bridge.lock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each(["an answer", "a failure", "a cancel"])(
+      "restarts the delay from the end, then holds no more, when it ends with %s",
+      async (ending) => {
+        vi.useFakeTimers();
+        try {
+          const { bridge, settle, started } = await askForSummary();
+          await started(15 * 60 * 1000);
+          await act(async () => vi.advanceTimersByTime(10 * 60 * 1000));
+          await act(async () => {
+            if (ending === "an answer") settle().resolve(summary);
+            else if (ending === "a failure")
+              settle().reject(new Error("FAKE failure"));
+            else settle().reject({ code: "aiCancelled" });
+          });
+          // Still held (until 15 minutes), it would not lock before 20.
+          await act(async () => vi.advanceTimersByTime(4 * 60 * 1000 + 30_000));
+          expect(bridge.lock).not.toHaveBeenCalled();
+          await act(async () => vi.advanceTimersByTime(60_000));
+          expect(bridge.lock).toHaveBeenCalledOnce();
+        } finally {
+          vi.useRealTimers();
+        }
+      },
+    );
+
+    it("still locks at once on Lock now, and stops the answer", async () => {
+      vi.useFakeTimers();
+      try {
+        const { bridge, started } = await askForSummary();
+        await started(15 * 60 * 1000);
+        await act(async () => {
+          fireEvent.click(
+            screen.getByRole("button", { name: "Unlocked · Lock now" }),
+          );
+        });
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        expect(bridge.aiCancel).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it("hides content at the deadline during an export and locks once it finishes", async () => {
     vi.useFakeTimers();
     try {
@@ -9011,13 +9424,10 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: humanText("Security") }),
+      await screen.findByRole("button", { name: humanText(/^Shared with me/) }),
     );
-    const clinic = screen.getByRole("region", {
-      name: humanText(translate("en", "portal.title")),
-    });
     await user.click(
-      within(clinic).getByRole("button", {
+      screen.getByRole("button", {
         name: humanText(translate("en", "portal.check")),
       }),
     );
@@ -9029,7 +9439,7 @@ describe("durable vault UI", () => {
 
     act(() => setLocaleOverride("fr"));
     expect(
-      within(clinic).getByRole("button", {
+      screen.getByRole("button", {
         name: humanText(translate("fr", "portal.check")),
       }),
     ).toBeVisible();
@@ -9037,6 +9447,19 @@ describe("durable vault UI", () => {
       translate("fr", "portal.result", { added: 0, refused: 0 }),
     );
     expect(notice).not.toHaveHumanTextContent(english);
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText(translate("fr", "security.title")),
+      }),
+    );
+    const clinic = screen.getByRole("region", {
+      name: humanText(translate("fr", "portal.title")),
+    });
+    expect(
+      within(clinic).queryByRole("button", {
+        name: humanText(translate("fr", "portal.check")),
+      }),
+    ).toBeNull();
     expect(
       within(clinic).getByLabelText(translate("fr", "portal.deviceCode")),
     ).toHaveValue(deviceCode);
@@ -9047,11 +9470,17 @@ describe("durable vault UI", () => {
       within(clinic).getByRole("heading", { name: "FAKE {Clinic}" }),
     ).toBeVisible();
     act(() => setLocaleOverride("en"));
-    expect(notice).toHaveHumanTextContent(english);
+    // Navigation remounts the visible status; check its current node.
+    expect(
+      screen.getByText(humanText(english)).closest('[role="status"]'),
+    ).toHaveHumanTextContent(english);
     expect(check).toHaveBeenCalledOnce();
   });
 
-  it("keeps the next profile name typed while an earlier profile is being saved", async () => {
+  it("keeps the Add profile dialog and its fields while a profile is being saved, and opens it empty for the next", async () => {
+    // With Add profile in a dialog (#165), nothing can be typed for a next
+    // profile while one is saved: the dialog holds the fields until the save
+    // ends, and opens empty for the next.
     const user = userEvent.setup();
     const vault = structuredClone(emptySnapshot);
     let finishSave!: () => void;
@@ -9076,26 +9505,31 @@ describe("durable vault UI", () => {
       createProfile,
       updateProfileDetails: vi.fn().mockResolvedValue(undefined),
     });
+    const fullNameLabel = humanText(translate("en", "personDetails.fullName"));
+    const openAdd = async () => {
+      await user.click(
+        screen.getByRole("button", { name: humanText("Add profile") }),
+      );
+      return screen.getByRole("dialog", { name: humanText("Add profile") });
+    };
     try {
       render(<VaultApp bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: humanText("Security") }),
       );
-      const name = screen.getByLabelText(humanText("New profile name"));
-      const fullNameLabel = humanText(
-        translate("en", "personDetails.fullName"),
-      );
+      const dialog = await openAdd();
+      const name = within(dialog).getByLabelText(humanText("New profile name"));
       await user.type(name, "FAKE First");
       await user.type(
-        screen.getByLabelText(fullNameLabel),
+        within(dialog).getByLabelText(fullNameLabel),
         "FAKE First Person",
       );
       await user.click(
-        screen.getByRole("checkbox", {
+        within(dialog).getByRole("checkbox", {
           name: humanText(translate("en", "personDetails.birthDateUnknown")),
         }),
       );
-      const add = screen.getByRole("button", {
+      const add = within(dialog).getByRole("button", {
         name: humanText("Add profile"),
       });
       await user.click(add);
@@ -9104,10 +9538,11 @@ describe("durable vault UI", () => {
           fullName: "FAKE First Person",
         }),
       );
+      // While it saves: the same dialog, its fields kept and held.
+      expect(dialog).toBeInTheDocument();
       expect(add).toBeDisabled();
-      expect(name).toBeEnabled();
-      await user.clear(name);
-      await user.type(name, "FAKE Second");
+      expect(name).toBeDisabled();
+      expect(name).toHaveValue("FAKE First");
 
       await act(async () => finishSave());
       await screen.findByText(
@@ -9117,21 +9552,21 @@ describe("durable vault UI", () => {
           }),
         ),
       );
-      // Details belong to the saved first profile and are cleared. Its late
-      // success must leave the independently edited next display name alone.
-      await waitFor(() =>
-        expect(screen.getByLabelText(fullNameLabel)).toHaveValue(""),
-      );
-      expect(screen.getByLabelText(humanText("New profile name"))).toHaveValue(
-        "FAKE Second",
-      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const next = await openAdd();
+      expect(
+        within(next).getByLabelText(humanText("New profile name")),
+      ).toHaveValue("");
+      expect(within(next).getByLabelText(fullNameLabel)).toHaveValue("");
       expect(createProfile).toHaveBeenCalledOnce();
     } finally {
       await act(async () => finishSave());
     }
   });
 
-  it("keeps an existing person draft while adding another profile refreshes the list", async () => {
+  it("keeps a person's unsaved details while their Edit details dialog is open: Add profile can't start then", async () => {
+    // With both in dialogs (#165), adding another profile can't refresh the
+    // list under an Edit details draft: the page behind the dialog is inert.
     const user = userEvent.setup();
     const vault = structuredClone(emptySnapshot);
     vault.profiles[0].displayName = "FAKE Existing";
@@ -9139,17 +9574,7 @@ describe("durable vault UI", () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi.fn(async () => captureSnapshot(vault)),
-      createProfile: vi.fn(
-        async (displayName: string, details?: PersonDetails) => {
-          vault.profiles.push({
-            id: "profile-2",
-            displayName,
-            createdAtMs: 2,
-            ...details,
-          });
-          return "profile-2";
-        },
-      ),
+      createProfile: vi.fn().mockResolvedValue("profile-2"),
       updateProfileDetails: vi.fn(
         async (id: string, details: PersonDetails) => {
           Object.assign(
@@ -9163,58 +9588,34 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: humanText("Security") }),
     );
+    const opener = screen.getByRole("button", {
+      name: humanText("Add profile"),
+    });
     await user.click(
       screen.getByRole("button", {
         name: humanText("Edit details for FAKE Existing"),
       }),
     );
-    const existing = () =>
-      screen.getByRole("form", {
-        name: humanText("Details for FAKE Existing"),
-      });
-    const fullName = humanText(translate("en", "personDetails.fullName"));
-    await user.clear(within(existing()).getByLabelText(fullName));
-    await user.type(
-      within(existing()).getByLabelText(fullName),
-      "FAKE Unsaved Person",
-    );
-
-    const create = screen
-      .getByLabelText(humanText("New profile name"))
-      .closest("form")!;
-    await user.type(
-      within(create).getByLabelText(humanText("New profile name")),
-      "FAKE Added",
-    );
-    await user.type(
-      within(create).getByLabelText(fullName),
-      "FAKE Added Person",
-    );
-    await user.click(
-      within(create).getByRole("checkbox", {
-        name: humanText(translate("en", "personDetails.birthDateUnknown")),
-      }),
-    );
-    await user.click(
-      within(create).getByRole("button", { name: humanText("Add profile") }),
-    );
-    await screen.findByText(humanText("FAKE Added was added."));
-    // The added person proves the list refreshed. Re-querying the current
-    // form prevents a detached old draft from satisfying these checks.
-    expect(
-      screen.getByRole("button", {
-        name: humanText("Edit details for FAKE Added"),
-      }),
-    ).toBeVisible();
-    expect(within(existing()).getByLabelText(fullName)).toHaveValue(
-      "FAKE Unsaved Person",
-    );
-    expect(bridge.createProfile).toHaveBeenCalledExactlyOnceWith("FAKE Added", {
-      fullName: "FAKE Added Person",
+    const existing = screen.getByRole("form", {
+      name: humanText("Details for FAKE Existing"),
     });
-    expect(bridge.updateProfileDetails).not.toHaveBeenCalled();
+    const fullName = humanText(translate("en", "personDetails.fullName"));
+    await user.clear(within(existing).getByLabelText(fullName));
+    await user.type(
+      within(existing).getByLabelText(fullName),
+      "FAKE Unsaved Person",
+    );
+    // Add profile is behind the dialog, out of reach.
+    expect(opener.closest("[inert]")).not.toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: humanText("Add profile") }),
+    ).toBeNull();
+    expect(within(existing).getByLabelText(fullName)).toHaveValue(
+      "FAKE Unsaved Person",
+    );
+    expect(bridge.createProfile).not.toHaveBeenCalled();
     await user.click(
-      within(existing()).getByRole("button", {
+      within(existing).getByRole("button", {
         name: humanText("Save details"),
       }),
     );
@@ -9244,24 +9645,34 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Security") }),
     );
 
-    const name = screen.getByLabelText(humanText("New profile name"));
-    await user.type(name, "Jamie's parent");
+    // Add profile opens a dialog (Ben, 29 Oct).
     await user.click(
       screen.getByRole("button", { name: humanText("Add profile") }),
     );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
+    const name = within(dialog).getByLabelText(humanText("New profile name"));
+    await user.type(name, "Jamie's parent");
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
     await waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
     expect(name).toHaveValue("Jamie's parent");
-    // The refusal names the box to check (#69).
+    // The refusal names the box to check (#69), inside the dialog, which
+    // stays open: the page behind it is inert.
     expect(
-      await screen.findByText(
+      await within(dialog).findByText(
         humanText("Check the profile name, then try again."),
       ),
     ).toBeVisible();
 
     await user.click(
-      screen.getByRole("button", { name: humanText("Add profile") }),
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
     );
-    await waitFor(() => expect(name).toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 
   it("clears unfinished passphrase fields when leaving Security", async () => {
@@ -10997,6 +11408,9 @@ describe("clinic connection operations", () => {
       await act(async () =>
         pending.finish({ link: connectedLink, approvalError: null }),
       );
+      await user.click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
       expect(
         await screen.findByRole("button", { name: "Check for new documents" }),
       ).toBeVisible();
@@ -11009,6 +11423,216 @@ describe("clinic connection operations", () => {
       await waitFor(() =>
         expect(screen.getByText(humanText(expected))).toBeVisible(),
       );
+    },
+  );
+
+  it.each([
+    ["during save", "announce"],
+    ["before announcement", "announce"],
+    ["during save", "lock"],
+    ["before announcement", "lock"],
+    ["before announcement", "change document"],
+    ["before announcement", "rename"],
+    ["before announcement", "change person"],
+  ] as const)(
+    "settles photo and clinic results arriving %s before %s",
+    async (arrival, nextAction) => {
+      let current = clinicSnapshot;
+      const pending = pendingConnection();
+      let finishPhoto!: (outcome: ImportOutcome) => void;
+      const streamCanvas = document.createElement("canvas");
+      streamCanvas.width = 64;
+      streamCanvas.height = 48;
+      const paint = () => streamCanvas.getContext("2d")!.fillRect(0, 0, 64, 48);
+      paint();
+      const stream = streamCanvas.captureStream(15);
+      const painter = window.setInterval(paint, 40);
+      const camera = vi
+        .spyOn(navigator.mediaDevices, "getUserMedia")
+        .mockResolvedValue(stream);
+      window.localStorage.setItem("mycarlos.cameraExplained.v1", "1");
+      onTestFinished(() => {
+        vi.useRealTimers();
+        camera.mockRestore();
+        window.clearInterval(painter);
+        stream.getTracks().forEach((track) => track.stop());
+        window.localStorage.removeItem("mycarlos.cameraExplained.v1");
+      });
+      const photo = {
+        ...clinicSnapshot.records[0],
+        id: "FAKE-photo-notice",
+        displayName: "FAKE_Camera.jpg",
+        mediaType: "application/octet-stream",
+      };
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        platform: vi.fn().mockResolvedValue("windows"),
+        snapshot: vi.fn(async () => captureSnapshot(current)),
+        unlock: vi.fn(async () => captureSnapshot(current)),
+        connectPortal: vi.fn().mockReturnValue(pending.promise),
+        checkDocuments: vi
+          .fn()
+          .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+        savePhoto: vi.fn().mockReturnValue(
+          new Promise<ImportOutcome>((resolve) => {
+            finishPhoto = resolve;
+          }),
+        ),
+        isPhoto: vi.fn(async (id) => id === photo.id),
+        renameRecord: vi.fn(async (id, name) => {
+          current = {
+            ...current,
+            records: current.records.map((record) =>
+              record.id === id ? { ...record, displayName: name } : record,
+            ),
+          };
+        }),
+      });
+      render(<VaultApp bridge={bridge} />);
+      const form = await openConnectForm();
+      await act(async () => fireEvent.submit(form));
+      await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+      const user = userEvent.setup();
+      await user.click(
+        screen.getAllByRole("button", { name: /^My records/ })[0],
+      );
+      await user.click(screen.getByRole("button", { name: "Take a photo" }));
+      const shutter = screen.getByRole("button", { name: "Take photo" });
+      await waitFor(() => expect(shutter).toBeEnabled());
+      fireEvent.click(shutter);
+      fireEvent.click(screen.getByRole("button", { name: "Use photo" }));
+      await waitFor(() => expect(bridge.savePhoto).toHaveBeenCalledOnce());
+
+      // Control the actual deferred announcement, after camera encoding has
+      // finished, without changing the native save or clinic promise order.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const finishClinic = async () => {
+        current = { ...current, portalLinks: [connectedLink] };
+        if (nextAction === "change person")
+          current = {
+            ...current,
+            profiles: [
+              ...current.profiles,
+              {
+                id: "FAKE-other-person",
+                displayName: "FAKE Second Patient",
+                createdAtMs: 2,
+              },
+            ],
+          };
+        await act(async () =>
+          pending.finish({ link: connectedLink, approvalError: null }),
+        );
+      };
+      if (arrival === "during save") await finishClinic();
+      current = { ...current, records: [...current.records, photo] };
+      await act(async () =>
+        finishPhoto({ imported: [photo.id], skippedDuplicates: [] }),
+      );
+      const details = screen.getByRole("dialog", { name: photo.displayName });
+      expect(details).toBeVisible();
+      if (arrival === "before announcement") await finishClinic();
+      const closeDetails = () =>
+        fireEvent.click(
+          within(details).getByRole("button", {
+            name: "Close document details",
+          }),
+        );
+      if (nextAction === "lock") {
+        closeDetails();
+        await act(async () =>
+          fireEvent.click(
+            screen.getAllByRole("button", { name: /Lock now/ })[0],
+          ),
+        );
+        expect(
+          screen.getByRole("heading", { name: "Unlock your vault" }),
+        ).toBeVisible();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+        });
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved|Device linked/),
+        ).not.toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+          target: { value: "FAKE photo notice passphrase" },
+        });
+        await act(async () =>
+          fireEvent.submit(
+            screen.getByRole("button", { name: "Unlock" }).closest("form")!,
+          ),
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+        });
+        expect(
+          screen.getByRole("heading", { name: "My records" }),
+        ).toBeVisible();
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved|Device linked/),
+        ).not.toBeInTheDocument();
+        expect(bridge.savePhoto).toHaveBeenCalledOnce();
+        return;
+      }
+      if (nextAction === "change document") {
+        closeDetails();
+        await act(async () =>
+          fireEvent.click(
+            screen.getByRole("button", { name: "FAKE_Results.pdf" }),
+          ),
+        );
+      } else if (nextAction === "change person") {
+        closeDetails();
+        const otherPerson = () =>
+          within(
+            screen.getByRole("navigation", { name: "Record library" }),
+          ).getByRole("button", { name: /^FAKE Second Patient\b/ });
+        await act(async () => fireEvent.click(otherPerson()));
+        expect(otherPerson()).toHaveAttribute("aria-current", "page");
+      } else if (nextAction === "rename") {
+        await act(async () =>
+          fireEvent.click(
+            within(details).getByRole("button", { name: "Rename document" }),
+          ),
+        );
+        fireEvent.change(screen.getByRole("textbox", { name: "File name" }), {
+          target: { value: "FAKE_Renamed" },
+        });
+        await act(async () =>
+          fireEvent.click(screen.getByRole("button", { name: "Save name" })),
+        );
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
+      });
+      const clinicNotice =
+        "Device linked. Its approval status is shown in Security, under Clinic documents.";
+      if (nextAction === "announce")
+        expect(within(details).getByRole("status")).toHaveHumanTextContent(
+          `FAKE_Camera.jpg was saved in myCarlos. ${clinicNotice}`,
+        );
+      else if (nextAction === "rename")
+        expect(
+          within(
+            screen.getByRole("dialog", { name: "FAKE_Renamed.jpg" }),
+          ).getByRole("status"),
+        ).toHaveHumanTextContent(
+          `Document renamed to FAKE_Renamed.jpg. ${clinicNotice}`,
+        );
+      else if (nextAction === "change document")
+        expect(
+          within(
+            screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+          ).getByRole("status"),
+        ).toHaveHumanTextContent(clinicNotice);
+      else
+        expect(screen.getByText(clinicNotice, { exact: true })).toBeVisible();
+      if (nextAction !== "announce")
+        expect(
+          screen.queryByText(/FAKE_Camera.jpg was saved/),
+        ).not.toBeInTheDocument();
+      expect(bridge.savePhoto).toHaveBeenCalledOnce();
+      expect(bridge.connectPortal).toHaveBeenCalledOnce();
     },
   );
 
@@ -11049,6 +11673,9 @@ describe("clinic connection operations", () => {
     current = { ...clinicSnapshot, portalLinks: [connectedLink] };
     await act(async () =>
       pending.finish({ link: connectedLink, approvalError: null }),
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
     );
     expect(
       await screen.findByRole("button", { name: "Check for new documents" }),
@@ -11149,6 +11776,9 @@ describe("clinic connection operations", () => {
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     expect(bridge.connectPortal).toHaveBeenCalledTimes(3);
     await act(async () => refuseLater({ code: "portal_busy" }));
+    await user.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
     expect(
       await screen.findByRole("button", { name: "Check for new documents" }),
     ).toBeVisible();
@@ -11277,6 +11907,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     link: PortalLinkSummary,
     extra: Partial<PortalApprovalCheck> = {},
   ): PortalApprovalCheck => ({
+    capture: captureSnapshot(vaultWith(link)).capture,
     link,
     expiresInMs: null,
     issue: null,
@@ -11338,7 +11969,9 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     const bridge = clinicBridge({
       refreshDeviceApproval: vi
         .fn()
-        .mockResolvedValue(found(pending, { expiresInMs: 4 * 60_000 })),
+        .mockImplementation(async () =>
+          found(pending, { expiresInMs: 4 * 60_000 }),
+        ),
     });
     await openClinicView(bridge);
     const snapshots = vi.mocked(bridge.snapshot).mock.calls.length;
@@ -11392,7 +12025,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
             finishCheck = resolve;
           }),
         )
-        .mockResolvedValue(found(pending)),
+        .mockImplementation(async () => found(pending)),
     });
     await openClinicView(bridge);
     await pass(10_000);
@@ -11512,14 +12145,17 @@ describe("automatic clinic approval checks in the app (#131)", () => {
           ],
         })
         .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
-      refreshDeviceApproval: vi.fn().mockResolvedValue(found(pending)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(pending)),
     });
     fakeClock();
     await act(async () => {
       render(<VaultApp bridge={bridge} />);
     });
     await pass(100);
-    // The check in the library's header, not the clinic view's.
+    // Start the manual document check from the reserved Shared view.
+    await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
     await click(
       screen.getByRole("button", { name: "Check for new documents" }),
     );
@@ -11535,6 +12171,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     // A wait does not outlive the session: after a lock, the first check
     // comes 10 s after the view opens.
     vi.mocked(bridge.checkDocuments!).mockClear();
+    await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
     await click(
       screen.getAllByRole("button", { name: "Check for new documents" })[0],
     );
@@ -11555,6 +12192,686 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     await pass(10_000);
     expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
   });
+
+  const arrivalVault = (link: PortalLinkSummary): VaultSnapshot => ({
+    ...vaultWith(link),
+    sharedProfileId: "FAKE_NATIVE_CAPTURE_OWNER",
+    automaticDocumentChecksSupported: true,
+  });
+  const accepted: PortalLinkSummary = {
+    ...pending,
+    approvalStatus: "accepted",
+    clinicApproved: true,
+  };
+
+  it("keeps a newer polled device and unrelated records from an older whole capture", async () => {
+    let deliverWhole!: () => void;
+    const beforePoll = arrivalVault(pending);
+    const withArrival: VaultSnapshot = {
+      ...beforePoll,
+      records: [
+        ...beforePoll.records,
+        {
+          ...beforePoll.records[0],
+          id: "FAKE_PARALLEL_RECORD",
+          displayName: "FAKE_Parallel_Arrival.pdf",
+        },
+      ],
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(beforePoll)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(accepted)),
+    });
+    await openClinicView(bridge);
+    const beforeRead = vi.mocked(bridge.snapshot).mock.calls.length;
+    vi.mocked(bridge.snapshot).mockImplementationOnce(() => {
+      const captured = captureSnapshot(withArrival);
+      return new Promise<VaultSnapshot>((resolve) => {
+        deliverWhole = () => resolve(captured);
+      });
+    });
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(bridge.snapshot).toHaveBeenCalledTimes(beforeRead + 1);
+    await pass(10_000);
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "The clinic approved this device.",
+      ),
+    ).toBeVisible();
+    await act(async () => deliverWhole());
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "The clinic approved this device.",
+      ),
+    ).toBeVisible();
+    await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    expect(
+      screen.getByRole("button", { name: "FAKE_Parallel_Arrival.pdf" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+  });
+
+  it("keeps a newer whole device capture ahead of an older delivered poll and panel notice", async () => {
+    let deliverPoll!: () => void;
+    const refused: PortalLinkSummary = {
+      ...pending,
+      approvalStatus: "refused",
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi.fn().mockImplementationOnce(() => {
+        const captured = found(accepted, { expiresInMs: 240_000 });
+        return new Promise<PortalApprovalCheck>((resolve) => {
+          deliverPoll = () => resolve(captured);
+        });
+      }),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(refused)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(
+      screen.getByText(
+        "The clinic refused this device approval request. Contact your clinic for next steps.",
+      ),
+    ).toBeVisible();
+    await act(async () => deliverPoll());
+    expect(
+      screen.getByText(
+        "The clinic refused this device approval request. Contact your clinic for next steps.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("The clinic approved this device."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Time left for this request/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("retires a poll countdown when a newer whole capture changes the device", async () => {
+    const pickedUp: PortalLinkSummary = {
+      ...pending,
+      approvalStatus: "challenge_ready",
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () =>
+          found(pending, { expiresInMs: 240_000 }),
+        ),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(
+      screen.getByText(
+        humanText("Time left for this request: about 4 minutes."),
+      ),
+    ).toBeVisible();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(pickedUp)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(
+      screen.getByText(
+        "Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Time left for this request/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("refuses a poll capture from another native runtime before device or panel publication", async () => {
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi.fn().mockImplementation(async () => {
+        const result = found(accepted, { expiresInMs: 240_000 });
+        return {
+          ...result,
+          capture: {
+            ...result.capture,
+            epoch: "FAKE_DIFFERENT_NATIVE_RUNTIME",
+          },
+        };
+      }),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(
+      screen.getByText(
+        "Approval request saved. Check for updates or send it again.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("The clinic approved this device."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Time left for this request/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps an ordinary poll timeout retryable without locking the current vault", async () => {
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi.fn().mockImplementation(async () =>
+        found(pending, {
+          issue: {
+            code: "portal_link_incomplete",
+            message: "FAKE whole-poll network budget expired.",
+          },
+        }),
+      ),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "myCarlos could not reach the clinic portal, so this request's status is not known yet.",
+      ),
+    ).toBeVisible();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Retry saved approval request" }),
+    ).toBeEnabled();
+  });
+
+  it("keeps the manual full document check available after automatic approval checks stop", async () => {
+    let current = vaultWith(pending);
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(pending)),
+      checkDocuments: vi.fn().mockImplementation(async () => {
+        current = vaultWith(accepted);
+        return { added: 0, refused: 0, receiptsPending: 0, issues: [] };
+      }),
+    });
+    await openClinicView(bridge);
+    // Actual user input keeps the vault open; polling itself never does.
+    // It does not restart the independent fifteen-minute polling window.
+    for (let step = 0; step < 3; step += 1) {
+      await pass(4 * 60_000);
+      await act(async () => fireEvent.keyDown(window, { key: "Shift" }));
+    }
+    await pass(3 * 60_000 + 1_000);
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        humanText(
+          "Automatic checks have stopped. To check again, choose Check for new documents.",
+        ),
+      ),
+    ).toBeVisible();
+    await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
+    const check = screen.getByRole("button", {
+      name: "Check for new documents",
+    });
+    await click(check);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await click(screen.getByRole("button", { name: "Security" }));
+    expect(
+      within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
+        "The clinic approved this device.",
+      ),
+    ).toBeVisible();
+    expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
+    expect(bridge.restartDeviceApproval).not.toHaveBeenCalled();
+  });
+
+  const pickedUp: PortalLinkSummary = {
+    ...pending,
+    approvalStatus: "challenge_ready",
+  };
+  const pickupText =
+    "Your clinic's records system has picked up this request. Waiting for clinic staff to approve this device.";
+  const deviceCard = () =>
+    within(document.getElementById(`portal-link-${pending.id}`)!);
+
+  it("drops an old rejected poll after a newer whole pickup capture", async () => {
+    let rejectOld!: () => void;
+    const oldError = "FAKE old poll failed after its newer whole capture.";
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi.fn().mockImplementationOnce(
+        () =>
+          new Promise<PortalApprovalCheck>((_, reject) => {
+            rejectOld = () =>
+              reject({ code: "FAKE_older_poll", message: oldError });
+          }),
+      ),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(pickedUp)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    await act(async () => rejectOld());
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    expect(screen.queryAllByText(oldError)).toHaveLength(0);
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("retires a genuine poll failure and its announcement on a subsequent whole capture", async () => {
+    const failure = "FAKE current poll failed before the later whole capture.";
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(arrivalVault(pending))),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockRejectedValueOnce({
+          code: "FAKE_current_poll",
+          message: failure,
+        })
+        .mockImplementation(async () => found(pickedUp)),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    vi.mocked(bridge.snapshot).mockImplementation(async () =>
+      captureSnapshot(arrivalVault(pickedUp)),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    expect(screen.queryAllByText(failure)).toHaveLength(0);
+    await pass(1_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a current failure when an older whole capture only merges unrelated records", async () => {
+    let deliverOldWhole!: () => void;
+    let rejectCurrent!: () => void;
+    const failure = "FAKE current failure after the newest device capture.";
+    const beforePoll = arrivalVault(pending);
+    const withRecord: VaultSnapshot = {
+      ...beforePoll,
+      records: [
+        ...beforePoll.records,
+        {
+          ...beforePoll.records[0],
+          id: "FAKE_DURING_FAILURE",
+          displayName: "FAKE_Arrived_Before_Poll.pdf",
+        },
+      ],
+    };
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(beforePoll)),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementationOnce(async () => found(pickedUp))
+        .mockImplementationOnce(
+          () =>
+            new Promise<PortalApprovalCheck>((_, reject) => {
+              rejectCurrent = () =>
+                reject({ code: "FAKE_current_poll", message: failure });
+            }),
+        ),
+    });
+    await openClinicView(bridge);
+    vi.mocked(bridge.snapshot).mockImplementationOnce(() => {
+      const captured = captureSnapshot(withRecord);
+      return new Promise<VaultSnapshot>((resolve) => {
+        deliverOldWhole = () => resolve(captured);
+      });
+    });
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await pass(10_000);
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    await pass(20_000);
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledTimes(2);
+    // This whole read predates the successful partial device capture, and
+    // cannot disown the next poll's genuine error merely by arriving late.
+    await act(async () => deliverOldWhole());
+    expect(deviceCard().getByText(pickupText)).toBeVisible();
+    await act(async () => rejectCurrent());
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    expect(
+      screen.getByRole("button", { name: "FAKE_Arrived_Before_Poll.pdf" }),
+    ).toBeVisible();
+  });
+
+  it("keeps a genuine current poll failure when no newer whole capture supersedes it", async () => {
+    const failure = "FAKE genuine current poll failure.";
+    const bridge = clinicBridge({
+      refreshDeviceApproval: vi.fn().mockRejectedValue({
+        code: "FAKE_current_poll",
+        message: failure,
+      }),
+    });
+    await openClinicView(bridge);
+    await pass(10_000);
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    await pass(30_000);
+    expect(deviceCard().getByText(failure)).toBeVisible();
+    expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+    expect(bridge.lock).not.toHaveBeenCalled();
+  });
+
+  it.each(["locked", "cancelled"])(
+    "still locks for a genuine current %s poll rejection",
+    async (code) => {
+      const bridge = clinicBridge({
+        refreshDeviceApproval: vi.fn().mockRejectedValue({
+          code,
+          message: "FAKE actual native session ended.",
+        }),
+      });
+      await openClinicView(bridge);
+      await pass(10_000);
+      expect(bridge.lock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible();
+    },
+  );
+
+  it.each(["result", "error"])(
+    "keeps immediate read-only recovery and focused-control cleanup for a current poll %s",
+    async (how) => {
+      let current = vaultWith(pending);
+      const bridge = clinicBridge({
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(current)),
+        refreshDeviceApproval: vi.fn().mockImplementation(async () => {
+          current = { ...vaultWith(pending), recovery: "writeFailed" };
+          if (how === "error")
+            throw {
+              code: "recovery_mode",
+              message: "FAKE immediate current recovery.",
+            };
+          return found(pending, { recovery: true });
+        }),
+      });
+      await openClinicView(bridge);
+      screen
+        .getByRole("button", { name: "Retry saved approval request" })
+        .focus();
+      const reads = vi.mocked(bridge.snapshot).mock.calls.length;
+      await pass(10_000);
+      expect(bridge.snapshot).toHaveBeenCalledTimes(reads + 1);
+      expect(
+        screen.getByRole("button", { name: "Retry saved approval request" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("heading", { name: "FAKE First Clinic", level: 3 }),
+      ).toHaveFocus();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["result", "error"])(
+    "rereads genuine recovery from a current poll %s after leaving the clinic view",
+    async (how) => {
+      let current = vaultWith(pending);
+      let finish!: () => void;
+      const bridge = clinicBridge({
+        snapshot: vi
+          .fn()
+          .mockImplementation(async () => captureSnapshot(current)),
+        refreshDeviceApproval: vi.fn().mockImplementationOnce(
+          () =>
+            new Promise<PortalApprovalCheck>((resolve, reject) => {
+              finish = () => {
+                current = { ...vaultWith(pending), recovery: "writeFailed" };
+                if (how === "error")
+                  reject({
+                    code: "recovery_mode",
+                    message: "FAKE current recovery after navigation.",
+                  });
+                else resolve(found(pending, { recovery: true }));
+              };
+            }),
+        ),
+      });
+      await openClinicView(bridge);
+      await pass(10_000);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledOnce();
+      await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+      const reads = vi.mocked(bridge.snapshot).mock.calls.length;
+      await act(async () => finish());
+      await pass(0);
+      expect(bridge.snapshot).toHaveBeenCalledTimes(reads + 1);
+      expect(
+        screen.getByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
+      ).toBeDisabled();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    },
+  );
+
+  const ownWaitActions = [
+    "connect",
+    "request",
+    "restart",
+    "header check",
+    "panel check",
+  ] as const;
+  type OwnWaitAction = (typeof ownWaitActions)[number];
+  async function holdOwnWait(action: OwnWaitAction) {
+    let current = vaultWith({ ...pending, approvalCanRestart: true });
+    if (action === "connect") current = { ...current, portalLinks: [] };
+    let complete!: () => void;
+    const rateLimit = {
+      code: "portal_rate_limited",
+      message: "FAKE portal asked this session to wait.",
+      retryAfterMs: 120_000,
+    };
+    const held = <T,>(value: T, reject = false) =>
+      new Promise<T>((resolve, fail) => {
+        complete = () => {
+          if (action === "connect") current = vaultWith(pending);
+          if (reject) fail(rateLimit);
+          else resolve(value);
+        };
+      });
+    const bridge = clinicBridge({
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      unlock: vi.fn().mockImplementation(async () => {
+        // The native result can already be persisted while its IPC reply is
+        // still held. The new session has an awaiting device at that portal.
+        current = vaultWith(pending);
+        return captureSnapshot(current);
+      }),
+      refreshDeviceApproval: vi
+        .fn()
+        .mockImplementation(async () => found(pending)),
+    });
+    vi.mocked(bridge.connectPortal!).mockImplementationOnce(() =>
+      held({ link: pending, approvalError: rateLimit }),
+    );
+    vi.mocked(bridge.requestDeviceApproval!).mockImplementationOnce(() =>
+      held(undefined, true),
+    );
+    vi.mocked(bridge.restartDeviceApproval!).mockImplementationOnce(() =>
+      held(undefined, true),
+    );
+    // Only the action under test holds a check. After the next unlock,
+    // an automatic document check must receive the bridge's ordinary reply.
+    if (action.endsWith("check")) {
+      vi.mocked(bridge.checkDocuments!).mockImplementationOnce(() =>
+        held({
+          added: 0,
+          refused: 0,
+          receiptsPending: 0,
+          issues: [
+            {
+              linkId: pending.id,
+              clinicName: pending.clinicName!,
+              code: "portal_rate_limited",
+            },
+          ],
+        }),
+      );
+    }
+    await openClinicView(bridge);
+    if (action === "connect") {
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Portal HTTPS address"), {
+          target: { value: pending.portalBase },
+        });
+        fireEvent.change(screen.getByLabelText("Linking code"), {
+          target: { value: "01234567-89ABCDEFGH" },
+        });
+        fireEvent.submit(
+          screen
+            .getByRole("button", { name: "Connect and request approval" })
+            .closest("form")!,
+        );
+      });
+      expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    } else if (action === "request" || action === "restart") {
+      await click(
+        screen.getByRole("button", {
+          name:
+            action === "request"
+              ? "Retry saved approval request"
+              : "Start a new approval request",
+        }),
+      );
+      expect(
+        action === "request"
+          ? bridge.requestDeviceApproval
+          : bridge.restartDeviceApproval,
+      ).toHaveBeenCalledOnce();
+    } else {
+      // Keep both originating-view cases; Shared now owns the one manual control.
+      if (action === "header check")
+        await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+      await click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
+      const check = screen.getByRole("button", {
+        name: "Check for new documents",
+      });
+      await click(check);
+      expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    }
+    expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+    return {
+      bridge,
+      finish: () => act(async () => complete()),
+      waitMs: action.endsWith("check") ? 60_000 : rateLimit.retryAfterMs,
+    };
+  }
+
+  it.each(ownWaitActions)(
+    "keeps a late old %s wait out of the newly unlocked session",
+    async (action) => {
+      const { bridge, finish } = await holdOwnWait(action);
+      await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+      await pass(100);
+      expect(
+        screen.getByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible();
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText("Passphrase", { exact: true }), {
+          target: { value: "FAKE detached wait passphrase" },
+        });
+      });
+      await click(screen.getByRole("button", { name: "Unlock" }));
+      await pass(100);
+      await click(screen.getByRole("button", { name: "Security" }));
+      // Deliver the old result/error only AFTER the new clinic view mounts.
+      await finish();
+      await pass(0);
+      await pass(9_999);
+      expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+      await pass(1);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledExactlyOnceWith(
+        pending.id,
+      );
+    },
+  );
+
+  it.each(
+    ownWaitActions.flatMap((action) =>
+      [false, true].map((failedLock) => ({ action, failedLock })),
+    ),
+  )(
+    "keeps the current $action wait for its session (failed lock: $failedLock)",
+    async ({ action, failedLock }) => {
+      const { bridge, finish, waitMs } = await holdOwnWait(action);
+      await finish();
+      await pass(0);
+      if (failedLock) {
+        vi.mocked(bridge.lock).mockRejectedValueOnce({
+          code: "storage",
+          message: "FAKE lock did not end this session.",
+        });
+        await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
+        expect(bridge.lock).toHaveBeenCalledOnce();
+        // The native session stays open, with its content concealed, until
+        // a successful retry ends it and installs a new wait owner.
+        expect(screen.getByRole("alert")).toHaveHumanTextContent(
+          "the vault is still open",
+        );
+        expect(
+          screen.queryByRole("button", { name: "Security" }),
+        ).not.toBeInTheDocument();
+        await click(screen.getByRole("button", { name: "Try locking again" }));
+        await act(async () => {
+          fireEvent.change(
+            screen.getByLabelText("Passphrase", { exact: true }),
+            {
+              target: { value: "FAKE retried lock passphrase" },
+            },
+          );
+        });
+        await click(screen.getByRole("button", { name: "Unlock" }));
+        await pass(100);
+        await click(screen.getByRole("button", { name: "Security" }));
+        await pass(10_000);
+        expect(bridge.refreshDeviceApproval).toHaveBeenCalledExactlyOnceWith(
+          pending.id,
+        );
+        return;
+      }
+      await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+      await click(screen.getByRole("button", { name: "Security" }));
+      await pass(waitMs - 1);
+      expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
+      await pass(1);
+      expect(bridge.refreshDeviceApproval).toHaveBeenCalledExactlyOnceWith(
+        pending.id,
+      );
+    },
+  );
 
   it("does not offer automatic checks when this build cannot check", async () => {
     const bridge = clinicBridge({ refreshDeviceApproval: undefined });
@@ -11587,7 +12904,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
             finishOld = resolve;
           }),
         )
-        .mockResolvedValue(found(pending)),
+        .mockImplementation(async () => found(pending)),
     });
     await openClinicView(bridge);
     await pass(10_000);
@@ -11781,6 +13098,10 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     });
     await click(screen.getByRole("button", { name: "Unlock" }));
   }
+  const openShared = () =>
+    click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
+  const openRecords = () =>
+    click(screen.getAllByRole("button", { name: /^My records/ })[0]);
   const lockNow = async () => {
     await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
     await pass(100);
@@ -11821,6 +13142,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     // Not opened, and focus stays where the patient left it.
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(search).toHaveFocus();
+    await openShared();
     expect(
       screen.getByRole("button", { name: "Check for new documents" }),
     ).toBeEnabled();
@@ -11841,6 +13163,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     await pass(60_000);
     expect(said()).toBe(UNLOCKED);
+    await openShared();
     expect(
       screen.getByRole("button", { name: "Check for new documents" }),
     ).toBeEnabled();
@@ -11878,10 +13201,12 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     // Shown as running on the clinic control, as the patient's own check
     // is; pressing it starts nothing beside the check under way.
+    await openShared();
     const control = screen.getByRole("button", { name: WORKING });
     expect(control).toBeDisabled();
     await click(control);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await openRecords();
     // A saved document opens while the portal has not answered.
     await click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
     expect(
@@ -11900,6 +13225,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     );
     // The retry is the patient's own check, which says what it found, even
     // when that is nothing.
+    await openShared();
     await click(
       screen.getByRole("button", { name: "Check for new documents" }),
     );
@@ -12183,6 +13509,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     const { bridge } = clinicBridge(vaultWith(approved));
     await start(bridge);
     await unlock();
+    await openShared();
     await click(
       screen.getByRole("button", { name: "Check for new documents" }),
     );
@@ -12214,6 +13541,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await pass(0);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     // Still shown as running while it waits to ask again.
+    await openShared();
     expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
     await pass(1_900);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
@@ -12237,6 +13565,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(said()).toBe(
       `${UNLOCKED} myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running. ${RETRY}`,
     );
+    await openShared();
     expect(
       screen.getByRole("button", { name: "Check for new documents" }),
     ).toBeEnabled();
@@ -12312,6 +13641,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     // running, rather than being refused as busy.
     await pass(5_000);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await openShared();
     expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
     await act(async () => first.settle(await deliver(found({ added: 1 }))()));
     await pass(0);
@@ -12540,9 +13870,11 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
   it.each([
     [
       "the library's Check for new documents",
-      async () =>
-        screen.getByRole("button", { name: "Check for new documents" }),
-      { name: "My records", level: 1 },
+      async () => {
+        await openShared();
+        return screen.getByRole("button", { name: "Check for new documents" });
+      },
+      { name: "Shared with me", level: 1 },
     ],
     [
       "a box of the connect form",
@@ -12596,15 +13928,26 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await unlock();
     // The patient's own press, just after unlocking: the automatic check
     // does not run beside it, and focus is left as that press leaves it.
+    await openShared();
+    // Finish navigation's focus recovery before starting the patient's check.
+    // Animation frames use the browser's clock, not the announcement's fake one.
+    await act(
+      () =>
+        new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => resolve());
+        }),
+    );
     const check = screen.getByRole("button", {
       name: "Check for new documents",
     });
+    fireEvent.pointerDown(check);
     check.focus();
+    expect(check).toHaveFocus();
     await click(check);
     await pass(ANNOUNCE_DELAY_MS);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     expect(
-      screen.getByRole("heading", { name: "My records", level: 1 }),
+      screen.getByRole("heading", { name: "Shared with me", level: 1 }),
     ).not.toHaveFocus();
     await act(async () => own.settle(found()));
     await pass(0);
@@ -12636,10 +13979,12 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       });
       await start(bridge);
       await unlock();
-      if (own)
+      if (own) {
+        await openShared();
         await click(
           screen.getByRole("button", { name: "Check for new documents" }),
         );
+      }
       await pass(ANNOUNCE_DELAY_MS);
       expect(bridge.checkDocuments).toHaveBeenCalledOnce();
       await lockNow();

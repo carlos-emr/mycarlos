@@ -899,8 +899,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // Preferences on a computer asks whether an AI model is installed (#72).
           case "ai_model_status":
             return { state: "notInstalled" };
+          case "ai_models":
           case "ai_model_catalog":
             return [];
+          // No add or download running when the row opens (#275).
+          case "ai_model_add_active":
+            return null;
           case "vault_status":
             return state.status;
           case "vault_notification_status":
@@ -1325,6 +1329,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             );
             if (!found) throw refuse("not_found", "native.error.18");
             return {
+              capture: captured().capture,
               link: copy(found),
               expiresInMs: 10 * 60_000,
               issue: null,

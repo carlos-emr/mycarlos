@@ -1,5 +1,5 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
-use crate::idle::IdleDeadline;
+use crate::idle::{AnswerHold, AnswerOrigin, IdleDeadline};
 use crate::portal_link::{self, LinkSummary, StoredLink};
 use crate::ui_text_ids::MessageId;
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -908,6 +908,7 @@ pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
     collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
+    approval_poll_progress: Mutex<HashMap<Uuid, delivery::ApprovalPollProgress>>,
     notifications: std::sync::OnceLock<Arc<crate::document_notification_runtime::Runtime>>,
     unlocked: Mutex<Option<UnlockedVault>>,
     snapshot_epoch: Uuid,
@@ -942,6 +943,7 @@ impl VaultStore {
             root,
             collection: crate::document_collection::Controller::new(Instant::now()),
             collection_resume: Mutex::new(None),
+            approval_poll_progress: Mutex::new(HashMap::new()),
             notifications: std::sync::OnceLock::new(),
             unlocked: Mutex::new(None),
             snapshot_epoch: Uuid::new_v4(),
@@ -979,7 +981,20 @@ impl VaultStore {
                 .unwrap_or_else(|p| p.into_inner()) = None;
         }
     }
+    fn approval_poll_progress(
+        &self,
+    ) -> MutexGuard<'_, HashMap<Uuid, delivery::ApprovalPollProgress>> {
+        self.approval_poll_progress
+            .lock()
+            .unwrap_or_else(|poisoned| {
+                let mut progress = poisoned.into_inner();
+                progress.clear();
+                self.approval_poll_progress.clear_poison();
+                progress
+            })
+    }
     fn invalidate_collection_cache(&self) {
+        self.approval_poll_progress().clear();
         self.collection.invalidate_cache();
         self.drop_idle_collection_cache();
     }
@@ -1201,6 +1216,25 @@ impl VaultStore {
     /// The session's idle deadline, which the app's native timer checks.
     pub fn idle(&self) -> &Arc<IdleDeadline> {
         &self.idle
+    }
+
+    /// Capture before asynchronous command validation. Lock ordering remains
+    /// session then idle, the same as opening and locking a vault.
+    pub(crate) fn answer_origin(&self) -> Option<AnswerOrigin> {
+        let guard = self.session();
+        guard.as_ref()?;
+        self.idle.answer_origin()
+    }
+
+    pub(crate) fn admit_answer<T>(
+        &self,
+        origin: AnswerOrigin,
+        cap: Duration,
+        reserve: impl FnOnce() -> T,
+    ) -> Option<(AnswerHold, T)> {
+        let guard = self.session();
+        guard.as_ref()?;
+        self.idle.admit_answer(origin, cap, reserve)
     }
 
     /// Takes the session mutex. A panic while it was held may have left the
