@@ -1930,6 +1930,9 @@ describe("the code a clinic emails (#141)", () => {
       expect(screen.getByRole("status")).toHaveTextContent(
         translate("fr", "portal.codeSubmitted"),
       );
+      expect(screen.getByRole("status")).not.toHaveTextContent(
+        translate("en", "portal.codeSubmitted"),
+      );
       act(() => setLocaleOverride("en"));
       // Not this clinic's code: the message beside the field.
       vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
@@ -1956,6 +1959,7 @@ describe("the code a clinic emails (#141)", () => {
       expect(screen.getByRole("status")).toHaveTextContent(
         translate("fr", "portal.codeLocked"),
       );
+      expect(screen.getByRole("status")).not.toHaveTextContent(locked);
     } finally {
       act(() => setLocaleOverride("en"));
     }
