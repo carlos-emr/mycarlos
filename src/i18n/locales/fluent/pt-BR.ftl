@@ -1809,7 +1809,7 @@ ai-explain-submit = Explicar
 
 ai-preferences-title = Assistente de IA
 
-ai-preferences-body = Explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. Você pode baixar o modelo ou adicionar um arquivo de modelo que já tenha; ele fica neste computador.
+ai-preferences-body = Explica seus documentos em palavras simples com um modelo de IA que funciona neste computador. Baixe um dos modelos abaixo ou adicione um arquivo correspondente que você já tenha. Os modelos ficam neste computador.
 
 ai-preferences-notInstalled = Não instalado
 
@@ -1843,7 +1843,7 @@ ai-model-unsupportedCpu = O processador deste computador não é compatível com
 
 ai-model-unsupportedPlatform = O assistente de IA ainda não está disponível neste tipo de computador.
 
-ai-model-refusedList = Este não é um arquivo que o myCarlos aceita. Escolha o arquivo de modelo indicado acima.
+ai-model-refusedList = Este não é um arquivo aceito pelo myCarlos. Escolha um dos arquivos de modelo listados acima.
 
 ai-model-refusedHash = Este não é o arquivo esperado. Baixe-o novamente e adicione a cópia nova.
 
@@ -1861,6 +1861,14 @@ ai-model-downloadNote = Baixa um arquivo ({ $size } MB), uma única vez, de { $h
 
 ai-model-downloading = Baixando e verificando… { $done } de { $total } MB
 
+ai-model-progressName = Download do modelo
+
+ai-model-progressValue = { $percent }, { $done } de { $total } MB
+
+ai-model-stillDownloading = O modelo ainda está sendo baixado.
+
+ai-model-stillChecking = O arquivo do modelo ainda está sendo verificado.
+
 ai-model-refusedNetwork = O download não foi concluído. Verifique sua conexão com a internet e tente novamente.
 
 ai-model-refusedUnavailable = O modelo não está disponível no endereço agora. Tente novamente mais tarde ou adicione um arquivo que já tenha.
@@ -1868,6 +1876,15 @@ ai-model-refusedUnavailable = O modelo não está disponível no endereço agora
 native-filter-models = Arquivos de modelo
 
 ai-working = O assistente de IA está trabalhando…
+
+ai-workingLong = Em um documento longo, isso pode levar vários minutos.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Trabalhando há { $minutes } minuto.
+    [many] Trabalhando há { $minutes } de minutos.
+    *[other] Trabalhando há { $minutes } minutos.
+    }
 
 ai-summary-ready = O resumo está pronto.
 
@@ -2094,3 +2111,38 @@ ai-summary-again = Resumir de novo
 ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.
 
 ai-keepFull = Este documento já guarda o máximo de respostas da IA. As respostas novas são mostradas, mas não são guardadas.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modelos neste computador
+
+ai-models-group = Modelo em uso
+
+ai-models-inUse = Em uso
+
+ai-models-installed = Instalado
+
+ai-models-addedByYou = Adicionado por você
+
+ai-models-notDownloaded = Não baixado
+
+ai-models-downloading = Baixando
+ai-models-installing = Instalando
+
+ai-models-download = Baixar
+
+ai-models-remove = Remover
+
+ai-models-help = O modelo marcado Em uso escreve os resumos e as explicações. Escolher outro modelo interrompe a resposta que está sendo escrita.
+
+ai-models-loading = Lendo a lista de modelos…
+
+ai-models-loadFailed = Não foi possível ler a lista de modelos. Tente novamente.
+
+ai-models-retry = Ler a lista de modelos novamente
+
+ai-models-starting = Iniciando o download…
+
+ai-models-picking = Escolha um arquivo de modelo para adicionar.
+
+ai-models-changed = Modelo em uso alterado

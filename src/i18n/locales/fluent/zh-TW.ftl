@@ -1629,7 +1629,7 @@ ai-explain-submit = 解釋
 
 ai-preferences-title = AI 助理
 
-ai-preferences-body = 使用在此電腦上執行的 AI 模型，以淺白易懂的文字解釋您的文件。您可以下載模型，或新增您已有的模型檔案；模型儲存在此電腦上。
+ai-preferences-body = 使用在這台電腦上執行的 AI 模型，以淺白的語言解釋你的文件。下載下列某個模型，或新增你已有的對應檔案。模型保留在這台電腦上。
 
 ai-preferences-notInstalled = 未安裝
 
@@ -1663,7 +1663,7 @@ ai-model-unsupportedCpu = 此電腦的處理器不支援 AI 助理。
 
 ai-model-unsupportedPlatform = 此類電腦暫不支援 AI 助理。
 
-ai-model-refusedList = myCarlos 不接受此檔案。請選擇上方列出的模型檔案。
+ai-model-refusedList = myCarlos 不接受此檔案。請選擇上方列出的某個模型檔案。
 
 ai-model-refusedHash = 這不是預期的檔案。請重新下載，然後新增新的副本。
 
@@ -1681,6 +1681,14 @@ ai-model-downloadNote = 僅一次，且僅在您點擊時，從 { $host } 下載
 
 ai-model-downloading = 正在下載並檢查… { $done } / { $total } MB
 
+ai-model-progressName = 模型下載
+
+ai-model-progressValue = { $percent }，{ $done } / { $total } MB
+
+ai-model-stillDownloading = 模型仍在下載。
+
+ai-model-stillChecking = 仍在檢查模型檔案。
+
 ai-model-refusedNetwork = 下載未完成。請檢查您的網路連線，然後再試一次。
 
 ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍後再試，或新增您已有的檔案。
@@ -1688,6 +1696,10 @@ ai-model-refusedUnavailable = 該模型目前無法從其網址取得。請稍�
 native-filter-models = 模型檔案
 
 ai-working = AI 助理正在處理…
+
+ai-workingLong = 文件較長時，可能需要幾分鐘。
+
+ai-workingFor = 已處理 { $minutes } 分鐘。
 
 ai-summary-ready = 摘要已產生。
 
@@ -1911,3 +1923,38 @@ ai-summary-again = 重新產生摘要
 ai-keepFailed = myCarlos 無法將此回答與文件一起保存。此處仍會顯示該回答。
 
 ai-keepFull = 此文件保存的 AI 回答已達上限。新的回答會顯示，但不會保存。
+
+# Catalog model list (#276A).
+
+ai-models-title = 這台電腦上的模型
+
+ai-models-group = 正在使用的模型
+
+ai-models-inUse = 正在使用
+
+ai-models-installed = 已安裝
+
+ai-models-addedByYou = 由你新增
+
+ai-models-notDownloaded = 尚未下載
+
+ai-models-downloading = 正在下載
+ai-models-installing = 正在安裝
+
+ai-models-download = 下載
+
+ai-models-remove = 移除
+
+ai-models-help = 標為「正在使用」的模型用於產生摘要和解釋。選擇其他模型會停止正在產生的回答。
+
+ai-models-loading = 正在讀取模型清單…
+
+ai-models-loadFailed = 無法讀取模型清單。請再試一次。
+
+ai-models-retry = 重新讀取模型清單
+
+ai-models-starting = 正在開始下載…
+
+ai-models-picking = 請選擇要新增的模型檔案。
+
+ai-models-changed = 已變更正在使用的模型

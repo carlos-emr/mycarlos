@@ -9424,13 +9424,10 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: humanText("Security") }),
+      await screen.findByRole("button", { name: humanText(/^Shared with me/) }),
     );
-    const clinic = screen.getByRole("region", {
-      name: humanText(translate("en", "portal.title")),
-    });
     await user.click(
-      within(clinic).getByRole("button", {
+      screen.getByRole("button", {
         name: humanText(translate("en", "portal.check")),
       }),
     );
@@ -9442,7 +9439,7 @@ describe("durable vault UI", () => {
 
     act(() => setLocaleOverride("fr"));
     expect(
-      within(clinic).getByRole("button", {
+      screen.getByRole("button", {
         name: humanText(translate("fr", "portal.check")),
       }),
     ).toBeVisible();
@@ -9450,6 +9447,19 @@ describe("durable vault UI", () => {
       translate("fr", "portal.result", { added: 0, refused: 0 }),
     );
     expect(notice).not.toHaveHumanTextContent(english);
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText(translate("fr", "security.title")),
+      }),
+    );
+    const clinic = screen.getByRole("region", {
+      name: humanText(translate("fr", "portal.title")),
+    });
+    expect(
+      within(clinic).queryByRole("button", {
+        name: humanText(translate("fr", "portal.check")),
+      }),
+    ).toBeNull();
     expect(
       within(clinic).getByLabelText(translate("fr", "portal.deviceCode")),
     ).toHaveValue(deviceCode);
@@ -9460,7 +9470,10 @@ describe("durable vault UI", () => {
       within(clinic).getByRole("heading", { name: "FAKE {Clinic}" }),
     ).toBeVisible();
     act(() => setLocaleOverride("en"));
-    expect(notice).toHaveHumanTextContent(english);
+    // Navigation remounts the visible status; check its current node.
+    expect(
+      screen.getByText(humanText(english)).closest('[role="status"]'),
+    ).toHaveHumanTextContent(english);
     expect(check).toHaveBeenCalledOnce();
   });
 
@@ -11395,6 +11408,9 @@ describe("clinic connection operations", () => {
       await act(async () =>
         pending.finish({ link: connectedLink, approvalError: null }),
       );
+      await user.click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
       expect(
         await screen.findByRole("button", { name: "Check for new documents" }),
       ).toBeVisible();
@@ -11658,6 +11674,9 @@ describe("clinic connection operations", () => {
     await act(async () =>
       pending.finish({ link: connectedLink, approvalError: null }),
     );
+    await user.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
     expect(
       await screen.findByRole("button", { name: "Check for new documents" }),
     ).toBeVisible();
@@ -11757,6 +11776,9 @@ describe("clinic connection operations", () => {
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     expect(bridge.connectPortal).toHaveBeenCalledTimes(3);
     await act(async () => refuseLater({ code: "portal_busy" }));
+    await user.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
     expect(
       await screen.findByRole("button", { name: "Check for new documents" }),
     ).toBeVisible();
@@ -12132,7 +12154,8 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       render(<VaultApp bridge={bridge} />);
     });
     await pass(100);
-    // The check in the library's header, not the clinic view's.
+    // Start the manual document check from the reserved Shared view.
+    await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
     await click(
       screen.getByRole("button", { name: "Check for new documents" }),
     );
@@ -12148,6 +12171,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
     // A wait does not outlive the session: after a lock, the first check
     // comes 10 s after the view opens.
     vi.mocked(bridge.checkDocuments!).mockClear();
+    await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
     await click(
       screen.getAllByRole("button", { name: "Check for new documents" })[0],
     );
@@ -12399,11 +12423,13 @@ describe("automatic clinic approval checks in the app (#131)", () => {
         ),
       ),
     ).toBeVisible();
-    const checks = screen.getAllByRole("button", {
+    await click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
+    const check = screen.getByRole("button", {
       name: "Check for new documents",
     });
-    await click(checks[checks.length - 1]);
+    await click(check);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await click(screen.getByRole("button", { name: "Security" }));
     expect(
       within(document.getElementById(`portal-link-${pending.id}`)!).getByText(
         "The clinic approved this device.",
@@ -12744,10 +12770,16 @@ describe("automatic clinic approval checks in the app (#131)", () => {
           : bridge.restartDeviceApproval,
       ).toHaveBeenCalledOnce();
     } else {
-      const checks = screen.getAllByRole("button", {
+      // Keep both originating-view cases; Shared now owns the one manual control.
+      if (action === "header check")
+        await click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+      await click(
+        screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+      );
+      const check = screen.getByRole("button", {
         name: "Check for new documents",
       });
-      await click(checks[action === "header check" ? 0 : checks.length - 1]);
+      await click(check);
       expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     }
     expect(bridge.refreshDeviceApproval).not.toHaveBeenCalled();
@@ -13066,6 +13098,10 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     });
     await click(screen.getByRole("button", { name: "Unlock" }));
   }
+  const openShared = () =>
+    click(screen.getAllByRole("button", { name: /^Shared with me/ })[0]);
+  const openRecords = () =>
+    click(screen.getAllByRole("button", { name: /^My records/ })[0]);
   const lockNow = async () => {
     await click(screen.getAllByRole("button", { name: /Lock now/ })[0]);
     await pass(100);
@@ -13106,6 +13142,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     // Not opened, and focus stays where the patient left it.
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(search).toHaveFocus();
+    await openShared();
     expect(
       screen.getByRole("button", { name: "Check for new documents" }),
     ).toBeEnabled();
@@ -13126,6 +13163,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     await pass(60_000);
     expect(said()).toBe(UNLOCKED);
+    await openShared();
     expect(
       screen.getByRole("button", { name: "Check for new documents" }),
     ).toBeEnabled();
@@ -13163,10 +13201,12 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     // Shown as running on the clinic control, as the patient's own check
     // is; pressing it starts nothing beside the check under way.
+    await openShared();
     const control = screen.getByRole("button", { name: WORKING });
     expect(control).toBeDisabled();
     await click(control);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await openRecords();
     // A saved document opens while the portal has not answered.
     await click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
     expect(
@@ -13185,6 +13225,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     );
     // The retry is the patient's own check, which says what it found, even
     // when that is nothing.
+    await openShared();
     await click(
       screen.getByRole("button", { name: "Check for new documents" }),
     );
@@ -13468,6 +13509,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     const { bridge } = clinicBridge(vaultWith(approved));
     await start(bridge);
     await unlock();
+    await openShared();
     await click(
       screen.getByRole("button", { name: "Check for new documents" }),
     );
@@ -13499,6 +13541,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await pass(0);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     // Still shown as running while it waits to ask again.
+    await openShared();
     expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
     await pass(1_900);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
@@ -13522,6 +13565,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     expect(said()).toBe(
       `${UNLOCKED} myCarlos did not check for new clinic documents after unlocking, because another clinic operation was running. ${RETRY}`,
     );
+    await openShared();
     expect(
       screen.getByRole("button", { name: "Check for new documents" }),
     ).toBeEnabled();
@@ -13597,6 +13641,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     // running, rather than being refused as busy.
     await pass(5_000);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    await openShared();
     expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
     await act(async () => first.settle(await deliver(found({ added: 1 }))()));
     await pass(0);
@@ -13825,9 +13870,11 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
   it.each([
     [
       "the library's Check for new documents",
-      async () =>
-        screen.getByRole("button", { name: "Check for new documents" }),
-      { name: "My records", level: 1 },
+      async () => {
+        await openShared();
+        return screen.getByRole("button", { name: "Check for new documents" });
+      },
+      { name: "Shared with me", level: 1 },
     ],
     [
       "a box of the connect form",
@@ -13881,15 +13928,26 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     await unlock();
     // The patient's own press, just after unlocking: the automatic check
     // does not run beside it, and focus is left as that press leaves it.
+    await openShared();
+    // Finish navigation's focus recovery before starting the patient's check.
+    // Animation frames use the browser's clock, not the announcement's fake one.
+    await act(
+      () =>
+        new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => resolve());
+        }),
+    );
     const check = screen.getByRole("button", {
       name: "Check for new documents",
     });
+    fireEvent.pointerDown(check);
     check.focus();
+    expect(check).toHaveFocus();
     await click(check);
     await pass(ANNOUNCE_DELAY_MS);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
     expect(
-      screen.getByRole("heading", { name: "My records", level: 1 }),
+      screen.getByRole("heading", { name: "Shared with me", level: 1 }),
     ).not.toHaveFocus();
     await act(async () => own.settle(found()));
     await pass(0);
@@ -13921,10 +13979,12 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       });
       await start(bridge);
       await unlock();
-      if (own)
+      if (own) {
+        await openShared();
         await click(
           screen.getByRole("button", { name: "Check for new documents" }),
         );
+      }
       await pass(ANNOUNCE_DELAY_MS);
       expect(bridge.checkDocuments).toHaveBeenCalledOnce();
       await lockNow();

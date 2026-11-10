@@ -2103,36 +2103,42 @@ export function VaultLibrary({
                   </div>
                 )}
 
-                <PortalDocuments
-                  compact
-                  bridge={bridge}
-                  snapshot={snapshot}
-                  busy={busy || portalBusy}
-                  working={portalBusy}
-                  readOnly={readOnly}
-                  run={runPortal}
-                  waits={approvalWaits}
-                  refresh={refresh}
-                  setNotice={setPortalNotice}
-                />
-                <label className="search">
-                  <Icon name="search" />
-                  <span className="sr-only">{searchLabel}</span>
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setQuery(value);
-                      setSearchRequest(
-                        value.trim() || query.trim()
-                          ? { query: value, location: searchLocation }
-                          : null,
-                      );
-                    }}
-                    placeholder={searchLabel}
-                  />
-                </label>
+                {/* Check for new documents sits to the right of the search box when the row
+                    has room; otherwise it goes under the box (#84 large text). */}
+                <div className="library-search-row">
+                  <label className="search">
+                    <Icon name="search" />
+                    <span className="sr-only">{searchLabel}</span>
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setQuery(value);
+                        setSearchRequest(
+                          value.trim() || query.trim()
+                            ? { query: value, location: searchLocation }
+                            : null,
+                        );
+                      }}
+                      placeholder={searchLabel}
+                    />
+                  </label>
+                  {inShared && (
+                    <PortalDocuments
+                      compact
+                      bridge={bridge}
+                      snapshot={snapshot}
+                      busy={busy || portalBusy}
+                      working={portalBusy}
+                      readOnly={readOnly}
+                      run={runPortal}
+                      waits={approvalWaits}
+                      refresh={refresh}
+                      setNotice={setPortalNotice}
+                    />
+                  )}
+                </div>
                 <div className="viewbar">
                   <span className="native-location-chip">
                     {currentFolder
@@ -2341,6 +2347,7 @@ export function VaultLibrary({
               <SecuritySettings
                 clinicDocuments={
                   <PortalDocuments
+                    showCheck={false}
                     bridge={bridge}
                     snapshot={snapshot}
                     busy={busy || portalBusy}

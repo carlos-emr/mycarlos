@@ -1845,7 +1845,7 @@ ai-explain-submit = Wyjaśnij
 
 ai-preferences-title = Asystent AI
 
-ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Można pobrać model albo dodać posiadany plik modelu; pozostaje on na tym komputerze.
+ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Pobierz jeden z poniższych modeli lub dodaj pasujący plik, który już masz. Modele pozostają na tym komputerze.
 
 ai-preferences-notInstalled = Nie zainstalowano
 
@@ -1879,7 +1879,7 @@ ai-model-unsupportedCpu = Procesor tego komputera nie jest obsługiwany przez as
 
 ai-model-unsupportedPlatform = Asystent AI nie jest jeszcze dostępny na tym rodzaju komputera.
 
-ai-model-refusedList = myCarlos nie akceptuje tego pliku. Proszę wybrać plik modelu podany powyżej.
+ai-model-refusedList = myCarlos nie akceptuje tego pliku. Wybierz jeden z plików modeli wymienionych powyżej.
 
 ai-model-refusedHash = To nie jest oczekiwany plik. Proszę pobrać go ponownie i dodać nową kopię.
 
@@ -1897,6 +1897,14 @@ ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $hos
 
 ai-model-downloading = Pobieranie i sprawdzanie… { $done } z { $total } MB
 
+ai-model-progressName = Pobieranie modelu
+
+ai-model-progressValue = { $percent }, { $done } z { $total } MB
+
+ai-model-stillDownloading = Model nadal się pobiera.
+
+ai-model-stillChecking = Plik modelu jest nadal sprawdzany.
+
 ai-model-refusedNetwork = Pobieranie nie zostało ukończone. Proszę sprawdzić połączenie z internetem i spróbować ponownie.
 
 ai-model-refusedUnavailable = Model jest teraz niedostępny pod swoim adresem. Proszę spróbować później albo dodać posiadany plik.
@@ -1904,6 +1912,16 @@ ai-model-refusedUnavailable = Model jest teraz niedostępny pod swoim adresem. P
 native-filter-models = Pliki modeli
 
 ai-working = Asystent AI pracuje…
+
+ai-workingLong = W przypadku długiego dokumentu może to potrwać kilka minut.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Trwa to już { $minutes } minutę.
+    [few] Trwa to już { $minutes } minuty.
+    [many] Trwa to już { $minutes } minut.
+    *[other] Trwa to już { $minutes } minuty.
+    }
 
 ai-summary-ready = Podsumowanie jest gotowe.
 
@@ -2132,3 +2150,38 @@ ai-summary-again = Podsumuj ponownie
 ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.
 
 ai-keepFull = Ten dokument przechowuje już maksymalną liczbę odpowiedzi AI. Nowe odpowiedzi są wyświetlane, ale nie są zachowywane.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modele na tym komputerze
+
+ai-models-group = Używany model
+
+ai-models-inUse = W użyciu
+
+ai-models-installed = Zainstalowany
+
+ai-models-addedByYou = Dodany przez Ciebie
+
+ai-models-notDownloaded = Niepobrany
+
+ai-models-downloading = Pobieranie
+ai-models-installing = Instalowanie
+
+ai-models-download = Pobierz
+
+ai-models-remove = Usuń
+
+ai-models-help = Model oznaczony jako W użyciu tworzy podsumowania i wyjaśnienia. Wybranie innego modelu zatrzymuje tworzoną odpowiedź.
+
+ai-models-loading = Odczytywanie listy modeli…
+
+ai-models-loadFailed = Nie udało się odczytać listy modeli. Spróbuj ponownie.
+
+ai-models-retry = Odczytaj ponownie listę modeli
+
+ai-models-starting = Rozpoczynanie pobierania…
+
+ai-models-picking = Wybierz plik modelu do dodania.
+
+ai-models-changed = Zmieniono używany model
