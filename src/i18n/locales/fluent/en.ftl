@@ -1771,7 +1771,7 @@ ai-explain-submit = Explain
 
 ai-preferences-title = AI helper
 
-ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.
+ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. Download one of the models below, or add a matching file you already have. Models stay on this computer.
 
 ai-preferences-notInstalled = Not installed
 
@@ -1805,7 +1805,7 @@ ai-model-unsupportedCpu = This computer’s processor is not supported by the AI
 
 ai-model-unsupportedPlatform = The AI helper is not available on this kind of computer yet.
 
-ai-model-refusedList = This is not a file myCarlos accepts. Choose the model file listed above.
+ai-model-refusedList = This is not a file myCarlos accepts. Choose one of the model files listed above.
 
 ai-model-refusedHash = This is not the file we expect. Download it again and add the new copy.
 
@@ -1822,6 +1822,14 @@ ai-model-download = Download the default model
 ai-model-downloadNote = Downloads one file ({ $size } MB), once, from { $host }, only when you click. Nothing about you or your documents is sent. The download site sees your internet address, as for any download.
 
 ai-model-downloading = Downloading and checking… { $done } of { $total } MB
+
+ai-model-progressName = Model download
+
+ai-model-progressValue = { $percent }, { $done } of { $total } MB
+
+ai-model-stillDownloading = The model is still downloading.
+
+ai-model-stillChecking = The model file is still being checked.
 
 ai-model-refusedNetwork = The download did not finish. Check your internet connection and try again.
 
@@ -2064,3 +2072,38 @@ ai-summary-again = Summarize again
 ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
 
 ai-keepFull = This document already keeps the most AI answers it can. New answers are shown but not kept.
+
+# Catalog model list (#276A).
+
+ai-models-title = Models on this computer
+
+ai-models-group = Model in use
+
+ai-models-inUse = In use
+
+ai-models-installed = Installed
+
+ai-models-addedByYou = Added by you
+
+ai-models-notDownloaded = Not downloaded
+
+ai-models-downloading = Downloading
+ai-models-installing = Installing
+
+ai-models-download = Download
+
+ai-models-remove = Remove
+
+ai-models-help = The model marked In use writes summaries and explanations. Choosing another model stops the answer being written.
+
+ai-models-loading = Reading the model list…
+
+ai-models-loadFailed = The model list could not be read. Try again.
+
+ai-models-retry = Read the model list again
+
+ai-models-starting = Starting the download…
+
+ai-models-picking = Choose a model file to add.
+
+ai-models-changed = Model in use changed
