@@ -866,6 +866,39 @@ describe("Add profile with the person's details, or later (#234)", () => {
     });
   });
 
+  it("clears a refusal once Add them later or the date's unknown box is changed", async () => {
+    renderSettings({
+      people: [],
+      notice: "FAKE the vault refused this profile",
+      onUpdateProfileDetails: vi.fn().mockResolvedValue(true),
+      onCreateProfile: vi.fn().mockResolvedValue(false),
+    });
+    const { dialog } = openAddProfile();
+    const refused = () =>
+      within(dialog).queryByText("FAKE the vault refused this profile");
+    const add = () =>
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: humanText("Add profile") }),
+      );
+    const unknown = () =>
+      within(dialog).getByLabelText(
+        humanText("I don't know this person's date of birth"),
+      );
+    change("New profile name", "FAKE Child");
+    change("Full name, as on clinic documents", "FAKE Child Example");
+    fireEvent.click(unknown());
+    add();
+    await waitFor(() => expect(refused()).not.toBeNull());
+    // Unticking "unknown" is a change too.
+    fireEvent.click(unknown());
+    expect(refused()).toBeNull();
+    fireEvent.click(unknown());
+    add();
+    await waitFor(() => expect(refused()).not.toBeNull());
+    fireEvent.click(within(dialog).getByLabelText(humanText("Add them later")));
+    expect(refused()).toBeNull();
+  });
+
   it("can add the person now and the details later", () => {
     const props = withDetails();
     const { dialog } = openAddProfile();

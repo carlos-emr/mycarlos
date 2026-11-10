@@ -737,9 +737,16 @@ export function SecuritySettings({
                         setAddRefused(false);
                       }}
                       birthDateUnknown={profileBirthDateUnknown}
-                      onBirthDateUnknownChange={setProfileBirthDateUnknown}
+                      // Like every other change, a tick clears a refusal.
+                      onBirthDateUnknownChange={(unknown) => {
+                        setProfileBirthDateUnknown(unknown);
+                        setAddRefused(false);
+                      }}
                       later={profileLater}
-                      onLaterChange={setProfileLater}
+                      onLaterChange={(later) => {
+                        setProfileLater(later);
+                        setAddRefused(false);
+                      }}
                       otherwiseReady={
                         Boolean(profileName.trim()) &&
                         !nameTooLong(profileName) &&
