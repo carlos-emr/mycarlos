@@ -4225,6 +4225,123 @@ fn vault_view_cancel() {
     pdf_view::cancel_views();
 }
 
+/// Where a quoted span of a page's text is on the page picture (#292).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageBoxesRequest {
+    record_id: Uuid,
+    page: u32,
+    /// The span, in UTF-16 units of the page's readable text.
+    start: u32,
+    end: u32,
+    /// The text the span holds, as the reader read it: the helper checks it is the same.
+    quoted: String,
+    /// The document's own password, when it is locked with one. Not the vault passphrase.
+    password: Option<String>,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for PageBoxesRequest {
+    fn drop(&mut self) {
+        if let Some(password) = self.password.as_mut() {
+            password.zeroize();
+        }
+    }
+}
+
+/// The quote's rectangles on the page picture, one per line run, as fractions of its width
+/// and height from the top left ([left, top, right, bottom]); none, and why, when the helper
+/// cannot place every word of it exactly.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PageBoxesAnswer {
+    rects: Vec<[f64; 4]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    absent: Option<&'static str>,
+}
+
+impl PageBoxesAnswer {
+    fn from_outcome(outcome: pdf_view::BoxesOutcome, given: bool) -> Result<Self, VaultError> {
+        use pdf_unlock::Refusal;
+        use pdf_view::BoxesOutcome;
+        match outcome {
+            BoxesOutcome::Found(rects) => Ok(Self {
+                rects: rects
+                    .into_iter()
+                    .map(|rect| rect.map(|side| f64::from(side) / page_boxes::UNIT))
+                    .collect(),
+                absent: None,
+            }),
+            BoxesOutcome::Absent(absent) => Ok(Self {
+                rects: Vec::new(),
+                absent: Some(absent.name()),
+            }),
+            BoxesOutcome::Refused(Refusal::WrongPassword) if given => {
+                Err(VaultError::PdfWrongPassword)
+            }
+            BoxesOutcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
+            BoxesOutcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
+            BoxesOutcome::Refused(Refusal::NoSuchPage) => Err(VaultError::Invalid),
+            BoxesOutcome::Unavailable => Err(VaultError::PdfViewUnavailable),
+            BoxesOutcome::NoSandbox => Err(VaultError::PdfViewNoSandbox),
+            BoxesOutcome::Cancelled => Err(VaultError::Cancelled),
+            BoxesOutcome::Refused(_) | BoxesOutcome::Failed => Err(VaultError::PdfViewFailed),
+        }
+    }
+}
+
+/// Where a quote from a page's text is on the page picture, for Show in document (#292). The
+/// record is decrypted into memory only and handed to the PDF helper, as for a page view
+/// (`pdf_view::boxes_in_helper`). A newer such request, a lock or the reader closing stops it;
+/// a page request does not.
+#[tauri::command]
+async fn vault_page_boxes(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: PageBoxesRequest,
+) -> CommandResult<PageBoxesAnswer> {
+    if request
+        .password
+        .as_ref()
+        .is_some_and(|password| password.len() > pdf_unlock::MAX_PASSWORD_BYTES)
+        || request.quoted.len() > page_boxes::MAX_SPAN_TEXT_BYTES
+    {
+        return Err(VaultError::Invalid.into());
+    }
+    let (record_id, page) = (request.record_id, request.page);
+    let span = (request.start, request.end);
+    let quoted = std::mem::take(&mut request.quoted);
+    let given = request.password.is_some();
+    let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
+    drop(request);
+    let ticket = pdf_view::ViewTicket::boxes();
+    let result = run_blocking(store.inner(), move |store| {
+        let size = store
+            .snapshot()?
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?
+            .plaintext_size;
+        if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
+            return Err(VaultError::PdfTooLarge);
+        }
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
+        store.read_for_view(record_id, &mut *document)?;
+        PageBoxesAnswer::from_outcome(
+            pdf_view::boxes_in_helper(&document, &password, page, span, &quoted, &ticket),
+            given,
+        )
+    })
+    .await;
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    result
+}
+
 /// A document's whole text for the AI helper (#72 part B, AI-10).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -5250,6 +5367,7 @@ pub fn run() {
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
+            vault_page_boxes,
             vault_document_text,
             vault_document_text_cancel,
             vault_record_known_details,
@@ -8794,5 +8912,92 @@ mod audit_history_ipc_tests {
             panic!("IPC must fail");
         };
         assert_eq!(locked["code"], "locked");
+    }
+}
+
+#[cfg(test)]
+mod page_boxes_command_tests {
+    use super::*;
+    use pdf_unlock::Refusal;
+    use pdf_view::BoxesOutcome;
+
+    #[test]
+    fn the_answer_gives_fractions_or_none_with_why_and_refusals_as_for_a_page() {
+        assert_eq!(
+            PageBoxesAnswer::from_outcome(
+                BoxesOutcome::Found(vec![[0, 6_553, 65_535, 13_107]]),
+                false
+            )
+            .unwrap(),
+            PageBoxesAnswer {
+                rects: vec![[0.0, 6_553.0 / 65_535.0, 1.0, 13_107.0 / 65_535.0]],
+                absent: None,
+            }
+        );
+        let absent =
+            PageBoxesAnswer::from_outcome(BoxesOutcome::Absent(page_boxes::Absent::Skewed), false)
+                .unwrap();
+        assert!(absent.rects.is_empty());
+        assert_eq!(
+            serde_json::to_value(&absent).unwrap(),
+            serde_json::json!({"rects": [], "absent": "skewed"})
+        );
+        assert_eq!(
+            serde_json::to_value(
+                PageBoxesAnswer::from_outcome(BoxesOutcome::Found(vec![[1, 2, 3, 4]]), false)
+                    .unwrap()
+            )
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+            ["rects"]
+        );
+        for (outcome, given, error) in [
+            (
+                BoxesOutcome::Refused(Refusal::WrongPassword),
+                true,
+                VaultError::PdfWrongPassword,
+            ),
+            (
+                BoxesOutcome::Refused(Refusal::WrongPassword),
+                false,
+                VaultError::PdfLocked,
+            ),
+            (
+                BoxesOutcome::Refused(Refusal::NoSuchPage),
+                false,
+                VaultError::Invalid,
+            ),
+            (
+                BoxesOutcome::Refused(Refusal::Damaged),
+                false,
+                VaultError::PdfViewFailed,
+            ),
+            (BoxesOutcome::Cancelled, false, VaultError::Cancelled),
+            (BoxesOutcome::NoSandbox, false, VaultError::PdfViewNoSandbox),
+            (BoxesOutcome::Failed, false, VaultError::PdfViewFailed),
+        ] {
+            assert_eq!(
+                std::mem::discriminant(&PageBoxesAnswer::from_outcome(outcome, given).unwrap_err()),
+                std::mem::discriminant(&error)
+            );
+        }
+    }
+
+    #[test]
+    fn the_boxes_command_wipes_the_password_and_runs_off_the_main_thread() {
+        let source = include_str!("lib.rs");
+        let body = |name: &str| {
+            let start = source.find(name).unwrap();
+            &source[start..start + source[start..].find("\n}\n").unwrap()]
+        };
+        let command = body("async fn vault_page_boxes(");
+        assert!(command.contains("run_blocking("));
+        assert!(command.contains("pdf_view::ViewTicket::boxes()"));
+        assert!(command.contains("pdf_view::boxes_in_helper("));
+        assert!(body("impl Drop for PageBoxesRequest").contains("password.zeroize()"));
+        assert!(source.contains("            vault_page_boxes,\n"));
     }
 }
