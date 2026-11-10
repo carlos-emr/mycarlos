@@ -12,6 +12,8 @@ const native = vi.hoisted(() => ({
   listeners: {} as Record<string, (event: { payload: unknown }) => void>,
   registerEnded: null as (() => Promise<void>) | null,
   onEnded: null as ((outcome: unknown) => void) | null,
+  /** The window may not listen, as when no capability grants it. */
+  refuseListen: false,
   /** The progress event's listener. */
   get listener() {
     return this.listeners["ai-model-add-progress"] ?? null;
@@ -23,6 +25,8 @@ vi.mock("@tauri-apps/api/event", () => ({
     name: string,
     handler: (event: { payload: unknown }) => void,
   ) => {
+    if (native.refuseListen)
+      throw new Error("FAKE event.listen not allowed by the capability");
     if (name === "ai-model-add-ended" && native.registerEnded)
       await native.registerEnded();
     const listener = (event: { payload: unknown }) => {
@@ -163,6 +167,7 @@ beforeEach(() => {
   native.listeners = {};
   native.registerEnded = null;
   native.onEnded = null;
+  native.refuseListen = false;
   setLocaleOverride("en");
 });
 afterEach(() => setLocaleOverride(null));
@@ -492,6 +497,60 @@ describe("The progress bar (#275)", () => {
     expect(
       bar()!.compareDocumentPosition(counts) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("asks the native side each second for the progress when the window may not listen", async () => {
+    native.refuseListen = true;
+    let active: unknown = null;
+    answer({
+      ai_model_catalog: [{ ...fake, sizeBytes: TOTAL }],
+      ai_model_download: () => new Promise(() => undefined),
+      ai_model_add_active: () => Promise.resolve(active),
+      ai_model_add_cancel: null,
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^Download / }),
+    );
+    expect(
+      screen.getByRole("button", { name: humanText("Downloading FAKE model") }),
+    ).toBeDisabled();
+    expect(bar()).toBeNull();
+    active = { kind: "download", done: 1_240_000_000, total: TOTAL, index: 0 };
+    await waitFor(() => expect(bar()).toHaveAttribute("aria-valuenow", "41"), {
+      timeout: 3000,
+    });
+    expect(screen.getByText(humanText("41%, 1,240 of 3,013 MB"))).toBeVisible();
+    active = { kind: "download", done: TOTAL, total: TOTAL, index: 0 };
+    await waitFor(
+      () =>
+        expect(
+          screen.getByRole("button", {
+            name: humanText("Installing FAKE model"),
+          }),
+        ).toBeDisabled(),
+      { timeout: 3000 },
+    );
+  });
+
+  it("shows a running copy's progress on opening when the window may not listen", async () => {
+    native.refuseListen = true;
+    answer({
+      ai_model_catalog: [{ ...fake, sizeBytes: TOTAL }],
+      ai_model_add_active: {
+        kind: "download",
+        done: 900_000_000,
+        total: TOTAL,
+        index: 0,
+      },
+      ai_model_add_cancel: null,
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await waitFor(() => expect(bar()).toHaveAttribute("aria-valuenow", "29"));
   });
 
   it("starts a resumed download where it stopped", async () => {

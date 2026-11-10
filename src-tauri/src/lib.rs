@@ -6158,7 +6158,15 @@ mod tests {
                 .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .collect();
         files.sort();
-        assert_eq!(files, ["appearance.json", "default.json", "zoom.json"]);
+        assert_eq!(
+            files,
+            [
+                "appearance.json",
+                "default.json",
+                "events.json",
+                "zoom.json"
+            ]
+        );
     }
 
     #[test]
@@ -6177,6 +6185,74 @@ mod tests {
             appearance["permissions"],
             serde_json::json!(["core:window:allow-set-theme"])
         );
+    }
+
+    #[test]
+    fn the_page_may_listen_for_the_apps_events_and_nothing_wider() {
+        // The AI helper follows a model download through listen()
+        // ("ai-model-add-progress", "ai-model-add-ended"). Tauri refuses listen()
+        // unless a capability grants it, and a refused listen showed no progress
+        // bar in the built app while every mocked test passed. So: the grant is
+        // there whenever a page file listens, it is listen and unlisten only (the
+        // page never emits), and only the main window on a computer has it.
+        let events: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/events.json")).unwrap();
+        assert_eq!(events["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            events["platforms"],
+            serde_json::json!(["windows", "macOS", "linux"])
+        );
+        assert_eq!(
+            events["permissions"],
+            serde_json::json!(["core:event:allow-listen", "core:event:allow-unlisten"])
+        );
+        fn page_files(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    page_files(&path, found);
+                } else if path.extension().is_some_and(|e| e == "ts" || e == "tsx")
+                    && !path.to_string_lossy().contains(".test.")
+                {
+                    found.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        page_files(
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../src")),
+            &mut files,
+        );
+        let listening: Vec<_> = files
+            .iter()
+            .filter(|path| {
+                std::fs::read_to_string(path)
+                    .unwrap()
+                    .contains("\"@tauri-apps/api/event\"")
+            })
+            .collect();
+        // The grant is only for pages that listen; without one it must go.
+        assert!(!listening.is_empty());
+        // No capability file grants emitting or the whole event or core set.
+        for name in [
+            "appearance.json",
+            "default.json",
+            "events.json",
+            "zoom.json",
+        ] {
+            let text = std::fs::read_to_string(format!(
+                "{}/capabilities/{name}",
+                env!("CARGO_MANIFEST_DIR")
+            ))
+            .unwrap();
+            for wider in [
+                "core:default",
+                "core:event:default",
+                "core:event:allow-emit",
+            ] {
+                assert!(!text.contains(wider), "{name} grants {wider}");
+            }
+        }
     }
 
     #[test]
@@ -8319,6 +8395,85 @@ mod native_localization_tests {
         let waited = PublicError::wait(1234);
         assert!(!public_error_text(&waited).is_empty());
         assert_eq!(waited.retry_after_ms, Some(1234));
+    }
+}
+
+#[cfg(test)]
+mod event_permission_ipc_tests {
+    use super::*;
+
+    fn request(cmd: &str, body: serde_json::Value) -> tauri::webview::InvokeRequest {
+        let local = if cfg!(any(windows, target_os = "android")) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        };
+        tauri::webview::InvokeRequest {
+            cmd: cmd.into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: local.parse().unwrap(),
+            body: tauri::ipc::InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.into(),
+        }
+    }
+
+    /// With the real generated capability authority (only the OS runtime is mocked), as the
+    /// built app checks it: the main window may listen for the model download's events and stop
+    /// listening, may not emit, and no other window may listen.
+    #[test]
+    fn the_main_window_may_listen_for_events_and_may_not_emit() {
+        let app = tauri::test::mock_builder()
+            .build(production_context())
+            .unwrap();
+        let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let other = tauri::WebviewWindowBuilder::new(&app, "FAKE-ungranted", Default::default())
+            .build()
+            .unwrap();
+        let listen = |event: &str| {
+            request(
+                "plugin:event|listen",
+                serde_json::json!({ "event": event, "target": { "kind": "Any" }, "handler": 7 }),
+            )
+        };
+        for event in ["ai-model-add-progress", "ai-model-add-ended"] {
+            let id = tauri::test::get_ipc_response(&main, listen(event))
+                .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))
+                .deserialize::<serde_json::Value>()
+                .unwrap();
+            tauri::test::get_ipc_response(
+                &main,
+                request(
+                    "plugin:event|unlisten",
+                    serde_json::json!({ "event": event, "eventId": id }),
+                ),
+            )
+            .unwrap_or_else(|refused| panic!("unlisten {event}: {refused}"));
+        }
+        let Err(refused) = tauri::test::get_ipc_response(&other, listen("ai-model-add-progress"))
+        else {
+            panic!("another window must not listen");
+        };
+        assert!(
+            refused.as_str().unwrap().contains("not allowed"),
+            "{refused}"
+        );
+        let Err(refused) = tauri::test::get_ipc_response(
+            &main,
+            request(
+                "plugin:event|emit",
+                serde_json::json!({ "event": "FAKE-page-event", "payload": null }),
+            ),
+        ) else {
+            panic!("the page must not emit");
+        };
+        assert!(
+            refused.as_str().unwrap().contains("not allowed"),
+            "{refused}"
+        );
     }
 }
 
