@@ -13190,10 +13190,20 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     // The patient's own press, just after unlocking: the automatic check
     // does not run beside it, and focus is left as that press leaves it.
     await openShared();
+    // Finish navigation's focus recovery before starting the patient's check.
+    // Animation frames use the browser's clock, not the announcement's fake one.
+    await act(
+      () =>
+        new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => resolve());
+        }),
+    );
     const check = screen.getByRole("button", {
       name: "Check for new documents",
     });
+    fireEvent.pointerDown(check);
     check.focus();
+    expect(check).toHaveFocus();
     await click(check);
     await pass(ANNOUNCE_DELAY_MS);
     expect(bridge.checkDocuments).toHaveBeenCalledOnce();
