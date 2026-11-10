@@ -314,6 +314,10 @@ impl From<VaultError> for PublicText {
                     code: "approval_cancelled",
                     message_key: "portal.approvalCancelled",
                 },
+                _ if reason == Some(portal_approval::ApprovalReason::CodeAttempts) => Self {
+                    code: "approval_code_locked",
+                    message_key: "portal.codeLocked",
+                },
                 _ if reason.is_some_and(|r| r.needs_clinic()) => Self {
                     code: "approval_contact_clinic",
                     message_key: "portal.approvalContact",
@@ -338,6 +342,18 @@ impl From<VaultError> for PublicText {
             VaultError::ApprovalStillOpen => Self {
                 code: "approval_still_open",
                 message_key: "portal.approvalStillOpen",
+            },
+            VaultError::ApprovalCodeMismatch => Self {
+                code: "approval_code_mismatch",
+                message_key: "portal.codeMismatch",
+            },
+            VaultError::ApprovalCodeLocked => Self {
+                code: "approval_code_locked",
+                message_key: "portal.codeLocked",
+            },
+            VaultError::ApprovalCodeNotOpen => Self {
+                code: "approval_code_not_open",
+                message_key: "portal.codeNotOpen",
             },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
@@ -2329,6 +2345,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
         AiError::Memory => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
+        AiError::Storage => "ai.error.storage",
         AiError::Cancelled | AiError::Failed => "ai.failed",
     };
     PublicError {
@@ -2362,6 +2379,8 @@ struct AuditHistory {
     checked_until_ms: Option<u64>,
     /// The time of the first later entry, when there is one.
     checked_from_ms: Option<u64>,
+    /// Every event the manifest pins is shown, even when part of the storage is damaged.
+    every_event_shown: bool,
 }
 
 impl From<vault::HistoryView> for AuditHistory {
@@ -2379,6 +2398,7 @@ impl From<vault::HistoryView> for AuditHistory {
             complete: view.complete,
             checked_until_ms,
             checked_from_ms,
+            every_event_shown: view.every_event_shown,
         }
     }
 }
@@ -2673,6 +2693,8 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 /// none do). `complete` says whether `entries` are the whole chain. When not, `checkedUntilMs` is
 /// the time of the last of `entries` and `checkedFromMs` the time of the first of `laterEntries`
 /// (each null when there is none), so the screen can say which events can't be checked.
+/// `everyEventShown` says the shown entries are still every event the manifest pins (only
+/// pieces without events are damaged), so the screen says so and marks no gap (#120 C1).
 #[tauri::command]
 async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
     audit_history_result(run_blocking(store.inner(), VaultStore::history_view).await)
@@ -2851,6 +2873,49 @@ async fn vault_refresh_device_approval(
             recovery: check.recovery,
         })
         .map_err(Into::into)
+}
+
+/// Why a code the patient typed was not taken (clinic code v1). A code that
+/// is not 9 digits, and a refusal by the portal, are said as such; the rest
+/// as a status check says them.
+fn approval_code_issue(error: VaultError) -> PublicError {
+    use portal_link::LinkError;
+    let (code, message_key) = match &error {
+        VaultError::Invalid => ("approval_code_format", "portal.codeFormat"),
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => {
+            ("approval_code_refused", "portal.codeRefused")
+        }
+        _ => return approval_check_issue(error),
+    };
+    PublicError {
+        code,
+        message_key,
+        record_id: None,
+        note_key: None,
+        retry_after_ms: None,
+    }
+}
+
+/// Takes the code a clinic emailed for a linked device's open request
+/// (clinic code v1). It is checked natively and sent to the portal only if it
+/// matches this clinic; it is never saved or logged, and the typed text is
+/// wiped here once used.
+#[tauri::command]
+async fn vault_submit_approval_code(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+    mut code: String,
+) -> CommandResult<()> {
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = store.submit_approval_code(link_id, &code, session);
+        code.zeroize();
+        result
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(approval_code_issue)
 }
 
 #[tauri::command]
@@ -5155,6 +5220,7 @@ pub fn run() {
             vault_request_device_approval,
             vault_restart_device_approval,
             vault_refresh_device_approval,
+            vault_submit_approval_code,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
@@ -5939,6 +6005,7 @@ mod tests {
             (AiError::Damaged, "aiDamaged", "isn't on this computer"),
             (AiError::Memory, "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
+            (AiError::Storage, "aiStorage", "could not be read"),
             (AiError::Cancelled, "aiCancelled", "could not finish"),
             (AiError::Failed, "aiFailed", "could not finish"),
         ] {
@@ -8335,6 +8402,7 @@ mod audit_history_ipc_tests {
                 entries,
                 later,
                 complete,
+                every_event_shown: complete,
             })
         };
         let partial = shown(entries(), Vec::new(), false);
@@ -8414,11 +8482,13 @@ mod audit_history_ipc_tests {
                 "checkedUntilMs",
                 "complete",
                 "entries",
+                "everyEventShown",
                 "laterEntries"
             ]
             .into()
         );
         assert_eq!(response["complete"], true);
+        assert_eq!(response["everyEventShown"], true);
         assert!(response["checkedUntilMs"].is_null());
         let rows = &response["entries"];
         assert_eq!(rows[0]["event"], "created");
@@ -8467,7 +8537,8 @@ mod audit_history_ipc_tests {
                 "laterEntries": [],
                 "complete": false,
                 "checkedUntilMs": null,
-                "checkedFromMs": null
+                "checkedFromMs": null,
+                "everyEventShown": false
             })
         );
         store.lock();

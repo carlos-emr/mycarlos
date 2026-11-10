@@ -1443,6 +1443,8 @@ interface-history-damaged = 此记录有部分已损毁。{ $date } 之后的事
 
 interface-history-damagedAll = 此记录有部分已损毁。其中的事件无法检查，因此全部不显示。
 
+interface-history-damagedStorageOnly = 此记录的部分存储内容已损毁，但所有事件均通过检查，并全部显示。
+
 interface-history-damagedBefore = 此记录有部分已损毁。{ $date } 之前的事件无法检查，因此不显示。
 
 interface-history-damagedBetween = 此记录有部分已损毁。{ $from } 至 { $to } 之间的事件无法检查，因此不显示。
@@ -1599,6 +1601,28 @@ library-status-unverified = 未验证
 
 library-status-verified = 已验证
 
+portal-approvedByCode = 诊所已通过验证码确认此设备。
+
+portal-codeFormat = 请输入诊所电子邮件中验证码的 9 位数字。
+
+portal-codeHint = 请输入诊所通过电子邮件发送给您的 9 位数验证码。切勿使用网站上显示的验证码。
+
+portal-codeLabel = 诊所电子邮件中的验证码
+
+portal-codeLocked = 此请求已尝试过太多验证码，因此 myCarlos 不会再接受新的验证码。请联系诊所。
+
+portal-codeMismatch = 此验证码与此诊所不符。请确认您关联的是诊所真正的门户网站网址，然后重试。
+
+portal-codeNeeded = 诊所已通过电子邮件向您发送确认此设备的验证码。请在下方输入。
+
+portal-codeNotOpen = 此请求目前不需要验证码。myCarlos 下次检查时会显示诊所的答复。
+
+portal-codeRefused = 诊所门户网站未接受此验证码。请几分钟后重试。
+
+portal-codeSubmit = 确认验证码
+
+portal-codeSubmitted = 验证码已发送。正在等待诊所确认此设备。如果 10 分钟内仍未确认，请重新申请。
+
 ai-summary-button = 摘要
 
 ai-summary-title = 通俗易懂的摘要
@@ -1710,6 +1734,8 @@ ai-failed = AI 助手未能完成。请重试。
 ai-error-memory = 目前可用内存不足，AI 助手无法运行。请关闭其他程序后重试。
 
 ai-error-busy = 正在添加或移除 AI 助手的模型。请在完成后重试。
+
+ai-error-storage = 无法从此电脑读取 AI 助手的模型。请重试。如果问题持续，请在“设置”中的“AI 助手”里删除模型，然后重新添加。
 
 ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能遗漏部分内容。
 

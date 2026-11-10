@@ -1608,6 +1608,8 @@ interface-history-damaged = Parte de este historial está dañada. Los eventos p
 
 interface-history-damagedAll = Parte de este historial está dañada. Sus eventos no se pueden verificar, así que no se muestra ninguno.
 
+interface-history-damagedStorageOnly = Parte del almacenamiento de este historial está dañada, pero todos sus eventos se verificaron y se muestran.
+
 interface-history-damagedBefore = Parte de este historial está dañada. Los eventos anteriores al { $date } no se pueden verificar y no se muestran.
 
 interface-history-damagedBetween = Parte de este historial está dañada. Los eventos entre el { $from } y el { $to } no se pueden verificar y no se muestran.
@@ -1779,6 +1781,28 @@ library-status-unverified = No verificado
 
 library-status-verified = Verificado
 
+portal-approvedByCode = Su clínica confirmó este dispositivo con un código.
+
+portal-codeFormat = Escriba los 9 dígitos del código del correo de su clínica.
+
+portal-codeHint = Escriba el código de 9 dígitos que su clínica le envió por correo electrónico. Nunca use un código que aparezca en un sitio web.
+
+portal-codeLabel = Código del correo de su clínica
+
+portal-codeLocked = Se probaron demasiados códigos para esta solicitud, así que myCarlos no aceptará otro. Comuníquese con su clínica.
+
+portal-codeMismatch = Este código no corresponde a esta clínica. Compruebe que vinculó la dirección real del portal de su clínica y vuelva a intentarlo.
+
+portal-codeNeeded = Su clínica le envió por correo electrónico un código para confirmar este dispositivo. Escríbalo abajo.
+
+portal-codeNotOpen = Esta solicitud no está esperando un código ahora. myCarlos mostrará la respuesta de su clínica en la próxima comprobación.
+
+portal-codeRefused = El portal de la clínica no aceptó el código. Vuelva a intentarlo en unos minutos.
+
+portal-codeSubmit = Confirmar código
+
+portal-codeSubmitted = Código enviado. Esperando a que su clínica confirme este dispositivo. Si no se confirma en 10 minutos, vuelva a solicitarlo.
+
 ai-summary-button = Resumen
 
 ai-summary-title = Resumen en palabras sencillas
@@ -1895,6 +1919,8 @@ ai-failed = El asistente de IA no pudo terminar. Intente de nuevo.
 ai-error-memory = Ahora mismo no hay suficiente memoria libre para el asistente de IA. Cierre otros programas e intente de nuevo.
 
 ai-error-busy = Se está agregando o quitando el modelo del asistente de IA. Intente de nuevo cuando termine.
+
+ai-error-storage = No se pudo leer el modelo del asistente de IA en este equipo. Intente de nuevo. Si sigue pasando, quite el modelo en Configuración, en Asistente de IA, y vuelva a agregarlo.
 
 ai-summary-pagesMissing = Algunas páginas no se pudieron leer completas, así que puede que este resumen omita partes.
 

@@ -1608,6 +1608,8 @@ interface-history-damaged = Une partie de cet historique est endommagée. Les é
 
 interface-history-damagedAll = Une partie de cet historique est endommagée. Ses événements ne peuvent pas être vérifiés, donc aucun ne s’affiche.
 
+interface-history-damagedStorageOnly = Une partie du stockage de cet historique est endommagée, mais tous ses événements ont été vérifiés et s’affichent.
+
 interface-history-damagedBefore = Une partie de cet historique est endommagée. Les événements avant le { $date } ne peuvent pas être vérifiés et ne s’affichent pas.
 
 interface-history-damagedBetween = Une partie de cet historique est endommagée. Les événements entre le { $from } et le { $to } ne peuvent pas être vérifiés et ne s’affichent pas.
@@ -1779,6 +1781,28 @@ library-status-unverified = Non vérifié
 
 library-status-verified = Vérifié
 
+portal-approvedByCode = Votre clinique a confirmé cet appareil au moyen d’un code.
+
+portal-codeFormat = Entrez les 9 chiffres du code reçu par courriel de votre clinique.
+
+portal-codeHint = Entrez le code à 9 chiffres que votre clinique vous a envoyé par courriel. N’utilisez jamais un code affiché sur un site Web.
+
+portal-codeLabel = Code reçu par courriel de votre clinique
+
+portal-codeLocked = Trop de codes ont été essayés pour cette demande. myCarlos n’en acceptera plus. Contactez votre clinique.
+
+portal-codeMismatch = Ce code ne correspond pas à cette clinique. Vérifiez que vous avez lié l’adresse réelle du portail de votre clinique, puis réessayez.
+
+portal-codeNeeded = Votre clinique vous a envoyé par courriel un code pour confirmer cet appareil. Entrez-le ci-dessous.
+
+portal-codeNotOpen = Cette demande n’attend pas de code pour le moment. myCarlos affichera la réponse de votre clinique lors de sa prochaine vérification.
+
+portal-codeRefused = Le portail de la clinique n’a pas accepté le code. Réessayez dans quelques minutes.
+
+portal-codeSubmit = Confirmer le code
+
+portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
+
 ai-summary-button = Résumé
 
 ai-summary-title = Résumé en mots simples
@@ -1895,6 +1919,8 @@ ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
 ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.
 
 ai-error-busy = Le modèle de l’assistant IA est en cours d’ajout ou de suppression. Réessayez quand ce sera terminé.
+
+ai-error-storage = Le modèle de l’assistant IA n’a pas pu être lu sur cet ordinateur. Réessayez. Si cela continue, supprimez le modèle dans Paramètres, sous Assistant IA, puis ajoutez-le de nouveau.
 
 ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; ce résumé peut donc en omettre des parties.
 
