@@ -10,7 +10,9 @@ import {
 import {
   PersonDetailsFields,
   PersonDetailsList,
+  PersonDialog,
   detailsProblem,
+  inDialogHost,
   trimmedDetails,
 } from "./PersonDetails";
 import type { PatientProfile, PersonDetails } from "../vault";
@@ -63,6 +65,9 @@ interface SecuritySettingsProps {
   onOpenHidden: () => void;
   focusAuditEntry?: boolean;
   onOpenAuditHistory: () => void;
+  /** Opens the notice about the AI helper (#72), when the helper is offered
+   * on this platform. */
+  onOpenAiHelperNotice?: () => void;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -76,6 +81,12 @@ interface SecuritySettingsProps {
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
   onSpeedTest: () => Promise<SpeedTestReport>;
+  /** Where the profile dialogs are drawn: beside the library's other dialogs,
+   * outside the page it makes inert while one is open. Without it, in place. */
+  dialogHost?: HTMLElement | null;
+  /** Told when a profile dialog opens and closes, so the library can make the
+   * rest of the page inert. */
+  onDialogChange?: (open: boolean) => void;
 }
 
 /** One line a tester can copy into the benchmark record. */
@@ -160,6 +171,7 @@ export function SecuritySettings({
   onOpenHidden,
   focusAuditEntry = false,
   onOpenAuditHistory,
+  onOpenAiHelperNotice,
   people = [],
   onUpdateProfileDetails,
   recoveryKeySetAtMs,
@@ -170,6 +182,8 @@ export function SecuritySettings({
   onSetUpRecoveryKey,
   onSaveBackup,
   onSpeedTest,
+  dialogHost,
+  onDialogChange,
 }: SecuritySettingsProps) {
   const { t } = useI18n();
   const hiddenEntryRef = useRef<HTMLButtonElement | null>(null);
@@ -223,6 +237,37 @@ export function SecuritySettings({
   const [profileName, setProfileName] = useState("");
   const [profileDetails, setProfileDetails] = useState<PersonDetails>({});
   const [profileBirthDateUnknown, setProfileBirthDateUnknown] = useState(false);
+  // "Add profile" opens a dialog (Ben, 29 Oct). The library makes the page
+  // inert while it is open; it is told in the same event that opens or closes
+  // the dialog, so the page is no longer inert when focus goes back.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addRefused, setAddRefused] = useState(false);
+  const dialogChange = useRef(onDialogChange);
+  dialogChange.current = onDialogChange;
+  const showAdd = (open: boolean) => {
+    if (open) {
+      setProfileName("");
+      setProfileDetails({});
+      setProfileBirthDateUnknown(false);
+    }
+    setAddRefused(false);
+    setAddOpen(open);
+    dialogChange.current?.(open);
+  };
+  useEffect(() => () => dialogChange.current?.(false), []);
+  // After adding, focus goes to the new person's line: the one that was not
+  // in the list when Add profile was pressed.
+  const [peopleBeforeAdd, setPeopleBeforeAdd] = useState<Set<string> | null>(
+    null,
+  );
+  const [focusPersonId, setFocusPersonId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!peopleBeforeAdd) return;
+    const added = people.find((person) => !peopleBeforeAdd.has(person.id));
+    if (!added) return;
+    setPeopleBeforeAdd(null);
+    setFocusPersonId(added.id);
+  }, [people, peopleBeforeAdd]);
   const [currentPassphrase, setCurrentPassphrase] = useState("");
   const [newPassphrase, setNewPassphrase] = useState("");
   const [newPassphraseConfirmation, setNewPassphraseConfirmation] =
@@ -257,16 +302,17 @@ export function SecuritySettings({
         detailsProblem(profileDetails, profileBirthDateUnknown))
     )
       return;
+    const before = new Set(people.map((person) => person.id));
+    setAddRefused(false);
     void (
       onUpdateProfileDetails
         ? onCreateProfile(profileName, trimmedDetails(profileDetails))
         : onCreateProfile(profileName)
     ).then((created) => {
       if (created) {
-        setProfileName("");
-        setProfileDetails({});
-        setProfileBirthDateUnknown(false);
-      }
+        showAdd(false);
+        setPeopleBeforeAdd(before);
+      } else setAddRefused(true);
     });
   };
   return (
@@ -301,7 +347,10 @@ export function SecuritySettings({
           </div>
         </section>
         {/* #71: the privacy notice says what is kept. */}
-        <section className="setting-row" aria-labelledby="what-is-kept">
+        <section
+          className="setting-row kept-setting"
+          aria-labelledby="what-is-kept"
+        >
           <div>
             <h2 id="what-is-kept">
               {translateNow("interface.SecuritySettings.whatMyCarlosKeeps")}
@@ -311,6 +360,19 @@ export function SecuritySettings({
                 "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne",
               )}
             </p>
+            <p>
+              {translateNow(
+                "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
+              )}
+            </p>
+            <p>
+              {translateNow(
+                "interface.SecuritySettings.startingAgainOrRestoringABackupOver",
+              )}
+            </p>
+          </div>
+          {/* Its controls on the right, as in the other rows. */}
+          <div className="kept-entries">
             <button
               ref={hiddenEntryRef}
               className="button hidden-settings-entry"
@@ -324,11 +386,6 @@ export function SecuritySettings({
                 <span className="hidden-entry-scope">{hiddenScopeName}</span>
               </span>
             </button>
-            <p>
-              {translateNow(
-                "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
-              )}
-            </p>
             <button
               ref={auditEntryRef}
               className="button hidden-settings-entry"
@@ -340,23 +397,40 @@ export function SecuritySettings({
                 {translateNow("interface.history.title")}
               </span>
             </button>
-            <p>
-              {translateNow(
-                "interface.SecuritySettings.startingAgainOrRestoringABackupOver",
-              )}
-            </p>
           </div>
         </section>
+        {onOpenAiHelperNotice && (
+          <section className="native-setting">
+            <h3>{translateNow("aiHelper.notice.title")}</h3>
+            <p>{translateNow("aiHelper.notice.introShare")}</p>
+            <button
+              className="button"
+              type="button"
+              onClick={onOpenAiHelperNotice}
+            >
+              {translateNow("aiHelper.notice.title")}
+            </button>
+          </section>
+        )}
         <section className="setting-row native-setting-form">
           <div>
-            <h2>
-              {translateNow("security.autoLock.title")}{" "}
-              <span className="state-pill">
-                {translateNow("security.autoLock.minutes", {
-                  count: autoLockMinutes,
-                })}
-              </span>
-            </h2>
+            <div className="native-auto-lock-heading">
+              <h2>
+                {translateNow("security.autoLock.title")}{" "}
+                <span className="state-pill">
+                  {translateNow("security.autoLock.minutes", {
+                    count: autoLockMinutes,
+                  })}
+                </span>
+              </h2>
+              <button
+                className="button"
+                type="button"
+                onClick={() => void onLock()}
+              >
+                {translateNow("security.lockNow")}
+              </button>
+            </div>
             <p>{translateNow("security.autoLock.body")}</p>
           </div>
           <div>
@@ -364,13 +438,6 @@ export function SecuritySettings({
               minutes={autoLockMinutes}
               onMinutes={onAutoLockMinutes}
             />
-            <button
-              className="button"
-              type="button"
-              onClick={() => void onLock()}
-            >
-              {translateNow("security.lockNow")}
-            </button>
           </div>
         </section>
         <section className="setting-row">
@@ -590,60 +657,91 @@ export function SecuritySettings({
             <h2>{translateNow("security.profiles.title")}</h2>
             <p>{translateNow("security.profiles.body")}</p>
           </div>
-          <form onSubmit={submitProfile}>
-            <label>
-              {translateNow("security.profiles.label")}
-              <input
-                required
-                maxLength={NAME_INPUT_MAX_LENGTH}
-                value={profileName}
-                onChange={(event) => setProfileName(event.target.value)}
-              />
-            </label>
-            {nameTooLong(profileName) && (
-              <p role="alert">{translateNow("create.profile.tooLong")}</p>
-            )}
-            {nameIsShared(profileName) && (
-              <p role="alert">
-                {t("create.profile.sharedTaken", {
-                  folder: t("interface.LibrarySidebar.sharedWithMe"),
-                })}
-              </p>
-            )}
-            {onUpdateProfileDetails && (
-              <fieldset disabled={busy || readOnly}>
-                <PersonDetailsFields
-                  details={profileDetails}
-                  onChange={setProfileDetails}
-                  birthDateUnknown={profileBirthDateUnknown}
-                  onBirthDateUnknownChange={setProfileBirthDateUnknown}
-                />
-              </fieldset>
-            )}
+          <div className="native-profile-add">
             <button
               className="button"
-              disabled={
-                busy ||
-                readOnly ||
-                Boolean(
-                  onUpdateProfileDetails &&
-                    detailsProblem(profileDetails, profileBirthDateUnknown),
-                ) ||
-                !profileName.trim() ||
-                nameTooLong(profileName) ||
-                nameIsShared(profileName)
-              }
+              type="button"
+              aria-haspopup="dialog"
+              disabled={busy || readOnly}
+              onClick={() => showAdd(true)}
             >
               {translateNow("security.profiles.add")}
             </button>
-          </form>
+          </div>
           {onUpdateProfileDetails && (
             <PersonDetailsList
               people={people}
-              busy={busy || readOnly}
+              busy={busy}
+              readOnly={readOnly}
               onSave={onUpdateProfileDetails}
+              focusId={focusPersonId}
+              onFocusLeft={() => setFocusPersonId(null)}
+              dialogHost={dialogHost}
+              onDialogChange={onDialogChange}
+              refusalText={notice}
             />
           )}
+          {addOpen &&
+            inDialogHost(
+              <PersonDialog
+                titleId="add-profile-title"
+                title={translateNow("security.profiles.add")}
+                submitText={translateNow("security.profiles.add")}
+                busy={busy}
+                submitDisabled={
+                  busy ||
+                  readOnly ||
+                  Boolean(
+                    onUpdateProfileDetails &&
+                      detailsProblem(profileDetails, profileBirthDateUnknown),
+                  ) ||
+                  !profileName.trim() ||
+                  nameTooLong(profileName) ||
+                  nameIsShared(profileName)
+                }
+                refusal={addRefused ? notice : ""}
+                onSubmit={submitProfile}
+                onClose={() => showAdd(false)}
+              >
+                <label>
+                  {translateNow("security.profiles.label")}
+                  <input
+                    required
+                    maxLength={NAME_INPUT_MAX_LENGTH}
+                    value={profileName}
+                    disabled={busy || readOnly}
+                    onChange={(event) => {
+                      setProfileName(event.target.value);
+                      setAddRefused(false);
+                    }}
+                  />
+                </label>
+                {nameTooLong(profileName) && (
+                  <p role="alert">{translateNow("create.profile.tooLong")}</p>
+                )}
+                {nameIsShared(profileName) && (
+                  <p role="alert">
+                    {t("create.profile.sharedTaken", {
+                      folder: t("interface.LibrarySidebar.sharedWithMe"),
+                    })}
+                  </p>
+                )}
+                {onUpdateProfileDetails && (
+                  <fieldset disabled={busy || readOnly}>
+                    <PersonDetailsFields
+                      details={profileDetails}
+                      onChange={(details) => {
+                        setProfileDetails(details);
+                        setAddRefused(false);
+                      }}
+                      birthDateUnknown={profileBirthDateUnknown}
+                      onBirthDateUnknownChange={setProfileBirthDateUnknown}
+                    />
+                  </fieldset>
+                )}
+              </PersonDialog>,
+              dialogHost,
+            )}
         </section>
       </div>
     </main>

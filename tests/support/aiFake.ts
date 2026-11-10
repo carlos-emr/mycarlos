@@ -1,0 +1,902 @@
+import { type Page } from "@playwright/test";
+import { translate } from "./fluent";
+import { FAKE_PAGE_COUNT, fakePageText, fakeUuid } from "./vaultFake";
+
+// The AI helper's native side (#72), faked over vaultFake.ts for specs that
+// follow the helper's whole path: a document's text for the preview and the
+// reader, what the vault knows about its patient, the text export, and the
+// model on this computer. Install it after fakeVaultWith: it wraps that
+// fake's `invoke`, answers the commands below itself and passes every other
+// command on, so the vault fake (and expectOnlyFakedCommands) see the rest.
+//
+// - A call can be held (holdAi): it stays pending until released
+//   (releaseAi) or cancelled, as a long read or a slow model would.
+// - Cancelling is native: vault_document_text_cancel settles a held text
+//   read, ai_cancel a held model run, and vault_lock both, each with the
+//   refusal the native side sends. A cancel that only logs a call while
+//   leaving the read pending fails the specs that wait on it (aiHeld).
+// - Device model state and In use survive reloads; pending fake work does not,
+//   as a reloaded window ends the work it was waiting for.
+// FAKE data only.
+
+/** The AI helper's native commands, in one place. The model's work commands
+ * are the names agreed for the runtime (root-aa, 5 Nov 2026); the wiring
+ * step switches the app to them. */
+export const AI_COMMANDS = {
+  modelStatus: "ai_model_status",
+  summarize: "ai_summarize",
+  explain: "ai_explain",
+  cancel: "ai_cancel",
+  // Adding and removing the model (root-4a's side of the agreement).
+  catalog: "ai_model_catalog",
+  models: "ai_models",
+  use: "ai_model_use",
+  addPicked: "ai_model_add_picked",
+  download: "ai_model_download",
+  addCancel: "ai_model_add_cancel",
+  // The copy running now, for a row that opens again while it runs (#275).
+  addActive: "ai_model_add_active",
+  remove: "ai_model_remove",
+  documentText: "vault_document_text",
+  cancelText: "vault_document_text_cancel",
+  knownDetails: "vault_record_known_details",
+  exportPick: "vault_export_text_pick",
+  exportPicked: "vault_export_text_picked",
+  // The answers kept with a document, in the vault (#212).
+  keptList: "vault_ai_results",
+  keptSave: "vault_ai_result_save",
+  keptRead: "vault_ai_result_read",
+} as const;
+
+type AiCommand = (typeof AI_COMMANDS)[keyof typeof AI_COMMANDS];
+
+/** The model the fake has, when one is installed. */
+export const FAKE_MODEL = { name: "FAKE test model", sha256: "test-only" };
+
+export type FakeModelStatus =
+  | { state: "notInstalled" }
+  | { state: "installed"; model: { name: string; sha256: string } }
+  | { state: "unsupported"; reason: "ram" | "cpu" | "platform" }
+  | { state: "damaged" };
+
+/** The refusals the model's commands make (PublicError codes). */
+export type FakeAiRefusal =
+  /** ai_model_remove's own refusals. */
+  | "busy"
+  | "storage"
+  | "aiNotInstalled"
+  | "aiDamaged"
+  | "aiMemory"
+  | "aiBusy"
+  | "aiCancelled"
+  | "aiFailed";
+
+export interface FakeAiModelRow {
+  index: number;
+  model: FakeCatalogEntry;
+  state: "notDownloaded" | "installed" | "damaged";
+  addedByYou: boolean;
+  inUse: boolean;
+  /** Only accepted legacy entries may be unlisted; never arbitrary files. */
+  offered?: boolean;
+}
+
+export interface FakeAiSetup {
+  /** What ai_model_status says. Default: not installed. */
+  model?: FakeModelStatus;
+  /** Accepted catalog entries and device state for the model-list flows. */
+  models?: FakeAiModelRow[];
+  /** Which accepted fake entry the native picker adds; default: first. */
+  pickedIndex?: number;
+  /** A document's pages, by its name. Others read as vaultFake's page text. */
+  documents?: Record<string, string[]>;
+  /** How the PDF helper read a document, by its name: pages it cut at its
+   * limit, pages it could not read (left out of `pages`), and a text cut by
+   * the reader's caps. Default: every page read in full. */
+  readAs?: Record<string, FakeTextRead>;
+  /** What vault_record_known_details says about every document's patient. */
+  knownDetails?: {
+    names?: string[];
+    birthDates?: string[];
+    doctorNames?: string[];
+    clinicNames?: string[];
+  };
+  /** What the model says it explains a term as. */
+  explanation?: string;
+  /** The one accepted model, as ai_model_catalog lists it: by default a
+   * FAKE entry; a spec can give the real model's name, size and licence. */
+  catalog?: Partial<FakeCatalogEntry>;
+}
+
+/** One accepted model, as ai_model_catalog lists it. */
+export interface FakeCatalogEntry {
+  name: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  licence: string;
+  notices: string[];
+  sourceUrl: string;
+}
+
+/** How the PDF helper read a document's text (see `FakeAiSetup.readAs`). */
+export interface FakeTextRead {
+  cutPages?: number[];
+  failedPages?: number[];
+  truncated?: boolean;
+}
+
+/** Installs the fake over the vault fake already on `page`. */
+export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
+  const defaultPages = (name: string) =>
+    Array.from({ length: FAKE_PAGE_COUNT }, (_, page) =>
+      fakePageText(name, page + 1),
+    );
+  await page.addInitScript(
+    (setup) => {
+      type Args = { request?: Record<string, unknown> } & Record<
+        string,
+        unknown
+      >;
+      type Held = {
+        command: string;
+        /** A text read's screen (request.readId): its cancel ends only it. */
+        readId?: unknown;
+        /** Ends the wait: with `answer`, that is the call's answer. */
+        resolve: (ended?: { answer: unknown }) => void;
+        reject: (reason: unknown) => void;
+      };
+      const internals = Reflect.get(window, "__TAURI_INTERNALS__") as {
+        invoke: (command: string, ...rest: unknown[]) => Promise<unknown>;
+      };
+      if (!internals) throw new Error("fakeAiWith needs fakeVaultWith first");
+      const vault = Reflect.get(window, "__fakeVault") as {
+        snapshot: () => { records: { id: string; displayName: string }[] };
+      };
+      const inner = internals.invoke.bind(internals);
+      const ours = new Set<string>(Object.values(setup.commands));
+      // What the model is now: adding or removing it changes it.
+      let model = structuredClone(setup.model);
+      let modelRows = structuredClone(setup.models);
+      try {
+        const keptModels = JSON.parse(
+          sessionStorage.getItem("__fakeAiModels") ?? "null",
+        );
+        if (keptModels && Array.isArray(keptModels.rows)) {
+          modelRows = keptModels.rows;
+          model = keptModels.model;
+        }
+      } catch {
+        /* A fresh fake device when there is no readable saved state. */
+      }
+      const persistModels = () =>
+        sessionStorage.setItem(
+          "__fakeAiModels",
+          JSON.stringify({ rows: modelRows, model }),
+        );
+      const modelStatus = () => {
+        if (model.state === "unsupported") return model;
+        let chosen = modelRows.find(
+          (row) => row.inUse && row.state !== "notDownloaded",
+        );
+        if (!chosen) {
+          chosen = modelRows.find((row) => row.state !== "notDownloaded");
+          if (chosen) chosen.inUse = true;
+        }
+        model = !chosen
+          ? { state: "notInstalled" }
+          : chosen.state === "damaged"
+            ? { state: "damaged" }
+            : {
+                state: "installed",
+                model: { name: chosen.model.name, sha256: chosen.model.sha256 },
+              };
+        persistModels();
+        return model;
+      };
+      let copyAdmission = false;
+      // As native: the add or download running now (#275).
+      let activeCopy: {
+        kind: string;
+        done: number;
+        total: number;
+        index?: number;
+      } | null = null;
+      const refusals: Record<string, string[]> = {};
+      let kept: {
+        recordId: unknown;
+        info: Record<string, unknown>;
+        content: string;
+        /** Hidden by a newer answer to the same question: kept, not shown. */
+        hidden: boolean;
+      }[] = [];
+      const calls: { command: string; args: Args }[] = [];
+      const cancelled: { command: string; by: string }[] = [];
+      const holds = new Set<string>();
+      let held: Held[] = [];
+      let tickets = 0;
+      const refusal = (code: string, messageKey: string) => ({
+        code,
+        message: setup.messages[messageKey] ?? code,
+        messageKey,
+      });
+      const settleHeld = (
+        which: (command: string) => boolean,
+        by: string,
+        reason: unknown,
+      ) => {
+        const stopped = held.filter((entry) => which(entry.command));
+        held = held.filter((entry) => !which(entry.command));
+        for (const entry of stopped) {
+          cancelled.push({ command: entry.command, by });
+          entry.reject(reason);
+        }
+      };
+      // An add or a download stopped with ai_model_add_cancel answers, as
+      // the native side does: { outcome: "cancelled" }, not an error.
+      const endHeld = (
+        which: (command: string) => boolean,
+        by: string,
+        answer: unknown,
+      ) => {
+        const stopped = held.filter((entry) => which(entry.command));
+        held = held.filter((entry) => !which(entry.command));
+        for (const entry of stopped) {
+          cancelled.push({ command: entry.command, by });
+          entry.resolve({ answer: structuredClone(answer) });
+        }
+      };
+      // Tauri's events (@tauri-apps/api/event): a listener is a callback
+      // the page hands over, and the native side calls it with each event.
+      const callbacks = new Map<number, (event: unknown) => void>();
+      let nextCallback = 1;
+      Reflect.set(
+        internals,
+        "transformCallback",
+        (callback: (event: unknown) => void) => {
+          const id = nextCallback++;
+          callbacks.set(id, callback);
+          return id;
+        },
+      );
+      let listeners: { event: string; eventId: number; handler: number }[] = [];
+      let nextEventId = 1;
+      const unlisten = (event: unknown, eventId: unknown) => {
+        listeners = listeners.filter(
+          (each) => !(each.event === event && each.eventId === eventId),
+        );
+      };
+      Reflect.set(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
+        unregisterListener: unlisten,
+      });
+      const emit = (event: string, payload: unknown) => {
+        for (const each of listeners)
+          if (each.event === event)
+            callbacks.get(each.handler)?.({
+              event,
+              id: each.eventId,
+              payload: structuredClone(payload),
+            });
+      };
+      const answers: Record<string, unknown[]> = {};
+      const installed = (index: number, picked: boolean) => {
+        const row = modelRows.find((entry) => entry.index === index);
+        if (row) {
+          row.state = "installed";
+          row.addedByYou = picked;
+        }
+        return modelStatus();
+      };
+      const nameOf = (recordId: unknown) =>
+        vault.snapshot().records.find((record) => record.id === recordId)
+          ?.displayName ?? "";
+      const pagesOf = (recordId: unknown) => {
+        const name = nameOf(recordId);
+        return setup.documents[name] ?? setup.defaultPages[name] ?? [];
+      };
+      const documentText = (recordId: unknown) => {
+        const texts = pagesOf(recordId);
+        const read: FakeTextRead = setup.readAs[nameOf(recordId)] ?? {};
+        const failed = read.failedPages ?? [];
+        const pages = texts
+          .map((text, index) => ({ index, text }))
+          .filter((page) => !failed.includes(page.index));
+        const pageStarts: number[] = [];
+        let joined = "";
+        pages.forEach((page, position) => {
+          if (position > 0) joined += "\n\n";
+          pageStarts.push(joined.length);
+          joined += page.text;
+        });
+        tickets += 1;
+        return {
+          pageCount: texts.length,
+          pages,
+          joined,
+          pageStarts,
+          emptyPages: pages.flatMap((page) =>
+            page.text.trim() ? [] : [page.index],
+          ),
+          cutPages: read.cutPages ?? [],
+          failedPages: failed,
+          truncated: read.truncated ?? false,
+          ticket: `FAKE-ticket-${tickets}`,
+        };
+      };
+      // As the native side does (#212): an answer asked for a document (a
+      // summary with its text read's ticket, an explanation with the record)
+      // waits under a keptId until a save names it.
+      const waiting: {
+        keptId: string;
+        recordId: unknown;
+        request: Record<string, unknown>;
+        tool: "summary" | "explain";
+        answer: Record<string, unknown>;
+      }[] = [];
+      let keptIds = 0;
+      const keptFor = (command: string, args: Args, result: unknown) => {
+        const request = args.request ?? {};
+        const c = setup.commands;
+        const summary =
+          command === c.summarize && request.recordId && request.ticket;
+        const explain = command === c.explain && request.recordId;
+        if (!summary && !explain) return result;
+        keptIds += 1;
+        const keptId = `FAKE-native-kept-${keptIds}`;
+        waiting.push({
+          keptId,
+          recordId: request.recordId,
+          request: structuredClone(request),
+          tool: summary ? "summary" : "explain",
+          answer: structuredClone(result) as Record<string, unknown>,
+        });
+        return { ...(result as object), keptId };
+      };
+      const answer = (command: string, args: Args): unknown => {
+        const request = args.request ?? {};
+        const c = setup.commands;
+        switch (command) {
+          case c.modelStatus:
+            return structuredClone(modelStatus());
+          case c.catalog:
+            return modelRows
+              .filter((row) => row.offered !== false)
+              .map((row) => structuredClone(row.model));
+          case c.models:
+            return modelRows
+              .filter(
+                (row) => row.offered !== false || row.state !== "notDownloaded",
+              )
+              .map(({ offered: _offered, ...row }) => structuredClone(row));
+          case c.use: {
+            const row = modelRows.find(
+              (entry) => entry.index === request.index,
+            );
+            if (!row || row.state !== "installed")
+              throw refusal("aiNotInstalled", "ai.failed");
+            settleHeld(
+              (command) => command === c.summarize || command === c.explain,
+              command,
+              refusal("aiCancelled", "ai.failed"),
+            );
+            modelRows.forEach((entry) => {
+              entry.inUse = entry.index === row.index;
+            });
+            return structuredClone(modelStatus());
+          }
+          case c.addPicked:
+            return {
+              outcome: "added",
+              status: structuredClone(installed(setup.pickedIndex, true)),
+            };
+          case c.download:
+            return {
+              outcome: "added",
+              status: structuredClone(
+                installed(Number(request.index ?? 0), false),
+              ),
+            };
+          case c.addCancel:
+            return null;
+          case c.addActive:
+            return structuredClone(activeCopy);
+          case c.remove: {
+            const index = Number(
+              request.index ?? modelRows.find((row) => row.inUse)?.index ?? 0,
+            );
+            const row = modelRows.find((entry) => entry.index === index);
+            if (row?.inUse)
+              settleHeld(
+                (command) => command === c.summarize || command === c.explain,
+                command,
+                refusal("aiCancelled", "ai.failed"),
+              );
+            if (row) {
+              row.state = "notDownloaded";
+              row.inUse = false;
+              row.addedByYou = false;
+            }
+            return structuredClone(modelStatus());
+          }
+          case c.documentText:
+            return documentText(request.recordId);
+          case c.knownDetails:
+            return {
+              names: [],
+              birthDates: [],
+              doctorNames: [],
+              clinicNames: [],
+              ...structuredClone(setup.knownDetails),
+            };
+          case c.exportPick:
+            return setup.pickId;
+          case c.exportPicked:
+            return { saved: true, hits: [] };
+          // Kept in memory, as the vault keeps them per document: one shown
+          // per question (tool, language, term), the newest; the older ones
+          // hidden, never deleted (D3).
+          case c.keptSave: {
+            const found = waiting.find(
+              (entry) =>
+                entry.keptId === request.keptId &&
+                entry.recordId === request.recordId,
+            );
+            if (!found) throw refusal("invalid", "native.error.19");
+            waiting.splice(waiting.indexOf(found), 1);
+            const model = found.answer.model as {
+              name: string;
+              sha256: string;
+            };
+            const lang = String(found.request.lang);
+            const term =
+              found.tool === "explain"
+                ? String(found.request.term).trim()
+                : undefined;
+            const input: Record<string, unknown> = {
+              tool: found.tool,
+              lang,
+              ...(term ? { term } : {}),
+              modelName: model.name,
+              modelSha256: model.sha256,
+            };
+            // The content in the reader's own shape, built from the kept
+            // answer; page code gave only the source places.
+            const sources = (request.sources ?? []) as unknown[];
+            const pages = (found.request.pages ?? []) as {
+              index: number;
+              text: string;
+            }[];
+            const lastPage = Number(found.answer.lastPage ?? 0);
+            const stored =
+              found.tool === "summary"
+                ? {
+                    tool: "summary",
+                    sentences: (
+                      found.answer.sentences as Record<string, unknown>[]
+                    ).map((sentence, index) => ({
+                      ...sentence,
+                      source: sources[index] ?? null,
+                    })),
+                    model,
+                    lang,
+                    createdAt: Date.now(),
+                    partial:
+                      lastPage < (pages.at(-1)?.index ?? 0) ||
+                      found.answer.lastPageCut === true,
+                    lastPage: pages.length ? lastPage + 1 : 0,
+                    pagesMissing: pages.some((page) => !page.text.trim()),
+                  }
+                : {
+                    tool: "explain",
+                    term,
+                    context: String(found.request.context ?? ""),
+                    text: String(found.answer.text),
+                    model,
+                    lang,
+                    createdAt: Date.now(),
+                  };
+            const same = (entry: (typeof kept)[number]) =>
+              entry.recordId === request.recordId &&
+              entry.info.tool === input.tool &&
+              entry.info.lang === input.lang &&
+              entry.info.term === input.term;
+            for (const entry of kept) if (same(entry)) entry.hidden = true;
+            const content = JSON.stringify(stored);
+            const info = {
+              ...structuredClone(input),
+              id: `FAKE-kept-${kept.length + 1}`,
+              createdAtMs: Date.now(),
+              size: content.length,
+            };
+            kept.unshift({
+              recordId: request.recordId,
+              info,
+              content,
+              hidden: false,
+            });
+            return structuredClone(info);
+          }
+          case c.keptList:
+            return kept
+              .filter(
+                (entry) => entry.recordId === request.recordId && !entry.hidden,
+              )
+              .map((entry) => structuredClone(entry.info));
+          case c.keptRead: {
+            const found = kept.find(
+              (entry) =>
+                entry.recordId === request.recordId &&
+                entry.info.id === request.resultId &&
+                !entry.hidden,
+            );
+            if (!found) throw refusal("not_found", "ai.failed");
+            return found.content;
+          }
+          case c.summarize: {
+            if (model.state !== "installed")
+              throw refusal("aiNotInstalled", "ai.failed");
+            const pages = (request.pages ?? []) as {
+              index: number;
+              text: string;
+            }[];
+            // One sentence per page with text, quoting its first line.
+            const sentences = pages
+              .filter((page) => page.text.trim())
+              .map((page) => {
+                const line = page.text.trim().split("\n")[0].trim();
+                return {
+                  text: `FAKE: page ${page.index + 1} begins “${line}”.`,
+                  quote: line,
+                };
+              });
+            return {
+              sentences,
+              model: structuredClone(model.model),
+              lastPage: pages.at(-1)?.index ?? 0,
+              lastPageCut: false,
+            };
+          }
+          case c.explain:
+            if (model.state !== "installed")
+              throw refusal("aiNotInstalled", "ai.failed");
+            return {
+              text: setup.explanation ?? `FAKE explanation of ${request.term}.`,
+              model: structuredClone(model.model),
+            };
+        }
+        throw new Error(`aiFake has no answer for ${command}`);
+      };
+
+      Reflect.set(window, "__fakeAi", {
+        calls: () => structuredClone(calls),
+        cancelled: () => structuredClone(cancelled),
+        held: () => held.map((entry) => entry.command),
+        hold: (command: string) => holds.add(command),
+        refuse: (command: string, code: string) =>
+          (refusals[command] ??= []).push(code),
+        answer: (command: string, value: unknown) =>
+          (answers[command] ??= []).push(value),
+        listening: (event: string) =>
+          listeners.filter((each) => each.event === event).length,
+        release: (command: string) => {
+          const entry = held.find((each) => each.command === command);
+          if (!entry) throw new Error(`Nothing held for ${command}`);
+          held = held.filter((each) => each !== entry);
+          entry.resolve();
+        },
+      });
+      internals.invoke = async (command: string, ...rest: unknown[]) => {
+        const c = setup.commands;
+        // The lock stops a text being read and the model with its answer
+        // (vault_lock in src-tauri/src/lib.rs), then locks the vault.
+        if (command === "vault_lock")
+          settleHeld(
+            (held) => held === c.documentText,
+            command,
+            refusal("cancelled", "native.error.36"),
+          );
+        if (command === "vault_lock")
+          settleHeld(
+            (held) => held === c.summarize || held === c.explain,
+            command,
+            refusal("aiCancelled", "ai.failed"),
+          );
+        if (command === "plugin:event|listen") {
+          const { event, handler } = (rest[0] ?? {}) as {
+            event: string;
+            handler: number;
+          };
+          listeners.push({ event, eventId: nextEventId, handler });
+          return nextEventId++;
+        }
+        if (command === "plugin:event|unlisten") {
+          const { event, eventId } = (rest[0] ?? {}) as Record<string, unknown>;
+          unlisten(event, eventId);
+          return null;
+        }
+        if (!ours.has(command)) return inner(command, ...rest);
+        const args = ((rest[0] as Args | undefined) ?? {}) as Args;
+        calls.push({ command, args: structuredClone(args) });
+        if (command === c.addCancel) {
+          endHeld(
+            (held) => held === c.addPicked || held === c.download,
+            command,
+            { outcome: "cancelled" },
+          );
+          return null;
+        }
+        // The file is checked (added) or fetched (downloaded) in steps: the
+        // start and half way, then, once the call is let go, the end.
+        const copying = command === c.addPicked || command === c.download;
+        const index =
+          command === c.download
+            ? Number(args.request?.index ?? 0)
+            : setup.pickedIndex;
+        const total =
+          modelRows.find((row) => row.index === index)?.model.sizeBytes ??
+          setup.catalogEntry.sizeBytes;
+        const progressIndex = command === c.download ? { index } : {};
+        if (copying) {
+          emit(setup.progressEvent, { done: 0, total, ...progressIndex });
+          emit(setup.progressEvent, {
+            done: Math.floor(total / 2),
+            total,
+            ...progressIndex,
+          });
+        }
+        if (command === c.cancelText) {
+          // The screen's own read only, as the native side does.
+          const readId = args.request?.readId;
+          const mine = held.filter(
+            (entry) =>
+              entry.command === c.documentText && entry.readId === readId,
+          );
+          held = held.filter((entry) => !mine.includes(entry));
+          for (const entry of mine) {
+            cancelled.push({ command: entry.command, by: command });
+            entry.reject(refusal("cancelled", "native.error.36"));
+          }
+          return null;
+        }
+        if (command === c.cancel) {
+          settleHeld(
+            (held) => held === c.summarize || held === c.explain,
+            command,
+            refusal("aiCancelled", "ai.failed"),
+          );
+          return null;
+        }
+        if (holds.delete(command)) {
+          const ended = await new Promise<{ answer: unknown } | undefined>(
+            (resolve, reject) =>
+              held.push({
+                command,
+                readId: args.request?.readId,
+                resolve,
+                reject,
+              }),
+          );
+          if (ended) return keptFor(command, args, ended.answer);
+        }
+        const scripted = answers[command]?.shift();
+        if (scripted !== undefined) return keptFor(command, args, scripted);
+        if (copying)
+          emit(setup.progressEvent, { done: total, total, ...progressIndex });
+        const refused = refusals[command]?.shift();
+        if (refused) {
+          // A failed check at load: the status says so from then on.
+          if (refused === "aiDamaged") {
+            model = { state: "damaged" };
+            const chosen = modelRows.find((row) => row.inUse);
+            if (chosen) chosen.state = "damaged";
+            persistModels();
+          }
+          throw refusal(refused, "ai.failed");
+        }
+        return keptFor(command, args, answer(command, args));
+      };
+      // An add or download, as native runs it (#275): while it runs,
+      // ai_model_add_active gives it (half way, as the fake's progress
+      // stops there while held); when it ends, ai-model-add-ended says how.
+      const handle = internals.invoke;
+      internals.invoke = async (command: string, ...rest: unknown[]) => {
+        const c = setup.commands;
+        if (command !== c.addPicked && command !== c.download)
+          return handle(command, ...rest);
+        if (copyAdmission) return { outcome: "busy" };
+        copyAdmission = true;
+        const args = (rest[0] ?? {}) as Args;
+        const index =
+          command === c.download
+            ? Number(args.request?.index ?? 0)
+            : setup.pickedIndex;
+        const total =
+          modelRows.find((row) => row.index === index)?.model.sizeBytes ??
+          setup.catalogEntry.sizeBytes;
+        activeCopy = {
+          kind: command === c.download ? "download" : "check",
+          ...(command === c.download ? { index } : {}),
+          done: Math.floor(total / 2),
+          total,
+        };
+        try {
+          const result = await handle(command, ...rest);
+          activeCopy = null;
+          emit("ai-model-add-ended", result);
+          return result;
+        } finally {
+          activeCopy = null;
+          copyAdmission = false;
+        }
+      };
+    },
+    {
+      commands: AI_COMMANDS,
+      model: setup.model ?? { state: "notInstalled" },
+      pickedIndex: setup.pickedIndex ?? 0,
+      models: setup.models ?? [
+        {
+          index: 0,
+          model: {
+            name:
+              setup.model?.state === "installed"
+                ? setup.model.model.name
+                : FAKE_MODEL.name,
+            fileName: "FAKE-test-model.gguf",
+            sizeBytes: 2_500_000_000,
+            sha256:
+              setup.model?.state === "installed"
+                ? setup.model.model.sha256
+                : FAKE_MODEL.sha256,
+            licence: "FAKE licence",
+            notices: [],
+            sourceUrl: "https://example.invalid/FAKE-test-model.gguf",
+            ...setup.catalog,
+          },
+          state:
+            setup.model?.state === "installed"
+              ? "installed"
+              : setup.model?.state === "damaged"
+                ? "damaged"
+                : "notDownloaded",
+          inUse:
+            setup.model?.state === "installed" ||
+            setup.model?.state === "damaged",
+          addedByYou: false,
+        },
+      ],
+      documents: setup.documents ?? {},
+      readAs: setup.readAs ?? {},
+      defaultPages: Object.fromEntries(
+        ["FAKE Bloodwork.pdf", "FAKE Letter.pdf", "FAKE Clinic letter.pdf"].map(
+          (name) => [name, defaultPages(name)],
+        ),
+      ),
+      knownDetails: setup.knownDetails ?? {},
+      explanation: setup.explanation ?? null,
+      pickId: fakeUuid(1100),
+      progressEvent: "ai-model-add-progress",
+      // As ai_model_catalog lists the one accepted model. FAKE: no file.
+      catalogEntry: {
+        name: FAKE_MODEL.name,
+        fileName: "FAKE-test-model.gguf",
+        // About the size of the accepted model; no file is ever read.
+        sizeBytes: 2_500_000_000,
+        sha256: FAKE_MODEL.sha256,
+        licence: "FAKE licence",
+        notices: [],
+        sourceUrl: "https://example.invalid/FAKE-test-model.gguf",
+        ...setup.catalog,
+      } satisfies FakeCatalogEntry,
+      // The refusals the fake makes, in English as the native side sends them.
+      messages: {
+        "native.error.36": translate("en", "native.error.36"),
+        "ai.failed": translate("en", "ai.failed"),
+      } as Record<string, string>,
+    },
+  );
+}
+
+/** The arguments of each call of an AI command, in order. */
+export async function aiCalls(
+  page: Page,
+  command: AiCommand,
+): Promise<{ request?: Record<string, unknown> }[]> {
+  const calls = await page.evaluate(() =>
+    (
+      Reflect.get(window, "__fakeAi") as {
+        calls: () => { command: string; args: unknown }[];
+      }
+    ).calls(),
+  );
+  return calls
+    .filter((call) => call.command === command)
+    .map((call) => call.args as { request?: Record<string, unknown> });
+}
+
+/** The next call of `command` stays pending until released or cancelled. */
+export async function holdAi(page: Page, command: AiCommand) {
+  await page.evaluate(
+    (command) =>
+      (Reflect.get(window, "__fakeAi") as { hold: (c: string) => void }).hold(
+        command,
+      ),
+    command,
+  );
+}
+
+/** Answers the oldest held call of `command`, as the native side finishing. */
+export async function releaseAi(page: Page, command: AiCommand) {
+  await page.evaluate(
+    (command) =>
+      (
+        Reflect.get(window, "__fakeAi") as { release: (c: string) => void }
+      ).release(command),
+    command,
+  );
+}
+
+/** The commands still held, in the order they were called. */
+export async function aiHeld(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    (Reflect.get(window, "__fakeAi") as { held: () => string[] }).held(),
+  );
+}
+
+/** What was cancelled, and by which command. */
+export async function aiCancelled(
+  page: Page,
+): Promise<{ command: string; by: string }[]> {
+  return page.evaluate(() =>
+    (
+      Reflect.get(window, "__fakeAi") as {
+        cancelled: () => { command: string; by: string }[];
+      }
+    ).cancelled(),
+  );
+}
+
+/** The next call of `command` is refused with `code`, as the native side
+ * refuses (an aiDamaged refusal also turns the status to damaged). */
+export async function refuseAi(
+  page: Page,
+  command: AiCommand,
+  code: FakeAiRefusal,
+) {
+  await page.evaluate(
+    ({ command, code }) =>
+      (
+        Reflect.get(window, "__fakeAi") as {
+          refuse: (command: string, code: string) => void;
+        }
+      ).refuse(command, code),
+    { command, code },
+  );
+}
+
+/** The next call of `command` answers `value` (an add or a download that
+ * ends in a refusal, such as { outcome: "network" }). */
+export async function answerAi(page: Page, command: AiCommand, value: unknown) {
+  await page.evaluate(
+    ({ command, value }) =>
+      (
+        Reflect.get(window, "__fakeAi") as {
+          answer: (command: string, value: unknown) => void;
+        }
+      ).answer(command, value),
+    { command, value },
+  );
+}
+
+/** How many listeners the page has for a Tauri event. */
+export async function aiListeners(page: Page, event: string): Promise<number> {
+  return page.evaluate(
+    (event) =>
+      (
+        Reflect.get(window, "__fakeAi") as {
+          listening: (event: string) => number;
+        }
+      ).listening(event),
+    event,
+  );
+}

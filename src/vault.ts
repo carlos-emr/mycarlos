@@ -1,5 +1,17 @@
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import type {
+  AiTool,
+  ModelExplanation,
+  ModelStatus,
+  ModelSummary,
+} from "./ai/types";
+import type {
+  DocumentPageText,
+  DocumentText,
+  SourceSpan,
+} from "./documentText";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
@@ -48,6 +60,20 @@ export interface VaultRecord {
   verifiedClinicName?: string;
   /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
   clinicServiceDate?: string;
+  /** The clinician-approved reading aid filed with this delivery (vault format 10). Reached from
+   * this document only; never a document of its own. */
+  readingAid?: ReadingAidRecord;
+}
+
+/** A filed reading aid as the reader shows it (the native receiver verified it). */
+export interface ReadingAidRecord {
+  deliveryId: string;
+  language: string;
+  /** When the clinician's review was recorded: the signed approval's time. */
+  reviewedAtMs: number;
+  notice: { version: string; heading: string; body: string };
+  overview: string;
+  points: { text: string; evidence: string[] }[];
 }
 
 /** When, and why, a document was hidden (#71). */
@@ -61,12 +87,21 @@ export interface HiddenRecord {
  * the vault's metadata could not be read, or a write failed. */
 export type RecoveryReason = "lostObjects" | "unreadableSlot" | "writeFailed";
 
+export interface SnapshotCapture {
+  /** Opaque native-store runtime identity; epochs are never ordered. */
+  epoch: string;
+  /** Native capture order, bounded to JavaScript's positive safe integers. */
+  sequence: number;
+}
+
 export interface VaultSnapshot {
+  capture: SnapshotCapture;
   profiles: PatientProfile[];
   folders: VaultFolder[];
   records: VaultRecord[];
   /** Native compile capability; absent/false keeps the linking flow hidden. */
   portalLinkingEnabled?: boolean;
+  automaticDocumentChecksSupported?: boolean;
   portalLinks?: PortalLinkSummary[];
   recovery: RecoveryReason | null;
   /** When the vault's recovery key was set up, if it has one. */
@@ -113,6 +148,31 @@ export interface PortalLinkSummary {
     | null;
   approvalCanRestart?: boolean;
   approvalRequestLimitReached?: boolean;
+}
+
+/** What a read-only status check of a linked device's approval found (#131).
+ * It never sends, re-sends or starts a request. */
+export interface PortalApprovalCheck {
+  /** Native capture order for this partial device result. */
+  capture: SnapshotCapture;
+  /** The device's saved state after the check. */
+  link: PortalLinkSummary;
+  /** For a request still open: the time the portal leaves it, by the
+   * portal's own clock when it replied, so a wrong clock on this device does
+   * not change it. Absent when the portal did not say what time it was. */
+  expiresInMs?: number | null;
+  /** Why the check could not finish. `portal_link_incomplete`: the portal
+   * could not be reached; `portal_refused`: it answered, but not with the
+   * request's state; `portal_rate_limited`: it asked to wait
+   * (`retryAfterMs`); `approval_missing`: it does not have the saved
+   * request; `approval_reply_invalid`: its reply did not verify;
+   * `portal_device_removed`: this device was removed from the portal
+   * account; or any other vault error. What the check read before it is
+   * still saved; the failure itself saves nothing. */
+  issue?: PublicError | null;
+  /** The vault went into read-only recovery during the check: read the
+   * vault again. */
+  recovery?: boolean;
 }
 
 export interface PortalLinkInput {
@@ -278,7 +338,18 @@ export interface AuditHistoryEntry {
     | "folderCreated"
     | "folderRenamed"
     | "folderMoved"
-    | "setAside";
+    | "setAside"
+    | "profileDetailsChanged"
+    | "portalLinkStarted"
+    | "portalLinked"
+    | "deviceApprovalRequested"
+    | "deviceApprovalVerified"
+    | "deviceApprovalStatusChanged"
+    | "deviceApprovalRequestRestarted"
+    | "deliveryFiled"
+    | "deliveryReceiptSettled"
+    | "readingAidFiled"
+    | "aiResultSaved";
   name: string | null;
   oldName: string | null;
   from: string[] | null;
@@ -288,6 +359,18 @@ export interface AuditHistoryEntry {
   how: string | null;
   place: string | null;
   previousSession: string | null;
+}
+
+/** An AI answer as the vault lists it: everything but its text. */
+export interface AiResultInfo {
+  id: string;
+  tool: AiTool;
+  lang: string;
+  term?: string;
+  modelName: string;
+  modelSha256: string;
+  createdAtMs: number;
+  size: number;
 }
 
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
@@ -321,6 +404,12 @@ export interface VaultBridge {
   /** Reads the audit history as far as its encrypted chain checks out. */
   history(): Promise<AuditHistoryView>;
   linkPortal?(request: PortalLinkInput): Promise<PortalLinkSummary>;
+  /** One explicit action, under one native session ticket; a failed approval
+   * step returns the durable original link rather than creating another one. */
+  connectPortal?(request: PortalLinkInput): Promise<{
+    link: PortalLinkSummary;
+    approvalError: PublicError | null;
+  }>;
   checkDocuments?(): Promise<{
     added: number;
     refused: number;
@@ -329,6 +418,9 @@ export interface VaultBridge {
   }>;
   requestDeviceApproval?(linkId: string): Promise<void>;
   restartDeviceApproval?(linkId: string): Promise<void>;
+  /** Reads one linked device's approval status from its portal and saves the
+   * clinic's answer (#131). It only reads: no request is sent or started. */
+  refreshDeviceApproval?(linkId: string): Promise<PortalApprovalCheck>;
   changePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -461,12 +553,107 @@ export interface VaultBridge {
     width: number,
     password?: string,
   ): Promise<ViewedPage>;
-  /** Stops a page still being drawn: the reader closed. */
+  /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** Whether the AI helper (#72) has a model on this computer. */
+  aiModelStatus(): Promise<ModelStatus>;
+  /** A plain-words summary of a document's pages, written by the model on
+   * this computer. One run at a time; `aiCancel` stops it. */
+  /** With `keep` (the document and the ticket of the text read the pages
+   * came from, unchanged), the answer is also kept natively for that
+   * document's save and comes with its `keptId` (#212). */
+  aiSummarize(
+    pages: DocumentPageText[],
+    lang: string,
+    keep?: { recordId: string; ticket: string },
+    answerId?: string,
+  ): Promise<ModelSummary>;
+  /** A term explained in plain words, with the sentence it is in. With
+   * `recordId`, kept natively for that document's save, as a summary is. */
+  aiExplain(
+    term: string,
+    context: string,
+    lang: string,
+    recordId?: string,
+    answerId?: string,
+  ): Promise<ModelExplanation>;
+  /** Stops the model's answer in flight, if any. */
+  aiCancel(): Promise<void>;
+  /** Calls `handler` with an answer's own time limit, in milliseconds, as
+   * the model is asked it: the automatic lock waits that long at most for
+   * it (D19). Returns the way to stop listening. */
+  onAiAnswerStarted?(
+    handler: (answer: { answerId: string; limitMs: number }) => void,
+  ): () => void;
+  /** The whole text of a stored PDF for the AI helper's preview (#72):
+   * every page's readable text, read once by the PDF helper on this device.
+   * Computers only. `password` is the document's own, when it is locked
+   * with one; it is not kept. The result carries the ticket one save
+   * needs. `readId` names the screen that asks (a random id of its own), so
+   * that its cancel ends only its own read. */
+  documentText(
+    recordId: string,
+    readId: string,
+    password?: string,
+  ): Promise<DocumentText>;
+  /** Stops the text the screen `readId` is still reading: it closed.
+   * Another screen's read goes on. */
+  cancelDocumentText(readId: string): Promise<void>;
+  /** What the vault knows about a document's patient, for the remover:
+   * names, birth dates, the provider and the clinic of its delivery. */
+  recordKnownDetails(recordId: string): Promise<KnownIdentifiers>;
+  /** Opens the save picker for an anonymized text, with a generic name in
+   * the app's language. Needs the preview's ticket. The id of the chosen
+   * place, or null when cancelled. */
+  pickTextExportDestination(
+    recordId: string,
+    ticket: string,
+  ): Promise<string | null>;
+  /** Writes the anonymized text where the picker chose, after the native
+   * re-check: saved, or refused with the ranges still holding a detail the
+   * vault knows. One save ends the ticket. */
+  exportTextToPicked(
+    pickId: string,
+    recordId: string,
+    ticket: string,
+    text: string,
+  ): Promise<TextSaveOutcome>;
+  /** Keeps an AI answer with its document, encrypted. A new answer to the
+   * same question (tool, language, term) is the one shown; the old one stays
+   * in the vault, hidden, never deleted (D3). */
+  /** The answer is the one the native side kept under `keptId` (#212):
+   * page code only names it, and gives a summary's source places, one per
+   * sentence. */
+  saveAiResult(
+    recordId: string,
+    keptId: string,
+    sources?: (SourceSpan | null)[],
+  ): Promise<AiResultInfo>;
+  /** The AI answers kept with a document, newest first. */
+  aiResults(recordId: string): Promise<AiResultInfo[]>;
+  /** One kept answer's text. */
+  readAiResult(recordId: string, resultId: string): Promise<string>;
   reset(confirmation: string): Promise<boolean>;
 }
 
-interface PublicError {
+/** What the vault knows about a document's patient (#72 part B). */
+export interface KnownIdentifiers {
+  names: string[];
+  /** As "1961-04-17". */
+  birthDates: string[];
+  doctorNames: string[];
+  clinicNames: string[];
+}
+
+/** How a text save ended (#72 part B, AI-02). */
+export interface TextSaveOutcome {
+  saved: boolean;
+  /** Ranges of the text, in UTF-16 units, that still hold a detail the
+   * vault knows or a character the cleaning drops. Empty when saved. */
+  hits: { start: number; end: number }[];
+}
+
+export interface PublicError {
   code?: string;
   message?: string;
   messageKey?: string;
@@ -476,7 +663,8 @@ interface PublicError {
   recordId?: string;
   /** A sentence to add after the message, about how the failure came about. */
   note?: string;
-  /** How long to wait before the next try, after several wrong ones. */
+  /** How long to wait before the next try: after several wrong ones, or
+   * when the clinic portal asked myCarlos to wait. */
   retryAfterMs?: number;
 }
 
@@ -528,6 +716,10 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     approval_refused: "portal.approvalRefused",
     approval_contact_clinic: "portal.approvalContact",
     approval_missing: "portal.approvalMissing",
+    approval_reply_invalid: "portal.approvalReplyInvalid",
+    approval_still_open: "portal.approvalStillOpen",
+    portal_device_removed: "portal.deviceRemoved",
+    portal_refused: "portal.approvalUnanswered",
     portal_link_address: "portal.errorAddress",
     portal_link_code: "portal.errorCode",
     portal_link_device_name: "portal.errorDeviceName",
@@ -535,11 +727,20 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     portal_link_keys_missing: "portal.errorKeys",
     portal_link_device_exists: "portal.errorExists",
     portal_link_incomplete: "portal.errorIncomplete",
+    portal_busy: "portal.errorBusy",
+    portal_rate_limited: "portal.errorRateLimited",
     pickup_refused: "portal.errorRefused",
     pickup_damaged: "portal.errorDamaged",
+    document_check_busy: "notifications.checkBusy",
   } as const;
   for (const [code, key] of Object.entries(portalErrors))
-    if (hasErrorCode(error, code)) return t(key);
+    if (hasErrorCode(error, code)) {
+      // The portal may say how long to wait (#131).
+      const wait = (error as PublicError).retryAfterMs;
+      return typeof wait === "number" && wait > 0
+        ? `${t(key)} ${t("error.retryIn", { count: Math.ceil(wait / 1000) })}`
+        : t(key);
+    }
   if (boxes?.length && hasErrorCode(error, "invalid"))
     return t("error.checkBoxes", {
       boxes: listed(boxes.map((box) => t(box))),
@@ -657,6 +858,10 @@ export function hasVaultErrorCode(error: unknown, code: string): boolean {
  * its own idle deadline while this screen was not running. */
 export const isLockedError = (error: unknown) => hasErrorCode(error, "locked");
 
+/** True when the vault is in read-only recovery mode. */
+export const isRecoveryModeError = (error: unknown) =>
+  hasErrorCode(error, "recovery_mode");
+
 /** True when a password did not open a locked PDF (#54): the patient may try
  * again. */
 export const isWrongPdfPassword = (error: unknown) =>
@@ -687,6 +892,10 @@ function isNativeRuntime(): boolean {
 
 export function createVaultBridge(): VaultBridge {
   const native = isNativeRuntime();
+  // A delayed cancellation must finish before a newer page takes a native
+  // ticket. Keep this on the bridge, including across reader close/reopen.
+  let pendingViewCancellation: Promise<void> | undefined;
+  let viewGeneration = 0;
   return {
     native,
     status: () => invoke<VaultStatus>("vault_status"),
@@ -700,7 +909,10 @@ export function createVaultBridge(): VaultBridge {
       }),
     unlock: (passphrase) =>
       invoke<VaultSnapshot>("vault_unlock", { request: { passphrase } }),
-    lock: () => invoke<void>("vault_lock"),
+    lock: () => {
+      viewGeneration += 1;
+      return invoke<void>("vault_lock");
+    },
     touch: () => invoke<void>("vault_touch"),
     setAutoLock: (minutes) =>
       invoke<void>("vault_set_auto_lock", { request: { minutes } }),
@@ -715,8 +927,11 @@ export function createVaultBridge(): VaultBridge {
       invoke("vault_restart_device_approval", { linkId }),
     requestDeviceApproval: (linkId) =>
       invoke("vault_request_device_approval", { linkId }),
+    refreshDeviceApproval: (linkId) =>
+      invoke<PortalApprovalCheck>("vault_refresh_device_approval", { linkId }),
     linkPortal: (request) =>
       invoke<PortalLinkSummary>("vault_portal_link", { request }),
+    connectPortal: (request) => invoke("vault_portal_connect", { request }),
     changePassphrase: (currentPassphrase, newPassphrase) =>
       invoke<void>("vault_change_passphrase", {
         request: { currentPassphrase, newPassphrase },
@@ -828,11 +1043,88 @@ export function createVaultBridge(): VaultBridge {
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
       }),
-    viewPage: (recordId, page, width, password) =>
-      invoke<ViewedPage>("vault_view_page", {
+    viewPage: async (recordId, page, width, password) => {
+      const generation = ++viewGeneration;
+      if (pendingViewCancellation) {
+        // A failed cancel is still reported to its caller. A new native page
+        // ticket can supersede older work, so it need not strand this reader.
+        await pendingViewCancellation.catch(() => undefined);
+      }
+      if (generation !== viewGeneration) throw { code: "cancelled" };
+      return invoke<ViewedPage>("vault_view_page", {
         request: { recordId, page, width, password: password ?? null },
+      });
+    },
+    cancelView: () => {
+      viewGeneration += 1;
+      // No newer page can start while this is pending, so one cancellation
+      // also covers repeated close/supersede calls during the same wait.
+      if (pendingViewCancellation) return pendingViewCancellation;
+      const cancellation = invoke<void>("vault_view_cancel");
+      pendingViewCancellation = cancellation;
+      const clear = () => {
+        if (pendingViewCancellation === cancellation) {
+          pendingViewCancellation = undefined;
+        }
+      };
+      void cancellation.then(clear, clear);
+      return cancellation;
+    },
+    aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
+    aiSummarize: (pages, lang, keep, answerId = crypto.randomUUID()) =>
+      invoke<ModelSummary>("ai_summarize", {
+        answerId,
+        request: { pages, lang, ...keep },
       }),
-    cancelView: () => invoke<void>("vault_view_cancel"),
+    aiExplain: (
+      term,
+      context,
+      lang,
+      recordId,
+      answerId = crypto.randomUUID(),
+    ) =>
+      invoke<ModelExplanation>("ai_explain", {
+        answerId,
+        request: { term, context, lang, ...(recordId ? { recordId } : {}) },
+      }),
+    aiCancel: () => invoke<void>("ai_cancel"),
+    onAiAnswerStarted: (handler) => {
+      const stop = listen<{ answerId: string; limitMs: number }>(
+        "ai-answer-started",
+        (event) => handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    documentText: (recordId, readId, password) =>
+      invoke<DocumentText>("vault_document_text", {
+        request: { recordId, readId, password: password ?? null },
+      }),
+    cancelDocumentText: (readId) =>
+      invoke<void>("vault_document_text_cancel", { request: { readId } }),
+    recordKnownDetails: (recordId) =>
+      invoke<KnownIdentifiers>("vault_record_known_details", {
+        request: { recordId },
+      }),
+    pickTextExportDestination: (recordId, ticket) =>
+      invoke<string | null>("vault_export_text_pick", {
+        request: { recordId, ticket },
+        locale: getLocale(),
+      }),
+    exportTextToPicked: (pickId, recordId, ticket, text) =>
+      invoke<TextSaveOutcome>("vault_export_text_picked", {
+        request: { pickId, recordId, ticket, text },
+        locale: getLocale(),
+      }),
+    saveAiResult: (recordId, keptId, sources) =>
+      invoke<AiResultInfo>("vault_ai_result_save", {
+        request: { recordId, keptId, ...(sources ? { sources } : {}) },
+      }),
+    aiResults: (recordId) =>
+      invoke<AiResultInfo[]>("vault_ai_results", { request: { recordId } }),
+    readAiResult: (recordId, resultId) =>
+      invoke<string>("vault_ai_result_read", {
+        request: { recordId, resultId },
+      }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>
