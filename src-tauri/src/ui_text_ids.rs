@@ -360,7 +360,6 @@ pub enum MessageId {
     InterfaceVaultLibraryTheyAreInNoOnesRecordsUntil,
     InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
     InterfaceVaultLibraryTopLevel,
-    InterfaceVaultLibraryUnlockedLockNow,
     InterfaceVaultLibraryWorking,
     InterfaceCameraDenied,
     InterfaceCountDocuments,
@@ -548,6 +547,9 @@ pub enum MessageId {
     LibraryFolderOpen,
     LibraryFolderRename,
     LibraryItems,
+    LibraryLocationDocuments,
+    LibraryLocationSummary,
+    LibraryLockUnlocked,
     LibraryNoMatchHelp,
     LibraryNoMatchTitle,
     LibraryRename,
@@ -1363,7 +1365,6 @@ impl MessageId {
         Self::InterfaceVaultLibraryTheyAreInNoOnesRecordsUntil,
         Self::InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
         Self::InterfaceVaultLibraryTopLevel,
-        Self::InterfaceVaultLibraryUnlockedLockNow,
         Self::InterfaceVaultLibraryWorking,
         Self::InterfaceCameraDenied,
         Self::InterfaceCountDocuments,
@@ -1551,6 +1552,9 @@ impl MessageId {
         Self::LibraryFolderOpen,
         Self::LibraryFolderRename,
         Self::LibraryItems,
+        Self::LibraryLocationDocuments,
+        Self::LibraryLocationSummary,
+        Self::LibraryLockUnlocked,
         Self::LibraryNoMatchHelp,
         Self::LibraryNoMatchTitle,
         Self::LibraryRename,
@@ -2582,7 +2586,6 @@ impl MessageId {
                 "interface-VaultLibrary-thisPhotoIsAlreadyInTheVault"
             }
             Self::InterfaceVaultLibraryTopLevel => "interface-VaultLibrary-topLevel",
-            Self::InterfaceVaultLibraryUnlockedLockNow => "interface-VaultLibrary-unlockedLockNow",
             Self::InterfaceVaultLibraryWorking => "interface-VaultLibrary-working",
             Self::InterfaceCameraDenied => "interface-camera-denied",
             Self::InterfaceCountDocuments => "interface-count-documents",
@@ -2832,6 +2835,9 @@ impl MessageId {
             Self::LibraryFolderOpen => "library-folder-open",
             Self::LibraryFolderRename => "library-folder-rename",
             Self::LibraryItems => "library-items",
+            Self::LibraryLocationDocuments => "library-location-documents",
+            Self::LibraryLocationSummary => "library-location-summary",
+            Self::LibraryLockUnlocked => "library-lock-unlocked",
             Self::LibraryNoMatchHelp => "library-noMatch-help",
             Self::LibraryNoMatchTitle => "library-noMatch-title",
             Self::LibraryRename => "library-rename",
@@ -3649,9 +3655,6 @@ impl MessageId {
                 Some(Self::InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault)
             }
             "interface.VaultLibrary.topLevel" => Some(Self::InterfaceVaultLibraryTopLevel),
-            "interface.VaultLibrary.unlockedLockNow" => {
-                Some(Self::InterfaceVaultLibraryUnlockedLockNow)
-            }
             "interface.VaultLibrary.working" => Some(Self::InterfaceVaultLibraryWorking),
             "interface.camera.denied" => Some(Self::InterfaceCameraDenied),
             "interface.count.documents" => Some(Self::InterfaceCountDocuments),
@@ -3794,6 +3797,9 @@ impl MessageId {
             "library.folder.open" => Some(Self::LibraryFolderOpen),
             "library.folder.rename" => Some(Self::LibraryFolderRename),
             "library.items" => Some(Self::LibraryItems),
+            "library.location.documents" => Some(Self::LibraryLocationDocuments),
+            "library.location.summary" => Some(Self::LibraryLocationSummary),
+            "library.lock.unlocked" => Some(Self::LibraryLockUnlocked),
             "library.noMatch.help" => Some(Self::LibraryNoMatchHelp),
             "library.noMatch.title" => Some(Self::LibraryNoMatchTitle),
             "library.rename" => Some(Self::LibraryRename),
