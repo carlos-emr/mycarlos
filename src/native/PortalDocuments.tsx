@@ -4,6 +4,7 @@ import {
   useTextState,
   message,
   deferredText,
+  resolveText,
   t as translateNow,
   type MessageKey,
   type UiText,
@@ -187,7 +188,7 @@ export function PortalDocuments({
   const [approvalCodes, setApprovalCodes] = useState<Record<string, string>>(
     {},
   );
-  const [codeIssues, setCodeIssues] = useState<Record<string, string>>({});
+  const [codeIssues, setCodeIssues] = useState<Record<string, UiText>>({});
   const submitting = useRef(false);
   const codeRevision = useRef(0);
   const submittedRevision = useRef<number | null>(null);
@@ -504,7 +505,7 @@ export function PortalDocuments({
         known = waitingNow();
         if (shown.current) {
           setApprovalCodes((codes) => ({ ...codes, [link.id]: "" }));
-          setStatusLine({ text: t("portal.codeSubmitted") });
+          setStatusLine({ text: message("portal.codeSubmitted") });
         }
       } catch (error) {
         if (isRateLimited(error))
@@ -521,12 +522,14 @@ export function PortalDocuments({
         if (shown.current) {
           setCodeIssues((issues) => ({
             ...issues,
-            [link.id]: vaultErrorMessage(error),
+            [link.id]: deferredText(() => vaultErrorMessage(error)),
           }));
           if (final) {
             // The form may go with the next state: also said in the panel.
             setApprovalCodes((codes) => ({ ...codes, [link.id]: "" }));
-            setStatusLine({ text: vaultErrorMessage(error) });
+            setStatusLine({
+              text: deferredText(() => vaultErrorMessage(error)),
+            });
           }
         }
       } finally {
@@ -717,7 +720,7 @@ export function PortalDocuments({
                     {t("portal.codeSubmit")}
                   </button>
                   <p id={`portal-code-issue-${link.id}`} aria-live="polite">
-                    {codeIssues[link.id] ?? ""}
+                    {resolveText(codeIssues[link.id] ?? "")}
                   </p>
                 </form>
               )}

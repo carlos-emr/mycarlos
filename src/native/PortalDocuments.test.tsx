@@ -1913,6 +1913,54 @@ describe("the code a clinic emails (#141)", () => {
     await waitFor(() => expect(failures).toEqual([offline]));
   });
 
+  it("says what a code met in the app's language, also after it changes", async () => {
+    const { bridge } = fixture({ snapshot: showing() });
+    const user = userEvent.setup();
+    const confirm = () => screen.getByRole("button", { name: "Confirm code" });
+    try {
+      // Sent: the panel's status line.
+      await user.type(codeBox()!, "482193644");
+      await user.click(confirm());
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(
+          translate("en", "portal.codeSubmitted"),
+        ),
+      );
+      act(() => setLocaleOverride("fr"));
+      expect(screen.getByRole("status")).toHaveTextContent(
+        translate("fr", "portal.codeSubmitted"),
+      );
+      act(() => setLocaleOverride("en"));
+      // Not this clinic's code: the message beside the field.
+      vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
+        code: "approval_code_mismatch",
+      });
+      await user.type(codeBox()!, "482193645");
+      await user.click(confirm());
+      await screen.findByText(mismatch);
+      act(() => setLocaleOverride("fr"));
+      expect(
+        screen.getByText(translate("fr", "portal.codeMismatch")),
+      ).toBeVisible();
+      expect(screen.queryByText(mismatch)).not.toBeInTheDocument();
+      act(() => setLocaleOverride("en"));
+      // No more codes taken: the panel's status line again.
+      vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
+        code: "approval_code_locked",
+      });
+      await user.click(confirm());
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(locked),
+      );
+      act(() => setLocaleOverride("fr"));
+      expect(screen.getByRole("status")).toHaveTextContent(
+        translate("fr", "portal.codeLocked"),
+      );
+    } finally {
+      act(() => setLocaleOverride("en"));
+    }
+  });
+
   it("fits a 360 px window at 200% text, message included", async () => {
     const { bridge } = fixture({ snapshot: showing() });
     vi.mocked(bridge.submitApprovalCode!).mockRejectedValueOnce({
