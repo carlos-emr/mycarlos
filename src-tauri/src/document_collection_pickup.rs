@@ -349,6 +349,11 @@ where
     // A saved candidate is insufficient: only a currently signed accepted link
     // is eligible for implicit collection. Explicit manual approval is separate.
     links.retain(crate::portal_approval::currently_approved);
+    // A device this run of the app found gone from its portal (#168; a manual,
+    // after-unlock, status or earlier background check found it) is not asked
+    // again. Left out before the rotation, so it spends none of the cycle's
+    // link visits.
+    links.retain(|link| !store.link_gone(link.id));
     let deferred = cache
         .retry_first
         .take()
@@ -375,12 +380,6 @@ where
         }
         // Rotate BEFORE even the first pending read or request, including failure.
         cache.last_visited = Some(original.id);
-        // A device this run of the app found gone from its portal (#168; a
-        // manual, after-unlock or status check found it) is not asked again
-        // by the background checks either.
-        if store.link_gone(original.id) {
-            continue;
-        }
         let i = cache.slot(&original)?;
         if cache.slots[i].as_ref().unwrap().manual_required {
             continue;
