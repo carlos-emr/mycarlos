@@ -2123,6 +2123,13 @@ impl VaultStore {
             entry.profile_id = Some(id);
             entry.name = Some(display_name.clone());
             entries.push(entry);
+            // Details given at creation are recorded as Edit details records
+            // them (#234): the history shows when they were first set.
+            if full_name.is_some() || birth_date.is_some() {
+                let mut entry = HistoryEntry::new(HistoryEvent::ProfileDetailsChanged, now_ms);
+                entry.profile_id = Some(id);
+                entries.push(entry);
+            }
             manifest.profiles.push(PatientProfile {
                 id,
                 display_name,
@@ -20030,6 +20037,42 @@ mod tests {
         ));
         assert_eq!(history_events(&store).len(), before);
         assert!(store.snapshot().unwrap().profiles[0].full_name.is_none());
+    }
+
+    #[test]
+    fn a_person_added_with_details_records_them_in_the_history_and_one_without_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        store.create(PASSWORD, "FAKE First", now).unwrap();
+        let before = history_events(&store).len();
+        let with = store
+            .create_profile_with_details("FAKE Mary", identity_details(), &today, now)
+            .unwrap();
+        let events = history_events(&store);
+        let added: Vec<_> = events[before..]
+            .iter()
+            .map(|entry| (entry.event, entry.profile_id))
+            .collect();
+        assert_eq!(
+            added,
+            vec![
+                (HistoryEvent::ProfileCreated, Some(with)),
+                (HistoryEvent::ProfileDetailsChanged, Some(with)),
+            ]
+        );
+        // "Later" (#234): no details, so no details event.
+        let before = history_events(&store).len();
+        let without = store
+            .create_profile_with_details("FAKE Later", ProfileDetails::default(), &today, now)
+            .unwrap();
+        let events = history_events(&store);
+        let added: Vec<_> = events[before..]
+            .iter()
+            .map(|entry| (entry.event, entry.profile_id))
+            .collect();
+        assert_eq!(added, vec![(HistoryEvent::ProfileCreated, Some(without))]);
     }
 
     #[test]

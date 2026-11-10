@@ -125,6 +125,10 @@ test("first setup: the key is shown, its kit saved, and it must be typed back wh
   await page
     .getByLabel(en("passphrase.confirm.label"), { exact: true })
     .fill(FAKE_PASSPHRASE);
+  // The person's details can wait (#234).
+  await page
+    .getByRole("checkbox", { name: en("personDetails.later"), exact: true })
+    .check();
   await page
     .getByRole("button", { name: en("create.submit"), exact: true })
     .click();
