@@ -847,11 +847,11 @@ export function PortalDocuments({
       {showCheck && checkButton}
       {offerNotices && (
         <NoticesAfterLink
-          onClose={(shown) => {
+          onClose={(wasShown) => {
             const linked = offerNotices;
             setOfferNotices(null);
             // Nothing was shown: the focus stays where the patient put it.
-            if (!shown) return;
+            if (!wasShown) return;
             // Then to the new clinic's heading, where the panel has one: the
             // control that made the link may be gone once a clinic is linked.
             requestAnimationFrame(() =>
