@@ -326,6 +326,9 @@ struct SummaryAnswer {
     sentences: Vec<Sentence>,
     last_page: u32,
     last_page_cut: bool,
+    /// The document's last page, read after a gap (`Fit::tail_page`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tail_page: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stats: Option<Stats>,
 }
@@ -476,14 +479,19 @@ pub(crate) struct Fit {
     pub(crate) last_page: u32,
     /// Only the start of the first page fitted.
     pub(crate) cut: bool,
+    /// The document's last page, read after a gap when the pages from page 1 did not all fit
+    /// (`fit_pages`): where instructions and follow-up usually are.
+    pub(crate) tail_page: Option<u32>,
 }
 
 /// The pages' separator in the joined text, as `documentText.ts`'s PAGE_SEPARATOR.
 pub(crate) const PAGE_SEPARATOR: &str = "\n\n";
 
-/// Whole pages, in order, while their tokens fit `budget`; when the first page alone does not,
-/// its start: `cut` then says so. `tokens` counts a text's tokens; `prefix` gives the longest
-/// start of a text within so many tokens. `None` when there is no page or no room at all.
+/// Whole pages, in order, while their tokens fit `budget`. When they do not all fit, the last
+/// page with text is read too if it takes at most half of `budget`: the pages from page 1 then
+/// fill the rest, and `tail_page` names that page, read after the gap. When the first page alone
+/// does not fit, its start: `cut` then says so. `tokens` counts a text's tokens; `prefix` gives the
+/// longest start of a text within so many tokens. `None` when there is no page or no room at all.
 pub(crate) fn fit_pages(
     pages: &[Page],
     budget: usize,
@@ -492,26 +500,56 @@ pub(crate) fn fit_pages(
 ) -> Option<Fit> {
     let first = pages.first()?;
     let separator = tokens(PAGE_SEPARATOR);
-    let mut used = 0usize;
-    let mut fitted = 0usize;
-    for (position, page) in pages.iter().enumerate() {
-        let cost = tokens(&page.text) + if position > 0 { separator } else { 0 };
-        if used + cost > budget {
-            break;
+    // How many pages from the first fit `room`.
+    let from_first = |among: &[Page], room: usize| {
+        let mut used = 0usize;
+        let mut fitted = 0usize;
+        for (position, page) in among.iter().enumerate() {
+            let cost = tokens(&page.text) + if position > 0 { separator } else { 0 };
+            if used + cost > room {
+                break;
+            }
+            used += cost;
+            fitted = position + 1;
         }
-        used += cost;
-        fitted = position + 1;
+        fitted
+    };
+    let joined = |read: &[&Page]| {
+        read.iter()
+            .map(|page| page.text.as_str())
+            .collect::<Vec<_>>()
+            .join(PAGE_SEPARATOR)
+    };
+    let fitted = from_first(pages, budget);
+    // The tail is the last page with text (E4b): a blank last page, a scan or an empty one,
+    // has nothing to read. A page the PDF helper refused is never sent, so it is never the tail.
+    // Only a page the pages from the first did not reach.
+    let tail_at = pages.iter().rposition(|page| !page.text.trim().is_empty());
+    if let Some(tail_at) = tail_at.filter(|&at| at >= 1 && fitted <= at) {
+        let (head, rest) = pages.split_at(tail_at);
+        let last = &rest[0];
+        let tail_cost = tokens(&last.text) + separator;
+        if tail_cost <= budget / 2 {
+            let kept = from_first(head, budget - tail_cost);
+            if kept > 0 && kept < head.len() {
+                let mut read: Vec<&Page> = head[..kept].iter().collect();
+                read.push(last);
+                return Some(Fit {
+                    text: joined(&read),
+                    last_page: head[kept - 1].index,
+                    cut: false,
+                    tail_page: Some(last.index),
+                });
+            }
+        }
     }
     if fitted > 0 {
-        let read = &pages[..fitted];
+        let read: Vec<&Page> = pages[..fitted].iter().collect();
         return Some(Fit {
-            text: read
-                .iter()
-                .map(|page| page.text.as_str())
-                .collect::<Vec<_>>()
-                .join(PAGE_SEPARATOR),
+            text: joined(&read),
             last_page: read[fitted - 1].index,
             cut: false,
+            tail_page: None,
         });
     }
     let start = prefix(&first.text, budget);
@@ -519,6 +557,7 @@ pub(crate) fn fit_pages(
         last_page: first.index,
         cut: true,
         text: start,
+        tail_page: None,
     };
     (!cut.text.trim().is_empty()).then_some(cut)
 }
@@ -702,6 +741,7 @@ fn serve_model(settings: &Settings) -> i32 {
                     sentences,
                     last_page: fit.last_page,
                     last_page_cut: fit.cut,
+                    tail_page: fit.tail_page,
                     stats: Some(engine.stats()),
                 }),
                 Err(error) => serde_json::to_string(&ErrorAnswer { id, error }),
@@ -786,6 +826,7 @@ mod stub {
                         }],
                         last_page: pages.last().map_or(0, |page| page.index),
                         last_page_cut: false,
+                        tail_page: None,
                         stats: None,
                     })
                 }
@@ -971,6 +1012,54 @@ mod tests {
     }
 
     #[test]
+    fn the_last_page_is_read_after_a_gap_when_the_pages_from_the_first_do_not_all_fit() {
+        // Five pages of 4 (separators of 2): 28 in all. In 20 the last page is kept back for
+        // (4 + 2), and pages 1 and 2 fill the 14 left (10): pages 1, 2 and 5 are read.
+        let all = pages(&["aaaa", "bbbb", "cccc", "dddd", "eeee"]);
+        let fit = fit_pages(&all, 20, chars, start).unwrap();
+        assert_eq!(fit.text, "aaaa\n\nbbbb\n\neeee");
+        assert_eq!((fit.last_page, fit.tail_page, fit.cut), (2, Some(8), false));
+        // All of them fit: read in order, no gap.
+        let fit = fit_pages(&all, 28, chars, start).unwrap();
+        assert_eq!((fit.last_page, fit.tail_page), (8, None));
+        // A last page over half of the room is not kept back for: pages from the first only.
+        let long_end = pages(&["aaaa", "bbbb", "cccccccccccccc"]);
+        let fit = fit_pages(&long_end, 20, chars, start).unwrap();
+        assert_eq!(
+            (fit.text.as_str(), fit.last_page, fit.tail_page),
+            ("aaaa\n\nbbbb", 2, None)
+        );
+        // No page of the start fits beside the last one: as before, the first page's start.
+        let wide = pages(&["abcdefghijklmnopqrst", "xy"]);
+        let fit = fit_pages(&wide, 10, chars, start).unwrap();
+        assert_eq!(
+            (fit.text.as_str(), fit.cut, fit.tail_page),
+            ("abcdefghij", true, None)
+        );
+    }
+
+    #[test]
+    fn the_tail_is_the_last_page_with_text_never_a_blank_one() {
+        // Four pages of 4, then a blank last page (index 8). In 20 the tail is the last page with
+        // text, index 6 (4 + 2), and pages 1 and 2 fill the 14 left: never the blank page.
+        let all = pages(&["aaaa", "bbbb", "cccc", "dddd", "   "]);
+        let fit = fit_pages(&all, 20, chars, start).unwrap();
+        assert_eq!(fit.text, "aaaa\n\nbbbb\n\ndddd");
+        assert_eq!((fit.last_page, fit.tail_page, fit.cut), (2, Some(6), false));
+        // Only the first page has text: no tail, the pages from the first as before.
+        let blank_after = pages(&["aaaaaaaaaa", " ", "\n", "  "]);
+        let fit = fit_pages(&blank_after, 12, chars, start).unwrap();
+        assert_eq!(
+            (fit.text.as_str(), fit.last_page, fit.tail_page),
+            ("aaaaaaaaaa", 0, None)
+        );
+        // Every page with text was reached from the first: no tail, whatever blank pages follow.
+        let short = pages(&["aaaa", "bbbb", "  ", "  "]);
+        let fit = fit_pages(&short, 14, chars, start).unwrap();
+        assert_eq!((fit.last_page, fit.tail_page), (4, None));
+    }
+
+    #[test]
     fn a_first_page_too_long_alone_is_read_from_its_start_and_marked_cut() {
         let all = pages(&["abcdefghij", "kl"]);
         let fit = fit_pages(&all, 4, chars, start).unwrap();
@@ -979,7 +1068,8 @@ mod tests {
             Fit {
                 text: "abcd".to_owned(),
                 last_page: 0,
-                cut: true
+                cut: true,
+                tail_page: None,
             }
         );
         assert_eq!(fit_pages(&all, 0, chars, start), None);

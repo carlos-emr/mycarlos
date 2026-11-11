@@ -111,6 +111,11 @@ pub(crate) struct SummarizeRequest {
     pub(crate) record_id: Option<uuid::Uuid>,
     #[serde(default)]
     pub(crate) ticket: Option<uuid::Uuid>,
+    /// The document's page count, as its text read found it (`vault_document_text`), when the
+    /// renderer gives it: with a last page read after a gap, the result says whether that is the
+    /// document's own last page (E4b). A kept answer's text ticket gives it instead.
+    #[serde(default)]
+    pub(crate) page_count: Option<u32>,
 }
 
 /// An explain request from the renderer.
@@ -268,6 +273,20 @@ pub(crate) struct SummaryResult {
     pub(crate) model: ModelInfo,
     pub(crate) last_page: u32,
     pub(crate) last_page_cut: bool,
+    /// The document's last page, read after a gap (left out when there was none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tail_page: Option<u32>,
+    /// With a tail page and the document's page count: whether the tail is the document's own
+    /// last page, or only the last page of the text read (its 50-page or 1 MiB cap, or a last
+    /// page that was blank or refused), so the reader can say "the last page" only when it is.
+    /// Left out when either is unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tail_is_last_page: Option<bool>,
+}
+
+/// Whether `tail_page` is the document's last page, when both are known.
+pub(crate) fn tail_is_last_page(tail_page: Option<u32>, page_count: Option<u32>) -> Option<bool> {
+    Some(tail_page?.checked_add(1)? == page_count?)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -344,6 +363,9 @@ pub(crate) fn check_summary(request: &SummarizeRequest) -> Result<(), AiError> {
             .all(|page| (page.index as usize) < MAX_PAGES && page.text.len() <= MAX_PAGE_BYTES)
         && total <= MAX_TEXT_BYTES
         && pages.iter().any(|page| !page.text.trim().is_empty())
+        && request
+            .page_count
+            .is_none_or(|count| pages.last().is_some_and(|last| last.index < count))
         && model_helper::language_name(&request.lang).is_some();
     valid.then_some(()).ok_or(AiError::Failed)
 }
@@ -469,6 +491,7 @@ impl ModelRuntime {
         watch: AnswerWatch,
     ) -> Result<SummaryResult, AiError> {
         check_summary(&request)?;
+        let page_count = request.page_count;
         self.runner.watch_answer(ticket, watch);
         self.start(ticket)?;
         let summary = self
@@ -488,6 +511,8 @@ impl ModelRuntime {
             model: summary.model,
             last_page: summary.last_page,
             last_page_cut: summary.last_page_cut,
+            tail_page: summary.tail_page,
+            tail_is_last_page: tail_is_last_page(summary.tail_page, page_count),
         })
     }
 
@@ -659,6 +684,7 @@ mod tests {
             lang: lang.to_owned(),
             record_id: None,
             ticket: None,
+            page_count: None,
         }
     }
 
@@ -691,6 +717,37 @@ mod tests {
         for request in refused {
             assert_eq!(check_summary(&request), Err(AiError::Failed));
         }
+        // A page count, when given, is past the last page sent (E4b).
+        let counted = |count| SummarizeRequest {
+            page_count: Some(count),
+            ..summary(vec![page(0, "a"), page(3, "b")], "en")
+        };
+        assert_eq!(check_summary(&counted(4)), Ok(()));
+        assert_eq!(check_summary(&counted(70)), Ok(()));
+        assert_eq!(check_summary(&counted(3)), Err(AiError::Failed));
+        assert_eq!(check_summary(&counted(0)), Err(AiError::Failed));
+        // The renderer may send it.
+        let sent: SummarizeRequest = serde_json::from_value(serde_json::json!({
+            "pages": [{"index": 0, "text": "FAKE text"}],
+            "lang": "en",
+            "pageCount": 12,
+        }))
+        .unwrap();
+        assert_eq!(sent.page_count, Some(12));
+    }
+
+    #[test]
+    fn a_tail_page_is_the_last_page_only_when_the_document_ends_there() {
+        // The document's last page (index 11 of 12) read after a gap.
+        assert_eq!(tail_is_last_page(Some(11), Some(12)), Some(true));
+        // Only the text read's last page: a 70-page document cut at 50 pages, or a last page
+        // that was blank or refused.
+        assert_eq!(tail_is_last_page(Some(49), Some(70)), Some(false));
+        assert_eq!(tail_is_last_page(Some(10), Some(12)), Some(false));
+        // Unknown either way: left out.
+        assert_eq!(tail_is_last_page(None, Some(12)), None);
+        assert_eq!(tail_is_last_page(Some(11), None), None);
+        assert_eq!(tail_is_last_page(Some(u32::MAX), Some(0)), None);
     }
 
     #[test]
@@ -890,6 +947,8 @@ mod tests {
                 model: model.clone(),
                 last_page: 3,
                 last_page_cut: false,
+                tail_page: None,
+                tail_is_last_page: None,
             })
             .unwrap(),
             serde_json::json!({
@@ -897,6 +956,29 @@ mod tests {
                 "model": {"name": "FAKE model", "sha256": "0".repeat(64)},
                 "lastPage": 3,
                 "lastPageCut": false
+            })
+        );
+        // A last page read after a gap is named; without one the shape is unchanged.
+        assert_eq!(
+            serde_json::to_value(SummaryResult {
+                sentences: vec![Sentence {
+                    text: "t".to_owned(),
+                    quote: String::new()
+                }],
+                model: model.clone(),
+                last_page: 3,
+                last_page_cut: false,
+                tail_page: Some(9),
+                tail_is_last_page: Some(false),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "sentences": [{"text": "t", "quote": ""}],
+                "model": {"name": "FAKE model", "sha256": "0".repeat(64)},
+                "lastPage": 3,
+                "lastPageCut": false,
+                "tailPage": 9,
+                "tailIsLastPage": false
             })
         );
         assert_eq!(
@@ -1247,6 +1329,8 @@ pub mod engine_testing {
         /// The index of the last page read, and whether only its start fitted.
         pub last_page: u32,
         pub last_page_cut: bool,
+        /// The document's last page, read after a gap.
+        pub tail_page: Option<u32>,
         /// The answer's `Stats` as the helper reports them: counts and times, never words.
         pub stats: Option<serde_json::Value>,
         /// The time limit the runner gave this answer.
@@ -1397,6 +1481,7 @@ pub mod engine_testing {
                 sentences,
                 last_page: summary.last_page,
                 last_page_cut: summary.last_page_cut,
+                tail_page: summary.tail_page,
                 stats: self
                     .runner
                     .last_stats()
