@@ -437,10 +437,13 @@ address, or any identity number such as a health card or record number, unless t
 the patient to use it, such as the clinic's number to call.";
 
 /// Part (a) of the 11 Nov variant design: what a summary says first, then what it says next.
-/// Kept in this one place, as it may be revised once the instructions-first run (E3) is scored.
+/// After the instructions-first run (E3), it also says what is not an instruction: E1 and E3
+/// wrote visits from a printed date, a report time or the signing doctor.
 const SUMMARY_ORDER: &str =
     "First say what the document found: the main problem or diagnosis and the key results, each \
-     with its number and unit. Then say what the patient must do and when.";
+     with its number and unit. Then say what the patient must do and when, only where the \
+     document tells the patient to do it: a doctor's name or signature, a printed, collected or \
+     reported date, or a medicine already given is not an instruction.";
 
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
@@ -1115,11 +1118,14 @@ mod tests {
             "Summarize this document for the patient in English, in at most 10 short sentences \
              (fewer if the document is short). First say what the document found: the main \
              problem or diagnosis and the key results, each with its number and unit. Then say \
-             what the patient must do and when. Put one fact in each sentence. When a sentence \
-             gives a rule with a condition (if, when, unless) or names a medicine or a group of \
-             medicines, keep every condition, every medicine or group, and every number or \
-             limit the document gives for it; if they do not all fit in one sentence, leave \
-             that sentence out. Say which, how much and when in the same sentence: the test or \
+             what the patient must do and when, only where the document tells the patient to do \
+             it: a doctor's name or signature, a printed, collected or reported date, or a \
+             medicine already given is not an instruction. Put one fact in each sentence. When \
+             a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
+             a group of medicines, keep every condition, every medicine or group, and every \
+             number or limit the document gives for it; if they do not all fit in one sentence, \
+             leave that sentence out. Say which, how much and when in the same sentence: the \
+             test or \
              medicine by name, the number with its unit, the date or time. For each sentence, \
              copy into \"quote\" one continuous piece of the document, 3 to 25 words, exactly \
              as written (same spelling, numbers, accents and punctuation, no '...' and no \
