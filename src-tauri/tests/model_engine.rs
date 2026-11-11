@@ -524,6 +524,8 @@ fn a_summary_build_names_its_prompt_grammar_and_caps_by_one_fingerprint() {
 /// `MYCARLOS_EVAL_EXPECT_SHA256`, when set, refuses any other model file. A run stopped part way is
 /// resumed: documents already in the file are skipped, if its first line names the same build,
 /// model, language and threads. `MYCARLOS_TEST_THREADS` and `MYCARLOS_TEST_CHAT_FORMAT` as above.
+/// On Linux each line also carries the helper's memory (`helper_memory`): the run's after the
+/// model loaded, each document's its own peak.
 #[test]
 #[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
 fn a_real_model_evaluation_run() {
@@ -571,6 +573,8 @@ fn a_real_model_evaluation_run() {
         .unwrap_or_else(|error| panic!("{error}"));
     let start_ms = started.elapsed().as_millis() as u64;
     let (model_sha256, model_bytes) = runner.model_file();
+    // The helper's memory once the model is loaded: its peak so far is the load's.
+    let loaded = helper_memory::helper().and_then(helper_memory::read);
     if let Some(expected) = optional("MYCARLOS_EVAL_EXPECT_SHA256") {
         assert_eq!(model_sha256, expected, "not the expected model file");
     }
@@ -592,6 +596,7 @@ fn a_real_model_evaluation_run() {
         "threads": threads,
         "startMs": start_ms,
         "startedAt": now(),
+        "helperMemory": loaded,
     });
 
     // Resume only the same build, model, language and threads.
@@ -668,9 +673,22 @@ fn a_real_model_evaluation_run() {
             hash.update((text.len() as u64).to_le_bytes());
             hash.update(text.as_bytes());
         }
+        // The helper's peak is set back just before the document, so the line carries this
+        // document's own peak; "helperStart" when that could not be done or the helper restarted.
+        let before = helper_memory::helper();
+        let reset = before.is_some_and(helper_memory::reset_peak);
         let asked = Instant::now();
         let answer = runner.summarize_measured(&lang, &borrowed);
         let wall_ms = asked.elapsed().as_millis() as u64;
+        let after = helper_memory::helper();
+        let memory = after.and_then(helper_memory::read).map(|mut memory| {
+            memory["peakSince"] = json!(if reset && after == before {
+                "document"
+            } else {
+                "helperStart"
+            });
+            memory
+        });
         let mut entry = json!({
             "kind": "document",
             "id": id,
@@ -679,6 +697,7 @@ fn a_real_model_evaluation_run() {
             "pages": pages.len(),
             "textBytes": pages.iter().map(|(_, text)| text.len()).sum::<usize>(),
             "wallMs": wall_ms,
+            "helperMemory": memory,
         });
         match &answer {
             Ok(measured) => {
@@ -708,4 +727,82 @@ fn a_real_model_evaluation_run() {
     }
     append(&json!({"kind": "end", "answered": answered, "finishedAt": now()}));
     runner.stop();
+}
+
+/// The model helper's memory for the evaluation run, from the kernel's own counts (Linux only;
+/// elsewhere nothing is measured). It tells how much memory a summary really takes beside the
+/// model, so the working allowance the app asks for can be checked against it.
+#[cfg(target_os = "linux")]
+mod helper_memory {
+    use serde_json::{json, Value};
+
+    /// The helper this test process started: its own child, running with the helper argument.
+    pub fn helper() -> Option<u32> {
+        let parent = std::process::id().to_string();
+        std::fs::read_dir("/proc")
+            .ok()?
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
+            .find(|pid| {
+                let status =
+                    std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
+                let child = status
+                    .lines()
+                    .find_map(|line| line.strip_prefix("PPid:"))
+                    .is_some_and(|value| value.trim() == parent);
+                let arguments = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+                child
+                    && arguments
+                        .split(|byte| *byte == 0)
+                        .any(|argument| argument == b"--mycarlos-model-helper")
+            })
+    }
+
+    /// Sets the helper's peak resident size back to its present size (`clear_refs` 5), so that
+    /// the next reading's peak is the next document's own. False when the kernel refused.
+    pub fn reset_peak(pid: u32) -> bool {
+        std::fs::write(format!("/proc/{pid}/clear_refs"), "5").is_ok()
+    }
+
+    /// The peak resident size since the last reset (or the helper's start), the size now and its
+    /// anonymous, file and shared parts (the weights are in the file or shared part), in KiB,
+    /// and the memory the machine still had available.
+    pub fn read(pid: u32) -> Option<Value> {
+        let kib = |text: &str, name: &str| {
+            text.lines().find_map(|line| {
+                line.strip_prefix(name)?
+                    .strip_prefix(':')?
+                    .trim()
+                    .trim_end_matches("kB")
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
+        };
+        let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+        let machine = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+        Some(json!({
+            "peakKiB": kib(&status, "VmHWM")?,
+            "rssKiB": kib(&status, "VmRSS"),
+            "anonKiB": kib(&status, "RssAnon"),
+            "fileKiB": kib(&status, "RssFile"),
+            "shmemKiB": kib(&status, "RssShmem"),
+            "availableKiB": kib(&machine, "MemAvailable"),
+        }))
+    }
+}
+
+#[cfg(windows)]
+mod helper_memory {
+    pub fn helper() -> Option<u32> {
+        None
+    }
+
+    pub fn reset_peak(_pid: u32) -> bool {
+        false
+    }
+
+    pub fn read(_pid: u32) -> Option<serde_json::Value> {
+        None
+    }
 }
