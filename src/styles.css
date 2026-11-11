@@ -1111,6 +1111,12 @@ p {
   margin: 6px 0;
   padding-left: 1.4em;
 }
+.native-reader-ai-result .ai-summary-heading {
+  margin: 12px 0 0;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+}
 .native-reader-ai .ai-label {
   color: var(--ink);
   font-weight: 700;

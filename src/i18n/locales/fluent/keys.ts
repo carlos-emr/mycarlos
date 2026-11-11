@@ -824,6 +824,8 @@ export const MESSAGE_KEYS = [
   "aiHelper.resultLabel",
   "ai.result.meta",
   "ai.summary.showInDocument",
+  "ai.summary.saysHeading",
+  "ai.summary.todoHeading",
   "ai.summary.partial",
   "ai.summary.noText",
   "ai.explain.box",
@@ -1972,6 +1974,8 @@ const FLUENT_IDS_BY_KEY = {
   "aiHelper.resultLabel": "aiHelper-resultLabel",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
+  "ai.summary.saysHeading": "ai-summary-saysHeading",
+  "ai.summary.todoHeading": "ai-summary-todoHeading",
   "ai.summary.partial": "ai-summary-partial",
   "ai.summary.noText": "ai-summary-noText",
   "ai.explain.box": "ai-explain-box",
@@ -3139,6 +3143,8 @@ export interface MessageArgsByKey {
     tool: FluentArgument;
   };
   "ai.summary.showInDocument": undefined;
+  "ai.summary.saysHeading": undefined;
+  "ai.summary.todoHeading": undefined;
   "ai.summary.partial": { last: FluentArgument };
   "ai.summary.noText": undefined;
   "ai.explain.box": undefined;

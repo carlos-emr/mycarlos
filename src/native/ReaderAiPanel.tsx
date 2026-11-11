@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   formatDate,
   getLocale,
@@ -9,6 +9,7 @@ import {
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
 import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
+import { summarySections } from "../ai/summarySections";
 import {
   ModelCancelled,
   ModelNotInstalled,
@@ -354,29 +355,40 @@ export function ReaderAiPanel({
       {summary && (
         <div className="native-reader-ai-result">
           <p className="ai-label">{t("aiHelper.resultLabel")}</p>
-          <ol>
-            {summary.sentences.map(({ text, source }, index) => (
-              <li key={index}>
-                <span id={`reader-ai-sentence-${index}`}>{text}</span>{" "}
-                {source ? (
-                  <button
-                    className="button"
-                    type="button"
-                    aria-describedby={`reader-ai-sentence-${index}`}
-                    onClick={() => onShowSource(source)}
-                  >
-                    {t("ai.summary.showInDocument")}
-                  </button>
-                ) : (
-                  // Never a guessed place: a sentence whose words were not
-                  // found in the document says so (threat model AI-05).
-                  <span className="ai-no-source">
-                    {t("ai.summary.noSource")}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
+          {/* K3 try-out: what the letter says, then what to do, split at
+              the first sentence that tells the patient to do something
+              (summarySections.ts). Each list keeps the sentences' order. */}
+          {summarySections(summary.sentences, summary.lang).map(
+            ({ heading, sentences }) => (
+              <Fragment key={heading}>
+                <h4 className="ai-summary-heading">{t(heading)}</h4>
+                <ol>
+                  {sentences.map(({ sentence: { text, source }, index }) => (
+                    <li key={index}>
+                      <span id={`reader-ai-sentence-${index}`}>{text}</span>{" "}
+                      {source ? (
+                        <button
+                          className="button"
+                          type="button"
+                          aria-describedby={`reader-ai-sentence-${index}`}
+                          onClick={() => onShowSource(source)}
+                        >
+                          {t("ai.summary.showInDocument")}
+                        </button>
+                      ) : (
+                        // Never a guessed place: a sentence whose words were
+                        // not found in the document says so (threat model
+                        // AI-05).
+                        <span className="ai-no-source">
+                          {t("ai.summary.noSource")}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </Fragment>
+            ),
+          )}
           {/* Pages with no text, cut short or not read at all are never
               left out silently, for a kept summary as for a new one. */}
           {summary.pagesMissing && <p>{t("ai.summary.pagesMissing")}</p>}

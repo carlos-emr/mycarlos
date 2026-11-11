@@ -186,6 +186,48 @@ describe("the reader's AI helper", () => {
     expect(screen.queryByRole("region", { name: "Explain a term" })).toBeNull();
   });
 
+  it("shows the summary under what the letter says, then what you need to do (K3 try-out)", async () => {
+    const model = fakeLocalModel({
+      sentences: () => [
+        {
+          text: "Your potassium is a little high.",
+          quote: "Potassium 5.4 mmol/L",
+        },
+        { text: "Repeat the test in two weeks.", quote: "Repeat in 2 weeks" },
+      ],
+    });
+    renderReader(model);
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    const panel = screen.getByRole("region", {
+      name: "Summary in plain words",
+    });
+    const says = await within(panel).findByRole("heading", {
+      name: "What the letter says",
+      level: 4,
+    });
+    const todo = within(panel).getByRole("heading", {
+      name: "What you need to do",
+      level: 4,
+    });
+    const saysList = says.nextElementSibling as HTMLElement;
+    const todoList = todo.nextElementSibling as HTMLElement;
+    expect(within(saysList).getAllByRole("listitem")).toHaveLength(1);
+    expect(
+      within(saysList).getByText("Your potassium is a little high."),
+    ).toBeVisible();
+    expect(within(todoList).getAllByRole("listitem")).toHaveLength(1);
+    expect(
+      within(todoList).getByText("Repeat the test in two weeks."),
+    ).toBeVisible();
+    // Each sentence keeps its own source link.
+    expect(
+      within(todoList).getByRole("button", { name: "Show in document" }),
+    ).toHaveAccessibleDescription("Repeat the test in two weeks.");
+  });
+
   it("labels a summary as AI's, and links only the sentences found in the document", async () => {
     const model = fakeLocalModel({
       sentences: () => [

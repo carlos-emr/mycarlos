@@ -1855,6 +1855,10 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Voir dans le document
 
+ai-summary-saysHeading = Ce que dit la lettre
+
+ai-summary-todoHeading = Ce que vous devez faire
+
 ai-summary-partial = Ce résumé ne couvre que le début du document : pages 1 à { $last }.
 
 ai-summary-noText = myCarlos n’a pu lire aucun texte dans ce document et ne peut donc pas le résumer. Il s’agit peut-être d’une numérisation.
