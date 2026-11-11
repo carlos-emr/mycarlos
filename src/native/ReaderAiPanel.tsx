@@ -524,11 +524,7 @@ export function ReaderAiPanel({
                   ? t("ai.summary.readStart")
                   : t("ai.summary.readPages", { last: tooLong.fit.lastPage })}
               </button>
-              <button
-                className="button"
-                type="button"
-                onClick={cancelQuestion}
-              >
+              <button className="button" type="button" onClick={cancelQuestion}>
                 {t("common.cancel")}
               </button>
             </div>
