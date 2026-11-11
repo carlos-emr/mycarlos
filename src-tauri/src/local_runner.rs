@@ -1383,7 +1383,7 @@ mod tests {
             .checked(crate::model_helper::CONTEXT_TOKENS);
         assert_eq!(more, Err(crate::model_limits::CardRejected::ContextMade));
         // A card that is not one is no hello at all.
-        let mut odd = base;
+        let mut odd = base.clone();
         odd["card"] = serde_json::json!({ "architecture": "qwen35" });
         assert!(serde_json::from_value::<Hello>(odd).is_err());
         // A null card reads as none.
