@@ -7,7 +7,7 @@
  "pages": [
   {
    "index": 0,
-   "text": "DOCUMENT D'ESSAI SYNTHÉTIQUE - DONNÉES FICTIVES SEULEMENT\n\nClinique médicale Saint-Laurent\n1234, rue Sherbrooke Est, app. 5\nMontréal (Québec) H2X 1A1\nTél. : 514 555-0123   Téléc. : 5145550124\n\nLe 3 octobre 2026\n\nDre Émilie Tremblay\nCentre hospitalier de Fictiveville\n88, boul. René-Lévesque Ouest\nFictiveville, QC G1R 9Z9\n\nObjet : Patiente : Renée Côté\nDate de naissance : 1958/03/02\nRAMQ : COTR 5803 0299\nDossier no : 0077123\n\nDocteure Tremblay,\n\nJe vous adresse Mme Renée Côté, 68 ans, pour une douleur thoracique depuis le\n15 septembre 2026. ECG du 2026/09/22 : rythme sinusal. Son conjoint, Jean de la Cruz,\nest joignable au 4185550177. Ancien numéro de carte : 1234 567 890.\nJean l'accompagnera au rendez-vous.\n\nDr Pierre d'Amours, médecin de famille\n"
+   "text": "DOCUMENT D'ESSAI SYNTHÉTIQUE - DONNÉES FICTIVES SEULEMENT\n\nClinique médicale de Fictiveville (FICTIVE)\n1234, rue de l'Exemple Est, app. 5\nFictiveville (Québec) Z9Z 9Z9\nTél. : 514 555-0123   Téléc. : 5145550124\n\nLe 3 octobre 2026\n\nDre Émilie FAKE-Tremblay (FICTIVE)\nCentre hospitalier de Fictiveville\n88, boul. Fictif Ouest\nFictiveville, QC Z9Z 9Z8\n\nObjet : Patiente : Renée FAKE-Côté (FICTIVE)\nDate de naissance : 1958/03/02\nRAMQ : FAKE 5803 0299\nDossier no : 0077123\n\nDocteure FAKE-Tremblay,\n\nJe vous adresse Mme Renée FAKE-Côté, 68 ans, pour une douleur thoracique depuis le\n15 septembre 2026. ECG du 2026/09/22 : rythme sinusal. Son conjoint, Jean FAKE-de la Cruz (FICTIF),\nest joignable au 4185550177. Ancien numéro de carte : 1234 567 890.\nJean l'accompagnera au rendez-vous.\n\nDr Pierre FAKE-d'Amours (FICTIF), médecin de famille\n"
   }
  ],
  "facts": [
@@ -68,10 +68,10 @@
    "category": "finding",
    "required": false,
    "critical": false,
-   "source_evidence": "Je vous adresse Mme Renée Côté, 68 ans,",
+   "source_evidence": "Je vous adresse Mme Renée FAKE-Côté, 68 ans,",
    "approved_statements": [
-    "Le médecin de famille l'adresse à la Dre Tremblay.",
-    "Her family doctor is referring her to Dr. Tremblay."
+    "Le médecin de famille l'adresse à la Dre FAKE-Tremblay.",
+    "Her family doctor is referring her to Dr. FAKE-Tremblay."
    ],
    "anchors": [
     "adress",
@@ -92,5 +92,5 @@
   "saying the ECG was abnormal",
   "inventing a diagnosis such as heart attack or angina"
  ],
- "notes": ""
+ "notes": "The 29 Oct text had a real Montréal street, real postal areas, a RAMQ number in the real format and unmarked names; on 10 Nov 2026 they were made clearly FAKE before any run."
 }
