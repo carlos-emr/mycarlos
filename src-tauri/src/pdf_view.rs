@@ -542,7 +542,8 @@ fn clean_png(png: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
     (clean.len() <= MAX_PNG_BYTES).then_some(clean)
 }
 
-#[cfg(any(desktop, test))]
+/// A length (u64, little-endian), then that many bytes, at most `limit`. On every platform: the
+/// helper's boxes request reads its quoted text with it, as the parent reads a page reply.
 fn read_sized(input: &mut impl Read, limit: usize) -> Option<Vec<u8>> {
     let mut length = [0u8; 8];
     input.read_exact(&mut length).ok()?;
