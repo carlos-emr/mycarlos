@@ -82,9 +82,12 @@ page, run through the app's own text extraction once and kept as their `pages`.
   table's repeated "mg daily changed (was"). A quote that cannot be found in the folded document
   falls back to comparing its text with the spans.
 - **Credit.** A fact counts as found (**credited**) only through a carrying sentence that a reviewer
-  marked `correct`, or, for a fact that is not critical, one that has no flag.
-  - **Held:** every sentence carrying it is flagged and not yet reviewed, or the fact is critical
-    and no sentence carrying it has been reviewed yet. Tables show it as "+N held".
+  marked `correct`, or one that is not on the review sheet.
+  - **On the sheet:** every flagged sentence, every sentence carrying a critical fact, and a fifth of
+    the others, chosen by the sentence itself (a hash), so a sentence two runs share is chosen in both or
+    neither.
+  - **Held:** every sentence carrying the fact is on the sheet with no verdict yet. Tables show it as
+    "+N held".
   - **Rejected:** the review marked every carrying sentence `wrong`, `unsupported` or `vague`.
   - Paraphrases that name no group are not found; the review sheet can show them.
 - **Patient actions found:** the same, for the instruction, timing and follow-up facts.
@@ -105,14 +108,21 @@ page, run through the app's own text extraction once and kept as their `pages`.
   - `LANGUAGE`: not the summary language.
   - `QUANTITY_MISMATCH`: a value or unit that differs from a fact's own.
   - `TRAP:<n>`: the sentence falls into the document's listed trap `n`.
-- **The review sheet** (`review.csv`) has:
-  - every flagged sentence;
-  - every sentence that carries a critical fact;
-  - a seeded fifth of the others.
-
-  Each row has its quote, the facts it carries, and the traps it fell into (or all of the
-  document's). A reviewer fills `verdict` (`correct`, `wrong`, `unsupported`, `vague`), and
-  `score --review` applies it.
+- **The review sheet is blind** (`review/review.csv`).
+  - **One row per distinct sentence** (document, words, quote) on the sheet in any run.
+  - **Opaque id:** a hash of the sentence, the same in every run and scoring. Rows are in id order, so
+    they are shuffled.
+  - **Columns:** the document, the sentence, its quote, the page text around the quote, and the
+    document's own wording of the facts it may state.
+  - **Nothing else:** no run, no flag, no score.
+  - **The key** (`key/review-key.csv`, outside `review/`) maps each id to every (run, sentence) it
+    stands for. Give the reviewer only `review/`.
+  - **Filling:** a reviewer fills `verdict` (`correct`, `wrong`, `unsupported`, `vague`).
+    `score --review` applies each verdict to every run that wrote that sentence. A row whose sentence
+    does not match its id is refused, and so are two verdicts for one sentence.
+  - **A sheet made by hand** with its own ids is read with `--review-key` and must match its key.
+  - **Reuse:** `prefill` copies such a sheet's verdicts into the scorer's sheet, by sentence. An
+    existing `review/review.csv` is never overwritten; the current sheet is then `review-latest.csv`.
 - **Helper memory** (Linux runs):
   - the helper's resident memory once the model has loaded;
   - each document's own peak (reset just before the document), with its anonymous, file and shared
@@ -151,6 +161,11 @@ scored. It does three things:
 - adds margins from an A/A pair;
 - keeps PR 295's holdout cases out of the decision.
 
+**Version 4** was written on 11 Nov, after a third review and before any variant was scored:
+- one verdict per distinct sentence, from a blind sheet;
+- a sampled sentence also waits for its verdict, so no FAIL rests on an unreviewed row;
+- three screens and two traps over-flagged less.
+
 **Version 3** was written on 11 Nov, after a second review and still before any 10–11 Nov run was
 scored. It does five things:
 - a critical fact counts only once a reviewer has accepted a sentence carrying it;
@@ -164,8 +179,8 @@ To reproduce version 1, use `compare.py` as of 8fbc23e5.
 The first run given to `score` is the baseline. Only documents in the decision count; PR 295's
 6 holdout cases are scored and reported on their own line, never decided on. A variant **passes**
 only if all of these hold:
-1. **No wrong statement.** No sentence was reviewed `wrong` or `unsupported`, and every flagged
-   sentence and every sentence carrying a critical fact has a verdict.
+1. **No wrong statement.** No sentence was reviewed `wrong` or `unsupported`, and every sentence on
+   the review sheet (flagged, carrying a critical fact, or sampled) has a verdict.
 2. **Must-haves kept.** At most `margin_lost` required facts that the baseline had (credited or
    held) are lost.
 3. **Patient actions not worse.** Patient actions found are at least the baseline's −
@@ -222,6 +237,9 @@ cargo test --offline --locked --features ai-helper-stub --test model_engine -- \
 python3 scripts/summary-evaluation/harness/compare.py score \
   --run B0.jsonl --run E1.jsonl --run E4.jsonl --out /path/to/compare \
   [--require-gain-for E1] [--noise B0.jsonl --noise B0p.jsonl] [--review filled.csv]
+# A hand-made sheet with its own ids: copy its verdicts into the scorer's sheet first.
+python3 scripts/summary-evaluation/harness/compare.py prefill --sheet /path/to/compare/review/review.csv \
+  --from hand.csv --key hand-key.csv --run B0.jsonl --out /path/to/compare/review/prefilled.csv
 ```
 A stopped run resumes where it stopped (same build, model, language and threads). Keep runs, review
 sheets and tables outside the repository; summarize them in the pull request.

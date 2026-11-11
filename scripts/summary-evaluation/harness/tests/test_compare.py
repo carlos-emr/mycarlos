@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -194,7 +195,7 @@ class RunTest(unittest.TestCase):
         self.assertEqual((summaries[1]["action_found"], summaries[1]["action_held"]), (0, 2))
         self.assertEqual(decisions[1]["verdict"], "PENDING")
         self.assertIn("\n| Document | B0 | E1 |", (out / "compare.md").read_text(encoding="utf-8"))
-        with (out / "review.csv").open(encoding="utf-8") as sheet:
+        with (out / "review" / "review.csv").open(encoding="utf-8") as sheet:
             rows = list(csv.DictReader(sheet))
         self.assertTrue(all(row["verdict"] == "" for row in rows))
 
@@ -266,10 +267,11 @@ class RunTest(unittest.TestCase):
 
     def test_the_review_sheet_is_never_overwritten(self):
         _, out = self.score(run_lines("E1", BETTER))
-        sheet = out / "review.csv"
-        sheet.write_text("run,doc,sentence,verdict\nE1,fake-letter,0,correct\n", encoding="utf-8")
+        sheet = out / "review" / "review.csv"
+        sheet.write_text("id,document,sentence,quote,verdict\nS0,fake-letter,x,y,correct\n", encoding="utf-8")
         compare.score([out.parent / "B0.jsonl", out.parent / "E1.jsonl"], out, self.docs)
         self.assertIn("correct", sheet.read_text(encoding="utf-8"))
+        self.assertTrue((out / "review" / "review-latest.csv").exists())
 
 
 
@@ -625,6 +627,158 @@ class FrozenTest(unittest.TestCase):
         _, decisions = compare.score(self.runs, out, drifted, self.review, freeze=compare.FREEZE)
         self.assertEqual(decisions[1]["verdict"], "UNFROZEN")
         self.assertIn("NOT FROZEN", (out / "compare.md").read_text(encoding="utf-8"))
+
+
+
+class BlindReviewTest(unittest.TestCase):
+    """Rule v4: one verdict per distinct sentence, a blind sheet with stable ids and a separate key."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.docs = {"fake-letter": fake_doc()}
+        self.base = write_run(self.folder.name, "B0", run_lines("B0", BETTER))
+        self.e1 = write_run(self.folder.name, "E1", run_lines("E1", BETTER))
+
+    def runs(self):
+        return {label: compare.read_run(path)[1] for label, path in (("B0", self.base), ("E1", self.e1))}
+
+    def sheet(self):
+        out = Path(self.folder.name) / "out"
+        compare.score([self.base, self.e1], out, self.docs)
+        with (out / "review" / "review.csv").open(encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        with (out / "key" / "review-key.csv").open(encoding="utf-8") as f:
+            key = list(csv.DictReader(f))
+        return out, rows, key
+
+    def test_the_sheet_is_blind_and_has_one_row_per_distinct_sentence(self):
+        _, rows, key = self.sheet()
+        self.assertNotIn("run", rows[0])
+        self.assertTrue(all(not r["verdict"] for r in rows))
+        self.assertEqual(len({r["id"] for r in rows}), len(rows))
+        self.assertEqual([r["id"] for r in rows], sorted(r["id"] for r in rows))
+        # The same sentences in B0 and E1: each is one row, and the key names both runs.
+        self.assertEqual({k["run"] for k in key}, {"B0", "E1"})
+        self.assertEqual(len(key), 2 * len(rows))
+        for r in rows:
+            skey = ("fake-letter", compare.normalized(r["sentence"]), compare.normalized(r["quote"]))
+            self.assertEqual(r["id"], compare.sentence_id(skey))
+
+    def test_one_verdict_applies_to_every_run_with_that_sentence(self):
+        out, rows, _ = self.sheet()
+        for r in rows:
+            r["verdict"] = "correct"
+        filled = Path(self.folder.name) / "filled.csv"
+        with filled.open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+        summaries, decisions = compare.score([self.base, self.e1], Path(self.folder.name) / "o2", self.docs, filled)
+        self.assertEqual([s["unreviewed"] for s in summaries], [0, 0])
+        self.assertEqual(summaries[0]["required_found"], summaries[1]["required_found"])
+        # Identical answers, every sentence reviewed once: "not worse" holds on every check.
+        self.assertEqual(decisions[1]["verdict"], "PASS")
+
+    def test_two_verdicts_for_one_sentence_are_refused(self):
+        rows = [dict(run="B0", doc="fake-letter", sentence=1, verdict="wrong"),
+                dict(run="E1", doc="fake-letter", sentence=1, verdict="correct")]
+        sheet = Path(self.folder.name) / "legacy.csv"
+        with sheet.open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+        with self.assertRaises(ValueError):
+            compare.read_review(sheet, self.runs())
+
+    def test_a_row_that_is_not_its_sentence_is_refused(self):
+        _, rows, _ = self.sheet()
+        rows[0]["sentence"] = rows[0]["sentence"] + " Changed."
+        bad = Path(self.folder.name) / "bad.csv"
+        with bad.open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+        with self.assertRaises(ValueError):
+            compare.read_review(bad, self.runs())
+
+    def test_a_hand_made_sheet_with_its_own_ids_needs_and_matches_its_key(self):
+        sentences = run_lines("B0", BETTER)[1]["result"]["sentences"]
+        rows = [dict(row=f"R{i + 1:03d}", document="fake-letter", language="en", sentence=s["text"], quote=s["quote"],
+                     context="", fact_it_may_state="", verdict="correct", note="") for i, s in enumerate(sentences)]
+        key = [dict(row=f"R{i + 1:03d}", run="B0", doc="fake-letter", sentence=i, why="critical")
+               for i in range(len(sentences))]
+        sheet, key_file = Path(self.folder.name) / "hand.csv", Path(self.folder.name) / "hand-key.csv"
+        for path, data in ((sheet, rows), (key_file, key)):
+            with path.open("w", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=list(data[0])); w.writeheader(); w.writerows(data)
+        with self.assertRaises(ValueError):
+            compare.read_review(sheet, self.runs())
+        verdicts = compare.read_review(sheet, self.runs(), key_file)
+        self.assertEqual(len(verdicts), len(sentences))
+        key[0]["sentence"] = 1
+        with key_file.open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(key[0])); w.writeheader(); w.writerows(key)
+        with self.assertRaises(ValueError):
+            compare.read_review(sheet, self.runs(), key_file)
+
+    def test_a_sampled_sentence_waits_for_its_verdict(self):
+        weight = sentence("You have lost 4 kg.", "They have lost 4 kg.")
+        entry = run_lines("E1", [weight])[1]
+        with unittest.mock.patch.object(compare, "REVIEW_SAMPLE", 1.0):
+            facts = {f["id"]: f["standing"] for f in compare.score_document(fake_doc(), entry, "en")["facts"]}
+            self.assertEqual(facts["weight"], "held")
+            facts = {f["id"]: f["standing"] for f in compare.score_document(fake_doc(), entry, "en", {0: "correct"})["facts"]}
+            self.assertEqual(facts["weight"], "credited")
+        with unittest.mock.patch.object(compare, "REVIEW_SAMPLE", 0.0):
+            facts = {f["id"]: f["standing"] for f in compare.score_document(fake_doc(), entry, "en")["facts"]}
+            self.assertEqual(facts["weight"], "credited")
+
+    def test_prefill_copies_a_hand_sheet_s_verdicts_into_the_scorer_s_sheet(self):
+        out, rows, _ = self.sheet()
+        sentences = run_lines("B0", BETTER)[1]["result"]["sentences"]
+        hand = [dict(row="R001", document="fake-letter", sentence=sentences[0]["text"], quote=sentences[0]["quote"],
+                     verdict="correct")]
+        key = [dict(row="R001", run="B0", doc="fake-letter", sentence=0, why="sampled")]
+        sheet, key_file = Path(self.folder.name) / "hand1.csv", Path(self.folder.name) / "hand1-key.csv"
+        for path, data in ((sheet, hand), (key_file, key)):
+            with path.open("w", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=list(data[0])); w.writeheader(); w.writerows(data)
+        target = Path(self.folder.name) / "prefilled.csv"
+        filled, blank = compare.prefill(out / "review" / "review.csv", sheet, self.runs(), key_file, target)
+        on_sheet = sentences[0]["text"] in {r["sentence"] for r in rows}
+        self.assertEqual((filled, blank), (1 if on_sheet else 0, len(rows) - (1 if on_sheet else 0)))
+        # The prefilled sheet is the scorer's own: it reads back without a key.
+        self.assertEqual(len(compare.read_review(target, self.runs())), filled)
+
+
+class ScreenV4Test(unittest.TestCase):
+    def flags(self, text, quote, doc=None):
+        return compare.screen(sentence(text, quote), "en", [], doc)
+
+    def test_a_failure_verb_is_a_negation(self):
+        self.assertNotIn("NEGATION_MISMATCH", self.flags(
+            "The doctor asks if they need intravenous iron since oral iron failed.",
+            "recommend intravenous iron, since oral iron has not corrected the anemia"))
+
+    def test_should_in_a_reported_question_is_not_advice(self):
+        self.assertEqual(self.flags("The doctor asks if they should keep eating gluten until the biopsy.",
+                                    "keep eating gluten until the biopsy, and for how long"), [])
+        self.assertIn("ADVICE_OR_JUDGEMENT:should", self.flags("You should keep eating gluten.",
+                                                               "keep eating gluten until the biopsy"))
+
+    def test_the_celiac_traps_spare_correct_sentences(self):
+        for doc_id, trap in (("demo-celiac-lab", "TRAP:1"), ("demo-gastro-referral", "TRAP:0")):
+            doc = REPO[doc_id]
+            for text in ("Your doctor wants to test you for celiac disease.", "Celiac disease can cause low iron.",
+                         "The referral asks about celiac disease.",
+                         "If celiac disease is confirmed, the treatment is a gluten-free diet.",
+                         "The patient has iron deficiency anemia and a positive celiac screen."):
+                self.assertNotIn(trap, self.flags(text, "x", doc), (doc_id, text))
+            for text in ("Celiac disease is confirmed.", "They have celiac disease.",
+                         "The tTG of 92 shows celiac disease.",
+                         "Your iron stores are very low and celiac disease is the cause."):
+                self.assertIn(trap, self.flags(text, "x", doc), (doc_id, text))
+
+    def test_the_referral_s_opening_line_is_evidence_of_the_positive_screen(self):
+        facts, _ = score_sentences("demo-gastro-referral", [sentence(
+            "The patient has iron deficiency anemia and a positive celiac screen.",
+            "assessment of iron deficiency anemia with a positive celiac screen")])
+        self.assertEqual(facts["celiac_screen_positive"]["matched"], "matched")
 
 
 class FreezeTest(unittest.TestCase):

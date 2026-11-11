@@ -1,9 +1,9 @@
 {
- "version": 3,
- "frozen_utc": "2026-11-11T00:56:14+00:00",
- "rule_version": 3,
- "scorer_sha256": "2f5780425a085f2fffa0b25f6ca081cb85ce23fd8804ff4384982576b77030bd",
- "scoring_documents_sha256": "8169efaa65e448ed2d16aaaac781ba8363727312187f9911c5780401091ee719",
+ "version": 4,
+ "frozen_utc": "2026-11-11T01:22:26+00:00",
+ "rule_version": 4,
+ "scorer_sha256": "23c6bb33d32036b47ada1f52d340951d7bb61297d223d790a7ebeb00693fdbbb",
+ "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
  "synthetic_only": true,
  "documents_count": 18,
  "facts": 147,
@@ -27,6 +27,11 @@
    "version": 3,
    "frozen_utc": "2026-11-11T00:56:14+00:00",
    "reason": "rule version 3 and the scorer pinned here (score marks a decision UNFROZEN when the scorer, rule or documents differ); qualifier groups for every required fact that still credited on one group, two options from the documents' wording in two qualifier groups, and the celiac traps widened to any unhedged 'celiac disease'"
+  },
+  {
+   "version": 4,
+   "frozen_utc": "2026-11-11T01:22:26+00:00",
+   "reason": "rule version 4: one verdict per distinct sentence from a blind sheet (opaque content ids, key apart), a sampled sentence waits for its verdict too; the two celiac traps no longer flag 'test you for', 'asks about', 'can cause', 'If ... is confirmed' or 'a positive celiac screen'; demo-gastro-referral's opening line is an evidence span for its positive celiac screen. Page text unchanged."
   }
  ],
  "documents": {
@@ -94,14 +99,14 @@
    "outputs_seen_before_facts": "yes"
   },
   "demo-celiac-lab": {
-   "sha256": "95d2b3b8bb84d33f523229886b66991babf71213dbde99a90fa33caf9b1c41d2",
+   "sha256": "5ada05133e56c111984c6dfc33de9cf414c0cdbe6b06f5c501407b5a49799946",
    "facts": 6,
    "critical": 3,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
   },
   "demo-gastro-referral": {
-   "sha256": "4a219f6f84f04a3475115b29774ba183162ab0bf6ee612ebbef7692192ddeaad",
+   "sha256": "8129ff0ba30e7708ad20fcf9ddada0394c65a508d8c0a10cdd586602c3bb9c26",
    "facts": 9,
    "critical": 4,
    "traps": 3,

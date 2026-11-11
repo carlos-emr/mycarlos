@@ -12,10 +12,11 @@ count. Anything else is left to the hand review sheet. See HARNESS.md for every 
 
   compare.py check                         validate the document set (and its freeze)
   compare.py prepare --out DIR             write the run's input documents (<id>.json)
-  compare.py score --run A.jsonl [--run B.jsonl ...] --out DIR [--review FILLED.csv]
+  compare.py score --run A.jsonl [--run B.jsonl ...] --out DIR [--review FILLED.csv [--review-key KEY.csv]]
                    [--noise A.jsonl --noise A2.jsonl] [--require-gain-for LABEL ...]
   compare.py repeat --run A.jsonl --run B.jsonl   same build, same answers token for token?
   compare.py noise --run A.jsonl --run A2.jsonl   how many facts flip between an A/A pair
+  compare.py prefill --sheet review/review.csv --from FILLED.csv [--key KEY.csv] --run A.jsonl ... --out OUT.csv
 
 The first run given to `score` is the baseline the others are compared with.
 """
@@ -27,7 +28,6 @@ import difflib
 import functools
 import hashlib
 import json
-import random
 import re
 import statistics
 import sys
@@ -57,7 +57,7 @@ MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
 # The decision rule (HARNESS.md): its version and its fixed numbers.
-RULE_VERSION = 3
+RULE_VERSION = 4
 LOCATED_POINTS = 2
 TIME_RATIO = 1.3
 SCREENS = {"SOURCE_NOT_FOUND", "NUMBER_NOT_IN_QUOTE", "NEGATION_MISMATCH", "HEDGE_DROPPED",
@@ -69,7 +69,9 @@ NEGATION = re.compile(
     r"\b(no|not|never|none|without|denies|denied|negative|absent|nie|bez|brak|"
     r"ne|pas|sans|aucun|aucune|jamais|nao|sem|nunca|nenhum|nenhuma|sin|ningun|ninguna|"
     r"ruled out|rules out|rule out|excluded|unremarkable|free of|"
-    r"exclu|exclue|ecarte|ecartee|wykluczon\w*|descartad\w*|afastad\w*)\b|n't")
+    r"exclu|exclue|ecarte|ecartee|wykluczon\w*|descartad\w*|afastad\w*|failed|fails|unsuccessful)\b|n't")
+# A reported question ("the doctor asks if they should…") repeats the document's question, not advice.
+REPORTED_QUESTION = re.compile(r"\b(asks?|asked|asking|wonders?|wants to know)\b (if|whether)\b[^.?!]*")
 # Words that hedge a statement: dropping them overstates the document (certainty inflation).
 HEDGE = re.compile(
     r"\b(suggest\w*(?!\s+(a\s+)?(repeat\w*|recheck\w*|review\w*|follow\w*|you\b|that you))|"
@@ -444,7 +446,8 @@ def screen(sentence, run_lang, facts, doc=None):
         flags.append("EXPERIENCER")
     if SECOND_PERSON.search(ftext) and ACTORS.search(fquote) and not ACTORS.search(ftext):
         flags.append("ACTOR_SHIFT")
-    added = sorted({word for word in ADVICE.findall(ftext) if not re.search(rf"\b{re.escape(word)}\b", fquote)})
+    stated = REPORTED_QUESTION.sub(" ", ftext)
+    added = sorted({word for word in ADVICE.findall(stated) if not re.search(rf"\b{re.escape(word)}\b", fquote)})
     if added:
         flags.append("ADVICE_OR_JUDGEMENT:" + ",".join(added))
     language = guess_language(text)
@@ -463,15 +466,33 @@ def screen(sentence, run_lang, facts, doc=None):
     return flags
 
 
-def credit(found, flags, verdicts, critical=False):
-    """A fact's standing from the sentences that carry it: "credited" when a reviewer marked one
-    of them correct, or (for a fact that is not critical) one has no flag and no verdict against
-    it; "held" while that waits for the review (every carrier flagged, or the fact critical and
-    no carrier reviewed yet); "rejected" when the review turned down every one."""
+def sentence_key(doc_id, sentence):
+    """What a sentence is, for the review: its document, words and quote. The same sentence written
+    by two runs is one sentence, reviewed once."""
+    return (doc_id, normalized(sentence.get("text", "")), normalized(sentence.get("quote", "")))
+
+
+def sentence_id(key):
+    """A sentence's opaque, stable id on the review sheet: the same in every run and every scoring."""
+    return "S" + hashlib.sha256("\x1f".join(key).encode("utf-8")).hexdigest()[:12]
+
+
+def sampled(key):
+    """The seeded fifth of the other sentences that goes on the sheet, chosen by the sentence itself,
+    so a sentence two runs share is sampled in both or in neither."""
+    digest = hashlib.sha256(("sample\x1f" + "\x1f".join(key)).encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) < REVIEW_SAMPLE * 0x100000000
+
+
+def credit(found, on_sheet, verdicts):
+    """A fact's standing from the sentences that carry it: "credited" when a reviewer marked one of
+    them correct, or one is not on the review sheet and has no verdict against it; "held" while
+    every carrier is on the sheet without a verdict (a flagged sentence, one carrying a critical
+    fact, or one in the sample); "rejected" when the review turned down every one."""
     standing = "rejected" if found else None
     for _, index in found:
         verdict = verdicts.get(index, "")
-        if verdict == "correct" or (not critical and not flags[index] and verdict not in NOT_CREDITED_VERDICTS):
+        if verdict == "correct" or (index not in on_sheet and verdict not in NOT_CREDITED_VERDICTS):
             return "credited"
         if verdict not in NOT_CREDITED_VERDICTS:
             standing = "held"
@@ -491,11 +512,16 @@ def score_document(doc, entry, run_lang, verdicts=None):
     sentences = answer["sentences"] if answer else []
     folded_document = fold(joined_text(doc))
     flags = [screen(s, run_lang, doc.get("facts", []), doc) for s in sentences]
+    keys = [sentence_key(doc["id"], s) for s in sentences]
+    founds = [(fact, carriers(fact, sentences, folded_document)) for fact in doc.get("facts", [])]
+    critical_carriers = {i for fact, found in founds if fact.get("critical", False) for _, i in found}
+    on_sheet = {i: ("flagged " if flags[i] else "") + ("critical " if i in critical_carriers else "")
+                + ("sampled" if sampled(keys[i]) else "") for i in range(len(sentences))}
+    on_sheet = {i: why.strip() for i, why in on_sheet.items() if why.strip()}
     facts = []
-    for fact in doc.get("facts", []):
-        found = carriers(fact, sentences, folded_document)
+    for fact, found in founds:
         how, index = found[0] if found else (None, None)
-        standing = credit(found, flags, verdicts, fact.get("critical", False))
+        standing = credit(found, on_sheet, verdicts)
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
                           critical=fact.get("critical", False), found=how if standing == "credited" else None,
                           standing=standing, matched=how, sentence=index,
@@ -503,7 +529,6 @@ def score_document(doc, entry, run_lang, verdicts=None):
     required = [f for f in facts if f["required"]]
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
     flagged = [dict(index=i, flags=f) for i, f in enumerate(flags)]
-    critical_carriers = {i for f in facts if f["critical"] for i in f["sentences"]}
     stats = (answer or {}).get("stats") or {}
     last_index = max(p["index"] for p in doc["pages"])
     result.update(
@@ -521,6 +546,8 @@ def score_document(doc, entry, run_lang, verdicts=None):
         trap_count=sum(1 for f in flagged for flag in f["flags"] if flag.startswith("TRAP:")),
         unreviewed_flagged=sum(1 for f in flagged if f["flags"] and verdicts.get(f["index"], "") == ""),
         unreviewed_critical=sum(1 for i in critical_carriers if verdicts.get(i, "") == ""),
+        unreviewed=sum(1 for i in on_sheet if verdicts.get(i, "") == ""),
+        sheet=[dict(index=i, id=sentence_id(keys[i]), why=why) for i, why in sorted(on_sheet.items())],
         prompt_tokens=stats.get("promptTokens"),
         answer_tokens=stats.get("answerTokens"),
         prompt_ms=stats.get("promptMs"),
@@ -540,40 +567,141 @@ def score_document(doc, entry, run_lang, verdicts=None):
     return result
 
 
-def review_rows(label, meta, docs, entries, scores, seed_text):
-    """Every flagged sentence, every sentence that carries a critical fact, and a seeded fifth of
-    the others."""
-    rows = []
-    for doc_id, score in scores.items():
-        entry = entries.get(doc_id)
-        if not entry or not entry.get("result"):
-            continue
-        rng = random.Random(hashlib.sha256(f"{seed_text}:{doc_id}".encode()).hexdigest())
-        critical = {i for f in score["facts"] if f["critical"] for i in f["sentences"]}
-        traps = docs[doc_id].get("traps", [])
-        for flagged, sentence in zip(score["flags"], entry["result"]["sentences"]):
-            sampled = rng.random() < REVIEW_SAMPLE
-            if not flagged["flags"] and flagged["index"] not in critical and not sampled:
+def quote_context(doc, quote, width=300):
+    """The document's text around a quote, the quote between ⟦ ⟧, for the reviewer."""
+    text = joined_text(doc)
+    chars, where, space = [], [], False
+    for i, ch in enumerate(text):
+        if ch.isspace():
+            if not space and chars:
+                chars.append(" ")
+                where.append(i)
+            space = True
+        else:
+            chars.append(ch.casefold())
+            where.append(i)
+            space = False
+    hay = "".join(chars)
+    needle = " ".join(quote.split()).casefold()
+    at = hay.find(needle) if needle else -1
+    if at < 0:
+        return "(this quote is not in the document word for word)"
+    start, end = where[at], where[at + len(needle) - 1] + 1
+    flat = lambda t: " ".join(t.split())
+    return (("…" if start > width else "") + flat(text[max(0, start - width):start]) + " ⟦" + flat(text[start:end])
+            + "⟧ " + flat(text[end:end + width]) + ("…" if end + width < len(text) else ""))
+
+
+SHEET_FIELDS = ["id", "document", "language", "sentence", "quote", "context", "fact_it_may_state", "verdict", "note"]
+KEY_FIELDS = ["id", "run", "doc", "sentence", "why"]
+
+
+def review_sheet(runs, docs, all_scores):
+    """The blind review sheet: one row per distinct sentence (document, words, quote) on the sheet in
+    any run, in the order of its opaque id (a hash: shuffled, and stable across runs and scorings),
+    with no run, flag or score on it; and the key: every (run, sentence) each row stands for."""
+    rows, key = {}, []
+    for (label, entries), scores in zip(runs.items(), all_scores):
+        for doc_id, score in scores.items():
+            entry = entries.get(doc_id)
+            if not entry or not entry.get("result"):
                 continue
-            candidates = [f["id"] for f in score["facts"] if flagged["index"] in f["sentences"]]
-            fell = [traps[int(flag.split(":")[1])] for flag in flagged["flags"] if flag.startswith("TRAP:")]
-            rows.append(dict(run=label, doc=doc_id, sentence=flagged["index"], text=sentence["text"],
-                             quote=sentence.get("quote", ""), located=sentence.get("located"),
-                             flags=" ".join(flagged["flags"]), facts=" ".join(candidates),
-                             traps=" | ".join(fell or traps), verdict="", note=""))
-    return rows
+            sentences = entry["result"]["sentences"]
+            facts = {f["id"]: f for f in docs[doc_id].get("facts", [])}
+            for item in score.get("sheet", []):
+                sentence = sentences[item["index"]]
+                key.append(dict(id=item["id"], run=label, doc=doc_id, sentence=item["index"], why=item["why"]))
+                if item["id"] in rows:
+                    continue
+                carried = [facts[f["id"]]["approved_statements"][0] for f in score["facts"]
+                           if item["index"] in f["sentences"]]
+                rows[item["id"]] = dict(id=item["id"], document=doc_id, language=docs[doc_id].get("lang", ""),
+                                        sentence=sentence["text"], quote=sentence.get("quote", ""),
+                                        context=quote_context(docs[doc_id], sentence.get("quote", "")),
+                                        fact_it_may_state=" | ".join(carried), verdict="", note="")
+    return [rows[i] for i in sorted(rows)], key
 
 
-def read_review(path):
-    """Filled review sheets: (run, doc, sentence) -> verdict."""
-    verdicts = {}
-    with open(path, newline="", encoding="utf-8") as source:
-        for row in csv.DictReader(source):
-            verdict = (row.get("verdict") or "").strip().lower()
-            if verdict not in VERDICTS:
-                raise ValueError(f"unknown verdict {verdict!r} in {path}")
-            verdicts[(row["run"], row["doc"], int(row["sentence"]))] = verdict
-    return verdicts
+def read_csv_rows(path):
+    with open(path, newline="", encoding="utf-8-sig") as source:
+        return list(csv.DictReader(source))
+
+
+def read_review(path, runs, key_path=None):
+    """A filled review sheet as verdicts by sentence (`sentence_key`), so one verdict applies to
+    every run that wrote the same sentence. Two sheet forms are read:
+    - the blind sheet (`id`/`row`, `document`, `sentence`, `quote`, `verdict`): each row's id must be
+      its sentence's own id (`sentence_id`), or, with `key_path`, a row of that key whose every
+      (run, document, sentence) is the row's sentence in that run;
+    - the older per-run sheet (`run`, `doc`, `sentence` as an index), read through the runs.
+    Anything that does not match is refused, and so are two different verdicts for one sentence."""
+    def verdict_of(row):
+        verdict = (row.get("verdict") or "").strip().lower()
+        if verdict not in VERDICTS:
+            raise ValueError(f"unknown verdict {verdict!r} in {path}")
+        return verdict
+    sheet = read_csv_rows(path)
+    found = {}
+    def put(skey, verdict, where):
+        if not verdict:
+            return
+        if found.get(skey, verdict) != verdict:
+            raise ValueError(f"{path}: two different verdicts for one sentence ({where})")
+        found[skey] = verdict
+    def sentence_of(run, doc, index):
+        entries = runs.get(run)
+        entry = entries.get(doc) if entries else None
+        sentences = ((entry or {}).get("result") or {}).get("sentences") or []
+        if not 0 <= index < len(sentences):
+            raise ValueError(f"{path}: no sentence {index} of {doc} in run {run}")
+        return sentence_key(doc, sentences[index])
+    if sheet and "run" in sheet[0] and "quote" not in sheet[0]:
+        for row in sheet:
+            put(sentence_of(row["run"], row["doc"], int(row["sentence"])), verdict_of(row),
+                f"{row['run']} {row['doc']} {row['sentence']}")
+        return found
+    key = {}
+    if key_path:
+        for row in read_csv_rows(key_path):
+            key.setdefault(row.get("id") or row.get("row"), []).append(row)
+    for row in sheet:
+        rid = row.get("id") or row.get("row")
+        skey = (row["document"], normalized(row.get("sentence", "")), normalized(row.get("quote", "")))
+        if key_path:
+            if rid not in key:
+                raise ValueError(f"{path}: row {rid} is not in the key {key_path}")
+            for k in key[rid]:
+                if sentence_of(k["run"], k["doc"], int(k["sentence"])) != skey:
+                    raise ValueError(f"{path}: row {rid} is not the sentence its key names ({k['run']} {k['doc']})")
+        elif rid != sentence_id(skey):
+            raise ValueError(f"{path}: row {rid} does not match its sentence; a sheet with other ids needs its key")
+        put(skey, verdict_of(row), rid)
+    if key_path:
+        missing = set(key) - {row.get("id") or row.get("row") for row in sheet}
+        if missing:
+            raise ValueError(f"{path}: {len(missing)} rows of the key are not on the sheet")
+    return found
+
+
+def prefill(sheet_path, other_path, runs, key_path, out_path):
+    """Copies the verdicts of another filled sheet (with its key when its ids are its own) into the
+    scorer's blind sheet, by sentence: rows already reviewed come back filled, the rest blank.
+    Returns (filled, blank)."""
+    verdicts = read_review(other_path, runs, key_path)
+    rows = read_csv_rows(sheet_path)
+    filled = 0
+    for row in rows:
+        skey = (row["document"], normalized(row.get("sentence", "")), normalized(row.get("quote", "")))
+        if row["id"] != sentence_id(skey):
+            raise ValueError(f"{sheet_path}: row {row['id']} does not match its sentence")
+        if verdicts.get(skey):
+            row["verdict"] = verdicts[skey]
+            filled += 1
+    with open(out_path, "w", newline="", encoding="utf-8") as target:
+        writer = csv.DictWriter(target, fieldnames=SHEET_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return filled, len(rows) - filled
 
 
 def summarize_run(scores, wrong, holdout=False):
@@ -598,6 +726,7 @@ def summarize_run(scores, wrong, holdout=False):
         traps=sum(s["trap_count"] for s in present),
         unreviewed_flagged=sum(s["unreviewed_flagged"] for s in present),
         unreviewed_critical=sum(s["unreviewed_critical"] for s in present),
+        unreviewed=sum(s["unreviewed"] for s in present),
         capped=sum(1 for s in present if s.get("capped")), cut=sum(1 for s in present if s.get("cut")),
         gap=sum(1 for s in present if s.get("gap")),
         median_wall_ms=statistics.median(walls) if walls else None,
@@ -666,8 +795,7 @@ def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_act
     elif summary["reviewed_wrong"]:
         checks.append(("no reviewed wrong statement", False))
     else:
-        waiting = summary["unreviewed_flagged"] + summary["unreviewed_critical"]
-        checks.append(("no reviewed wrong statement", None if waiting else True))
+        checks.append(("no reviewed wrong statement", None if summary["unreviewed"] else True))
     sure, maybe = [], []
     for doc_id, base in base_scores.items():
         if not base.get("decision", True) or not base.get("present") or base.get("error"):
@@ -808,13 +936,21 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
 
 
 def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, require_gain=False,
-          noise_pair=None, freeze=None):
+          noise_pair=None, freeze=None, review_key=None):
     """Scores the runs, the first as the baseline. `require_gain`: True for every variant, or the
     labels of the variants aimed at patient actions. `freeze`: HARNESS-FREEZE.json to hold the
     scorer and documents to; a decision under anything else is never PASS ("UNFROZEN")."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    verdicts = read_review(review) if review else None
+    loaded = {}
+    for path in run_paths:
+        meta, entries = read_run(path)
+        label = run_label(meta, path)
+        if label in loaded:
+            raise ValueError(f"two runs are called {label}")
+        loaded[label] = (meta, entries)
+    verdicts = read_review(review, {label: entries for label, (_, entries) in loaded.items()}, review_key) \
+        if review else None
     measured = noise(*noise_pair, docs) if noise_pair else None
     if measured:
         margin_lost, margin_actions = measured["margin_lost"], measured["margin_actions"]
@@ -823,29 +959,24 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
                    require_gain=require_gain if isinstance(require_gain, bool) else sorted(require_gain))
     identity = scoring_identity(docs, margins)
     unfrozen = pinning_problems(identity, freeze) if freeze is not None else []
-    labels, all_scores, summaries, holdouts, metas, sheets, memories = [], [], [], [], [], [], []
-    for path in run_paths:
-        meta, entries = read_run(path)
-        label = run_label(meta, path)
-        if label in labels:
-            raise ValueError(f"two runs are called {label}")
+    labels, all_scores, summaries, holdouts, metas, memories = [], [], [], [], [], []
+    for label, (meta, entries) in loaded.items():
         labels.append(label)
         metas.append(meta)
         lang = meta.get("lang", "en")
-        mine = {(doc, index): verdict for (run, doc, index), verdict in (verdicts or {}).items() if run == label}
-        scores = {doc_id: score_document(doc, entries.get(doc_id), lang,
-                                         {i: v for (d, i), v in mine.items() if d == doc_id})
-                  for doc_id, doc in docs.items()}
+        scores, wrong = {}, (0 if verdicts is not None else None)
+        for doc_id, doc in docs.items():
+            entry = entries.get(doc_id)
+            sentences = ((entry or {}).get("result") or {}).get("sentences") or []
+            mine = {i: (verdicts or {}).get(sentence_key(doc_id, s), "") for i, s in enumerate(sentences)}
+            mine = {i: v for i, v in mine.items() if v}
+            scores[doc_id] = score_document(doc, entry, lang, mine)
+            if verdicts is not None and in_decision(doc):
+                wrong += sum(1 for v in mine.values() if v in WRONG_VERDICTS)
         all_scores.append(scores)
-        wrong = None
-        if verdicts is not None:
-            wrong = sum(1 for (doc, _), verdict in mine.items()
-                        if verdict in WRONG_VERDICTS and in_decision(docs.get(doc, {})))
         summaries.append(summarize_run(scores, wrong))
         holdouts.append(summarize_run(scores, None, holdout=True))
         memories.append(memory(meta, entries))
-        seed = meta.get("build", {}).get("fingerprint", "") + label
-        sheets += review_rows(label, meta, docs, entries, scores, seed)
     base_model = metas[0].get("model", {}).get("sha256")
     notes = [f"{label}: another model file" for label, meta in zip(labels, metas)
              if meta.get("model", {}).get("sha256") != base_model]
@@ -861,13 +992,22 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
         runs=[dict(label=l, meta=m, summary=s, holdout=h, decision=d, memory=mem, documents=sc)
               for l, m, s, h, d, mem, sc in zip(labels, metas, summaries, holdouts, decisions, memories, all_scores)],
         notes=notes), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    sheet = out / "review.csv"
-    if not sheet.exists():
-        with sheet.open("w", newline="", encoding="utf-8") as target:
-            writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "text", "quote", "located",
-                                                        "flags", "facts", "traps", "verdict", "note"])
-            writer.writeheader()
-            writer.writerows(sheets)
+    rows, key = review_sheet({label: entries for label, (_, entries) in loaded.items()}, docs, all_scores)
+    (out / "review").mkdir(exist_ok=True)
+    (out / "key").mkdir(exist_ok=True)
+    sheet = out / "review" / "review.csv"
+    if sheet.exists():
+        # A sheet being filled is never overwritten; the full current one is written beside it.
+        notes.append("review/review.csv kept as it was; the current full sheet is review/review-latest.csv")
+        sheet = out / "review" / "review-latest.csv"
+    with sheet.open("w", newline="", encoding="utf-8") as target:
+        writer = csv.DictWriter(target, fieldnames=SHEET_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    with (out / "key" / "review-key.csv").open("w", newline="", encoding="utf-8") as target:
+        writer = csv.DictWriter(target, fieldnames=KEY_FIELDS)
+        writer.writeheader()
+        writer.writerows(key)
     header = (f"Scoring {identity['id'][:16]} (rule v{RULE_VERSION}; scorer {identity['scorer'][:12]}, "
               f"documents {identity['documents'][:12]}, thresholds {identity['thresholds'][:12]}; "
               f"margins: lost {margin_lost}, actions {margin_actions}"
@@ -906,11 +1046,18 @@ def main(argv=None):
     sc.add_argument("--run", action="append", required=True)
     sc.add_argument("--out", required=True)
     sc.add_argument("--review")
+    sc.add_argument("--review-key", help="the key of a blind sheet whose ids are not the scorer's own")
     sc.add_argument("--noise", action="append", help="an A/A pair (twice): the only way to set margins")
     sc.add_argument("--require-gain-for", action="append", default=[], metavar="LABEL",
                     help="a variant aimed at patient actions: more than the baseline + margin (repeat per run)")
     rep = sub.add_parser("repeat")
     rep.add_argument("--run", action="append", required=True)
+    pre = sub.add_parser("prefill", help="copy another sheet's verdicts into the scorer's blind sheet, by sentence")
+    pre.add_argument("--sheet", required=True, help="the scorer's review/review.csv (or review-latest.csv)")
+    pre.add_argument("--from", dest="other", required=True, help="a filled sheet")
+    pre.add_argument("--key", help="that sheet's key, when its ids are its own")
+    pre.add_argument("--run", action="append", required=True, help="every run its key names")
+    pre.add_argument("--out", required=True)
     noi = sub.add_parser("noise")
     noi.add_argument("--run", action="append", required=True)
     args = parser.parse_args(argv)
@@ -920,6 +1067,14 @@ def main(argv=None):
         same, different, compared, problems = repeat(*args.run)
         print(json.dumps(dict(compared=compared, same=same, different=different, not_comparable=problems)))
         return 0 if compared and not different and not problems else 1
+    if args.command == "prefill":
+        runs = {}
+        for path in args.run:
+            meta, entries = read_run(path)
+            runs[run_label(meta, path)] = entries
+        filled, blank = prefill(args.sheet, args.other, runs, args.key, args.out)
+        print(json.dumps(dict(filled=filled, blank=blank, out=args.out)))
+        return 0
     docs = load_documents(args.documents, args.fixtures)
     if args.command == "check":
         fixture_ids = {d for d, doc in docs.items() if doc.get("source") == "PR 295 fixtures"}
@@ -953,7 +1108,8 @@ def main(argv=None):
     if unknown:
         raise SystemExit(f"--require-gain-for names no run: {', '.join(sorted(unknown))}")
     summaries, decisions = score(args.run, args.out, docs, args.review, 0, 0, set(args.require_gain_for),
-                                 tuple(args.noise) if args.noise else None, freeze=FREEZE)
+                                 tuple(args.noise) if args.noise else None, freeze=FREEZE,
+                                 review_key=args.review_key)
     for summary, decision in zip(summaries, decisions):
         print(json.dumps(dict(summary=summary, verdict=decision["verdict"] if decision else "baseline")))
     return 0
