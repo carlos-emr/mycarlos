@@ -278,6 +278,31 @@ fn the_real_engine_loads_the_model_as_handed_over_and_summarizes_under_the_gramm
 }
 
 #[test]
+fn the_helper_says_what_it_found_in_the_model_file_and_the_app_checks_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = model_file(dir.path(), &tiny_model());
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let (card, rejected) = runner
+        .card()
+        .expect("the helper describes the model it loaded in its hello");
+    // As the tiny model's own header says, read by llama.cpp in the helper.
+    assert_eq!(card["architecture"], "llama", "{card}");
+    assert_eq!(card["trainedContext"], 8_192, "{card}");
+    assert_eq!(card["contextMade"], 8_192, "{card}");
+    assert_eq!(card["layers"], 1, "{card}");
+    // 256 byte tokens, then unknown, start and end.
+    assert_eq!(card["vocabulary"], 259, "{card}");
+    assert_eq!(card["recurrent"], false, "{card}");
+    assert_eq!(card["hybrid"], false, "{card}");
+    let parameters = card["parameters"].as_u64().unwrap();
+    assert!(parameters > 0 && parameters < 1_000_000, "{card}");
+    // Far smaller than any real model: the app does not keep it, and its limits stay the
+    // catalogue's.
+    assert_eq!(rejected.as_deref(), Some("Parameters"));
+    runner.stop();
+}
+
+#[test]
 fn a_model_file_that_is_not_a_model_ends_the_helper_before_it_greets() {
     let dir = tempfile::tempdir().unwrap();
     let model = model_file(dir.path(), b"GGUF FAKE but not a model");

@@ -1280,6 +1280,17 @@ pub mod engine_testing {
             })
         }
 
+        /// What the helper said it found in the model file (model limits), as JSON, and why
+        /// the app did not keep it, when it did not.
+        pub fn card(&self) -> Option<(serde_json::Value, Option<String>)> {
+            self.runner.last_card().map(|(card, rejected)| {
+                (
+                    serde_json::to_value(card).unwrap_or_default(),
+                    rejected.map(|why| format!("{why:?}")),
+                )
+            })
+        }
+
         /// A summary of `pages` (index, text) in `lang`: sentences (text, quote), last page.
         pub fn summarize(
             &self,

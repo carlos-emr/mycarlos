@@ -362,8 +362,12 @@ struct Sidecar {
     answer_limit: AnswerLimit,
     /// The model file while the process may still read it (see `RunnerConfig::model_file`).
     model_file: Option<Arc<std::fs::File>>,
-    /// What the helper said it found in the model file, checked (model limits).
-    card: Option<crate::model_limits::ModelCard>,
+    /// What the helper said it found in the model file (model limits), and why it was not
+    /// kept, when it was not.
+    card: Option<(
+        crate::model_limits::ModelCard,
+        Option<crate::model_limits::CardRejected>,
+    )>,
 }
 
 /// The model process: started as it is, or through the helpers' launcher.
@@ -432,6 +436,14 @@ pub(crate) struct Runner {
     /// The checked cards of the models started in this session, by their SHA-256 (model
     /// limits): kept after the helper ends, for the settings.
     cards: Mutex<Vec<(String, crate::model_limits::ModelCard)>>,
+    /// The last card a helper sent, kept or not, and why not: for support and the engine
+    /// test, never for the settings.
+    last_card: Mutex<
+        Option<(
+            crate::model_limits::ModelCard,
+            Option<crate::model_limits::CardRejected>,
+        )>,
+    >,
 }
 
 /// What is told an answer's own time limit as the answer is asked: the idle lock's hold on
@@ -485,7 +497,21 @@ impl Runner {
             last_stats: Mutex::new(None),
             answer_watch: Mutex::new(None),
             cards: Mutex::new(Vec::new()),
+            last_card: Mutex::new(None),
         }
+    }
+
+    /// The last card a helper sent, and why it was not kept, when it was not.
+    pub(crate) fn last_card(
+        &self,
+    ) -> Option<(
+        crate::model_limits::ModelCard,
+        Option<crate::model_limits::CardRejected>,
+    )> {
+        self.last_card
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// The checked card of the model with this SHA-256, when the helper has run it in this
@@ -652,8 +678,12 @@ impl Runner {
             }
             Ok(sidecar) => {
                 let model = sidecar.model.clone();
-                if let Some(card) = sidecar.card.clone() {
-                    self.remember_card(&model.sha256, card);
+                if let Some((card, rejected)) = sidecar.card.clone() {
+                    if rejected.is_none() {
+                        self.remember_card(&model.sha256, card.clone());
+                    }
+                    *self.last_card.lock().unwrap_or_else(|e| e.into_inner()) =
+                        Some((card, rejected));
                 }
                 *slot = Some(sidecar);
                 self.set_status(RunnerStatus::Ready {
@@ -993,9 +1023,13 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
     sidecar.model = hello.model;
     // Kept only in range, and only for a context no larger than the one asked for: the rest is
     // dropped, and the catalogue's limits stay (model limits, slice 1: nothing is refused yet).
-    sidecar.card = hello
-        .card
-        .and_then(|card| card.checked(crate::model_helper::CONTEXT_TOKENS).ok());
+    sidecar.card =
+        hello.card.map(
+            |card| match card.clone().checked(crate::model_helper::CONTEXT_TOKENS) {
+                Ok(card) => (card, None),
+                Err(rejected) => (card, Some(rejected)),
+            },
+        );
     // The process holds its own copy of the descriptor now, closed once it has loaded.
     #[cfg(unix)]
     {
