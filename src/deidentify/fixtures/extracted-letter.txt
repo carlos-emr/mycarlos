@@ -1,7 +1,7 @@
 SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY
 Clinique médicale Fictive
-88, boul. René-Lévesque Ouest, app. 5
-Montréal (QC) H2X 1A1
+88, boul. Émile-Exemple Ouest, app. 5
+Montréal (QC) H0Z 9Z9
 Tél. : 514-555-0199   Téléc. : 514-555-0198
 www.clinique-fictive.example.ca
 
