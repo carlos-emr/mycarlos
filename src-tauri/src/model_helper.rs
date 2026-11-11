@@ -442,13 +442,22 @@ const SUMMARY_PLAIN: &str =
     "Write to the patient as \"you\", in plain everyday words; keep the medical term the \
      document uses, and follow it with a few plain words that explain it.";
 
-/// E6: what the document found and what it means comes first, even with no instructions (E5
-/// shrank a findings-only referral to 2 sentences). A result's number only when it is acted on:
-/// E5's "each with its number and unit" pushed numbers and technical names.
+/// E6: what the document found comes first, even with no instructions (E5 shrank a
+/// findings-only referral to 2 sentences). A result's number only when it is acted on: E5's
+/// "each with its number and unit" pushed numbers and technical names.
+///
+/// K11 (round-4 candidate on K2): what a finding means for you only where the document gives that
+/// meaning or reason. In round 3, 6 of E6's 9 wrong or unsupported sentences came from "what it
+/// means for you": a meaning the document never gives ("it means low iron"), a cause it does not
+/// state (confusion blamed on the gut infection), a judgement it does not make ("needs
+/// attention"). A plain explanation of a medical term is not such a meaning and stays.
 const SUMMARY_FOUND: &str =
-    "First say what the document found and what it means for you, in 2 to 4 sentences, even \
-     when the document gives you no instructions; give a test result's number or unit only \
-     when you must act on it.";
+    "First say what the document found, in 2 to 4 sentences, even when the document gives you \
+     no instructions; give a test result's number or unit only when you must act on it. Say \
+     what a finding means for you only where the document itself gives that meaning or reason: \
+     add no cause, diagnosis, judgement or reassurance of your own (a few plain words that \
+     explain a medical term are not one), and if the document gives none, write no sentence \
+     about what it means.";
 
 /// E6: then every instruction, one in each sentence, with E5's list of what is not an
 /// instruction kept word for word.
@@ -1137,10 +1146,11 @@ mod tests {
     }
 
     #[test]
-    fn k2_is_e6_with_warnings_in_the_documents_own_words() {
-        // K2 = E6 word for word (E5's system text, cap and language lines, the round-3 request),
-        // except the warning sentence, which now asks for the document's own words. The text is
-        // the screening overlay's (board K2) exactly.
+    fn k11_is_k2_with_meanings_only_from_the_document() {
+        // K11 = K2 word for word (E6 with warnings in the document's own words), except the
+        // found-first sentence: what a finding means for you only where the document gives it, no
+        // cause, diagnosis, judgement or reassurance of the model's own, and no meaning sentence
+        // when the document gives none. A term's plain explanation stays.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1148,9 +1158,13 @@ mod tests {
             "Summarize this document for the patient in English, in at most 10 short sentences \
              (fewer if the document is short). Write to the patient as \"you\", in plain \
              everyday words; keep the medical term the document uses, and follow it with a few \
-             plain words that explain it. First say what the document found and what it means \
-             for you, in 2 to 4 sentences, even when the document gives you no instructions; \
-             give a test result's number or unit only when you must act on it. Then say what \
+             plain words that explain it. First say what the document found, in 2 to 4 \
+             sentences, even when the document gives you no instructions; give a test result's \
+             number or unit only when you must act on it. Say what a finding means for you only \
+             where the document itself gives that meaning or reason: add no cause, diagnosis, \
+             judgement or reassurance of your own (a few plain words that explain a medical term \
+             are not one), and if the document gives none, write no sentence about what it \
+             means. Then say what \
              you must do and when, only where the document tells you to, one instruction in \
              each sentence: every medicine that is new, changed, stopped or on hold (say \
              stopped or on hold), every test or visit with its date, and every rule to follow. \
@@ -1176,6 +1190,7 @@ mod tests {
         assert!(!prompt.contains("number and unit"));
         assert!(!prompt.contains("Say which, how much and when"));
         assert!(!prompt.contains("give every reason the document lists"));
+        assert!(!prompt.contains("found and what it means for you"));
         // Ben's plain-language goal stays for everything else: a term keeps its plain words.
         assert!(prompt.contains(SUMMARY_PLAIN) && prompt.contains(SUMMARY_WHOLE_RULES));
         assert_eq!(
