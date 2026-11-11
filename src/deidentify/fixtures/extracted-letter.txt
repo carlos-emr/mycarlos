@@ -1,0 +1,32 @@
+SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY
+Clinique médicale Fictive
+88, boul. René-Lévesque Ouest, app. 5
+Montréal (QC) H2X 1A1
+Tél. : 514-555-0199   Téléc. : 514-555-0198
+www.clinique-fictive.example.ca
+
+Monday, October 6, 2025
+
+Dr. Kowalski
+Hôpital Fictif de Testville
+
+Re: ŻÓŁĆ, Łukasz
+DDN : 1933-02-11
+NAS : 046 454 286
+Spécimen no : SP-2025-00417
+
+Dear Dr. Kowalski,
+
+Thank you for seeing Mr. Łukasz Żółć, a 92-year-old man followed here since 2019 for
+hypertension. His wife, 王小明, accompanied him. He has been on amlodipine 5 mg since
+March 2024 and his blood pressure today was 138/84. The echocardiogram of 03/04/2025
+showed a normal ejection fraction. Please see the discharge summary dated 17/10/25.
+
+He reports that his sister, Ewa Żółć, also has hypertension. Platelets 250 x10⁹/L.
+Dose 5 µg daily; results ≥ 10 are flagged.
+
+Further details are at https://portal.example.org/results?id=4471 and on
+clinique-fictive.example.ca/patients.
+
+Sincerely,
+Dre Anne-Marie Côté-Lévesque

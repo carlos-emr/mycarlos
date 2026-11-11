@@ -1,0 +1,11 @@
+# The model helper's llama.cpp (src/model_helper.rs): ggml's CPU code is built for AVX2, FMA and
+# F16C on x86_64 (2013 and later processors), while myCarlos itself keeps the baseline. The helper
+# refuses to load a model on a processor without them, and the model list's hardware check says
+# so first. llama-cpp-sys-2 passes GGML_ variables to CMake; other processors ignore them.
+[env]
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"
+GGML_BMI2 = "ON"
+GGML_SSE42 = "ON"

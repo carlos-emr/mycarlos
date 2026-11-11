@@ -11,8 +11,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VaultBridge, VaultSnapshot } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 // #67: every pressable target is at least 44px, and no text is under 14px.
 const vault = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [
     { id: "p1", displayName: "FAKE Avery", createdAtMs: 1 },
     { id: "p2", displayName: "FAKE Blake", createdAtMs: 2 },
@@ -46,8 +59,18 @@ const vault = {
 function renderLibrary() {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
-    snapshot: vi.fn().mockResolvedValue(vault),
+    snapshot: vi.fn().mockImplementation(async () => captureSnapshot(vault)),
     isLockedPdf: vi.fn().mockResolvedValue(false),
+    aiModelStatus: vi.fn().mockResolvedValue({ state: "notInstalled" }),
+    aiSummarize: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiExplain: vi
+      .fn()
+      .mockRejectedValue(new Error("FAKE: no model in this test")),
+    aiCancel: vi.fn().mockResolvedValue(undefined),
+    // People's details, and the person fields in Add profile.
+    updateProfileDetails: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultBridge;
   render(
     <VaultLibrary
@@ -245,6 +268,13 @@ describe("targets and text sizes in the app (#67)", () => {
           press(label === "desktop" ? new RegExp(`^${name}`) : name);
         open("Security");
         expectComfortable("Security");
+        // Add profile and Edit details are dialogs (Ben, 29 Oct).
+        press("Add profile");
+        expectComfortable("add profile");
+        press("Cancel");
+        press("Edit details for FAKE Avery");
+        expectComfortable("edit details");
+        press("Cancel");
         open("Preferences");
         expectComfortable("Preferences");
       });

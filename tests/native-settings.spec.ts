@@ -8,6 +8,8 @@ import AxeBuilder from "@axe-core/playwright";
 // commands do, and this covers what the screens offer.
 async function fakeNative(page: Page, status: "unlocked" | "locked") {
   await page.addInitScript((status) => {
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const snapshot = {
       profiles: [
         { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
@@ -25,7 +27,11 @@ async function fakeNative(page: Page, status: "unlocked" | "locked") {
         args?: { request?: { confirmation?: string } },
       ) => {
         if (command === "vault_status") return status;
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform: "android" };
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;

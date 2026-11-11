@@ -31,10 +31,10 @@ fn check_tracing_receipts(
         }
     }
     let _running = Running(&store.portal_check_running);
-    crate::portal_pickup::check_using(
+    crate::portal_pickup::check_asking_using(
         store,
         session,
-        &crate::portal_approval::ApprovalHttp,
+        &crate::portal_approval::ApprovalHttp::default(),
         |link, method, suffix, body, anchor, max, cancelled| {
             let receipt_post = method == "POST" && suffix.ends_with("/receipt");
             if let Some(target) = drop_delivery_id {
@@ -234,6 +234,8 @@ fn native_portal_real_https_flow() {
             "link",
             "request",
             "restart-request",
+            "poll",
+            "code",
             "check",
             "check-drop-receipt-reply",
             "inspect",
@@ -286,6 +288,19 @@ fn native_portal_real_https_flow() {
         match phase.as_str() {
             "request" => store.request_staff_approval(links[0].id, session)?,
             "restart-request" => store.restart_staff_approval(links[0].id, session)?,
+            // The automatic status check (#131): reads only.
+            "poll" => {
+                store.poll_staff_approval(links[0].id, session)?;
+            }
+            // Clinic code v1 (#141): the code the clinic emailed, from the
+            // environment only, never the config or the report.
+            "code" => {
+                let mut code = std::env::var("MYCARLOS_NATIVE_FLOW_APPROVAL_CODE")
+                    .expect("the emailed FAKE approval code is required");
+                let result = store.submit_approval_code(links[0].id, &code, session);
+                code.zeroize();
+                result?
+            }
             "check" => {
                 check_result = Some(check_tracing_receipts(
                     &store,

@@ -206,6 +206,24 @@ export function t(key: MessageKey, params?: Params): string {
   return translate(getLocale(), key, params);
 }
 
+/** Text in the language now in use with no bidi isolation around the
+ * inserted values. For text that is stored or sent as data, such as the notes
+ * in the placeholders of an anonymized text, where an invisible formatter
+ * character would be refused (AI-01) and would stop a placeholder matching. */
+export function tPlain(key: MessageKey, params?: Params): string {
+  return formatMessage(getLocale(), key, params ?? {}, false);
+}
+
+/** `tPlain` in a given language: the placeholders of an anonymized text are
+ * written in the document's language, not the app's (#215). */
+export function translatePlain(
+  locale: Locale,
+  key: MessageKey,
+  params?: Params,
+): string {
+  return formatMessage(locale, key, params ?? {}, false);
+}
+
 // --- numbers and dates ----------------------------------------------------
 
 export function formatNumber(
