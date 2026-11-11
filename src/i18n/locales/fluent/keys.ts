@@ -815,6 +815,7 @@ export const MESSAGE_KEYS = [
   "portal.refusedDocuments",
   "portal.tryAgain",
   "portal.tryAgainFor",
+  "portal.linkAnother",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
@@ -1965,6 +1966,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.refusedDocuments": "portal-refusedDocuments",
   "portal.tryAgain": "portal-tryAgain",
   "portal.tryAgainFor": "portal-tryAgainFor",
+  "portal.linkAnother": "portal-linkAnother",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
   "ai.summary.button": "ai-summary-button",
@@ -3130,6 +3132,7 @@ export interface MessageArgsByKey {
   "portal.refusedDocuments": { count: FluentArgument };
   "portal.tryAgain": undefined;
   "portal.tryAgainFor": { clinic: FluentArgument };
+  "portal.linkAnother": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;

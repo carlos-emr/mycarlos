@@ -1,6 +1,7 @@
 import { humanText, humanValue, visibleText } from "../test/humanText";
 import { LOCALES, resolveText, setLocaleOverride, translate } from "../i18n";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,6 +9,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { ANNOUNCE_DELAY_MS } from "./announce";
 import userEvent from "@testing-library/user-event";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1581,6 +1583,92 @@ describe("VaultLibrary person dialogs (Ben, 29 Oct)", () => {
         { text: "FAKE Riley was added.", dialogOpen: false },
       ]),
     );
+  });
+
+  it("holds a profile's result while Link another clinic, opened at once, is on screen (#145)", async () => {
+    // A linked clinic (FAKE), so Security's clinic panel offers Link another
+    // clinic.
+    const linked: VaultSnapshot = {
+      ...snapshot,
+      portalLinkingEnabled: true,
+      portalLinks: [
+        {
+          id: "fake-link",
+          portalBase: "https://portal.example.test/patient",
+          deviceName: "myCarlos on Windows",
+          profileId: null,
+          clinicName: "FAKE Clinic",
+          fingerprints: [],
+          incomplete: false,
+          deviceKeyId: "fake-device",
+          deviceFingerprint: "11".repeat(32),
+          approvalRequested: true,
+          clinicApproved: true,
+        },
+      ],
+    };
+    let added: (id: string) => void = () => {};
+    const createProfile = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          added = resolve;
+        }),
+    );
+    const { setNotice } = renderLibrary(linked, 0, {
+      createProfile,
+      connectPortal: vi.fn(),
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+    });
+    const said = watchNotices(setNotice as ReturnType<typeof vi.fn>);
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: humanText("Add profile"),
+    });
+    fireEvent.change(
+      within(dialog).getByLabelText(humanText("New profile name")),
+      { target: { value: "FAKE Riley" } },
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
+    await vi.waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
+    vi.useFakeTimers();
+    try {
+      await act(async () => added("profile-2"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      // Link another clinic opens before the result is due.
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: humanText("Link another clinic"),
+          }),
+        );
+      });
+      const clinic = screen.getByRole("dialog", {
+        name: humanText("Link another clinic"),
+      });
+      await act(async () => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS * 2));
+      // Not said while it is open: the page behind it, with the status
+      // line, is inert.
+      expect(said).toEqual([]);
+      await act(async () => {
+        fireEvent.click(
+          within(clinic).getByRole("button", { name: humanText("Cancel") }),
+        );
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await act(async () => vi.advanceTimersByTime(ANNOUNCE_DELAY_MS));
+      expect(said).toEqual([
+        { text: "FAKE Riley was added.", dialogOpen: false },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

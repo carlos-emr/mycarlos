@@ -1807,6 +1807,8 @@ portal-tryAgain = Try again
 
 portal-tryAgainFor = Try again for { $clinic }
 
+portal-linkAnother = Link another clinic
+
 ai-summary-button = Summary
 
 ai-summary-title = Summary in plain words

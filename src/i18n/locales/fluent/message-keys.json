@@ -814,6 +814,7 @@
   "portal.refusedDocuments",
   "portal.tryAgain",
   "portal.tryAgainFor",
+  "portal.linkAnother",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",

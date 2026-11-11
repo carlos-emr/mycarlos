@@ -1655,6 +1655,8 @@ portal-tryAgain = 重试
 
 portal-tryAgainFor = 重试：{ $clinic }
 
+portal-linkAnother = 关联另一家诊所
+
 ai-summary-button = 摘要
 
 ai-summary-title = 通俗易懂的摘要

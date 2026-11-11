@@ -11367,6 +11367,147 @@ describe("clinic connection operations", () => {
       .closest("form")!;
   }
 
+  it("opens Link another clinic over an inert page, and returns focus to it (#145)", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...clinicSnapshot, portalLinks: [connectedLink] }),
+      connectPortal: vi.fn(),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    // A clinic is linked: its card comes first, and the form is not on the page.
+    expect(
+      screen.getByRole("heading", { name: "FAKE First Clinic" }),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Portal HTTPS address")).toBeNull();
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await user.click(linkAnother);
+    const dialog = screen.getByRole("dialog", { name: "Link another clinic" });
+    expect(document.activeElement).toBe(
+      within(dialog).getByLabelText("Portal HTTPS address"),
+    );
+    // The page behind the dialog is inert; the dialog is not.
+    expect(document.querySelector(".app-body")).toHaveAttribute("inert");
+    expect(dialog.closest("[inert]")).toBeNull();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector(".app-body")).not.toHaveAttribute("inert");
+    expect(document.activeElement).toBe(linkAnother);
+    expect(bridge.connectPortal).not.toHaveBeenCalled();
+  });
+
+  it("gives focus back to Link another clinic when a link sent from its dialog is refused (#145)", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...clinicSnapshot, portalLinks: [connectedLink] }),
+      connectPortal: vi
+        .fn()
+        .mockRejectedValue({ code: "portal_link_code_rejected" }),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await user.click(linkAnother);
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector(".app-body")).not.toHaveAttribute("inert");
+    expect(
+      await screen.findByText(
+        "The portal did not accept that code. Make a new linking code in your patient portal.",
+      ),
+    ).toBeVisible();
+    expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    await waitFor(() => expect(linkAnother).toBeEnabled());
+    await waitFor(() => expect(document.activeElement).toBe(linkAnother));
+  });
+
+  it("gives focus to the new clinic after a link sent from the dialog, which then opens empty (#145)", async () => {
+    const second = {
+      ...connectedLink,
+      id: "fake-clinic-link-2",
+      clinicName: "FAKE Second Clinic",
+      portalBase: "https://second.example.test/patient",
+    };
+    let current: VaultSnapshot = {
+      ...clinicSnapshot,
+      portalLinks: [connectedLink],
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      connectPortal: vi.fn().mockImplementation(async () => {
+        current = { ...current, portalLinks: [connectedLink, second] };
+        return { link: second, approvalError: null };
+      }),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://second.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const heading = await screen.findByRole("heading", {
+      name: "FAKE Second Clinic",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    // Once the link is finished the button is usable again, and focus stays
+    // on the new clinic.
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await waitFor(() => expect(linkAnother).toBeEnabled());
+    expect(document.activeElement).toBe(heading);
+    await user.click(linkAnother);
+    expect(screen.getByLabelText("Portal HTTPS address")).toHaveValue("");
+  });
+
   it("keeps local records usable and shares admission across clinic-view remounts", async () => {
     let current = clinicSnapshot;
     const pending = pendingConnection();
@@ -11844,13 +11985,23 @@ describe("clinic connection operations", () => {
       ),
     ).toBeVisible();
     // The result can render before clinic admission is released. Wait for
-    // the next attempt to be usable before typing its code.
+    // the next attempt to be usable before typing its code: a clinic is
+    // linked now, so it starts from "Link another clinic" (#145).
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Connect and request approval" }),
+        screen.getByRole("button", { name: "Link another clinic" }),
       ).toBeEnabled(),
     );
     // An error that arrives while a picker is open waits for its result.
+    // The form opens from "Link another clinic", empty for the next clinic's
+    // address.
+    await user.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
     await user.type(
       screen.getByLabelText("Linking code"),
       "01234567-89ABCDEFGK",
@@ -12091,7 +12242,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       screen.queryByText("Clinic operation in progress…"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Connect and request approval" }),
+      screen.getByRole("button", { name: "Link another clinic" }),
     ).toBeEnabled();
     await pass(3 * 60_000);
     expect(
@@ -12181,7 +12332,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       });
       await openClinicView(bridge);
       expect(
-        screen.getByRole("button", { name: "Connect and request approval" }),
+        screen.getByRole("button", { name: "Link another clinic" }),
       ).toBeEnabled();
       // The focused control is disabled once the vault reads read-only:
       // focus goes to the device's heading, not to the page.
@@ -12199,7 +12350,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       // Read again, once: the vault on screen is read-only now.
       expect(bridge.snapshot).toHaveBeenCalledTimes(snapshots + 1);
       expect(
-        screen.getByRole("button", { name: "Connect and request approval" }),
+        screen.getByRole("button", { name: "Link another clinic" }),
       ).toBeDisabled();
       expect(
         screen.getByRole("button", { name: "Retry saved approval request" }),
@@ -14024,10 +14175,11 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       { name: "Shared with me", level: 1 },
     ],
     [
-      "a box of the connect form",
+      "Link another clinic",
       async () => {
         await click(screen.getByRole("button", { name: "Security" }));
-        return screen.getByLabelText("Linking code");
+        // A clinic is linked: the form is behind this button (#145).
+        return screen.getByRole("button", { name: "Link another clinic" });
       },
       { name: "Clinic documents", level: 2 },
     ],

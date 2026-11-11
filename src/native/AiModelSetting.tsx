@@ -147,6 +147,10 @@ export function AiModelSetting({
   const [note, setNote] = useState<
     "ai.model.stillDownloading" | "ai.model.stillChecking" | null
   >(null);
+  // The window may not listen for the app's events (a missing capability):
+  // progress then comes from asking the native side instead.
+  const [eventsRefused, setEventsRefused] = useState(false);
+  const pollInFlight = useRef(false);
   const mounted = useRef(true);
   const activityRevision = useRef(0);
   const progressObserved = useRef(false);
@@ -276,7 +280,10 @@ export function AiModelSetting({
         // Older native builds omit index; an own download still knows its row.
         index: event.payload.index ?? current?.index ?? null,
       }));
-    }).catch(() => () => undefined);
+    }).catch(() => {
+      if (live) setEventsRefused(true);
+      return () => undefined;
+    });
     return () => {
       live = false;
       mounted.current = false;
@@ -383,7 +390,9 @@ export function AiModelSetting({
         setNote(null);
       }
     });
+    // Reattach to a running copy whether or not the listener could register.
     void stop
+      .catch(() => undefined)
       .then(async () => {
         if (!live || !mounted.current || own.current) return;
         const revision = activityRevision.current;
@@ -406,6 +415,41 @@ export function AiModelSetting({
       void stop.then((unlisten) => unlisten()).catch(() => undefined);
     };
   }, []);
+
+  // Without events, ask about the running copy each second while one runs, so
+  // its progress never goes unseen. Its own call still ends it as usual.
+  const polling = eventsRefused && progress !== null;
+  useEffect(() => {
+    if (!polling) return;
+    const timer = window.setInterval(() => {
+      // A slow answer is not asked over again, so an older one never lands last.
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
+      void invoke<ModelAddNow | null>("ai_model_add_active")
+        .then((now) => {
+          if (!mounted.current) return;
+          if (now)
+            setProgress((current) =>
+              current
+                ? {
+                    done: now.done,
+                    total: now.total,
+                    index: now.index ?? current.index ?? null,
+                  }
+                : current,
+            );
+          else if (!own.current) {
+            setProgress(null);
+            void reloadRef.current(true);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          pollInFlight.current = false;
+        });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [polling]);
 
   const run = (
     command: "ai_model_add_picked" | "ai_model_download",

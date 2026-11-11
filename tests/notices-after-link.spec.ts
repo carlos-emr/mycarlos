@@ -112,9 +112,13 @@ test("Not now leaves both off, and the step is not offered again", async ({
   const boxes = await preferencesBoxes(page);
   await expect(boxes.notices).not.toBeChecked();
   await expect(boxes.checks).not.toBeChecked();
-  // A second clinic's link offers nothing.
+  // A second clinic's link offers nothing. A clinic is linked now, so the
+  // form opens from Link another clinic (#145); sending closes it.
   await sidebar(page)
     .getByRole("button", { name: en("security.title"), exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: en("portal.linkAnother"), exact: true })
     .click();
   await page
     .getByLabel(en("portal.address"), { exact: true })

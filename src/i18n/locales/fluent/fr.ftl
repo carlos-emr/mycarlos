@@ -1843,6 +1843,8 @@ portal-tryAgain = Réessayer
 
 portal-tryAgainFor = Réessayer pour { $clinic }
 
+portal-linkAnother = Associer une autre clinique
+
 ai-summary-button = Résumé
 
 ai-summary-title = Résumé en mots simples
