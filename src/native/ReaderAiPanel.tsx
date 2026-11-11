@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   formatDate,
   getLocale,
@@ -110,6 +116,9 @@ export function ReaderAiPanel({
   const wholeRef = useRef<HTMLDivElement | null>(null);
   const unfoldRef = useRef<HTMLButtonElement | null>(null);
   const backToShown = useRef(false);
+  // Whether "Show the whole summary" has the focus: a window that grows
+  // removes it, and the focus then goes to the sentence shown, not the page.
+  const unfoldFocused = useRef(false);
   // Whole minutes the answer has been working for, shown from the first
   // (#72: a long document's summary may take up to 20 minutes).
   const [workingMinutes, setWorkingMinutes] = useState(0);
@@ -227,6 +236,9 @@ export function ReaderAiPanel({
           if (!live.current) return;
           setFromKept(true);
           setSummary(found);
+          // A new summary: no sentence of it is shown yet.
+          setShownIndex(null);
+          setUnfolded(false);
           return;
         }
         // Closed while the kept answers were looked up: nothing is read.
@@ -254,6 +266,8 @@ export function ReaderAiPanel({
         if (!live.current) return;
         setFromKept(false);
         setSummary(result);
+        setShownIndex(null);
+        setUnfolded(false);
         setReadyFor("summary");
         await keep(result);
       })
@@ -289,27 +303,38 @@ export function ReaderAiPanel({
       .finally(() => live.current && setWorking(false));
   };
 
+  // Never while an answer is being written: its working line and the status
+  // a screen reader hears ("The summary is ready.") stay in view.
   const folded =
     quoteShown &&
     smallWindow &&
     !unfolded &&
+    !working &&
     tool === "summary" &&
     summary !== null &&
     shownIndex !== null;
   // Focus inside the summary when it folds (the window got smaller) goes to
   // the button that unfolds it, never to the page. A "Show in document"
   // press then moves it on to the marked words (the reader's own effect,
-  // which runs after this one).
-  useEffect(() => {
+  // which runs after this one). Before paint, while the focused element is
+  // still the active one in every webview (WebKit included).
+  useLayoutEffect(() => {
     const active = document.activeElement;
     if (folded && active && wholeRef.current?.contains(active))
       unfoldRef.current?.focus();
   }, [folded]);
-  // Unfolded on request: back to the sentence whose words are shown.
-  useEffect(() => {
-    if (folded || !backToShown.current) return;
+  // Unfolded: back to the sentence whose words are shown, after a press of
+  // "Show the whole summary", or when the window grew while that button had
+  // the focus and the focus fell to the page with it.
+  useLayoutEffect(() => {
+    if (folded) return;
+    const active = document.activeElement;
+    const lost = !active || active === document.body;
+    const back = backToShown.current || (unfoldFocused.current && lost);
     backToShown.current = false;
-    document.getElementById(`reader-ai-show-${shownIndex}`)?.focus();
+    unfoldFocused.current = false;
+    if (back && shownIndex !== null)
+      document.getElementById(`reader-ai-show-${shownIndex}`)?.focus();
   }, [folded, shownIndex]);
   const unfold = () => {
     backToShown.current = true;
@@ -339,6 +364,11 @@ export function ReaderAiPanel({
             aria-controls="reader-ai-whole"
             aria-describedby="reader-ai-folded"
             onClick={unfold}
+            onFocus={() => (unfoldFocused.current = true)}
+            // Focus that moved on clears it; a button taken away keeps it.
+            onBlur={(event) => {
+              if (event.relatedTarget) unfoldFocused.current = false;
+            }}
           >
             {t("ai.summary.showWhole")}
           </button>

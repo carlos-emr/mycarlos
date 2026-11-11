@@ -1562,6 +1562,90 @@ describe("Show in document also marks the page picture (#292)", () => {
     }
   });
 
+  it("does not fold while Summarize again is working, and forgets the sentence shown once the new summary is in", async () => {
+    await browser.viewport(560, 760);
+    try {
+      // A kept summary whose sentence has a place, then a re-run that waits.
+      const start = pageTexts[1].indexOf("Repeat in 2 weeks");
+      const model = repeat();
+      const answer = model.summarize;
+      let release: () => void = () => undefined;
+      model.summarize = (...args: Parameters<typeof answer>) =>
+        new Promise<Awaited<ReturnType<typeof answer>>>((resolve) => {
+          release = () => resolve(answer(...args));
+        });
+      const { kept } = fakeKept(
+        [
+          {
+            input: { tool: "summary", lang: "en" },
+            content: JSON.stringify({
+              tool: "summary",
+              sentences: [
+                {
+                  text: "FAKE: kept, repeat the test.",
+                  quote: "Repeat in 2 weeks",
+                  source: {
+                    page: 1,
+                    start,
+                    end: start + "Repeat in 2 weeks".length,
+                  },
+                },
+              ],
+              model: { name: "FAKE older model", sha256: "cd".repeat(32) },
+              lang: "en",
+              createdAt: Date.UTC(2026, 9, 1),
+              partial: false,
+              lastPage: 2,
+              pagesMissing: false,
+            }),
+          },
+        ],
+        model,
+      );
+      renderReader(model, { kept, pageBoxes: oneBox() });
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      await screen.findByText("FAKE: kept, repeat the test.");
+      await user.click(screen.getByRole("button", { name: "Summarize again" }));
+      // While it works, the old sentence's words can still be shown, but
+      // the panel stays whole: the working line and the status stay heard.
+      await user.click(
+        screen.getByRole("button", { name: "Show in document" }),
+      );
+      await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
+      expect(unfoldButton()).toBeNull();
+      expect(document.getElementById("reader-ai-whole")).toBeVisible();
+      act(() => release());
+      // The new summary is in and said; no fold with the old sentence's place.
+      await screen.findByText("FAKE: repeat the test in two weeks.");
+      await waitFor(() => expect(status()).toContain("The summary is ready."));
+      expect(unfoldButton()).toBeNull();
+      expect(document.activeElement).not.toBe(document.body);
+    } finally {
+      await browser.viewport(1100, 760);
+    }
+  });
+
+  it("gives the focus to the sentence shown when the window grows while the fold's button has it", async () => {
+    try {
+      await browser.viewport(560, 760);
+      await show({ pageBoxes: oneBox() });
+      const unfold = await screen.findByRole("button", {
+        name: "Show the whole summary",
+      });
+      act(() => unfold.focus());
+      await browser.viewport(1100, 760);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Show in document" }),
+        ).toHaveFocus(),
+      );
+    } finally {
+      await browser.viewport(1100, 760);
+    }
+  });
+
   it("marks the text only where the boxes cannot be asked for", async () => {
     await show({});
     const mark = await waitFor(() => {
