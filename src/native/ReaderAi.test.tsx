@@ -1305,7 +1305,8 @@ describe("a document longer than the model reads at a time (#301)", () => {
     expect(loadText).not.toHaveBeenCalled();
     expect(model.calls).toHaveLength(0);
     // Summarizing again is a new run: it asks.
-    await user.click(screen.getByRole("button", { name: "Summarize again" }));
+    const again = screen.getByRole("button", { name: "Summarize again" });
+    await user.click(again);
     expect(await screen.findByText(warning)).toBeVisible();
     await waitFor(() =>
       expect(
@@ -1314,6 +1315,16 @@ describe("a document longer than the model reads at a time (#301)", () => {
         }),
       ).toHaveFocus(),
     );
+    expect(model.calls).toHaveLength(0);
+    // Cancel now leaves the summary on screen and only the question goes;
+    // the focus goes back to Summarize again.
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(warning)).toBeNull();
+    expect(screen.getByText("FAKE: kept earlier.")).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Summary in plain words" }),
+    ).toBeVisible();
+    expect(again).toHaveFocus();
     expect(model.calls).toHaveLength(0);
   });
 
@@ -1343,16 +1354,90 @@ describe("a document longer than the model reads at a time (#301)", () => {
     expect(model.calls).toHaveLength(0);
   });
 
-  it("asks in every language the app speaks", async () => {
+  it("asks in every language the app speaks, one page and several", () => {
+    // What each language says for one page, for the start of page 1, and for
+    // 1, 2 and 5 pages in the settings line (FAKE numbers; visible text, the
+    // bidi isolation marks aside).
+    const expected: Record<
+      (typeof LOCALES)[number],
+      { one: [string, string]; start: [string, string]; reads: string[] }
+    > = {
+      en: {
+        one: ["about page 1 of 5", "Summarize page 1"],
+        start: ["the start of page 1", "Summarize the start of page 1"],
+        reads: [
+          "about 1 page at a time",
+          "about 2 pages at a time",
+          "about 5 pages at a time",
+        ],
+      },
+      fr: {
+        one: ["environ la page 1 sur 5", "Résumer la page 1"],
+        start: ["le début de la page 1", "Résumer le début de la page 1"],
+        reads: [
+          "environ 1 page à la fois",
+          "environ 2 pages à la fois",
+          "environ 5 pages à la fois",
+        ],
+      },
+      es: {
+        one: ["aproximadamente la página 1 de 5", "Resumir la página 1"],
+        start: [
+          "el comienzo de la página 1",
+          "Resumir el comienzo de la página 1",
+        ],
+        reads: [
+          "alrededor de 1 página a la vez",
+          "alrededor de 2 páginas a la vez",
+          "alrededor de 5 páginas a la vez",
+        ],
+      },
+      pl: {
+        one: ["stronę 1 z 5", "Podsumuj stronę 1"],
+        start: ["początek strony 1", "Podsumuj początek strony 1"],
+        reads: ["około 1 strony", "około 2 stron", "około 5 stron"],
+      },
+      "pt-BR": {
+        one: ["aproximadamente a página 1 de 5", "Resumir a página 1"],
+        start: ["o início da página 1", "Resumir o início da página 1"],
+        reads: [
+          "cerca de 1 página por vez",
+          "cerca de 2 páginas por vez",
+          "cerca de 5 páginas por vez",
+        ],
+      },
+      "zh-CN": {
+        one: ["第 1 页（共 5 页）", "为第 1 页生成摘要"],
+        start: ["第 1 页的开头部分", "为第 1 页的开头部分生成摘要"],
+        reads: ["约可读 1 页", "约可读 2 页", "约可读 5 页"],
+      },
+      "zh-TW": {
+        one: ["第 1 頁（共 5 頁）", "為第 1 頁產生摘要"],
+        start: ["第 1 頁的開頭部分", "為第 1 頁的開頭部分產生摘要"],
+        reads: ["約可讀 1 頁", "約可讀 2 頁", "約可讀 5 頁"],
+      },
+    };
     for (const locale of LOCALES) {
+      const say = (key: Parameters<typeof translate>[1], params = {}) =>
+        visibleText(translate(locale, key, params));
+      const { one, start, reads } = expected[locale];
       expect(
-        translate(locale, "ai.summary.tooLong", { last: 2, total: 5 }),
+        say("ai.summary.tooLong", { last: 1, total: 5 }),
         locale,
-      ).toMatch(/2[^]*5/);
-      expect(
-        translate(locale, "ai.summary.readPages", { last: 2 }),
-        locale,
-      ).toMatch(/2/);
+      ).toContain(one[0]);
+      expect(say("ai.summary.readPages", { last: 1 }), locale).toBe(one[1]);
+      expect(say("ai.summary.tooLong", { last: 2, total: 5 }), locale).toMatch(
+        /2[^]*5/,
+      );
+      expect(say("ai.summary.readPages", { last: 2 }), locale).toMatch(/2/);
+      expect(say("ai.summary.tooLongStart"), locale).toContain(start[0]);
+      expect(say("ai.summary.readStart"), locale).toBe(start[1]);
+      [1, 2, 5].forEach((pages, index) =>
+        expect(
+          say("ai.model.reads", { pages, characters: 19000 }),
+          `${locale} ${pages}`,
+        ).toContain(reads[index]),
+      );
     }
   });
 });

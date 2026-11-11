@@ -1853,11 +1853,11 @@ ai-summary-partial = Este resumo cobre apenas o início do documento: páginas 1
 
 ai-summary-tooLong =
     { $last ->
-    [one] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler mais ou menos a página 1 de { $total }.
-   *[other] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler mais ou menos as páginas 1 a { $last } de { $total }.
+    [one] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente a página 1 de { $total }.
+   *[other] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente as páginas 1 a { $last } de { $total }.
     }
 
-ai-summary-tooLongStart = Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler só mais ou menos o início da página 1.
+ai-summary-tooLongStart = Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler apenas aproximadamente o início da página 1.
 
 ai-summary-tooLongAfter = O resumo dirá quais páginas foram lidas.
 
