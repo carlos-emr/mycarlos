@@ -428,16 +428,23 @@ document says so. Do not reassure and do not warn. Do not add a diagnosis, do no
 advice, and do not suggest changing any medicine. If the document gives instructions, you may \
 repeat them as the document's instructions.";
 
+/// Part (a) of the 11 Nov variant design: what a summary says first, then what it says next.
+/// Kept in this one place, as it may be revised once the instructions-first run (E3) is scored.
+const SUMMARY_ORDER: &str =
+    "First say what the document found: the main problem or diagnosis and the key results, each \
+     with its number and unit. Then say what the patient must do and when.";
+
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
-         sentences (fewer if the document is short). Start with the most important point; put \
-         one fact in each sentence. For each sentence, copy into \"quote\" one continuous piece \
-         of the document, 3 to 25 words, exactly as written (same spelling, numbers, accents and \
-         punctuation, no '...' and no joined pieces), in the document's own language. If you \
-         cannot find such a piece for a sentence, leave that sentence out.\n\nReply only with \
-         JSON in this shape: {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
+         sentences (fewer if the document is short). {SUMMARY_ORDER} Put one fact in each \
+         sentence. For each sentence, copy into \"quote\" one continuous piece of the document, 3 \
+         to 25 words, exactly as written (same spelling, numbers, accents and punctuation, no \
+         '...' and no joined pieces), in the document's own language. If you cannot find such a \
+         piece for a sentence, leave that sentence out.\n\n\
+         Reply only with JSON in this shape: \
+         {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
          Document:\n<<<\n{SLOT}\n>>>"
     )
 }
@@ -985,6 +992,26 @@ mod tests {
             CONTEXT_TOKENS as usize - 300 - SUMMARY_TOKENS - PROMPT_MARGIN
         );
         assert_eq!(document_budget(9_000, SUMMARY_TOKENS), 0);
+    }
+
+    #[test]
+    fn p2_says_what_was_found_first_then_what_to_do() {
+        // P2 = E2 + part (a) only (SUMMARY_ORDER), word for word as the design note gives it.
+        let prompt = summary_prompt("English", MAX_SENTENCES);
+        let (before, after) = prompt.split_once(SLOT).unwrap();
+        assert_eq!(
+            before,
+            "Summarize this document for the patient in English, in at most 10 short sentences \
+             (fewer if the document is short). First say what the document found: the main \
+             problem or diagnosis and the key results, each with its number and unit. Then say \
+             what the patient must do and when. Put one fact in each sentence. For each \
+             sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 words, \
+             exactly as written (same spelling, numbers, accents and punctuation, no '...' and \
+             no joined pieces), in the document's own language. If you cannot find such a piece \
+             for a sentence, leave that sentence out.\n\nReply only with JSON in this shape: \
+             {\"sentences\": [{\"text\": \"...\", \"quote\": \"...\"}]}\n\nDocument:\n<<<\n"
+        );
+        assert_eq!(after, "\n>>>");
     }
 
     #[test]
