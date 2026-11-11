@@ -148,8 +148,9 @@ describe("the document reader", () => {
       name: humanText("Page 1 of 2. The page's text follows."),
     });
     expect(picture).toHaveAttribute("src", PNG);
-    // Fitted to the reader, the page does not scroll sideways.
-    const area = picture.parentElement!;
+    // Fitted to the reader, the page does not scroll sideways. The page's own
+    // scroll area: the picture may sit in a wrapper of its own size (#292).
+    const area = picture.closest<HTMLElement>(".native-reader-page")!;
     expect(area.scrollWidth).toBeLessThanOrEqual(area.clientWidth);
     const style = getComputedStyle(area);
     const available = Math.floor(
@@ -866,7 +867,7 @@ describe("the document reader", () => {
       await waitFor(() => expect(viewPage).toHaveBeenCalledTimes(2));
       const current = await screen.findByRole("img", { name });
       expect(current.getBoundingClientRect().width).toBeLessThan(fittedWidth);
-      const area = current.parentElement!;
+      const area = current.closest<HTMLElement>(".native-reader-page")!;
       const style = getComputedStyle(area);
       const available = Math.floor(
         area.clientWidth -
