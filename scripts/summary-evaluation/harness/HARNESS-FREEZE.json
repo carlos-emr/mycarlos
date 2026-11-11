@@ -1,9 +1,9 @@
 {
- "version": "5.3",
- "status": "RESCORE LINE: scores the 10-11 Nov runs (B0, B0R, E1, E4, L1, L2, ...). The DRAFT next-freeze branch (contacts, multi-page) is numbered 6 to keep the two apart.",
- "frozen_utc": "2026-11-11T02:36:29+00:00",
- "rule_version": 5,
- "scorer_sha256": "19af180dcf20f4577a088d4f870b2870ff72260045b661e86566047bfd7962b8",
+ "version": "6",
+ "status": "RESCORE LINE, rule 6: scores the 10-11 Nov runs (B0, B0R, E1, E4, E2, E3, L1, L2, ...). The DRAFT next-freeze branch is renumbered 7 so the two cannot be confused.",
+ "frozen_utc": "2026-11-11T03:26:05+00:00",
+ "rule_version": 6,
+ "scorer_sha256": "29b0e79f73e26f4b28aed7e373c8e203de612ce0170126455d533a3e69744d7b",
  "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
  "synthetic_only": true,
  "documents_count": 18,
@@ -53,6 +53,11 @@
    "version": "5.3",
    "frozen_utc": "2026-11-11T02:36:29+00:00",
    "reason": "made after round 2b's review: score and noise check each run's pagesSha256 against the page text they use (--pages, the folder the runs read, or the current document) and refuse a mismatch; quotes, sheet contexts and the reviewer's docs come from that one text. Facts, spans and traps unchanged; the documents' later telephone-line change stays for future runs."
+  },
+  {
+   "version": "6",
+   "frozen_utc": "2026-11-11T03:26:05+00:00",
+   "reason": "rule 6 of the rescore line: Ben's decisions (popup, about 03:20Z 11 Nov), made after B0, E1 and E4 had been scored and reviewed (E2 had finished, not scored). Check 1: a variant's wrong or unsupported sentences on decision documents not above the baseline's, and no reviewer-marked unsafe sentence (any document) the baseline does not also write; the baseline's own unsafe sentences reported apart. Check 5: the median wall time per answered decision document at most 180 s and no new failure. The review sheet gains an 'unsafe' column. Facts, credit and documents unchanged."
   }
  ],
  "documents": {

@@ -58,9 +58,10 @@ MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
 # The decision rule (HARNESS.md): its version and its fixed numbers.
-RULE_VERSION = 5
+RULE_VERSION = 6
 LOCATED_POINTS = 2
-TIME_RATIO = 1.3
+# Rule 6 (Ben, 11 Nov): a summary may take up to about 3 minutes: the median per document.
+TIME_LIMIT_MS = 180_000
 SCREENS = {"SOURCE_NOT_FOUND", "NUMBER_NOT_IN_QUOTE", "NEGATION_MISMATCH", "HEDGE_DROPPED",
            "CERTAINTY_ADDED", "EXPERIENCER", "ACTOR_SHIFT", "ADVICE_OR_JUDGEMENT", "LANGUAGE",
            "QUANTITY_MISMATCH", "TRAP"}
@@ -663,7 +664,8 @@ def quote_context(doc, quote, width=300):
             + "⟧ " + flat(text[end:end + width]) + ("…" if end + width < len(text) else ""))
 
 
-SHEET_FIELDS = ["id", "document", "language", "sentence", "quote", "context", "fact_it_may_state", "verdict", "note"]
+SHEET_FIELDS = ["id", "document", "language", "sentence", "quote", "context", "fact_it_may_state", "verdict", "unsafe",
+                "note"]
 KEY_FIELDS = ["id", "run", "doc", "sentence", "why"]
 
 
@@ -692,7 +694,7 @@ def review_sheet(runs, docs, all_scores):
                 rows[item["id"]] = dict(id=item["id"], document=doc_id, language=docs[doc_id].get("lang", ""),
                                         sentence=sentence["text"], quote=sentence.get("quote", ""),
                                         context=quote_context(docs[doc_id], sentence.get("quote", "")),
-                                        fact_it_may_state=" | ".join(carried), verdict="", note="")
+                                        fact_it_may_state=" | ".join(carried), verdict="", unsafe="", note="")
     return [rows[i] for i in sorted(rows)], key
 
 
@@ -709,6 +711,7 @@ class Verdicts(dict):
         super().__init__(*args, **kwargs)
         self.states = {}
         self.states_all = set()
+        self.unsafe = set()
 
 
 STATES_NOTE = re.compile(r"\bstates?\s*:\s*(all\b|\d+(?:\s*,\s*\d+)*)", re.IGNORECASE)
@@ -733,6 +736,17 @@ def stated_facts(row):
     if not places or not all(1 <= n <= len(listed) for n in places):
         raise ValueError(f"row {row.get('id') or row.get('row')}: 'states:' names a place the row does not list")
     return frozenset(listed[n - 1] for n in places)
+
+
+UNSAFE_YES = {"yes", "y", "unsafe", "true", "1", "mild"}
+
+
+def unsafe_of(row):
+    """Whether a sheet row's `unsafe` column marks the sentence unsafe for a patient ("yes"; "mild" counts too)."""
+    value = (row.get("unsafe") or "").strip().lower()
+    if value and value not in UNSAFE_YES | {"no", "n", "0", "false"}:
+        raise ValueError(f"unknown unsafe value {value!r}: use yes or leave it blank")
+    return value in UNSAFE_YES
 
 
 def read_review(path, runs, key_path=None):
@@ -765,8 +779,10 @@ def read_review(path, runs, key_path=None):
         return sentence_key(doc, sentences[index])
     if sheet and "run" in sheet[0] and "quote" not in sheet[0]:
         for row in sheet:
-            put(sentence_of(row["run"], row["doc"], int(row["sentence"])), verdict_of(row),
-                f"{row['run']} {row['doc']} {row['sentence']}")
+            skey = sentence_of(row["run"], row["doc"], int(row["sentence"]))
+            if unsafe_of(row):
+                found.unsafe.add(skey)
+            put(skey, verdict_of(row), f"{row['run']} {row['doc']} {row['sentence']}")
         return found
     key = {}
     if key_path:
@@ -784,6 +800,9 @@ def read_review(path, runs, key_path=None):
         elif rid != sentence_id(skey):
             raise ValueError(f"{path}: row {rid} does not match its sentence; a sheet with other ids needs its key")
         verdict = verdict_of(row)
+        if unsafe_of(row):
+            # Unsafe for a patient whatever the verdict (rule 6): kept by sentence, like the verdict.
+            found.unsafe.add(skey)
         if verdict == "correct" and len(listed_facts(row)) > 1:
             # Several facts listed: credit goes only to those the note names; none named, not reviewed yet.
             stated = stated_facts(row)
@@ -812,6 +831,8 @@ def prefill(sheet_path, other_path, runs, key_path, out_path):
         skey = (row["document"], normalized(row.get("sentence", "")), normalized(row.get("quote", "")))
         if row["id"] != sentence_id(skey):
             raise ValueError(f"{sheet_path}: row {row['id']} does not match its sentence")
+        if skey in verdicts.unsafe:
+            row["unsafe"] = "yes"
         if verdicts.get(skey):
             row["verdict"] = verdicts[skey]
             filled += 1
@@ -994,17 +1015,26 @@ def three_way(best, worst):
     return True if worst else False if not best else None
 
 
-def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_actions=0, require_gain=False):
-    """The written-down rule, version 2 (HARNESS.md): PASS only if every check holds; PENDING
-    while held facts or flagged sentences wait for the review. Only documents in the decision
-    count (PR 295's holdout cases never do)."""
+def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_actions=0, require_gain=False,
+           own_unsafe=()):
+    """The written-down rule (HARNESS.md; version 6 for checks 1 and 5): PASS only if every check
+    holds; PENDING while held facts or sentences on the sheet wait for the review. Only documents in
+    the decision count (PR 295's holdout cases never do), except that an unsafe sentence counts on
+    any document. `own_unsafe`: the variant's sentences a reviewer marked unsafe that the baseline
+    did not also write."""
     checks = []
-    if summary["reviewed_wrong"] is None:
-        checks.append(("no reviewed wrong statement", None))
-    elif summary["reviewed_wrong"]:
-        checks.append(("no reviewed wrong statement", False))
+    mine, base = summary["reviewed_wrong"], base_summary["reviewed_wrong"]
+    if mine is None or base is None:
+        checks.append(("wrong or unsupported not above the baseline's", None))
     else:
-        checks.append(("no reviewed wrong statement", None if summary["unreviewed"] else True))
+        # A sentence both runs wrote counts on both sides. Rows still unreviewed could only add to a count.
+        checks.append((f"wrong or unsupported not above the baseline's ({mine} vs {base})",
+                       three_way(mine <= base + base_summary["unreviewed"], mine + summary["unreviewed"] <= base)))
+    if own_unsafe:
+        checks.append((f"no unsafe sentence the baseline does not also write ({len(own_unsafe)})", False))
+    else:
+        checks.append(("no unsafe sentence the baseline does not also write (0)",
+                       None if summary.get("unreviewed_any") else True))
     sure, maybe = [], []
     for doc_id, base in base_scores.items():
         if not base.get("decision", True) or not base.get("present") or base.get("error"):
@@ -1038,11 +1068,12 @@ def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_act
     else:
         checks.append((f"quotes found within {LOCATED_POINTS} points",
                        summary["located_pct"] >= base_summary["located_pct"] - LOCATED_POINTS))
-    slower = (summary["median_wall_ms"] is None or base_summary["median_wall_ms"] is None
-              or summary["median_wall_ms"] > TIME_RATIO * base_summary["median_wall_ms"])
+    # Rule 6 (Ben, 11 Nov): the median time per answered decision document at most 180 s, and no
+    # decision document failing (a time-limit failure included) that the baseline answered.
+    slower = summary["median_wall_ms"] is None or summary["median_wall_ms"] > TIME_LIMIT_MS
     new_failures = [d for d, s in scores.items() if s.get("decision", True)
                     and s.get("error") and not base_scores.get(d, {}).get("error")]
-    checks.append((f"median time within {round((TIME_RATIO - 1) * 100)}%, no new failure",
+    checks.append((f"median time per document at most {TIME_LIMIT_MS // 1000} s, no new failure",
                    not slower and not new_failures))
     verdict = "FAIL" if any(ok is False for _, ok in checks) else "PENDING" if any(ok is None for _, ok in checks) else "PASS"
     return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures)
@@ -1084,7 +1115,7 @@ def scoring_identity(docs, margins):
     canonical = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")
     documents = {doc_id: hashlib.sha256(canonical(doc)).hexdigest() for doc_id, doc in sorted(docs.items())}
     thresholds = dict(rule_version=RULE_VERSION, min_overlap=MIN_OVERLAP, short_option=SHORT_OPTION,
-                      review_sample=REVIEW_SAMPLE, located_points=LOCATED_POINTS, time_ratio=TIME_RATIO,
+                      review_sample=REVIEW_SAMPLE, located_points=LOCATED_POINTS, time_limit_ms=TIME_LIMIT_MS,
                       **margins)
     parts = dict(scorer=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                  documents=hashlib.sha256(canonical(documents)).hexdigest(),
@@ -1119,15 +1150,21 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
                  " (capped: stopped at the token cap; cut: the end was not read; gap: the last page read after a gap;"
                  " trap: sentences that fell into a listed trap). Holdout documents are never in the decision.")
     lines.append("")
-    lines.append("| Run | must-haves | held | actions | quotes found | flags | traps | median s | capped | cut | gap | failed | reviewed wrong | verdict |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Run | must-haves | held | actions | quotes found | flags | traps | median s | capped | cut | gap | failed | reviewed wrong | unsafe | verdict |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for label, summary, decision in zip(labels, summaries, decisions):
         wrong = "not reviewed" if summary["reviewed_wrong"] is None else summary["reviewed_wrong"]
         median = "" if summary["median_wall_ms"] is None else f"{summary['median_wall_ms'] / 1000:.0f}"
         lines.append(f"| {label} | {summary['required_found']}/{summary['required_total']} | {summary['required_held']} | "
                      f"{summary['action_found']}/{summary['action_total']} | {summary['located_pct']}% | "
                      f"{summary['flags']} | {summary['traps']} | {median} | {summary['capped']} | {summary['cut']} | "
-                     f"{summary['gap']} | {summary['failed']} | {wrong} | {decision['verdict'] if decision else 'baseline'} |")
+                     f"{summary['gap']} | {summary['failed']} | {wrong} | {summary.get('unsafe', 0)} | "
+                     f"{decision['verdict'] if decision else 'baseline'} |")
+    if summaries and summaries[0].get("unsafe"):
+        lines.append("")
+        lines.append(f"The baseline's own unsafe sentences ({summaries[0]['unsafe']}; a variant is not charged for "
+                     "writing the same sentence):")
+        lines += [f"- {u['document']}: {u['sentence']}" for u in summaries[0]["unsafe_sentences"]]
     if any(h["documents"] for h in holdouts):
         lines.append("")
         lines.append("Holdout (PR 295's holdout families, reported only):")
@@ -1190,12 +1227,22 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
                 wrong += sum(1 for v in mine.values() if v in WRONG_VERDICTS)
         all_scores.append(scores)
         summaries.append(summarize_run(scores, wrong))
+        unsafe = sorted({(doc_id, sentence_key(doc_id, s)[1], sentence_key(doc_id, s)[2])
+                         for doc_id in docs for s in (((entries.get(doc_id) or {}).get("result") or {}).get("sentences") or [])
+                         if verdicts is not None and sentence_key(doc_id, s) in getattr(verdicts, "unsafe", set())})
+        summaries[-1]["unsafe"] = len(unsafe)
+        summaries[-1]["unsafe_sentences"] = [dict(document=d, sentence=t, quote=q) for d, t, q in unsafe]
+        # Any sentence on the sheet, holdout included, still without a verdict (an unsafe mark may come).
+        summaries[-1]["unreviewed_any"] = sum(sc.get("unreviewed", 0) for sc in scores.values() if sc.get("present"))
         holdouts.append(summarize_run(scores, None, holdout=True))
         memories.append(memory(meta, entries))
     base_model = metas[0].get("model", {}).get("sha256")
     notes = [f"{label}: another model file" for label, meta in zip(labels, metas)
              if meta.get("model", {}).get("sha256") != base_model]
-    decisions = [None] + [decide(all_scores[0], summaries[0], s, m, margin_lost, margin_actions, gains(label))
+    base_unsafe = {(u["document"], u["sentence"], u["quote"]) for u in summaries[0]["unsafe_sentences"]}
+    decisions = [None] + [decide(all_scores[0], summaries[0], s, m, margin_lost, margin_actions, gains(label),
+                                 [u for u in m["unsafe_sentences"]
+                                  if (u["document"], u["sentence"], u["quote"]) not in base_unsafe])
                           for label, s, m in zip(labels[1:], all_scores[1:], summaries[1:])]
     for decision in decisions[1:]:
         if unfrozen and decision["verdict"] == "PASS":

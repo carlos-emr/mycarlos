@@ -208,6 +208,14 @@ is turned down is "rejected", i.e. lost). Such a row without a `states:` note is
 are unchanged. Made after B0 and E1 had been scored: 5 of round 2's 6 several-fact rows were
 `correct` with no such note.
 
+**Version 6 of the rescore line** (11 Nov; the DRAFT next freeze is renumbered 7 so the two cannot be
+confused) records **Ben's decisions, made after B0, E1 and E4 had been scored and reviewed** (E2 had
+finished but was not scored): "compare to today" for wrong statements, any reviewer-marked unsafe
+sentence the baseline lacks fails a variant, and a summary may take up to about 3 minutes (checks 1
+and 5 above). The review sheet gains the `unsafe` column (`yes` or blank, a reason in `note`; "mild"
+counts as unsafe). Facts, credit and the other checks are as in version 5. Under it, on the round-2b
+review: B0 median 87 s, E1 81 s, E4 77 s per document.
+
 **Version 5** was written on 11 Nov **after model outputs had been seen**:
 - B0's outputs were read in full (the rescore and Agent 4's blind review of its 94 rows);
 - E1's outputs were read by Agent 1, who reported the ibuprofen pair above;
@@ -237,8 +245,14 @@ To reproduce version 1, use `compare.py` as of 8fbc23e5.
 The first run given to `score` is the baseline. Only documents in the decision count; PR 295's
 6 holdout cases are scored and reported on their own line, never decided on. A variant **passes**
 only if all of these hold:
-1. **No wrong statement.** No sentence was reviewed `wrong` or `unsupported`, and every sentence on
-   the review sheet (flagged, carrying a critical fact, or sampled) has a verdict.
+1. **Wrong and unsafe statements, compared with today (rule 6).**
+   - a. The variant's sentences reviewed `wrong` or `unsupported` on the decision documents are no
+     more than the baseline's. A sentence both runs wrote counts on both sides. While rows are
+     unreviewed the check is pending, unless no review could change its answer.
+   - b. No sentence the reviewer marked **unsafe** (the sheet's `unsafe` column) that the baseline
+     did not also write, on any document, holdout included. The baseline's own unsafe sentences are
+     listed apart in `compare.md` (and `unsafe_sentences` in `scores.json`).
+   - (Rules 2 to 5: no sentence reviewed `wrong` or `unsupported` at all.)
 2. **Must-haves kept.** At most `margin_lost` required facts that the baseline had (credited or
    held) are lost.
 3. **Patient actions not worse.** Patient actions found are at least the baseline's −
@@ -248,8 +262,9 @@ only if all of these hold:
    - Other variants in the same call are held to "not worse". So a speed, fit or model-swap variant
      can pass.
 4. **Quotes.** Quotes found are within 2 points of the baseline.
-5. **Time.** The median time is at most 30% above the baseline, and no document fails that the
-   baseline answered.
+5. **Time (rule 6).** The median of the wall time per answered decision document is at most 180 s,
+   and no decision document fails, by the time limit or otherwise, that the baseline answered.
+   (Rules 2 to 5: the median at most 30% above the baseline's.)
 
 Held facts are counted both ways: as found and as not found.
 - A check that passes either way holds; one that fails either way fails.
