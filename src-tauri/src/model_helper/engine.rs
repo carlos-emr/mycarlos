@@ -2,10 +2,11 @@
 //! one thing at a time, each from a fresh cache. Only the helper process runs this.
 
 use super::{
-    answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
-    read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
-    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    answer_hash, document_budget, explain_prompt, explain_system_prompt, fit_pages,
+    gemma4_conversation, language_name, read_explanation, read_summary, summary_grammar,
+    summary_prompt, summary_system_prompt, thinking_off, without_slot, ChatFormat, Fit, ModelFile,
+    Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS, CONTEXT_TOKENS,
+    EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -216,12 +217,13 @@ impl Engine {
         self.stats
     }
 
-    /// The prompt's tokens: the chat template around `user`, with each [`SLOT`] in it replaced
-    /// by the next of `parts`. The template's own words are read with their control tokens;
-    /// the parts, the document's words, never are. Also gives the instruction prefix's length
-    /// (see [`assemble`]).
+    /// The prompt's tokens: the chat template around `system` (the tool's own system prompt)
+    /// and `user`, with each [`SLOT`] in `user` replaced by the next of `parts`. The template's
+    /// own words are read with their control tokens; the parts, the document's words, never are.
+    /// Also gives the instruction prefix's length (see [`assemble`]).
     fn prompt_tokens(
         &self,
+        system: &str,
         user: &str,
         parts: &[&str],
     ) -> Result<(Vec<LlamaToken>, usize), Failure> {
@@ -231,7 +233,7 @@ impl Engine {
                     LlamaChatMessage::new(role.to_owned(), content.to_owned())
                         .map_err(|_| failed("prompt"))
                 };
-                let messages = [message("system", SYSTEM_PROMPT)?, message("user", user)?];
+                let messages = [message("system", system)?, message("user", user)?];
                 let template = self.template.as_ref().ok_or_else(|| failed("template"))?;
                 let templated = self
                     .model
@@ -241,7 +243,7 @@ impl Engine {
                 thinking_off(template.to_str().unwrap_or_default(), templated)
             }
             // Thinking is already off: Gemma 4's template adds `<|think|>` only to turn it on.
-            ChatFormat::Gemma4 => gemma4_conversation(SYSTEM_PROMPT, user),
+            ChatFormat::Gemma4 => gemma4_conversation(system, user),
         };
         let vocab = self.model.vocab();
         assemble(&templated, parts, |text, start, special| {
@@ -475,8 +477,9 @@ impl Engine {
     ) -> Result<(Vec<Sentence>, Fit), Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
         let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
+        let system = summary_system_prompt();
         let user = summary_prompt(language, max_sentences);
-        let around = self.prompt_tokens(&user, &[""])?.0.len();
+        let around = self.prompt_tokens(&system, &user, &[""])?.0.len();
         let budget = document_budget(around, SUMMARY_TOKENS);
         let pages: Vec<Page> = pages
             .iter()
@@ -492,7 +495,7 @@ impl Engine {
             |text, budget| self.prefix(text, budget),
         )
         .ok_or_else(|| failed("no room"))?;
-        let (tokens, prefix_len) = self.prompt_tokens(&user, &[&fit.text])?;
+        let (tokens, prefix_len) = self.prompt_tokens(&system, &user, &[&fit.text])?;
         let grammar = summary_grammar(max_sentences);
         let (written, capped) =
             self.generate(&tokens, prefix_len, SUMMARY_TOKENS, Some(&grammar))?;
@@ -508,9 +511,10 @@ impl Engine {
         lang: &str,
     ) -> Result<String, Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
+        let system = explain_system_prompt();
         let user = explain_prompt(language);
         let (term, context) = (without_slot(term), without_slot(context));
-        let (tokens, prefix_len) = self.prompt_tokens(&user, &[&term, &context])?;
+        let (tokens, prefix_len) = self.prompt_tokens(&system, &user, &[&term, &context])?;
         let (written, capped) = self.generate(&tokens, prefix_len, EXPLAIN_TOKENS, None)?;
         read_explanation(&written, capped).ok_or_else(|| failed("empty"))
     }
@@ -529,7 +533,10 @@ fn first_best(scores: impl Iterator<Item = (LlamaToken, f32)>) -> Option<(LlamaT
 
 #[cfg(test)]
 mod tests {
-    use super::super::{explain_prompt, gemma4_conversation, summary_prompt, SYSTEM_PROMPT};
+    use super::super::{
+        explain_prompt, explain_system_prompt, gemma4_conversation, summary_prompt,
+        summary_system_prompt,
+    };
     use super::*;
 
     /// Each character a token, marked as the model's control text or a part's plain words.
@@ -541,8 +548,8 @@ mod tests {
 
     #[test]
     fn the_instruction_prefix_never_holds_a_document_a_term_or_a_sentence() {
-        let summary = gemma4_conversation(SYSTEM_PROMPT, &summary_prompt("English", 6));
-        let explain = gemma4_conversation(SYSTEM_PROMPT, &explain_prompt("Polish"));
+        let summary = gemma4_conversation(&summary_system_prompt(), &summary_prompt("English", 6));
+        let explain = gemma4_conversation(&explain_system_prompt(), &explain_prompt("Polish"));
         for (templated, with_marker, without) in [
             (&summary, vec![MARKER], vec!["FAKE other pages"]),
             (
