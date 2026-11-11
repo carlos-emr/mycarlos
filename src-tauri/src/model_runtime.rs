@@ -402,7 +402,7 @@ pub(crate) fn choose_window(
     let wanted = windows
         .clone()
         .find(|window| *window >= need)
-        .or_else(|| windows.clone().last())
+        .or_else(|| windows.clone().next_back())
         .unwrap_or(model_helper::CONTEXT_TOKENS);
     windows
         .rev()

@@ -546,6 +546,8 @@ pub(crate) fn fit_pages(
 }
 
 /// The room left for the document: the context, less the answer and the prompt around it.
+/// The helper counts in the window it made ([`document_budget_at`]); tests, in the default one.
+#[cfg(test)]
 pub(crate) const fn document_budget(prompt_tokens: usize, answer_tokens: usize) -> usize {
     document_budget_at(CONTEXT_TOKENS, prompt_tokens, answer_tokens)
 }
