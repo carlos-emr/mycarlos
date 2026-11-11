@@ -190,6 +190,16 @@ only: the credit and the decision rule are as in version 5, and a set where ever
 verdict gets the same decisions at either sample (a test). Tests that are about a partial sample
 pin it to 0.2.
 
+**Page text as the runs read it, 11 Nov (after round 2b):** a run records the fingerprint of the
+page text it read (`pagesSha256`). `score` and `noise` take `--pages <folder>` (the folder `prepare`
+wrote for those runs) and check every run's fingerprint against it, or against the current document
+when no folder is given: a run is never scored against text it did not read, and the runs of one
+scoring must have read the same text. Quotes are placed, the sheet's contexts cut and the reviewer's
+`review/docs/` written from that one text; the facts, spans and traps stay the frozen ones. Until
+then contexts came from the current documents while `docs/` held the run-time text: they differed
+in two lab reports, whose telephone line was changed after the runs (1-800-555-0100 to
+613-555-0150, freeze 2); that change stays, for future runs.
+
 **Rows that list several facts, 11 Nov (after round 2):** a `correct` row whose `fact_it_may_state`
 lists several facts must name in its note the ones it states (`states: 1, 3` or `states: all`).
 Only those are credited; for the others the sentence counts as `vague` (a fact whose every carrier

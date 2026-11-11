@@ -1,9 +1,9 @@
 {
- "version": "5.2",
+ "version": "5.3",
  "status": "RESCORE LINE: scores the 10-11 Nov runs (B0, B0R, E1, E4, L1, L2, ...). The DRAFT next-freeze branch (contacts, multi-page) is numbered 6 to keep the two apart.",
- "frozen_utc": "2026-11-11T02:29:19+00:00",
+ "frozen_utc": "2026-11-11T02:36:29+00:00",
  "rule_version": 5,
- "scorer_sha256": "7ad37d1cee869ac01b209ce06c266cc0b9915b06e1c815ba53d39793e8cdec00",
+ "scorer_sha256": "19af180dcf20f4577a088d4f870b2870ff72260045b661e86566047bfd7962b8",
  "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
  "synthetic_only": true,
  "documents_count": 18,
@@ -48,6 +48,11 @@
    "version": "5.2",
    "frozen_utc": "2026-11-11T02:29:19+00:00",
    "reason": "made after B0 and E1 had been scored and reviewed (round 2): a correct review row that lists several facts credits only those its note names ('states: 1, 3' or 'states: all'); without such a note it is not reviewed yet; prefill carries the note over by the facts' wording. Single-fact rows and the decision rule unchanged. Documents unchanged."
+  },
+  {
+   "version": "5.3",
+   "frozen_utc": "2026-11-11T02:36:29+00:00",
+   "reason": "made after round 2b's review: score and noise check each run's pagesSha256 against the page text they use (--pages, the folder the runs read, or the current document) and refuse a mismatch; quotes, sheet contexts and the reviewer's docs come from that one text. Facts, spans and traps unchanged; the documents' later telephone-line change stays for future runs."
   }
  ],
  "documents": {

@@ -30,6 +30,7 @@ import hashlib
 import json
 import re
 import statistics
+import struct
 import sys
 import unicodedata
 from datetime import datetime, timezone
@@ -364,6 +365,41 @@ def freeze_problems(documents=DOCUMENTS, freeze=FREEZE):
     problems += [f"{doc_id}: changed since the freeze" for doc_id in sorted(set(files) & set(frozen))
                  if files[doc_id] != frozen[doc_id]["sha256"]]
     return problems
+
+
+def pages_hash(pages):
+    """The run's own fingerprint of the page text it read (model_engine.rs `pagesSha256`): for each
+    page, its index (u32, little-endian), its text's length in bytes (u64) and the text."""
+    digest = hashlib.sha256()
+    for page in pages:
+        text = page["text"].encode("utf-8")
+        digest.update(struct.pack("<I", page["index"]))
+        digest.update(struct.pack("<Q", len(text)))
+        digest.update(text)
+    return digest.hexdigest()
+
+
+def load_pages(folder):
+    """The page text a set of runs read: `prepare`'s folder as the runs were given it (`<id>.json`)."""
+    return {path.stem: read_json(path)["pages"] for path in sorted(Path(folder).glob("*.json"))}
+
+
+def as_read(docs, loaded, pages=None):
+    """The documents with the page text the runs actually read: each run's `pagesSha256` names it.
+    The facts, traps and spans stay the frozen ones; quotes are placed, contexts cut and the
+    reviewer's documents written from these pages. A run is never scored against page text it did
+    not read, and the runs of one scoring must have read the same text."""
+    chosen = {}
+    for doc_id, doc in docs.items():
+        candidate = (pages or {}).get(doc_id, doc["pages"])
+        for label, (_, entries) in loaded.items():
+            read = (entries.get(doc_id) or {}).get("pagesSha256")
+            if read and read != pages_hash(candidate):
+                where = "the --pages folder" if pages and doc_id in pages else "the current document"
+                raise ValueError(f"run {label} read other page text for {doc_id} than {where}: "
+                                 "pass --pages with the folder the runs read")
+        chosen[doc_id] = dict(doc, pages=candidate)
+    return chosen
 
 
 def in_decision(doc):
@@ -1012,15 +1048,16 @@ def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_act
     return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures)
 
 
-def noise(first, second, docs):
+def noise(first, second, docs, pages=None):
     """An A/A pair: how many required (and patient-action) facts are carried in one run and not in
     the other (before any review), on the documents the decision uses. With greedy decoding,
     two runs of one build and threads answer token for token, so a same-build pair measures only
     run-to-run noise (expected 0); a pair with a change meant to make no difference (the A/A'
     pair) measures how far answers move by chance, which sets the margins (HARNESS.md)."""
+    loaded = {f"run{i}": read_run(path) for i, path in enumerate((first, second))}
+    docs = as_read(docs, loaded, pages)
     runs = []
-    for path in (first, second):
-        meta, entries = read_run(path)
+    for meta, entries in loaded.values():
         runs.append({doc_id: score_document(doc, entries.get(doc_id), meta.get("lang", "en"))
                      for doc_id, doc in docs.items() if in_decision(doc)})
     a, b = runs
@@ -1109,7 +1146,7 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
 
 
 def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, require_gain=False,
-          noise_pair=None, freeze=None, review_key=None, reading=True):
+          noise_pair=None, freeze=None, review_key=None, reading=True, pages=None):
     """Scores the runs, the first as the baseline. `require_gain`: True for every variant, or the
     labels of the variants aimed at patient actions. `freeze`: HARNESS-FREEZE.json to hold the
     scorer and documents to; a decision under anything else is never PASS ("UNFROZEN")."""
@@ -1124,7 +1161,7 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
         loaded[label] = (meta, entries)
     verdicts = read_review(review, {label: entries for label, (_, entries) in loaded.items()}, review_key) \
         if review else None
-    measured = noise(*noise_pair, docs) if noise_pair else None
+    measured = noise(*noise_pair, docs, pages) if noise_pair else None
     if measured:
         margin_lost, margin_actions = measured["margin_lost"], measured["margin_actions"]
     gains = lambda label: require_gain is True or (not isinstance(require_gain, bool) and label in require_gain)
@@ -1132,6 +1169,9 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
                    require_gain=require_gain if isinstance(require_gain, bool) else sorted(require_gain))
     identity = scoring_identity(docs, margins)
     unfrozen = pinning_problems(identity, freeze) if freeze is not None else []
+    # From here on, the documents carry the page text the runs read (checked by its hash).
+    docs = as_read(docs, loaded, pages)
+    read_pages = {doc_id: pages_hash(doc["pages"]) for doc_id, doc in docs.items()}
     labels, all_scores, summaries, holdouts, metas, memories = [], [], [], [], [], []
     for label, (meta, entries) in loaded.items():
         labels.append(label)
@@ -1163,12 +1203,17 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
     notes += [f"NOT FROZEN, no PASS: {problem}" for problem in unfrozen]
     (out / "scores.json").write_text(json.dumps(dict(
         scoring=identity, scored_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), noise=measured,
-        frozen=(not unfrozen) if freeze is not None else None,
+        frozen=(not unfrozen) if freeze is not None else None, pages_as_read=read_pages,
         runs=[dict(label=l, meta=m, summary=s, holdout=h, decision=d, memory=mem, documents=sc)
               for l, m, s, h, d, mem, sc in zip(labels, metas, summaries, holdouts, decisions, memories, all_scores)],
         notes=notes), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     rows, key = review_sheet({label: entries for label, (_, entries) in loaded.items()}, docs, all_scores)
     (out / "review").mkdir(exist_ok=True)
+    # The reviewer's documents: the same page text the contexts and the quote placement used.
+    (out / "review" / "docs").mkdir(exist_ok=True)
+    for doc_id, doc in docs.items():
+        (out / "review" / "docs" / f"{doc_id}.txt").write_text(
+            "\n\n".join(p["text"] for p in doc["pages"]) + "\n", encoding="utf-8")
     (out / "key").mkdir(exist_ok=True)
     sheet = out / "review" / "review.csv"
     if sheet.exists():
@@ -1227,6 +1272,8 @@ def main(argv=None):
     sc.add_argument("--out", required=True)
     sc.add_argument("--review")
     sc.add_argument("--review-key", help="the key of a blind sheet whose ids are not the scorer's own")
+    sc.add_argument("--pages", help="the folder of page text the runs read (prepare's output for them); each "
+                                    "run's pagesSha256 must match it")
     sc.add_argument("--noise", action="append", help="an A/A pair (twice): the only way to set margins")
     sc.add_argument("--require-gain-for", action="append", default=[], metavar="LABEL",
                     help="a variant aimed at patient actions: more than the baseline + margin (repeat per run)")
@@ -1240,6 +1287,7 @@ def main(argv=None):
     pre.add_argument("--out", required=True)
     noi = sub.add_parser("noise")
     noi.add_argument("--run", action="append", required=True)
+    noi.add_argument("--pages", help="the folder of page text the runs read")
     args = parser.parse_args(argv)
     if args.command == "repeat":
         if len(args.run) != 2:
@@ -1280,7 +1328,7 @@ def main(argv=None):
     if args.command == "noise":
         if len(args.run) != 2:
             raise SystemExit("noise compares exactly two runs")
-        print(json.dumps(noise(*args.run, docs)))
+        print(json.dumps(noise(*args.run, docs, load_pages(args.pages) if args.pages else None)))
         return 0
     if args.noise and len(args.noise) != 2:
         raise SystemExit("--noise takes exactly two runs")
@@ -1289,7 +1337,7 @@ def main(argv=None):
         raise SystemExit(f"--require-gain-for names no run: {', '.join(sorted(unknown))}")
     summaries, decisions = score(args.run, args.out, docs, args.review, 0, 0, set(args.require_gain_for),
                                  tuple(args.noise) if args.noise else None, freeze=FREEZE,
-                                 review_key=args.review_key)
+                                 review_key=args.review_key, pages=load_pages(args.pages) if args.pages else None)
     for summary, decision in zip(summaries, decisions):
         print(json.dumps(dict(summary=summary, verdict=decision["verdict"] if decision else "baseline")))
     return 0
