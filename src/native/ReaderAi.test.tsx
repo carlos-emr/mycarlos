@@ -1439,7 +1439,8 @@ describe("Show in document also marks the page picture (#292)", () => {
     const { user } = await show({ pageBoxes });
     await waitFor(() => expect(overlay()).not.toBeNull());
     const reader = document.querySelector(".native-reader")!;
-    const text = document.querySelector("details.native-reader-text")!;
+    // The text's scroll box, the div inside "Text on this page" (D144).
+    const text = document.querySelector("details.native-reader-text div")!;
     const panel = document.querySelector(".native-reader-ai")!;
     const height = (element: Element) =>
       parseFloat(getComputedStyle(element).maxHeight);

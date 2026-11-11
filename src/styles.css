@@ -521,7 +521,7 @@ h1, h2, p { margin: 0; }
 /* While Show in document marks a quote, the text and the AI panel give the
    picture room, so that a short or narrow window keeps the words in view in
    both places (#292). */
-.native-reader-highlighting .native-reader-text { max-height: 20vh; }
+.native-reader-highlighting .native-reader-text div { max-height: 20vh; }
 .native-reader-highlighting .native-reader-ai { max-height: 25vh; }
 .native-reader-ai { max-height: 40vh; overflow: auto; padding: 8px 20px 14px; border-top: 1px solid var(--line); }
 .native-reader-ai h3 { margin: 0 0 6px; font-size: 1rem; }
