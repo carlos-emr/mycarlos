@@ -169,7 +169,7 @@ async function shot(page: Page, name: string) {
   await test.info().attach(name, { path, contentType: "image/png" });
 }
 
-test("marks the quote on the page picture and in the text, and keeps it on its words at every zoom", async ({
+test("marks the quote on the page picture and in the text, and keeps the helper's boxes in place at every zoom", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -219,7 +219,8 @@ test("marks the quote on the page picture and in the text, and keeps it on its w
     .toBe(true);
   await shot(page, "show-in-document-1280");
 
-  // Larger, twice: the boxes stay on their words.
+  // Larger, twice: the boxes keep their place on the picture. The fake gives
+  // the fractions; the native tests check where the helper puts them.
   const larger = reader.getByRole("button", {
     name: en("interface.DocumentReader.larger"),
     exact: true,

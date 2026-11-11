@@ -1463,6 +1463,69 @@ mod tests {
         }
 
         #[test]
+        fn a_quote_that_occurs_twice_is_boxed_at_its_own_occurrence() {
+            // Pages repeat lines ("Reference range", a name). The same FAKE sentence is set on
+            // two lines, baselines 700 and 664: the k-th in the page's text is boxed where the
+            // k-th is drawn, never at the other.
+            const SAME: &str = "FAKE result pending, see the reference range.";
+            let body = format!(
+                "BT /F1 12 Tf 72 700 Td ({SAME}) Tj \
+                0 -18 Td (The patient reports tiredness and bloating.) Tj \
+                0 -18 Td ({SAME}) Tj ET"
+            );
+            let pdf = page(&body, |_| dictionary! {});
+            let text = text_of(&pdf, 0);
+            let (first, second) = (text.find(SAME).unwrap(), text.rfind(SAME).unwrap());
+            assert!(first < second, "{text:?}");
+            /// `SAME` at byte `at` of `text`, page 0 of `pdf`.
+            fn boxed(pdf: &[u8], text: &str, at: usize) -> Result<Vec<Rect16>, Absent> {
+                let start = text[..at].encode_utf16().count() as u32;
+                let end = start + SAME.encode_utf16().count() as u32;
+                boxes(pdf, "", 0, start, end, SAME).unwrap()
+            }
+            let one = boxed(&pdf, &text, first).unwrap();
+            let two = boxed(&pdf, &text, second).unwrap();
+            assert_eq!((one.len(), two.len()), (1, 1));
+            let (one, two) = (fractions(one[0]), fractions(two[0]));
+            assert!(
+                (one[1] - (792.0 - 700.0 - 9.6) / 792.0).abs() < 0.002,
+                "{one:?}"
+            );
+            assert!(
+                (two[1] - (792.0 - 664.0 - 9.6) / 792.0).abs() < 0.002,
+                "{two:?}"
+            );
+            assert!(two[1] >= one[3], "the second is below the first");
+            assert!((one[0] - two[0]).abs() < 0.002 && (one[2] - two[2]).abs() < 0.002);
+
+            // A third copy that only the picture draws (a form XObject the page text leaves
+            // out): the drawn copies outnumber the text's, so neither can be told which drawn
+            // one is its own. No box for either.
+            let pdf = page(&format!("q /Hdr Do Q {body}"), |document| {
+                let font = document.add_object(dictionary! {
+                    "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+                    "Encoding" => "WinAnsiEncoding"
+                });
+                let header = document.add_object(Stream::new(
+                    dictionary! {
+                        "Type" => "XObject", "Subtype" => "Form",
+                        "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                        "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } }
+                    },
+                    format!("BT /F1 12 Tf 72 760 Td ({SAME}) Tj ET").into_bytes(),
+                ));
+                dictionary! { "XObject" => dictionary! { "Hdr" => header } }
+            });
+            // The page text still holds two (lopdf runs the lines together after the XObject;
+            // the characters are the same).
+            let text = text_of(&pdf, 0);
+            assert_eq!(text.matches(SAME).count(), 2, "{text:?}");
+            for at in [text.find(SAME).unwrap(), text.rfind(SAME).unwrap()] {
+                assert_eq!(boxed(&pdf, &text, at), Err(Absent::Unaligned));
+            }
+        }
+
+        #[test]
         fn text_set_at_an_angle_gets_no_box() {
             let pdf = page(
                 "BT /F1 12 Tf 0.866 0.5 -0.5 0.866 150 300 Tm (FAKE stamp reviewed by the clinic) Tj ET \

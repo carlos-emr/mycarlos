@@ -43,7 +43,8 @@ pub(crate) const MAX_LINES: usize = 256;
 /// A side of a box, in 1/65,535 of the picture's width or height.
 pub(crate) const UNIT: f64 = 65_535.0;
 /// The most edits the two libraries' characters may differ by on one page. More, and the page
-/// gets no boxes: the edit script's memory grows with its square (36 MB at this limit).
+/// gets no boxes: the edit script's memory grows with its square (3,001² eight-byte values, about
+/// 72 MB at this limit, inside the helper's memory limit).
 const MAX_EDITS: usize = 3_000;
 /// A glyph's height, in its own 1000-unit space: about a line's ink, descender to ascender.
 const DESCENT: f64 = -220.0;
