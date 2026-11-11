@@ -1143,8 +1143,9 @@ describe("the reader's AI helper", () => {
 });
 
 describe("a document longer than the model reads at a time (#301)", () => {
-  // Five FAKE pages of 3,150 bytes and a digit: 1,051 tokens each
-  // (capacity.ts), so two fit a room of 2,200 and none fits 500 whole.
+  // Five FAKE pages of 3,151 bytes: 1,143 tokens each (capacity.ts: " FAKE"
+  // in capitals, then plain words, signs and a digit), so two fit a room of
+  // 2,400 and none fits 500 whole.
   const longPages = Array.from(
     { length: 5 },
     (_, index) => "FAKE long page text. ".repeat(150) + index,
@@ -1165,7 +1166,7 @@ describe("a document longer than the model reads at a time (#301)", () => {
   );
 
   it("asks before the model starts, with the focus on its first answer, and summarizes the pages it can read on request", async () => {
-    const model = withRoom(2200);
+    const model = withRoom(2400);
     renderReader(model, { loadText: long });
     await firstPage();
     const user = userEvent.setup();
@@ -1211,7 +1212,7 @@ describe("a document longer than the model reads at a time (#301)", () => {
   });
 
   it("closes the panel on Cancel, asks no model, and puts the focus back on Summary", async () => {
-    const model = withRoom(2200);
+    const model = withRoom(2400);
     renderReader(model, { loadText: long });
     await firstPage();
     const user = userEvent.setup();
@@ -1275,7 +1276,7 @@ describe("a document longer than the model reads at a time (#301)", () => {
   });
 
   it("shows a kept summary without asking, and reads no text for it", async () => {
-    const model = withRoom(2200);
+    const model = withRoom(2400);
     const { kept } = fakeKept(
       [
         {
@@ -1329,7 +1330,7 @@ describe("a document longer than the model reads at a time (#301)", () => {
   });
 
   it("asks after the notice about the AI helper, the first time", async () => {
-    const model = withRoom(2200);
+    const model = withRoom(2400);
     let release: () => void = () => undefined;
     renderReader(model, {
       loadText: long,
