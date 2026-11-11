@@ -296,6 +296,11 @@ class CounterExampleTest(unittest.TestCase):
         fact = evidence_of("demo-celiac-lab", "ttg_high_suggests_celiac")
         wrong = sentence("Celiac disease is confirmed.", fact["source_evidence"])
         facts, scored = score_sentences("demo-celiac-lab", [wrong])
+        # Rule v5: it quotes the fact's source without its words, so it waits on the sheet "to check";
+        # the review turns it down and the fact is not credited.
+        self.assertEqual(facts["ttg_high_suggests_celiac"]["standing"], "held")
+        self.assertIn("to-check", scored["sheet"][0]["why"])
+        facts, _ = score_sentences("demo-celiac-lab", [wrong], {0: "wrong"})
         self.assertIsNone(facts["ttg_high_suggests_celiac"]["standing"])
         flags = scored["flags"][0]["flags"]
         self.assertIn("CERTAINTY_ADDED:confirmed", flags)
@@ -303,7 +308,10 @@ class CounterExampleTest(unittest.TestCase):
 
     def test_the_opposite_of_a_fact_is_not_credited(self):
         fact = evidence_of("demo-celiac-lab", "iron_deficiency_anemia")
-        facts, scored = score_sentences("demo-celiac-lab", [sentence("Your iron is fine.", fact["source_evidence"])])
+        fine = [sentence("Your iron is fine.", fact["source_evidence"])]
+        facts, scored = score_sentences("demo-celiac-lab", fine)
+        self.assertEqual(facts["iron_deficiency_anemia"]["standing"], "held")
+        facts, _ = score_sentences("demo-celiac-lab", fine, {0: "wrong"})
         self.assertIsNone(facts["iron_deficiency_anemia"]["standing"])
         self.assertIn("ADVICE_OR_JUDGEMENT:fine", scored["flags"][0]["flags"])
 
@@ -569,11 +577,145 @@ class LongDocumentTest(unittest.TestCase):
         self.assertEqual(self.evidence_pages("long03-heart-failure-54p", "clinic_9_november"), [53])
         self.assertGreaterEqual(53, compare.TEXT_READ_PAGES)
 
+    def test_a_fact_past_the_text_read_cap_is_never_sent(self):
+        doc = REPO["long03-heart-failure-54p"]
+        pages = compare.fact_pages(doc, evidence_of("long03-heart-failure-54p", "clinic_9_november"))
+        self.assertEqual(pages, {53})
+        read, partly = compare.pages_read(doc, dict(lastPage=7, lastPageCut=True, tailPage=49))
+        self.assertEqual(compare.reading_label(pages, read, partly), "never sent")
+        early = compare.fact_pages(doc, evidence_of("long03-heart-failure-54p", "heart_failure_admission"))
+        self.assertEqual(compare.reading_label(early, read, partly), "read")
+
     def test_the_lab_series_repeats_its_header_and_footer_on_every_page(self):
         pages = REPO["long05-lab-series-6p"]["pages"]
         self.assertTrue(all("PHN: 9876 543 210" in p["text"] and "Call the clinic at 613-555-0156" in p["text"]
                             for p in pages))
         self.assertEqual(compare.contact_flag("Call the clinic at 613-555-0156.", REPO["long05-lab-series-6p"]), None)
+
+
+class CrossLanguageTest(unittest.TestCase):
+    """Rule v5: a must-have stated in the summary's language, quoting the document's own words, is
+    reviewed rather than lost (PR 295's French cases have French approved wordings only)."""
+
+    def test_the_ibuprofen_pair_is_credited_alike_once_reviewed(self):
+        fact = evidence_of("fr-medication_plan", "ibuprofen")
+        english = sentence("Stop taking ibuprofen.", "Arrêter l'ibuprofène.")
+        french = sentence("Arrêter l'ibuprofène.", "Arrêter l'ibuprofène.")
+        # Before the review: the French copy is an approved wording (a critical fact waits for a
+        # reviewer); the English sentence is not recognized but quotes the source, so it waits too.
+        facts_en, scored_en = score_sentences("fr-medication_plan", [english])
+        facts_fr, scored_fr = score_sentences("fr-medication_plan", [french])
+        self.assertEqual(facts_en["ibuprofen"]["standing"], "held")
+        self.assertEqual(facts_fr["ibuprofen"]["standing"], "held")
+        self.assertEqual(facts_en["ibuprofen"]["to_check"], [0])
+        self.assertIn("to-check", scored_en["sheet"][0]["why"])
+        self.assertEqual(scored_en["required_held"], 1)
+        # A reviewer accepts each: both runs are credited alike.
+        facts_en, scored_en = score_sentences("fr-medication_plan", [english], {0: "correct"})
+        facts_fr, scored_fr = score_sentences("fr-medication_plan", [french], {0: "correct"})
+        self.assertEqual(facts_en["ibuprofen"]["standing"], "credited")
+        self.assertEqual(facts_en["ibuprofen"]["found"], "reviewed")
+        self.assertEqual(facts_fr["ibuprofen"]["standing"], "credited")
+        self.assertEqual(scored_en["required_found"], scored_fr["required_found"])
+        self.assertEqual(fact["source_evidence"], "Arrêter l'ibuprofène.")
+
+    def test_a_rejected_or_vague_to_check_sentence_credits_nothing(self):
+        english = [sentence("Keep taking ibuprofen.", "Arrêter l'ibuprofène.")]
+        for verdict in ("wrong", "vague", "unsupported"):
+            facts, _ = score_sentences("fr-medication_plan", english, {0: verdict})
+            self.assertIsNone(facts["ibuprofen"]["standing"], verdict)
+
+    def test_a_sentence_that_carries_another_fact_is_not_to_check(self):
+        both = sentence("Ramipril 5 mg continues; stop taking ibuprofen.",
+                        "Continuer le ramipril 5 mg une fois par jour.\nL'amlodipine 10 mg une fois par jour reste inchangée.\nArrêter l'ibuprofène.")
+        facts, _ = score_sentences("fr-medication_plan", [both])
+        self.assertEqual(facts["ramipril"]["sentences"], [0])
+        self.assertEqual(facts["ibuprofen"]["to_check"], [])
+
+    def test_a_sentence_that_quotes_nothing_of_the_fact_is_still_lost(self):
+        facts, scored = score_sentences("fr-medication_plan",
+                                        [sentence("Stop taking ibuprofen.", "Si la fièvre revient, contacter la clinique.")])
+        self.assertIsNone(facts["ibuprofen"]["standing"])
+        self.assertEqual(facts["ibuprofen"]["to_check"], [])
+
+    def test_the_sheet_lists_the_fact_to_check_with_the_document_s_wording(self):
+        english = sentence("Stop taking ibuprofen.", "Arrêter l'ibuprofène.")
+        _, scored = score_sentences("fr-medication_plan", [english])
+        entry = dict(kind="document", id="fr-medication_plan", wallMs=1,
+                     result=dict(sentences=[english], lastPage=0, lastPageCut=False))
+        rows, key = compare.review_sheet({"E1": {"fr-medication_plan": entry}}, REPO,
+                                         [{"fr-medication_plan": scored}])
+        self.assertEqual(rows[0]["fact_it_may_state"], "Arrêter l'ibuprofène.")
+        self.assertIn("to-check", key[0]["why"])
+
+    def test_french_a_with_a_grave_accent_is_not_read_as_portuguese(self):
+        self.assertEqual(compare.guess_language(
+            "La dose de lévothyroxine passe de 50 µg à 75 µg par jour, à prendre le matin à jeun."), "fr")
+        self.assertEqual(compare.guess_language(
+            "O paciente deve voltar à clínica em 6 semanas para repetir o exame de sangue."), "pt-BR")
+        self.assertEqual(compare.guess_language("Il doit revenir à la clinique et à la pharmacie avec le formulaire."), "fr")
+
+
+class ReadingReportTest(unittest.TestCase):
+    """Reporting only (rule v5 line): a fact lost on a page the model never read is told apart from
+    one the model read and left out; the scores and decisions do not change."""
+
+    LONG = "new-long-hospital-record"
+
+    def test_pages_read_from_the_answer(self):
+        doc = REPO[self.LONG]
+        self.assertEqual(compare.pages_read(doc, dict(lastPage=16, lastPageCut=False)), (set(range(17)), None))
+        self.assertEqual(compare.pages_read(doc, dict(lastPage=14, lastPageCut=False, tailPage=17)),
+                         (set(range(15)) | {17}, None))
+        self.assertEqual(compare.pages_read(doc, dict(lastPage=16, lastPageCut=True)), (set(range(16)), 16))
+        self.assertEqual(compare.pages_read(doc, None), (set(), None))
+
+    def test_a_fact_on_a_page_not_read_is_labelled_so(self):
+        doc = REPO[self.LONG]
+        aki = compare.fact_pages(doc, evidence_of(self.LONG, "aki_recovered"))
+        self.assertEqual(aki, {17})
+        head = compare.pages_read(doc, dict(lastPage=16, lastPageCut=False))
+        head_and_tail = compare.pages_read(doc, dict(lastPage=14, lastPageCut=False, tailPage=17))
+        self.assertEqual(compare.reading_label(aki, *head), "not read")
+        self.assertEqual(compare.reading_label(aki, *head_and_tail), "read")
+        self.assertEqual(compare.reading_label({16}, set(range(16)), 16), "partly read")
+        self.assertEqual(compare.reading_label(set(), set(), None), "read")
+
+    def test_the_report_splits_lost_facts_by_reading(self):
+        doc = REPO[self.LONG]
+        sentences = [sentence("FAKE: nothing from the document.", "no such words anywhere")]
+        entry = dict(kind="document", id=self.LONG, wallMs=1,
+                     result=dict(sentences=sentences, lastPage=16, lastPageCut=False))
+        scores = {self.LONG: compare.score_document(doc, entry, "en")}
+        report = compare.reading_report(["B0"], [{self.LONG: entry}], {self.LONG: doc}, [scores])[0]
+        required = [f for f in doc["facts"] if f.get("required", True)]
+        on_17 = [f for f in required if compare.fact_pages(doc, f) == {17}]
+        self.assertEqual(report["groups"]["not read"]["lost"], len(on_17))
+        self.assertEqual(report["groups"]["read"]["lost"], len(required) - len(on_17))
+        self.assertIn("aki_recovered (lost)", report["documents"][self.LONG]["not read"])
+        self.assertIn("| B0 |", compare.reading_markdown([report]))
+
+
+class ReadingIsReportingOnlyTest(unittest.TestCase):
+    setUp = RunTest.setUp
+
+    def test_scores_decisions_and_sheet_are_byte_identical_with_and_without_the_report(self):
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        variant = write_run(self.folder.name, "E1", run_lines("E1", BETTER))
+        outs = []
+        for reading in (False, True):
+            out = Path(self.folder.name) / f"reading-{reading}"
+            _, decisions = compare.score([base, variant], out, self.docs, reading=reading)
+            outs.append((out, decisions))
+        (plain, plain_decisions), (reported, reported_decisions) = outs
+        self.assertEqual(plain_decisions, reported_decisions)
+        for name in ("compare.md", "review/review.csv", "key/review-key.csv"):
+            self.assertEqual((plain / name).read_bytes(), (reported / name).read_bytes(), name)
+        without_time = lambda path: {k: v for k, v in json.loads(path.read_text(encoding="utf-8")).items()
+                                     if k != "scored_at"}
+        self.assertEqual(without_time(plain / "scores.json"), without_time(reported / "scores.json"))
+        self.assertFalse((plain / "reading.md").exists())
+        self.assertTrue((reported / "reading.md").exists() and (reported / "reading.json").exists())
 
 
 class DecisionV2Test(RunTest):

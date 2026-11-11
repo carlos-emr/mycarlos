@@ -299,7 +299,10 @@ def contact_flag(text, doc=None):
 
 
 def guess_language(text):
-    words = fold(text).replace("'", " ").split()
+    """The language whose stopwords the text uses most (two or more), else None. A standalone "à" is
+    left out: folded it is the Portuguese stopword "a", and French uses it constantly (rule v5)."""
+    kept = [word for word in normalized(text).replace("'", " ").split() if word.casefold().strip(",.;:") != "à"]
+    words = fold(" ".join(kept)).split()
     scores = {lang: sum(word in stop for word in words) for lang, stop in STOPWORDS.items()}
     best = max(scores, key=scores.get)
     return best if scores[best] >= 2 else None
@@ -590,11 +593,13 @@ def sampled(key):
     return int(digest[:8], 16) < REVIEW_SAMPLE * 0x100000000
 
 
-def credit(found, on_sheet, verdicts):
+def credit(found, on_sheet, verdicts, to_check=()):
     """A fact's standing from the sentences that carry it: "credited" when a reviewer marked one of
     them correct, or one is not on the review sheet and has no verdict against it; "held" while
     every carrier is on the sheet without a verdict (a flagged sentence, one carrying a critical
-    fact, or one in the sample); "rejected" when the review turned down every one."""
+    fact, or one in the sample); "rejected" when the review turned down every one.
+    `to_check` (rule v5): sentences that quote the fact's source in words the scorer does not
+    recognize. One a reviewer marked correct credits the fact; one without a verdict holds it."""
     standing = "rejected" if found else None
     for _, index in found:
         verdict = verdicts.get(index, "")
@@ -602,7 +607,26 @@ def credit(found, on_sheet, verdicts):
             return "credited"
         if verdict not in NOT_CREDITED_VERDICTS:
             standing = "held"
+    for index in to_check:
+        verdict = verdicts.get(index, "")
+        if verdict == "correct":
+            return "credited"
+        if verdict not in NOT_CREDITED_VERDICTS:
+            standing = "held"
     return standing
+
+
+def to_check(fact, sentences, founds, folded_document):
+    """Rule v5: for a required fact that no sentence carries, the sentences that carry no fact at all
+    but quote this fact's source. They go on the review sheet "to check": a summary in another
+    language than the document (or in other words) states the fact without the words the scorer
+    looks for, as in "Stop taking ibuprofen." quoting "Arrêter l'ibuprofène."."""
+    if not fact.get("required", True) or dict(founds)[fact["id"]]:
+        return []
+    carrying = {index for _, found in founds for _, index in found}
+    spans = evidence_spans(fact)
+    return [index for index, sentence in enumerate(sentences) if index not in carrying
+            and quote_on_evidence(sentence.get("quote", ""), spans, folded_document)]
 
 
 def score_document(doc, entry, run_lang, verdicts=None):
@@ -621,17 +645,23 @@ def score_document(doc, entry, run_lang, verdicts=None):
     keys = [sentence_key(doc["id"], s) for s in sentences]
     founds = [(fact, carriers(fact, sentences, folded_document)) for fact in doc.get("facts", [])]
     critical_carriers = {i for fact, found in founds if fact.get("critical", False) for _, i in found}
+    by_id = [(fact["id"], found) for fact, found in founds]
+    checks = {fact["id"]: to_check(fact, sentences, by_id, folded_document) for fact, _ in founds}
+    checked = {i for indexes in checks.values() for i in indexes}
     on_sheet = {i: ("flagged " if flags[i] else "") + ("critical " if i in critical_carriers else "")
+                + ("to-check " if i in checked else "")
                 + ("sampled" if sampled(keys[i]) else "") for i in range(len(sentences))}
     on_sheet = {i: why.strip() for i, why in on_sheet.items() if why.strip()}
     facts = []
     for fact, found in founds:
         how, index = found[0] if found else (None, None)
-        standing = credit(found, on_sheet, verdicts)
+        standing = credit(found, on_sheet, verdicts, checks[fact["id"]])
+        if standing == "credited" and how is None:
+            how, index = "reviewed", next(i for i in checks[fact["id"]] if verdicts.get(i) == "correct")
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
                           critical=fact.get("critical", False), found=how if standing == "credited" else None,
                           standing=standing, matched=how, sentence=index,
-                          sentences=[i for _, i in found]))
+                          sentences=[i for _, i in found], to_check=checks[fact["id"]]))
     required = [f for f in facts if f["required"]]
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
     flagged = [dict(index=i, flags=f) for i, f in enumerate(flags)]
@@ -718,10 +748,13 @@ def review_sheet(runs, docs, all_scores):
             for item in score.get("sheet", []):
                 sentence = sentences[item["index"]]
                 key.append(dict(id=item["id"], run=label, doc=doc_id, sentence=item["index"], why=item["why"]))
-                if item["id"] in rows:
-                    continue
                 carried = [facts[f["id"]]["approved_statements"][0] for f in score["facts"]
-                           if item["index"] in f["sentences"]]
+                           if item["index"] in f["sentences"] or item["index"] in f.get("to_check", [])]
+                if item["id"] in rows:
+                    # Another run wrote the same sentence: every fact it may state there is listed too.
+                    listed = rows[item["id"]]["fact_it_may_state"].split(" | ") if rows[item["id"]]["fact_it_may_state"] else []
+                    rows[item["id"]]["fact_it_may_state"] = " | ".join(listed + [c for c in carried if c not in listed])
+                    continue
                 rows[item["id"]] = dict(id=item["id"], document=doc_id, language=docs[doc_id].get("lang", ""),
                                         sentence=sentence["text"], quote=sentence.get("quote", ""),
                                         context=quote_context(docs[doc_id], sentence.get("quote", "")),
@@ -809,6 +842,95 @@ def prefill(sheet_path, other_path, runs, key_path, out_path):
         writer.writeheader()
         writer.writerows(rows)
     return filled, len(rows) - filled
+
+
+# --- Reading report (reporting only: no score or decision reads it) -----------------------------
+
+READING_LABELS = ("read", "partly read", "not read", "never sent")
+
+
+def pages_read(doc, answer):
+    """(read, partly): the page indexes a run's model read whole, and the one it read only in part.
+    From the answer's lastPage, lastPageCut and tailPage (a variant that keeps room for the last
+    page reads it after a gap)."""
+    if not answer or answer.get("lastPage") is None:
+        return set(), None
+    last, tail = answer["lastPage"], answer.get("tailPage")
+    read = {p["index"] for p in doc["pages"] if p["index"] <= last}
+    partly = None
+    if answer.get("lastPageCut"):
+        read.discard(last)
+        partly = last
+    if tail is not None:
+        read.add(tail)
+        if partly == tail:
+            partly = None
+    return read, partly
+
+
+def fact_pages(doc, fact):
+    """The pages that hold the fact's source evidence or any of its spans (folded)."""
+    return {p["index"] for span in evidence_spans(fact) for p in doc["pages"] if fold(span) in fold(p["text"])}
+
+
+def reading_label(pages, read, partly):
+    """Whether the model could have seen the fact: "read" (a page holding it was read whole, or the
+    evidence is on no single page), "partly read" (only on the page read in part), "not read", or
+    "never sent" (only on pages past the app's text-read cap, which no run receives)."""
+    if not pages or pages & read:
+        return "read"
+    if min(pages) >= TEXT_READ_PAGES:
+        return "never sent"
+    return "partly read" if partly in pages else "not read"
+
+
+def reading_report(labels, runs, docs, all_scores):
+    """Per run, the required facts of the decision documents by whether their page was read, and
+    how each group fared: credited, held, or lost (for a read page: the model left it out)."""
+    report = []
+    for label, entries, scores in zip(labels, runs, all_scores):
+        groups = {name: dict(facts=0, credited=0, held=0, lost=0) for name in READING_LABELS}
+        documents = {}
+        for doc_id, doc in docs.items():
+            score = scores.get(doc_id, {})
+            if not in_decision(doc) or not score.get("present") or score.get("error"):
+                continue
+            read, partly = pages_read(doc, (entries.get(doc_id) or {}).get("result"))
+            by_id = {f["id"]: f for f in doc.get("facts", [])}
+            for fact in score["facts"]:
+                if not fact["required"]:
+                    continue
+                name = reading_label(fact_pages(doc, by_id[fact["id"]]), read, partly)
+                outcome = {"credited": "credited", "held": "held"}.get(fact["standing"], "lost")
+                groups[name]["facts"] += 1
+                groups[name][outcome] += 1
+                if name != "read":
+                    documents.setdefault(doc_id, {}).setdefault(name, []).append(f"{fact['id']} ({outcome})")
+        read_facts = groups["read"]["facts"]
+        report.append(dict(label=label, groups=groups, documents=documents,
+                           read_credited_pct=round(100 * groups["read"]["credited"] / read_facts, 1) if read_facts else None))
+    return report
+
+
+def reading_markdown(report):
+    lines = ["Reading report (reporting only: the decision does not use it). Required facts of the decision "
+             "documents, by whether the run's model read a page that holds them (from lastPage, lastPageCut "
+             "and tailPage). Lost on a read page: the model left it out. Lost on a page not read: the model "
+             "never saw it.", "",
+             "| Run | read: credited / held / left out (of) | credited of read | partly read: credited / held / lost (of) | not read: credited / held / lost (of) | never sent (of) |",
+             "|---|---|---|---|---|---|"]
+    for run in report:
+        g = run["groups"]
+        cell = lambda name: f"{g[name]['credited']} / {g[name]['held']} / {g[name]['lost']} ({g[name]['facts']})"
+        pct = "" if run["read_credited_pct"] is None else f"{run['read_credited_pct']}%"
+        lines.append(f"| {run['label']} | {cell('read')} | {pct} | {cell('partly read')} | {cell('not read')} | "
+                     f"{run['groups']['never sent']['facts']} |")
+    for run in report:
+        if run["documents"]:
+            lines += ["", f"{run['label']}: facts on pages not read whole"]
+            for doc_id, names in sorted(run["documents"].items()):
+                lines.append(f"- {doc_id}: " + "; ".join(f"{name}: {', '.join(items)}" for name, items in names.items()))
+    return "\n".join(lines) + "\n"
 
 
 def summarize_run(scores, wrong, holdout=False):
@@ -1046,7 +1168,7 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
 
 
 def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, require_gain=False,
-          noise_pair=None, freeze=None, review_key=None):
+          noise_pair=None, freeze=None, review_key=None, reading=True):
     """Scores the runs, the first as the baseline. `require_gain`: True for every variant, or the
     labels of the variants aimed at patient actions. `freeze`: HARNESS-FREEZE.json to hold the
     scorer and documents to; a decision under anything else is never PASS ("UNFROZEN")."""
@@ -1126,6 +1248,11 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
               f"{'; NOT FROZEN' if unfrozen else ''})\n\n")
     (out / "compare.md").write_text(header + table(labels, docs, all_scores, summaries, decisions, memories, holdouts)
                                     + "".join(f"\nNOTE: {n}\n" for n in notes), encoding="utf-8")
+    if reading:
+        # Reporting only, in files of its own: scores.json, compare.md and the sheet are the same without it.
+        report = reading_report(labels, [entries for _, entries in loaded.values()], docs, all_scores)
+        (out / "reading.json").write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        (out / "reading.md").write_text(reading_markdown(report), encoding="utf-8")
     return summaries, decisions
 
 
