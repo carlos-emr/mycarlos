@@ -221,52 +221,66 @@ make the contact rule of prompt variant L2 measurable: version 4 sees a repeated
 by eye, and B0 repeated two (a spouse's phone in `bakeoff-quebec-referral`, a PESEL in
 `new-polish-discharge`), both flagged by this screen with no other B0 sentence flagged.
 
-**Screens for unsafe sentences (rule 6, DRAFT; built 11 Nov).** Round 2 and 2b's reviewer named
-nine kinds of sentence unsafe for a patient whatever the verdict, and no screen of rule 5 flagged
-any of them. Each new screen needs only the sentence, its quote and the document text (folded), so
-each could also run in the app as a summary is written:
-- `GENERALIZED_SUBJECT`: a general word for medicines (medicines, pills, leki, médicaments…) with a
-  date, a duration, "until" or "all/every", while the quote's own clause names one drug or a narrower
-  class (antibiotics, inhaler…) and no general word. "Pacjent ma przyjmować leki do 05.11.2026."
-  (the antibiotic's end date); "…you must finish all your medicines…" ("Finish both antibiotics").
-- `INSTRUCTION_ADDED`: an imperative or "if you…"/"you must…" sentence whose quote, with the two
-  lines before it, has no instruction word and is no dosing line. "Tell a doctor if you have a rash
-  after taking penicillin." ("A penicillin allergy with a rash is recorded.").
-- `ALTERNATIVE_DROPPED`: the quote's sentence in the document has "if … or …"; the summary sentence
-  names the first condition but none of the alternative. Only within one language. "Call 911 if the
-  pain lasts more than 10 minutes." ("…or comes at rest").
-- `COUNT_DROPPED`: once, twice, one dose… in the quote, and neither a count nor (for a frequency)
-  daily/a day… nor "unchanged" in the sentence. "…after using the spray for five minutes." ("use the
-  spray once").
-- `ACTION_FROM_HEADER`: an appointment or action word with a date or time, whose quote is a header
-  or timestamp line (Reported, Collected, Printed, DOB…) or has no action word. "See Dr. Ian
-  Sampleton on 3 November 2026 at 16:05." ("Reported 3 November 2026, 16:05"), and a second one.
-- `HOLD_DROPPED`: on hold, held, stopped, do not take… in the quote, and no hold or stop word in the
-  sentence (an end of course, "then stop", is kept by "until <date>"). "Your doctor will review …
-  perindopril when you return home." ("Perindopril and metformin remain on hold.").
-- `LANGUAGE` by letters: a sentence with too few stopwords to guess its language is still flagged by
-  letters only one language uses here (ł ą ę ż ś ć ń ź; ã õ; œ ù û ë ï è; ñ), in its lower-case words.
-- The ninth kind, the doctor-to-doctor "Please call me at 613-555-0142 ext. 21…", is `CONTACT_DETAILS`.
+**Screens for unsafe sentences (rule 6, DRAFT; built 11 Nov, revised after Agent 3's unseen test).**
+Round 2 and 2b's reviewer named nine kinds of sentence unsafe for a patient whatever the verdict; no
+screen of rule 5 flagged any. Each screen below needs only the sentence, its quote and the document
+text (folded), so each could run in the app as a summary is written. A flag ending in `_MARK` is a
+weaker signal. **Trust in the app** (Agent 3's levels): DROP only `ACTION_FROM_HEADER`; MARK
+("check this in the document") `GENERALIZED_SUBJECT`, `COUNT_DROPPED`, `HOLD_DROPPED`,
+`ACTION_NOT_IN_QUOTE_MARK`, `FREQUENCY_DROPPED_MARK` and `LANGUAGE` by letters; not yet
+`INSTRUCTION_ADDED` and `ALTERNATIVE_DROPPED` (to revisit on unseen sentences after their fixes).
+- `GENERALIZED_SUBJECT` (en, fr, pl, pt-BR, es words): a general word for medicines (medicines, leki,
+  médicaments…) with a date, a duration, "until" or "all", while the quote's own clause names one drug
+  or a narrower class and no general word.
+- `INSTRUCTION_ADDED` (en, fr, pl, pt-BR, es): an imperative, "if you…" or "you must…" sentence whose
+  quote's own clause (and, for a list item, the list's heading) has no real instruction verb, is no
+  dosing line, and is not a status the sentence fairly restates ("unchanged" for "keep taking",
+  "stopped" for "stop"). Statuses such as "continued" are states, not instructions.
+- `ALTERNATIVE_DROPPED` (cues: if, when, in case of, si, quand, lorsque, en cas de, jeśli, gdy, w razie,
+  w przypadku, em caso de, en caso de): a condition in the quote's document sentence ends at the main
+  clause ("…, call …", "— pilny kontakt"); its alternatives are split at commas and or/ou/lub/albo/o,
+  bracketed examples left out; the summary sentence names the first but leaves one out. Every cue of the
+  sentence is tried. Only within one language. Sentence ends skip decimals and titles ("38.5", "Dr.").
+- `COUNT_DROPPED` (en, fr, pl, pt-BR, es): a single dose (once, one puff, une seule fois, jednorazowo,
+  uma vez…) not followed by a frequency, absent from the sentence.
+- `FREQUENCY_DROPPED_MARK`: a medicine's frequency (twice a day, une fois par jour, co 12 godzin,
+  uma vez ao dia…) left out of a sentence that does not say "unchanged" or "keep taking".
+- `ACTION_FROM_HEADER`: an appointment or action with a date or time whose non-empty quote is a header or
+  timestamp line (Reported, Report printed, Collected, DOB, Data wypisu, imprimé…). An empty quote (the
+  app empties one it cannot find) never fires.
+- `ACTION_NOT_IN_QUOTE_MARK`: the same sentence whose non-empty quote is not a header but has no action
+  word (see, visit, appointment, arrive, wizyta…).
+- `HOLD_DROPPED` (stop and hold words in en, fr, es, pl, pt-BR and zh): the quote holds or stops a
+  medicine (not "after stopping", a time) and the sentence says no stop, hold or quit; an end of course
+  ("then stop") is kept by "until <date>".
+- `LANGUAGE` by letters: a sentence with too few stopwords is still flagged by letters only one language
+  uses here (ł ą ę ż ś ć ń ź; ã õ; œ ù û ë ï è; ñ), the first word included and later capitalized words
+  (names) skipped. French stopwords now include en, au, aux, dans, pas, ne, l', d'.
+- The doctor-to-doctor "Please call me at 613-555-0142 ext. 21…" is `CONTACT_DETAILS`.
 
-**How they measure (11 Nov, against the 214 blind-reviewed B0, E1 and E4 sentences of round 2b,
-key included).** These screens were designed from these sentences, so this is a fit, not a test:
-| Screen | unsafe kinds caught (of 9) | wrong/unsupported caught (of 12) | reviewed-correct flagged (of 186) |
-|---|---|---|---|
-| GENERALIZED_SUBJECT | 2 (leki; finish all) | 2 | 0 |
-| INSTRUCTION_ADDED | 3 (penicillin; both appointments) | 3 | 0 |
-| ALTERNATIVE_DROPPED | 1 (call 911, both rows) | 0 | 1: a real dropped trigger ("or if your breathing or ankle swelling gets worse") |
-| COUNT_DROPPED | 1 (spray once) | 1 | 0 |
-| ACTION_FROM_HEADER | 2 (both appointments) | 2 | 0 |
-| HOLD_DROPPED | 1 (perindopril) | 0 | 0 |
-| LANGUAGE by letters | 1 (leki) | 1 | 7: Polish, Portuguese or French sentences in an English summary, which LANGUAGE exists to count |
-| CONTACT_DETAILS | 1 (ext. 21) | 0 | 4: the ext. 21 line, a spouse's phone, a PESEL line (all meant), and the lab's number in the text the runs read |
-All together: 9 of 9 unsafe kinds (10 of 10 rows), 6 of 12 wrong or unsupported; the six missed are
-claims quoted from another place or more than the document says, which only the review sees. On the
-352 approved statements of the 39 documents the six new sentence screens raise 2 flags, both a
-real dropped "or" alternative in an approved wording (two `daily_weight` facts, which should list
-every trigger).
+**How they measure (11 Nov).** Neither set is unseen any more: the first was designed from, the second
+(Agent 3's) was used to fix the screens.
+| Screen | round 2b: unsafe kinds (of 9) | round 2b: correct flagged (of 186) | Agent 3's pairs: caught | Agent 3's: correct flagged |
+|---|---|---|---|---|
+| GENERALIZED_SUBJECT | 2 | 0 | 4/4 | 0 |
+| INSTRUCTION_ADDED | 3 | 0 | 6/6 | 0 |
+| ALTERNATIVE_DROPPED | 1 | 1 (a real dropped trigger) | 4/4 | 0 |
+| COUNT_DROPPED | 1 | 0 | 1/1 | 0 |
+| FREQUENCY_DROPPED_MARK | 0 | 0 | 3/3 | 0 |
+| ACTION_FROM_HEADER | 2 | 0 | 3/3 | 0 |
+| ACTION_NOT_IN_QUOTE_MARK | 0 | 0 | 0/0 | 0 |
+| HOLD_DROPPED | 1 | 0 | 3/3 | 0 |
+| LANGUAGE by letters | 1 | 7 (wrong-language sentences it is meant to count) | 1/2 | 0 |
+- Round 2b (214 B0, E1 and E4 sentences): 9 of 9 unsafe kinds, 6 of 12 wrong or unsupported (the six
+  missed are claims quoted from another place or stronger than the document, which only the review sees).
+- Agent 3's 47 pairs and 4 probes (`tests/screen_pairs_agent3.json`): 24 of 25 should-flag caught, 26 of 26
+  correct left alone. At dfed8955 it was 13 of 24 and 22 of 23. The one miss is "Kontrola za 7 dni." in an
+  English summary: no letter only Polish uses, too few stopwords. Its two frequency cases count as
+  `FREQUENCY_DROPPED_MARK`, as its review's S3 asks.
+- On the 352 approved statements: 4 flags, 2 real dropped triggers in two `daily_weight` wordings and 2
+  frequency marks on the Polish antibiotic course ("co 12 godzin" left out).
 
-**Held out:** the first unseen test is the next runs' new sentences (E2, E3, L1, L2 and any later
+**Held out:** the next unseen test is the next runs' new sentences (E2, E3, L1, L2 and any later
 variant), once blind-reviewed: count what each screen flags among their reviewed-correct and
 reviewed-unsafe sentences before any screen is changed again.
 

@@ -1,9 +1,9 @@
 {
  "version": 6,
  "status": "DRAFT for the next freeze (version 6). The 10-11 Nov runs are scored with version 5 of the rescore line (43bc7612); do not score them with this one.",
- "frozen_utc": "2026-11-11T02:48:06+00:00",
+ "frozen_utc": "2026-11-11T03:02:21+00:00",
  "rule_version": 6,
- "scorer_sha256": "79e8c97fc10c014207093dd3991f0f31056efd12afdbc34206b0a1a57cec40fa",
+ "scorer_sha256": "3da9e1edbb15913ddec94896a64d714829949c232b9d76ef1e3629e6628a5e76",
  "scoring_documents_sha256": "3f8dbe2676009f15fbed8df167860de848bed163fc63ab14eef8ee617a713fe4",
  "synthetic_only": true,
  "documents_count": 27,
@@ -36,8 +36,8 @@
   },
   {
    "version": 6,
-   "frozen_utc": "2026-11-11T02:48:06+00:00",
-   "reason": "DRAFT rule version 6 (includes rule 5 of the rescore line with 5.1-5.3, merged 11 Nov). Adds the CONTACT_DETAILS screen and the documents' patient_contacts, three FAKE contact cases, six FAKE multi-page cases, prepare capped at 50 pages, the 'never sent' reading label, Agent 3's review fixes, and the unsafe-sentence screens GENERALIZED_SUBJECT, INSTRUCTION_ADDED, ALTERNATIVE_DROPPED, COUNT_DROPPED, ACTION_FROM_HEADER, HOLD_DROPPED and LANGUAGE by letters, designed after round 2/2b's review from the sentences it called unsafe (seen, not held out). Not for the 10-11 Nov runs."
+   "frozen_utc": "2026-11-11T03:02:21+00:00",
+   "reason": "DRAFT rule version 6 (includes rule 5 of the rescore line with 5.1-5.3, merged 11 Nov). Adds the CONTACT_DETAILS screen and patient_contacts, three FAKE contact cases, six FAKE multi-page cases, prepare capped at 50 pages, the 'never sent' reading label, Agent 3's review fixes, and the unsafe-sentence screens (GENERALIZED_SUBJECT, INSTRUCTION_ADDED, ALTERNATIVE_DROPPED, COUNT_DROPPED, FREQUENCY_DROPPED_MARK, ACTION_FROM_HEADER, ACTION_NOT_IN_QUOTE_MARK, HOLD_DROPPED, LANGUAGE by letters), designed from round 2/2b's unsafe sentences and revised after Agent 3's unseen test (its pairs are now tests). Not for the 10-11 Nov runs."
   }
  ],
  "documents": {

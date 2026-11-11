@@ -1,0 +1,471 @@
+{
+ "source": "Agent 3's unseen test of the rule-6 screens at dfed8955 (11 Nov 2026), written from the harness documents without the round-2b sheet or key. Seen from 11 Nov: tuned against since.",
+ "pairs": [
+  {
+   "id": "G1",
+   "doc": "new-long-hospital-record",
+   "lang": "en",
+   "text": "Take your medicines until 3 November 2026.",
+   "quote": "Vancomycin 125 mg by mouth four times daily until 3 November 2026, then stop.",
+   "expect": [
+    "GENERALIZED_SUBJECT"
+   ]
+  },
+  {
+   "id": "G2",
+   "doc": "new-polish-discharge",
+   "lang": "pl",
+   "text": "Leki należy przyjmować do 05.11.2026.",
+   "quote": "Amoksycylina z kwasem klawulanowym 875/125 mg doustnie co 12 godzin jeszcze przez 3 dni (do 05.11.2026).",
+   "expect": [
+    "GENERALIZED_SUBJECT"
+   ]
+  },
+  {
+   "id": "G3",
+   "doc": "long01-pneumonia-record",
+   "lang": "en",
+   "text": "Finish all your medicines in 5 more days.",
+   "quote": "take 1 tablet twice a day with food for 5 more days",
+   "expect": [
+    "GENERALIZED_SUBJECT"
+   ]
+  },
+  {
+   "id": "G4",
+   "doc": "new-french-nephrology",
+   "lang": "fr",
+   "text": "Arrêtez tous vos médicaments.",
+   "quote": "Arrêter l'ibuprofène et tous les anti-inflammatoires.",
+   "expect": [
+    "GENERALIZED_SUBJECT"
+   ]
+  },
+  {
+   "id": "I1",
+   "doc": "fake02-cardiac-discharge",
+   "lang": "en",
+   "text": "Tell your doctor if you feel short of breath.",
+   "quote": "The echocardiogram showed anterior hypokinesis with LVEF 40%",
+   "expect": [
+    "INSTRUCTION_ADDED"
+   ]
+  },
+  {
+   "id": "I2",
+   "doc": "long05-lab-series-6p",
+   "lang": "en",
+   "text": "Ask your doctor about your haemoglobin.",
+   "quote": "Haemoglobin               148          146          147          145          g/L           135-175",
+   "expect": [
+    "INSTRUCTION_ADDED"
+   ]
+  },
+  {
+   "id": "I3",
+   "doc": "new-french-nephrology",
+   "lang": "fr",
+   "text": "Buvez plus d'eau pour protéger vos reins.",
+   "quote": "pour une baisse de la fonction rénale découverte lors d'un bilan de routine",
+   "expect": [
+    "INSTRUCTION_ADDED"
+   ]
+  },
+  {
+   "id": "I4",
+   "doc": "new-polish-discharge",
+   "lang": "pl",
+   "text": "Należy pić dużo wody.",
+   "quote": "Pacjent, lat 65, został przyjęty z powodu gorączki do 39°C",
+   "expect": [
+    "INSTRUCTION_ADDED"
+   ]
+  },
+  {
+   "id": "I5",
+   "doc": "bakeoff-ptbr-endocrinology",
+   "lang": "pt-BR",
+   "text": "Evite açúcar e doces.",
+   "quote": "A meta combinada com a paciente é HbA1c abaixo de 7%.",
+   "expect": [
+    "INSTRUCTION_ADDED"
+   ]
+  },
+  {
+   "id": "A1",
+   "doc": "contact01-leg-discharge",
+   "lang": "en",
+   "text": "Call the Short Stay Unit if the redness spreads past the pen line.",
+   "quote": "If the redness spreads past the pen line, or you get a fever over 38 °C, call the Short Stay Unit",
+   "expect": [
+    "ALTERNATIVE_DROPPED"
+   ]
+  },
+  {
+   "id": "A2",
+   "doc": "long06-lettre-cardio-2p-fr",
+   "lang": "fr",
+   "text": "Allez à l'urgence en cas de douleur thoracique.",
+   "quote": "aller à l'urgence ou appeler le 911 en cas de douleur thoracique",
+   "expect": [
+    "ALTERNATIVE_DROPPED"
+   ]
+  },
+  {
+   "id": "A3",
+   "doc": "new-polish-discharge",
+   "lang": "pl",
+   "text": "W razie gorączki należy pilnie skontaktować się z lekarzem.",
+   "quote": "W razie ponownej gorączki, nasilenia duszności lub krwioplucia — pilny kontakt z lekarzem",
+   "expect": [
+    "ALTERNATIVE_DROPPED"
+   ]
+  },
+  {
+   "id": "A4",
+   "doc": "bakeoff-long-discharge-summary",
+   "lang": "en",
+   "text": "Call your family doctor if your weight goes up by more than 2 kg in 3 days.",
+   "quote": "Call your family doctor if your weight goes up by more than 2 kg in 3 days",
+   "expect": [
+    "ALTERNATIVE_DROPPED"
+   ]
+  },
+  {
+   "id": "C1",
+   "doc": "fake02-cardiac-discharge",
+   "lang": "en",
+   "text": "For chest pain, use the spray, and call 911 if the pain is not gone after 5 minutes.",
+   "quote": "For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.",
+   "expect": [
+    "COUNT_DROPPED"
+   ]
+  },
+  {
+   "id": "C2",
+   "doc": "bakeoff-ptbr-endocrinology",
+   "lang": "pt-BR",
+   "text": "Inicie a empagliflozina 10 mg pela manhã.",
+   "quote": "Iniciar empagliflozina 10 mg uma vez ao dia, pela manhã.",
+   "expect": [
+    "FREQUENCY_DROPPED_MARK"
+   ],
+   "note": "Agent 3 expected COUNT_DROPPED; its own S3 splits a dropped frequency off as a mark"
+  },
+  {
+   "id": "C3",
+   "doc": "long06-lettre-cardio-2p-fr",
+   "lang": "fr",
+   "text": "Prenez l'amlodipine 10 mg.",
+   "quote": "amlodipine 10 mg une fois par jour",
+   "expect": [
+    "FREQUENCY_DROPPED_MARK"
+   ],
+   "note": "Agent 3 expected COUNT_DROPPED; its own S3 splits a dropped frequency off as a mark"
+  },
+  {
+   "id": "H1",
+   "doc": "long05-lab-series-6p",
+   "lang": "en",
+   "text": "See Dr. Casey FAKE-Okoro on 30 October 2026 at 16:20.",
+   "quote": "Report printed: 2026-10-30 16:20",
+   "expect": [
+    "ACTION_FROM_HEADER"
+   ]
+  },
+  {
+   "id": "H2",
+   "doc": "fake03-cardiac-lab",
+   "lang": "en",
+   "text": "Come back on 26 October 2026 at 15:42.",
+   "quote": "Reported  26 October 2026, 15:42",
+   "expect": [
+    "ACTION_FROM_HEADER",
+    "INSTRUCTION_ADDED"
+   ],
+   "note": "INSTRUCTION_ADDED also fires, rightly (Agent 3's review): an instruction from a 'Reported' line"
+  },
+  {
+   "id": "H3",
+   "doc": "new-polish-discharge",
+   "lang": "pl",
+   "text": "Wizyta u lekarza 02.11.2026.",
+   "quote": "Data wypisu: 02.11.2026",
+   "expect": [
+    "ACTION_FROM_HEADER"
+   ]
+  },
+  {
+   "id": "D1",
+   "doc": "new-long-hospital-record",
+   "lang": "en",
+   "text": "Your family doctor will review perindopril at your next visit.",
+   "quote": "Perindopril: ON HOLD until the family physician reviews the kidney blood test.",
+   "expect": [
+    "HOLD_DROPPED"
+   ]
+  },
+  {
+   "id": "D2",
+   "doc": "new-french-nephrology",
+   "lang": "fr",
+   "text": "Votre médecin vérifiera l'hydrochlorothiazide.",
+   "quote": "Cesser l'hydrochlorothiazide.",
+   "expect": [
+    "HOLD_DROPPED"
+   ]
+  },
+  {
+   "id": "D3",
+   "doc": "new-polish-discharge",
+   "lang": "pl",
+   "text": "Pacjent powinien ograniczyć palenie.",
+   "quote": "Bezwzględnie zaprzestać palenia papierosów.",
+   "expect": [
+    "HOLD_DROPPED"
+   ]
+  },
+  {
+   "id": "L1",
+   "doc": "new-polish-discharge",
+   "lang": "en",
+   "text": "Zaprzestać palenia.",
+   "quote": "Bezwzględnie zaprzestać palenia papierosów.",
+   "expect": [
+    "LANGUAGE"
+   ]
+  },
+  {
+   "id": "L2",
+   "doc": "new-polish-discharge",
+   "lang": "en",
+   "text": "Kontrola za 7 dni.",
+   "quote": "Kontrola u lekarza rodzinnego za 7 dni, z oznaczeniem CRP i morfologii krwi.",
+   "expect": [
+    "LANGUAGE"
+   ],
+   "known_miss": "no letter only Polish uses and too few stopwords: LANGUAGE cannot tell yet"
+  },
+  {
+   "id": "N1",
+   "doc": "long01-pneumonia-record",
+   "lang": "en",
+   "text": "Take amoxicillin-clavulanate twice a day for 5 more days, until 12 November 2026.",
+   "quote": "take 1 tablet twice a day with food for 5 more days",
+   "expect": []
+  },
+  {
+   "id": "N2",
+   "doc": "bakeoff-long-discharge-summary",
+   "lang": "en",
+   "text": "Continue metoprolol, ramipril and apixaban as before.",
+   "quote": "Continue metoprolol 25 mg twice daily, ramipril 5 mg once daily, apixaban 5 mg twice",
+   "expect": []
+  },
+  {
+   "id": "N3",
+   "doc": "contact01-leg-discharge",
+   "lang": "en",
+   "text": "Continue your usual metformin twice a day.",
+   "quote": "Continue your usual metformin 500 mg twice a day.",
+   "expect": []
+  },
+  {
+   "id": "N4",
+   "doc": "long03-heart-failure-54p",
+   "lang": "en",
+   "text": "Bring your weight record and all your medicines to the clinic.",
+   "quote": "Bring your weight record and all your medicines.",
+   "expect": []
+  },
+  {
+   "id": "N5",
+   "doc": "contact03-referral-booking",
+   "lang": "en",
+   "text": "Your appointment is on Friday 20 November 2026 at 9:15 a.m. with Dr. Riley FAKE-Mendes.",
+   "quote": "Your appointment is on Friday 20 November 2026 at 9:15 a.m. with Dr. Riley FAKE-Mendes,",
+   "expect": []
+  },
+  {
+   "id": "N6",
+   "doc": "bakeoff-ptbr-endocrinology",
+   "lang": "pt-BR",
+   "text": "Retorne à clínica em 3 meses, em janeiro de 2027.",
+   "quote": "Retorno nesta clínica em 3 meses, em janeiro de 2027.",
+   "expect": []
+  },
+  {
+   "id": "N7",
+   "doc": "new-french-nephrology",
+   "lang": "fr",
+   "text": "Refaites la créatinine et le potassium dans 2 semaines.",
+   "quote": "Refaire la créatinine et le potassium dans 2 semaines.",
+   "expect": []
+  },
+  {
+   "id": "N8",
+   "doc": "new-polish-discharge",
+   "lang": "pl",
+   "text": "Kontrola u lekarza rodzinnego za 7 dni.",
+   "quote": "Kontrola u lekarza rodzinnego za 7 dni, z oznaczeniem CRP i morfologii krwi.",
+   "expect": []
+  },
+  {
+   "id": "N9",
+   "doc": "fake02-cardiac-discharge",
+   "lang": "en",
+   "text": "If the pain is not gone after 5 minutes, call 911.",
+   "quote": "If the pain is not gone after 5 minutes, call 911.",
+   "expect": []
+  },
+  {
+   "id": "N10",
+   "doc": "fake02-cardiac-discharge",
+   "lang": "en",
+   "text": "Glyburide was stopped because of a risk of low blood sugar.",
+   "quote": "Glyburide was stopped because of hypoglycemia risk",
+   "expect": []
+  },
+  {
+   "id": "N11",
+   "doc": "bakeoff-long-discharge-summary",
+   "lang": "en",
+   "text": "Stop taking ibuprofen.",
+   "quote": "Ibuprofen STOPPED. Do not take ibuprofen, naproxen or other anti-inflammatory pain",
+   "expect": []
+  },
+  {
+   "id": "N12",
+   "doc": "new-french-nephrology",
+   "lang": "fr",
+   "text": "Arrêtez l'ibuprofène et tous les anti-inflammatoires.",
+   "quote": "Arrêter l'ibuprofène et tous les anti-inflammatoires.",
+   "expect": []
+  },
+  {
+   "id": "N13",
+   "doc": "new-polish-discharge",
+   "lang": "pl",
+   "text": "Należy całkowicie zaprzestać palenia papierosów.",
+   "quote": "Bezwzględnie zaprzestać palenia papierosów.",
+   "expect": []
+  },
+  {
+   "id": "N14",
+   "doc": "long01-pneumonia-record",
+   "lang": "en",
+   "text": "Please call your family doctor's office to book a visit within 1 week.",
+   "quote": "Please call her office to book this visit.",
+   "expect": []
+  },
+  {
+   "id": "N15",
+   "doc": "new-long-hospital-record",
+   "lang": "en",
+   "text": "Perindopril stays on hold until your family doctor reviews your kidney blood test.",
+   "quote": "Perindopril: ON HOLD until the family physician reviews the kidney blood test.",
+   "expect": []
+  },
+  {
+   "id": "N16",
+   "doc": "new-long-hospital-record",
+   "lang": "en",
+   "text": "Take vancomycin four times a day until 3 November 2026, then stop.",
+   "quote": "Vancomycin 125 mg by mouth four times daily until 3 November 2026, then stop.",
+   "expect": []
+  },
+  {
+   "id": "N17",
+   "doc": "new-long-hospital-record",
+   "lang": "en",
+   "text": "Take amoxicillin-clavulanate twice daily until 31 October 2026.",
+   "quote": "Amoxicillin-clavulanate 875/125 mg by mouth twice daily until 31 October 2026, then stop.",
+   "expect": []
+  },
+  {
+   "id": "N18",
+   "doc": "bakeoff-ptbr-endocrinology",
+   "lang": "pt-BR",
+   "text": "Mantenha a metformina 850 mg duas vezes ao dia.",
+   "quote": "Manter a metformina 850 mg duas vezes ao dia, sem alteração.",
+   "expect": []
+  },
+  {
+   "id": "N19",
+   "doc": "long05-lab-series-6p",
+   "lang": "en",
+   "text": "The report was printed on 30 October 2026.",
+   "quote": "Report printed: 2026-10-30 16:20",
+   "expect": []
+  },
+  {
+   "id": "N20",
+   "doc": "long06-lettre-cardio-2p-fr",
+   "lang": "fr",
+   "text": "Un rendez-vous de suivi en cardiologie est prévu dans 6 mois.",
+   "quote": "Rendez-vous de suivi en clinique de cardiologie dans 6 mois",
+   "expect": []
+  },
+  {
+   "id": "N21",
+   "doc": "contact03-referral-booking",
+   "lang": "en",
+   "text": "Please arrive 15 minutes early for your appointment on 20 November 2026.",
+   "quote": "Please arrive 15 minutes early.",
+   "expect": []
+  },
+  {
+   "id": "N22",
+   "doc": "bakeoff-long-discharge-summary",
+   "lang": "en",
+   "text": "Call your family doctor if your weight goes up by more than 2 kg in 3 days, or if your breathing or ankle swelling gets worse.",
+   "quote": "Call your family doctor if your weight goes up by more than 2 kg in 3 days, or if your breathing or ankle swelling gets worse.",
+   "expect": []
+  },
+  {
+   "id": "N23",
+   "doc": "fake02-cardiac-discharge",
+   "lang": "en",
+   "text": "For chest pain, use the spray once, and call 911 if the pain is not gone after 5 minutes.",
+   "quote": "For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.",
+   "expect": []
+  },
+  {
+   "id": "Q1",
+   "doc": "contact03-referral-booking",
+   "lang": "en",
+   "text": "Your appointment is on Friday 20 November 2026 at 9:15 a.m.",
+   "quote": "",
+   "expect": []
+  },
+  {
+   "id": "F1",
+   "doc": "new-long-hospital-record",
+   "lang": "en",
+   "text": "Keep taking alendronate.",
+   "quote": "Alendronate 70 mg once weekly. Continued.",
+   "expect": [],
+   "note": "Agent 3's frequency probe: a kept medicine"
+  },
+  {
+   "id": "F2",
+   "doc": "long01-pneumonia-record",
+   "lang": "en",
+   "text": "Keep using fluticasone-salmeterol 250/50.",
+   "quote": "Keep taking fluticasone-salmeterol 250/50, 1 inhalation twice a day, and rinse your mouth after.",
+   "expect": [],
+   "note": "Agent 3's frequency probe, reworded by Agent 2 from its review"
+  },
+  {
+   "id": "F3",
+   "doc": "long01-pneumonia-record",
+   "lang": "en",
+   "text": "Take amoxicillin-clavulanate for 5 more days.",
+   "quote": "take 1 tablet twice a day with food for 5 more days",
+   "expect": [
+    "FREQUENCY_DROPPED_MARK"
+   ],
+   "note": "Agent 3's frequency probe: a dropped frequency is a mark, not COUNT_DROPPED"
+  }
+ ]
+}

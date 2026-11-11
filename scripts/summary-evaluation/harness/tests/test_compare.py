@@ -655,6 +655,29 @@ class UnsafeScreensTest(unittest.TestCase):
         for doc_id, text, quote in cases:
             self.assertEqual(self.flags(doc_id, text, quote) & new, set(), text)
 
+    def test_agent3_s_pairs_give_their_expected_flags(self):
+        """Agent 3's 47 unseen pairs (and 4 probes) of 11 Nov, seen since: every new screen flag as expected,
+        except the misses it lists (which must still be misses, so a fix is noticed)."""
+        data = json.loads((Path(__file__).parent / "screen_pairs_agent3.json").read_text(encoding="utf-8"))
+        new = {"GENERALIZED_SUBJECT", "INSTRUCTION_ADDED", "ALTERNATIVE_DROPPED", "COUNT_DROPPED", "ACTION_FROM_HEADER",
+               "HOLD_DROPPED", "FREQUENCY_DROPPED_MARK", "ACTION_NOT_IN_QUOTE_MARK", "LANGUAGE"}
+        for pair in data["pairs"]:
+            got = self.flags(pair["doc"], pair["text"], pair["quote"], pair["lang"]) & new
+            if pair.get("known_miss"):
+                self.assertNotEqual(got, set(pair["expect"]), f"{pair['id']} is caught now: drop its known_miss")
+            else:
+                self.assertEqual(got, set(pair["expect"]), pair["id"])
+
+    def test_only_a_header_quote_makes_an_appointment_drop_eligible(self):
+        doc = "contact03-referral-booking"
+        text = "Your appointment is on Friday 20 November 2026 at 9:15 a.m."
+        self.assertFalse(self.flags(doc, text, "") & {"ACTION_FROM_HEADER", "ACTION_NOT_IN_QUOTE_MARK"})
+        weak = self.flags(doc, text, "Please bring your health card and a list of your medicines.")
+        self.assertIn("ACTION_NOT_IN_QUOTE_MARK", weak)
+        self.assertNotIn("ACTION_FROM_HEADER", weak)
+        self.assertIn("ACTION_FROM_HEADER", self.flags("fake03-cardiac-lab", "See Dr. Ian Sampleton on 26 October 2026.",
+                                                       "Reported 26 October 2026, 15:42"))
+
     def test_an_alternative_in_another_language_is_not_judged(self):
         self.assertNotIn("ALTERNATIVE_DROPPED", self.flags(
             "new-french-nephrology", "Call the clinic if she passes much less urine.",

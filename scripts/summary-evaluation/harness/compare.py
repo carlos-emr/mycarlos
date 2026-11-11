@@ -67,7 +67,8 @@ TIME_RATIO = 1.3
 SCREENS = {"SOURCE_NOT_FOUND", "NUMBER_NOT_IN_QUOTE", "NEGATION_MISMATCH", "HEDGE_DROPPED",
            "CERTAINTY_ADDED", "EXPERIENCER", "ACTOR_SHIFT", "ADVICE_OR_JUDGEMENT", "LANGUAGE",
            "QUANTITY_MISMATCH", "TRAP", "CONTACT_DETAILS", "GENERALIZED_SUBJECT", "INSTRUCTION_ADDED",
-           "ALTERNATIVE_DROPPED", "COUNT_DROPPED", "ACTION_FROM_HEADER", "HOLD_DROPPED"}
+           "ALTERNATIVE_DROPPED", "COUNT_DROPPED", "ACTION_FROM_HEADER", "HOLD_DROPPED", "FREQUENCY_DROPPED_MARK",
+           "ACTION_NOT_IN_QUOTE_MARK"}
 
 # Screens run on folded text (case, accents and spacing folded), so the words below have no accents.
 NEGATION = re.compile(
@@ -117,7 +118,8 @@ ADVICE = re.compile(
     r"nalezy|zaleca\w*|normaln\w*|deve|recomend\w*|preocup\w*)\b")
 STOPWORDS = {
     "en": {"the", "and", "of", "to", "is", "was", "in", "for", "with", "your", "you", "on", "a"},
-    "fr": {"le", "la", "les", "et", "de", "des", "du", "est", "un", "une", "pour", "vous", "avec"},
+    "fr": {"le", "la", "les", "et", "de", "des", "du", "est", "un", "une", "pour", "vous", "avec", "en", "au", "aux",
+           "dans", "pas", "ne", "l", "d"},
     "pl": {"i", "w", "na", "z", "jest", "nie", "do", "sie", "oraz", "po", "przez", "pan", "pani"},
     "pt-BR": {"o", "a", "os", "as", "e", "de", "do", "da", "em", "com", "para", "que", "voce"},
     "es": {"el", "la", "los", "las", "y", "de", "del", "en", "con", "para", "que", "usted", "es"},
@@ -363,46 +365,93 @@ NARROW_MEDICINES = re.compile(
 INSTRUCTION_SENTENCE = re.compile(
     r"^(?:please )?(?:tell|call|see|take|stop|avoid|go|keep|use|book|ask|contact|check|make sure|remember|"
     r"do not|don't|never|bring|come|return|weigh|drink|eat|rest|wear|start|continue|follow|write|get|finish|"
-    r"report|seek|let)\b|\bif you\b|\byou (?:should|must|need to|have to|will need to|are to)\b"
-    r"|^(?:appelez|prenez|arretez|evitez|allez|gardez|faites|refaites|consultez|contactez|ecrivez|venez|ne prenez|"
-    r"continuez|commencez|utilisez|signalez|prosze|nalezy|prosimy|tome|evite|procure|ligue|continue|pare)\b"
-    r"|\bsi vous\b|\bvous devez\b|\bmusi\b|\bpowin\w*\b|\bdeve\b|\bjesli\b")
+    r"report|seek|let|phone|limit|wash|quit)\b|\bif you\b|\byou (?:should|must|need to|have to|will need to|are to)\b"
+    # fr
+    r"|^(?:appelez|prenez|arretez|cessez|evitez|allez|gardez|faites|refaites|consultez|contactez|ecrivez|venez|"
+    r"ne prenez|continuez|commencez|utilisez|signalez|buvez|mangez|pesez|surveillez|reposez|limitez)\b"
+    r"|\bsi vous\b|\bvous devez\b|\bil faut\b"
+    # pl
+    r"|^(?:prosze|nalezy|prosimy|zglos\w*|przyjmuj\w*|pij|unikaj|odstaw|zadzwon\w*|skontaktuj\w*|stosuj)\b"
+    r"|\bmusi\b|\bpowin\w*\b|\bnalezy\b|\bjesli\b"
+    # pt-BR / es
+    r"|^(?:tome|evite|procure|ligue|pare|beba|faca|retorne|mantenha|inicie|continue|llame|acuda|vaya|deje|no tome)\b"
+    r"|\bdeve\b|\bdebe\b")
+# Real instructions in the quote's own clause (base forms and imperatives; never a status such as
+# "continued", "unchanged", "stopped", which is a state the document reports).
 QUOTE_INSTRUCTION = re.compile(
-    r"\b(?:please|should|must|need|needs|call|take|taking|stop|avoid|go|keep|use|book|ask|contact|see|return|repeat|"
-    r"continue|start|do not|don't|never|bring|weigh|drink|follow|finish|asked|advised|recommend\w*|instruct\w*|"
-    r"if|when|until|seek|report|tell|limit|wear|rest|elevate|raise|apply|refer\w*|appel\w*|pren\w*|arret\w*|"
-    r"evit\w*|refai\w*|consult\w*|contact\w*|ecriv\w*|doit|devez|faut|si|prosze|nalezy|przyjm\w*|zglos\w*|"
-    r"kontrol\w*|jesli|deve|tome|evite|procure|ligue|continu\w*|stosowa\w*|unika\w*|wash|quit|inchang\w*|"
-    r"unchanged|no change|instructions?|follow-up|repetir|iniciar|inicie|manter|suspender|tomar|evitar|retornar|"
-    r"zaprzesta\w*|odstaw\w*|zglosic|wizyt\w*|rendez-vous)\b")
-CONDITION_CUE = re.compile(r"\b(?:if|si|jesli|jezeli|when|quand|gdy|caso)\b")
-ALTERNATIVE_SPLIT = re.compile(r"\b(?:or|ou|lub|albo|o)\b")
-COUNT_WORDS = re.compile(r"\b(?:once|twice|thrice|one dose|single dose|a single|one puff|one spray|one tablet|"
-                         r"une fois|deux fois|une seule|jednorazowo|raz|dwa razy|uma vez|duas vezes|una vez|dos veces)\b")
-FREQUENCY_WORDS = re.compile(r"\b(?:daily|a day|per day|each day|every day|a week|weekly|per week|every|each "
-                             r"(?:morning|night|evening)|at bedtime|par jour|par semaine|dziennie|tygodniowo|"
-                             r"por dia|ao dia|por semana)\b")
-ACTION_WORDS = re.compile(r"\b(?:see|visit|appointment|come|book|attend|go to|return|follow-up|follow up|"
-                          r"rendez-vous|consultez|revoir|wizyt\w*|konsultac\w*|consulta|retorno|seen)\b")
-HEADER_QUOTE = re.compile(r"^(?:reported|collected|printed|received|dob|date of birth|accession|requisition|"
-                          r"signed|dictated|transcribed|ordered|verified|resulted|result date|specimen|"
-                          r"date du rapport|preleve|data urodzenia|data przyjecia|data wypisu|data)\b")
-QUOTE_ACTION = re.compile(r"\b(?:see|seen|visit|appointment|follow|return|come|book|clinic|review|rendez|revoir|"
-                          r"wizyt\w*|kontrol\w*|consult\w*|retorno|appel\w*|call|repeat|refai\w*)\w*")
-HOLD_QUOTE = re.compile(r"\b(?:on hold|held|hold|stopped|stop|discontinued|discontinue|do not take|don't take|"
-                        r"not to take|suspend\w*|suspendu\w*|arret\w*|interromp\w*|wstrzyma\w*|odstaw\w*|"
-                        r"suspens\w*|paused?)\b")
-HOLD_SENTENCE = re.compile(r"\b(?:hold|held|stop\w*|discontinu\w*|pause\w*|not take|don't take|do not take|"
-                           r"no longer|not restart\w*|not resume|quit\w*|arret\w*|suspend\w*|wstrzym\w*|"
-                           r"odstaw\w*|nie przyjm\w*|not taking|ne plus|ne pas prendre|nao tome|parar|pare)\b")
-# Letters that belong to one language here: a short sentence (too few stopwords to guess) in another
-# language than the summary's still shows them. Capitalized words are names, and are skipped.
-UNCHANGED_WORDS = re.compile(r"\b(?:unchanged|no change|not changed|same dose|as before|continue\w*|bez zmian|"
-                             r"inchang\w*|sans changement|sem altera\w*|mantid\w*|mesma dose)\b")
-END_OF_COURSE = re.compile(r"\b(?:then stop|and stop|then discontinue|puis arret\w*|potem odstaw\w*|depois suspend\w*)\b")
+    r"\b(?:please|should|must|need to|needs to|call|take|stop|avoid|go|keep|use|book|ask|contact|see|return|repeat|"
+    r"continue|start|do not|don't|never|bring|weigh|drink|follow|follow-up|finish|seek|report|tell|limit|wear|rest|"
+    r"elevate|raise|apply|wash|quit|arrange|referr\w*|referred|if|when|"
+    r"appel\w*|prendre|prenez|arreter|arretez|cesser|cessez|eviter|evitez|refaire|refaites|consulter|consultez|"
+    r"contacter|ecrire|ecrivez|doit|devez|faut|si|quand|en cas d\w*|"
+    r"prosze|nalezy|przyjmowac|zglos\w*|kontrola|jesli|w razie|odstawic|zaprzesta\w*|unikac|stosowac|"
+    r"deve|tome|tomar|evite|evitar|procure|ligue|repetir|iniciar|inicie|manter|mantenha|suspender|retornar|"
+    r"retorno|em caso de|caso|debe|llame|acuda|nie wolno|interdit\w*|pas de \w+|evitar|advis\w*|recommend\w*|"
+    r"instruct\w*|counsel\w*|encourag\w*|orient\w*|conseill\w*|recommand\w*|zalec\w*|polec\w*|beber|boire|pic)\b"
+    r"|\bno (?:\w+ )?\w+ing\b")
 DOSING_LINE = re.compile(r"\b\d+(?:[.,]\d+)? ?(?:mg|mcg|ug|g|ml|units?|unites|jednost\w*)\b.*\b(?:daily|a day|twice|"
                          r"once|times|every|by mouth|orally|doustnie|par jour|ao dia|dziennie|co \d+ godzin)\b")
+DOSE_WORDS = re.compile(r"\b(?:tablets?|capsules?|puffs?|inhalations?|sprays?|drops?|injections?|patch(?:es)?|"
+                        r"comprim\w*|gelul\w*|bouffees?|tabletk\w*|kapsulk\w*|wziew\w*|comprimidos?|capsulas?|"
+                        r"gotas?|jatos?)\b")
+# A sentence that keeps or stops a medicine is a fair paraphrase of a quote that reports it as
+# unchanged, continued or stopped.
+KEEP_SENTENCE = re.compile(r"\b(?:keep taking|keep using|continue\w*|as before|as usual|gardez|continuez|"
+                           r"nadal|kontynu\w*|mantenha|continue)\b")
+UNCHANGED_WORDS = re.compile(r"\b(?:unchanged|no change|not changed|same dose|as before|as usual|continued|"
+                             r"keep taking|keep using|continue\w*|bez zmian|kontynu\w*|inchang\w*|sans changement|"
+                             r"poursuiv\w*|sem altera\w*|mantid\w*|mesma dose)\b")
+LIST_ITEM = re.compile(r"^(?:[-*•·]|\d+[.)])\s*")
+CONDITION_CUE = re.compile(r"\b(?:if|when|in case of|si|s'il|quand|lorsque|en cas d\w*|jesli|jezeli|gdy|w razie|"
+                           r"w przypadku|em caso de|en caso de|caso)\b")
+MAIN_CLAUSE = re.compile(r"(?:,|\s[—–-]\s|\s[—–]|:)\s*(?:then )?(?:call|go|see|contact|seek|phone|"
+                         r"tell|stop|come|return|get|appelez|allez|consultez|contactez|cessez|zadzwon\w*|"
+                         r"skontaktuj\w*|zglos\w*|pilny|nalezy|ligue|procure|va|llame|acuda|vaya)\b")
+ALTERNATIVE_SPLIT = re.compile(r",|;|\b(?:or|ou|lub|albo|o)\b")
+SINGLE_DOSE = re.compile(r"\b(?:once|one puff|one spray|one dose|one tablet|a single dose|single dose|a single|"
+                         r"une seule fois|une fois|une seule dose|jednorazowo|uma vez|uma unica vez|una vez|una sola vez)\b"
+                         r"(?!\s+(?:a|per|par|each|every|daily|weekly|dziennie|tygodniowo|ao|por|al|na)\b)")
+COUNT_SAID = re.compile(r"\b(?:once|one|single|a single|une fois|une seule|un seul|jednorazowo|jeden|jedna|raz|"
+                        r"uma vez|uma|una vez|una)\b")
+FREQUENCY_WORDS = re.compile(
+    r"\b(?:once|twice|thrice|three times|four times|\d+ times|une fois|deux fois|trois fois|quatre fois|\d+ fois|"
+    r"raz|dwa razy|trzy razy|cztery razy|\d+ razy|uma vez|duas vezes|tres vezes|quatro vezes|\d+ vezes|una vez|"
+    r"dos veces|tres veces)\s+(?:a day|daily|per day|a week|weekly|per week|par jour|par semaine|dziennie|"
+    r"tygodniowo|w tygodniu|ao dia|por dia|por semana|na semana|al dia|a la semana)\b"
+    r"|\bevery \d+ hours\b|\bco \d+ godzin\b|\btoutes les \d+ heures\b|\ba cada \d+ horas\b|\bcada \d+ horas\b"
+    r"|\b(?:daily|weekly|dziennie|tygodniowo|quotidien\w*|diariamente|semanal\w*)\b"
+    r"|\b(?:each|every) (?:morning|night|evening|day|week)\b|\bat bedtime\b|\bchaque (?:matin|soir|jour)\b"
+    r"|\bcodziennie\b|\btodas as manhas\b|\btodos os dias\b")
+ACTION_WORDS = re.compile(r"\b(?:see|visit|appointment|come|book|attend|go to|return|follow-up|follow up|"
+                          r"rendez-vous|consultez|revoir|wizyt\w*|konsultac\w*|consulta|retorno|seen)\b")
+# A quote that is a header or timestamp line: an appointment taken from it is never right.
+HEADER_QUOTE = re.compile(r"^(?:report printed|printed|reported|collected|received|dob|date of birth|accession|"
+                          r"requisition|signed|dictated|transcribed|ordered|verified|resulted|result date|specimen|"
+                          r"imprime\w*|date d'impression|preleve\w*|recu le|date de naissance|data wypisu|"
+                          r"data przyjecia|data urodzenia|data wydruku|data pobrania|impresso|coletad\w*|"
+                          r"data do exame|data de nascimento)\b")
+QUOTE_ACTION = re.compile(r"\b(?:see|seen|visit|appointment|follow|return|come|book|clinic|review|arrive|rendez|revoir|"
+                          r"wizyt\w*|kontrol\w*|consult\w*|retorno|retorne|appel\w*|call|repeat|refai\w*|przyjd\w*|"
+                          r"arrivez|chegue)\w*")
+# Stop and hold words by language (en, fr, es, pl, pt-BR, zh): a quote that holds or stops a medicine,
+# a sentence that keeps saying so.
+HOLD_WORDS = (r"on hold|held|hold|holding|stopped|stop|stopping|discontinued|discontinue|cease\w*|suspend\w*|"
+              r"withh[eo]ld\w*|paused?|do not take|don't take|not to take|no longer|"
+              r"arret\w*|cess\w*|interromp\w*|ne pas prendre|ne plus prendre|en pause|"
+              r"deten\w*|interrump\w*|dejar de|no tome|no tomar|"
+              r"wstrzym\w*|odstaw\w*|zaprzesta\w*|przerw\w*|nie przyjmow\w*|nie stosow\w*|"
+              r"suspens\w*|parar|pare|nao tome|nao tomar|deixar de|interromp\w*")
+HOLD_QUOTE = re.compile(r"\b(?:" + HOLD_WORDS + r")\b|停用|暂停|停止|停药|勿服|不要服用")
+HOLD_SENTENCE = re.compile(r"\b(?:" + HOLD_WORDS + r"|not restart\w*|not resume|quit\w*|nie przyjm\w*|not taking|"
+                           r"rzuc\w*|przesta\w*|give up|abandon\w*|largar|dejar)\b"
+                           r"|停用|暂停|停止|停药|勿服|不要服用")
+END_OF_COURSE = re.compile(r"\b(?:then stop|and stop|then discontinue|puis arret\w*|potem odstaw\w*|depois suspend\w*)\b")
+# Letters that belong to one language here: a short sentence (too few stopwords to guess) in another
+# language than the summary's still shows them. A capitalized word after the first is a name, skipped.
 UNIQUE_LETTERS = {"pl": "łąężśćńź", "pt-BR": "ãõ", "fr": "œùûëïè", "es": "ñ¿¡"}
+# A sentence end: . ! ? before a space or the end, not inside a number ("38.5") and not after a title.
+SENTENCE_END = re.compile(r"(?<!\bdr)(?<!\bdre)(?<!\bmr)(?<!\bms)(?<!\bmrs)(?<!\bst)(?<!\bno)(?<!\bvs)(?<!\bp\.o)"
+                          r"[.!?](?=\s|$)")
 
 
 def doc_lines(doc):
@@ -440,14 +489,16 @@ def quote_line(doc, quote, before=0):
 
 
 def quote_sentence(doc, quote):
-    """The document sentence(s) a quote lies in (folded): the quote widened to the nearest sentence ends."""
+    """The document sentence(s) a quote lies in (folded): the quote widened to the nearest sentence ends
+    (not a decimal point, not a title such as "Dr.")."""
     place = quote_place(doc, quote)
     if not place:
         return ""
     flat, start, end = place[3:]
-    left = max(flat.rfind(c, 0, start) for c in ".!?") + 1
-    rights = [i for i in (flat.find(c, max(start, end - 1)) for c in ".!?") if i >= 0]
-    return flat[left:min(rights) if rights else len(flat)]
+    ends = [m.end() for m in SENTENCE_END.finditer(flat)]
+    left = max([e for e in ends if e <= start], default=0)
+    right = min([e for e in ends if e >= max(start + 1, end)], default=len(flat))
+    return flat[left:right].strip()
 
 
 def quote_clause(doc, quote):
@@ -464,57 +515,91 @@ def quote_clause(doc, quote):
     return flat[left:right] if right > left else lines[first]
 
 
+def list_heading(doc, quote):
+    """For a quote on a list item, the heading line above the list (folded), else ""."""
+    place = quote_place(doc, quote)
+    if not place:
+        return ""
+    lines, first = place[0], place[1]
+    if not LIST_ITEM.search(lines[first]):
+        return ""
+    for line in reversed(lines[max(0, first - 12):first]):
+        if not LIST_ITEM.search(line):
+            return line
+    return ""
+
+
 def content_words(text):
     return {w[:5] for w in re.findall(r"[^\W\d_]{4,}", text)
             if w not in {s for stop in STOPWORDS.values() for s in stop} | {"that", "this", "your", "with", "more"}}
 
 
+def alternative_dropped(text, around):
+    """Whether a condition in the document sentence has alternatives ("if A, B or C") the summary
+    sentence leaves out while it names the first."""
+    said = content_words(fold(text))
+    for cue in CONDITION_CUE.finditer(around):
+        condition = around[cue.end():]
+        main = MAIN_CLAUSE.search(condition)
+        condition = re.split(r"[;:]", condition[:main.start()] if main else condition)[0]
+        condition = re.sub(r"\([^)]*\)?", " ", condition)  # examples in brackets are not alternatives
+        parts = [content_words(p) for p in ALTERNATIVE_SPLIT.split(condition) if p and content_words(p)]
+        if len(parts) >= 2 and parts[0] & said and any(not p & said for p in parts[1:]):
+            return True
+    return False
+
+
 def unsafe_flags(text, quote, doc, run_lang):
-    """The screens for the unsafe kinds of sentence a reviewer found (rule 6, DRAFT)."""
+    """The screens for the unsafe kinds of sentence a reviewer found (rule 6, DRAFT). Flags ending in
+    "_MARK" are weaker signals; see HARNESS.md for which a summary could drop and which only mark."""
     ftext, fquote = fold(text), fold(quote)
     flags = []
-    line = quote_clause(doc, quote) or fquote
-    if (GENERAL_MEDICINES.search(ftext) and not NARROW_MEDICINES.search(ftext) and not GENERAL_MEDICINES.search(line)
+    clause = quote_clause(doc, quote) or fquote
+    if (GENERAL_MEDICINES.search(ftext) and not NARROW_MEDICINES.search(ftext) and not GENERAL_MEDICINES.search(clause)
             and (DATE_WORDS.search(ftext) or DURATION_WORDS.search(ftext) or UNTIL_WORDS.search(ftext)
                  or ALL_WORDS.search(ftext))
-            and NARROW_MEDICINES.search(line)):
+            and NARROW_MEDICINES.search(clause)):
         flags.append("GENERALIZED_SUBJECT")
-    # The quote's line and the two lines before it: a list item under "Follow-up:" is an instruction.
-    context = quote_line(doc, quote, 2) or fquote
+    # The quote's own clause, and the heading above it when it is a list item.
+    context = f"{list_heading(doc, quote)} {clause}".strip()
+    keeps = KEEP_SENTENCE.search(ftext) and UNCHANGED_WORDS.search(context)
+    stops = HOLD_SENTENCE.search(ftext) and HOLD_QUOTE.search(context)
     if (INSTRUCTION_SENTENCE.search(ftext) and fquote and not QUOTE_INSTRUCTION.search(context)
-            and not DOSING_LINE.search(context)):
+            and not DOSING_LINE.search(context) and not keeps and not stops):
         flags.append("INSTRUCTION_ADDED")
     around = quote_sentence(doc, quote)
-    cue = CONDITION_CUE.search(around)
     # Word overlap cannot tell a dropped alternative across languages: only within one.
     same_language = (guess_language(around) or (doc or {}).get("lang") or run_lang) == (guess_language(text) or run_lang)
-    if cue and same_language:
-        condition = re.split(r"[;:]", around[cue.end():])[0]
-        parts = ALTERNATIVE_SPLIT.split(condition, maxsplit=1)
-        if len(parts) == 2:
-            first, second = content_words(parts[0]), content_words(parts[1])
-            said = content_words(ftext)
-            if first & said and second and not second & said:
-                flags.append("ALTERNATIVE_DROPPED")
-    counted = COUNT_WORDS.search(fquote)
-    if counted and not COUNT_WORDS.search(ftext) and not UNCHANGED_WORDS.search(ftext):
-        frequency = re.search(re.escape(counted.group(0)) + r" (?:a|per|par|each|every|daily|weekly|dziennie|"
-                              r"tygodniowo|por|ao)\b", fquote) or re.search(re.escape(counted.group(0)) + r" daily", fquote)
-        if not (frequency and FREQUENCY_WORDS.search(ftext)):
-            flags.append("COUNT_DROPPED")
-    if (ACTION_WORDS.search(ftext) and (DATE_WORDS.search(ftext) or TIME_WORDS.search(ftext))
-            and (HEADER_QUOTE.search(fquote) or not QUOTE_ACTION.search(fquote))):
-        flags.append("ACTION_FROM_HEADER")
+    if around and same_language and alternative_dropped(text, around):
+        flags.append("ALTERNATIVE_DROPPED")
+    if SINGLE_DOSE.search(fquote) and not COUNT_SAID.search(ftext):
+        flags.append("COUNT_DROPPED")
+    if (FREQUENCY_WORDS.search(fquote) and not FREQUENCY_WORDS.search(ftext) and not UNCHANGED_WORDS.search(ftext)
+            and not SINGLE_DOSE.search(fquote) and "GENERALIZED_SUBJECT" not in flags
+            and (DOSING_LINE.search(fquote) or NARROW_MEDICINES.search(fquote) or DOSE_WORDS.search(fquote))):
+        flags.append("FREQUENCY_DROPPED_MARK")
+    dated_action = ACTION_WORDS.search(ftext) and (DATE_WORDS.search(ftext) or TIME_WORDS.search(ftext))
+    if dated_action and fquote:
+        if HEADER_QUOTE.search(fquote):
+            flags.append("ACTION_FROM_HEADER")
+        elif not QUOTE_ACTION.search(fquote):
+            flags.append("ACTION_NOT_IN_QUOTE_MARK")
     course_end = END_OF_COURSE.search(fquote) and (UNTIL_WORDS.search(ftext) or DATE_WORDS.search(ftext)
                                                    or DURATION_WORDS.search(ftext))
-    if HOLD_QUOTE.search(fquote) and not HOLD_SENTENCE.search(ftext) and not course_end:
+    # "for 3 months after stopping it" names a time, not a hold.
+    holds = [m for m in HOLD_QUOTE.finditer(fquote)
+             if not re.search(r"\b(?:after|before|since|apres|avant|po|przed|depois|antes)\s+(?:\w+\s+)?$",
+                              fquote[:m.start()])]
+    if holds and not HOLD_SENTENCE.search(ftext) and not course_end:
         flags.append("HOLD_DROPPED")
     return flags
 
 
 def unique_letter_language(text, run_lang):
-    """A language other than the summary's whose own letters a sentence's lower-case words use."""
-    words = [w for w in normalized(text).split() if w[:1].islower()]
+    """A language other than the summary's whose own letters a sentence's words use (a capitalized
+    word after the first is taken as a name and skipped)."""
+    words = normalized(text).split()
+    words = words[:1] + [w for w in words[1:] if w[:1].islower()]
     letters = set("".join(words).casefold())
     for lang, own in UNIQUE_LETTERS.items():
         if lang != run_lang and letters & set(own):
