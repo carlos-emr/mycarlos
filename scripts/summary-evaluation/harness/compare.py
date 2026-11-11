@@ -349,6 +349,51 @@ def summarize_run(scores, wrong):
     )
 
 
+# What the app asks for beside the model file once it is verified (model_runtime.rs WORKING_BYTES).
+WORKING_MIB = 1536
+
+
+def memory(meta, entries):
+    """The helper's memory in a run (Linux runs carry it): after the model loaded, each document's
+    own peak, and how far the highest peak went above the model file, against WORKING_MIB."""
+    mib = lambda kib: round(kib / 1024)
+    model_mib = (meta.get("model") or {}).get("bytes", 0) / 1048576
+    load = meta.get("helperMemory") or {}
+    peaks = {doc_id: e["helperMemory"] for doc_id, e in entries.items() if (e.get("helperMemory") or {}).get("peakKiB")}
+    if not peaks and not load:
+        return None
+    own = [m["peakKiB"] for m in peaks.values() if m.get("peakSince") == "document"]
+    top = max(peaks, key=lambda doc_id: peaks[doc_id]["peakKiB"]) if peaks else None
+    highest = max([m["peakKiB"] for m in peaks.values()] + [load.get("peakKiB") or 0])
+    available = [m["availableKiB"] for m in list(peaks.values()) + [load] if m.get("availableKiB")]
+    return dict(
+        model_mib=round(model_mib), load_peak_mib=mib(load["peakKiB"]) if load.get("peakKiB") else None,
+        documents=len(peaks), own_peaks=len(own),
+        median_peak_mib=mib(statistics.median(own)) if own else None,
+        max_peak_mib=mib(peaks[top]["peakKiB"]) if top else None, max_peak_doc=top,
+        above_model_mib=round(highest / 1024 - model_mib) if model_mib else None,
+        working_mib=WORKING_MIB,
+        lowest_available_mib=mib(min(available)) if available else None,
+    )
+
+
+def memory_lines(labels, memories):
+    rows = [(label, m) for label, m in zip(labels, memories) if m]
+    if not rows:
+        return []
+    lines = ["", "Helper memory (MiB; per-document peaks are each document's own, reset before it):", "",
+             "| Run | model file | after load | median document peak | highest document peak | highest above the model file "
+             f"(app allows {WORKING_MIB}) | lowest available |",
+             "|---|---|---|---|---|---|---|"]
+    for label, m in rows:
+        top = f"{m['max_peak_mib']} ({m['max_peak_doc']})" if m["max_peak_doc"] else ""
+        own = "" if m["own_peaks"] == m["documents"] else f" ({m['own_peaks']} of {m['documents']} own)"
+        lines.append(f"| {label} | {m['model_mib']} | {m['load_peak_mib'] or ''} | {m['median_peak_mib'] or ''}{own} | "
+                     f"{top} | {m['above_model_mib'] if m['above_model_mib'] is not None else ''} | "
+                     f"{m['lowest_available_mib'] or ''} |")
+    return lines
+
+
 def decide(base_scores, base_summary, scores, summary):
     """The written-down rule (HARNESS.md): PASS only if every check holds; PENDING while the
     hand review has not been filled in."""
@@ -378,7 +423,7 @@ def decide(base_scores, base_summary, scores, summary):
     return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures)
 
 
-def table(labels, docs, all_scores, summaries, decisions):
+def table(labels, docs, all_scores, summaries, decisions, memories=()):
     head = "| Document | " + " | ".join(labels) + " |"
     lines = [head, "|---|" + "---|" * len(labels)]
     for doc_id in sorted(docs):
@@ -416,6 +461,7 @@ def table(labels, docs, all_scores, summaries, decisions):
                                                    for name, ok in decision["checks"]))
             if decision["lost"]:
                 lines.append(f"  lost: {', '.join(decision['lost'])}")
+    lines += memory_lines(labels, memories)
     return "\n".join(lines) + "\n"
 
 
@@ -423,7 +469,7 @@ def score(run_paths, out, docs, review=None):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     verdicts = read_review(review) if review else None
-    labels, all_scores, summaries, metas, sheets = [], [], [], [], []
+    labels, all_scores, summaries, metas, sheets, memories = [], [], [], [], [], []
     for path in run_paths:
         meta, entries = read_run(path)
         label = run_label(meta, path)
@@ -438,6 +484,7 @@ def score(run_paths, out, docs, review=None):
         if verdicts is not None:
             wrong = sum(1 for (run, _, _), verdict in verdicts.items() if run == label and verdict in WRONG_VERDICTS)
         summaries.append(summarize_run(scores, wrong))
+        memories.append(memory(meta, entries))
         seed = meta.get("build", {}).get("fingerprint", "") + label
         sheets += review_rows(label, meta, docs, entries, scores, seed)
     base_model = metas[0].get("model", {}).get("sha256")
@@ -445,8 +492,8 @@ def score(run_paths, out, docs, review=None):
              if meta.get("model", {}).get("sha256") != base_model]
     decisions = [None] + [decide(all_scores[0], summaries[0], s, m) for s, m in zip(all_scores[1:], summaries[1:])]
     (out / "scores.json").write_text(json.dumps(dict(
-        runs=[dict(label=l, meta=m, summary=s, decision=d, documents=sc)
-              for l, m, s, d, sc in zip(labels, metas, summaries, decisions, all_scores)],
+        runs=[dict(label=l, meta=m, summary=s, decision=d, memory=mem, documents=sc)
+              for l, m, s, d, mem, sc in zip(labels, metas, summaries, decisions, memories, all_scores)],
         notes=notes), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     sheet = out / "review.csv"
     if not sheet.exists():
@@ -455,7 +502,7 @@ def score(run_paths, out, docs, review=None):
                                                         "flags", "facts", "traps", "verdict", "note"])
             writer.writeheader()
             writer.writerows(sheets)
-    (out / "compare.md").write_text(table(labels, docs, all_scores, summaries, decisions)
+    (out / "compare.md").write_text(table(labels, docs, all_scores, summaries, decisions, memories)
                                     + "".join(f"\nNOTE: {n}\n" for n in notes), encoding="utf-8")
     return summaries, decisions
 

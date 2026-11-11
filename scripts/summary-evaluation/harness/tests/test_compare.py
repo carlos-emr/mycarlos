@@ -236,6 +236,27 @@ class RunTest(unittest.TestCase):
         same, different, compared, problems = compare.repeat(first, write_run(self.folder.name, "B0X", changed))
         self.assertEqual((same, different, problems), ([], ["fake-letter"], ["build"]))
 
+    def test_reports_the_helper_s_memory_per_document_against_the_allowance(self):
+        lines = run_lines("B0", BASE)
+        lines[0]["model"]["bytes"] = 3 * 1048576 * 1024
+        lines[0]["helperMemory"] = dict(peakKiB=3_300_000, availableKiB=9_000_000)
+        lines[1]["helperMemory"] = dict(peakKiB=3_700_000, availableKiB=8_000_512, peakSince="document")
+        meta, entries = compare.read_run(write_run(self.folder.name, "B0", lines))
+        m = compare.memory(meta, entries)
+        self.assertEqual((m["model_mib"], m["load_peak_mib"], m["median_peak_mib"], m["max_peak_doc"]),
+                         (3072, 3223, 3613, "fake-letter"))
+        self.assertEqual((m["above_model_mib"], m["working_mib"], m["lowest_available_mib"]), (541, 1536, 7813))
+        compare.score([write_run(self.folder.name, "B0", lines)], Path(self.folder.name) / "out", self.docs)
+        self.assertIn("| B0 | 3072 | 3223 | 3613 | 3613 (fake-letter) | 541 | 7813 |",
+                      (Path(self.folder.name) / "out" / "compare.md").read_text(encoding="utf-8"))
+
+    def test_a_peak_kept_from_the_helper_s_start_is_not_counted_as_a_document_s_own(self):
+        lines = run_lines("B0", BASE)
+        lines[1]["helperMemory"] = dict(peakKiB=3_700_000, peakSince="helperStart")
+        m = compare.memory(*compare.read_run(write_run(self.folder.name, "B0", lines)))
+        self.assertEqual((m["documents"], m["own_peaks"], m["median_peak_mib"]), (1, 0, None))
+        self.assertIsNone(compare.memory(*compare.read_run(write_run(self.folder.name, "B1", run_lines("B1", BASE)))))
+
     def test_the_review_sheet_is_never_overwritten(self):
         _, out = self.score(run_lines("E1", BETTER))
         sheet = out / "review.csv"

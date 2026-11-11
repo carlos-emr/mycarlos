@@ -55,6 +55,10 @@ and kept as their `pages`.
 - **The review sheet** (`review.csv`) has every flagged sentence and a seeded fifth of the others,
   each with its quote, the facts it carries and the document's traps. A reviewer fills `verdict`
   (`correct`, `wrong`, `unsupported`, `vague`). One `wrong` or `unsupported` fails a variant.
+- **Helper memory** (Linux runs): the helper's resident memory once the model has loaded, and each
+  document's own peak (reset just before the document), with its anonymous, file and shared parts
+  and the memory the computer still had. `compare.md` sets the highest peak above the model file
+  against the 1,536 MiB the app allows for working memory.
 - Sentences, quotes found, prompt and answer tokens and times, `capped` (stopped at the token cap),
   `cut` (the last page did not fit, or only its start did), time limit, failures, and `answerHash`
   (token-for-token comparison: greedy decoding repeats exactly on the same build and threads).
