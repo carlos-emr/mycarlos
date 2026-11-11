@@ -405,6 +405,10 @@ pub(crate) struct SummaryRequest {
     pub(crate) lang: String,
     pub(crate) pages: Vec<Page>,
     pub(crate) max_sentences: usize,
+    /// Evaluation only (V5): also ask for the instructions and times listed apart. The app never
+    /// sets it; then the request is sent without it, as the baseline's was.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) actions: bool,
 }
 
 /// One sentence of a summary: the words, and the words of the document it
@@ -856,7 +860,12 @@ impl Runner {
         if sentences.is_empty() {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
         }
-        let actions = answer.actions.unwrap_or_default();
+        // Kept only when asked for (V5): a request without them gets none back.
+        let actions = if request.actions {
+            answer.actions.unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         if sentences.iter().chain(&actions).any(|sentence| {
             sentence.text.chars().count() > MAX_SENTENCE_CHARS
                 || sentence.quote.chars().count() > MAX_SENTENCE_CHARS
@@ -1822,6 +1831,7 @@ mod tests {
                     },
                 ],
                 max_sentences: 5,
+                actions: false,
             }
         }
 
@@ -2308,7 +2318,11 @@ mod tests {
             // 2, which it did not read.
             let runner = Runner::new(config(&["--actions"], GIB));
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
-            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            let asked = SummaryRequest {
+                actions: true,
+                ..request()
+            };
+            let summary = runner.summarize(runner.ticket(), &asked).unwrap();
             assert_eq!(summary.actions.len(), 2);
             assert!(!summary.actions[0].quote.is_empty());
             assert!(summary.actions[1].quote.is_empty());
@@ -2322,10 +2336,20 @@ mod tests {
             let plain = Runner::new(config(&[], GIB));
             plain.start(&Fixed(Some(8 * GIB))).unwrap();
             assert!(plain
-                .summarize(plain.ticket(), &request())
+                .summarize(plain.ticket(), &asked)
                 .unwrap()
                 .actions
                 .is_empty());
+            // Not asked, as the app never asks: the request goes without "actions", as the
+            // baseline's did, and what a helper lists apart anyway is dropped.
+            assert!(serde_json::to_value(request())
+                .unwrap()
+                .get("actions")
+                .is_none());
+            assert_eq!(serde_json::to_value(&asked).unwrap()["actions"], true);
+            let unasked = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert!(unasked.actions.is_empty());
+            assert!(unasked.action_unlocated_quotes.is_empty());
         }
 
         #[test]

@@ -479,6 +479,7 @@ impl ModelRuntime {
                     lang: request.lang,
                     pages: request.pages,
                     max_sentences: model_helper::MAX_SENTENCES,
+                    actions: false,
                 },
             )
             .map_err(|error| from_runner(&error))?;
@@ -1160,6 +1161,7 @@ pub mod testing {
                     })
                     .collect(),
                 max_sentences: model_helper::MAX_SENTENCES,
+                actions: false,
             };
             self.runner
                 .summarize(self.runner.ticket(), &request)
@@ -1222,6 +1224,11 @@ pub mod engine_testing {
     use sha2::{Digest, Sha256};
     use std::io::{Read, Write};
 
+    /// V5: the evaluation record (`summarize_measured`, `summary_build`) asks for the
+    /// instructions and times listed apart. The app never does, so its request, prompt and
+    /// grammar stay the baseline's.
+    const MEASURE_ACTIONS: bool = true;
+
     struct Plenty;
 
     impl MemoryProbe for Plenty {
@@ -1272,8 +1279,9 @@ pub mod engine_testing {
     pub fn summary_build(lang: &str) -> Result<serde_json::Value, String> {
         let language =
             model_helper::language_name(lang).ok_or_else(|| format!("unknown language {lang}"))?;
-        let prompt = model_helper::summary_prompt(language, model_helper::MAX_SENTENCES);
-        let grammar = model_helper::summary_grammar(model_helper::MAX_SENTENCES);
+        let prompt =
+            model_helper::summary_prompt(language, model_helper::MAX_SENTENCES, MEASURE_ACTIONS);
+        let grammar = model_helper::summary_grammar(model_helper::MAX_SENTENCES, MEASURE_ACTIONS);
         let caps = serde_json::json!({
             "maxSentences": model_helper::MAX_SENTENCES,
             "summaryTokens": model_helper::SUMMARY_TOKENS,
@@ -1281,6 +1289,7 @@ pub mod engine_testing {
             "maxTextChars": model_helper::MAX_TEXT_CHARS,
             "maxQuoteChars": model_helper::MAX_QUOTE_CHARS,
             "maxActions": model_helper::MAX_ACTIONS,
+            "actionsAsked": MEASURE_ACTIONS,
         });
         let caps_text = caps.to_string();
         let mut hash = Sha256::new();
@@ -1353,8 +1362,9 @@ pub mod engine_testing {
             (self.model_sha256.clone(), self.model_bytes)
         }
 
-        /// A summary of `pages` (index, text) in `lang`, as the app asks for one, with each
-        /// sentence's own quote (also one that was not found), the fit, the stats and the limit.
+        /// A summary of `pages` (index, text) in `lang`, as the app asks for one but with the
+        /// actions listed apart (V5, `MEASURE_ACTIONS`), with each sentence's own quote (also one
+        /// that was not found), the fit, the stats and the limit.
         pub fn summarize_measured(
             &self,
             lang: &str,
@@ -1370,6 +1380,7 @@ pub mod engine_testing {
                     })
                     .collect(),
                 max_sentences: model_helper::MAX_SENTENCES,
+                actions: MEASURE_ACTIONS,
             };
             let text_bytes = pages.iter().map(|(_, text)| text.len()).sum();
             let (prompt, answer) = crate::local_runner::summary_request_size(text_bytes);
@@ -1436,6 +1447,7 @@ pub mod engine_testing {
                     })
                     .collect(),
                 max_sentences: model_helper::MAX_SENTENCES,
+                actions: false,
             };
             self.runner
                 .summarize(self.runner.ticket(), &request)

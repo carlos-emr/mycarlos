@@ -467,17 +467,19 @@ impl Engine {
         )
     }
 
-    /// A summary of the pages that fit, in `lang`, with the actions it listed apart (V5) and the
-    /// fit it read.
+    /// A summary of the pages that fit, in `lang`, with the fit it read. With `actions` (V5,
+    /// evaluation only), also the instructions and times it listed apart; without, none, and
+    /// the request and grammar are the baseline's.
     pub(super) fn summarize(
         &mut self,
         lang: &str,
         pages: &[Page],
         max_sentences: usize,
+        actions: bool,
     ) -> Result<(Vec<Sentence>, Vec<Sentence>, Fit), Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
         let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
-        let user = summary_prompt(language, max_sentences);
+        let user = summary_prompt(language, max_sentences, actions);
         let around = self.prompt_tokens(&user, &[""])?.0.len();
         let budget = document_budget(around, SUMMARY_TOKENS);
         let pages: Vec<Page> = pages
@@ -495,12 +497,16 @@ impl Engine {
         )
         .ok_or_else(|| failed("no room"))?;
         let (tokens, prefix_len) = self.prompt_tokens(&user, &[&fit.text])?;
-        let grammar = summary_grammar(max_sentences);
+        let grammar = summary_grammar(max_sentences, actions);
         let (written, capped) =
             self.generate(&tokens, prefix_len, SUMMARY_TOKENS, Some(&grammar))?;
         let sentences = read_summary(&written, capped).ok_or_else(|| failed("unreadable"))?;
-        let actions = read_actions(&written, capped);
-        Ok((sentences, actions, fit))
+        let listed = if actions {
+            read_actions(&written, capped)
+        } else {
+            Vec::new()
+        };
+        Ok((sentences, listed, fit))
     }
 
     /// What `term` means in `context`, in `lang`.
@@ -544,7 +550,7 @@ mod tests {
 
     #[test]
     fn the_instruction_prefix_never_holds_a_document_a_term_or_a_sentence() {
-        let summary = gemma4_conversation(SYSTEM_PROMPT, &summary_prompt("English", 6));
+        let summary = gemma4_conversation(SYSTEM_PROMPT, &summary_prompt("English", 6, false));
         let explain = gemma4_conversation(SYSTEM_PROMPT, &explain_prompt("Polish"));
         for (templated, with_marker, without) in [
             (&summary, vec![MARKER], vec!["FAKE other pages"]),

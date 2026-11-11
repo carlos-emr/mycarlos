@@ -468,12 +468,12 @@ fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
     ];
     let measured = runner.summarize_measured("en", &pages).unwrap();
     assert_eq!((measured.last_page, measured.last_page_cut), (1, false));
-    // V5: the summary's 6 sentences, then 0 to 4 actions listed apart, marked, which a scorer
-    // reads as sentences too.
+    // V5: the summary's 6 sentences, then 0 to 8 actions listed apart (the measured record
+    // asks for them; the app never does), marked, which a scorer reads as sentences too.
     let summary_sentences = measured.sentences.iter().filter(|s| !s.action).count();
     let actions = measured.sentences.iter().filter(|s| s.action).count();
     assert_eq!(summary_sentences, 6, "{measured:?}");
-    assert!(actions <= 4, "{measured:?}");
+    assert!(actions <= 8, "{measured:?}");
     assert!(measured.sentences[..6].iter().all(|s| !s.action));
     for sentence in &measured.sentences {
         assert_eq!(
@@ -517,6 +517,17 @@ fn a_summary_build_names_its_prompt_grammar_and_caps_by_one_fingerprint() {
         .as_str()
         .unwrap()
         .contains(&format!("{{0,{}}}", cap - 1)));
+    // V5: the measured build asks for actions; its request and grammar allow the caps' number.
+    assert_eq!(en["caps"]["actionsAsked"], true);
+    let actions = en["caps"]["maxActions"].as_u64().unwrap();
+    assert!(en["summaryPrompt"]
+        .as_str()
+        .unwrap()
+        .contains(&format!("at most {actions}, each as one sentence")));
+    assert!(en["grammar"]
+        .as_str()
+        .unwrap()
+        .contains(&format!("sentence){{0,{}}})?", actions - 1)));
     assert!(summary_build("xx").is_err());
 }
 

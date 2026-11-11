@@ -1525,6 +1525,7 @@ mod tests {
             lang: "en".into(),
             pages: vec![],
             max_sentences: 1,
+            actions: false,
         };
         assert!(matches!(
             runner.summarize(old, &request),
