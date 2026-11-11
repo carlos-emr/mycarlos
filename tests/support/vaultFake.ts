@@ -266,7 +266,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         displayName: string;
         sourceLabel: string;
         mediaType: string;
-        sourceKind?: "manual";
         plaintextSize: number;
         importedAtMs: number;
         available: boolean;
@@ -459,7 +458,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [setup.ids.folder],
             displayName: "FAKE Bloodwork.pdf",
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 2048,
             importedAtMs: Date.UTC(2026, 9, 2, 12),
@@ -471,7 +469,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [],
             displayName: "FAKE Letter.pdf",
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 1024,
             importedAtMs: Date.UTC(2026, 9, 3, 12),
@@ -507,7 +504,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [],
             displayName: "FAKE Locked.pdf",
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 3072,
             importedAtMs: Date.UTC(2026, 9, 4, 12),
@@ -524,7 +520,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [],
             displayName: name,
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             // As the vault stores a photo: bytes it does not name.
             mediaType: "application/octet-stream",
             plaintextSize: 1234,
@@ -718,7 +713,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         folderIds,
         displayName,
         sourceLabel: "Manual import — unverified",
-        sourceKind: "manual",
         mediaType: "application/pdf",
         plaintextSize: 1024,
         importedAtMs: Date.now(),
@@ -1757,6 +1751,13 @@ export async function fakeSnapshot(page: Page) {
         snapshot: () => {
           recoveryKeySetAtMs: number | null;
           recoveryKeyLabel: string | null;
+          sharedProfileId?: string;
+          profiles: {
+            id: string;
+            displayName: string;
+            fullName?: string;
+            birthDate?: string;
+          }[];
           records: {
             id: string;
             displayName: string;

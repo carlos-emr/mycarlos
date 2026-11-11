@@ -6169,7 +6169,15 @@ mod tests {
                 .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .collect();
         files.sort();
-        assert_eq!(files, ["appearance.json", "default.json", "zoom.json"]);
+        assert_eq!(
+            files,
+            [
+                "appearance.json",
+                "default.json",
+                "events.json",
+                "zoom.json"
+            ]
+        );
     }
 
     #[test]
@@ -6188,6 +6196,74 @@ mod tests {
             appearance["permissions"],
             serde_json::json!(["core:window:allow-set-theme"])
         );
+    }
+
+    #[test]
+    fn the_page_may_listen_for_the_apps_events_and_nothing_wider() {
+        // The AI helper follows a model download through listen()
+        // ("ai-model-add-progress", "ai-model-add-ended"). Tauri refuses listen()
+        // unless a capability grants it, and a refused listen showed no progress
+        // bar in the built app while every mocked test passed. So: the grant is
+        // there whenever a page file listens, it is listen and unlisten only (the
+        // page never emits), and only the main window on a computer has it.
+        let events: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/events.json")).unwrap();
+        assert_eq!(events["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            events["platforms"],
+            serde_json::json!(["windows", "macOS", "linux"])
+        );
+        assert_eq!(
+            events["permissions"],
+            serde_json::json!(["core:event:allow-listen", "core:event:allow-unlisten"])
+        );
+        fn page_files(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    page_files(&path, found);
+                } else if path.extension().is_some_and(|e| e == "ts" || e == "tsx")
+                    && !path.to_string_lossy().contains(".test.")
+                {
+                    found.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        page_files(
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../src")),
+            &mut files,
+        );
+        let listening: Vec<_> = files
+            .iter()
+            .filter(|path| {
+                std::fs::read_to_string(path)
+                    .unwrap()
+                    .contains("\"@tauri-apps/api/event\"")
+            })
+            .collect();
+        // The grant is only for pages that listen; without one it must go.
+        assert!(!listening.is_empty());
+        // No capability file grants emitting or the whole event or core set.
+        for name in [
+            "appearance.json",
+            "default.json",
+            "events.json",
+            "zoom.json",
+        ] {
+            let text = std::fs::read_to_string(format!(
+                "{}/capabilities/{name}",
+                env!("CARGO_MANIFEST_DIR")
+            ))
+            .unwrap();
+            for wider in [
+                "core:default",
+                "core:event:default",
+                "core:event:allow-emit",
+            ] {
+                assert!(!text.contains(wider), "{name} grants {wider}");
+            }
+        }
     }
 
     #[test]
@@ -7251,6 +7327,93 @@ mod tests {
             let _ = serde_json::from_slice::<HideUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
+    }
+}
+
+#[cfg(test)]
+mod historical_identifier_export_tests {
+    use super::*;
+
+    #[test]
+    fn native_text_export_refuses_a_former_name_and_unverifiable_history_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                pages_digest: pages_digest([(0, "Zorvana")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let request = || TextExportPickedRequest {
+            record_id: record,
+            ticket,
+            pick_id,
+            text: "Zorvana".to_owned(),
+        };
+        // The current label alone must not reject the unique former token.
+        let current_only = vec!["FAKE Neralis".to_owned()];
+        assert!(text_recheck::identifier_hits("Zorvana", &current_only, &[]).is_empty());
+        assert!(!text_recheck::identifier_hits("Neralis", &current_only, &[]).is_empty());
+        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
+        assert!(!outcome.saved);
+        assert_eq!(outcome.hits.len(), 1);
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 7));
+        assert!(!destination.exists());
+
+        // Only this disposable synthetic vault is damaged. The audit view may
+        // retain checked fragments; a privacy check must not certify the gap.
+        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .is_err());
+        assert!(!destination.exists());
     }
 }
 
@@ -8330,6 +8493,90 @@ mod native_localization_tests {
         let waited = PublicError::wait(1234);
         assert!(!public_error_text(&waited).is_empty());
         assert_eq!(waited.retry_after_ms, Some(1234));
+    }
+}
+
+#[cfg(test)]
+mod event_permission_ipc_tests {
+    use super::*;
+
+    fn request(cmd: &str, body: serde_json::Value) -> tauri::webview::InvokeRequest {
+        let local = if cfg!(any(windows, target_os = "android")) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        };
+        tauri::webview::InvokeRequest {
+            cmd: cmd.into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: local.parse().unwrap(),
+            body: tauri::ipc::InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.into(),
+        }
+    }
+
+    /// With the real generated capability authority (only the OS runtime is mocked), as the
+    /// built app checks it: the main window may listen for every event the page listens to (the
+    /// model download's, and an AI answer's start for the idle lock) and stop listening, may not
+    /// emit, and no other window may listen.
+    #[test]
+    fn the_main_window_may_listen_for_events_and_may_not_emit() {
+        let app = tauri::test::mock_builder()
+            .build(production_context())
+            .unwrap();
+        let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let other = tauri::WebviewWindowBuilder::new(&app, "FAKE-ungranted", Default::default())
+            .build()
+            .unwrap();
+        let listen = |event: &str| {
+            request(
+                "plugin:event|listen",
+                serde_json::json!({ "event": event, "target": { "kind": "Any" }, "handler": 7 }),
+            )
+        };
+        for event in [
+            "ai-model-add-progress",
+            "ai-model-add-ended",
+            "ai-answer-started",
+        ] {
+            let id = tauri::test::get_ipc_response(&main, listen(event))
+                .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))
+                .deserialize::<serde_json::Value>()
+                .unwrap();
+            tauri::test::get_ipc_response(
+                &main,
+                request(
+                    "plugin:event|unlisten",
+                    serde_json::json!({ "event": event, "eventId": id }),
+                ),
+            )
+            .unwrap_or_else(|refused| panic!("unlisten {event}: {refused}"));
+        }
+        let Err(refused) = tauri::test::get_ipc_response(&other, listen("ai-model-add-progress"))
+        else {
+            panic!("another window must not listen");
+        };
+        assert!(
+            refused.as_str().unwrap().contains("not allowed"),
+            "{refused}"
+        );
+        let Err(refused) = tauri::test::get_ipc_response(
+            &main,
+            request(
+                "plugin:event|emit",
+                serde_json::json!({ "event": "FAKE-page-event", "payload": null }),
+            ),
+        ) else {
+            panic!("the page must not emit");
+        };
+        assert!(
+            refused.as_str().unwrap().contains("not allowed"),
+            "{refused}"
+        );
     }
 }
 

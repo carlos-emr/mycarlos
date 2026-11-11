@@ -599,8 +599,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = This photo is already in t
 
 interface-VaultLibrary-topLevel = Top level
 
-interface-VaultLibrary-unlockedLockNow = Unlocked · Lock now
-
 interface-VaultLibrary-working = Working…
 
 kit-keep = Keep it somewhere private and away from the device. Anyone with this key and a copy of your vault can open it. If you set up a new recovery key, this one no longer opens the vault on this device.
@@ -658,6 +656,12 @@ library-items =
     [one] { $count } visible library item
     *[other] { $count } visible library items
     }
+
+library-location-documents = In { $place }: { $documents }.
+
+library-location-summary = In { $place }: { $folders }, { $documents }.
+
+library-lock-unlocked = Unlocked
 
 library-noMatch-help = Try another search.
 
@@ -947,8 +951,6 @@ readingAid-title = Reading aid from your clinic
 readingAid-unavailable = This reading aid cannot be shown safely. Open the original document instead.
 
 record-kind-document = Document
-
-record-source-manual = Manual import — unverified
 
 recover-intro = Use your recovery key to open the vault and choose a new passphrase.
 
@@ -1370,6 +1372,16 @@ personDetails-futureDate = A birth date cannot be in the future.
 
 personDetails-help = Kept in this encrypted vault, to suggest who a shared document is for. These details do not verify a document's source.
 
+personDetails-setup = Full name and date of birth
+
+personDetails-later = Add them later
+
+personDetails-reminder = Add { $name }'s full name and date of birth. They help myCarlos tell who a document is for.
+
+personDetails-notNow = Not now
+
+personDetails-notSaved = The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.
+
 personDetails-invalidDate = Enter a valid birth date as year, month and day.
 
 personDetails-list = People's details
@@ -1441,6 +1453,18 @@ portal-defaultDeviceName = myCarlos on { $platform }
 portal-deviceCode = Device code
 
 portal-deviceName = Name for this device
+
+portal-deviceDetailsShow = Show device details
+
+portal-deviceDetailsHide = Hide device details
+
+portal-earlierShow =
+    { $count ->
+    [one] Show { $count } earlier attempt
+    *[other] Show { $count } earlier attempts
+    }
+
+portal-earlierHide = Hide earlier attempts
 
 portal-errorAddress = Enter the portal HTTPS address without a username, password, query, or fragment.
 
@@ -1621,6 +1645,8 @@ interface-history-event-imported = Document added
 
 interface-history-event-moved = Document moved
 
+interface-history-event-other = Other event
+
 interface-history-event-passphraseChanged = Passphrase changed
 
 interface-history-event-portalLinkStarted = Clinic link started
@@ -1672,6 +1698,8 @@ interface-history-how-movedFromShared = Moved from Shared with me
 interface-history-how-passphrase = Passphrase
 
 interface-history-how-patient = Hidden by you
+
+interface-history-how-personFolder = A person's folder
 
 interface-history-how-picked = Imported from a chosen file
 
@@ -1766,6 +1794,8 @@ portal-codeRefused = The clinic portal didn't take the code. Try again in a few 
 portal-codeSubmit = Confirm code
 
 portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
+
+portal-linkAnother = Link another clinic
 
 ai-summary-button = Summary
 

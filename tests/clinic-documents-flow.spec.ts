@@ -111,7 +111,12 @@ test("links this device to a clinic and asks for approval in one action: a refus
     level: 3,
   });
   await expect(clinic).toBeVisible();
-  await expect(code).toHaveValue("");
+  // Linked: the form leaves the panel for "Link another clinic" (#148),
+  // which opens empty (link-another-clinic.spec.ts), so no code is kept.
+  await expect(code).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: en("portal.linkAnother"), exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(en("portal.errorCodeRejected"), { exact: true }),
   ).toHaveCount(0);
@@ -154,7 +159,9 @@ test("links this device to a clinic and asks for approval in one action: a refus
   expect(await fakeCalls(page, "vault_portal_link")).toEqual([]);
   expect(await fakeCalls(page, "vault_request_device_approval")).toEqual([]);
 
-  // The device code, copied for the clinic's staff.
+  // The device code, copied for the clinic's staff. It waits behind Show
+  // device details (#166).
+  await page.getByText(en("portal.deviceDetailsShow"), { exact: true }).click();
   await page
     .getByRole("button", { name: en("portal.copy"), exact: true })
     .click();

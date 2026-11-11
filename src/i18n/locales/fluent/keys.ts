@@ -188,7 +188,6 @@ export const MESSAGE_KEYS = [
   "interface.VaultLibrary.theyAreInNoOnesRecordsUntil",
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault",
   "interface.VaultLibrary.topLevel",
-  "interface.VaultLibrary.unlockedLockNow",
   "interface.VaultLibrary.working",
   "interface.camera.denied",
   "interface.count.documents",
@@ -293,6 +292,9 @@ export const MESSAGE_KEYS = [
   "library.folder.open",
   "library.folder.rename",
   "library.items",
+  "library.location.documents",
+  "library.location.summary",
+  "library.lock.unlocked",
   "library.noMatch.help",
   "library.noMatch.title",
   "library.rename",
@@ -422,7 +424,6 @@ export const MESSAGE_KEYS = [
   "readingAid.title",
   "readingAid.unavailable",
   "record.kind.document",
-  "record.source.manual",
   "recover.intro",
   "recover.key.format",
   "recover.key.label",
@@ -651,6 +652,10 @@ export const MESSAGE_KEYS = [
   "portal.defaultDeviceName",
   "portal.deviceCode",
   "portal.deviceName",
+  "portal.deviceDetailsShow",
+  "portal.deviceDetailsHide",
+  "portal.earlierShow",
+  "portal.earlierHide",
   "portal.errorAddress",
   "portal.errorCancelled",
   "portal.errorCode",
@@ -703,6 +708,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.created",
   "interface.history.event.deliveryFiled",
   "interface.history.event.deliveryReceiptSettled",
+  "interface.history.event.other",
+  "interface.history.how.personFolder",
   "interface.history.event.deviceApprovalRequestRestarted",
   "interface.history.event.deviceApprovalRequested",
   "interface.history.event.deviceApprovalStatusChanged",
@@ -804,6 +811,7 @@ export const MESSAGE_KEYS = [
   "portal.codeRefused",
   "portal.codeSubmit",
   "portal.codeSubmitted",
+  "portal.linkAnother",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
@@ -995,6 +1003,11 @@ export const MESSAGE_KEYS = [
   "ai.models.picking",
   "ai.models.changed",
   "ai.models.installing",
+  "personDetails.setup",
+  "personDetails.later",
+  "personDetails.reminder",
+  "personDetails.notNow",
+  "personDetails.notSaved",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1273,8 +1286,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault":
     "interface-VaultLibrary-thisPhotoIsAlreadyInTheVault",
   "interface.VaultLibrary.topLevel": "interface-VaultLibrary-topLevel",
-  "interface.VaultLibrary.unlockedLockNow":
-    "interface-VaultLibrary-unlockedLockNow",
   "interface.VaultLibrary.working": "interface-VaultLibrary-working",
   "interface.camera.denied": "interface-camera-denied",
   "interface.count.documents": "interface-count-documents",
@@ -1398,6 +1409,9 @@ const FLUENT_IDS_BY_KEY = {
   "library.folder.open": "library-folder-open",
   "library.folder.rename": "library-folder-rename",
   "library.items": "library-items",
+  "library.location.documents": "library-location-documents",
+  "library.location.summary": "library-location-summary",
+  "library.lock.unlocked": "library-lock-unlocked",
   "library.noMatch.help": "library-noMatch-help",
   "library.noMatch.title": "library-noMatch-title",
   "library.rename": "library-rename",
@@ -1527,7 +1541,6 @@ const FLUENT_IDS_BY_KEY = {
   "readingAid.title": "readingAid-title",
   "readingAid.unavailable": "readingAid-unavailable",
   "record.kind.document": "record-kind-document",
-  "record.source.manual": "record-source-manual",
   "recover.intro": "recover-intro",
   "recover.key.format": "recover-key-format",
   "recover.key.label": "recover-key-label",
@@ -1758,6 +1771,10 @@ const FLUENT_IDS_BY_KEY = {
   "portal.defaultDeviceName": "portal-defaultDeviceName",
   "portal.deviceCode": "portal-deviceCode",
   "portal.deviceName": "portal-deviceName",
+  "portal.deviceDetailsShow": "portal-deviceDetailsShow",
+  "portal.deviceDetailsHide": "portal-deviceDetailsHide",
+  "portal.earlierShow": "portal-earlierShow",
+  "portal.earlierHide": "portal-earlierHide",
   "portal.errorAddress": "portal-errorAddress",
   "portal.errorCancelled": "portal-errorCancelled",
   "portal.errorCode": "portal-errorCode",
@@ -1815,6 +1832,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-event-deliveryFiled",
   "interface.history.event.deliveryReceiptSettled":
     "interface-history-event-deliveryReceiptSettled",
+  "interface.history.event.other": "interface-history-event-other",
+  "interface.history.how.personFolder": "interface-history-how-personFolder",
   "interface.history.event.deviceApprovalRequestRestarted":
     "interface-history-event-deviceApprovalRequestRestarted",
   "interface.history.event.deviceApprovalRequested":
@@ -1937,6 +1956,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.codeRefused": "portal-codeRefused",
   "portal.codeSubmit": "portal-codeSubmit",
   "portal.codeSubmitted": "portal-codeSubmitted",
+  "portal.linkAnother": "portal-linkAnother",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
   "ai.summary.button": "ai-summary-button",
@@ -2188,6 +2208,11 @@ const FLUENT_IDS_BY_KEY = {
   "ai.models.picking": "ai-models-picking",
   "ai.models.changed": "ai-models-changed",
   "ai.models.installing": "ai-models-installing",
+  "personDetails.setup": "personDetails-setup",
+  "personDetails.later": "personDetails-later",
+  "personDetails.reminder": "personDetails-reminder",
+  "personDetails.notNow": "personDetails-notNow",
+  "personDetails.notSaved": "personDetails-notSaved",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2394,7 +2419,6 @@ export interface MessageArgsByKey {
   "interface.VaultLibrary.theyAreInNoOnesRecordsUntil": undefined;
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault": undefined;
   "interface.VaultLibrary.topLevel": undefined;
-  "interface.VaultLibrary.unlockedLockNow": undefined;
   "interface.VaultLibrary.working": undefined;
   "interface.camera.denied": { help: FluentArgument };
   "interface.count.documents": { count: FluentArgument };
@@ -2532,6 +2556,16 @@ export interface MessageArgsByKey {
   "library.folder.open": { name: FluentArgument };
   "library.folder.rename": { name: FluentArgument };
   "library.items": { count: FluentArgument };
+  "library.location.documents": {
+    documents: FluentArgument;
+    place: FluentArgument;
+  };
+  "library.location.summary": {
+    documents: FluentArgument;
+    folders: FluentArgument;
+    place: FluentArgument;
+  };
+  "library.lock.unlocked": undefined;
   "library.noMatch.help": undefined;
   "library.noMatch.title": undefined;
   "library.rename": undefined;
@@ -2674,7 +2708,6 @@ export interface MessageArgsByKey {
   "readingAid.title": undefined;
   "readingAid.unavailable": undefined;
   "record.kind.document": undefined;
-  "record.source.manual": undefined;
   "recover.intro": undefined;
   "recover.key.format": undefined;
   "recover.key.label": undefined;
@@ -2923,6 +2956,10 @@ export interface MessageArgsByKey {
   "portal.defaultDeviceName": { platform: FluentArgument };
   "portal.deviceCode": undefined;
   "portal.deviceName": undefined;
+  "portal.deviceDetailsShow": undefined;
+  "portal.deviceDetailsHide": undefined;
+  "portal.earlierShow": { count: FluentArgument };
+  "portal.earlierHide": undefined;
   "portal.errorAddress": undefined;
   "portal.errorCancelled": undefined;
   "portal.errorCode": undefined;
@@ -2978,6 +3015,8 @@ export interface MessageArgsByKey {
   "interface.history.event.created": undefined;
   "interface.history.event.deliveryFiled": undefined;
   "interface.history.event.deliveryReceiptSettled": undefined;
+  "interface.history.event.other": undefined;
+  "interface.history.how.personFolder": undefined;
   "interface.history.event.deviceApprovalRequestRestarted": undefined;
   "interface.history.event.deviceApprovalRequested": undefined;
   "interface.history.event.deviceApprovalStatusChanged": undefined;
@@ -3079,6 +3118,7 @@ export interface MessageArgsByKey {
   "portal.codeRefused": undefined;
   "portal.codeSubmit": undefined;
   "portal.codeSubmitted": undefined;
+  "portal.linkAnother": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;
@@ -3290,6 +3330,11 @@ export interface MessageArgsByKey {
   "ai.models.picking": undefined;
   "ai.models.changed": undefined;
   "ai.models.installing": undefined;
+  "personDetails.setup": undefined;
+  "personDetails.later": undefined;
+  "personDetails.reminder": { name: FluentArgument };
+  "personDetails.notNow": undefined;
+  "personDetails.notSaved": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

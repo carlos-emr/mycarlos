@@ -840,6 +840,80 @@ describe("SecuritySettings profiles", () => {
   });
 });
 
+describe("Add profile with the person's details, or later (#234)", () => {
+  const withDetails = () =>
+    renderSettings({
+      people: [],
+      onUpdateProfileDetails: vi.fn().mockResolvedValue(true),
+    });
+
+  it("asks for the details, and adds the person with them", () => {
+    const props = withDetails();
+    // Add profile is a dialog now (Ben, 29 Oct): its own Add profile adds.
+    const { dialog } = openAddProfile();
+    change("New profile name", "FAKE Child");
+    const add = within(dialog).getByRole("button", {
+      name: humanText("Add profile"),
+    });
+    expect(add).toBeDisabled();
+    change("Full name, as on clinic documents", "FAKE Child Example");
+    change("Date of birth", "2015-06-01");
+    expect(add).toBeEnabled();
+    fireEvent.click(add);
+    expect(props.onCreateProfile).toHaveBeenCalledWith("FAKE Child", {
+      fullName: "FAKE Child Example",
+      birthDate: "2015-06-01",
+    });
+  });
+
+  it("clears a refusal once Add them later or the date's unknown box is changed", async () => {
+    renderSettings({
+      people: [],
+      notice: "FAKE the vault refused this profile",
+      onUpdateProfileDetails: vi.fn().mockResolvedValue(true),
+      onCreateProfile: vi.fn().mockResolvedValue(false),
+    });
+    const { dialog } = openAddProfile();
+    const refused = () =>
+      within(dialog).queryByText("FAKE the vault refused this profile");
+    const add = () =>
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: humanText("Add profile") }),
+      );
+    const unknown = () =>
+      within(dialog).getByLabelText(
+        humanText("I don't know this person's date of birth"),
+      );
+    change("New profile name", "FAKE Child");
+    change("Full name, as on clinic documents", "FAKE Child Example");
+    fireEvent.click(unknown());
+    add();
+    await waitFor(() => expect(refused()).not.toBeNull());
+    // Unticking "unknown" is a change too.
+    fireEvent.click(unknown());
+    expect(refused()).toBeNull();
+    fireEvent.click(unknown());
+    add();
+    await waitFor(() => expect(refused()).not.toBeNull());
+    fireEvent.click(within(dialog).getByLabelText(humanText("Add them later")));
+    expect(refused()).toBeNull();
+  });
+
+  it("can add the person now and the details later", () => {
+    const props = withDetails();
+    const { dialog } = openAddProfile();
+    change("New profile name", "FAKE Child");
+    fireEvent.click(screen.getByLabelText(humanText("Add them later")));
+    expect(
+      screen.queryByLabelText(humanText("Full name, as on clinic documents")),
+    ).toBeNull();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Add profile") }),
+    );
+    expect(props.onCreateProfile).toHaveBeenCalledWith("FAKE Child");
+  });
+});
+
 describe("SecuritySettings backup", () => {
   it("saves an encrypted backup", () => {
     const props = renderSettings();

@@ -2870,39 +2870,49 @@ p {
   width: 16px;
   height: 16px;
 }
+/* #121: "Sort by" stays in view before its choices, each its own Tab stop. With
+   large text on a narrow window, the choices go under the label and then under
+   each other, each whole: the window hides what runs past its edge. A 1px gap
+   over the line colour draws the dividers both across and down. */
 .native-sort-choice {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0 14px;
-  margin: 0;
-  padding: 0;
-  border: 0;
+  gap: 0 8px;
+  min-width: 0;
+  max-width: 100%;
 }
-.native-sort-choice legend {
-  float: left;
-  margin-right: 2px;
-  padding: 0;
+.native-sort-label {
   color: var(--ink-soft);
   font-weight: 700;
 }
-.native-sort-choice label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.native-sort-segment {
+  flex-wrap: wrap;
+  gap: 1px;
+  max-width: 100%;
+  background: var(--line);
+}
+.native-sort-segment button {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 44px;
+  max-width: 100%;
   min-height: 44px;
+  padding-inline: 12px;
+  background: var(--paper);
   color: var(--ink);
+  font: inherit;
   font-weight: 600;
-  cursor: pointer;
 }
-.native-sort-choice input {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin: 0;
+.native-sort-segment button + button {
+  border-left: 0;
 }
-/* With words on List and Grid, the radios and the segment can need more than a
-   narrow window's width, so the segment moves to its own line, whole. */
+/* Drawn inside the button, so the segment's rounded corners do not cut it off. */
+.native-sort-segment button:focus-visible {
+  outline-offset: -4px;
+}
+/* With words on List and Grid, the sort choices and the view segment can need
+   more than a narrow window's width, so the segment moves to its own line, whole. */
 .native-vault-page .view-controls {
   flex-wrap: wrap;
   row-gap: 0;
@@ -3382,8 +3392,7 @@ p {
    button's line breaks, as names do. A folder's item count wraps like its name.
    Only where the sidebar is hidden, so the computer's layout is unchanged. */
 @media (max-width: 56.25em) {
-  .native-vault-page
-    :is(.view-controls, .native-sort-choice, .native-top-level-narrow) {
+  .native-vault-page :is(.view-controls, .native-top-level-narrow) {
     min-width: 0;
     max-width: 100%;
   }
@@ -3747,6 +3756,12 @@ button:disabled,
     outline: 3px solid Highlight;
     outline-offset: 2px;
   }
+  /* A selected segment button already has a Highlight ring; with focus it gets a
+     different one, so a keyboard user can tell focus from selection (#121). */
+  .native-vault-page .segment button[aria-pressed="true"]:focus-visible {
+    outline: 3px solid CanvasText;
+    outline-offset: -6px;
+  }
   .text-size-box input[aria-invalid="true"] {
     outline: 2px solid CanvasText;
   }
@@ -3887,6 +3902,21 @@ button:disabled,
   overflow-wrap: anywhere;
   font-family: monospace;
 }
+/* Clinic documents lists working links only; earlier attempts and each card's device code and
+   fingerprint wait behind a button and a disclosure. */
+.portal-device-details {
+  margin-block: 0.75rem;
+}
+.portal-device-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.portal-device-details[open] > summary {
+  margin-bottom: 0.5rem;
+}
+.portal-earlier-toggle {
+  margin-block: 0.25rem 1rem;
+}
 .portal-address {
   overflow-wrap: anywhere;
 }
@@ -3916,6 +3946,52 @@ button:disabled,
 .portal-documents > p + p {
   margin-block-start: 0.5rem;
 }
+/* #145: "Link another clinic". The dialog is drawn beside the library's other
+   dialogs, outside .portal-documents, so its fields get the panel's sizes here:
+   one column, every field the dialog's width, 44px targets. Its title wraps
+   at large text instead of being cut short. */
+.portal-link-dialog .dialog-head h2 {
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.portal-link-dialog label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+.portal-link-dialog input,
+.portal-link-dialog select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  font: inherit;
+}
+.portal-link-dialog select {
+  padding: 8px 10px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+}
+/* Below 40em the dialogs' footer buttons share a row, half each, and a
+   button gets a row of its own only when its longest word doesn't fit its
+   half (#157). A Chinese label has no long word, so this dialog's long send
+   label stayed beside Cancel, two characters to a line. Here each button
+   gets its own row, the dialog's width. */
+@media (max-width: 40em) {
+  .portal-link-dialog .dialog-actions > * {
+    flex-basis: 100%;
+  }
+}
+/* In Chinese, a button label that wraps splits evenly instead of leaving one
+   character alone on its last line ("连接并申请批准" at 320 px, 200% text).
+   Other languages keep their wrapping. */
+.portal-link-dialog .dialog-actions .button:lang(zh) {
+  text-wrap: balance;
+}
 .portal-documents > .native-inline-form {
   margin-block-start: 1.25rem;
 }
@@ -3934,6 +4010,13 @@ button:disabled,
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* A section's heading, its intro close under it, then a clear gap before the
+   form, box or buttons that follow: one rule for every such section (Clinic
+   documents, and the AI helper in Security and on its own page). After the
+   rules above, so the gap also replaces the inline form's pull-up margin. */
+:where(h1, h2, h3):has(+ .section-intro) { margin-block-end: 0; }
+.section-intro { margin-block-start: 4px; }
+.section-intro + * { margin-block-start: 14px; }
 /* Visible choices before opening a vault, wrapping instead of a dropdown. */
 .language-compact {
   display: grid;
@@ -4100,4 +4183,55 @@ button:disabled,
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* The library's reminder to add a person's full name and birth date (#234). */
+.native-details-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-block: 8px 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.native-details-reminder p {
+  flex: 1 1 16rem;
+  margin: 0;
+}
+.native-person-details-setup {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.native-person-details-setup legend {
+  padding-inline: 4px;
+  font-weight: 600;
+}
+/* The tick boxes in the details group sit beside their words, on the Create
+   screen as in Security (#234). */
+.native-person-details-setup .native-person-date-unknown {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.native-person-details-setup .native-person-date-unknown input {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.native-person-details-setup label,
+.native-person-details-setup input {
+  min-width: 0;
 }

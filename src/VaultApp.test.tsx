@@ -18,6 +18,13 @@ import {
 } from "./native/recoveryOffer";
 
 const offerIsDue = () => forgetRecoveryOffer();
+// The window's own lock button, named by its words "Lock now" (#121). Security
+// has a Lock now button too, so look only in the title bar.
+const windowLock = (name: string | RegExp = "Lock now") =>
+  within(document.querySelector(".titlebar") as HTMLElement).getByRole(
+    "button",
+    { name: typeof name === "string" ? humanText(name) : name },
+  );
 import { StrictMode } from "react";
 import VaultApp from "./VaultApp";
 import type {
@@ -399,6 +406,54 @@ function renameBridge() {
   });
 }
 
+describe("the first person's details at setup (#234)", () => {
+  it("says when the details typed at setup could not be saved, and the vault is still ready", async () => {
+    const user = userEvent.setup();
+    const updateProfileDetails = vi
+      .fn()
+      .mockRejectedValue({ code: "storage", message: "FAKE: not saved" });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      updateProfileDetails,
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    await user.type(
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
+      "FAKE Patient",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Full name, as on clinic documents")),
+      "FAKE Patient Example",
+    );
+    fireEvent.change(screen.getByLabelText(humanText("Date of birth")), {
+      target: { value: "1980-04-12" },
+    });
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Confirm passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(updateProfileDetails).toHaveBeenCalledOnce();
+    expect(bridge.create).toHaveBeenCalledOnce();
+  });
+});
+
 describe("durable vault UI", () => {
   it.each(["status", "snapshot"])(
     "locks native state and shows unlock when the current startup %s fails",
@@ -531,9 +586,7 @@ describe("durable vault UI", () => {
           ? "FAKE pending lock secret"
           : "Checking and reading the complete history…",
       );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Unlocked · Lock now" }),
-      );
+      fireEvent.click(windowLock());
       expect(
         screen.getByText(
           "Vault content is hidden while myCarlos finishes locking…",
@@ -633,9 +686,7 @@ describe("durable vault UI", () => {
       fireEvent.click(screen.getByRole("button", { name: "Security" }));
       fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
       await screen.findByText("Checking and reading the complete history…");
-      fireEvent.click(
-        screen.getByRole("button", { name: "Unlocked · Lock now" }),
-      );
+      fireEvent.click(windowLock());
       await screen.findByLabelText("Passphrase");
       expect(
         screen.queryByRole("heading", { name: "Audit history" }),
@@ -717,9 +768,7 @@ describe("durable vault UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
     await screen.findByText("FAKE verified session secret");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Unlocked · Lock now" }),
-    );
+    fireEvent.click(windowLock());
     await screen.findByLabelText("Passphrase");
     expect(document.body).not.toHaveTextContent("FAKE verified session secret");
   });
@@ -2446,9 +2495,7 @@ describe("durable vault UI", () => {
 
       // Intake runs in the background: Lock remains available while the
       // native reply containing this document name is still in flight.
-      await user.click(
-        screen.getByRole("button", { name: humanText("Unlocked · Lock now") }),
-      );
+      await user.click(windowLock());
       expect(
         await screen.findByLabelText(humanText("Passphrase")),
       ).toBeVisible();
@@ -2778,9 +2825,7 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByRole("dialog", { name: humanText("FAKE_Letter.pdf") }),
     ).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
-    );
+    await user.click(windowLock());
     expect(
       await screen.findByRole("heading", {
         name: humanText("Unlock your vault"),
@@ -3558,6 +3603,79 @@ describe("durable vault UI", () => {
       ).toBeVisible();
     },
   );
+
+  it("says that details typed at setup were not saved once the recovery key dialog is done", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("absent"),
+      beginRecoveryKey: vi.fn().mockResolvedValue(RECOVERY_KEY),
+      updateProfileDetails: vi
+        .fn()
+        .mockRejectedValue({ code: "storage", message: "FAKE: not saved" }),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () =>
+          captureSnapshot({ ...emptySnapshot, recoveryKeySetAtMs: 5 }),
+        ),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await continuePastComfort();
+    await user.type(
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
+      "FAKE Patient",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Full name, as on clinic documents")),
+      "FAKE Patient Example",
+    );
+    fireEvent.change(screen.getByLabelText(humanText("Date of birth")), {
+      target: { value: "1980-04-12" },
+    });
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Confirm passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: humanText("Your recovery key"),
+    });
+    expect(bridge.updateProfileDetails).toHaveBeenCalledOnce();
+    // Nothing is written under the dialog, where it would not be read out.
+    expect(
+      screen.queryByText(humanText(/weren't saved/)),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Next: check your recovery key"),
+      }),
+    );
+    await user.type(
+      within(dialog).getByLabelText(humanText("Your recovery key")),
+      RECOVERY_KEY,
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Check and save") }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    // The dialog's result says both: the key is saved, the details are not.
+    expect(
+      await screen.findByText(
+        humanText(
+          "Recovery key saved. Keep your kit somewhere safe. The vault is ready, but the full name and date of birth weren't saved. Add them in Edit details.",
+        ),
+      ),
+    ).toBeVisible();
+  });
 
   it("returns focus to the Security recovery setup button after Escape", async () => {
     const user = userEvent.setup();
@@ -4604,9 +4722,7 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await screen.findByText(humanText("FAKE_Results.pdf"));
-    await user.click(
-      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
-    );
+    await user.click(windowLock());
     await user.type(
       await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
@@ -5095,9 +5211,7 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
-    await user.click(
-      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
-    );
+    await user.click(windowLock());
     await screen.findByRole("heading", {
       name: humanText("Unlock your vault"),
     });
@@ -6590,13 +6704,7 @@ describe("durable vault UI", () => {
         const { bridge, started } = await askForSummary();
         await started(5 * 60 * 1000);
         vi.mocked(bridge.lock).mockRejectedValueOnce({ code: "storage" });
-        await act(async () =>
-          fireEvent.click(
-            screen.getByRole("button", {
-              name: humanText("Unlocked · Lock now"),
-            }),
-          ),
-        );
+        await act(async () => fireEvent.click(windowLock()));
         await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
         expect(bridge.lock).toHaveBeenCalledOnce();
         await act(async () => vi.advanceTimersByTime(4 * 60 * 1000 + 10_000));
@@ -6611,13 +6719,7 @@ describe("durable vault UI", () => {
         vi.useFakeTimers();
         try {
           const { bridge, settles } = await askForSummary();
-          await act(async () =>
-            fireEvent.click(
-              screen.getByRole("button", {
-                name: humanText("Unlocked · Lock now"),
-              }),
-            ),
-          );
+          await act(async () => fireEvent.click(windowLock()));
           expect(bridge.lock).toHaveBeenCalledOnce();
           vi.mocked(bridge.unlock).mockImplementation(async () =>
             captureSnapshot(snapshotWithRecord),
@@ -6701,13 +6803,7 @@ describe("durable vault UI", () => {
       vi.useFakeTimers();
       try {
         const { bridge, settles, started } = await askForSummary();
-        await act(async () =>
-          fireEvent.click(
-            screen.getByRole("button", {
-              name: humanText("Unlocked · Lock now"),
-            }),
-          ),
-        );
+        await act(async () => fireEvent.click(windowLock()));
         vi.mocked(bridge.unlock).mockImplementation(async () =>
           captureSnapshot(snapshotWithRecord),
         );
@@ -6865,9 +6961,7 @@ describe("durable vault UI", () => {
         const { bridge, started } = await askForSummary();
         await started(15 * 60 * 1000);
         await act(async () => {
-          fireEvent.click(
-            screen.getByRole("button", { name: "Unlocked · Lock now" }),
-          );
+          fireEvent.click(windowLock());
         });
         expect(bridge.lock).toHaveBeenCalledOnce();
         expect(bridge.aiCancel).toHaveBeenCalled();
@@ -10740,11 +10834,7 @@ describe("durable vault UI", () => {
     ).not.toBeInTheDocument();
     expect(document.body).not.toHaveHumanTextContent(previousBackup);
     expect(window.localStorage.getItem(guideKey)).toBeNull();
-    await user.click(
-      await screen.findByRole("button", {
-        name: humanText(/Unlocked · Lock now/),
-      }),
-    );
+    await user.click(await waitFor(() => windowLock()));
     await screen.findByLabelText(humanText("Passphrase"));
     await expectNothingKeptAfterUnlock();
   });
@@ -10991,11 +11081,7 @@ describe("the app's notices in the language in use (#46)", () => {
     ).toBeVisible();
     expect(screen.queryByText(humanText(/Automatic locking set/))).toBeNull();
 
-    await user.click(
-      screen.getByRole("button", {
-        name: humanText(pl("interface.VaultLibrary.unlockedLockNow")),
-      }),
-    );
+    await user.click(windowLock(pl("security.lockNow")));
     expect(
       await screen.findByText(humanText(pl("notice.locked"))),
     ).toBeVisible();
@@ -11280,6 +11366,147 @@ describe("clinic connection operations", () => {
       .getByRole("button", { name: "Connect and request approval" })
       .closest("form")!;
   }
+
+  it("opens Link another clinic over an inert page, and returns focus to it (#145)", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...clinicSnapshot, portalLinks: [connectedLink] }),
+      connectPortal: vi.fn(),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    // A clinic is linked: its card comes first, and the form is not on the page.
+    expect(
+      screen.getByRole("heading", { name: "FAKE First Clinic" }),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Portal HTTPS address")).toBeNull();
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await user.click(linkAnother);
+    const dialog = screen.getByRole("dialog", { name: "Link another clinic" });
+    expect(document.activeElement).toBe(
+      within(dialog).getByLabelText("Portal HTTPS address"),
+    );
+    // The page behind the dialog is inert; the dialog is not.
+    expect(document.querySelector(".app-body")).toHaveAttribute("inert");
+    expect(dialog.closest("[inert]")).toBeNull();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector(".app-body")).not.toHaveAttribute("inert");
+    expect(document.activeElement).toBe(linkAnother);
+    expect(bridge.connectPortal).not.toHaveBeenCalled();
+  });
+
+  it("gives focus back to Link another clinic when a link sent from its dialog is refused (#145)", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockResolvedValue({ ...clinicSnapshot, portalLinks: [connectedLink] }),
+      connectPortal: vi
+        .fn()
+        .mockRejectedValue({ code: "portal_link_code_rejected" }),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await user.click(linkAnother);
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Connect and request approval" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.querySelector(".app-body")).not.toHaveAttribute("inert");
+    expect(
+      await screen.findByText(
+        "The portal did not accept that code. Make a new linking code in your patient portal.",
+      ),
+    ).toBeVisible();
+    expect(bridge.connectPortal).toHaveBeenCalledOnce();
+    await waitFor(() => expect(linkAnother).toBeEnabled());
+    await waitFor(() => expect(document.activeElement).toBe(linkAnother));
+  });
+
+  it("gives focus to the new clinic after a link sent from the dialog, which then opens empty (#145)", async () => {
+    const second = {
+      ...connectedLink,
+      id: "fake-clinic-link-2",
+      clinicName: "FAKE Second Clinic",
+      portalBase: "https://second.example.test/patient",
+    };
+    let current: VaultSnapshot = {
+      ...clinicSnapshot,
+      portalLinks: [connectedLink],
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      connectPortal: vi.fn().mockImplementation(async () => {
+        current = { ...current, portalLinks: [connectedLink, second] };
+        return { link: second, approvalError: null };
+      }),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://second.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    await act(async () => {
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Connect and request approval" })
+          .closest("form")!,
+      );
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const heading = await screen.findByRole("heading", {
+      name: "FAKE Second Clinic",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    // Once the link is finished the button is usable again, and focus stays
+    // on the new clinic.
+    const linkAnother = screen.getByRole("button", {
+      name: "Link another clinic",
+    });
+    await waitFor(() => expect(linkAnother).toBeEnabled());
+    expect(document.activeElement).toBe(heading);
+    await user.click(linkAnother);
+    expect(screen.getByLabelText("Portal HTTPS address")).toHaveValue("");
+  });
 
   it("keeps local records usable and shares admission across clinic-view remounts", async () => {
     let current = clinicSnapshot;
@@ -11757,9 +11984,29 @@ describe("clinic connection operations", () => {
         "Device linked. Its approval status is shown in Security, under Clinic documents.",
       ),
     ).toBeVisible();
+    // The result can render before clinic admission is released. Wait for
+    // the next attempt to be usable before typing its code: a clinic is
+    // linked now, so it starts from "Link another clinic" (#145).
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Link another clinic" }),
+      ).toBeEnabled(),
+    );
     // An error that arrives while a picker is open waits for its result.
+    // The form opens from "Link another clinic", empty for the next clinic's
+    // address.
+    await user.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
     await user.type(
       screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGK",
+    );
+    expect(screen.getByLabelText("Linking code")).toHaveValue(
       "01234567-89ABCDEFGK",
     );
     await act(async () => {
@@ -11769,6 +12016,8 @@ describe("clinic connection operations", () => {
           .closest("form")!,
       );
     });
+    // The third request must have entered before the picker is opened.
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(3));
     await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
     await user.click(
       screen.getByRole("button", { name: "Choose files to import" }),
@@ -11993,7 +12242,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       screen.queryByText("Clinic operation in progress…"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Connect and request approval" }),
+      screen.getByRole("button", { name: "Link another clinic" }),
     ).toBeEnabled();
     await pass(3 * 60_000);
     expect(
@@ -12083,7 +12332,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       });
       await openClinicView(bridge);
       expect(
-        screen.getByRole("button", { name: "Connect and request approval" }),
+        screen.getByRole("button", { name: "Link another clinic" }),
       ).toBeEnabled();
       // The focused control is disabled once the vault reads read-only:
       // focus goes to the device's heading, not to the page.
@@ -12101,7 +12350,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       // Read again, once: the vault on screen is read-only now.
       expect(bridge.snapshot).toHaveBeenCalledTimes(snapshots + 1);
       expect(
-        screen.getByRole("button", { name: "Connect and request approval" }),
+        screen.getByRole("button", { name: "Link another clinic" }),
       ).toBeDisabled();
       expect(
         screen.getByRole("button", { name: "Retry saved approval request" }),
@@ -13236,6 +13485,55 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
     );
   });
 
+  // Demo fix (29 Oct, Ben): a vault with devices a reset portal deleted. The
+  // library is usable before the check ends; the native check says those
+  // devices are removed, and asks no more about them in this run of the app.
+  it("keeps the library usable during a check with three gone devices, then says they were removed", async () => {
+    const gone = [1, 2, 3].map(
+      (n): PortalLinkSummary => ({
+        ...approved,
+        id: `fake-gone-link-${n}`,
+        deviceKeyId: `FAKE_GONE_DEVICE_${n}`,
+      }),
+    );
+    const slow = later<Check>();
+    const { bridge } = clinicBridge(vaultWith(...gone, approved), {
+      checkDocuments: vi.fn().mockReturnValueOnce(slow.promise),
+    });
+    await start(bridge);
+    await unlock();
+    await pass(ANNOUNCE_DELAY_MS);
+    expect(bridge.checkDocuments).toHaveBeenCalledOnce();
+    // The check control is in Shared with me (main's c9fea1ed).
+    await openShared();
+    expect(screen.getByRole("button", { name: WORKING })).toBeDisabled();
+    await openRecords();
+    // A saved document opens while the check runs.
+    await click(screen.getByRole("button", { name: "FAKE_Results.pdf" }));
+    expect(
+      screen.getByRole("dialog", { name: "FAKE_Results.pdf" }),
+    ).toBeVisible();
+    await click(screen.getByRole("button", { name: "Close document details" }));
+    await act(async () =>
+      slow.settle(
+        found({
+          issues: gone.map((link) => issue(link, "portal_device_removed")),
+        }),
+      ),
+    );
+    await pass(0);
+    // Said as removed (the native check asks no more about them in this run
+    // of the app), and the check is over: it can be run again.
+    // One line for each of the three gone devices.
+    expect(
+      said().split("This device was removed from your clinic portal account."),
+    ).toHaveLength(4);
+    await openShared();
+    expect(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    ).toBeEnabled();
+  });
+
   it.each([
     [
       "a fault on this device",
@@ -13877,10 +14175,11 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       { name: "Shared with me", level: 1 },
     ],
     [
-      "a box of the connect form",
+      "Link another clinic",
       async () => {
         await click(screen.getByRole("button", { name: "Security" }));
-        return screen.getByLabelText("Linking code");
+        // A clinic is linked: the form is behind this button (#145).
+        return screen.getByRole("button", { name: "Link another clinic" });
       },
       { name: "Clinic documents", level: 2 },
     ],
@@ -13888,6 +14187,8 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       "a device's Copy device code",
       async () => {
         await click(screen.getByRole("button", { name: "Security" }));
+        // The device code is behind Show device details.
+        await click(screen.getByText("Show device details"));
         return screen.getByRole("button", { name: "Copy device code" });
       },
       { name: "FAKE First Clinic", level: 3 },
@@ -14283,9 +14584,7 @@ describe("Automatic arrival snapshot ownership", () => {
     await waitFor(() =>
       expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Unlocked · Lock now") }),
-    );
+    fireEvent.click(windowLock());
     await screen.findByLabelText(humanText("Passphrase"));
     act(() => window.dispatchEvent(new Event("focus")));
     await Promise.resolve();

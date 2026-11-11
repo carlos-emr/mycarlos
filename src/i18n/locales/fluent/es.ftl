@@ -616,8 +616,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = Esta foto ya está en la b
 
 interface-VaultLibrary-topLevel = Nivel superior
 
-interface-VaultLibrary-unlockedLockNow = Desbloqueada · Bloquear ahora
-
 interface-VaultLibrary-working = Procesando…
 
 kit-keep = Guárdela en un lugar privado y lejos del dispositivo. Cualquier persona con esta clave y una copia de su bóveda puede abrirla. Si configura una nueva clave de recuperación, esta ya no abrirá la bóveda en este dispositivo.
@@ -677,6 +675,12 @@ library-items =
     [many] { $count } de elementos visibles de la biblioteca
     *[other] { $count } elementos visibles de la biblioteca
     }
+
+library-location-documents = En { $place }: { $documents }.
+
+library-location-summary = En { $place }: { $folders }, { $documents }.
+
+library-lock-unlocked = Desbloqueada
 
 library-noMatch-help = Pruebe otra búsqueda.
 
@@ -970,8 +974,6 @@ readingAid-title = Ayuda de lectura de su clínica
 readingAid-unavailable = Esta ayuda de lectura no se puede mostrar de forma segura. Abra el documento original.
 
 record-kind-document = Documento
-
-record-source-manual = Importación manual — sin verificar
 
 recover-intro = Use su clave de recuperación para abrir la bóveda y elegir una nueva frase de contraseña.
 
@@ -1402,6 +1404,16 @@ personDetails-futureDate = La fecha de nacimiento no puede ser futura.
 
 personDetails-help = Se guardan en esta bóveda cifrada para sugerir a quién pertenece un documento compartido. Estos datos no verifican el origen de un documento.
 
+personDetails-setup = Nombre completo y fecha de nacimiento
+
+personDetails-later = Agregarlos más tarde
+
+personDetails-reminder = Agregue el nombre completo y la fecha de nacimiento de { $name }. Ayudan a myCarlos a saber para quién es un documento.
+
+personDetails-notNow = Ahora no
+
+personDetails-notSaved = La bóveda está lista, pero el nombre completo y la fecha de nacimiento no se guardaron. Agréguelos en Editar datos.
+
 personDetails-invalidDate = Introduzca una fecha de nacimiento válida: año, mes y día.
 
 personDetails-list = Datos de las personas
@@ -1473,6 +1485,18 @@ portal-defaultDeviceName = myCarlos en { $platform }
 portal-deviceCode = Código del dispositivo
 
 portal-deviceName = Nombre de este dispositivo
+
+portal-deviceDetailsShow = Mostrar los detalles del dispositivo
+
+portal-deviceDetailsHide = Ocultar los detalles del dispositivo
+
+portal-earlierShow =
+    { $count ->
+    [one] Mostrar { $count } intento anterior
+    *[other] Mostrar { $count } intentos anteriores
+    }
+
+portal-earlierHide = Ocultar los intentos anteriores
 
 portal-errorAddress = Introduzca la dirección HTTPS del portal sin nombre de usuario, contraseña, parámetros de consulta ni fragmento.
 
@@ -1654,6 +1678,8 @@ interface-history-event-imported = Documento añadido
 
 interface-history-event-moved = Documento movido
 
+interface-history-event-other = Otro evento
+
 interface-history-event-passphraseChanged = Frase de contraseña cambiada
 
 interface-history-event-portalLinkStarted = Vinculación con la clínica iniciada
@@ -1706,6 +1732,8 @@ interface-history-how-movedFromShared = Movido desde Compartido conmigo
 interface-history-how-passphrase = Frase de contraseña
 
 interface-history-how-patient = Ocultado por usted
+
+interface-history-how-personFolder = Carpeta de una persona
 
 interface-history-how-picked = Importado desde un archivo elegido
 
@@ -1802,6 +1830,8 @@ portal-codeRefused = El portal de la clínica no aceptó el código. Vuelva a in
 portal-codeSubmit = Confirmar código
 
 portal-codeSubmitted = Código enviado. Esperando a que su clínica confirme este dispositivo. Si no se confirma en 10 minutos, vuelva a solicitarlo.
+
+portal-linkAnother = Vincular otra clínica
 
 ai-summary-button = Resumen
 

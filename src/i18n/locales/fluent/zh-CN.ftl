@@ -373,8 +373,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = 此相片已在保险库�
 
 interface-VaultLibrary-topLevel = 最上层
 
-interface-VaultLibrary-unlockedLockNow = 已解锁 · 立即锁定
-
 interface-VaultLibrary-working = 处理中…
 
 interface-camera-denied = myCarlos 无法使用相机。{ $help } 接着请选择「重试」。
@@ -582,6 +580,12 @@ library-folder-open = 打开 { $name }
 library-folder-rename = 重命名文件夹 { $name }
 
 library-items = { $count } 个可见记录项目
+
+library-location-documents = 位置：{ $place }。{ $documents }。
+
+library-location-summary = 位置：{ $place }。{ $folders }，{ $documents }。
+
+library-lock-unlocked = 已解锁
 
 library-noMatch-help = 请尝试其他搜索内容。
 
@@ -855,8 +859,6 @@ readingAid-title = 诊所提供的阅读辅助
 readingAid-unavailable = 无法安全显示此阅读辅助。请改为打开原始文档。
 
 record-kind-document = 文档
-
-record-source-manual = 手动导入 — 未验证
 
 recover-intro = 使用恢复密钥打开保险库并选择新密码短语。
 
@@ -1242,6 +1244,16 @@ personDetails-futureDate = 出生日期不能是未来的日期。
 
 personDetails-help = 这些资料保存在此加密保险库中，用于提示分享的文档可能属于谁。这些资料不会验证文档的来源。
 
+personDetails-setup = 全名和出生日期
+
+personDetails-later = 稍后添加
+
+personDetails-reminder = 请添加 { $name } 的全名和出生日期。这些资料可帮助 myCarlos 判断文档属于谁。
+
+personDetails-notNow = 暂不
+
+personDetails-notSaved = 保险库已就绪，但全名和出生日期未能保存。请在“编辑资料”中添加。
+
 personDetails-invalidDate = 请按年、月、日输入有效的出生日期。
 
 personDetails-list = 个人资料
@@ -1313,6 +1325,14 @@ portal-defaultDeviceName = { $platform } 上的 myCarlos
 portal-deviceCode = 设备代码
 
 portal-deviceName = 此设备的名称
+
+portal-deviceDetailsShow = 显示设备详情
+
+portal-deviceDetailsHide = 隐藏设备详情
+
+portal-earlierShow = 显示之前的 { $count } 次尝试
+
+portal-earlierHide = 隐藏之前的尝试
 
 portal-errorAddress = 请输入门户网站的 HTTPS 网址，不要包含用户名、密码、查询参数或片段标识符。
 
@@ -1489,6 +1509,8 @@ interface-history-event-imported = 文档已添加
 
 interface-history-event-moved = 文档已移动
 
+interface-history-event-other = 其他事件
+
 interface-history-event-passphraseChanged = 密码短语已变更
 
 interface-history-event-portalLinkStarted = 已开始关联诊所
@@ -1536,6 +1558,8 @@ interface-history-how-movedFromShared = 从「与我分享」移出
 interface-history-how-passphrase = 密码短语
 
 interface-history-how-patient = 由您隐藏
+
+interface-history-how-personFolder = 某人的文件夹
 
 interface-history-how-picked = 从所选文件导入
 
@@ -1622,6 +1646,8 @@ portal-codeRefused = 诊所门户网站未接受此验证码。请几分钟后�
 portal-codeSubmit = 确认验证码
 
 portal-codeSubmitted = 验证码已发送。正在等待诊所确认此设备。如果 10 分钟内仍未确认，请重新申请。
+
+portal-linkAnother = 关联另一家诊所
 
 ai-summary-button = 摘要
 
