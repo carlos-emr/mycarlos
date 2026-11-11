@@ -399,8 +399,7 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
               .map((row) => ({
                 index: row.index,
                 capacity: structuredClone(row.model.capacity),
-                confirmed:
-                  setup.limitsConfirmed || checkedRows.has(row.index),
+                confirmed: setup.limitsConfirmed || checkedRows.has(row.index),
                 trainedContext: null,
                 parameters: null,
                 fileBytes: row.model.sizeBytes,

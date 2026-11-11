@@ -1977,7 +1977,9 @@ describe("Loading the chosen model once (D218)", () => {
       neededBytes: 0,
     }));
   const checks = () =>
-    native.invoke.mock.calls.filter(([command]) => command === "ai_model_check");
+    native.invoke.mock.calls.filter(
+      ([command]) => command === "ai_model_check",
+    );
   const row = (name: string) => screen.getByRole("region", { name });
   const pickOther = async () => {
     render(<AiModelSetting status={firstInUse} onStatus={vi.fn()} />);
@@ -2003,7 +2005,9 @@ describe("Loading the chosen model once (D218)", () => {
       "This computer could not run this model. Try again later, or choose another model.",
     );
     expect(checks()).toEqual([["ai_model_check", { request: { index: 1 } }]]);
-    expect(screen.getByRole("status")).toHaveTextContent("Model in use changed");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Model in use changed",
+    );
     expect(screen.queryByText(checking)).toBeNull();
     expect(screen.queryByText(ready)).toBeNull();
     expect(within(row(first.name)).queryByRole("alert")).toBeNull();
@@ -2041,7 +2045,9 @@ describe("Loading the chosen model once (D218)", () => {
       "aria-live",
       "polite",
     );
-    expect(screen.getByRole("status")).toHaveTextContent("Model in use changed");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Model in use changed",
+    );
     // Not removed while it is being checked.
     expect(
       within(row(other.name)).getByRole("button", {
@@ -2053,7 +2059,9 @@ describe("Loading the chosen model once (D218)", () => {
     await waitFor(() => expect(screen.queryByText(checking)).toBeNull());
     // Said for screen readers too, in the same live line.
     expect(screen.getByText(ready)).toHaveAttribute("aria-live", "polite");
-    expect(screen.getByRole("status")).toHaveTextContent("Model in use changed");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Model in use changed",
+    );
     // Its card now confirms what it reads: the limits are asked again.
     await waitFor(() => expect(limitsAsked).toBeGreaterThan(before));
     expect(screen.queryByRole("alert")).toBeNull();
@@ -2189,9 +2197,7 @@ describe("Loading the chosen model once (D218)", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "Download FAKE other" }),
     );
-    await waitFor(() =>
-      expect(row(other.name)).toHaveTextContent("Installed"),
-    );
+    await waitFor(() => expect(row(other.name)).toHaveTextContent("Installed"));
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Model added"),
     );
