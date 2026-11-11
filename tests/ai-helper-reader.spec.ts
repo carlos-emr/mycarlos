@@ -279,9 +279,17 @@ test.describe("with a model on this computer", () => {
     await expect(
       reader.getByRole("button", { name: en("photo.close"), exact: true }),
     ).not.toBeFocused();
-    // Shift+Tab from the marked words: the control before them, the page
-    // text's own toggle.
+    // Shift+Tab from the marked words: back in the page's order. First the
+    // page text's own box, which holds them and takes the focus so that the
+    // keys scroll it (D144), then the page text's toggle.
     await marked.focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(
+      reader.getByRole("region", {
+        name: en("interface.DocumentReader.textOnThisPage"),
+        exact: true,
+      }),
+    ).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await expect(
       reader.getByText(en("interface.DocumentReader.textOnThisPage"), {
