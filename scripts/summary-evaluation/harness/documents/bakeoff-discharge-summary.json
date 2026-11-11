@@ -160,5 +160,8 @@
    "example": "She was admitted with bronchitis."
   }
  ],
+ "patient_contacts": [
+  "(613) 555-0142"
+ ],
  "notes": ""
 }

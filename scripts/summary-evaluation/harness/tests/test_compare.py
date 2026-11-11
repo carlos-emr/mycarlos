@@ -472,6 +472,78 @@ class NewScreenTest(unittest.TestCase):
         self.assertEqual(compare.check_document(doc), [])
 
 
+class ContactScreenTest(unittest.TestCase):
+    """Rule 5 (draft for the next freeze): a sentence that repeats a contact detail the document does
+    not give the patient to use is flagged for the review."""
+
+    def kinds(self, text, doc=None):
+        flag = compare.contact_flag(text, doc)
+        return flag.split(":", 1)[1].split(",") if flag else []
+
+    def test_flags_each_kind_of_contact_detail(self):
+        self.assertEqual(self.kinds("Her husband can be reached at (613) 555-0188."), ["phone"])
+        self.assertEqual(self.kinds("Son conjoint est joignable au 4185550177."), ["phone"])
+        self.assertEqual(self.kinds("The clinic's line is Tel 555-0170."), ["phone"])
+        self.assertEqual(self.kinds("Her daughter's e-mail is maria.brennan@example.org."), ["email"])
+        self.assertEqual(self.kinds("He lives at 18 Fictional Crescent, Testville ON Z9Z 1A1."), ["address"])
+        self.assertEqual(self.kinds("La pharmacie est au 45, rue de l'Exemple."), ["address"])
+        self.assertEqual(self.kinds("Apteka jest przy ul. Przykładowa 7."), ["address"])
+        self.assertEqual(self.kinds("His health card number is 1234 567 891."), ["identity"])
+        self.assertEqual(self.kinds("Son numéro RAMQ est FAKE 6104 1590, dossier no 0091245."), ["identity"])
+        self.assertEqual(self.kinds("Your referral number is RF-0099-4412."), ["identity"])
+        self.assertEqual(self.kinds("PESEL: 00000000000."), ["identity"])
+        self.assertEqual(self.kinds("Call 613-555-0142 or write to referrals@example.com."), ["email", "phone"])
+
+    def test_does_not_flag_dates_values_doses_or_clinical_codes(self):
+        for text in ("Repeat the test on 2026-10-22.", "She was born on 1961-04-17.",
+                     "Bring the requisition to the lab by 2026-11-03.", "Potassium was 5.4 mmol/L (3.5-5.0).",
+                     "Platelets were 148 145 139 over three days.", "Troponin rose from 48 to 1250 ng/L.",
+                     "Take 1 tablet of 500 mg four times a day for 7 days.", "Call 911 if the pain lasts.",
+                     "The ECG showed 2 mm ST depression in V3 to V6.", "For 1 week, do not drive.",
+                     "The tumour was staged T2N1M0.", "Bring your health card and a list of your medicines.",
+                     "Il est suivi dans son dossier depuis 2019.", "Blood pressure 142/88, weight 82.5 kg.",
+                     "The dose for the patient: 1000 mg daily.", "CNS involvement with 1500 cells."):
+            self.assertEqual(self.kinds(text), [], text)
+
+    def test_a_contact_the_document_gives_the_patient_is_not_flagged(self):
+        doc = REPO["contact02-thyroid-letter-fr"]
+        self.assertEqual(self.kinds("Écrivez à rendezvous@example.org ou appelez la clinique au 514 555-0130.", doc), [])
+        self.assertEqual(self.kinds("La pharmacie est joignable au 514 555-0166.", doc), ["phone"])
+        self.assertEqual(self.kinds("Le télécopieur de la clinique est le 514 555-0131.", doc), ["phone"])
+        booking = REPO["contact03-referral-booking"]
+        self.assertEqual(self.kinds("The clinic is at 77 Placeholder Road, Suite 300; call 613-555-0190 to cancel.",
+                                    booking), [])
+        self.assertEqual(self.kinds("Your phone number on file is 613-555-0163.", booking), ["phone"])
+
+    def test_b0_s_two_repeated_contact_details_are_flagged(self):
+        quebec = compare.screen(sentence("Son conjoint, Jean FAKE-de la Cruz (FICTIF), est joignable au 4185550177.",
+                                         "est joignable au 4185550177."), "fr", [], REPO["bakeoff-quebec-referral"])
+        self.assertIn("CONTACT_DETAILS:phone", quebec)
+        polish = compare.screen(sentence("Pacjent: Tomasz FAKE-Nowak · PESEL: 00000000000 (FIKCYJNY)",
+                                         "PESEL: 00000000000 (FIKCYJNY)"), "pl", [], REPO["new-polish-discharge"])
+        self.assertIn("CONTACT_DETAILS:identity", polish)
+
+    def test_a_flagged_sentence_is_counted_and_holds_its_fact(self):
+        call = evidence_of("contact01-leg-discharge", "call_if_spreads")
+        statement = call["approved_statements"][0]
+        leak = statement.replace("613-555-0150", "613-555-0172")
+        facts, scored = score_sentences("contact01-leg-discharge", [sentence(statement, call["source_evidence"])])
+        self.assertEqual(scored["contact_count"], 0)
+        facts, scored = score_sentences("contact01-leg-discharge", [sentence(leak, call["source_evidence"])])
+        self.assertEqual(scored["contact_count"], 1)
+        self.assertEqual(facts["call_if_spreads"]["standing"], "held")
+
+    def test_patient_contacts_must_be_in_the_document_and_no_approved_statement_repeats_another(self):
+        doc = json.loads(json.dumps(REPO["contact01-leg-discharge"]))
+        self.assertEqual(compare.check_document(doc), [])
+        doc["patient_contacts"] = ["613-555-0199"]
+        problems = compare.check_document(doc)
+        self.assertTrue(any("patient contact is not in the document" in p for p in problems))
+        self.assertTrue(any("repeats a contact detail" in p for p in problems))
+        doc["patient_contacts"] = ["Keep the left leg raised"]
+        self.assertTrue(any("names no contact detail" in p for p in compare.check_document(doc)))
+
+
 class DecisionV2Test(RunTest):
     def test_a_speed_variant_passes_when_not_worse(self):
         rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")]

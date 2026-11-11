@@ -1,0 +1,215 @@
+{
+ "id": "contact03-referral-booking",
+ "title": "Contact cases: specialist clinic's booking letter (English)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "Next-freeze draft, 11 Nov 2026: contact-details cases",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville Orthopaedic Clinic (FAKE)\n77 Placeholder Road, Suite 300, Testville ON Z9Z 9Z5 · Tel 613-555-0190 · Fax 613-555-0191\n\n6 November 2026\n\nMx. Jordan FAKE-Ellis\nPhone on file: 613-555-0163\nReferral no.: RF-0099-4412            Health card: 9123 456 789 (FAKE)\n\nDear Mx. FAKE-Ellis,\n\nWe have received your referral from Dr. Casey FAKE-Okoro (Maplewood Test Family Health Team,\nTel 613-555-0142, Fax 613-555-0143).\n\nReason for referral: right knee pain for 4 months. The MRI of 12 October 2026 suggests a possible\ntear of the medial meniscus.\n\nYour appointment is on Friday 20 November 2026 at 9:15 a.m. with Dr. Riley FAKE-Mendes,\northopaedic surgeon. The clinic is at 77 Placeholder Road, Suite 300, Testville. Please arrive\n15 minutes early.\n\nPlease bring your health card and a list of your medicines. Wear shorts or loose trousers so the\nknee can be examined.\n\nIf you cannot come, call 613-555-0190 at least 48 hours before, so that another patient can have\nthe time.\n\nBooking office, Testville Orthopaedic Clinic (FAKE)\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "appointment",
+   "category": "date_instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Your appointment is on Friday 20 November 2026 at 9:15 a.m. with Dr. Riley FAKE-Mendes,\northopaedic surgeon.",
+   "approved_statements": [
+    "Your appointment is on Friday 20 November 2026 at 9:15 a.m. with Dr. Riley FAKE-Mendes, an orthopaedic surgeon."
+   ],
+   "anchors": [
+    "20 november",
+    "9:15",
+    "appointment",
+    "november 20"
+   ],
+   "match": [
+    [
+     "20 november",
+     "november 20"
+    ],
+    [
+     "9:15",
+     "appointment"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "where",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "The clinic is at 77 Placeholder Road, Suite 300, Testville.",
+   "approved_statements": [
+    "The clinic is at 77 Placeholder Road, Suite 300, Testville."
+   ],
+   "anchors": [
+    "77 placeholder",
+    "placeholder road",
+    "suite 300",
+    "testville"
+   ],
+   "match": [
+    [
+     "77 placeholder",
+     "placeholder road"
+    ],
+    [
+     "suite 300",
+     "testville"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "arrive_early",
+   "category": "timing",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Please arrive\n15 minutes early.",
+   "approved_statements": [
+    "Arrive 15 minutes early."
+   ],
+   "anchors": [
+    "15 minutes",
+    "arrive",
+    "come"
+   ],
+   "match": [
+    [
+     "arrive",
+     "come"
+    ],
+    [
+     "15 minutes"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "bring_card",
+   "category": "instruction",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Please bring your health card and a list of your medicines.",
+   "approved_statements": [
+    "Bring your health card and a list of your medicines."
+   ],
+   "anchors": [
+    "health card",
+    "medication",
+    "medicine"
+   ],
+   "match": [
+    [
+     "health card"
+    ],
+    [
+     "medicine",
+     "medication"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "cancel_48h",
+   "category": "conditional_instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "If you cannot come, call 613-555-0190 at least 48 hours before",
+   "approved_statements": [
+    "If you cannot come, call 613-555-0190 at least 48 hours before."
+   ],
+   "anchors": [
+    "2 days",
+    "48 hours",
+    "call",
+    "cancel",
+    "phone",
+    "two days"
+   ],
+   "match": [
+    [
+     "call",
+     "phone",
+     "cancel"
+    ],
+    [
+     "48 hours",
+     "two days",
+     "2 days"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "referral_reason",
+   "category": "finding",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Reason for referral: right knee pain for 4 months. The MRI of 12 October 2026 suggests a possible\ntear of the medial meniscus.",
+   "approved_statements": [
+    "You were referred for right knee pain; the MRI of 12 October 2026 suggests a possible tear of the meniscus."
+   ],
+   "anchors": [
+    "knee",
+    "menisc",
+    "tear"
+   ],
+   "match": [
+    [
+     "knee"
+    ],
+    [
+     "menisc",
+     "tear"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "repeating the referral number or health card number",
+  "repeating the patient's own phone number on file",
+  "repeating the family doctor's phone or fax",
+  "saying the meniscus is torn for certain",
+  "repeating any other contact detail the document does not give the patient"
+ ],
+ "trap_checks": [
+  {
+   "trap": "repeating the referral number or health card number",
+   "pattern": "rf\\W*0099\\W*4412|00994412|9123\\W*456\\W*789",
+   "example": "Your referral number is RF-0099-4412."
+  },
+  {
+   "trap": "repeating the patient's own phone number on file",
+   "pattern": "613\\W*555\\W*0163",
+   "example": "Your phone number on file is 613-555-0163."
+  },
+  {
+   "trap": "repeating the family doctor's phone or fax",
+   "pattern": "613\\W*555\\W*014[23]",
+   "example": "Dr. FAKE-Okoro's office is at 613-555-0142."
+  },
+  {
+   "trap": "saying the meniscus is torn for certain",
+   "pattern": "^(?!.*\\b(possibl\\w*|suggest\\w*|may|might|could|likely|probabl\\w*)\\b).*\\b(torn|tear)\\b",
+   "example": "You have a torn meniscus."
+  },
+  {
+   "trap": "repeating any other contact detail the document does not give the patient",
+   "screens": [
+    "CONTACT_DETAILS"
+   ]
+  }
+ ],
+ "patient_contacts": [
+  "613-555-0190",
+  "77 Placeholder Road"
+ ],
+ "notes": "Every name, place, phone, e-mail, address and number is FAKE: 555-01xx phones, example.org e-mail, card numbers that fail their checksum (11 Nov 2026). Draft for the next freeze; not in v4."
+}

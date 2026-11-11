@@ -137,5 +137,9 @@
    ]
   }
  ],
+ "patient_contacts": [
+  "613-555-0150",
+  "results@lab.example.org"
+ ],
  "notes": ""
 }

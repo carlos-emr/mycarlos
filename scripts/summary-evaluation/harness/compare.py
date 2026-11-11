@@ -57,12 +57,12 @@ MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
 # The decision rule (HARNESS.md): its version and its fixed numbers.
-RULE_VERSION = 4
+RULE_VERSION = 5
 LOCATED_POINTS = 2
 TIME_RATIO = 1.3
 SCREENS = {"SOURCE_NOT_FOUND", "NUMBER_NOT_IN_QUOTE", "NEGATION_MISMATCH", "HEDGE_DROPPED",
            "CERTAINTY_ADDED", "EXPERIENCER", "ACTOR_SHIFT", "ADVICE_OR_JUDGEMENT", "LANGUAGE",
-           "QUANTITY_MISMATCH", "TRAP"}
+           "QUANTITY_MISMATCH", "TRAP", "CONTACT_DETAILS"}
 
 # Screens run on folded text (case, accents and spacing folded), so the words below have no accents.
 NEGATION = re.compile(
@@ -118,6 +118,40 @@ STOPWORDS = {
     "es": {"el", "la", "los", "las", "y", "de", "del", "en", "con", "para", "que", "usted", "es"},
 }
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+# Contact details a summary sentence should not repeat (rule v5): a phone number, an e-mail address, a
+# street address or an identity number (health card, record, visit or requisition number), unless the
+# document gives it to the patient to use (the document's `patient_contacts`). Matched with accents
+# dropped and case kept: the street patterns need capitals ("2 mm ST depression" is no street).
+# Words that name an identity number on their own, and words that do only with a number marker after
+# them ("dossier no", "chart #", "accession:"), since "dossier" or "file" alone are everyday words.
+ID_WORDS = (r"health ?card(?: number| no\.?)?|health (?:insurance )?number|ohip|ramq|msp|phn|mrn|pesel|cpf|"
+            r"carte d'assurance maladie|numero d'assurance maladie|cartao (?:sus|nacional de saude)|"
+            r"(?:medical record|record|chart|requisition|accession|dossier|prontuario|"
+            r"numer (?:karty|ubezpieczenia|dokumentacji|pacjenta)) ?(?:number|numero|no\.?|n[o\u00b0]|#|id|:)|"
+            r"(?:file|visit|card|hospital|patient|referral) ?(?:number|numero|no\.?|n[o\u00b0]|#|id)")
+CONTACT_IDENTITY = re.compile(r"\b(?:" + ID_WORDS + r")(?![\w])[^.;\n\d]{0,25}?"
+                              r"(?<![\w-])((?:[a-z]+-?)*[ -]?\d[\d -]{2,}\d)", re.IGNORECASE)
+PHONE_WORDS = (r"tel|telec|phone|telephone|call|fax|telefon\w*|joignable|reached|ligue|ligar|llam\w*|"
+               r"appel\w*|zadzwon\w*|kontakt\w*|contact\w*")
+CONTACT_PHONE = re.compile(
+    r"(?<![\w.,/+-])(?:\+?1[ .-]?)?(?:\(\d{3}\) ?|\d{3}[ .-]?)\d{3}[ .-]?\d{4}(?![\w/]|[.,-]\d| ?\d)"
+    r"|(?<![\w+])\+\d{1,3}(?:[ .-]?\d{1,4}){3,5}(?![\w]|[.,-]\d)"
+    r"|\(\d{2}\) ?\d{4,5}-\d{4}\b"
+    r"|\b(?:" + PHONE_WORDS + r")\b[^\d\n]{0,25}?(?<![\d.,/-])\d{3}[ .-]\d{4}(?![\w/]|[.,-]\d| ?\d)",
+    re.IGNORECASE)
+CONTACT_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+CONTACT_ADDRESS = re.compile(
+    r"(?<![\w.,])\d{1,5}[A-Za-z]?,? (?:[A-Z][\w'.-]* ){0,3}"
+    r"(?:(?i:street|avenue|road|boulevard|lane|crescent|highway)\b|(?:St|Ave|Rd|Blvd|Cres|Hwy)\b)"
+    r"|(?<![\w.,])\d{1,5},? (?i:rue|avenue|av\.|boulevard|boul\.?|chemin|rang|montee)(?!\w)"
+    r"|\b(?:ul\.|al\.|os\.|(?i:ulica|aleja|osiedle)) ?[A-Z][\w-]+(?: [A-Z][\w-]+)? \d{1,4}[a-z]?\b"
+    r"|\b(?:Rua|Avenida|Av\.|Travessa|Alameda|Rodovia|Calle) (?:[\w'.,-]+ ){0,5}?\d{1,5}\b"
+    r"|\b(?:PO|P\.O\.) Box \d+"
+    r"|\b(?!T\d[A-Z] ?\dM)[A-Z]\d[A-Z] ?\d[A-Z]\d\b|\b\d{5}-\d{3}\b")
+# A long number on its own: 8 or more digits in one run (not a date such as 20261022), or in groups of
+# at least 3 digits that start with 4 (1234 567 890, FAKE 5803 0299). Shorter groups are table values.
+CONTACT_LONG_NUMBER = re.compile(r"(?<![\w.,/-])\d{8,}(?![\w.,/-])"
+                                 r"|(?<![\w.,/-])\d{4}(?:[ -]\d{3,4}){1,3}(?![\w.,/-]|\.\d)")
 
 
 # --- Text ---------------------------------------------------------------------------------------
@@ -203,6 +237,62 @@ def quote_on_evidence(quote, spans, folded_document):
                 if min(place + len(q), start + len(e)) - max(place, start) >= need:
                     return True
     return False
+
+
+def plain(text):
+    """Accents dropped, case kept: for the street patterns, which need capitals."""
+    text = unicodedata.normalize("NFKD", normalized(text))
+    return "".join(c for c in text if not unicodedata.combining(c)).replace("ł", "l").replace("Ł", "L")
+
+
+def looks_like_date(digits):
+    """An 8-digit run that reads as a date, 19000101 to 20991231."""
+    return (len(digits) == 8 and digits[:2] in ("19", "20") and 1 <= int(digits[4:6]) <= 12
+            and 1 <= int(digits[6:]) <= 31)
+
+
+def contact_details(text):
+    """The contact details in `text`, as (kind, key) pairs: kind is phone, email, address or identity;
+    the key is what the same detail is recognised by elsewhere (its digits, the folded address or
+    e-mail). One stretch of text counts once, under the first kind that claims it."""
+    text = plain(text)
+    found, taken = [], []
+
+    def claim(kind, key, span):
+        if all(span[1] <= start or span[0] >= end for start, end in taken):
+            found.append((kind, key))
+            taken.append(span)
+
+    for m in CONTACT_IDENTITY.finditer(text):
+        digits = re.sub(r"\D", "", m.group(1))
+        if not looks_like_date(digits):
+            claim("identity", digits, m.span(1))
+    for m in CONTACT_EMAIL.finditer(text):
+        claim("email", m.group(0).casefold(), m.span())
+    for m in CONTACT_PHONE.finditer(text):
+        number = re.search(r"\+?[\d(][\d() .-]*\d$", m.group(0)).group(0)
+        claim("phone", re.sub(r"\D", "", number)[-10:], (m.end() - len(number), m.end()))
+    for m in CONTACT_ADDRESS.finditer(text):
+        claim("address", " ".join(fold(m.group(0)).replace(",", " ").split()[:2]), m.span())
+    for m in CONTACT_LONG_NUMBER.finditer(text):
+        digits = re.sub(r"\D", "", m.group(0))
+        if len(digits) >= 8 and not looks_like_date(digits):
+            claim("identity", digits, m.span())
+    return found
+
+
+def patient_contact_keys(doc):
+    """The contact details the document gives the patient to use (its `patient_contacts`): a sentence
+    may repeat these."""
+    return {key for entry in (doc or {}).get("patient_contacts", []) for _, key in contact_details(entry)}
+
+
+def contact_flag(text, doc=None):
+    """The CONTACT_DETAILS flag for a sentence, or None: the kinds it repeats that the document does
+    not give the patient to use."""
+    allowed = patient_contact_keys(doc)
+    kinds = sorted({kind for kind, key in contact_details(text) if key not in allowed})
+    return "CONTACT_DETAILS:" + ",".join(kinds) if kinds else None
 
 
 def guess_language(text):
@@ -292,6 +382,15 @@ def check_document(doc, fixture=False):
             problems.append(f"{where}: a required fact needs a qualifier group, or a `no_qualifier` reason")
     if fixture:
         return problems
+    for entry in doc.get("patient_contacts", []):
+        if not entry or normalized(entry) not in joined:
+            problems.append(f"patient contact is not in the document: {entry[:40]!r}")
+        elif not contact_details(entry):
+            problems.append(f"patient contact names no contact detail: {entry[:40]!r}")
+    for f in doc.get("facts", []):
+        for statement in f.get("approved_statements", []):
+            if contact_flag(statement, doc):
+                problems.append(f"fact {f.get('id')}: an approved statement repeats a contact detail: {statement[:50]!r}")
     traps = doc.get("traps", [])
     checks = doc.get("trap_checks", [])
     if [c.get("trap") for c in checks] != list(traps):
@@ -461,6 +560,9 @@ def screen(sentence, run_lang, facts, doc=None):
             value, unit = found.groups()
             if value.replace(",", ".") != check["value"] or fold(unit) != fold(check["unit"]):
                 flags.append(f"QUANTITY_MISMATCH:{fact['id']}")
+    contact = contact_flag(text, doc)
+    if contact:
+        flags.append(contact)
     if doc is not None:
         flags += [f"TRAP:{index}" for index in trap_flags(doc, text)]
     return flags
@@ -544,6 +646,7 @@ def score_document(doc, entry, run_lang, verdicts=None):
         flags=flagged,
         flag_count=sum(len(f["flags"]) for f in flagged),
         trap_count=sum(1 for f in flagged for flag in f["flags"] if flag.startswith("TRAP:")),
+        contact_count=sum(1 for f in flagged for flag in f["flags"] if flag.startswith("CONTACT_DETAILS:")),
         unreviewed_flagged=sum(1 for f in flagged if f["flags"] and verdicts.get(f["index"], "") == ""),
         unreviewed_critical=sum(1 for i in critical_carriers if verdicts.get(i, "") == ""),
         unreviewed=sum(1 for i in on_sheet if verdicts.get(i, "") == ""),
@@ -724,6 +827,7 @@ def summarize_run(scores, wrong, holdout=False):
         located_pct=round(100 * sum(s["located"] for s in present) / sentences, 1) if sentences else None,
         sentences=sentences, flags=sum(s["flag_count"] for s in present),
         traps=sum(s["trap_count"] for s in present),
+        contacts=sum(s.get("contact_count", 0) for s in present),
         unreviewed_flagged=sum(s["unreviewed_flagged"] for s in present),
         unreviewed_critical=sum(s["unreviewed_critical"] for s in present),
         unreviewed=sum(s["unreviewed"] for s in present),
@@ -898,7 +1002,8 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
                 held = f" (+{s['required_held']} held)" if s["required_held"] else ""
                 action = f" · act {s['action_found']}/{s['action_total']}" if s["action_total"] else ""
                 marks = ((" · capped" if s.get("capped") else "") + (" · cut" if s.get("cut") else "")
-                         + (" · gap" if s.get("gap") else "") + (f" · {s['trap_count']} trap" if s["trap_count"] else ""))
+                         + (" · gap" if s.get("gap") else "") + (f" · {s['trap_count']} trap" if s["trap_count"] else "")
+                         + (f" · {s['contact_count']} contact" if s.get("contact_count") else ""))
                 cells.append(f"{s['required_found']}/{s['required_total']}{held}{action} · {s['sentences']} s · "
                              f"{s['located']} q · {s['flag_count']} fl · {(s['wall_ms'] or 0) / 1000:.0f} s{marks}")
         holdout = "" if in_decision(docs[doc_id]) else " (holdout)"
@@ -907,16 +1012,17 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
     lines.append("Cells: must-haves credited/total (+ held: carried only by flagged sentences, until the review) · "
                  "patient actions credited/total · sentences · quotes found · flags · seconds"
                  " (capped: stopped at the token cap; cut: the end was not read; gap: the last page read after a gap;"
-                 " trap: sentences that fell into a listed trap). Holdout documents are never in the decision.")
+                 " trap: sentences that fell into a listed trap; contact: sentences that repeat a contact detail"
+                 " the document does not give the patient). Holdout documents are never in the decision.")
     lines.append("")
-    lines.append("| Run | must-haves | held | actions | quotes found | flags | traps | median s | capped | cut | gap | failed | reviewed wrong | verdict |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Run | must-haves | held | actions | quotes found | flags | traps | contacts | median s | capped | cut | gap | failed | reviewed wrong | verdict |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for label, summary, decision in zip(labels, summaries, decisions):
         wrong = "not reviewed" if summary["reviewed_wrong"] is None else summary["reviewed_wrong"]
         median = "" if summary["median_wall_ms"] is None else f"{summary['median_wall_ms'] / 1000:.0f}"
         lines.append(f"| {label} | {summary['required_found']}/{summary['required_total']} | {summary['required_held']} | "
                      f"{summary['action_found']}/{summary['action_total']} | {summary['located_pct']}% | "
-                     f"{summary['flags']} | {summary['traps']} | {median} | {summary['capped']} | {summary['cut']} | "
+                     f"{summary['flags']} | {summary['traps']} | {summary['contacts']} | {median} | {summary['capped']} | {summary['cut']} | "
                      f"{summary['gap']} | {summary['failed']} | {wrong} | {decision['verdict'] if decision else 'baseline'} |")
     if any(h["documents"] for h in holdouts):
         lines.append("")

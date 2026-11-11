@@ -21,7 +21,10 @@ Nothing here runs in CI and nothing here runs a model on its own. Every document
 
 ## Documents and facts
 Each document: `id`, `title`, `lang`, `synthetic: true`, `source`, `pages` (`index`, `text`),
-`facts`, `traps` (wrong statements to watch for), `trap_checks` and `notes`.
+`facts`, `traps` (wrong statements to watch for), `trap_checks`, `notes`, and (rule 5) an optional
+`patient_contacts`: the phone numbers, e-mail addresses and street addresses the document gives the
+patient to use ("call the lab at 613-555-0150"), copied from it. A sentence may repeat those; the
+`CONTACT_DETAILS` screen flags any other contact detail.
 
 Each fact follows PR 295's fixture schema: `id`, `category`, `required`, `critical`,
 `source_evidence` (verbatim from the document), `approved_statements`, `anchors`,
@@ -51,6 +54,8 @@ Each fact follows PR 295's fixture schema: `id`, `category`, `required`, `critic
 - every required fact has a qualifier or a reason;
 - every trap has a check whose example trips it, and no approved statement of the document trips
   it;
+- every `patient_contacts` entry is in the document and names a contact detail, and no approved
+  statement repeats a contact detail that is not one of them;
 - the document matches the freeze.
 
 PR 295's cases are frozen by its own `FIXTURE-FREEZE.json` and checked as they are. Their 26 critical
@@ -66,6 +71,7 @@ Categories add `instruction`, `timing` and `follow_up`. Those, with PR 295's
 | 5 Nov texts | `fake01-cardiology-referral`, `fake02-cardiac-discharge`, `fake03-cardiac-lab` |
 | Bake-off (29 Oct) | 9 `bakeoff-*`: six short (one French) and three longer (one Brazilian Portuguese) |
 | New | `new-rheumatology-letter` (instructions and timing at the end), `new-french-nephrology`, `new-polish-discharge`, `new-long-hospital-record` (18 pages, about 26 KB / 6k tokens, instructions on the last page) |
+| Contacts (draft, rule 5) | `contact01-leg-discharge` (a daughter's phone and e-mail, a health card and home address; the ward's number is given to the patient), `contact02-thyroid-letter-fr` (a pharmacy's address and phone, a daughter's phone, RAMQ and file numbers; an e-mail and the clinic's number are given to the patient), `contact03-referral-booking` (a referral number, the patient's own phone on file, the family doctor's phone; the clinic's address and number are given to the patient) |
 | PR 295 | 12 EN/FR cases, 48 facts: 6 development and 6 holdout |
 
 The facts of the demo, 5 Nov and bake-off documents were written after model summaries of them
@@ -108,6 +114,12 @@ page, run through the app's own text extraction once and kept as their `pages`.
   - `LANGUAGE`: not the summary language.
   - `QUANTITY_MISMATCH`: a value or unit that differs from a fact's own.
   - `TRAP:<n>`: the sentence falls into the document's listed trap `n`.
+  - `CONTACT_DETAILS:<kinds>` (rule 5): the sentence repeats a phone number, an e-mail address, a
+    street address or postal code, or an identity number (a health card, RAMQ, PESEL, record, chart,
+    visit, referral or requisition number, or any run of 8 or more digits that is not a date) that
+    is not in the document's `patient_contacts`. Kinds: `phone`, `email`, `address`, `identity`.
+    The count per run is in `compare.md` (`contacts`). Not flagged: dates, lab values, doses, "911",
+    "ST depression", TNM stages, and a health card named without its number.
 - **The review sheet is blind** (`review/review.csv`).
   - **One row per distinct sentence** (document, words, quote) on the sheet in any run.
   - **Opaque id:** a hash of the sentence, the same in every run and scoring. Rows are in id order, so
@@ -144,7 +156,7 @@ page, run through the app's own text extraction once and kept as their `pages`.
 - every document as scored (facts, traps and pages, PR 295's cases included);
 - the rule's fixed numbers and margins.
 
-`HARNESS-FREEZE.json` pins the 18 harness document files, `compare.py`'s SHA-256, the rule version,
+`HARNESS-FREEZE.json` pins the harness document files, `compare.py`'s SHA-256, the rule version,
 and the hash of every document as scored.
 - `check` fails when any of them differs.
 - `score` marks a decision `UNFROZEN`, never PASS, when the scorer, the rule or the documents differ
@@ -160,6 +172,14 @@ scored. It does three things:
 - turns check 3 into "not worse" by default;
 - adds margins from an A/A pair;
 - keeps PR 295's holdout cases out of the decision.
+
+**Version 5 (DRAFT for the next freeze; not used for the 10–11 Nov runs, which are scored with
+version 4 at 97e401aa)** adds the `CONTACT_DETAILS` screen, the documents' `patient_contacts`, and
+three FAKE contact cases. A flagged sentence goes on the review sheet like any other, so a fact it
+carries is held until reviewed; the screen changes no verdict by itself. It was written on 11 Nov to
+make the contact rule of prompt variant L2 measurable: version 4 sees a repeated contact detail only
+by eye, and B0 repeated two (a spouse's phone in `bakeoff-quebec-referral`, a PESEL in
+`new-polish-discharge`), both flagged by this screen with no other B0 sentence flagged.
 
 **Version 4** was written on 11 Nov, after a third review and before any variant was scored:
 - one verdict per distinct sentence, from a blind sheet;

@@ -1,14 +1,15 @@
 {
- "version": 4,
- "frozen_utc": "2026-11-11T01:22:26+00:00",
- "rule_version": 4,
- "scorer_sha256": "23c6bb33d32036b47ada1f52d340951d7bb61297d223d790a7ebeb00693fdbbb",
- "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
+ "version": 5,
+ "status": "DRAFT for the next freeze. The 10-11 Nov runs are scored with version 4 (commit 97e401aa); do not score them with this one.",
+ "frozen_utc": "2026-11-11T01:47:22+00:00",
+ "rule_version": 5,
+ "scorer_sha256": "ccf607ada196c31036234c20ed56512d0d6ed1e9e886e7e0b915921b111467fc",
+ "scoring_documents_sha256": "efccf19ce85fe35f3ad1aaa293bb5e73168c2a89aa01b9568ad5200ffa0b2a53",
  "synthetic_only": true,
- "documents_count": 18,
- "facts": 147,
- "critical_facts": 70,
- "traps": 57,
+ "documents_count": 21,
+ "facts": 164,
+ "critical_facts": 78,
+ "traps": 71,
  "pages_as_run": "The 10-11 Nov evaluation runs read version 1's page text. Since version 2 the only page change is the lab's telephone line in bakeoff-lab-report and bakeoff-cumulative-lab, which no fact, evidence span, match option or trap touches, so those runs are scored with the current version.",
  "outputs_seen_note": "'yes': the facts were written after model summaries of the document existed (the bake-off, the 5 Nov runs, the demo). 'no record': no earlier model output of it is known.",
  "policy": "Do not change a frozen document after a run is scored with it; a change needs a new version here and a reason, and runs scored before and after it are not compared.",
@@ -32,18 +33,23 @@
    "version": 4,
    "frozen_utc": "2026-11-11T01:22:26+00:00",
    "reason": "rule version 4: one verdict per distinct sentence from a blind sheet (opaque content ids, key apart), a sampled sentence waits for its verdict too; the two celiac traps no longer flag 'test you for', 'asks about', 'can cause', 'If ... is confirmed' or 'a positive celiac screen'; demo-gastro-referral's opening line is an evidence span for its positive celiac screen. Page text unchanged."
+  },
+  {
+   "version": 5,
+   "frozen_utc": "2026-11-11T01:47:22+00:00",
+   "reason": "DRAFT rule version 5: the CONTACT_DETAILS screen (a phone, e-mail, street address or identity number the document does not give the patient), the documents' patient_contacts (added to bakeoff-cumulative-lab, bakeoff-discharge-summary and bakeoff-lab-report; their page text, facts and traps unchanged), and three FAKE contact cases (contact01-03). Not for the 10-11 Nov runs."
   }
  ],
  "documents": {
   "bakeoff-cumulative-lab": {
-   "sha256": "28d2c5fceae25a332b6e3ac894a02b4669d3333956335a25c7b84992885f400c",
+   "sha256": "4722f697ded577699c1c386922a5ea3c1108698a0bde5b3f9533852c49079f9e",
    "facts": 5,
    "critical": 3,
    "traps": 5,
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-discharge-summary": {
-   "sha256": "9dc51fa258c343a6829544f5ec1cf98581d1dbed0daa1f2a72fea41f37c7b921",
+   "sha256": "f0dd4efb6dd472f54086177ec1afaa7cbfc104f90a682cc0ba751bc35c232bcb",
    "facts": 5,
    "critical": 3,
    "traps": 3,
@@ -64,7 +70,7 @@
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-lab-report": {
-   "sha256": "f869a8d33993842bce59feb0a1076d6c94e3db029ba69bd718ae2d611feb2c0b",
+   "sha256": "0ff0244e1c5c12c69fbf1e649d0c7b66893c00737b55d1fd1ac3d70dd08fc77d",
    "facts": 3,
    "critical": 2,
    "traps": 3,
@@ -97,6 +103,27 @@
    "critical": 2,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
+  },
+  "contact01-leg-discharge": {
+   "sha256": "f3e00aad4434b48a5efc9e79abe7b339029f3d9665b65714ceeae29777c74941",
+   "facts": 6,
+   "critical": 3,
+   "traps": 4,
+   "outputs_seen_before_facts": "no"
+  },
+  "contact02-thyroid-letter-fr": {
+   "sha256": "2db2e063681616c3490602d7481e993518df4af3f69841bc10e7986ff4c5a194",
+   "facts": 5,
+   "critical": 3,
+   "traps": 5,
+   "outputs_seen_before_facts": "no"
+  },
+  "contact03-referral-booking": {
+   "sha256": "f53e3cbac7c334b9f9ac307a133c42b3513c0f2499a2323969bfe3fca15d7f83",
+   "facts": 6,
+   "critical": 2,
+   "traps": 5,
+   "outputs_seen_before_facts": "no"
   },
   "demo-celiac-lab": {
    "sha256": "5ada05133e56c111984c6dfc33de9cf414c0cdbe6b06f5c501407b5a49799946",

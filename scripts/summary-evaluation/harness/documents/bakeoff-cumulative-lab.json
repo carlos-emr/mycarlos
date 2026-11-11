@@ -217,5 +217,8 @@
    "example": "You should start a statin."
   }
  ],
+ "patient_contacts": [
+  "613-555-0150"
+ ],
  "notes": ""
 }
