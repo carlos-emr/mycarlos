@@ -1,17 +1,29 @@
 {
- "version": 1,
- "frozen_utc": "2026-11-11T00:41:29+00:00",
+ "version": 2,
+ "frozen_utc": "2026-11-11T00:43:18+00:00",
  "synthetic_only": true,
  "documents_count": 18,
  "facts": 147,
  "critical_facts": 70,
  "traps": 57,
- "pages_as_run": "The page text is exactly what the 10-11 Nov evaluation runs read; only facts, evidence spans, qualifier groups and trap checks were added (11 Nov), before any of those runs was scored.",
+ "pages_as_run": "Version 1 (the commit before this freeze's version 2) has exactly the page text the 10-11 Nov evaluation runs read; score those runs with the documents of version 1.",
  "outputs_seen_note": "'yes': the facts were written after model summaries of the document existed (the bake-off, the 5 Nov runs, the demo). 'no record': no earlier model output of it is known.",
  "policy": "Do not change a frozen document after a run is scored with it; a change needs a new version here and a reason, and runs scored before and after it are not compared.",
+ "history": [
+  {
+   "version": 1,
+   "frozen_utc": "2026-11-11T00:41:29+00:00",
+   "reason": "first freeze: facts, evidence spans, qualifier groups and trap checks added before any 10-11 Nov run was scored; page text as the runs read it"
+  },
+  {
+   "version": 2,
+   "frozen_utc": "2026-11-11T00:43:18+00:00",
+   "reason": "page text of bakeoff-lab-report and bakeoff-cumulative-lab: a toll-free 1-800-555-01xx number (not a reserved fiction range) replaced by 613-555-0150; bakeoff-quebec-referral: its note no longer describes the earlier text"
+  }
+ ],
  "documents": {
   "bakeoff-cumulative-lab": {
-   "sha256": "aea8bba2af8743a63057bdb394b4840a38f72fc35a8d9f65aa0cdca7d7753e75",
+   "sha256": "9ea8396f7d1a0e55410fb09312cd5cb28eff14f781f0adee80d324ca504e45d6",
    "facts": 5,
    "critical": 3,
    "traps": 5,
@@ -39,7 +51,7 @@
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-lab-report": {
-   "sha256": "9be034d9d4b83b55548a5f8fb14f5ddbb60e87e4bec2981df8eb12a1caed1656",
+   "sha256": "f869a8d33993842bce59feb0a1076d6c94e3db029ba69bd718ae2d611feb2c0b",
    "facts": 3,
    "critical": 2,
    "traps": 3,
@@ -60,7 +72,7 @@
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-quebec-referral": {
-   "sha256": "429db775467296a5eec971ebdc90fcd642c382b67badacb368b157d5a697e0cb",
+   "sha256": "3954fb4a944bec522ff1af7b0a7b887b6d4e52cfe00e56c465b164711535b0ff",
    "facts": 3,
    "critical": 2,
    "traps": 2,

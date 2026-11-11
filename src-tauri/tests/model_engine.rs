@@ -515,7 +515,8 @@ fn a_summary_build_names_its_prompt_grammar_and_caps_by_one_fingerprint() {
 }
 
 /// By hand, never in CI: one evaluation run of the AI summary over FAKE documents
-/// (`scripts/summary-evaluation/HARNESS.md`). A real model (`MYCARLOS_TEST_MODEL`) summarizes
+/// (`scripts/summary-evaluation/harness/HARNESS.md`). A real model (`MYCARLOS_TEST_MODEL`)
+/// summarizes
 /// each document in `MYCARLOS_EVAL_DOCS` (`<id>.json`: `{"id","lang","pages":[{"index","text"}]}`)
 /// in `MYCARLOS_TEST_LANG` (default `en`), through the app's own helper and sandbox. Each answer is
 /// appended to `MYCARLOS_EVAL_OUT` as one JSON line, written and synced before the next document,

@@ -7,7 +7,7 @@
  "pages": [
   {
    "index": 0,
-   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories - Clinical Chemistry\n\nPatient: EXAMPLE, Avery          PHN: 9123 456 789\nDate of birth: 17-Apr-1961       Sex: F\nMRN: H00012345                   Accession #: LAB-26-0099812\nOrdering provider: Dr. Morgan Testcase\nCollected: 2026-10-08 07:40      Reported: 2026-10-09 15:12\n\nTest                 Result     Units      Reference\nHemoglobin           132        g/L        120-160\nPotassium            5.4        mmol/L     3.5-5.0     H\nCreatinine           88         umol/L     45-90\nTSH                  2.1        mU/L       0.32-4.0\n\nComment: Potassium mildly raised. Repeat in 2 weeks (on or after 2026-10-22).\nQuestions: call the lab at 1-800-555-0100 or email results@lab.example.org.\n"
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories - Clinical Chemistry\n\nPatient: EXAMPLE, Avery          PHN: 9123 456 789\nDate of birth: 17-Apr-1961       Sex: F\nMRN: H00012345                   Accession #: LAB-26-0099812\nOrdering provider: Dr. Morgan Testcase\nCollected: 2026-10-08 07:40      Reported: 2026-10-09 15:12\n\nTest                 Result     Units      Reference\nHemoglobin           132        g/L        120-160\nPotassium            5.4        mmol/L     3.5-5.0     H\nCreatinine           88         umol/L     45-90\nTSH                  2.1        mU/L       0.32-4.0\n\nComment: Potassium mildly raised. Repeat in 2 weeks (on or after 2026-10-22).\nQuestions: call the lab at 613-555-0150 or email results@lab.example.org.\n"
   }
  ],
  "facts": [
