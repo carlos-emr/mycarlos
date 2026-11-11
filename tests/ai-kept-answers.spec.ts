@@ -10,6 +10,7 @@ import {
   refuseAi,
 } from "./support/aiFake";
 import { translate } from "./support/fluent";
+import { AI_EXPLAIN_ENABLED } from "../src/ai/features";
 import {
   FAKE_IDS,
   FAKE_PAGE_COUNT,
@@ -164,6 +165,10 @@ test("a kept summary is shown again without the model, and Summarize again hides
 test("an explanation is kept under the term as asked, without its spaces", async ({
   page,
 }) => {
+  test.skip(
+    !AI_EXPLAIN_ENABLED,
+    "Explain is switched off in the UI (src/ai/features.ts); ReaderAi.test.tsx covers keeping an explanation with the switch on",
+  );
   await start(page);
   const reader = await openReader(page);
   await open(page, reader, en("ai.explain.title"), true);

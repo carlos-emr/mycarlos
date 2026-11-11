@@ -17,6 +17,7 @@ import {
   type ReactNode,
 } from "react";
 import { useModalFocus } from "../useModalFocus";
+import { AI_EXPLAIN_ENABLED } from "../ai/features";
 import type { AiTool, SourceSpan } from "../ai/types";
 import { ReaderAiPanel, TERM_MAX, type ReaderAi } from "./ReaderAiPanel";
 import { ReadingAidView } from "./ReadingAidView";
@@ -232,8 +233,11 @@ function ReadingDocument({
   const markRef = useRef<HTMLElement | null>(null);
   const selected = useRef("");
   const offersAi = Boolean(ai);
+  // Explain is switched off in the UI (AI_EXPLAIN_ENABLED): then no button
+  // opens it and the selection, which only ever filled its box, is not read.
+  const offersExplain = offersAi && AI_EXPLAIN_ENABLED;
   useEffect(() => {
-    if (!offersAi) return;
+    if (!offersExplain) return;
     const remember = () => {
       const selection = document.getSelection();
       if (
@@ -245,7 +249,7 @@ function ReadingDocument({
     };
     document.addEventListener("selectionchange", remember);
     return () => document.removeEventListener("selectionchange", remember);
-  }, [offersAi]);
+  }, [offersExplain]);
 
   useEffect(() => {
     // The page area exists only while the original is shown; measure again when it comes back.
@@ -533,6 +537,7 @@ function ReadingDocument({
   };
   // Opening a tool may wait for the AI helper's notice; closing never does.
   const toggleAi = (tool: AiTool) => {
+    if (tool === "explain" && !AI_EXPLAIN_ENABLED) return;
     if (aiTool === tool) setAiTool(null);
     else if (ai?.beforeFirstUse) ai.beforeFirstUse(() => setAiTool(tool));
     else setAiTool(tool);
@@ -638,17 +643,19 @@ function ReadingDocument({
                   >
                     {translateNow("ai.summary.button")}
                   </button>
-                  <button
-                    className="button"
-                    type="button"
-                    aria-expanded={aiTool === "explain"}
-                    aria-controls={
-                      aiTool === "explain" ? "reader-ai-panel" : undefined
-                    }
-                    onClick={() => toggleAi("explain")}
-                  >
-                    {translateNow("ai.explain.title")}
-                  </button>
+                  {AI_EXPLAIN_ENABLED && (
+                    <button
+                      className="button"
+                      type="button"
+                      aria-expanded={aiTool === "explain"}
+                      aria-controls={
+                        aiTool === "explain" ? "reader-ai-panel" : undefined
+                      }
+                      onClick={() => toggleAi("explain")}
+                    >
+                      {translateNow("ai.explain.title")}
+                    </button>
+                  )}
                 </span>
               )}
             </div>
