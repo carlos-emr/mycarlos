@@ -1018,7 +1018,8 @@ impl Store {
 
     /// As [`Self::verified_model`], reading free memory from `probe`. On
     /// Linux the sealed copy lives in memory beside the loaded weights, so
-    /// twice the size plus 1.5 GiB must be free before it is made; unknown
+    /// what a start needs (`model_runtime::needed_bytes`: twice the size
+    /// plus the working memory) must be free before it is made; unknown
     /// refuses.
     pub(crate) fn verified_model_with(
         &self,
@@ -1037,10 +1038,7 @@ impl Store {
             let path = self.dir.join(model.file_name);
             #[cfg(target_os = "linux")]
             {
-                let needed = model
-                    .size_bytes
-                    .saturating_mul(2)
-                    .saturating_add(1536 << 20);
+                let needed = crate::model_runtime::needed_bytes(model.size_bytes);
                 if probe.available_bytes().is_none_or(|free| free < needed) {
                     return Err(ModelError::Memory);
                 }
@@ -2164,6 +2162,13 @@ mod tests {
             }
         );
         store.verified_model_with(&Free(Some(4 << 30))).unwrap();
+        // The same figure as the runtime's start: one byte less refuses.
+        let needed = crate::model_runtime::needed_bytes(1 << 20);
+        assert_eq!(
+            store.verified_model_with(&Free(Some(needed - 1))).err(),
+            Some(ModelError::Memory)
+        );
+        store.verified_model_with(&Free(Some(needed))).unwrap();
     }
 
     /// A fake network: serves `bytes` (announcing `announce`), or refuses.

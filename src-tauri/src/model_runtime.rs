@@ -41,8 +41,11 @@ pub(crate) const ANSWER_LIMIT: AnswerLimit = AnswerLimit {
     floor: Duration::from_secs(5 * 60),
     ceiling: Duration::from_secs(20 * 60),
 };
-/// Above the model's own size: its cache at the context used, and the runtime's memory.
-const WORKING_BYTES: u64 = 3 * 512 * 1024 * 1024;
+/// Above the model's own size: its cache at the context used, and the runtime's memory. The
+/// helper's measured peak above the file was 508 to 626 MiB for Qwen3.5 4B, the larger listed
+/// model, at the full 8,192 context and prompts of up to 7,155 tokens (11 Nov 2026); 1 GiB keeps
+/// about 400 MiB over the highest.
+const WORKING_BYTES: u64 = 1024 * 1024 * 1024;
 /// The helper's memory limit above the model's size.
 const LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
@@ -947,6 +950,19 @@ mod tests {
         // Checked again once the copy exists: it is not counted a second time.
         assert_eq!(needed_after_verifying(size), size + WORKING_BYTES);
         assert!(needed_after_verifying(size) <= needed_bytes(size));
+    }
+
+    #[test]
+    fn a_start_asks_for_the_model_and_1_gib_above_it() {
+        // Qwen3.5 4B's listed size.
+        let size = 3_013_027_808;
+        assert_eq!(needed_after_verifying(size), 4_086_769_632);
+        let expected = if cfg!(target_os = "linux") {
+            7_099_797_440
+        } else {
+            4_086_769_632
+        };
+        assert_eq!(needed_bytes(size), expected);
     }
 
     struct Fixed(Option<u64>);
