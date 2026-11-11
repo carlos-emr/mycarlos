@@ -86,6 +86,16 @@
     [
      "heart attack",
      "troponin"
+    ],
+    [
+     "no",
+     "not",
+     "without",
+     "ruled out",
+     "excluded",
+     "didn't",
+     "did not",
+     "normal"
     ]
    ],
    "expected_attributes": {}
@@ -243,6 +253,17 @@
      "acetaminophen",
      "paracetamol",
      "tylenol"
+    ],
+    [
+     "may",
+     "can",
+     "allowed",
+     "instead",
+     "use",
+     "take",
+     "1 g",
+     "1g",
+     "pain"
     ]
    ],
    "expected_attributes": {}
@@ -338,6 +359,18 @@
      "salt",
      "sodium",
      "fluid"
+    ],
+    [
+     "limit",
+     "less",
+     "under",
+     "no more",
+     "restrict",
+     "reduce",
+     "2 g",
+     "1.5",
+     "litre",
+     "liter"
     ]
    ],
    "expected_attributes": {}

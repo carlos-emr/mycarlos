@@ -129,6 +129,14 @@
      "exercise test",
      "angiogram",
      "stress test"
+    ],
+    [
+     "ask",
+     "whether",
+     "need",
+     "question",
+     "wonder",
+     "if"
     ]
    ],
    "expected_attributes": {}

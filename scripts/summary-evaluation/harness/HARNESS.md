@@ -34,13 +34,13 @@ Each fact follows PR 295's fixture schema: `id`, `category`, `required`, `critic
   - Longer words are stems: `week` finds "weeks", `prediabet` "prediabetes".
 - `evidence_spans` (optional): other verbatim places that state the fact, such as a table row
   beside its comment line.
-- `no_qualifier` (optional): why a critical fact has a single group. Otherwise every critical fact
+- `no_qualifier` (optional): why a required fact has a single group. Otherwise every required fact
   has a **qualifier group** that carries its meaning:
   - the direction (high, low), the status (new, stopped, unchanged) or the value;
   - the hedge ("suggests") for a result that only suggests.
 
-  So a sentence that names the fact but says something else is not credited ("Your iron is fine."
-  for iron-deficiency anemia).
+  So a sentence that names the fact but says something else is not credited: "Your iron is fine."
+  for iron-deficiency anemia, or "Your liver is damaged." for a mildly high ALT to repeat.
 - `trap_checks`: one per listed trap, in order. Either a `pattern` (a regular expression on the
   sentence's folded text) with an `example` sentence that must fall into it, or the `screens`
   that already check it (wrong numbers: `NUMBER_NOT_IN_QUOTE`, `QUANTITY_MISMATCH`).
@@ -48,12 +48,14 @@ Each fact follows PR 295's fixture schema: `id`, `category`, `required`, `critic
 `check` holds every harness fact to this:
 - its evidence and spans are in the document;
 - every approved statement names every group;
-- every critical fact has a qualifier or a reason;
+- every required fact has a qualifier or a reason;
 - every trap has a check whose example trips it, and no approved statement of the document trips
   it;
 - the document matches the freeze.
 
-PR 295's cases are frozen by its own `FIXTURE-FREEZE.json` and checked as they are.
+PR 295's cases are frozen by its own `FIXTURE-FREEZE.json` and checked as they are. Their 26 critical
+facts keep their single anchor group, so they rely on the critical rule below: none counts before a
+reviewer has accepted a sentence carrying it.
 
 Categories add `instruction`, `timing` and `follow_up`. Those, with PR 295's
 `conditional_instruction` and `date_instruction`, are reported together as **patient actions**.
@@ -79,10 +81,10 @@ page, run through the app's own text extraction once and kept as their `pages`.
   A quote from another place never counts, even when it shares words with the evidence (a dose
   table's repeated "mg daily changed (was"). A quote that cannot be found in the folded document
   falls back to comparing its text with the spans.
-- **Credit.** A fact counts as found (**credited**) only through a carrying sentence that has no
-  flag, or that a reviewer marked `correct`.
-  - **Held:** every sentence carrying it is flagged and not yet reviewed. Tables show it as
-    "+N held".
+- **Credit.** A fact counts as found (**credited**) only through a carrying sentence that a reviewer
+  marked `correct`, or, for a fact that is not critical, one that has no flag.
+  - **Held:** every sentence carrying it is flagged and not yet reviewed, or the fact is critical
+    and no sentence carrying it has been reviewed yet. Tables show it as "+N held".
   - **Rejected:** the review marked every carrying sentence `wrong`, `unsupported` or `vague`.
   - Paraphrases that name no group are not found; the review sheet can show them.
 - **Patient actions found:** the same, for the instruction, timing and follow-up facts.
@@ -92,9 +94,10 @@ page, run through the app's own text extraction once and kept as their `pages`.
   - `NUMBER_NOT_IN_QUOTE`: a number in the sentence that its quote does not have.
   - `NEGATION_MISMATCH`: a negation or absence word on one side only ("ruled out", "excluded",
     "unremarkable" and "free of" included).
-  - `HEDGE_DROPPED`: the quote hedges ("suggests", "probably", "to confirm"…) and the sentence
-    does not: certainty inflation.
-  - `CERTAINTY_ADDED`: "confirmed", "definite", "diagnosed with"… in the sentence, not the quote.
+  - `HEDGE_DROPPED`: the quote hedges ("suggests", "probably", "possible"…) and the sentence does
+    not: certainty inflation. A purpose ("needed to confirm it") is not a hedge.
+  - `CERTAINTY_ADDED`: "confirmed", "definite", "proven"… in the sentence, not the quote. "Diagnosed
+    with" counts only against a quote that hedges.
   - `EXPERIENCER`: a family member on one side only. A family doctor is not one.
   - `ACTOR_SHIFT`: the sentence talks to the patient while the quote names a doctor or clinic as the
     one who acts.
@@ -131,8 +134,13 @@ page, run through the app's own text extraction once and kept as their `pages`.
 - every document as scored (facts, traps and pages, PR 295's cases included);
 - the rule's fixed numbers and margins.
 
-Runs scored under different identities are not compared. `HARNESS-FREEZE.json` pins the harness
-documents; a change needs a new freeze version and a reason.
+`HARNESS-FREEZE.json` pins the 18 harness document files, `compare.py`'s SHA-256, the rule version,
+and the hash of every document as scored.
+- `check` fails when any of them differs.
+- `score` marks a decision `UNFROZEN`, never PASS, when the scorer, the rule or the documents differ
+  from the freeze, and says so in `compare.md` and `scores.json` (`frozen`).
+- A change needs a new freeze version and a reason, and runs scored before and after it are not
+  compared.
 
 ## The decision rule
 **Version 1** was written on 10 Nov, before any run.
@@ -143,20 +151,29 @@ scored. It does three things:
 - adds margins from an A/A pair;
 - keeps PR 295's holdout cases out of the decision.
 
+**Version 3** was written on 11 Nov, after a second review and still before any 10–11 Nov run was
+scored. It does five things:
+- a critical fact counts only once a reviewer has accepted a sentence carrying it;
+- check 1 waits for those reviews;
+- the gain in check 3 is required per variant;
+- margins come only from a noise pair;
+- the freeze is enforced.
+
 To reproduce version 1, use `compare.py` as of 8fbc23e5.
 
 The first run given to `score` is the baseline. Only documents in the decision count; PR 295's
 6 holdout cases are scored and reported on their own line, never decided on. A variant **passes**
 only if all of these hold:
 1. **No wrong statement.** No sentence was reviewed `wrong` or `unsupported`, and every flagged
-   sentence has a verdict.
+   sentence and every sentence carrying a critical fact has a verdict.
 2. **Must-haves kept.** At most `margin_lost` required facts that the baseline had (credited or
    held) are lost.
 3. **Patient actions not worse.** Patient actions found are at least the baseline's −
    `margin_actions`.
-   - With `--require-gain`, for an experiment aimed at them, they must be more than the baseline +
-     `margin_actions`.
-   - So a speed or model-swap variant can pass on "not worse".
+   - For a variant named with `--require-gain-for LABEL` (an experiment aimed at them), they must be
+     more than the baseline + `margin_actions`.
+   - Other variants in the same call are held to "not worse". So a speed, fit or model-swap variant
+     can pass.
 4. **Quotes.** Quotes found are within 2 points of the baseline.
 5. **Time.** The median time is at most 30% above the baseline, and no document fails that the
    baseline answered.
@@ -178,9 +195,9 @@ That chance movement is measured by an **A/A′ pair**: the baseline and the bas
 meant to make no difference (a blank line in the system text, say), over the same documents.
 
 - `compare.py noise --run A.jsonl --run A2.jsonl` counts the required facts, and the patient-action
-  facts, whose credit flips between the two runs.
+  facts, that one run's answers carry and the other's do not (before any review).
 - Those counts are the margins: `score --noise A.jsonl --noise A2.jsonl` sets `margin_lost` and
-  `margin_actions` from them, and `compare.md` says so.
+  `margin_actions` from them, and `compare.md` says so. There is no other way to set a margin.
 - Without an A/A′ pair, both margins are 0 (the B0/B0R floor).
 
 A one-fact difference then decides nothing it should not. Write the margins in the pull request
@@ -203,8 +220,8 @@ cargo test --offline --locked --features ai-helper-stub --test model_engine -- \
 
 # 3. Score and compare (baseline first). Margins from an A/A' pair, or 0.
 python3 scripts/summary-evaluation/harness/compare.py score \
-  --run B0.jsonl --run E1.jsonl --out /path/to/compare-B0-E1 \
-  [--noise B0.jsonl --noise B0p.jsonl] [--require-gain] [--review filled.csv]
+  --run B0.jsonl --run E1.jsonl --run E4.jsonl --out /path/to/compare \
+  [--require-gain-for E1] [--noise B0.jsonl --noise B0p.jsonl] [--review filled.csv]
 ```
 A stopped run resumes where it stopped (same build, model, language and threads). Keep runs, review
 sheets and tables outside the repository; summarize them in the pull request.

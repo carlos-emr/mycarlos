@@ -86,6 +86,14 @@
     [
      "kidney",
      "creatinine"
+    ],
+    [
+     "recover",
+     "back",
+     "improv",
+     "normal",
+     "better",
+     "resolved"
     ]
    ],
    "expected_attributes": {},
@@ -140,6 +148,14 @@
    "match": [
     [
      "atorvastatin"
+    ],
+    [
+     "80",
+     "increas",
+     "raised",
+     "higher",
+     "doubl",
+     "up"
     ]
    ],
    "expected_attributes": {},
@@ -164,6 +180,15 @@
    "match": [
     [
      "ramipril"
+    ],
+    [
+     "2.5",
+     "2,5",
+     "lower",
+     "reduc",
+     "decreas",
+     "halved",
+     "down"
     ]
    ],
    "expected_attributes": {},
@@ -191,6 +216,14 @@
    "match": [
     [
      "empagliflozin"
+    ],
+    [
+     "new",
+     "start",
+     "began",
+     "added",
+     "10 mg",
+     "10mg"
     ]
    ],
    "expected_attributes": {},
@@ -213,6 +246,14 @@
    "match": [
     [
      "metoprolol"
+    ],
+    [
+     "new",
+     "start",
+     "began",
+     "added",
+     "25 mg",
+     "25mg"
     ]
    ],
    "expected_attributes": {}
@@ -232,6 +273,14 @@
    "match": [
     [
      "metformin"
+    ],
+    [
+     "500",
+     "lower",
+     "reduc",
+     "decreas",
+     "halved",
+     "down"
     ]
    ],
    "expected_attributes": {},
@@ -259,6 +308,14 @@
    "match": [
     [
      "glyburide"
+    ],
+    [
+     "stop",
+     "discontinu",
+     "no longer",
+     "off",
+     "not take",
+     "halted"
     ]
    ],
    "expected_attributes": {},
@@ -420,6 +477,18 @@
    "match": [
     [
      "driv"
+    ],
+    [
+     "no",
+     "not",
+     "don't",
+     "avoid",
+     "never"
+    ],
+    [
+     "week",
+     "7 days",
+     "seven days"
     ]
    ],
    "expected_attributes": {}

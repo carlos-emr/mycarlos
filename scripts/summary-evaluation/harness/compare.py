@@ -13,8 +13,7 @@ count. Anything else is left to the hand review sheet. See HARNESS.md for every 
   compare.py check                         validate the document set (and its freeze)
   compare.py prepare --out DIR             write the run's input documents (<id>.json)
   compare.py score --run A.jsonl [--run B.jsonl ...] --out DIR [--review FILLED.csv]
-                   [--noise A.jsonl --noise A2.jsonl] [--margin-lost N] [--margin-actions N]
-                   [--require-gain]
+                   [--noise A.jsonl --noise A2.jsonl] [--require-gain-for LABEL ...]
   compare.py repeat --run A.jsonl --run B.jsonl   same build, same answers token for token?
   compare.py noise --run A.jsonl --run A2.jsonl   how many facts flip between an A/A pair
 
@@ -58,7 +57,7 @@ MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
 # The decision rule (HARNESS.md): its version and its fixed numbers.
-RULE_VERSION = 2
+RULE_VERSION = 3
 LOCATED_POINTS = 2
 TIME_RATIO = 1.3
 SCREENS = {"SOURCE_NOT_FOUND", "NUMBER_NOT_IN_QUOTE", "NEGATION_MISMATCH", "HEDGE_DROPPED",
@@ -75,17 +74,19 @@ NEGATION = re.compile(
 HEDGE = re.compile(
     r"\b(suggest\w*(?!\s+(a\s+)?(repeat\w*|recheck\w*|review\w*|follow\w*|you\b|that you))|"
     r"possibl\w*|probabl\w*|likely|unlikely|suspect\w*|consistent with|in keeping with|"
-    r"compatible|cannot (be )?(excluded|ruled out|exclude|rule out)|to confirm|needs? confirm\w*|"
+    r"compatible|cannot (be )?(excluded|ruled out|exclude|rule out)|"
     r"(may|could) (indicate|suggest|reflect|represent|mean)|may (have|need|require)|"
     r"(may|could) be (due|caused|a sign|related|from|the cause|consistent|in keeping|linked)|"
     r"might|query|uncertain|questionable|equivocal|"
-    r"borderline|presum\w*|evoqu\w*|sugger\w*|a confirmer|peut-etre|prawdopodob\w*|mozliw\w*|"
-    r"podejrzen\w*|sugeruj\w*|do potwierdzenia|sugere\w*|sugestiv\w*|provavel\w*|possivel\w*|"
-    r"suspeit\w*|compativel|a confirmar|sospech\w*|posible\w*)\b")
+    r"borderline|presum\w*|evoqu\w*|sugger\w*|peut-etre|prawdopodob\w*|mozliw\w*|"
+    r"podejrzen\w*|sugeruj\w*|sugere\w*|sugestiv\w*|provavel\w*|possivel\w*|"
+    r"suspeit\w*|compativel|sospech\w*|posible\w*)\b")
 # Words that make a statement certain: added to a quote that lacks them, they overstate it.
 CERTAINTY = re.compile(
-    r"\b(confirmed|confirms|definite|definitely|certainly|proven|proves|diagnosed with|"
-    r"established|definitively|confirme|confirmee|confirmad\w*|confirmou|potwierdz\w*)\b")
+    r"\b(confirmed|confirms|definite|definitely|certainly|proven|proves|definitively|confirme|"
+    r"confirmee|confirmad\w*|confirmou|potwierdz\w*)\b")
+# Neutral clinical wording that overstates only a quote that hedges ("diagnosed with" for "suggests").
+CERTAINTY_IF_HEDGED = re.compile(r"\b(diagnosed with|diagnosis of|established)\b")
 # Who a statement is about: a family member on one side only is a different experiencer.
 FAMILY = re.compile(
     r"\b(mother|father|mom|dad|sister|brother|siblings?|sons?|daughters?|parents?|aunt|uncle|"
@@ -285,8 +286,8 @@ def check_document(doc, fixture=False):
         for statement in f.get("approved_statements", []):
             if not carries_groups(f, statement):
                 problems.append(f"{where}: its approved statement does not name every group: {statement[:50]!r}")
-        if f.get("critical") and len(fact_groups(f)) < 2 and not f.get("no_qualifier"):
-            problems.append(f"{where}: a critical fact needs a qualifier group, or a `no_qualifier` reason")
+        if f.get("required", True) and len(fact_groups(f)) < 2 and not f.get("no_qualifier"):
+            problems.append(f"{where}: a required fact needs a qualifier group, or a `no_qualifier` reason")
     if fixture:
         return problems
     traps = doc.get("traps", [])
@@ -329,6 +330,22 @@ def load_documents(documents=DOCUMENTS, fixtures=FIXTURES):
                 lang=case["language"], synthetic=case["synthetic"], source="PR 295 fixtures",
                 pages=case["pages"], facts=case["facts"], traps=[], split=case["split"])
     return docs
+
+
+def pinning_problems(identity, freeze=FREEZE):
+    """What differs from HARNESS-FREEZE.json in a scoring identity (`scoring_identity`): the
+    scorer, the rule's version, or the documents as scored (PR 295's cases included)."""
+    if not Path(freeze).exists():
+        return ["no HARNESS-FREEZE.json"]
+    frozen = read_json(freeze)
+    problems = []
+    if frozen.get("scorer_sha256") != identity["scorer"]:
+        problems.append("the scorer differs from the freeze")
+    if frozen.get("rule_version") != RULE_VERSION:
+        problems.append(f"the rule is version {RULE_VERSION}, the freeze says {frozen.get('rule_version')}")
+    if frozen.get("scoring_documents_sha256") != identity["documents"]:
+        problems.append("the documents as scored differ from the freeze")
+    return problems
 
 
 def freeze_problems(documents=DOCUMENTS, freeze=FREEZE):
@@ -415,7 +432,11 @@ def screen(sentence, run_lang, facts, doc=None):
         flags.append("NEGATION_MISMATCH")
     if HEDGE.search(fquote) and not HEDGE.search(ftext):
         flags.append("HEDGE_DROPPED")
-    added = sorted({m.group(0) for m in CERTAINTY.finditer(ftext)} - {m.group(0) for m in CERTAINTY.finditer(fquote)})
+    said = {m.group(0) for m in CERTAINTY.finditer(ftext)}
+    if HEDGE.search(fquote):
+        said |= {m.group(0) for m in CERTAINTY_IF_HEDGED.finditer(ftext)}
+    added = sorted(said - {m.group(0) for m in CERTAINTY.finditer(fquote)}
+                   - {m.group(0) for m in CERTAINTY_IF_HEDGED.finditer(fquote)})
     if added:
         flags.append("CERTAINTY_ADDED:" + ",".join(added))
     people = [bool(FAMILY.search(FAMILY_DOCTOR.sub(" ", side))) for side in (ftext, fquote)]
@@ -442,14 +463,15 @@ def screen(sentence, run_lang, facts, doc=None):
     return flags
 
 
-def credit(found, flags, verdicts):
-    """A fact's standing from the sentences that carry it: "credited" when one of them has no
-    flag and no verdict against it, or a reviewer marked it correct; "held" when every one is
-    flagged and not yet reviewed; "rejected" when the review turned down every one."""
+def credit(found, flags, verdicts, critical=False):
+    """A fact's standing from the sentences that carry it: "credited" when a reviewer marked one
+    of them correct, or (for a fact that is not critical) one has no flag and no verdict against
+    it; "held" while that waits for the review (every carrier flagged, or the fact critical and
+    no carrier reviewed yet); "rejected" when the review turned down every one."""
     standing = "rejected" if found else None
     for _, index in found:
         verdict = verdicts.get(index, "")
-        if verdict == "correct" or (not flags[index] and verdict not in NOT_CREDITED_VERDICTS):
+        if verdict == "correct" or (not critical and not flags[index] and verdict not in NOT_CREDITED_VERDICTS):
             return "credited"
         if verdict not in NOT_CREDITED_VERDICTS:
             standing = "held"
@@ -473,7 +495,7 @@ def score_document(doc, entry, run_lang, verdicts=None):
     for fact in doc.get("facts", []):
         found = carriers(fact, sentences, folded_document)
         how, index = found[0] if found else (None, None)
-        standing = credit(found, flags, verdicts)
+        standing = credit(found, flags, verdicts, fact.get("critical", False))
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
                           critical=fact.get("critical", False), found=how if standing == "credited" else None,
                           standing=standing, matched=how, sentence=index,
@@ -481,6 +503,7 @@ def score_document(doc, entry, run_lang, verdicts=None):
     required = [f for f in facts if f["required"]]
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
     flagged = [dict(index=i, flags=f) for i, f in enumerate(flags)]
+    critical_carriers = {i for f in facts if f["critical"] for i in f["sentences"]}
     stats = (answer or {}).get("stats") or {}
     last_index = max(p["index"] for p in doc["pages"])
     result.update(
@@ -497,6 +520,7 @@ def score_document(doc, entry, run_lang, verdicts=None):
         flag_count=sum(len(f["flags"]) for f in flagged),
         trap_count=sum(1 for f in flagged for flag in f["flags"] if flag.startswith("TRAP:")),
         unreviewed_flagged=sum(1 for f in flagged if f["flags"] and verdicts.get(f["index"], "") == ""),
+        unreviewed_critical=sum(1 for i in critical_carriers if verdicts.get(i, "") == ""),
         prompt_tokens=stats.get("promptTokens"),
         answer_tokens=stats.get("answerTokens"),
         prompt_ms=stats.get("promptMs"),
@@ -573,6 +597,7 @@ def summarize_run(scores, wrong, holdout=False):
         sentences=sentences, flags=sum(s["flag_count"] for s in present),
         traps=sum(s["trap_count"] for s in present),
         unreviewed_flagged=sum(s["unreviewed_flagged"] for s in present),
+        unreviewed_critical=sum(s["unreviewed_critical"] for s in present),
         capped=sum(1 for s in present if s.get("capped")), cut=sum(1 for s in present if s.get("cut")),
         gap=sum(1 for s in present if s.get("gap")),
         median_wall_ms=statistics.median(walls) if walls else None,
@@ -641,7 +666,8 @@ def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_act
     elif summary["reviewed_wrong"]:
         checks.append(("no reviewed wrong statement", False))
     else:
-        checks.append(("no reviewed wrong statement", None if summary["unreviewed_flagged"] else True))
+        waiting = summary["unreviewed_flagged"] + summary["unreviewed_critical"]
+        checks.append(("no reviewed wrong statement", None if waiting else True))
     sure, maybe = [], []
     for doc_id, base in base_scores.items():
         if not base.get("decision", True) or not base.get("present") or base.get("error"):
@@ -686,8 +712,8 @@ def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_act
 
 
 def noise(first, second, docs):
-    """An A/A pair: how many required (and patient-action) facts change standing between two runs
-    of what should be the same thing, on the documents the decision uses. With greedy decoding,
+    """An A/A pair: how many required (and patient-action) facts are carried in one run and not in
+    the other (before any review), on the documents the decision uses. With greedy decoding,
     two runs of one build and threads answer token for token, so a same-build pair measures only
     run-to-run noise (expected 0); a pair with a change meant to make no difference (the A/A'
     pair) measures how far answers move by chance, which sets the margins (HARNESS.md)."""
@@ -706,7 +732,7 @@ def noise(first, second, docs):
         b_facts = {f["id"]: f for f in b[doc_id]["facts"]}
         for f in a[doc_id]["facts"]:
             other = b_facts.get(f["id"], {})
-            if f["required"] and (f["standing"] == "credited") != (other.get("standing") == "credited"):
+            if f["required"] and (f["matched"] is not None) != (other.get("matched") is not None):
                 flipped.append(f"{doc_id}/{f['id']}")
                 if f["category"] in ACTION_CATEGORIES:
                     flipped_actions.append(f"{doc_id}/{f['id']}")
@@ -782,15 +808,21 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
 
 
 def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, require_gain=False,
-          noise_pair=None):
+          noise_pair=None, freeze=None):
+    """Scores the runs, the first as the baseline. `require_gain`: True for every variant, or the
+    labels of the variants aimed at patient actions. `freeze`: HARNESS-FREEZE.json to hold the
+    scorer and documents to; a decision under anything else is never PASS ("UNFROZEN")."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     verdicts = read_review(review) if review else None
     measured = noise(*noise_pair, docs) if noise_pair else None
     if measured:
         margin_lost, margin_actions = measured["margin_lost"], measured["margin_actions"]
-    margins = dict(margin_lost=margin_lost, margin_actions=margin_actions, require_gain=require_gain)
+    gains = lambda label: require_gain is True or (not isinstance(require_gain, bool) and label in require_gain)
+    margins = dict(margin_lost=margin_lost, margin_actions=margin_actions,
+                   require_gain=require_gain if isinstance(require_gain, bool) else sorted(require_gain))
     identity = scoring_identity(docs, margins)
+    unfrozen = pinning_problems(identity, freeze) if freeze is not None else []
     labels, all_scores, summaries, holdouts, metas, sheets, memories = [], [], [], [], [], [], []
     for path in run_paths:
         meta, entries = read_run(path)
@@ -817,10 +849,15 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
     base_model = metas[0].get("model", {}).get("sha256")
     notes = [f"{label}: another model file" for label, meta in zip(labels, metas)
              if meta.get("model", {}).get("sha256") != base_model]
-    decisions = [None] + [decide(all_scores[0], summaries[0], s, m, margin_lost, margin_actions, require_gain)
-                          for s, m in zip(all_scores[1:], summaries[1:])]
+    decisions = [None] + [decide(all_scores[0], summaries[0], s, m, margin_lost, margin_actions, gains(label))
+                          for label, s, m in zip(labels[1:], all_scores[1:], summaries[1:])]
+    for decision in decisions[1:]:
+        if unfrozen and decision["verdict"] == "PASS":
+            decision["verdict"] = "UNFROZEN"
+    notes += [f"NOT FROZEN, no PASS: {problem}" for problem in unfrozen]
     (out / "scores.json").write_text(json.dumps(dict(
         scoring=identity, scored_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), noise=measured,
+        frozen=(not unfrozen) if freeze is not None else None,
         runs=[dict(label=l, meta=m, summary=s, holdout=h, decision=d, memory=mem, documents=sc)
               for l, m, s, h, d, mem, sc in zip(labels, metas, summaries, holdouts, decisions, memories, all_scores)],
         notes=notes), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
@@ -834,8 +871,9 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
     header = (f"Scoring {identity['id'][:16]} (rule v{RULE_VERSION}; scorer {identity['scorer'][:12]}, "
               f"documents {identity['documents'][:12]}, thresholds {identity['thresholds'][:12]}; "
               f"margins: lost {margin_lost}, actions {margin_actions}"
-              f"{', gain required' if require_gain else ''}"
-              f"{' from the noise pair' if measured else ''})\n\n")
+              f"{' from the noise pair' if measured else ''}"
+              f"{'; gain required for ' + ', '.join(l for l in labels[1:] if gains(l)) if any(gains(l) for l in labels[1:]) else ''}"
+              f"{'; NOT FROZEN' if unfrozen else ''})\n\n")
     (out / "compare.md").write_text(header + table(labels, docs, all_scores, summaries, decisions, memories, holdouts)
                                     + "".join(f"\nNOTE: {n}\n" for n in notes), encoding="utf-8")
     return summaries, decisions
@@ -868,11 +906,9 @@ def main(argv=None):
     sc.add_argument("--run", action="append", required=True)
     sc.add_argument("--out", required=True)
     sc.add_argument("--review")
-    sc.add_argument("--noise", action="append", help="an A/A pair (twice) that sets both margins")
-    sc.add_argument("--margin-lost", type=int, default=0)
-    sc.add_argument("--margin-actions", type=int, default=0)
-    sc.add_argument("--require-gain", action="store_true",
-                    help="an experiment aimed at patient actions: more than the baseline + margin")
+    sc.add_argument("--noise", action="append", help="an A/A pair (twice): the only way to set margins")
+    sc.add_argument("--require-gain-for", action="append", default=[], metavar="LABEL",
+                    help="a variant aimed at patient actions: more than the baseline + margin (repeat per run)")
     rep = sub.add_parser("repeat")
     rep.add_argument("--run", action="append", required=True)
     noi = sub.add_parser("noise")
@@ -892,6 +928,7 @@ def main(argv=None):
         for doc_id, p in bad.items():
             print(f"{doc_id}: " + "; ".join(p))
         frozen = freeze_problems(args.documents) if Path(args.documents).resolve() == DOCUMENTS else []
+        frozen += pinning_problems(scoring_identity(docs, {}))
         for problem in frozen:
             print(f"freeze: {problem}")
         print(f"{len(docs)} documents, {sum(len(d.get('facts', [])) for d in docs.values())} facts, "
@@ -912,8 +949,11 @@ def main(argv=None):
         return 0
     if args.noise and len(args.noise) != 2:
         raise SystemExit("--noise takes exactly two runs")
-    summaries, decisions = score(args.run, args.out, docs, args.review, args.margin_lost, args.margin_actions,
-                                 args.require_gain, tuple(args.noise) if args.noise else None)
+    unknown = set(args.require_gain_for) - {run_label(read_run(path)[0], path) for path in args.run}
+    if unknown:
+        raise SystemExit(f"--require-gain-for names no run: {', '.join(sorted(unknown))}")
+    summaries, decisions = score(args.run, args.out, docs, args.review, 0, 0, set(args.require_gain_for),
+                                 tuple(args.noise) if args.noise else None, freeze=FREEZE)
     for summary, decision in zip(summaries, decisions):
         print(json.dumps(dict(summary=summary, verdict=decision["verdict"] if decision else "baseline")))
     return 0

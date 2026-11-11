@@ -21,7 +21,7 @@ def fake_doc():
                                   example="Start a gluten-free diet.")], facts=[
         dict(id="weight", category="finding", required=True, critical=False,
              source_evidence="They have lost 4 kg.", approved_statements=["They lost 4 kg."],
-             anchors=["4 kg"], match=[["4 kg"]], expected_attributes={}),
+             anchors=["4 kg"], match=[["4 kg"], ["lost", "lose", "loss"]], expected_attributes={}),
         dict(id="gluten", category="instruction", required=True, critical=True,
              source_evidence="I have asked them to keep eating gluten for now.",
              approved_statements=["Keep eating gluten for now."], anchors=["gluten"],
@@ -190,8 +190,8 @@ class RunTest(unittest.TestCase):
     def test_a_better_variant_waits_for_the_hand_review(self):
         (summaries, decisions), out = self.score(run_lines("E1", BETTER))
         self.assertEqual(summaries[0]["action_found"], 0)
-        # "You should be seen…" is flagged (should): its fact is held until the review.
-        self.assertEqual((summaries[1]["action_found"], summaries[1]["action_held"]), (1, 1))
+        # Both patient actions are critical: held until a reviewer marks a carrying sentence correct.
+        self.assertEqual((summaries[1]["action_found"], summaries[1]["action_held"]), (0, 2))
         self.assertEqual(decisions[1]["verdict"], "PENDING")
         self.assertIn("\n| Document | B0 | E1 |", (out / "compare.md").read_text(encoding="utf-8"))
         with (out / "review.csv").open(encoding="utf-8") as sheet:
@@ -311,13 +311,42 @@ class CounterExampleTest(unittest.TestCase):
         self.assertEqual(scored["flags"][0]["flags"], [])
         self.assertEqual((facts["vitamin_d_low"]["standing"], facts["vitamin_d_low"]["found"]), ("credited", "matched"))
 
-    def test_a_correct_statement_of_the_trap_fact_is_credited(self):
+    def test_a_correct_statement_of_the_critical_fact_is_credited_once_reviewed(self):
         fact = evidence_of("demo-celiac-lab", "ttg_high_suggests_celiac")
         right = sentence("The celiac antibody test is 92 U/mL, more than six times the upper limit.",
                          fact["source_evidence"])
         facts, scored = score_sentences("demo-celiac-lab", [right])
         self.assertEqual(scored["flags"][0]["flags"], [])
+        self.assertEqual(facts["ttg_high_suggests_celiac"]["standing"], "held")
+        facts, _ = score_sentences("demo-celiac-lab", [right], {0: "correct"})
         self.assertEqual(facts["ttg_high_suggests_celiac"]["standing"], "credited")
+
+    def test_an_unhedged_celiac_claim_quoting_the_table_row_is_a_trap(self):
+        row = "Tissue transglutaminase IgA\t92\tH\t<15\tU/mL"
+        for text in ("Your tTG test is 92, which is high, so there is celiac disease.",
+                     "The tTG of 92 shows celiac disease."):
+            facts, scored = score_sentences("demo-celiac-lab", [sentence(text, row)])
+            self.assertIn("TRAP:1", scored["flags"][0]["flags"], text)
+            self.assertNotEqual(facts["ttg_high_suggests_celiac"]["standing"], "credited", text)
+        iron = evidence_of("demo-celiac-lab", "iron_deficiency_anemia")
+        facts, scored = score_sentences("demo-celiac-lab", [sentence(
+            "Your iron stores are very low and celiac disease is the cause.", iron["source_evidence"])])
+        self.assertIn("TRAP:1", scored["flags"][0]["flags"])
+        self.assertEqual(facts["iron_deficiency_anemia"]["standing"], "held")
+
+    def test_a_named_organ_without_its_qualifier_is_not_the_fact(self):
+        facts, _ = score_sentences("demo-celiac-lab", [sentence("Your liver is damaged.", "ALT\t52\tH\t<50\tU/L")])
+        self.assertIsNone(facts["alt_high_repeat"]["matched"])
+
+    def test_the_documents_own_wording_is_found(self):
+        iron = evidence_of("demo-celiac-lab", "iron_deficiency_anemia")
+        facts, _ = score_sentences("demo-celiac-lab", [sentence(
+            "You have fewer red blood cells than normal, with little stored iron.", iron["source_evidence"])])
+        self.assertEqual(facts["iron_deficiency_anemia"]["matched"], "matched")
+        ecg = evidence_of("bakeoff-referral-letter", "ecg_no_acute_changes")
+        facts, _ = score_sentences("bakeoff-referral-letter", [sentence("Your ECG showed no new problems.",
+                                                                        ecg["source_evidence"])])
+        self.assertEqual(facts["ecg_no_acute_changes"]["matched"], "matched")
 
 
 class MatchingTest(unittest.TestCase):
@@ -367,10 +396,15 @@ class CreditTest(unittest.TestCase):
         for verdict in ("wrong", "unsupported", "vague"):
             self.assertEqual(self.standing([self.timing], {0: verdict})["timing"], "rejected")
 
-    def test_an_unflagged_sentence_carrying_the_same_fact_credits_it(self):
+    def test_a_critical_fact_waits_for_a_reviewer_even_when_an_unflagged_sentence_carries_it(self):
         plain = sentence("They will be seen within 4 to 6 weeks.",
                          "I would be grateful if they could be seen within the next 4 to 6 weeks.")
-        self.assertEqual(self.standing([self.timing, plain])["timing"], "credited")
+        self.assertEqual(self.standing([self.timing, plain])["timing"], "held")
+        self.assertEqual(self.standing([self.timing, plain], {1: "correct"})["timing"], "credited")
+
+    def test_an_unflagged_sentence_credits_a_fact_that_is_not_critical(self):
+        weight = sentence("You have lost 4 kg.", "They have lost 4 kg.")
+        self.assertEqual(self.standing([weight])["weight"], "credited")
 
     def test_a_review_against_an_unflagged_sentence_takes_its_credit(self):
         weight = sentence("You have lost 4 kg.", "They have lost 4 kg.")
@@ -390,6 +424,15 @@ class NewScreenTest(unittest.TestCase):
     def test_flags_certainty_the_quote_does_not_have(self):
         self.assertIn("CERTAINTY_ADDED:confirmed", self.flags("Celiac disease is confirmed.", "tTG IgA 92 U/mL"))
         self.assertEqual(self.flags("A biopsy is needed to confirm it.", "A biopsy is needed to confirm it."), [])
+        # "Diagnosed with" overstates only a quote that hedges.
+        self.assertEqual(self.flags("You were diagnosed with pneumonia.",
+                                    "Admitted with community-acquired pneumonia."), [])
+        self.assertIn("CERTAINTY_ADDED:diagnosed with",
+                      self.flags("You were diagnosed with pneumonia.", "Findings suggest pneumonia."))
+
+    def test_a_purpose_clause_is_not_a_hedge(self):
+        self.assertNotIn("HEDGE_DROPPED", self.flags("You need a biopsy of the small bowel to check for celiac disease.",
+                                                     "a duodenal biopsy is usually needed to confirm it."))
 
     def test_flags_a_statement_about_someone_else(self):
         self.assertIn("EXPERIENCER", self.flags("You have hypothyroidism.", "Mother has hypothyroidism."))
@@ -422,6 +465,7 @@ class NewScreenTest(unittest.TestCase):
         doc = fake_doc()
         doc["facts"][1]["match"] = [["gluten"]]
         self.assertTrue(any("needs a qualifier group" in p for p in compare.check_document(doc)))
+        doc["facts"][1]["required"] = True
         doc["facts"][1]["no_qualifier"] = "the word carries the fact"
         self.assertEqual(compare.check_document(doc), [])
 
@@ -486,13 +530,15 @@ class DecisionV2Test(RunTest):
         again = write_run(self.folder.name, "B0R", run_lines("B0R", BETTER))
         measured = compare.noise(first, again, self.docs)
         self.assertEqual((measured["margin_lost"], measured["margin_actions"], measured["same_answers"]), (0, 0, 1))
+        # Facts carried in one answer and not the other, before any review.
         moved = run_lines("B0X", BETTER[:2])
         moved[1]["result"]["stats"]["answerHash"] = 7
         measured = compare.noise(first, write_run(self.folder.name, "B0X", moved), self.docs)
-        self.assertEqual((measured["margin_lost"], measured["margin_actions"]), (0, 0))
+        self.assertEqual((measured["flipped"], measured["margin_actions"]), (["fake-letter/timing"], 1))
         dropped = run_lines("B0Y", BASE)
         measured = compare.noise(first, write_run(self.folder.name, "B0Y", dropped), self.docs)
-        self.assertEqual((measured["flipped"], measured["margin_actions"]), (["fake-letter/gluten"], 1))
+        self.assertEqual((measured["flipped"], measured["margin_actions"]),
+                         (["fake-letter/gluten", "fake-letter/timing"], 2))
 
     def test_every_output_names_what_scored_it(self):
         (_, _), out = self.score(run_lines("E1", BETTER))
@@ -506,6 +552,79 @@ class DecisionV2Test(RunTest):
         changed["fake-letter"]["facts"][0]["match"] = [["4 kg"], ["lost"]]
         self.assertNotEqual(compare.scoring_identity(changed, {})["documents"],
                             compare.scoring_identity(self.docs, {})["documents"])
+
+
+
+class RuleV3Test(RunTest):
+    def write_review(self, rows):
+        review = Path(self.folder.name) / "filled.csv"
+        with review.open("w", newline="", encoding="utf-8") as target:
+            writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "verdict"])
+            writer.writeheader()
+            writer.writerows(rows)
+        return review
+
+    def test_the_verdict_waits_while_a_critical_carrier_is_unreviewed(self):
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        gluten = [BETTER[0], BETTER[1]]
+        variant = write_run(self.folder.name, "E1", run_lines("E1", gluten))
+        review = self.write_review([dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")])
+        _, decisions = compare.score([base, variant], Path(self.folder.name) / "w", self.docs, review)
+        check = next(ok for name, ok in decisions[1]["checks"] if name == "no reviewed wrong statement")
+        self.assertIsNone(check)
+        self.assertEqual(decisions[1]["verdict"], "PENDING")
+
+    def test_gain_is_required_only_of_the_variants_named(self):
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        e1 = write_run(self.folder.name, "E1", run_lines("E1", BASE))
+        e4 = write_run(self.folder.name, "E4", run_lines("E4", BASE))
+        review = self.write_review([dict(run=r, doc="fake-letter", sentence=0, verdict="correct") for r in ("E1", "E4")])
+        _, decisions = compare.score([base, e1, e4], Path(self.folder.name) / "g", self.docs, review,
+                                     require_gain={"E1"})
+        self.assertEqual((decisions[1]["verdict"], decisions[2]["verdict"]), ("FAIL", "PASS"))
+        self.assertIn("gain required for E1)", (Path(self.folder.name) / "g" / "compare.md").read_text(encoding="utf-8"))
+
+    def test_margins_come_only_from_a_noise_pair_on_the_command_line(self):
+        with self.assertRaises(SystemExit):
+            compare.main(["score", "--run", "x.jsonl", "--out", "y", "--margin-lost", "3"])
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        with self.assertRaises(SystemExit):
+            compare.main(["score", "--run", str(base), "--out", str(Path(self.folder.name) / "z"),
+                          "--require-gain-for", "E9"])
+
+
+class FrozenTest(unittest.TestCase):
+    """The decision is held to HARNESS-FREEZE.json: scorer, rule version and documents."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        row = "25-hydroxy vitamin D\t41\tL\t75–250\tnmol/L"
+        lines = lambda variant: [
+            dict(kind="run", variant=variant, build=dict(fingerprint="f" * 64), lang="en", model=dict(sha256="a" * 64)),
+            dict(kind="document", id="demo-celiac-lab", wallMs=1000, result=dict(
+                sentences=[sentence("Your vitamin D was low.", row)], lastPage=0, lastPageCut=False)),
+        ]
+        self.runs = [write_run(self.folder.name, v, lines(v)) for v in ("B0", "E1")]
+        self.review = Path(self.folder.name) / "filled.csv"
+        self.review.write_text("run,doc,sentence,verdict\nE1,demo-celiac-lab,0,correct\n", encoding="utf-8")
+
+    def test_the_repository_set_is_frozen_with_its_scorer_and_rule(self):
+        frozen = compare.read_json(compare.FREEZE)
+        self.assertEqual(frozen["rule_version"], compare.RULE_VERSION)
+        self.assertEqual(compare.pinning_problems(compare.scoring_identity(REPO, {})), [])
+        _, decisions = compare.score(self.runs, Path(self.folder.name) / "f", REPO, self.review, freeze=compare.FREEZE)
+        self.assertEqual(decisions[1]["verdict"], "PASS")
+
+    def test_a_drifted_document_is_never_a_pass(self):
+        drifted = json.loads(json.dumps(REPO))
+        drifted["demo-celiac-lab"]["facts"][0]["match"][0].append("FAKE-extra")
+        problems = compare.pinning_problems(compare.scoring_identity(drifted, {}))
+        self.assertEqual(problems, ["the documents as scored differ from the freeze"])
+        out = Path(self.folder.name) / "d"
+        _, decisions = compare.score(self.runs, out, drifted, self.review, freeze=compare.FREEZE)
+        self.assertEqual(decisions[1]["verdict"], "UNFROZEN")
+        self.assertIn("NOT FROZEN", (out / "compare.md").read_text(encoding="utf-8"))
 
 
 class FreezeTest(unittest.TestCase):

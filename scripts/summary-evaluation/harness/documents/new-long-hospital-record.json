@@ -123,6 +123,16 @@
     [
      "kidney",
      "creatinine"
+    ],
+    [
+     "back",
+     "recover",
+     "improv",
+     "near usual",
+     "normal",
+     "115",
+     "better",
+     "injur"
     ]
    ],
    "expected_attributes": {}
@@ -249,6 +259,14 @@
    "match": [
     [
      "metformin"
+    ],
+    [
+     "500",
+     "lower",
+     "reduc",
+     "decreas",
+     "halved",
+     "down"
     ]
    ],
    "expected_attributes": {},
@@ -361,6 +379,13 @@
     [
      "loperamide",
      "imodium"
+    ],
+    [
+     "not",
+     "don't",
+     "avoid",
+     "no",
+     "never"
     ]
    ],
    "expected_attributes": {}

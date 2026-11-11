@@ -32,6 +32,13 @@
      "bloat",
      "stool",
      "diarrh"
+    ],
+    [
+     "month",
+     "meal",
+     "eating",
+     "day",
+     "since"
     ]
    ],
    "expected_attributes": {}
@@ -53,6 +60,16 @@
     [
      "4 kg",
      "4kg"
+    ],
+    [
+     "lost",
+     "loss",
+     "lose",
+     "losing",
+     "down",
+     "dropped",
+     "without trying",
+     "unintention"
     ]
    ],
    "expected_attributes": {}
@@ -172,6 +189,14 @@
      "biops",
      "endoscop",
      "scope"
+    ],
+    [
+     "ask",
+     "whether",
+     "need",
+     "question",
+     "wonder",
+     "confirm"
     ]
    ],
    "expected_attributes": {}
@@ -271,7 +296,7 @@
  "trap_checks": [
   {
    "trap": "saying celiac disease is confirmed (the letter asks whether a biopsy is needed)",
-   "pattern": "^(?!.*\\b(to confirm|confirm it|needed|needs|need|biops\\w*|whether|likely|suggest\\w*|probabl\\w*|possibl\\w*|may|might|could)\\b)(?=.*\\b(celiac|coeliac)\\b)(?=.*\\b(confirmed|definite\\w*|diagnosed|you have|they have|has|have)\\b)",
+   "pattern": "^(?!.*\\b(to confirm|confirm it|needed|needs|need|biops\\w*|whether|likely|suggest\\w*|probabl\\w*|possibl\\w*|may|might|could)\\b)(?=.*\\b(celiac|coeliac)\\b)(?=.*\\b(confirmed|definite\\w*|diagnosed|you have|they have|has|have)\\b)|^(?!.*\\b(suggest\\w*|likely|probabl\\w*|possibl\\w*|may|might|could|whether|to confirm|confirm it|biops\\w*|needed|needs|need|point\\w* to|consistent|in keeping|can be seen|seen with|risk|cousin|relatives?|family|mother|father|sister|brother|test\\w* for|check\\w* for|screen\\w* for|rule out|ruled out|if|untreated)\\b)(?=.*\\b(celiac|coeliac) disease\\b)",
    "example": "They have celiac disease."
   },
   {

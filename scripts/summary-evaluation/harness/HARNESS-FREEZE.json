@@ -1,12 +1,15 @@
 {
- "version": 2,
- "frozen_utc": "2026-11-11T00:43:18+00:00",
+ "version": 3,
+ "frozen_utc": "2026-11-11T00:56:14+00:00",
+ "rule_version": 3,
+ "scorer_sha256": "2f5780425a085f2fffa0b25f6ca081cb85ce23fd8804ff4384982576b77030bd",
+ "scoring_documents_sha256": "8169efaa65e448ed2d16aaaac781ba8363727312187f9911c5780401091ee719",
  "synthetic_only": true,
  "documents_count": 18,
  "facts": 147,
  "critical_facts": 70,
  "traps": 57,
- "pages_as_run": "Version 1 (the commit before this freeze's version 2) has exactly the page text the 10-11 Nov evaluation runs read; score those runs with the documents of version 1.",
+ "pages_as_run": "The 10-11 Nov evaluation runs read version 1's page text. Since version 2 the only page change is the lab's telephone line in bakeoff-lab-report and bakeoff-cumulative-lab, which no fact, evidence span, match option or trap touches, so those runs are scored with the current version.",
  "outputs_seen_note": "'yes': the facts were written after model summaries of the document existed (the bake-off, the 5 Nov runs, the demo). 'no record': no earlier model output of it is known.",
  "policy": "Do not change a frozen document after a run is scored with it; a change needs a new version here and a reason, and runs scored before and after it are not compared.",
  "history": [
@@ -19,11 +22,16 @@
    "version": 2,
    "frozen_utc": "2026-11-11T00:43:18+00:00",
    "reason": "page text of bakeoff-lab-report and bakeoff-cumulative-lab: a toll-free 1-800-555-01xx number (not a reserved fiction range) replaced by 613-555-0150; bakeoff-quebec-referral: its note no longer describes the earlier text"
+  },
+  {
+   "version": 3,
+   "frozen_utc": "2026-11-11T00:56:14+00:00",
+   "reason": "rule version 3 and the scorer pinned here (score marks a decision UNFROZEN when the scorer, rule or documents differ); qualifier groups for every required fact that still credited on one group, two options from the documents' wording in two qualifier groups, and the celiac traps widened to any unhedged 'celiac disease'"
   }
  ],
  "documents": {
   "bakeoff-cumulative-lab": {
-   "sha256": "9ea8396f7d1a0e55410fb09312cd5cb28eff14f781f0adee80d324ca504e45d6",
+   "sha256": "28d2c5fceae25a332b6e3ac894a02b4669d3333956335a25c7b84992885f400c",
    "facts": 5,
    "critical": 3,
    "traps": 5,
@@ -37,7 +45,7 @@
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-hospital-header": {
-   "sha256": "b726c7130b1338b0f0b9936107123a92b7af1b0cf234f2695e7ddf5a6ecc7078",
+   "sha256": "16d6df3b1bda7f3b55d2e80a71c7a22da2ea02914ddc86259a4c60775d477b76",
    "facts": 4,
    "critical": 1,
    "traps": 2,
@@ -58,14 +66,14 @@
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-long-discharge-summary": {
-   "sha256": "635cbd21a27cfdadb27c2a83e76db3fb95d58f51f1bc217852c7f9fb88cffe7f",
+   "sha256": "194c68a58b46c33f97b76eb0acabd1d2503d9edd64dcb5fdee27ee2b2ce25eaa",
    "facts": 16,
    "critical": 6,
    "traps": 5,
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-ptbr-endocrinology": {
-   "sha256": "40a644418551e190812a0676f82f7db7d0bdb60c41526ebbd609204ae2559fbc",
+   "sha256": "88d03cb29631e97cf48ffb17b822a5f70b8a7be5726df05b6bc3dd67b64f7410",
    "facts": 9,
    "critical": 4,
    "traps": 4,
@@ -79,56 +87,56 @@
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-referral-letter": {
-   "sha256": "eafdcb644e5734e15bee52ae8e8ff809410f867e4ef196c87b670b0ce7215d3e",
+   "sha256": "1efa5326518515493f8f138804475fbed8473de3312096ad6cd4a47ac2aec370",
    "facts": 5,
    "critical": 2,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
   },
   "demo-celiac-lab": {
-   "sha256": "dcea0cac3ce13097f6b6ff505babab8c6a15a40935bc85cd3a9c6f4960e70b40",
+   "sha256": "95d2b3b8bb84d33f523229886b66991babf71213dbde99a90fa33caf9b1c41d2",
    "facts": 6,
    "critical": 3,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
   },
   "demo-gastro-referral": {
-   "sha256": "bce1316d4a7575079fc682fff77ed988ca2ad87ad8d9717dc8dbb517d8e5d551",
+   "sha256": "4a219f6f84f04a3475115b29774ba183162ab0bf6ee612ebbef7692192ddeaad",
    "facts": 9,
    "critical": 4,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
   },
   "fake01-cardiology-referral": {
-   "sha256": "8013ef31d642ba1688ddcb17d6759a6b43853de957eb82f4a8a861acd294e3e5",
+   "sha256": "c51da9b14e9194f08979bb8c7482977d34ca246c8f52620a829a665cd40a99c8",
    "facts": 8,
    "critical": 3,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
   },
   "fake02-cardiac-discharge": {
-   "sha256": "566694fd71e03cca69719a699ff46bff5ac9be79055c328c2be562e37f3e3017",
+   "sha256": "c7bc41c824802aa01552995d886d6beef2eba79afcc98edb7561f903613e7b30",
    "facts": 18,
    "critical": 6,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
   },
   "fake03-cardiac-lab": {
-   "sha256": "f87a09eb81ce8f6b892dc59b399c8114f3e682b03563ffce584804b72160caba",
+   "sha256": "1e8aa26fdcc13f277e168235ffe8773a13898c328354804c08432d786092c05a",
    "facts": 6,
    "critical": 2,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
   },
   "new-french-nephrology": {
-   "sha256": "95320e8824bfe833c569c518133f30fef0533896be6033a10bc59f74dcc86c48",
+   "sha256": "77cd0eb40d3dd1d500383723fc55ef118205289744f2f5f49e2bb6e616759143",
    "facts": 11,
    "critical": 5,
    "traps": 3,
    "outputs_seen_before_facts": "no record"
   },
   "new-long-hospital-record": {
-   "sha256": "8a38181ff35c562f3dd98fc0a2cf1ad9b222988f63fd53dfdf34da0104536745",
+   "sha256": "ae8e3dc3526a3bd4a493b99675ccc97cb9e53336a79229b7ddb0bc2c0cc1c7be",
    "facts": 14,
    "critical": 9,
    "traps": 3,
@@ -142,7 +150,7 @@
    "outputs_seen_before_facts": "no record"
   },
   "new-rheumatology-letter": {
-   "sha256": "994ca9f4a0c0afa7b9312ecb99a593c788efe4f87112a5ce334fdecf1ec0d2eb",
+   "sha256": "b4be973a8a1ec362b64ff3b13906bb60a6cfa321c6aaa2197347f2c58fd82480",
    "facts": 11,
    "critical": 7,
    "traps": 3,

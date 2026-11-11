@@ -38,7 +38,13 @@
      "microcyt",
      "deplet",
      "anemi",
-     "anaemi"
+     "anaemi",
+     "fewer",
+     "little",
+     "below",
+     "under",
+     "reduced",
+     "lack"
     ]
    ],
    "expected_attributes": {}
@@ -135,6 +141,15 @@
    "match": [
     [
      "vitamin d"
+    ],
+    [
+     "low",
+     "deficien",
+     "insufficien",
+     "below",
+     "under",
+     "41",
+     "reduced"
     ]
    ],
    "expected_attributes": {},
@@ -159,6 +174,16 @@
     [
      "alt",
      "liver"
+    ],
+    [
+     "high",
+     "raised",
+     "elevat",
+     "above",
+     "52",
+     "repeat",
+     "recheck",
+     "again"
     ]
    ],
    "expected_attributes": {},
@@ -214,7 +239,7 @@
   },
   {
    "trap": "saying celiac disease is confirmed",
-   "pattern": "^(?!.*\\b(to confirm|confirm it|needed|needs|need|biops\\w*|whether|likely|suggest\\w*|probabl\\w*|possibl\\w*|may|might|could)\\b)(?=.*\\b(celiac|coeliac)\\b)(?=.*\\b(confirmed|definite\\w*|diagnosed|you have|they have|has|have)\\b)",
+   "pattern": "^(?!.*\\b(to confirm|confirm it|needed|needs|need|biops\\w*|whether|likely|suggest\\w*|probabl\\w*|possibl\\w*|may|might|could)\\b)(?=.*\\b(celiac|coeliac)\\b)(?=.*\\b(confirmed|definite\\w*|diagnosed|you have|they have|has|have)\\b)|^(?!.*\\b(suggest\\w*|likely|probabl\\w*|possibl\\w*|may|might|could|whether|to confirm|confirm it|biops\\w*|needed|needs|need|point\\w* to|consistent|in keeping|can be seen|seen with|risk|cousin|relatives?|family|mother|father|sister|brother|test\\w* for|check\\w* for|screen\\w* for|rule out|ruled out|if|untreated)\\b)(?=.*\\b(celiac|coeliac) disease\\b)",
    "example": "Celiac disease is confirmed."
   },
   {

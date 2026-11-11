@@ -135,6 +135,19 @@
      "alt",
      "ast",
      "ggt"
+    ],
+    [
+     "rise",
+     "risen",
+     "rising",
+     "rose",
+     "increas",
+     "higher",
+     "high",
+     "elevat",
+     "up",
+     "climb",
+     "gradual"
     ]
    ],
    "expected_attributes": {},

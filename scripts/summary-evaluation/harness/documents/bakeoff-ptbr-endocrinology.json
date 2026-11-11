@@ -69,6 +69,17 @@
      "rins",
      "renal",
      "kidney"
+    ],
+    [
+     "normal",
+     "well",
+     "fine",
+     "good",
+     "healthy",
+     "no protein",
+     "bem",
+     "sem perda",
+     "normais"
     ]
    ],
    "expected_attributes": {}
@@ -197,6 +208,16 @@
      "water",
      "higien",
      "hygien"
+    ],
+    [
+     "drink",
+     "beber",
+     "enough",
+     "suficiente",
+     "care",
+     "cuidar",
+     "clean",
+     "intim"
     ]
    ],
    "expected_attributes": {}

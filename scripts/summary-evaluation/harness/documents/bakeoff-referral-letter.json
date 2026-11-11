@@ -60,7 +60,10 @@
      "sinus",
      "normal",
      "no change",
-     "without"
+     "without",
+     "no new",
+     "no sign",
+     "nothing"
     ]
    ],
    "expected_attributes": {}
@@ -82,6 +85,9 @@
     [
      "ldl",
      "cholesterol"
+    ],
+    [
+     "3.9"
     ]
    ],
    "expected_attributes": {},

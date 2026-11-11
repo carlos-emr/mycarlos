@@ -54,6 +54,15 @@
      "hand",
      "wrist",
      "stiff"
+    ],
+    [
+     "pain",
+     "swell",
+     "swollen",
+     "ache",
+     "sore",
+     "month",
+     "morning"
     ]
    ],
    "expected_attributes": {}
@@ -126,6 +135,13 @@
    "match": [
     [
      "folic"
+    ],
+    [
+     "5 mg",
+     "5mg",
+     "week",
+     "day after",
+     "once"
     ]
    ],
    "expected_attributes": {}
@@ -145,6 +161,18 @@
    "match": [
     [
      "prednisone"
+    ],
+    [
+     "10 mg",
+     "10mg",
+     "5 mg",
+     "5mg",
+     "taper",
+     "then stop",
+     "lower",
+     "reduc",
+     "2 weeks",
+     "two weeks"
     ]
    ],
    "expected_attributes": {}

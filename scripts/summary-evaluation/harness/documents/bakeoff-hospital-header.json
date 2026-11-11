@@ -26,6 +26,15 @@
    "match": [
     [
      "ultrasound"
+    ],
+    [
+     "abdom",
+     "belly",
+     "stomach",
+     "tummy",
+     "liver",
+     "gallbladder",
+     "gallstone"
     ]
    ],
    "expected_attributes": {}
@@ -45,6 +54,14 @@
    "match": [
     [
      "liver"
+    ],
+    [
+     "normal",
+     "healthy",
+     "fine",
+     "no problem",
+     "unremarkable",
+     "ok"
     ]
    ],
    "expected_attributes": {}
@@ -64,6 +81,13 @@
    "match": [
     [
      "gallstone"
+    ],
+    [
+     "no",
+     "not",
+     "without",
+     "none",
+     "free"
     ]
    ],
    "expected_attributes": {}

@@ -94,6 +94,14 @@
     [
      "a1c",
      "8.1"
+    ],
+    [
+     "above",
+     "high",
+     "over",
+     "target",
+     "raised",
+     "elevat"
     ]
    ],
    "expected_attributes": {},
@@ -118,6 +126,15 @@
     [
      "ldl",
      "cholesterol"
+    ],
+    [
+     "above",
+     "high",
+     "over",
+     "target",
+     "raised",
+     "elevat",
+     "2.2"
     ]
    ],
    "expected_attributes": {},
@@ -142,6 +159,14 @@
     [
      "probnp",
      "bnp"
+    ],
+    [
+     "high",
+     "raised",
+     "elevat",
+     "above",
+     "1,180",
+     "1180"
     ]
    ],
    "expected_attributes": {},

@@ -70,6 +70,18 @@
      "148",
      "dfge",
      "egfr"
+    ],
+    [
+     "148",
+     "high",
+     "rose",
+     "risen",
+     "increas",
+     "elevat",
+     "96",
+     "hausse",
+     "augment",
+     "eleve"
     ]
    ],
    "expected_attributes": {}
@@ -155,6 +167,20 @@
      "acetaminoph",
      "paracetamol",
      "tylenol"
+    ],
+    [
+     "1 g",
+     "1g",
+     "may",
+     "can",
+     "instead",
+     "replace",
+     "remplac",
+     "peut",
+     "pain",
+     "douleur",
+     "knee",
+     "genou"
     ]
    ],
    "expected_attributes": {}
@@ -211,6 +237,14 @@
     [
      "hydrochlorothiazid",
      "diuret"
+    ],
+    [
+     "stop",
+     "arret",
+     "cesser",
+     "discontinu",
+     "no longer",
+     "off"
     ]
    ],
    "expected_attributes": {}
@@ -309,6 +343,13 @@
      "swell",
      "jambe",
      "leg"
+    ],
+    [
+     "call",
+     "appel",
+     "contact",
+     "clinic",
+     "clinique"
     ]
    ],
    "expected_attributes": {}
