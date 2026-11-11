@@ -307,11 +307,15 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
     );
 
     if (first && !AI_EXPLAIN_ENABLED) {
-      // Step 9 is for the demo build, which still offers Explain. Here Explain
-      // is switched off in the UI (src/ai/features.ts): no button is there.
-      await expect(
-        reader.getByRole("button", { name: "Explain a term", exact: true }),
-      ).toHaveCount(0);
+      // Step 9 (Explain a term) is out of the demo while Explain is switched
+      // off in the UI (src/ai/features.ts), so it is skipped here and comes
+      // back with the switch. That the button is gone is checked by
+      // "offers Summary only" in ai-helper-reader.spec.ts.
+      test.info().annotations.push({
+        type: "skipped step",
+        description:
+          "runbook step 9 (Explain a term): Explain is switched off in the UI and out of the demo",
+      });
     }
     if (first && AI_EXPLAIN_ENABLED) {
       // Step 9: Explain a term → Word or phrase → Explain.

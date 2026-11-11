@@ -30,7 +30,7 @@ Enabled document checks contact the portal. Your operating system may display a 
 
 ## AI features and model downloads
 
-Where supported, Summary and Explain use an AI model on your device. These features do not upload the document to a hosted AI service. Saved answers are kept encrypted with the document. An answer can be wrong; check it against the original and ask your care team about medical decisions.
+Where supported, Summary uses an AI model on your device. It does not upload the document to a hosted AI service. Saved answers are kept encrypted with the document. An answer can be wrong; check it against the original and ask your care team about medical decisions.
 
 If you choose to download a model, the app contacts its download host and permitted delivery hosts. They receive your internet address and request information, including which model file is requested and when. The model files currently come from Hugging Face and its delivery infrastructure. **[CONFIRM HOSTS, THEIR PRIVACY NOTICE LINKS AND ANY RELEASE CHANGES.]** This network download is separate from processing your document locally.
 

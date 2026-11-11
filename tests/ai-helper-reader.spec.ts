@@ -36,7 +36,7 @@ import {
 // skipped. ReaderAi.test.tsx covers Explain's code with the switch on.
 
 const EXPLAIN_OFF =
-  "Explain is switched off in the UI (src/ai/features.ts); ReaderAi.test.tsx covers it with the switch on";
+  "Explain is switched off in the UI (src/ai/features.ts); this test runs again when it is switched on";
 
 const en = (
   key: Parameters<typeof translate>[1],

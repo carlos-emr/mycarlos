@@ -68,28 +68,35 @@ describe("the reader with Explain switched off", () => {
     // The tests below describe the app with the switch off; turning it back
     // on is a product change, so this file changes with it.
     expect(AI_EXPLAIN_ENABLED).toBe(false);
-    renderReader(fakeLocalModel());
-    await firstPage();
-    expect(screen.getByRole("button", { name: "Summary" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Explain a term" })).toBeNull();
-    // Words selected in the page text no longer lead anywhere either.
-    const user = userEvent.setup();
-    await user.click(screen.getByText(humanText("Text on this page")));
-    const text = await screen.findByText(pageTexts[0]);
-    const range = document.createRange();
-    const at = pageTexts[0].indexOf("Potassium");
-    range.setStart(text.firstChild!, at);
-    range.setEnd(text.firstChild!, at + "Potassium".length);
-    document.getSelection()!.removeAllRanges();
-    document.getSelection()!.addRange(range);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await user.click(screen.getByRole("button", { name: "Summary" }));
-    const panel = screen.getByRole("region", {
-      name: "Summary in plain words",
-    });
-    expect(within(panel).queryByRole("textbox")).toBeNull();
-    expect(screen.queryByRole("region", { name: "Explain a term" })).toBeNull();
-    expect(screen.queryByLabelText("Word or phrase")).toBeNull();
+    // The page-text selection only ever filled Explain's term box, so with the
+    // switch off the reader does not listen for it at all.
+    const listen = vi.spyOn(document, "addEventListener");
+    try {
+      renderReader(fakeLocalModel());
+      await firstPage();
+      expect(screen.getByRole("button", { name: "Summary" })).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "Explain a term" }),
+      ).toBeNull();
+      const user = userEvent.setup();
+      await user.click(screen.getByText(humanText("Text on this page")));
+      await screen.findByText(pageTexts[0]);
+      expect(listen).not.toHaveBeenCalledWith(
+        "selectionchange",
+        expect.anything(),
+      );
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      const panel = screen.getByRole("region", {
+        name: "Summary in plain words",
+      });
+      expect(within(panel).queryByRole("textbox")).toBeNull();
+      expect(
+        screen.queryByRole("region", { name: "Explain a term" }),
+      ).toBeNull();
+      expect(screen.queryByLabelText("Word or phrase")).toBeNull();
+    } finally {
+      listen.mockRestore();
+    }
   });
 
   it("summarizes as before: the label, the source links and one model call", async () => {
