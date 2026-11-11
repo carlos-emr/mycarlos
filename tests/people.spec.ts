@@ -49,18 +49,27 @@ test("a person is added with their details in Security, their details are edited
       exact: true,
     }),
   });
-  await profiles
-    .getByLabel(en("security.profiles.label"), { exact: true })
-    .fill(CHILD);
-  await profiles
-    .getByLabel(en("personDetails.fullName"), { exact: true })
-    .fill(CHILD_FULL_NAME);
-  await profiles
-    .getByLabel(en("personDetails.birthDate"), { exact: true })
-    .fill(CHILD_BIRTH_DATE);
+  // Add profile opens a dialog with the name and the person's details.
   await profiles
     .getByRole("button", { name: en("security.profiles.add"), exact: true })
     .click();
+  const addProfile = page.getByRole("dialog", {
+    name: en("security.profiles.add"),
+    exact: true,
+  });
+  await addProfile
+    .getByLabel(en("security.profiles.label"), { exact: true })
+    .fill(CHILD);
+  await addProfile
+    .getByLabel(en("personDetails.fullName"), { exact: true })
+    .fill(CHILD_FULL_NAME);
+  await addProfile
+    .getByLabel(en("personDetails.birthDate"), { exact: true })
+    .fill(CHILD_BIRTH_DATE);
+  await addProfile
+    .getByRole("button", { name: en("security.profiles.add"), exact: true })
+    .click();
+  await expect(addProfile).toHaveCount(0);
   await expect(
     page.getByText(en("interface.notice.personAdded", { name: CHILD }), {
       exact: true,
@@ -90,12 +99,18 @@ test("a person is added with their details in Security, their details are edited
       exact: true,
     })
     .click();
-  await details
+  // Edit details is a dialog too.
+  const editDetails = page.getByRole("dialog", {
+    name: en("personDetails.edit"),
+    exact: true,
+  });
+  await editDetails
     .getByLabel(en("personDetails.birthDateUnknown"), { exact: true })
     .check();
-  await details
+  await editDetails
     .getByRole("button", { name: en("personDetails.save"), exact: true })
     .click();
+  await expect(editDetails).toHaveCount(0);
   await expect(
     page.getByText(en("personDetails.saved", { name: CHILD }), {
       exact: true,

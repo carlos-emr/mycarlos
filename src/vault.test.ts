@@ -75,16 +75,10 @@ describe("native idle deadline bridge", () => {
     };
     invoke.mockResolvedValueOnce(info);
     await expect(
-      bridge.saveAiResult(
-        "rec",
-        {
-          tool: "summary",
-          lang: "fr",
-          modelName: "FAKE model",
-          modelSha256: "a".repeat(64),
-        },
-        "{}",
-      ),
+      bridge.saveAiResult("rec", "kept-1", [
+        { page: 0, start: 0, end: 4 },
+        null,
+      ]),
     ).resolves.toEqual(info);
     invoke.mockResolvedValueOnce([info]);
     await expect(bridge.aiResults("rec")).resolves.toEqual([info]);
@@ -96,13 +90,8 @@ describe("native idle deadline bridge", () => {
         {
           request: {
             recordId: "rec",
-            result: {
-              tool: "summary",
-              lang: "fr",
-              modelName: "FAKE model",
-              modelSha256: "a".repeat(64),
-            },
-            content: "{}",
+            keptId: "kept-1",
+            sources: [{ page: 0, start: 0, end: 4 }, null],
           },
         },
       ],
@@ -157,23 +146,88 @@ describe("native idle deadline bridge", () => {
       lastPage: 2,
       lastPageCut: false,
     });
-    await bridge.aiSummarize(pages, "fr");
+    await bridge.aiSummarize(pages, "fr", undefined, "summary-id");
     invoke.mockResolvedValue({
       text: "FAKE",
       model: { name: "FAKE", sha256: "test-only" },
     });
-    await bridge.aiExplain("potassium", "Potassium 5.4.", "pl");
+    await bridge.aiExplain(
+      "potassium",
+      "Potassium 5.4.",
+      "pl",
+      undefined,
+      "explain-id",
+    );
     invoke.mockResolvedValue(null);
     await bridge.aiCancel();
     expect(invoke.mock.calls).toEqual([
-      ["ai_summarize", { request: { pages, lang: "fr" } }],
+      [
+        "ai_summarize",
+        { answerId: "summary-id", request: { pages, lang: "fr" } },
+      ],
       [
         "ai_explain",
         {
+          answerId: "explain-id",
           request: { term: "potassium", context: "Potassium 5.4.", lang: "pl" },
         },
       ],
       ["ai_cancel"],
+    ]);
+  });
+
+  it("names the document, and a summary's text ticket, when an answer is to be kept (#212)", async () => {
+    const bridge = createVaultBridge();
+    const pages = [{ index: 0, text: "FAKE page one." }];
+    invoke.mockResolvedValueOnce({
+      sentences: [],
+      model: { name: "FAKE", sha256: "test-only" },
+      lastPage: 0,
+      lastPageCut: false,
+      keptId: "kept-1",
+    });
+    await expect(
+      bridge.aiSummarize(
+        pages,
+        "fr",
+        { recordId: "rec", ticket: "t-1" },
+        "summary-id",
+      ),
+    ).resolves.toMatchObject({ keptId: "kept-1" });
+    invoke.mockResolvedValueOnce({
+      text: "FAKE",
+      model: { name: "FAKE", sha256: "test-only" },
+      keptId: "kept-2",
+    });
+    await expect(
+      bridge.aiExplain(
+        "potassium",
+        "Potassium 5.4.",
+        "pl",
+        "rec",
+        "explain-id",
+      ),
+    ).resolves.toMatchObject({ keptId: "kept-2" });
+    expect(invoke.mock.calls).toEqual([
+      [
+        "ai_summarize",
+        {
+          answerId: "summary-id",
+          request: { pages, lang: "fr", recordId: "rec", ticket: "t-1" },
+        },
+      ],
+      [
+        "ai_explain",
+        {
+          answerId: "explain-id",
+          request: {
+            term: "potassium",
+            context: "Potassium 5.4.",
+            lang: "pl",
+            recordId: "rec",
+          },
+        },
+      ],
     ]);
   });
 
@@ -220,6 +274,43 @@ describe("native idle deadline bridge", () => {
           },
         },
       ],
+    ]);
+  });
+
+  it("keeps the link and approval action in one native call and preserves partial state", async () => {
+    const bridge = createVaultBridge();
+    const request = {
+      portalBase: "https://portal.example.test/patient",
+      code: "FAKE0001-FAKE7-Q2M4K",
+      deviceName: "FAKE receiving device",
+      profileId: null,
+    };
+    const result = {
+      link: { id: "FAKE original link", deviceKeyId: "FAKE original key" },
+      approvalError: {
+        code: "portal_link_incomplete",
+        message: "FAKE lost reply",
+      },
+    };
+    invoke.mockResolvedValue(result);
+    await expect(bridge.connectPortal!(request)).resolves.toEqual(result);
+    expect(invoke.mock.calls).toEqual([["vault_portal_connect", { request }]]);
+  });
+
+  it("checks one device's approval in one read-only native call (#131)", async () => {
+    const bridge = createVaultBridge();
+    const result = {
+      capture: { epoch: "FAKE native epoch", sequence: 1 },
+      link: { id: "FAKE link", deviceKeyId: "FAKE key" },
+      expiresInMs: 120_000,
+      issue: null,
+    };
+    invoke.mockResolvedValue(result);
+    await expect(bridge.refreshDeviceApproval!("FAKE link")).resolves.toEqual(
+      result,
+    );
+    expect(invoke.mock.calls).toEqual([
+      ["vault_refresh_device_approval", { linkId: "FAKE link" }],
     ]);
   });
 
@@ -717,6 +808,30 @@ describe("errors the app words itself, in the language in use (#46)", () => {
     setLocaleOverride("es");
     expect(humanValue(vaultErrorMessage(refused, ["box.folderName"]))).toBe(
       humanValue("Revise el nombre de la carpeta y vuelva a intentarlo."),
+    );
+  });
+
+  it("says a clinic portal asked to wait, and for how long if it said (#131)", () => {
+    const asked = { code: "portal_rate_limited", message: "Native text." };
+    setLocaleOverride("fr");
+    expect(vaultErrorMessage(asked)).toBe(
+      "Le portail de la clinique a demandé à myCarlos d’attendre avant de réessayer.",
+    );
+    expect(
+      vaultErrorMessage({ code: "approval_reply_invalid", message: "Native." }),
+    ).toBe(
+      "La réponse du portail de la clinique au sujet de cette demande n’a pas pu être vérifiée. Elle n’a donc pas été utilisée. Communiquez avec votre clinique.",
+    );
+    expect(
+      vaultErrorMessage({ code: "approval_still_open", message: "Native." }),
+    ).toBe(
+      "Cette demande d’approbation est toujours ouverte sur le portail de la clinique. Attendez qu’elle prenne fin avant d’en créer une nouvelle.",
+    );
+    setLocaleOverride("en");
+    expect(
+      humanValue(vaultErrorMessage({ ...asked, retryAfterMs: 30_000 })),
+    ).toBe(
+      "The clinic portal asked myCarlos to wait before trying again. Try again in 30 seconds.",
     );
   });
 

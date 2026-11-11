@@ -214,6 +214,16 @@ export function tPlain(key: MessageKey, params?: Params): string {
   return formatMessage(getLocale(), key, params ?? {}, false);
 }
 
+/** `tPlain` in a given language: the placeholders of an anonymized text are
+ * written in the document's language, not the app's (#215). */
+export function translatePlain(
+  locale: Locale,
+  key: MessageKey,
+  params?: Params,
+): string {
+  return formatMessage(locale, key, params ?? {}, false);
+}
+
 // --- numbers and dates ----------------------------------------------------
 
 export function formatNumber(

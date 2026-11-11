@@ -20,7 +20,8 @@ interface LibrarySidebarProps {
     | "hidden"
     | "history"
     | "security"
-    | "preferences";
+    | "preferences"
+    | "ai";
   /** Files added to Shared with me since the vault was unlocked, until it
    * is opened (#61). */
   sharedNew: number;
@@ -41,6 +42,9 @@ interface LibrarySidebarProps {
   hiddenFromShared?: boolean;
   onOpenSecurity: () => void;
   onOpenPreferences: () => void;
+  /** The AI helper's settings (#72): given only where the helper can run,
+   * on a computer. */
+  onOpenAi?: () => void;
 }
 
 /** A person's folders in tree order, with their depth below the person. */
@@ -93,6 +97,7 @@ export function LibrarySidebar({
   hiddenFromShared = false,
   onOpenSecurity,
   onOpenPreferences,
+  onOpenAi,
 }: LibrarySidebarProps) {
   useI18n();
   const { startDrag, dragOver, dropInto, dragEnd, dragClass, dropClass } = drag;
@@ -287,16 +292,18 @@ export function LibrarySidebar({
         >
           <Icon name="settings" /> {translateNow("sidebar.preferences")}
         </button>
+        {onOpenAi && (
+          <button
+            className={section === "ai" ? "selected" : ""}
+            type="button"
+            onClick={onOpenAi}
+          >
+            <Icon name="sparkle" /> {translateNow("ai.preferences.title")}
+          </button>
+        )}
       </nav>
       <div className="storage">
         <span>{translateNow("sidebar.storage")}</span>
-        <div className="storage-meter">
-          <span
-            style={{
-              width: `${Math.min(100, Math.max(8, totals.documents * 4))}%`,
-            }}
-          />
-        </div>
         <small>
           {translateNow("sidebar.documents", { count: totals.documents })} ·{" "}
           {translateNow("sidebar.folderCount", { count: totals.folders })}

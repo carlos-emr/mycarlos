@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { keptInput, keptSummary, parseKeptSummary } from "./kept";
+import { keptSources, keptSummary, parseKeptSummary } from "./kept";
 import type { ExplainResult, SummaryResult } from "./types";
 
 const summary: SummaryResult = {
@@ -90,13 +90,10 @@ describe("answers kept with the document", () => {
     });
   });
 
-  it("tells the vault the tool, language, term and model of an answer", () => {
-    expect(keptInput(summary)).toEqual({
-      tool: "summary",
-      lang: "fr",
-      modelName: "FAKE model",
-      modelSha256: "ab".repeat(32),
-    });
+  it("gives the vault only a summary's source places: the words are the native side's", () => {
+    expect(keptSources(summary)).toEqual(
+      summary.sentences.map((sentence) => sentence.source),
+    );
     const explained: ExplainResult = {
       tool: "explain",
       term: "eGFR",
@@ -106,13 +103,7 @@ describe("answers kept with the document", () => {
       lang: "en",
       createdAt: 2,
     };
-    expect(keptInput(explained)).toEqual({
-      tool: "explain",
-      lang: "en",
-      term: "eGFR",
-      modelName: "FAKE model",
-      modelSha256: "ab".repeat(32),
-    });
+    expect(keptSources(explained)).toBeUndefined();
   });
 
   it("finds the kept summary in the asked language, or none", async () => {
@@ -134,6 +125,7 @@ describe("answers kept with the document", () => {
         ]),
       read: vi.fn().mockResolvedValue(JSON.stringify(summary)),
       save: vi.fn(),
+      recordId: "FAKE-record",
     };
     expect(await keptSummary(kept, "fr")).toEqual(summary);
     expect(kept.read).toHaveBeenCalledWith("s1");

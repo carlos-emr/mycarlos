@@ -69,6 +69,8 @@ function renderLibrary() {
       .fn()
       .mockRejectedValue(new Error("FAKE: no model in this test")),
     aiCancel: vi.fn().mockResolvedValue(undefined),
+    // People's details, and the person fields in Add profile.
+    updateProfileDetails: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultBridge;
   render(
     <VaultLibrary
@@ -266,6 +268,13 @@ describe("targets and text sizes in the app (#67)", () => {
           press(label === "desktop" ? new RegExp(`^${name}`) : name);
         open("Security");
         expectComfortable("Security");
+        // Add profile and Edit details are dialogs (Ben, 29 Oct).
+        press("Add profile");
+        expectComfortable("add profile");
+        press("Cancel");
+        press("Edit details for FAKE Avery");
+        expectComfortable("edit details");
+        press("Cancel");
         open("Preferences");
         expectComfortable("Preferences");
       });

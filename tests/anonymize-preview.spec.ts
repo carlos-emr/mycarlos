@@ -12,6 +12,8 @@ interface SaveCall {
 
 async function fakeVault(page: Page) {
   await page.addInitScript(() => {
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const snapshot = {
       profiles: [
         {
@@ -54,8 +56,14 @@ async function fakeVault(page: Page) {
       invoke: async (command: string, args?: unknown) => {
         calls.push({ command, args });
         if (command === "vault_status") return "unlocked";
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform: "linux" };
+        if (command === "received_list")
+          return { files: [], notice: { dropped: 0, refusedShares: 0 } };
         if (command === "vault_document_text")
           return {
             pageCount: 1,

@@ -94,6 +94,13 @@ jobs:
     name: Web UI and browser tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    container:
+      # Match package-lock.json so the preinstalled browsers match Playwright.
+      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -106,17 +113,6 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run check
-      - name: Install Playwright Chromium with bounded mirror retries
-        run: |
-          for attempt in 1 2 3; do
-            if npx playwright install --with-deps chromium; then
-              exit 0
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            sleep $((attempt * 10))
-          done
       - run: npm test
       - run: npm run test:dev-hmr
       - run: npm run test:dev-data
@@ -205,13 +201,14 @@ jobs:
       - name: The app as bundled has no model helper stub, and starts on a processor without AVX
         # The stub's argument is unknown outside test builds (exit 64). Under a Nehalem (no AVX)
         # processor the app's start code must not fault, and the model helper must refuse with
-        # its unsupported-processor code (5) before any of llama.cpp runs.
+        # its unsupported-processor code (5) before any of llama.cpp runs. The helper is given
+        # every argument the app passes (a missing one is refused first, with 64).
         run: |
           app=src-tauri/target/debug/mycarlos-tauri-poc
           set +e
           "$app" --mycarlos-model-helper --stub 0 < /dev/null; stub=$?
           qemu-x86_64 -cpu Nehalem "$app" --mycarlos-model-helper --threads 1 --name FAKE \
-            --sha256 "$(printf '0%.0s' $(seq 64))" --model-fd 3 < /dev/null; nehalem=$?
+            --sha256 "$(printf '0%.0s' $(seq 64))" --chat-format builtin --model-fd 3 < /dev/null; nehalem=$?
           set -e
           echo "stub argument: exit $stub; Nehalem: exit $nehalem"
           test "$stub" -eq 64

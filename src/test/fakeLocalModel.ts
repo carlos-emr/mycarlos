@@ -12,6 +12,15 @@ export interface FakeLocalModel extends LocalModel {
   calls: { tool: "summary" | "explain"; lang: string; input: string }[];
   /** How many times `cancel` was called. */
   cancels: number;
+  /** The answers kept for a document's save, as the native side keeps them
+   * (#212): one per answer asked with `keepFor`, under its `keptId`. */
+  kept: {
+    keptId: string;
+    recordId: string;
+    tool: "summary" | "explain";
+    lang: string;
+    term?: string;
+  }[];
 }
 
 export const FAKE_MODEL: ModelInfo = {
@@ -35,12 +44,23 @@ export function fakeLocalModel(
   const calls: FakeLocalModel["calls"] = [];
   const status = options.status ?? { state: "installed", model: FAKE_MODEL };
   const model = status.state === "installed" ? status.model : FAKE_MODEL;
+  const keep = (
+    recordId: string | undefined,
+    question: Omit<FakeLocalModel["kept"][number], "keptId" | "recordId">,
+  ) => {
+    if (!recordId) return undefined;
+    const keptId = `FAKE-kept-${fake.kept.length + 1}`;
+    fake.kept.push({ keptId, recordId, ...question });
+    return keptId;
+  };
   const fake: FakeLocalModel = {
     calls,
     cancels: 0,
+    kept: [],
     status: async () => status,
-    summarize: async (document, lang) => {
+    summarize: async (document, lang, keepFor) => {
       calls.push({ tool: "summary", lang, input: document.joined });
+      const keptId = keep(keepFor, { tool: "summary", lang });
       const sentences = options.sentences
         ? options.sentences(document)
         : firstLines(document);
@@ -51,13 +71,16 @@ export function fakeLocalModel(
           ? options.lastPage(document)
           : (document.pages.at(-1)?.index ?? 0),
         lastPageCut: options.lastPageCut ?? false,
+        ...(keptId ? { keptId } : {}),
       };
     },
-    explain: async (term, context, lang) => {
+    explain: async (term, context, lang, keepFor) => {
       calls.push({ tool: "explain", lang, input: `${term}\n${context}` });
+      const keptId = keep(keepFor, { tool: "explain", lang, term });
       return {
         text: options.explanation ?? `FAKE explanation of ${term}.`,
         model,
+        ...(keptId ? { keptId } : {}),
       };
     },
     cancel: () => {

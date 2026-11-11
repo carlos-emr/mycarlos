@@ -16,16 +16,22 @@
 
 use super::*;
 
-/// The most answers a document keeps, counting every tool and language and
-/// the hidden ones: past it a new answer is refused, never an old one dropped.
-pub(super) const MAX_AI_RESULTS_PER_RECORD: usize = 32;
+/// The most answers a document shows, one per question (tool, language,
+/// term). Nothing is deleted (D3): past it a new question is refused, never
+/// an old answer dropped.
+pub(super) const MAX_SHOWN_AI_RESULTS_PER_RECORD: usize = 32;
+/// The most hidden answers a document keeps (D13): asking a question again
+/// hides the answer before, and past this cap asking again is refused. Each
+/// answer is a manifest entry of ~0.5 KB, and the manifest is capped for the
+/// whole vault (`MAX_MANIFEST_BYTES`), so this is kept to 3 per shown answer.
+pub(super) const MAX_HIDDEN_AI_RESULTS_PER_RECORD: usize = 96;
 /// The most an answer's bytes may be: a few sentences and their quotes.
 pub(super) const MAX_AI_RESULT_BYTES: u64 = 64 * 1024;
 const MAX_LANG_LEN: usize = 16;
 const MAX_TERM_CHARS: usize = 200;
 const MAX_MODEL_NAME_CHARS: usize = 120;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AiTool {
     Summary,
@@ -301,8 +307,18 @@ pub(super) fn validate<'a>(
     if record.ai_results.is_empty() {
         return Ok(());
     }
+    let hidden = record
+        .ai_results
+        .iter()
+        .filter(|result| result.superseded)
+        .count();
+    let shown = record.ai_results.len() - hidden;
     if format_version < MANIFEST_FORMAT_AI_RESULTS
-        || record.ai_results.len() > MAX_AI_RESULTS_PER_RECORD
+        || shown > MAX_SHOWN_AI_RESULTS_PER_RECORD
+        || hidden > MAX_HIDDEN_AI_RESULTS_PER_RECORD
+        // Format 10 had one cap for every answer, hidden ones included.
+        || (format_version < MANIFEST_FORMAT_AI_HIDDEN_CAP
+            && record.ai_results.len() > MAX_SHOWN_AI_RESULTS_PER_RECORD)
     {
         return Err(VaultError::Corrupt);
     }
@@ -424,8 +440,25 @@ impl VaultStore {
             if next_record.id != record_id {
                 continue;
             }
-            // Full, counting the hidden ones: refused, nothing dropped.
-            if next_record.ai_results.len() >= MAX_AI_RESULTS_PER_RECORD {
+            // Asked again, the shown answer is hidden (D3), so the hidden
+            // cap applies; a new question takes a shown place (D13). Full:
+            // refused, nothing dropped.
+            let asked_again = next_record
+                .ai_results
+                .iter()
+                .any(|earlier| !earlier.superseded && earlier.same_question(&stored));
+            let hidden = next_record
+                .ai_results
+                .iter()
+                .filter(|earlier| earlier.superseded)
+                .count();
+            let shown = next_record.ai_results.len() - hidden;
+            let full = if asked_again {
+                hidden >= MAX_HIDDEN_AI_RESULTS_PER_RECORD
+            } else {
+                shown >= MAX_SHOWN_AI_RESULTS_PER_RECORD
+            };
+            if full {
                 remove_objects(&self.root, &[object_name], Removable::UncommittedObject);
                 return Err(VaultError::AiResultsFull);
             }
@@ -781,25 +814,58 @@ mod tests {
         assert!(store.root.join("objects").join(&old_name).is_file());
     }
 
+    /// A document's answers, shown and hidden.
+    fn counts(store: &VaultStore, record_id: Uuid) -> (usize, usize) {
+        let guard = store.session();
+        let manifest = &guard.as_ref().unwrap().manifest;
+        let record = manifest.records.iter().find(|r| r.id == record_id).unwrap();
+        let hidden = record.ai_results.iter().filter(|r| r.superseded).count();
+        (record.ai_results.len() - hidden, hidden)
+    }
+
     #[test]
-    fn a_full_document_refuses_a_new_answer_and_drops_none_counting_the_hidden_ones() {
+    fn a_document_shows_at_most_32_answers_and_a_new_question_past_them_is_refused() {
         let (_temp, store, id) = fixture();
-        for at in 0..MAX_AI_RESULTS_PER_RECORD as u64 {
+        for at in 0..MAX_SHOWN_AI_RESULTS_PER_RECORD {
+            store
+                .save_ai_result(id, explain(&format!("FAKE term {at}")), b"{}", 10)
+                .unwrap();
+        }
+        assert_eq!(counts(&store, id), (MAX_SHOWN_AI_RESULTS_PER_RECORD, 0));
+        let names = object_names(&store, id);
+        let files = || fs::read_dir(store.root.join("objects")).unwrap().count();
+        let before = files();
+        refused(
+            store.save_ai_result(id, explain("FAKE one term too many"), b"{}", 11),
+            "AiResultsFull",
+        );
+        assert_eq!(object_names(&store, id), names, "nothing dropped");
+        assert_eq!(
+            files(),
+            before,
+            "the refused answer's object is not left behind"
+        );
+        // Asking one of them again still works: it hides the answer before.
+        store
+            .save_ai_result(id, explain("FAKE term 0"), b"{\"again\":1}", 12)
+            .unwrap();
+        assert_eq!(counts(&store, id), (MAX_SHOWN_AI_RESULTS_PER_RECORD, 1));
+    }
+
+    #[test]
+    fn hidden_answers_have_a_cap_of_their_own_and_asking_again_past_it_is_refused() {
+        let (_temp, store, id) = fixture();
+        for at in 0..=MAX_HIDDEN_AI_RESULTS_PER_RECORD as u64 {
             store
                 .save_ai_result(id, summary("fr"), b"{\"v\":1}", 10 + at)
                 .unwrap();
         }
+        assert_eq!(counts(&store, id), (1, MAX_HIDDEN_AI_RESULTS_PER_RECORD));
         let names = object_names(&store, id);
-        assert_eq!(names.len(), MAX_AI_RESULTS_PER_RECORD);
-        assert_eq!(
-            store.ai_results(id).unwrap().len(),
-            1,
-            "only the newest shown"
-        );
         let files = || fs::read_dir(store.root.join("objects")).unwrap().count();
         let before = files();
         refused(
-            store.save_ai_result(id, summary("en"), b"{\"v\":2}", 99),
+            store.save_ai_result(id, summary("fr"), b"{\"v\":2}", 999),
             "AiResultsFull",
         );
         assert_eq!(object_names(&store, id), names, "nothing dropped");
@@ -811,6 +877,52 @@ mod tests {
             before,
             "the refused answer's object is not left behind"
         );
+        // The shown answer is still the last kept one.
+        let shown = store.ai_results(id).unwrap();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(store.read_ai_result(id, shown[0].id).unwrap(), b"{\"v\":1}");
+        // A new question still takes a shown place.
+        store
+            .save_ai_result(id, summary("en"), b"{\"v\":3}", 1000)
+            .unwrap();
+        assert_eq!(counts(&store, id), (2, MAX_HIDDEN_AI_RESULTS_PER_RECORD));
+    }
+
+    #[test]
+    fn shown_and_hidden_counts_survive_backup_and_restore() {
+        let (temp, store, id) = fixture();
+        for at in 0..4 {
+            store
+                .save_ai_result(id, summary("fr"), b"{\"fr\":1}", 10 + at)
+                .unwrap();
+        }
+        store
+            .save_ai_result(id, explain("FAKE eGFR"), b"{\"t\":1}", 20)
+            .unwrap();
+        assert_eq!(counts(&store, id), (2, 3));
+        let names = object_names(&store, id);
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 30).unwrap();
+        let restored = VaultStore::new(temp.path().join("restored"));
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        assert_eq!(counts(&restored, id), (2, 3), "the same, hidden ones too");
+        assert_eq!(object_names(&restored, id), names);
+        for name in &names {
+            assert!(restored.root.join("objects").join(name).is_file());
+        }
+        assert_eq!(restored.ai_results(id).unwrap().len(), 2);
+        // Asking again after the restore hides one more.
+        restored
+            .save_ai_result(id, summary("fr"), b"{\"fr\":2}", 40)
+            .unwrap();
+        assert_eq!(counts(&restored, id), (2, 4));
     }
 
     #[test]
@@ -934,5 +1046,52 @@ mod tests {
             validate_manifest_structure(&shared_object, vault_id),
             Err(VaultError::Corrupt)
         ));
+    }
+
+    #[test]
+    fn a_manifest_over_either_cap_is_corrupt_and_format_10_keeps_its_single_cap() {
+        let (_temp, store, id) = fixture();
+        store
+            .save_ai_result(id, explain("FAKE base"), b"{}", 10)
+            .unwrap();
+        let guard = store.session();
+        let manifest = &guard.as_ref().unwrap().manifest;
+        let vault_id = manifest.vault_id;
+        let base = manifest.records[0].ai_results[0].clone();
+        // `shown` answers to as many questions, plus `hidden` earlier ones.
+        let with = |shown: usize, hidden: usize| {
+            let mut next = manifest.clone();
+            let answers = &mut next.records[0].ai_results;
+            answers.clear();
+            for at in 0..shown + hidden {
+                answers.push(StoredAiResult {
+                    id: Uuid::new_v4(),
+                    object_name: format!("{}.mcobj", Uuid::new_v4()),
+                    term: Some(if at < shown {
+                        format!("FAKE term {at}")
+                    } else {
+                        "FAKE term 0".to_owned()
+                    }),
+                    superseded: at >= shown,
+                    ..base.clone()
+                });
+            }
+            next
+        };
+        let ok = |next: &Manifest| validate_manifest_structure(next, vault_id).is_ok();
+        let full = with(
+            MAX_SHOWN_AI_RESULTS_PER_RECORD,
+            MAX_HIDDEN_AI_RESULTS_PER_RECORD,
+        );
+        assert!(ok(&full), "both caps reached is valid");
+        assert!(!ok(&with(MAX_SHOWN_AI_RESULTS_PER_RECORD + 1, 0)));
+        assert!(!ok(&with(1, MAX_HIDDEN_AI_RESULTS_PER_RECORD + 1)));
+        // Format 10 counted every answer against 32.
+        let mut format_10 = with(MAX_SHOWN_AI_RESULTS_PER_RECORD, 1);
+        format_10.format_version = MANIFEST_FORMAT_AI_RESULTS;
+        assert!(!ok(&format_10));
+        let mut format_10 = with(MAX_SHOWN_AI_RESULTS_PER_RECORD - 1, 1);
+        format_10.format_version = MANIFEST_FORMAT_AI_RESULTS;
+        assert!(ok(&format_10));
     }
 }

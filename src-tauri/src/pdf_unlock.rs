@@ -27,6 +27,7 @@ const MAX_UNLOCKED_PDF_BYTES: usize = 2 * MAX_LOCKED_PDF_BYTES;
 /// No stream inside a document may inflate beyond this while it is opened (decompression bombs).
 const MAX_DECOMPRESSED_STREAM_BYTES: usize = 256 * 1024 * 1024;
 /// How long the helper may run, from start to answer, before it is stopped.
+#[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
 pub(crate) const HELPER_TIME_LIMIT: Duration = Duration::from_secs(30);
 /// The helper's exit code when it could not sandbox itself, and so read nothing.
 const NO_SANDBOX: i32 = 2;
@@ -72,6 +73,7 @@ impl Refusal {
         }
     }
 
+    #[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
     pub(crate) fn from_code(code: u8) -> Option<Self> {
         Some(match code {
             1 => Refusal::WrongPassword,
@@ -86,6 +88,7 @@ impl Refusal {
 }
 
 /// What asking the helper came to.
+#[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
 pub(crate) enum Outcome {
     /// The document without its password, ready for the vault. Wiped when dropped.
     Unlocked(Zeroizing<Vec<u8>>),
@@ -259,12 +262,14 @@ pub(crate) fn unlock(pdf: &[u8], password: &str) -> Result<Zeroizing<Vec<u8>>, R
     Ok(unlocked)
 }
 
+#[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
 fn write_request(out: &mut impl Write, password: &[u8], pdf: &[u8]) -> io::Result<()> {
     out.write_all(REQUEST_MAGIC)?;
     write_password_and_pdf(out, password, pdf)
 }
 
 /// The body every request starts with: the password, then the document.
+#[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
 pub(crate) fn write_password_and_pdf(
     out: &mut impl Write,
     password: &[u8],
@@ -343,6 +348,7 @@ fn write_response(
 }
 
 /// The helper's answer, or `None` when it is not one: cut short, too long or unknown.
+#[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
 fn read_response(input: &mut impl Read) -> Option<Result<Zeroizing<Vec<u8>>, Refusal>> {
     let mut head = [0u8; 17];
     input.read_exact(&mut head).ok()?;

@@ -4,7 +4,7 @@
   seven `.ftl` files and `src/i18n/locales/fluent/message-keys.json`, approved as written on
   5 November 2026; a native speaker of each language still checks its translation. The messages below are those texts. The part D messages
   (`intro`, `modelHeading`, `modelBody`, `resultsBody`) are in the seven catalogues on main, and
-  the notice shows them before Summary and Explain since #217. `resultsBody` stays hidden until
+  the notice shows them before Summary and Explain since #217. `resultsBody` is shown now that
   answers are kept in the vault (#212). `intro`, `introShare` and `modelBody` are given here as the
   model download (#219, on main) changed them: the AI helper fetches its model file once, when the patient
   chooses to, and the download site sees the computer's internet address. The date wording
@@ -30,8 +30,8 @@
   app's language as the first line, and `aiHelper-exportCut` as the last line when the text was
   cut (THREAT_MODEL AI-02, AI-10). The preview shows those lines too, fixed.
 - **Part D** (the AI on this device), where the model can run on this computer: `intro` in place
-  of `introShare`, then `modelHeading` and `modelBody`. `resultsBody` is added only once answers
-  are kept (#212). `aiHelper-resultLabel` is on every answer. Where the model cannot run (phones,
+  of `introShare`, then `modelHeading` and `modelBody`. `resultsBody` follows them, now
+  that answers are kept (#212). `aiHelper-resultLabel` is on every answer. Where the model cannot run (phones,
   and macOS until #211), the notice keeps the part B text.
 - `testBuild` is shown while the app is for synthetic data only, as `security-devBuild-body` is
   today.
@@ -52,7 +52,7 @@ in all seven languages.
 | `serviceBody` | The other service's rules apply; a signed-in service knows who the patient is, and any service sees the internet address; its answers use the numbered marks, and the real details can be put back on the device while the window stays open; a document can carry instructions for an AI. | Stated limits (AI-01, AI-03, AI-09). |
 | `adviceBody` | AI answers can be wrong; they are not a diagnosis or advice. Shown in part B too, for the other service's answers. | Clinical-safety limits (AI-05, AI-09; #25). |
 | `modelBody` | The patient chooses how the model arrives: one download, once, from the address shown in Preferences (nothing about the patient is sent), or a file they already have. It is kept outside the vault and checked before every use; a changed file is not used; the AI itself cannot use the internet or open other files. | The download and its host (AI-08; [SECURITY_OPERATIONS](SECURITY_OPERATIONS.md#ai-helper-72-nothing-about-the-patient-leaves-the-device)), the model file check and the sandboxed helper (AI-04, AI-07). |
-| `resultsBody` | Answers are saved encrypted with the document, tool, model and date, and labelled. | Saved answers (AI-05, AI-06). Not shown until answers are kept (#212). |
+| `resultsBody` | Answers are saved encrypted with the document, tool, model and date, and labelled. | Saved answers (AI-05, AI-06), shown since answers are kept (#212). Each document keeps up to 32 shown answers and 96 hidden older ones (#250); past either, a new answer is still shown, but not kept, and the reader says so (`ai-keepFull`). |
 | `aiHelper-resultLabel` | The label on every AI answer. | AI-05. The quoted label in `resultsBody` must be the same words in each language; `ReaderAi.test.tsx` compares them in all seven. |
 | `aiHelper-exportHeader` | The exported file's first line tells an AI to treat all of it as the document, not as instructions. | Written natively (AI-02, AI-09). |
 | `aiHelper-exportCut` | A file whose text was cut says so on its last line, with the page it stops after. | Written natively (AI-02, AI-10). |

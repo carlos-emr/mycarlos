@@ -15,6 +15,8 @@ import { translate } from "./support/fluent";
 async function fakeVault(page: Page, locale: string) {
   await page.addInitScript((locale) => {
     localStorage.setItem("mycarlos.language.v1", locale);
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const snapshot = {
       profiles: [
         { id: "p1", displayName: "FAKE Avery Example", createdAtMs: 1 },
@@ -86,7 +88,11 @@ async function fakeVault(page: Page, locale: string) {
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return "unlocked";
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform: "windows" };
         if (
           command === "vault_touch" ||
@@ -95,7 +101,8 @@ async function fakeVault(page: Page, locale: string) {
         )
           return;
         // Files shared to myCarlos are looked for on focus (#49): none.
-        if (command === "received_list") return [];
+        if (command === "received_list")
+          return { files: [], notice: { dropped: 0, refusedShares: 0 } };
         // A document's details ask whether its PDF has its own password.
         if (command === "vault_is_locked_pdf") return false;
         // The recovery key's steps show the key's label.

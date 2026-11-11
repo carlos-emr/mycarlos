@@ -38,7 +38,6 @@ const record: VaultRecord = {
   folderIds: [],
   displayName: "FAKE {name} Hidden.pdf",
   sourceLabel: "Manual import — unverified",
-  sourceKind: "manual",
   mediaType: "application/pdf",
   plaintextSize: 1234567,
   importedAtMs: Date.UTC(2026, 9, 23, 12),
@@ -121,11 +120,10 @@ describe("the installed interface in the selected language", () => {
       target: { value: "FAKE {name} Shared with me" },
     });
     changeLanguage("fr");
+    // Named by its words, with the state shown before them (#121).
     expect(
-      screen.getByRole("button", {
-        name: "Déverrouillé · Verrouiller maintenant",
-      }),
-    ).toBeVisible();
+      screen.getByRole("button", { name: "Verrouiller maintenant" }),
+    ).toHaveTextContent("Déverrouillé · Verrouiller maintenant");
     expect(screen.queryByRole("button", { name: /^Masqués/ })).toBeNull();
     expect(screen.getByRole("button", { name: "Sécurité" })).toBeVisible();
     expect(
@@ -142,8 +140,8 @@ describe("the installed interface in the selected language", () => {
     expect(draft).toHaveValue("FAKE {name} Shared with me");
     changeLanguage("pl");
     expect(
-      screen.getByRole("button", { name: "Odblokowany · Zablokuj teraz" }),
-    ).toBeVisible();
+      screen.getByRole("button", { name: "Zablokuj teraz" }),
+    ).toHaveTextContent("Odblokowany · Zablokuj teraz");
     expect(screen.getByRole("searchbox")).toBe(search);
     expect(draft).toHaveValue("FAKE {name} Shared with me");
   });
@@ -359,8 +357,12 @@ describe("the installed interface in the selected language", () => {
         }),
       ).toBeVisible();
       expect(dialog).toHaveTextContent(record.displayName);
+      // #135: the status first, then the source, each in the language in use.
       expect(dialog).toHaveTextContent(
-        translate(locale, "record.source.manual"),
+        translate(locale, "library.status.unverified"),
+      );
+      expect(dialog).toHaveTextContent(
+        translate(locale, "library.source.manualImport"),
       );
       const size = `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(record.plaintextSize / (1024 * 1024))} MB`;
       expect(dialog).toHaveTextContent(size);

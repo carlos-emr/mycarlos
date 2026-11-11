@@ -47,10 +47,9 @@ async function openSecurity(page: import("@playwright/test").Page) {
 
 async function lockNow(page: import("@playwright/test").Page) {
   await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.unlockedLockNow"),
-      exact: true,
-    })
+    // The window's own Lock now, named by its words (#121).
+    .locator(".titlebar")
+    .getByRole("button", { name: en("security.lockNow"), exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: en("unlock.title") }),

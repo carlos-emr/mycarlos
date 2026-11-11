@@ -342,6 +342,58 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(result).not.toHaveTextContent("1961");
   });
 
+  it("writes the placeholders in the document's language, and puts back marks written in another (#215)", async () => {
+    const user = userEvent.setup();
+    const letter = [
+      {
+        index: 0,
+        text:
+          "Madame, nous avons vu Avery Example le 2026-10-08 à la clinique pour une douleur dans la poitrine. " +
+          "Elle est suivie depuis le 2026-09-24 et elle prend du ramipril 5 mg. Nous la reverrons dans un mois " +
+          "avec les résultats de ses analyses. Le traitement est bien toléré et la patiente ne signale pas " +
+          "d'effet secondaire. Elle doit revenir avant la fin du mois si les douleurs reviennent.",
+      },
+    ];
+    const { saveText } = renderPreview({
+      text: documentText({ pages: letter, ...joinPages(letter) }),
+    });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    // The app is in English; the letter is French.
+    const sent = shownString();
+    expect(sent).toContain(
+      "nous avons vu [NOM 1] le [DATE 2, 14 jours après DATE 1]",
+    );
+    expect(sent).toContain("suivie depuis le [DATE 1]");
+    expect(sent).not.toMatch(/\[NAME|days after|Avery|2026/);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save the text…") }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: humanText("Save the text…"),
+      }),
+    );
+    await screen.findByText(humanText("The text was saved."));
+    expect(saveText.mock.calls[0][2]).toBe(sent);
+    await user.click(screen.getByLabelText(humanText("The AI's answer")));
+    // The AI answered in English and translated the marks.
+    await user.paste(
+      "[NAME 1] was seen on [DATE 2, 14 days after DATE 1]; [NOM 1] since [DATE 1].",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Put details back") }),
+    );
+    const result = await screen.findByRole("region", {
+      name: humanText("The answer with the details put back"),
+    });
+    expect(result).toHaveTextContent(
+      "Avery Example was seen on 2026-10-08; Avery Example since 2026-09-24.",
+    );
+    expect(result.querySelectorAll("mark")).toHaveLength(0);
+  });
+
   it("asks for the document's own password, and stops the read when closed", async () => {
     const user = userEvent.setup();
     const readText = vi.fn(async (password?: string) => {

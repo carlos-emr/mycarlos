@@ -5,12 +5,19 @@ import { describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
 import { DocumentReader, sentenceAround } from "./DocumentReader";
 import { PreferencesSettings } from "./PreferencesSettings";
+import { AiSettings } from "./AiSettings";
 import type { ReaderAi } from "./ReaderAiPanel";
 import type { KeptAnswers } from "../ai/kept";
-import { notInstalledModel } from "../ai/localModel";
-import { LOCALES, translate } from "../i18n";
+import type { SourceSpan } from "../documentText";
+import { nativeLocalModel, notInstalledModel } from "../ai/localModel";
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { ModelCancelled, type LocalModel } from "../ai/types";
-import { fakeDocumentText, fakeLocalModel } from "../test/fakeLocalModel";
+import {
+  FAKE_MODEL,
+  fakeDocumentText,
+  fakeLocalModel,
+  type FakeLocalModel,
+} from "../test/fakeLocalModel";
 import type { VaultRecord, ViewedPage } from "../vault";
 
 // FAKE documents only. A real 1 x 1 PNG, drawn here, so the picture loads.
@@ -85,12 +92,16 @@ function renderReader(
 }
 
 /** A vault that keeps answers in memory, as the real one does per record. */
-function fakeKept(saved: { input: unknown; content: string }[] = []) {
-  const infoOf = (
-    input: { tool: "summary" | "explain"; lang: string; term?: string },
-    size: number,
-    id: string,
-  ) => ({
+type KeptInput = { tool: "summary" | "explain"; lang: string; term?: string };
+
+/** The vault's answers for one document. A save names an answer the model
+ * kept natively (`model.kept`) and adds a summary's source places; the
+ * stored text is the native side's, faked here as the question it answers. */
+function fakeKept(
+  saved: { input: KeptInput; content: string }[] = [],
+  model?: FakeLocalModel,
+) {
+  const infoOf = (input: KeptInput, size: number, id: string) => ({
     id,
     tool: input.tool,
     lang: input.lang,
@@ -100,23 +111,30 @@ function fakeKept(saved: { input: unknown; content: string }[] = []) {
     createdAtMs: 1,
     size,
   });
+  const saves: { keptId: string; sources?: (SourceSpan | null)[] }[] = [];
   const kept: KeptAnswers = {
+    recordId: "FAKE-record",
     list: vi.fn(async () =>
       saved.map((entry, index) =>
-        infoOf(
-          entry.input as { tool: "summary" | "explain"; lang: string },
-          entry.content.length,
-          `k${index}`,
-        ),
+        infoOf(entry.input, entry.content.length, `k${index}`),
       ),
     ),
     read: vi.fn(async (id: string) => saved[Number(id.slice(1))].content),
-    save: vi.fn(async (input, content) => {
+    save: vi.fn(async (keptId: string, sources?: (SourceSpan | null)[]) => {
+      saves.push({ keptId, ...(sources ? { sources } : {}) });
+      const answer = model?.kept.find((entry) => entry.keptId === keptId);
+      if (!answer) throw new Error("FAKE: nothing kept under that id");
+      const input: KeptInput = {
+        tool: answer.tool,
+        lang: answer.lang,
+        ...(answer.term ? { term: answer.term } : {}),
+      };
+      const content = JSON.stringify(input);
       saved.push({ input, content });
       return infoOf(input, content.length, `k${saved.length - 1}`);
     }),
   };
-  return { kept, saved };
+  return { kept, saved, saves };
 }
 
 const AI_LABEL = "Written by AI and may be wrong. Check with your doctor.";
@@ -149,7 +167,9 @@ describe("the reader's AI helper", () => {
       ),
     ).toBeVisible();
     await user.click(
-      within(panel).getByRole("button", { name: "Open Preferences" }),
+      within(panel).getByRole("button", {
+        name: "Open AI helper settings",
+      }),
     );
     expect(onOpenPreferences).toHaveBeenCalledTimes(1);
     expect(loadText).not.toHaveBeenCalled();
@@ -323,25 +343,33 @@ describe("the reader's AI helper", () => {
     expect(model.calls).toHaveLength(1);
   });
 
-  it("keeps a new summary and a new explanation with the document", async () => {
-    const { kept, saved } = fakeKept();
-    renderReader(fakeLocalModel(), { kept });
+  it("keeps a new summary and a new explanation with the document, by the id the model kept each under", async () => {
+    const model = fakeLocalModel();
+    const { kept, saved, saves } = fakeKept([], model);
+    renderReader(model, { kept });
     await firstPage();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Summary" }));
     await screen.findByText(AI_LABEL);
     await waitFor(() => expect(kept.save).toHaveBeenCalledTimes(1));
-    expect(saved[0].input).toEqual({
+    // Asked to keep it for this document; saved by its id, with the
+    // sentences' source places and nothing else.
+    expect(model.kept[0]).toEqual({
+      keptId: "FAKE-kept-1",
+      recordId: "FAKE-record",
       tool: "summary",
       lang: "en",
-      modelName: "FAKE test model",
-      modelSha256: expect.any(String),
     });
-    expect(JSON.parse(saved[0].content).tool).toBe("summary");
+    expect(saves[0].keptId).toBe("FAKE-kept-1");
+    expect(saves[0].sources).toHaveLength(
+      screen.getAllByRole("listitem").length,
+    );
+    expect(saved[0].input).toEqual({ tool: "summary", lang: "en" });
     await user.click(screen.getByRole("button", { name: "Explain a term" }));
     await user.type(screen.getByLabelText("Word or phrase"), "potassium");
     await user.click(screen.getByRole("button", { name: "Explain" }));
     await waitFor(() => expect(kept.save).toHaveBeenCalledTimes(2));
+    expect(saves[1]).toEqual({ keptId: "FAKE-kept-2" });
     expect(saved[1].input).toMatchObject({
       tool: "explain",
       term: "potassium",
@@ -351,27 +379,30 @@ describe("the reader's AI helper", () => {
 
   it("shows the summary the vault kept, asks no model, and summarizes again on request", async () => {
     const model = fakeLocalModel();
-    const { kept } = fakeKept([
-      {
-        input: { tool: "summary", lang: "en" },
-        content: JSON.stringify({
-          tool: "summary",
-          sentences: [
-            {
-              text: "FAKE: kept earlier.",
-              quote: "FAKE text on page 2",
-              source: null,
-            },
-          ],
-          model: { name: "FAKE older model", sha256: "cd".repeat(32) },
-          lang: "en",
-          createdAt: Date.UTC(2026, 9, 1),
-          partial: true,
-          lastPage: 4,
-          pagesMissing: true,
-        }),
-      },
-    ]);
+    const { kept } = fakeKept(
+      [
+        {
+          input: { tool: "summary", lang: "en" },
+          content: JSON.stringify({
+            tool: "summary",
+            sentences: [
+              {
+                text: "FAKE: kept earlier.",
+                quote: "FAKE text on page 2",
+                source: null,
+              },
+            ],
+            model: { name: "FAKE older model", sha256: "cd".repeat(32) },
+            lang: "en",
+            createdAt: Date.UTC(2026, 9, 1),
+            partial: true,
+            lastPage: 4,
+            pagesMissing: true,
+          }),
+        },
+      ],
+      model,
+    );
     renderReader(model, { kept });
     await firstPage();
     const user = userEvent.setup();
@@ -580,7 +611,9 @@ describe("the reader's AI helper", () => {
       ),
     ).toBeVisible();
     await user.click(
-      within(panel).getByRole("button", { name: "Open Preferences" }),
+      within(panel).getByRole("button", {
+        name: "Open AI helper settings",
+      }),
     );
     expect(onOpenPreferences).toHaveBeenCalledTimes(1);
     expect(loadText).not.toHaveBeenCalled();
@@ -644,6 +677,200 @@ describe("the reader's AI helper", () => {
     expect(
       screen.queryByRole("region", { name: "Summary in plain words" }),
     ).toBeNull();
+  });
+
+  it("says in its status that the summary, and then the explanation, is ready", async () => {
+    renderReader(fakeLocalModel());
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    const summaryPanel = screen.getByRole("region", {
+      name: "Summary in plain words",
+    });
+    await waitFor(() =>
+      expect(within(summaryPanel).getByRole("status")).toHaveTextContent(
+        "The summary is ready.",
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    const explainPanel = screen.getByRole("region", { name: "Explain a term" });
+    expect(within(explainPanel).getByRole("status")).toHaveTextContent("");
+    await user.type(
+      within(explainPanel).getByRole("textbox", { name: "Word or phrase" }),
+      "potassium",
+    );
+    await user.click(
+      within(explainPanel).getByRole("button", { name: "Explain" }),
+    );
+    await waitFor(() =>
+      expect(within(explainPanel).getByRole("status")).toHaveTextContent(
+        "The explanation is ready.",
+      ),
+    );
+  });
+
+  it("says a summary can take several minutes, and how many it has taken, outside its status", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const model = fakeLocalModel();
+      const written = model.summarize.bind(model);
+      let release!: () => void;
+      model.summarize = async (...args) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return written(...args);
+      };
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      const panel = screen.getByRole("region", {
+        name: "Summary in plain words",
+      });
+      const status = within(panel).getByRole("status");
+      await waitFor(() =>
+        expect(status).toHaveTextContent("The AI helper is working…"),
+      );
+      expect(
+        within(panel).getByText(
+          humanText("This can take several minutes for a long document."),
+        ),
+      ).toBeVisible();
+      // No time before the first minute.
+      expect(within(panel).queryByText(/so far/)).toBeNull();
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(
+        within(panel).getByText(humanText("Working for 1 minute so far.")),
+      ).toBeVisible();
+      await act(async () => vi.advanceTimersByTime(2 * 60_000));
+      expect(
+        within(panel).getByText(humanText("Working for 3 minutes so far.")),
+      ).toBeVisible();
+      // A screen reader is told the work once, not each minute.
+      expect(status).toHaveTextContent(/^The AI helper is working…$/);
+      // Both go once the answer is written.
+      await act(async () => release());
+      await waitFor(() =>
+        expect(status).toHaveTextContent("The summary is ready."),
+      );
+      expect(within(panel).queryByText(/several minutes|so far/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts an explanation's minutes too, without the long-document note", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const model = fakeLocalModel();
+      model.explain = () => new Promise(() => undefined);
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.click(screen.getByRole("button", { name: "Explain a term" }));
+      const panel = screen.getByRole("region", { name: "Explain a term" });
+      await user.type(
+        within(panel).getByRole("textbox", { name: "Word or phrase" }),
+        "potassium",
+      );
+      await user.click(within(panel).getByRole("button", { name: "Explain" }));
+      await waitFor(() =>
+        expect(within(panel).getByRole("status")).toHaveTextContent(
+          "The AI helper is working…",
+        ),
+      );
+      await act(async () => vi.advanceTimersByTime(2 * 60_000));
+      expect(
+        within(panel).getByText(humanText("Working for 2 minutes so far.")),
+      ).toBeVisible();
+      expect(within(panel).queryByText(/several minutes/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says an answer is ready once: not for one read back from the vault, nor again on coming back to it", async () => {
+    const model = fakeLocalModel();
+    // A summary the vault kept earlier, in English.
+    const { kept } = fakeKept(
+      [
+        {
+          input: { tool: "summary", lang: "en" },
+          content: JSON.stringify({
+            tool: "summary",
+            sentences: [
+              {
+                text: "FAKE: kept earlier.",
+                quote: "FAKE text on page 2",
+                source: null,
+              },
+            ],
+            model: { name: "FAKE older model", sha256: "cd".repeat(32) },
+            lang: "en",
+            createdAt: Date.UTC(2026, 9, 1),
+            partial: false,
+            lastPage: 2,
+            pagesMissing: false,
+          }),
+        },
+      ],
+      model,
+    );
+    renderReader(model, { kept });
+    await firstPage();
+    const user = userEvent.setup();
+    const summaryTool = screen.getByRole("button", { name: "Summary" });
+    const summaryStatus = () =>
+      within(
+        screen.getByRole("region", { name: "Summary in plain words" }),
+      ).getByRole("status");
+    await user.click(summaryTool);
+    expect(await screen.findByText("FAKE: kept earlier.")).toBeVisible();
+    // Read back, not new: nothing is read out.
+    expect(summaryStatus()).toBeEmptyDOMElement();
+    // To Explain and back: still the kept summary, still nothing new.
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    await user.click(summaryTool);
+    expect(await screen.findByText("FAKE: kept earlier.")).toBeVisible();
+    expect(summaryStatus()).toBeEmptyDOMElement();
+    expect(model.calls).toHaveLength(0);
+    // A new answer is said.
+    await user.click(screen.getByRole("button", { name: "Summarize again" }));
+    await waitFor(() =>
+      expect(summaryStatus()).toHaveTextContent("The summary is ready."),
+    );
+    expect(model.calls).toHaveLength(1);
+  });
+
+  it("does not say an earlier explanation is ready when the next one fails", async () => {
+    const model = fakeLocalModel();
+    const explained = model.explain;
+    let asked = 0;
+    model.explain = async (...args) => {
+      asked += 1;
+      if (asked > 1) throw new Error("FAKE: the model failed");
+      return explained(...args);
+    };
+    renderReader(model);
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    const explainPanel = screen.getByRole("region", { name: "Explain a term" });
+    const box = within(explainPanel).getByRole("textbox", {
+      name: "Word or phrase",
+    });
+    const ask = within(explainPanel).getByRole("button", { name: "Explain" });
+    await user.type(box, "potassium");
+    await user.click(ask);
+    await waitFor(() =>
+      expect(within(explainPanel).getByRole("status")).toHaveTextContent(
+        "The explanation is ready.",
+      ),
+    );
+    await user.clear(box);
+    await user.type(box, "creatinine");
+    await user.click(ask);
+    await within(explainPanel).findByRole("alert");
+    expect(within(explainPanel).getByRole("status")).toHaveTextContent("");
   });
 
   it("numbers the last page read by its page, not by the count, when a page failed", async () => {
@@ -738,6 +965,125 @@ describe("the reader's AI helper", () => {
     );
   });
 
+  // Refused as the native side refuses (lib.rs ai_error): a code and the key
+  // of its words, passed on by the real bridge.
+  const refusingModel = (code: string, messageKey?: string) => {
+    const refusal = {
+      code,
+      message: "FAKE native words",
+      ...(messageKey === undefined ? {} : { messageKey }),
+    };
+    return nativeLocalModel({
+      aiModelStatus: async () => ({ state: "installed", model: FAKE_MODEL }),
+      aiSummarize: () => Promise.reject(refusal),
+      aiExplain: () => Promise.reject(refusal),
+      aiCancel: async () => undefined,
+    });
+  };
+  const OWN_WORDS = [
+    [
+      "aiStorage",
+      "ai.error.storage",
+      "The AI helper's model could not be read from this computer. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.",
+    ],
+    [
+      "aiMemory",
+      "ai.error.memory",
+      "There isn't enough free memory for the AI helper right now. Close some other programs, then try again.",
+    ],
+    [
+      "aiBusy",
+      "ai.error.busy",
+      "The AI helper's model is being added or removed. Try again when that is done.",
+    ],
+  ] as const;
+
+  it.each(OWN_WORDS)(
+    "says what stopped a summary refused with %s, in its own words",
+    async (code, messageKey, words) => {
+      renderReader(refusingModel(code, messageKey));
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      expect((await screen.findByRole("alert")).textContent).toBe(words);
+    },
+  );
+
+  it.each(OWN_WORDS)(
+    "says what stopped an explanation refused with %s, in its own words",
+    async (code, messageKey, words) => {
+      renderReader(refusingModel(code, messageKey));
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Explain a term" }));
+      await user.type(
+        screen.getByRole("textbox", { name: "Word or phrase" }),
+        "eGFR",
+      );
+      await user.click(screen.getByRole("button", { name: "Explain" }));
+      expect((await screen.findByRole("alert")).textContent).toBe(words);
+    },
+  );
+
+  // The code alone picks the words: not the key a refusal carries, nor its
+  // message.
+  it.each([
+    ["aiStorage", "ai.failed", OWN_WORDS[0][2]],
+    ["aiStorage", undefined, OWN_WORDS[0][2]],
+    ["aiMemory", "ai.error.storage", OWN_WORDS[1][2]],
+  ] as const)(
+    "says the words of %s whatever key the refusal carries (%s)",
+    async (code, messageKey, words) => {
+      renderReader(refusingModel(code, messageKey));
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toBe(words);
+      expect(alert.textContent).not.toContain("FAKE native words");
+    },
+  );
+
+  it("says a refusal's own words in the language chosen after it", async () => {
+    renderReader(refusingModel("aiMemory", "ai.error.memory"));
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Explain a term" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Word or phrase" }),
+      "eGFR",
+    );
+    await user.click(screen.getByRole("button", { name: "Explain" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      OWN_WORDS[1][2],
+    );
+    act(() => setLocaleOverride("fr"));
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+      "Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.",
+    );
+  });
+
+  // Only these codes choose the words: any other refusal, even one naming
+  // other words, says the helper could not finish.
+  it.each([
+    ["aiFailed", "ai.failed"],
+    ["invalid", "ai.error.storage"],
+  ])(
+    "says the helper could not finish when refused with %s",
+    async (code, messageKey) => {
+      renderReader(refusingModel(code, messageKey));
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      expect((await screen.findByRole("alert")).textContent).toBe(
+        "The AI helper could not finish. Try again.",
+      );
+    },
+  );
+
   it("explains words selected in the page text, with their sentence", async () => {
     const model = fakeLocalModel({ explanation: "FAKE: a salt in the blood." });
     renderReader(model);
@@ -811,21 +1157,28 @@ describe("sentenceAround", () => {
   });
 });
 
-describe("Preferences", () => {
-  it("shows the AI helper as not installed on a computer, and not at all elsewhere", () => {
-    const { rerender } = render(
-      <PreferencesSettings aiStatus={{ state: "notInstalled" }} />,
+describe("Settings > AI helper", () => {
+  it("has its own page with the model's row, and Preferences no longer holds it", () => {
+    const { unmount } = render(
+      <AiSettings aiStatus={{ state: "notInstalled" }} onAiStatus={vi.fn()} />,
     );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "AI helper" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText("How the AI helper works on this computer"),
+    ).toBeVisible();
     const row = screen
-      .getByRole("heading", { name: /AI helper/ })
+      .getByRole("heading", { level: 2, name: /AI helper/ })
       .closest("section")!;
     expect(within(row).getByText("Not installed")).toBeVisible();
     expect(
       within(row).getByText(
-        "Explains your documents in plain words with an AI model that runs on this computer. You can download the model, or add a model file you already have; it stays on this computer.",
+        "Explains your documents in plain words with an AI model that runs on this computer. Download one of the models below, or add a matching file you already have. Models stay on this computer.",
       ),
     ).toBeVisible();
-    rerender(<PreferencesSettings />);
+    unmount();
+    render(<PreferencesSettings />);
     expect(screen.queryByRole("heading", { name: /AI helper/ })).toBeNull();
   });
 });

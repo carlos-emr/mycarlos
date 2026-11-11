@@ -34,6 +34,17 @@ pub enum LinkError {
     ClinicKeysMissing,
     #[cfg_attr(target_os = "android", allow(dead_code))]
     DeviceExists,
+    Busy,
+    /// The portal refused for too many requests (HTTP 429), with the seconds
+    /// it asked to wait, if it said (#131).
+    RateLimited(Option<u64>),
+    /// The portal refused because this device was removed from the patient's
+    /// portal account (403 `device_removed`, #131).
+    DeviceRemoved,
+    /// The portal answered with this other HTTP status instead of what was
+    /// asked (a refused device assertion, maintenance…), with the seconds it
+    /// asked to wait, if it said (#131).
+    HttpRefused(u16, Option<u64>),
     Cancelled,
 }
 
@@ -234,6 +245,15 @@ pub struct LinkSummary {
     pub approval_reason: Option<crate::portal_approval::ApprovalReason>,
     pub approval_can_restart: bool,
     pub approval_request_limit_reached: bool,
+    /// The clinic asked for the code it emailed (clinic code v1): the request
+    /// that approved this device, when one did, else the current one.
+    pub approval_by_code: bool,
+    /// This run of the app sent a code for the current request and the
+    /// portal took it; the clinic has yet to answer.
+    pub approval_code_submitted: bool,
+    /// No more codes are taken for the current request: too many did not
+    /// match this clinic, or the portal has had five.
+    pub approval_code_locked: bool,
 }
 
 impl StoredLink {
@@ -322,18 +342,13 @@ impl StoredLink {
             approval_request_limit_reached: !accepted
                 && self.approval_history.len() + usize::from(self.approval.is_some())
                     >= crate::portal_approval::MAX_APPROVAL_REQUESTS,
-            approval_can_restart: self.approval_history.len()
-                + usize::from(self.approval.is_some())
-                < crate::portal_approval::MAX_APPROVAL_REQUESTS
-                && !accepted
-                && self.approval.as_ref().is_some_and(|a| {
-                    a.state() != crate::portal_approval::ApprovalState::Refused
-                        && (matches!(
-                            a.state(),
-                            crate::portal_approval::ApprovalState::Expired
-                                | crate::portal_approval::ApprovalState::Cancelled
-                        ) || a.expires_at <= crate::now_ms() / 1000)
-                }),
+            // By this device's clock here; a status check uses the portal's
+            // when it can (#131). One rule for both.
+            approval_can_restart: crate::portal_approval::can_restart(self, crate::now_ms() / 1000),
+            approval_by_code: crate::portal_approval::approval_by_code(self),
+            // In memory only: the store adds them (`VaultStore::link_summary`).
+            approval_code_submitted: false,
+            approval_code_locked: false,
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())

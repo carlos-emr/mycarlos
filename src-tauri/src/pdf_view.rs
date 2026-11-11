@@ -166,6 +166,7 @@ pub(crate) struct Page {
 }
 
 /// What asking the helper for a page came to.
+#[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.
 pub(crate) enum Outcome {
     Shown(Page),
     Refused(Refusal),

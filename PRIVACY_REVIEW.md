@@ -36,7 +36,7 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 | What             | Examples                                                                                                                                                                                                   | Kept encrypted?                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer or a phone), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person), including documents the patient has **hidden** | Yes, each with its own key        |
-| Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in                                                                                          | Yes                               |
+| Document details | Name (the patient can rename it), size, date added, the stored label "Manual import — unverified" (stored unchanged; the app shows it as the status "Unverified", then "Manual import", or, when the vault has checked a clinic's signature, as "Verified", then "From {clinic}"), which folder it is in | Yes                               |
 | AI answers       | What the AI helper wrote about a document on this computer (#72): a plain-words summary or a term explained, with the tool, language, model and date. Kept encrypted with the document. Asking again shows the new answer and hides the older one, which stays in the vault, never deleted (#71, D3); nothing leaves the device | Yes                               |
 | Profiles         | A display name for each person the patient keeps records for                                                                                                                                               | Yes                               |
 | Folders          | Folder names and how they nest                                                                                                                                                                             | Yes                               |
@@ -206,7 +206,7 @@ saved (for example some network folders), on the systems where it can tell.
 - **No record of use.** The app keeps no record of who opened the vault or what they looked at.
   Apart from the traces listed in section 2 (and, once the change under review lands, the count of
   wrong tries), it records nothing about use. The AI helper adds its text exports to those traces (#171),
-  and its answers once they are kept (#212; section 11).
+  and its answers, which are kept (#212; section 11).
 
 ## 5. Backups
 
@@ -306,7 +306,9 @@ computer's IP address, the time and which public file was fetched, and nothing e
 - Passphrases must be at least 15 characters, and a check on the device refuses ones that are easy
   to guess (see section 5 for how strong that makes them).
 - The app locks after 1 to 15 minutes without use (5 by default); a file window, or the system
-  window confirming a new recovery key, that it opened extends that by up to 15 more minutes. When
+  window confirming a new recovery key, that it opened extends that by up to 15 more minutes, and
+  an AI answer being written by the time it takes, up to that answer's own limit (5 to 20
+  minutes; 20 at most while the AI helper starts). When
   its window is minimised or, on a phone, when it goes to the background, it hides its content at
   once and locks as soon as any import, save or backup under way has finished (see section 4 for the
   details).
@@ -334,7 +336,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
   release.
 - **Lost or stolen device.** There is no remote lock or wipe. What protects the vault is the
   device's own lock, the app's automatic lock (up to 15 minutes after last use, or up to 15 more
-  while a file window it opened is showing) and the passphrase.
+  while a file window it opened is showing, or, while an AI answer is written, up to its limit of
+  at most 20 minutes plus the AI helper's start) and the passphrase.
 - **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place,
   vaults set aside included, and some app files, such as the lock-delay setting; the app's
   instructions say to delete the vault's folder by hand. On
@@ -410,11 +413,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     wrong", stay outside the rules for software as a medical device (#25)?
 16. **Other people's documents:** the helper can be used on documents in a child's or another
     adult's profile. Is more guidance needed before their text is exported (see also question 4)?
-17. **Keeping AI answers:** once #212 lands, answers are kept with their document, encrypted. A
+17. **Keeping AI answers:** answers are kept with their document, encrypted (#212). A
     newer answer for the same document, tool and language (and term, for Explain) is shown in place
     of the older one, and the older one is kept hidden, never deleted, like the documents (#71;
-    decided 5 November 2026). Should the patient be able to remove an answer they do
-    not want?
+    decided 5 November 2026). Each document keeps up to 32 shown answers and 96 hidden older ones (#250); past either, a new answer is still shown, but not kept, and the reader says so. Should the patient be able to remove an answer
+    they do not want?
 18. **Dates replaced by marks:** no real date is sent. Each date is a numbered mark with its gap in
     days from the earliest date, so the time between dates stays clear. A reader who knows one real
     date (a birth, or an event named in the text) can still work out all the others from the
@@ -440,7 +443,7 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 
 The text export (part B) is built on main (#171) and works on computers only; it is hidden on
 phones. The reader's Summary and Explain (#217), the model runtime (#218) and the model
-download (#219) are on main; kept answers (#212) are in review. This section describes all of it, so that the assessment
+download (#219) and kept answers (#212) are on main. This section describes all of it, so that the assessment
 can cover them. It is for synthetic data only until this assessment approves real information (#25). The security side
 is in `THREAT_MODEL.md` (AI-01 to AI-10) and `SECURITY_OPERATIONS.md`, and the notice the patient
 sees is in `AI_HELPER_NOTICE.md`.
@@ -513,12 +516,11 @@ network or to the patient's other files (#218), on Windows and Linux computers w
 Macs come later (#211). The default model is Qwen3.5 4B (Q4_K_M), chosen on 5 November 2026 after the comparison of small
 open models on made-up documents.
 
-**The answers.** Each is marked "Written by AI and may be wrong. Check with your doctor." In this
-build an answer is shown only while the reader is open and is not kept. Once #212 lands, answers are
-saved in the vault, encrypted, with the document, the tool, the model and the date. A newer
+**The answers.** Each is marked "Written by AI and may be wrong. Check with your doctor." Answers
+are saved in the vault, encrypted, with the document, the tool, the model and the date (#212). A newer
 answer for the same document, tool and language (and term) is shown in place of the older one,
 which is kept hidden, never deleted (#71; decided 5 November 2026); an answer is hidden with its
-document, and answers are in backups like the rest of the vault (question 17). The notice promises this only once it is true.
+document, and answers are in backups like the rest of the vault (question 17). Each document keeps up to 32 shown answers and 96 hidden older ones (#250); past either, a new answer is still shown, but not kept, and the reader says so. The notice says that answers are saved (`resultsBody`).
 
 **Limits.**
 

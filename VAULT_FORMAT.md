@@ -562,14 +562,19 @@ screen can request the history. Native code reads every encrypted segment in ord
 display rows over IPC only for entries it has authenticated from one of the chain's two pinned
 ends. From the start: entries before the first segment that is missing or does not authenticate,
 while each follows the one before from the genesis value, and never past the manifest's count.
-From the end (Ben's D146): entries after the last such segment, walking back from the manifest's
+From the end (Ben's D146): entries after the last such segment that holds entries (a damaged
+filler segment hides nothing), walking back from the manifest's
 pinned head while each is the `prev` of the one after it with the number before it, so that the
 last is number `count - 1` and its hash is the head; none is shown twice. With the rows it returns
 `complete`, true only when the rows from the start are the whole chain the manifest pins (its
 count and head). When it is false, Security shows a notice dated from the native fields: "Part of
 this history is damaged. Events between <date> and <date> can't be checked and aren't shown." (or
 "after <date>", "before <date>", or that none are shown), with a marker in the list where the gap
-is (Ben's D129 and D146, mycarlos#120). The notice follows those fields only; the renderer never
+is (Ben's D129 and D146, mycarlos#120). It also returns `everyEventShown`: whether the rows from
+the start and from the end, in order, are still the whole chain the manifest pins, so that only
+segments holding no entries (padding) are damaged. Security then says instead "Part of the storage
+for this history is damaged, but every event checks out and is shown." and marks no gap (#120 C1).
+The notice follows those fields only; the renderer never
 works it out. Its dates are the entries' recorded times, so after the device clock was set back
 the first can read later than the second; the order shown is always the chain's. A damaged
 segment is never opened or shown.
@@ -820,12 +825,24 @@ state, described in the recovery-key sections above.
   and the remaining review gates are still required before release. See [HANDOFF.md](HANDOFF.md).
 
 
-### Future manifest format 5: portal link custody (#55)
+### Manifest formats 5–7: portal link custody, clinic delivery and approval (#55)
 
-This future branch reserves format 5 above held profile format 4. It does not
-authorize upgrading the current demo. A writable unlock upgrades older supported
-manifests using the existing redundant/history transaction; read-only recovery
-never writes a migration. Older applications refuse the new version.
+The app writes format 7 (`VAULT_FORMAT` in `src-tauri/src/vault.rs`). At a
+writable unlock, `upgrade_manifest` raises an older manifest straight to 7 in a
+commit of its own, using the existing redundant/history transaction. Recovery
+never upgrades on its own: `VaultStore::unlock` calls it only when the unlock is
+not in recovery. The one other caller is the patient's confirmed hiding of
+unavailable documents as damaged, in the missing-documents recovery
+(`hide_unavailable_records`, #71), which upgrades first, in a commit of its own.
+A build older than the manifest refuses it as `NewerFormat`
+(`ManifestRefusal::Newer`), not as damage.
+
+`validate_manifest_structure` refuses as corrupt a manifest whose format is too
+old for what it holds:
+- below 5: any portal link, or a record's `originalPdf`;
+- below 6: a link's `approval`, or a record's `delivery`;
+- below 7: a link's `approvalHistory`, or an approval with a `status` or `reason`.
+The sections below describe each step; these rules are the checked part.
 
 `portalLinks` is absent for an empty list, at most 16 entries otherwise. Each
 entry keeps its UUID, canonical HTTPS portal base (including any deployment path),
@@ -915,9 +932,10 @@ retains the original receipt. `gone` never represents a cryptographic pickup.
 
 A link's optional `approval` keeps one first-device request UUID, exact signed
 intent and expiry, and any verified challenge/acceptance. Intent and history
-are committed before POST. This milestone implements `staff_first` only, with
-null predecessor; it does not authorize a later-device or lost-all-devices
-fallback. Exact clinic signatures bind the saved portal base, recipient, both
+are committed before POST. Two challenge kinds are accepted, `staff_first` and,
+for clinic code v1 (#141), `code`, both with no predecessor
+(`portal_approval::verify_challenge`); a later-device or lost-all-devices
+fallback is not implemented. Exact clinic signatures bind the saved portal base, recipient, both
 public keys, device ID, request, challenge and original compact hashes. Unsigned
 portal status alone never establishes approval. Stored historical evidence
 remains readable after revocation; current approval requires active pinned keys.
@@ -930,7 +948,8 @@ actual linking/staff approval and full native UI flow remain enablement gates.
 #### Format 7: recoverable approval requests and terminal status
 
 Format 7 retains original request IDs across explicit restarts. Each link keeps
-its current `approval` and bounded `approvalHistory` (at most 16 requests in all).
+its current `approval` and bounded `approvalHistory` (at most 16 requests in all,
+`portal_approval::MAX_APPROVAL_REQUESTS`).
 No request/proof is dropped to make room: a full history stops new requests and
 asks the patient to contact the clinic. Each attempt can also keep its typed
 advisory `status` and controlled `reason`; old format-6 attempts with neither
@@ -1095,3 +1114,25 @@ A format 1–9 vault opens with no answers and is upgraded to format 10 at its
 next writable unlock, in a commit of its own, as for every earlier format. An
 older myCarlos then refuses the vault as newer: there is no downgrade. Header
 and object formats are unchanged.
+
+#### Format 11: hidden AI answers have a cap of their own (D13)
+
+Format 11 changes only how a record's `aiResults` are counted. A record shows
+at most **32** answers, one per question, and keeps at most **96** hidden
+(`superseded`) ones besides. Asking a question again hides the answer before,
+so it counts against the hidden cap; a new question counts against the shown
+cap. Past either cap a new answer is refused (`ai_results_full`, "This document
+already keeps the most AI answers it can."), and none is dropped: nothing is
+deleted (#71, D3).
+
+The hidden cap is kept to three per shown answer because every answer, shown or
+hidden, is a manifest entry of about 0.5 KB (0.8 KB at most), and the manifest
+is capped for the whole vault at 16 MiB: a vault can hold about 170 documents
+with both caps full before its manifest is.
+
+A format 11 manifest with more than 32 shown or 96 hidden answers on a record
+is corrupt. A format 10 manifest keeps its own rule, at most 32 answers in all.
+A format 1–10 vault is upgraded to format 11 at its next writable unlock, in a
+commit of its own, with nothing else changed. An older myCarlos then refuses
+the vault as newer rather than reading a record with more than 32 answers as
+damaged. Header and object formats are unchanged.

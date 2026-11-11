@@ -43,6 +43,17 @@ export interface ModelSummary {
   /** True when the first page alone was too long, and only its start was
    * read (it is then `lastPage`). */
   lastPageCut: boolean;
+  /** The id the native side kept this answer under for the document's save
+   * (#212), when the request named the document. */
+  keptId?: string;
+}
+
+/** A term explained, as the model writes it. */
+export interface ModelExplanation {
+  text: string;
+  model: ModelInfo;
+  /** As `ModelSummary.keptId`. */
+  keptId?: string;
 }
 
 /** One summary sentence as the model writes it: the words, and the words of
@@ -62,6 +73,15 @@ export interface AcceptedModel {
   licence: string;
   notices: string[];
   sourceUrl: string;
+}
+
+/** One native catalog row, keyed by its stable catalog index (#276A). */
+export interface ModelRow {
+  index: number;
+  model: AcceptedModel;
+  state: "notDownloaded" | "installed" | "damaged";
+  addedByYou: boolean;
+  inUse: boolean;
 }
 
 /** How `ai_model_add_picked` ended. `added` carries the new status; the
@@ -94,6 +114,9 @@ export interface SummarySentence extends ModelSentence {
 
 export interface SummaryResult {
   tool: "summary";
+  /** The native keep id (`ModelSummary.keptId`); never on an answer read
+   * back from the vault. */
+  keptId?: string;
   sentences: SummarySentence[];
   model: ModelInfo;
   /** The language the summary is written in (a locale such as "fr"). */
@@ -110,6 +133,9 @@ export interface SummaryResult {
 
 export interface ExplainResult {
   tool: "explain";
+  /** The native keep id (`ModelSummary.keptId`); never on an answer read
+   * back from the vault. */
+  keptId?: string;
   term: string;
   /** The sentence the term was found in, when there is one. */
   context: string;
@@ -123,12 +149,19 @@ export interface ExplainResult {
  * (`nativeLocalModel`); `notInstalledModel` refuses everything. */
 export interface LocalModel {
   status(): Promise<ModelStatus>;
-  summarize(document: DocumentText, lang: string): Promise<ModelSummary>;
+  /** With `keepFor` (the document's record id), the native side also keeps
+   * the answer for that document's save and gives its `keptId`. */
+  summarize(
+    document: DocumentText,
+    lang: string,
+    keepFor?: string,
+  ): Promise<ModelSummary>;
   explain(
     term: string,
     context: string,
     lang: string,
-  ): Promise<{ text: string; model: ModelInfo }>;
+    keepFor?: string,
+  ): Promise<ModelExplanation>;
   /** Stops the answer being written, if one is: the panel closed. */
   cancel(): void;
 }
