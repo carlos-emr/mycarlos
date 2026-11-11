@@ -2825,8 +2825,8 @@ const RULES: Rule[] = [
     group: 1,
     skipDates: true,
   },
-  // A national identity number after its label: DNI/NIE "12345678Z", PESEL, CPF
-  // "123.456.789-09", RG, NIF; and a CPF by its shape.
+  // A national identity number after its label: DNI/NIE "12345678A", PESEL, CPF
+  // "123.456.789-00", RG, NIF; and a CPF by its shape.
   {
     kind: "sin",
     pattern:

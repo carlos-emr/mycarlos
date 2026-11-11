@@ -87,7 +87,7 @@ const documents = [
     text: imaging,
     gone: [
       "Avery Example",
-      "EXAA 6104 1799",
+      "EXAA 6164 1799",
       "0045123",
       "R-778812",
       "Hôpital Fictif de Testville",
