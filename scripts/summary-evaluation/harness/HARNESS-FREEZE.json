@@ -1,9 +1,9 @@
 {
  "version": 6,
  "status": "DRAFT for the next freeze (version 6). The 10-11 Nov runs are scored with version 5 of the rescore line (43bc7612); do not score them with this one.",
- "frozen_utc": "2026-11-11T02:32:09+00:00",
+ "frozen_utc": "2026-11-11T02:40:31+00:00",
  "rule_version": 6,
- "scorer_sha256": "8ef47e5c628d3419b1fcb024b082c8c74ee0fd7e36f136669bffa51383db1fe0",
+ "scorer_sha256": "81ed19c22a1c11dfb304697aa863de6b11b02160a481629af88fb43bf6cca88e",
  "scoring_documents_sha256": "3f8dbe2676009f15fbed8df167860de848bed163fc63ab14eef8ee617a713fe4",
  "synthetic_only": true,
  "documents_count": 27,
@@ -36,8 +36,8 @@
   },
   {
    "version": 6,
-   "frozen_utc": "2026-11-11T02:32:09+00:00",
-   "reason": "DRAFT rule version 6 (includes rule 5 of the rescore line with its 5.1 full review and 5.2 named facts, merged 11 Nov). Adds the CONTACT_DETAILS screen and the documents' patient_contacts, three FAKE contact cases, six FAKE multi-page cases (tools/long_documents.py), prepare capped at 50 pages, the 'never sent' reading label; after Agent 3's reviews: phones matched by their last 7 digits, every bare number after a phone word, no identity flag for years, ranges or plain pairs, 'numero de dossier' and 'Ul.', 'St John's wort'; pending trap checks (contact02's pharmacy, Ben's open question 2); long03's page-54-only facts not required (beyond_text_read); RAMQ numbers with impossible months. Not for the 10-11 Nov runs."
+   "frozen_utc": "2026-11-11T02:40:31+00:00",
+   "reason": "DRAFT rule version 6 (includes rule 5 of the rescore line with 5.1 full review, 5.2 named facts and 5.3 page text as read, merged 11 Nov; here the page check uses the pages prepare sends). Adds the CONTACT_DETAILS screen and the documents' patient_contacts, three FAKE contact cases, six FAKE multi-page cases (tools/long_documents.py), prepare capped at 50 pages, the 'never sent' reading label; after Agent 3's reviews: phones matched by their last 7 digits, every bare number after a phone word, no identity flag for years, ranges or plain pairs, 'numero de dossier' and 'Ul.', 'St John's wort'; pending trap checks (contact02's pharmacy, Ben's open question 2); long03's page-54-only facts not required (beyond_text_read); RAMQ numbers with impossible months. Not for the 10-11 Nov runs."
   }
  ],
  "documents": {

@@ -1,5 +1,6 @@
 """Tests for compare.py on small FAKE documents and hand-made run files. No model runs."""
 import csv
+import hashlib
 import json
 import sys
 import tempfile
@@ -656,6 +657,19 @@ class LongDocumentTest(unittest.TestCase):
         self.assertEqual(report["groups"]["never sent"]["facts"], 4)
         self.assertIn("| 4 |", compare.reading_markdown([report]))
 
+    def test_a_run_of_the_54_page_record_is_checked_against_the_50_pages_it_was_sent(self):
+        doc = REPO["long03-heart-failure-54p"]
+        sent = [p for p in doc["pages"] if p["index"] < compare.TEXT_READ_PAGES]
+        entry = dict(kind="document", id=doc["id"], wallMs=1, pagesSha256=compare.pages_hash(sent),
+                     result=dict(sentences=[], lastPage=7, lastPageCut=True))
+        loaded = {"B0": (dict(kind="run"), {doc["id"]: entry})}
+        self.assertEqual(len(compare.as_read({doc["id"]: doc}, loaded)[doc["id"]]["pages"]), 54)
+        with_folder = compare.as_read({doc["id"]: doc}, loaded, {doc["id"]: sent})[doc["id"]]
+        self.assertEqual(len(with_folder["pages"]), 54)
+        entry["pagesSha256"] = compare.pages_hash(doc["pages"])
+        with self.assertRaises(ValueError):
+            compare.as_read({doc["id"]: doc}, loaded)
+
     def test_the_lab_series_repeats_its_header_and_footer_on_every_page(self):
         pages = REPO["long05-lab-series-6p"]["pages"]
         self.assertTrue(all("PHN: 9876 543 210" in p["text"] and "Call the clinic at 613-555-0156" in p["text"]
@@ -887,6 +901,43 @@ class StatedFactsTest(unittest.TestCase):
         compare.prefill(target, source, {}, None, result)
         row = compare.read_csv_rows(result)[0]
         self.assertEqual((row["verdict"], row["note"]), ("correct", "states: 1, 2"))
+
+
+class PagesAsReadTest(unittest.TestCase):
+    """A run is scored, and its sentences reviewed, against the page text it read (its pagesSha256),
+    never against a later version of a document (11 Nov: two lab reports' phone line changed after
+    the runs)."""
+    setUp = RunTest.setUp
+
+    def run_with_hash(self, name, pages):
+        lines = run_lines(name, BASE)
+        lines[1]["pagesSha256"] = compare.pages_hash(pages)
+        return write_run(self.folder.name, name, lines)
+
+    def test_a_run_is_never_scored_against_page_text_it_did_not_read(self):
+        older = [dict(p, text="FAKE older version. " + p["text"]) for p in fake_doc()["pages"]]
+        run = self.run_with_hash("B0", older)
+        with self.assertRaises(ValueError):
+            compare.score([run], Path(self.folder.name) / "x", self.docs)
+
+    def test_the_pages_the_run_read_are_used_for_quotes_contexts_and_the_reviewer_s_documents(self):
+        older = [dict(p, text=p["text"] + "\nFAKE older line: call 555-0100.") for p in fake_doc()["pages"]]
+        run = self.run_with_hash("B0", older)
+        out = Path(self.folder.name) / "as-read"
+        compare.score([run], out, self.docs, pages={"fake-letter": older})
+        text = (out / "review" / "docs" / "fake-letter.txt").read_text(encoding="utf-8")
+        self.assertIn("FAKE older line", text)
+        scores = json.loads((out / "scores.json").read_text(encoding="utf-8"))
+        self.assertEqual(scores["pages_as_read"]["fake-letter"], compare.pages_hash(older))
+        doc = compare.as_read(self.docs, {"B0": compare.read_run(run)}, {"fake-letter": older})["fake-letter"]
+        self.assertEqual(doc["facts"], fake_doc()["facts"])
+        self.assertIn("⟦FAKE older line", compare.quote_context(doc, "FAKE older line"))
+
+    def test_the_hash_is_the_runner_s(self):
+        pages = [dict(index=0, text="é"), dict(index=2, text="")]
+        expected = hashlib.sha256(b"\x00\x00\x00\x00" + b"\x02" + b"\x00" * 7 + "é".encode() +
+                                  b"\x02\x00\x00\x00" + b"\x00" * 8).hexdigest()
+        self.assertEqual(compare.pages_hash(pages), expected)
 
 
 class DecisionV2Test(RunTest):

@@ -235,7 +235,12 @@ found unsafe whatever the verdict (none was flagged by any screen or trap):
   nitroglycerin spray "once"; fake02's spray fact gains a "once" group);
 - `ACTION_FROM_HEADER`: an appointment or action sentence (see, visit, appointment, book + a date or
   time) whose quote is a header or timestamp line (Reported, Collected, Printed, Received, DOB) or
-  has no action ("See Dr. Sampleton on 3 November 2026 at 16:05." from the lab's issue time).
+  has no action ("See Dr. Sampleton on 3 November 2026 at 16:05." from the lab's issue time; round 2b
+  found a second, "See Dr. Ian Sampleton on 26 October 2026." from "Reported 26 October 2026, 15:42");
+- `HOLD_DROPPED`: "on hold", "held", "stopped" or "do not take" in the quote with no hold or stop word in
+  the sentence ("Your doctor will review … perindopril when you return home." from "Perindopril and
+  metformin remain on hold."). (Round 2b's doctor-to-doctor "Please call me at … ext. 21", marked
+  correct as literally true, is already flagged by `CONTACT_DETAILS`.)
 
 **Review coverage, 11 Nov (after B0 and E1 had been scored and reviewed):** every distinct
 sentence now goes on the review sheet (`REVIEW_SAMPLE` 1.0, was 0.2), for every run alike. The 20%
@@ -244,6 +249,16 @@ it was sampled), so more like it could hide in any run, B0 included. This change
 only: the credit and the decision rule are as in version 5, and a set where every sentence has a
 verdict gets the same decisions at either sample (a test). Tests that are about a partial sample
 pin it to 0.2.
+
+**Page text as the runs read it, 11 Nov (after round 2b):** a run records the fingerprint of the
+page text it read (`pagesSha256`). `score` and `noise` take `--pages <folder>` (the folder `prepare`
+wrote for those runs) and check every run's fingerprint against it, or against the current document
+when no folder is given: a run is never scored against text it did not read, and the runs of one
+scoring must have read the same text. Quotes are placed, the sheet's contexts cut and the reviewer's
+`review/docs/` written from that one text; the facts, spans and traps stay the frozen ones. Until
+then contexts came from the current documents while `docs/` held the run-time text: they differed
+in two lab reports, whose telephone line was changed after the runs (1-800-555-0100 to
+613-555-0150, freeze 2); that change stays, for future runs.
 
 **Rows that list several facts, 11 Nov (after round 2):** a `correct` row whose `fact_it_may_state`
 lists several facts must name in its note the ones it states (`states: 1, 3` or `states: all`).
