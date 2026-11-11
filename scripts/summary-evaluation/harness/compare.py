@@ -523,9 +523,12 @@ def to_check(fact, sentences, founds, folded_document):
             and quote_on_evidence(sentence.get("quote", ""), spans, folded_document)]
 
 
-def score_document(doc, entry, run_lang, verdicts=None):
-    """One document's scores in one run. `verdicts`: sentence index -> the review's verdict."""
+def score_document(doc, entry, run_lang, verdicts=None, states=None):
+    """One document's scores in one run. `verdicts`: sentence index -> the review's verdict.
+    `states`: sentence index -> the facts (their listed wording) a correct several-fact row states;
+    for any other fact that sentence counts as vague."""
     verdicts = verdicts or {}
+    states = states or {}
     result = dict(id=doc["id"], present=entry is not None, decision=in_decision(doc))
     if entry is None:
         return result
@@ -549,9 +552,11 @@ def score_document(doc, entry, run_lang, verdicts=None):
     facts = []
     for fact, found in founds:
         how, index = found[0] if found else (None, None)
-        standing = credit(found, on_sheet, verdicts, checks[fact["id"]])
+        wording = (fact.get("approved_statements") or [""])[0]
+        own = {i: ("vague" if i in states and wording not in states[i] else v) for i, v in verdicts.items()}
+        standing = credit(found, on_sheet, own, checks[fact["id"]])
         if standing == "credited" and how is None:
-            how, index = "reviewed", next(i for i in checks[fact["id"]] if verdicts.get(i) == "correct")
+            how, index = "reviewed", next(i for i in checks[fact["id"]] if own.get(i) == "correct")
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
                           critical=fact.get("critical", False), found=how if standing == "credited" else None,
                           standing=standing, matched=how, sentence=index,
@@ -660,6 +665,40 @@ def read_csv_rows(path):
         return list(csv.DictReader(source))
 
 
+class Verdicts(dict):
+    """Verdicts by sentence, and `states`: for a row that lists several facts and was marked correct,
+    the listed facts' wordings it states (its note's "states: 1, 3"; absent for "states: all")."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.states = {}
+        self.states_all = set()
+
+
+STATES_NOTE = re.compile(r"\bstates?\s*:\s*(all\b|\d+(?:\s*,\s*\d+)*)", re.IGNORECASE)
+
+
+def listed_facts(row):
+    """The facts a sheet row lists, in order (the document's own wording of each)."""
+    listed = row.get("fact_it_may_state") or ""
+    return [text for text in listed.split(" | ") if text]
+
+
+def stated_facts(row):
+    """For a correct row listing several facts: the wordings its note names ("states: 1, 3"), None for
+    "states: all", or False when the note names none (the row is then not yet reviewed)."""
+    found = STATES_NOTE.search(row.get("note") or "")
+    if not found:
+        return False
+    if found.group(1).lower() == "all":
+        return None
+    listed = listed_facts(row)
+    places = {int(n) for n in re.findall(r"\d+", found.group(1))}
+    if not places or not all(1 <= n <= len(listed) for n in places):
+        raise ValueError(f"row {row.get('id') or row.get('row')}: 'states:' names a place the row does not list")
+    return frozenset(listed[n - 1] for n in places)
+
+
 def read_review(path, runs, key_path=None):
     """A filled review sheet as verdicts by sentence (`sentence_key`), so one verdict applies to
     every run that wrote the same sentence. Two sheet forms are read:
@@ -674,7 +713,7 @@ def read_review(path, runs, key_path=None):
             raise ValueError(f"unknown verdict {verdict!r} in {path}")
         return verdict
     sheet = read_csv_rows(path)
-    found = {}
+    found = Verdicts()
     def put(skey, verdict, where):
         if not verdict:
             return
@@ -708,7 +747,17 @@ def read_review(path, runs, key_path=None):
                     raise ValueError(f"{path}: row {rid} is not the sentence its key names ({k['run']} {k['doc']})")
         elif rid != sentence_id(skey):
             raise ValueError(f"{path}: row {rid} does not match its sentence; a sheet with other ids needs its key")
-        put(skey, verdict_of(row), rid)
+        verdict = verdict_of(row)
+        if verdict == "correct" and len(listed_facts(row)) > 1:
+            # Several facts listed: credit goes only to those the note names; none named, not reviewed yet.
+            stated = stated_facts(row)
+            if stated is False:
+                continue
+            if stated is None:
+                found.states_all.add(skey)
+            else:
+                found.states[skey] = stated
+        put(skey, verdict, rid)
     if key_path:
         missing = set(key) - {row.get("id") or row.get("row") for row in sheet}
         if missing:
@@ -730,6 +779,12 @@ def prefill(sheet_path, other_path, runs, key_path, out_path):
         if verdicts.get(skey):
             row["verdict"] = verdicts[skey]
             filled += 1
+            if skey in verdicts.states:
+                listed = listed_facts(row)
+                places = sorted(listed.index(text) + 1 for text in verdicts.states[skey] if text in listed)
+                row["note"] = "states: " + ", ".join(str(n) for n in places) if places else ""
+            elif skey in verdicts.states_all:
+                row["note"] = "states: all"
     with open(out_path, "w", newline="", encoding="utf-8") as target:
         writer = csv.DictWriter(target, fieldnames=SHEET_FIELDS)
         writer.writeheader()
@@ -1088,7 +1143,9 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
             sentences = ((entry or {}).get("result") or {}).get("sentences") or []
             mine = {i: (verdicts or {}).get(sentence_key(doc_id, s), "") for i, s in enumerate(sentences)}
             mine = {i: v for i, v in mine.items() if v}
-            scores[doc_id] = score_document(doc, entry, lang, mine)
+            states = {i: verdicts.states[sentence_key(doc_id, s)] for i, s in enumerate(sentences)
+                      if verdicts is not None and sentence_key(doc_id, s) in getattr(verdicts, "states", {})}
+            scores[doc_id] = score_document(doc, entry, lang, mine, states)
             if verdicts is not None and in_decision(doc):
                 wrong += sum(1 for v in mine.values() if v in WRONG_VERDICTS)
         all_scores.append(scores)

@@ -1,9 +1,9 @@
 {
- "version": "5.1",
+ "version": "5.2",
  "status": "RESCORE LINE: scores the 10-11 Nov runs (B0, B0R, E1, E4, L1, L2, ...). The DRAFT next-freeze branch (contacts, multi-page) is numbered 6 to keep the two apart.",
- "frozen_utc": "2026-11-11T02:26:37+00:00",
+ "frozen_utc": "2026-11-11T02:29:19+00:00",
  "rule_version": 5,
- "scorer_sha256": "8d5299953518e949489cc7c86cdfa3344f145f9b2dadbbab209f8ebbe792eaee",
+ "scorer_sha256": "7ad37d1cee869ac01b209ce06c266cc0b9915b06e1c815ba53d39793e8cdec00",
  "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
  "synthetic_only": true,
  "documents_count": 18,
@@ -43,6 +43,11 @@
    "version": "5.1",
    "frozen_utc": "2026-11-11T02:26:37+00:00",
    "reason": "review coverage only, made after B0 and E1 had been scored and reviewed (round 2): every distinct sentence goes on the sheet (REVIEW_SAMPLE 1.0, was 0.2), for every run alike, because a 20% sample let an invented appointment through by chance. Rule 5 and its credit are unchanged; a fully reviewed set gets the same decisions at either sample (test). Documents unchanged."
+  },
+  {
+   "version": "5.2",
+   "frozen_utc": "2026-11-11T02:29:19+00:00",
+   "reason": "made after B0 and E1 had been scored and reviewed (round 2): a correct review row that lists several facts credits only those its note names ('states: 1, 3' or 'states: all'); without such a note it is not reviewed yet; prefill carries the note over by the facts' wording. Single-fact rows and the decision rule unchanged. Documents unchanged."
   }
  ],
  "documents": {

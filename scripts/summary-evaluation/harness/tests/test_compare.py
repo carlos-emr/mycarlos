@@ -643,6 +643,72 @@ class FullReviewTest(unittest.TestCase):
         self.assertEqual(json.loads(outcomes[1][0])[1]["verdict"], "PASS")
 
 
+class StatedFactsTest(unittest.TestCase):
+    """A correct row that lists several facts credits only those its note names ("states: 1, 2");
+    with no such note it is not reviewed yet (11 Nov, after round 2, rescore line 5.2)."""
+    setUp = RunTest.setUp
+    DOC = "bakeoff-hospital-header"
+    LIVER = sentence("The ultrasound shows a normal liver and no gallstones.", "Normal liver echotexture. No gallstones.")
+
+    def sheet(self, note):
+        listed = " | ".join(evidence_of(self.DOC, f)["approved_statements"][0]
+                            for f in ("liver_normal", "no_gallstones", "normal_study"))
+        key = compare.sentence_key(self.DOC, self.LIVER)
+        path = Path(self.folder.name) / "stated.csv"
+        with path.open("w", newline="", encoding="utf-8") as target:
+            writer = csv.DictWriter(target, fieldnames=compare.SHEET_FIELDS)
+            writer.writeheader()
+            writer.writerow(dict(id=compare.sentence_id(key), document=self.DOC, language="en",
+                                 sentence=self.LIVER["text"], quote=self.LIVER["quote"], context="",
+                                 fact_it_may_state=listed, verdict="correct", note=note))
+        return path, key
+
+    def standings(self, note):
+        path, key = self.sheet(note)
+        verdicts = compare.read_review(path, {})
+        mine = {0: verdicts[key]} if key in verdicts else {}
+        states = {0: verdicts.states[key]} if key in verdicts.states else {}
+        facts, _ = score_sentences(self.DOC, [self.LIVER], mine) if not states else (None, None)
+        if states:
+            entry = dict(kind="document", id=self.DOC, wallMs=1,
+                         result=dict(sentences=[self.LIVER], lastPage=0, lastPageCut=False))
+            facts = {f["id"]: f for f in compare.score_document(REPO[self.DOC], entry, "en", mine, states)["facts"]}
+        return {f: facts[f]["standing"] for f in ("liver_normal", "no_gallstones", "normal_study")}
+
+    def test_only_the_named_facts_are_credited(self):
+        self.assertEqual(self.standings("States two of the three. states: 1, 2"),
+                         dict(liver_normal="credited", no_gallstones="credited", normal_study="rejected"))
+
+    def test_states_all_credits_every_listed_fact(self):
+        self.assertEqual(self.standings("states: all"),
+                         dict(liver_normal="credited", no_gallstones="credited", normal_study="credited"))
+
+    def test_a_several_fact_row_without_states_is_not_reviewed_yet(self):
+        path, key = self.sheet("looks fine")
+        self.assertNotIn(key, compare.read_review(path, {}))
+        self.assertEqual(self.standings("looks fine"),
+                         dict(liver_normal="held", no_gallstones="held", normal_study="held"))
+
+    def test_a_place_the_row_does_not_list_is_refused(self):
+        path, _ = self.sheet("states: 4")
+        with self.assertRaises(ValueError):
+            compare.read_review(path, {})
+
+    def test_prefill_carries_the_named_facts_over(self):
+        source, key = self.sheet("states: 2, 1")
+        target = Path(self.folder.name) / "target.csv"
+        rows = compare.read_csv_rows(source)
+        rows[0].update(verdict="", note="")
+        with target.open("w", newline="", encoding="utf-8") as out:
+            writer = csv.DictWriter(out, fieldnames=compare.SHEET_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+        result = Path(self.folder.name) / "prefilled.csv"
+        compare.prefill(target, source, {}, None, result)
+        row = compare.read_csv_rows(result)[0]
+        self.assertEqual((row["verdict"], row["note"]), ("correct", "states: 1, 2"))
+
+
 class DecisionV2Test(RunTest):
     def test_a_speed_variant_passes_when_not_worse(self):
         rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")]

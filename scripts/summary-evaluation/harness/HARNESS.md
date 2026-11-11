@@ -190,6 +190,14 @@ only: the credit and the decision rule are as in version 5, and a set where ever
 verdict gets the same decisions at either sample (a test). Tests that are about a partial sample
 pin it to 0.2.
 
+**Rows that list several facts, 11 Nov (after round 2):** a `correct` row whose `fact_it_may_state`
+lists several facts must name in its note the ones it states (`states: 1, 3` or `states: all`).
+Only those are credited; for the others the sentence counts as `vague` (a fact whose every carrier
+is turned down is "rejected", i.e. lost). Such a row without a `states:` note is not reviewed yet.
+`prefill` carries the note over by the facts' wording. Rows listing one fact, and the decision rule,
+are unchanged. Made after B0 and E1 had been scored: 5 of round 2's 6 several-fact rows were
+`correct` with no such note.
+
 **Version 5** was written on 11 Nov **after model outputs had been seen**:
 - B0's outputs were read in full (the rescore and Agent 4's blind review of its 94 rows);
 - E1's outputs were read by Agent 1, who reported the ibuprofen pair above;
