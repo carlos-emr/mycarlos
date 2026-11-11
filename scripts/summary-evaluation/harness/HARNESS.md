@@ -163,13 +163,14 @@ page, run through the app's own text extraction once and kept as their `pages`.
 `scores.json` (`scoring`) and the first line of `compare.md` name, by SHA-256:
 - `compare.py` itself;
 - every document as scored (facts, traps and pages, PR 295's cases included);
+- the fact tags (`FACT-TAGS.json`, rule 9);
 - the rule's fixed numbers and margins.
 
 `HARNESS-FREEZE.json` pins the 18 harness document files, `compare.py`'s SHA-256, the rule version,
-and the hash of every document as scored.
+the fact tags (`tags_sha256`, since rule 9) and the hash of every document as scored.
 - `check` fails when any of them differs.
-- `score` marks a decision `UNFROZEN`, never PASS, when the scorer, the rule or the documents differ
-  from the freeze, and says so in `compare.md` and `scores.json` (`frozen`).
+- `score` marks a decision `UNFROZEN`, never PASS, when the scorer, the rule, the tags or the documents
+  differ from the freeze, and says so in `compare.md` and `scores.json` (`frozen`).
 - A change needs a new freeze version and a reason, and runs scored before and after it are not
   compared.
 
@@ -326,6 +327,71 @@ Held facts are counted both ways: as found and as not found.
 - A variant with no review is `PENDING` at best.
 
 Ties go to the smaller change.
+
+### Rule 9: what the patient must DO and KNOW, in plain words
+Ben, 11 Nov evening (18:53Z, refined 18:58Z), after round 2: a summary tells the patient what they
+need to DO and to KNOW, in plain words; the medical terms the document uses stay, each followed by a
+short plain explanation. The baseline is **E5**; B0 is reported as a reference row, never gating.
+Rule 9 was written and frozen before any output of the round-3 variants (E6, E6a) existed.
+
+**Fact tags (`FACT-TAGS.json`).** Every fact of every document, PR 295's cases included, is tagged:
+- **DO:** what the patient must do: instructions, warnings, stopped or held medicines,
+  appointments, tests.
+- **KNOW:** what the patient must know: the diagnosis and what changed.
+- **DETAIL:** numbers and technical names. Never required.
+
+A fact counts in rule 9 only if it is required in its document **and** tagged DO or KNOW. The tags
+came from an automatic first pass (category, PR 295's status tag, whether a result's qualifier has
+words) and a hand pass, from the documents only. Key facts (`KEY_FACTS`, `key_kind`) stay key
+whatever their tag. `check` and `score` refuse tags that do not fit the documents.
+
+**Credit in plain words, by the review.** The match groups often need the document's term or number
+("A1c", "8.1"), so a plain sentence ("your average blood sugar has gone up") is not matched. For
+every required DO or KNOW fact, every sentence whose quote lies on the fact's evidence and that the
+word match did not already find for it goes on the sheet "to check" (rule 5's rows took only
+sentences that carried no fact). A `correct` verdict credits it; a row listing several facts
+credits only those its `states:` note names. The word match still credits as before and still
+feeds the screens.
+
+A verdict given on a row that listed fewer facts (a sheet from rule 8) never credits a fact the row
+did not list: that fact is held until the row is answered again. `prefill` leaves such a row's
+verdict blank, with a note giving the earlier verdict ("rule 9: 1 more fact(s) listed than when
+reviewed; earlier verdict correct for 1"), and still copies its `unsafe` and `technical` answers.
+
+**The `technical` column.** Every sentence row gets `technical`: **yes** (a medical term without a
+plain explanation) or **no** (plain enough). A blank waits for the reviewer. An explained term is
+fine ("pyelonephritis (a kidney infection)"). **A plain explanation of a term that is medically
+right is not `unsupported`, and not advice.** Two different answers for one sentence are refused.
+
+**Checks**, against the baseline (the first run); PASS only if all hold:
+1. a. Wrong or unsupported not above the baseline's (as rule 8).
+   b. No unsafe sentence the baseline does not also write, with the together and same-point rows,
+      strict as D242 (as rule 8).
+2. No key fact lost (on the decision documents, whatever its tag), and the **DO facts credited**
+   and the **KNOW facts credited** each at least the baseline's (held facts both ways).
+3. **Plain language:** the share of the run's sentences on the decision documents answered
+   `technical: no` is at least the baseline's (unanswered sentences both ways). A margin comes
+   later, from a noise pair; until then it is 0.
+4. Quotes found within 2 points of the baseline.
+5. The median time per answered decision document at most 180 s, and no new failure.
+
+Rule 8's checks 2 and 3 (must-haves lost or a net gain; patient actions) are not used: DO and KNOW
+replace them. `--require-gain-for` and the margins apply to rule 8 only.
+
+**The jargon screen** (`jargon_terms`, evaluation only, never in the app; reported, not gating). It
+flags a medical term with no plain explanation beside it: an abbreviation of two or more capitals
+(ALT, LVEF, eGFR, tTG; not FAKE, OK, ER, MD, ID or TV), a lab unit (mmol/L, µmol/L, g/L, U/L, ×10⁹/L,
+…), or a term from a fixed list drawn from the documents. A term counts as explained when a
+bracket, a dash, a colon, a comma phrase ("a", "which", "the", …) or "which is / means" follows it
+(after any run of terms and a value, as in "tissue transglutaminase IgA 92 U/mL (…)"), or when it
+stands in brackets or after "called" behind the plain words. Medicine names, doses and percentages
+are not flagged. `compare.md` reports, per run, the sentences it flags beside the reviewer's
+answers; it is pre-registered on the baseline before the review and compared with it.
+
+**Scoring:** `score` loads `FACT-TAGS.json` (`--tags` for another file) and decides by rule 9.
+Called without tags (the tests' API default), the scorer applies rule 8 and names rule 8 in its
+output. Runs scored under rule 8 and rule 9 are not compared: the baseline is rescored under rule 9
+from the same review, with the `technical` answers added.
 
 ### Margins and the noise floor
 Greedy decoding repeats exactly, so two runs of one build and thread count (B0 and B0R) answer

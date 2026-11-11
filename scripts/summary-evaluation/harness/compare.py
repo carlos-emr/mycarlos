@@ -40,6 +40,9 @@ HERE = Path(__file__).resolve().parent
 DOCUMENTS = HERE / "documents"
 FIXTURES = HERE.parent / "fixtures.json"
 FREEZE = HERE / "HARNESS-FREEZE.json"
+# Rule 9 (Ben, 11 Nov): each fact tagged DO, KNOW or DETAIL (FACT-TAGS.json, pinned by the freeze).
+TAGS = HERE / "FACT-TAGS.json"
+TAG_VALUES = ("DO", "KNOW", "DETAIL")
 CATEGORIES = {
     "finding", "history", "medication", "result", "question", "instruction", "timing", "follow_up",
     # PR 295's fixture categories
@@ -89,8 +92,11 @@ MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
 # The decision rule (HARNESS.md): its version and its fixed numbers. Rule 7 is the DRAFT next freeze's
-# (another branch); the rescore line goes from 6 to 8 so the two cannot be confused.
-RULE_VERSION = 8
+# (another branch); the rescore line goes from 6 to 8 so the two cannot be confused. Rule 9 (Ben,
+# 11 Nov evening: DO and KNOW in plain words, against E5) decides when the fact tags are given.
+RULE_VERSION = 9
+# Without fact tags (tests, older call sites) the scorer applies rule 8's decision.
+RULE_WITHOUT_TAGS = 8
 LOCATED_POINTS = 2
 # Rule 6 (Ben, 11 Nov): a summary may take up to about 3 minutes: the median per document.
 TIME_LIMIT_MS = 180_000
@@ -373,15 +379,20 @@ def load_documents(documents=DOCUMENTS, fixtures=FIXTURES):
 
 def pinning_problems(identity, freeze=FREEZE):
     """What differs from HARNESS-FREEZE.json in a scoring identity (`scoring_identity`): the
-    scorer, the rule's version, or the documents as scored (PR 295's cases included)."""
+    scorer, the rule's version, the fact tags (rule 9), or the documents as scored (PR 295's cases
+    included)."""
     if not Path(freeze).exists():
         return ["no HARNESS-FREEZE.json"]
     frozen = read_json(freeze)
     problems = []
     if frozen.get("scorer_sha256") != identity["scorer"]:
         problems.append("the scorer differs from the freeze")
-    if frozen.get("rule_version") != RULE_VERSION:
-        problems.append(f"the rule is version {RULE_VERSION}, the freeze says {frozen.get('rule_version')}")
+    version = identity.get("thresholds_values", {}).get("rule_version", RULE_VERSION)
+    if frozen.get("rule_version") != version:
+        problems.append(f"the rule is version {version}, the freeze says {frozen.get('rule_version')}")
+    if frozen.get("tags_sha256") != identity.get("tags"):
+        problems.append("the fact tags differ from the freeze" if identity.get("tags")
+                        else "the freeze pins fact tags; this scoring has none")
     if frozen.get("scoring_documents_sha256") != identity["documents"]:
         problems.append("the documents as scored differ from the freeze")
     return problems
@@ -451,6 +462,20 @@ def key_kind(doc_id, fact):
     if category == "conditional_instruction":
         return SEEK_CARE
     return KEY_FACTS.get(f"{doc_id}/{fact.get('id')}")
+
+
+def load_tags(path=TAGS):
+    """Rule 9's fact tags, by "document/fact": DO, KNOW or DETAIL."""
+    return dict(read_json(path)["tags"])
+
+
+def tag_problems(docs, tags):
+    """What is wrong with a tag set: a fact without a tag, a tag for no fact, an unknown value."""
+    known = {f"{doc_id}/{f.get('id')}" for doc_id, doc in docs.items() for f in doc.get("facts", [])}
+    problems = [f"fact {name} has no DO/KNOW/DETAIL tag" for name in sorted(known - set(tags))]
+    problems += [f"tag for {name}, which is not a fact" for name in sorted(set(tags) - known)]
+    problems += [f"{name}: unknown tag {value!r}" for name, value in sorted(tags.items()) if value not in TAG_VALUES]
+    return problems
 
 
 def key_problems(docs):
@@ -710,12 +735,76 @@ def to_check(fact, sentences, founds, folded_document):
             and quote_on_evidence(sentence.get("quote", ""), spans, folded_document)]
 
 
-def score_document(doc, entry, run_lang, verdicts=None, states=None):
+# Rule 9's jargon screen (evaluation only, never in the app): a medical term with no plain words
+# explaining it. Ben (11 Nov): the doctor's terms are fine, each followed by a short plain
+# explanation ("pyelonephritis (a kidney infection)", "NSTEMI, a type of heart attack"). The screen
+# is pre-registered and reported beside the reviewer's `technical` marks; the marks decide.
+JARGON_ABBREVIATION = re.compile(r"\b(?=[A-Za-z0-9]*[A-Z][A-Za-z0-9]*[A-Z])[A-Za-z][A-Za-z0-9]{1,6}\b")
+# Capitals a patient reads as plain words, and the FAKE markers in the evaluation documents.
+PLAIN_ABBREVIATIONS = {"FAKE", "OK", "ER", "MD", "ID", "TV"}
+JARGON_UNIT = re.compile(r"(?<![A-Za-z])(mmol/L|[µu]mol/L|nmol/L|pmol/L|[µu]g/L|g/L|mg/dL|U/L|IU/mL|U/mL|mU/L|"
+                         r"mL/min|fL|[x×]\s?10\^?9?⁹?/L|ms)(?![A-Za-z])")
+JARGON_TERMS = re.compile(
+    r"\b(pyelonephritis|transglutaminase|echocardiogram\w*|echotexture|ejection fraction|intraepithelial|villous|"
+    r"duoden\w*|gastroscop\w*|biops\w*|nodules?|consolidation|conjunctiv\w*|myocardial|infarct\w*|angina|"
+    r"angiogra\w*|stents?|creatinine|ferritin|ha?emoglobin|neutrophils?|troponin|natriuretic|sepsis|delirium|"
+    r"clostridi\w*|difficile|exacerbation|rheumatoid|seropositive|erosions?|radiolog\w*|sinus rhythm|"
+    r"st depression|lymphocytes?|macrocytic|microcytic|anaemi\w*|anemi\w*|hypertension|tsh|a1c|hba1c|"
+    r"prediabet\w*|lipids?|triglycerides?|bilirubin)\b", re.IGNORECASE)
+# Plain words right after the term (or after a run of terms and a value: "tissue transglutaminase
+# IgA 92 U/mL (...)"), or the term in brackets or "called ..." after the plain words.
+JARGON_EXPLAINED = re.compile(
+    r"^\s*(\(|[—–]|-\s|:\s|,\s*(a|an|the|which|that|or|meaning|your|this|these)\b|\s+(which|that)\s+(is|are|was|were|means|"
+    r"measures?|shows?|checks?)\b|\s+(means|is a|is an|is the|are the)\b)", re.IGNORECASE)
+JARGON_EXPLAINED_BEFORE = re.compile(r"(\(\s*|\b(called|known as|named)\s+(\w+\s+){0,2})$", re.IGNORECASE)
+JARGON_JOIN = re.compile(r"[\s-]*(\d[\d.,]*\s*)?")
+
+
+def jargon_terms(text):
+    """The medical terms in a sentence with no plain explanation beside them (rule 9's screen): an
+    abbreviation (two or more capitals), a lab unit, or a term from a fixed list drawn from the
+    evaluation documents. Medicine names, doses and percentages are not jargon."""
+    spans = {}
+    for pattern in (JARGON_ABBREVIATION, JARGON_UNIT, JARGON_TERMS):
+        for m in pattern.finditer(text):
+            if pattern is not JARGON_ABBREVIATION or m.group(0).upper() not in PLAIN_ABBREVIATIONS:
+                spans[(m.start(), m.end())] = m.group(0)
+    # A span inside a longer one ("ST" in "ST depression") is the same term.
+    terms = sorted((s, e, w) for (s, e), w in spans.items()
+                   if not any(s2 <= s and e <= e2 and (s2, e2) != (s, e) for s2, e2 in spans))
+    found, i = [], 0
+    while i < len(terms):
+        j = i
+        while j + 1 < len(terms) and JARGON_JOIN.fullmatch(text[terms[j][1]:terms[j + 1][0]]):
+            j += 1
+        start, end = terms[i][0], terms[j][1]
+        if not (JARGON_EXPLAINED.match(text[end:end + 40]) or JARGON_EXPLAINED_BEFORE.search(text[max(0, start - 40):start])):
+            found += [w for _, _, w in terms[i:j + 1]]
+        i = j + 1
+    return found
+
+
+def to_check9(fact, sentences, found, folded_document):
+    """Rule 9: every sentence whose quote lies on the fact's evidence and that the word match did not
+    already find for it. A plain-words sentence ("your average blood sugar has gone up") states a
+    fact without the document's terms or numbers, so the reviewer, not the word lists, decides."""
+    spans = evidence_spans(fact)
+    carrying = {index for _, index in found}
+    return [index for index, sentence in enumerate(sentences) if index not in carrying
+            and quote_on_evidence(sentence.get("quote", ""), spans, folded_document)]
+
+
+def score_document(doc, entry, run_lang, verdicts=None, states=None, tags=None, seen=None):
     """One document's scores in one run. `verdicts`: sentence index -> the review's verdict.
     `states`: sentence index -> the facts (their listed wording) a correct several-fact row states;
-    for any other fact that sentence counts as vague."""
+    for any other fact that sentence counts as vague. `tags` (rule 9): "document/fact" -> DO, KNOW
+    or DETAIL. With tags, a fact is required only if it is required in its document and tagged DO
+    or KNOW, and every sentence whose quote lies on its evidence goes on the sheet to check it.
+    `seen` (rule 9): sentence index -> the facts (their listed wording) its row listed when it was
+    reviewed; a correct or vague verdict says nothing about a fact the row did not list, which waits."""
     verdicts = verdicts or {}
     states = states or {}
+    seen = seen or {}
     result = dict(id=doc["id"], present=entry is not None, decision=in_decision(doc))
     if entry is None:
         return result
@@ -730,7 +819,14 @@ def score_document(doc, entry, run_lang, verdicts=None, states=None):
     founds = [(fact, carriers(fact, sentences, folded_document)) for fact in doc.get("facts", [])]
     critical_carriers = {i for fact, found in founds if fact.get("critical", False) for _, i in found}
     by_id = [(fact["id"], found) for fact, found in founds]
-    checks = {fact["id"]: to_check(fact, sentences, by_id, folded_document) for fact, _ in founds}
+    tag_of = (lambda fact: tags.get(f"{doc['id']}/{fact['id']}")) if tags is not None else (lambda fact: None)
+    needed = {fact["id"]: (fact.get("required", True) and tag_of(fact) in ("DO", "KNOW")) if tags is not None
+              else fact.get("required", True) for fact, _ in founds}
+    if tags is not None:
+        checks = {fact["id"]: to_check9(fact, sentences, found, folded_document) if needed[fact["id"]] else []
+                  for fact, found in founds}
+    else:
+        checks = {fact["id"]: to_check(fact, sentences, by_id, folded_document) for fact, _ in founds}
     checked = {i for indexes in checks.values() for i in indexes}
     on_sheet = {i: ("flagged " if flags[i] else "") + ("critical " if i in critical_carriers else "")
                 + ("to-check " if i in checked else "")
@@ -740,17 +836,20 @@ def score_document(doc, entry, run_lang, verdicts=None, states=None):
     for fact, found in founds:
         how, index = found[0] if found else (None, None)
         wording = (fact.get("approved_statements") or [""])[0]
-        own = {i: ("vague" if i in states and wording not in states[i] else v) for i, v in verdicts.items()}
+        own = {i: ("" if i in seen and wording not in seen[i] and v in ("correct", "vague") else
+                   "vague" if i in states and wording not in states[i] else v) for i, v in verdicts.items()}
         standing = credit(found, on_sheet, own, checks[fact["id"]])
         if standing == "credited" and how is None:
             how, index = "reviewed", next(i for i in checks[fact["id"]] if own.get(i) == "correct")
-        facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
-                          critical=fact.get("critical", False), key=key_kind(doc["id"], fact),
+        facts.append(dict(id=fact["id"], category=fact["category"], required=needed[fact["id"]],
+                          tag=tag_of(fact), critical=fact.get("critical", False), key=key_kind(doc["id"], fact),
                           found=how if standing == "credited" else None,
                           standing=standing, matched=how, sentence=index,
                           sentences=[i for _, i in found], to_check=checks[fact["id"]]))
     required = [f for f in facts if f["required"]]
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
+    do = [f for f in required if f["tag"] == "DO"]
+    know = [f for f in required if f["tag"] == "KNOW"]
     flagged = [dict(index=i, flags=f) for i, f in enumerate(flags)]
     stats = (answer or {}).get("stats") or {}
     last_index = max(p["index"] for p in doc["pages"])
@@ -764,6 +863,13 @@ def score_document(doc, entry, run_lang, verdicts=None, states=None):
         action_found=sum(1 for f in actions if f["standing"] == "credited"),
         action_held=sum(1 for f in actions if f["standing"] == "held"),
         action_total=len(actions),
+        do_found=sum(1 for f in do if f["standing"] == "credited"),
+        do_held=sum(1 for f in do if f["standing"] == "held"),
+        do_total=len(do),
+        know_found=sum(1 for f in know if f["standing"] == "credited"),
+        know_held=sum(1 for f in know if f["standing"] == "held"),
+        know_total=len(know),
+        jargon=[dict(index=i, terms=found) for i, s in enumerate(sentences) if (found := jargon_terms(s.get("text", "")))],
         flags=flagged,
         flag_count=sum(len(f["flags"]) for f in flagged),
         trap_count=sum(1 for f in flagged for flag in f["flags"] if flag.startswith("TRAP:")),
@@ -816,6 +922,7 @@ def quote_context(doc, quote, width=300):
 
 
 SHEET_FIELDS = ["id", "document", "language", "sentence", "quote", "context", "fact_it_may_state", "verdict", "unsafe",
+                "technical",
                 "note"]
 KEY_FIELDS = ["id", "run", "doc", "sentence", "why"]
 
@@ -953,6 +1060,13 @@ class Verdicts(dict):
         self.windows = {}
         self.pairs = {}
         self.window_rows = {}
+        # Rule 9's `technical` column: "yes" (a medical term without a plain explanation) or "no"
+        # (plain enough); a blank waits for the reviewer.
+        self.technical = set()
+        self.plain = set()
+        # The facts each blind-sheet row listed when it was reviewed (rule 9 lists more per row:
+        # a verdict never credits a fact its row did not list).
+        self.listed = {}
 
 
 STATES_NOTE = re.compile(r"\bstates?\s*:\s*(all\b|\d+(?:\s*,\s*\d+)*)", re.IGNORECASE)
@@ -980,6 +1094,29 @@ def stated_facts(row):
 
 
 UNSAFE_YES = {"yes", "y", "unsafe", "true", "1", "mild"}
+
+
+def technical_of(row):
+    """A sheet row's `technical` column (rule 9): True for "yes" (a medical term without a plain
+    explanation), False for "no" (plain enough), None while blank (not reviewed for it yet)."""
+    value = (row.get("technical") or "").strip().lower()
+    if value in {"yes", "y"}:
+        return True
+    if value in {"no", "n"}:
+        return False
+    if value:
+        raise ValueError(f"unknown technical value {value!r}: write yes or no")
+    return None
+
+
+def put_technical(found, skey, row, where):
+    """Keeps a row's `technical` answer by sentence; two different answers for one sentence are refused."""
+    answer = technical_of(row)
+    if answer is None:
+        return
+    if skey in (found.plain if answer else found.technical):
+        raise ValueError(f"two different technical answers for one sentence ({where})")
+    (found.technical if answer else found.plain).add(skey)
 
 
 def unsafe_of(row):
@@ -1040,6 +1177,7 @@ def read_review(path, runs, key_path=None):
             skey = sentence_of(row["run"], row["doc"], int(row["sentence"]))
             if unsafe_of(row):
                 found.unsafe.add(skey)
+            put_technical(found, skey, row, f"{path}: {row['run']} {row['doc']} {row['sentence']}")
             put(skey, verdict_of(row), f"{row['run']} {row['doc']} {row['sentence']}")
         return found
     key = {}
@@ -1080,6 +1218,9 @@ def read_review(path, runs, key_path=None):
         if unsafe_of(row):
             # Unsafe for a patient whatever the verdict (rule 6): kept by sentence, like the verdict.
             found.unsafe.add(skey)
+        put_technical(found, skey, row, f"{path}: {rid}")
+        if "fact_it_may_state" in row:
+            found.listed[skey] = frozenset(listed_facts(row))
         if verdict == "correct" and len(listed_facts(row)) > 1:
             # Several facts listed: credit goes only to those the note names; none named, not reviewed yet.
             stated = stated_facts(row)
@@ -1127,7 +1268,18 @@ def prefill(sheet_path, other_path, runs, key_path, out_path):
             raise ValueError(f"{sheet_path}: row {row['id']} does not match its sentence")
         if skey in verdicts.unsafe:
             row["unsafe"] = "yes"
-        if verdicts.get(skey):
+        if skey in verdicts.technical:
+            row["technical"] = "yes"
+        elif skey in verdicts.plain:
+            row["technical"] = "no"
+        grown = [text for text in listed_facts(row) if text not in verdicts.listed.get(skey, listed_facts(row))]
+        if verdicts.get(skey) in ("correct", "vague") and grown:
+            # Rule 9 lists more facts on this row than the reviewer saw: it goes back for a verdict.
+            earlier = (verdicts.states.get(skey) if skey in verdicts.states else verdicts.listed[skey])
+            places = sorted(listed_facts(row).index(text) + 1 for text in earlier if text in listed_facts(row))
+            row["note"] = (f"rule 9: {len(grown)} more fact(s) listed than when reviewed; earlier verdict "
+                           f"{verdicts[skey]}" + (f" for {', '.join(str(n) for n in places)}" if places else ""))
+        elif verdicts.get(skey):
             row["verdict"] = verdicts[skey]
             filled += 1
             if skey in verdicts.states:
@@ -1245,6 +1397,11 @@ def summarize_run(scores, wrong, holdout=False):
         action_found=sum(s["action_found"] for s in present),
         action_held=sum(s["action_held"] for s in present),
         action_total=sum(s["action_total"] for s in present),
+        do_found=sum(s.get("do_found", 0) for s in present), do_held=sum(s.get("do_held", 0) for s in present),
+        do_total=sum(s.get("do_total", 0) for s in present),
+        know_found=sum(s.get("know_found", 0) for s in present), know_held=sum(s.get("know_held", 0) for s in present),
+        know_total=sum(s.get("know_total", 0) for s in present),
+        jargon_sentences=sum(len(s.get("jargon", [])) for s in present),
         located_pct=round(100 * sum(s["located"] for s in present) / sentences, 1) if sentences else None,
         sentences=sentences, flags=sum(s["flag_count"] for s in present),
         traps=sum(s["trap_count"] for s in present),
@@ -1397,6 +1554,98 @@ def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_act
                 key_lost=key_sure + key_maybe, holdout_key_lost=holdout_key)
 
 
+def plain_counts(docs, loaded_entries, verdicts):
+    """Rule 9: a run's sentences on the decision documents the reviewer marked plain ("no"),
+    technical ("yes"), or not yet (pending). Every sentence counts, one per sentence written."""
+    plain = technical = pending = 0
+    for doc_id, doc in docs.items():
+        entry = loaded_entries.get(doc_id)
+        if not in_decision(doc) or not entry or entry.get("error"):
+            continue
+        for s in ((entry.get("result") or {}).get("sentences") or []):
+            skey = sentence_key(doc_id, s)
+            if skey in verdicts.technical:
+                technical += 1
+            elif skey in verdicts.plain:
+                plain += 1
+            else:
+                pending += 1
+    return dict(plain=plain, technical=technical, technical_pending=pending)
+
+
+def decide9(base_scores, base_summary, scores, summary, own_unsafe=(), own_unsafe_pending=()):
+    """Rule 9 (HARNESS.md; Ben, 11 Nov: a summary tells the patient what to DO and KNOW, in plain
+    words; the baseline is E5): PASS only if every check holds; PENDING while held facts, rows on
+    the sheet or `technical` answers wait for the review. 1a and 1b are rule 8's; a key fact (any
+    tag) may not be lost; the DO and KNOW facts credited (held facts both ways) and the share of
+    plain sentences may not fall below the baseline's; quotes and time as before."""
+    checks = []
+    mine, base = summary["reviewed_wrong"], base_summary["reviewed_wrong"]
+    if mine is None or base is None:
+        checks.append(("wrong or unsupported not above the baseline's", None))
+    else:
+        checks.append((f"wrong or unsupported not above the baseline's ({mine} vs {base})",
+                       three_way(mine <= base + base_summary["unreviewed"], mine + summary["unreviewed"] <= base)))
+    pending_note = f", {len(own_unsafe_pending)} pending" if own_unsafe_pending else ""
+    checks.append((f"no unsafe sentence the baseline does not also write ({len(own_unsafe)}{pending_note})",
+                   False if own_unsafe else None if own_unsafe_pending or summary.get("unreviewed_any") else True))
+    lost, key_sure, key_maybe, holdout_key = [], [], [], []
+    for doc_id, base in base_scores.items():
+        if not base.get("present") or base.get("error"):
+            continue
+        mine = {f["id"]: f["standing"] for f in scores.get(doc_id, {}).get("facts", [])}
+        for f in base["facts"]:
+            if f["standing"] not in ("credited", "held") or not (f["required"] or f.get("key")):
+                continue
+            standing = mine.get(f["id"])
+            if standing == "credited":
+                continue
+            name = f"{doc_id}/{f['id']}"
+            if not base.get("decision", True):
+                if f.get("key"):
+                    holdout_key.append(name)
+                continue
+            if f["required"]:
+                lost.append(name)
+            if f.get("key"):
+                certain = f["standing"] == "credited" and standing != "held"
+                (key_sure if certain else key_maybe).append(name)
+    checks.append((f"no key fact lost ({len(key_sure)} lost, {len(key_maybe)} pending)",
+                   three_way(not key_sure, not key_sure and not key_maybe)))
+    for kind in ("do", "know"):
+        found, held = summary[f"{kind}_found"], summary[f"{kind}_held"]
+        base_found, base_held = base_summary[f"{kind}_found"], base_summary[f"{kind}_held"]
+        shown = lambda f, h: f"{f}" + (f" (+{h} held)" if h else "")
+        checks.append((f"{kind.upper()} facts credited not below the baseline's "
+                       f"({shown(found, held)} vs {shown(base_found, base_held)})",
+                       three_way(found + held >= base_found, found >= base_found + base_held)))
+    if summary.get("plain") is None or base_summary.get("plain") is None:
+        checks.append(("plain sentences not a lower share than the baseline's (not reviewed)", None))
+    else:
+        total, base_total = summary["sentences"], base_summary["sentences"]
+        best, worst = summary["plain"] + summary["technical_pending"], summary["plain"]
+        base_best, base_worst = base_summary["plain"] + base_summary["technical_pending"], base_summary["plain"]
+        waiting = summary["technical_pending"] + base_summary["technical_pending"]
+        # Shares compared as cross products: exact, and a run with no sentences never passes.
+        checks.append((f"plain sentences not a lower share than the baseline's ({worst}/{total} vs "
+                       f"{base_worst}/{base_total}{f', {waiting} pending' if waiting else ''})",
+                       False if not total else
+                       three_way(best * base_total >= base_worst * total, worst * base_total >= base_best * total)))
+    if summary["located_pct"] is None or base_summary["located_pct"] is None:
+        checks.append((f"quotes found within {LOCATED_POINTS} points", False))
+    else:
+        checks.append((f"quotes found within {LOCATED_POINTS} points",
+                       summary["located_pct"] >= base_summary["located_pct"] - LOCATED_POINTS))
+    slower = summary["median_wall_ms"] is None or summary["median_wall_ms"] > TIME_LIMIT_MS
+    new_failures = [d for d, s in scores.items() if s.get("decision", True)
+                    and s.get("error") and not base_scores.get(d, {}).get("error")]
+    checks.append((f"median time per document at most {TIME_LIMIT_MS // 1000} s, no new failure",
+                   not slower and not new_failures))
+    verdict = "FAIL" if any(ok is False for _, ok in checks) else "PENDING" if any(ok is None for _, ok in checks) else "PASS"
+    return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures,
+                key_lost=key_sure + key_maybe, holdout_key_lost=holdout_key)
+
+
 def noise(first, second, docs, pages=None):
     """An A/A pair: how many required (and patient-action) facts are carried in one run and not in
     the other (before any review), on the documents the decision uses. With greedy decoding,
@@ -1427,22 +1676,26 @@ def noise(first, second, docs, pages=None):
                 margin_lost=len(flipped), margin_actions=len(flipped_actions))
 
 
-def scoring_identity(docs, margins):
+def scoring_identity(docs, margins, tags=None):
     """What decides a score, by hash: this file, every document (facts, traps, pages; the PR 295
-    cases included), and the rule's fixed numbers. Written into every output."""
+    cases included), the fact tags (rule 9; without them, rule 8 decides) and the rule's fixed
+    numbers. Written into every output."""
     canonical = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")
     documents = {doc_id: hashlib.sha256(canonical(doc)).hexdigest() for doc_id, doc in sorted(docs.items())}
-    thresholds = dict(rule_version=RULE_VERSION, min_overlap=MIN_OVERLAP, short_option=SHORT_OPTION,
+    thresholds = dict(rule_version=RULE_VERSION if tags is not None else RULE_WITHOUT_TAGS,
+                      min_overlap=MIN_OVERLAP, short_option=SHORT_OPTION,
                       review_sample=REVIEW_SAMPLE, located_points=LOCATED_POINTS, time_limit_ms=TIME_LIMIT_MS,
                       **margins)
     parts = dict(scorer=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                  documents=hashlib.sha256(canonical(documents)).hexdigest(),
                  thresholds=hashlib.sha256(canonical(thresholds)).hexdigest())
+    if tags is not None:
+        parts["tags"] = hashlib.sha256(canonical(tags)).hexdigest()
     return dict(id=hashlib.sha256(canonical(parts)).hexdigest(), **parts, thresholds_values=thresholds,
                 document_hashes=documents)
 
 
-def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=()):
+def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=(), rule9=False):
     head = "| Document | " + " | ".join(labels) + " |"
     lines = [head, "|---|" + "---|" * len(labels)]
     for doc_id in sorted(docs):
@@ -1479,6 +1732,21 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
                      f"{summary['gap']} | {summary['failed']} | {wrong} | {summary.get('unsafe', 0)}"
                      f"{' (+' + str(summary['unsafe_pending']) + ' pending)' if summary.get('unsafe_pending') else ''} | "
                      f"{decision['verdict'] if decision else 'baseline'} |")
+    if rule9:
+        lines.append("")
+        lines.append("Rule 9 (DO and KNOW: required facts by their tag, credited (+ held); plain: sentences the reviewer "
+                     "marked plain (pending: no answer yet); jargon screen: sentences with a medical term and no plain "
+                     "explanation, automatic, reported only):")
+        lines.append("")
+        lines.append("| Run | DO | KNOW | plain | technical | pending | jargon screen |")
+        lines.append("|---|---|---|---|---|---|---|")
+        for label, summary in zip(labels, summaries):
+            held = lambda kind: f" (+{summary[kind + '_held']})" if summary[kind + "_held"] else ""
+            unknown = lambda value: "not reviewed" if value is None else value
+            lines.append(f"| {label} | {summary['do_found']}/{summary['do_total']}{held('do')} | "
+                         f"{summary['know_found']}/{summary['know_total']}{held('know')} | {unknown(summary['plain'])} | "
+                         f"{unknown(summary['technical'])} | {unknown(summary['technical_pending'])} | "
+                         f"{summary['jargon_sentences']}/{summary['sentences']} |")
     if summaries and summaries[0].get("unsafe"):
         lines.append("")
         lines.append(f"The baseline's own unsafe sentences ({summaries[0]['unsafe']}; a variant is not charged for "
@@ -1516,10 +1784,11 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
 
 
 def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, require_gain=False,
-          noise_pair=None, freeze=None, review_key=None, reading=True, pages=None):
+          noise_pair=None, freeze=None, review_key=None, reading=True, pages=None, tags=None):
     """Scores the runs, the first as the baseline. `require_gain`: True for every variant, or the
-    labels of the variants aimed at patient actions. `freeze`: HARNESS-FREEZE.json to hold the
-    scorer and documents to; a decision under anything else is never PASS ("UNFROZEN")."""
+    labels of the variants aimed at patient actions (rule 8). `freeze`: HARNESS-FREEZE.json to hold
+    the scorer and documents to; a decision under anything else is never PASS ("UNFROZEN").
+    `tags` (FACT-TAGS.json's, by "document/fact"): rule 9 decides; without them, rule 8."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     loaded = {}
@@ -1537,7 +1806,10 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
     gains = lambda label: require_gain is True or (not isinstance(require_gain, bool) and label in require_gain)
     margins = dict(margin_lost=margin_lost, margin_actions=margin_actions,
                    require_gain=require_gain if isinstance(require_gain, bool) else sorted(require_gain))
-    identity = scoring_identity(docs, margins)
+    identity = scoring_identity(docs, margins, tags)
+    rule = identity["thresholds_values"]["rule_version"]
+    if tags is not None and tag_problems(docs, tags):
+        raise ValueError("the fact tags do not fit the documents: " + "; ".join(tag_problems(docs, tags)[:5]))
     unfrozen = pinning_problems(identity, freeze) if freeze is not None else []
     # From here on, the documents carry the page text the runs read (checked by its hash).
     docs = as_read(docs, loaded, pages)
@@ -1556,11 +1828,15 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
             mine = {i: v for i, v in mine.items() if v}
             states = {i: verdicts.states[sentence_key(doc_id, s)] for i, s in enumerate(sentences)
                       if verdicts is not None and sentence_key(doc_id, s) in getattr(verdicts, "states", {})}
-            scores[doc_id] = score_document(doc, entry, lang, mine, states)
+            seen = {i: verdicts.listed[sentence_key(doc_id, s)] for i, s in enumerate(sentences)
+                    if tags is not None and verdicts is not None and sentence_key(doc_id, s) in verdicts.listed}
+            scores[doc_id] = score_document(doc, entry, lang, mine, states, tags, seen)
             if verdicts is not None and in_decision(doc):
                 wrong += sum(1 for v in mine.values() if v in WRONG_VERDICTS)
         all_scores.append(scores)
         summaries.append(summarize_run(scores, wrong))
+        summaries[-1].update(plain_counts(docs, entries, verdicts) if verdicts is not None
+                             else dict(plain=None, technical=None, technical_pending=None))
         # Rule 8: each unsafe-marked sentence's state in this run (alone, or read with the sentences beside it).
         states = {}
         if verdicts is not None:
@@ -1585,8 +1861,8 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
     decisions = [None]
     for label, s, m, states in zip(labels[1:], all_scores[1:], summaries[1:], unsafe_states_of[1:]):
         charged, pending, linked = charged_unsafe(states, unsafe_states_of[0], getattr(verdicts, "pairs", {}))
-        decision = decide(all_scores[0], summaries[0], s, m, margin_lost, margin_actions, gains(label),
-                          charged, pending)
+        decision = (decide9(all_scores[0], summaries[0], s, m, charged, pending) if tags is not None else
+                    decide(all_scores[0], summaries[0], s, m, margin_lost, margin_actions, gains(label), charged, pending))
         decision.update(unsafe_new=as_rows(charged), unsafe_new_pending=as_rows(pending), unsafe_linked=as_rows(linked))
         decisions.append(decision)
     for decision in decisions[1:]:
@@ -1620,13 +1896,15 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
         writer = csv.DictWriter(target, fieldnames=KEY_FIELDS)
         writer.writeheader()
         writer.writerows(key)
-    header = (f"Scoring {identity['id'][:16]} (rule v{RULE_VERSION}; scorer {identity['scorer'][:12]}, "
-              f"documents {identity['documents'][:12]}, thresholds {identity['thresholds'][:12]}; "
+    header = (f"Scoring {identity['id'][:16]} (rule v{rule}; scorer {identity['scorer'][:12]}, "
+              f"documents {identity['documents'][:12]}, thresholds {identity['thresholds'][:12]}"
+              f"{', tags ' + identity['tags'][:12] if identity.get('tags') else ''}; "
               f"margins: lost {margin_lost}, actions {margin_actions}"
               f"{' from the noise pair' if measured else ''}"
               f"{'; gain required for ' + ', '.join(l for l in labels[1:] if gains(l)) if any(gains(l) for l in labels[1:]) else ''}"
               f"{'; NOT FROZEN' if unfrozen else ''})\n\n")
-    (out / "compare.md").write_text(header + table(labels, docs, all_scores, summaries, decisions, memories, holdouts)
+    (out / "compare.md").write_text(header + table(labels, docs, all_scores, summaries, decisions, memories, holdouts,
+                                                   rule9=tags is not None)
                                     + "".join(f"\nNOTE: {n}\n" for n in notes), encoding="utf-8")
     if reading:
         # Reporting only, in files of its own: scores.json, compare.md and the sheet are the same without it.
@@ -1668,7 +1946,8 @@ def main(argv=None):
                                     "run's pagesSha256 must match it")
     sc.add_argument("--noise", action="append", help="an A/A pair (twice): the only way to set margins")
     sc.add_argument("--require-gain-for", action="append", default=[], metavar="LABEL",
-                    help="a variant aimed at patient actions: more than the baseline + margin (repeat per run)")
+                    help="rule 8 only: a variant aimed at patient actions: more than the baseline + margin")
+    sc.add_argument("--tags", default=str(TAGS), help="the fact tags rule 9 decides with (FACT-TAGS.json)")
     rep = sub.add_parser("repeat")
     rep.add_argument("--run", action="append", required=True)
     pre = sub.add_parser("prefill", help="copy another sheet's verdicts into the scorer's blind sheet, by sentence")
@@ -1704,8 +1983,13 @@ def main(argv=None):
             bad["key facts"] = key_problems(docs)
         for doc_id, p in bad.items():
             print(f"{doc_id}: " + "; ".join(p))
+        tags = load_tags()
+        if tag_problems(docs, tags):
+            bad["fact tags"] = tag_problems(docs, tags)
+            for problem in bad["fact tags"]:
+                print(f"fact tags: {problem}")
         frozen = freeze_problems(args.documents) if Path(args.documents).resolve() == DOCUMENTS else []
-        frozen += pinning_problems(scoring_identity(docs, {}))
+        frozen += pinning_problems(scoring_identity(docs, {}, tags))
         for problem in frozen:
             print(f"freeze: {problem}")
         print(f"{len(docs)} documents, {sum(len(d.get('facts', [])) for d in docs.values())} facts, "
@@ -1731,7 +2015,8 @@ def main(argv=None):
         raise SystemExit(f"--require-gain-for names no run: {', '.join(sorted(unknown))}")
     summaries, decisions = score(args.run, args.out, docs, args.review, 0, 0, set(args.require_gain_for),
                                  tuple(args.noise) if args.noise else None, freeze=FREEZE,
-                                 review_key=args.review_key, pages=load_pages(args.pages) if args.pages else None)
+                                 review_key=args.review_key, pages=load_pages(args.pages) if args.pages else None,
+                                 tags=load_tags(args.tags))
     for summary, decision in zip(summaries, decisions):
         print(json.dumps(dict(summary=summary, verdict=decision["verdict"] if decision else "baseline")))
     return 0

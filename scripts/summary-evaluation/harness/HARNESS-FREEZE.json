@@ -1,9 +1,9 @@
 {
- "version": "8",
- "status": "RESCORE LINE, rule 8: scores the 10-11 Nov runs and round 2 (B0, B0R, E1, E4, E2, E3, P1, P2, E5, L1, ...). Rule 7 is the DRAFT next freeze's number, so the rescore line goes from 6 to 8.",
- "frozen_utc": "2026-11-11T14:58:09+00:00",
- "rule_version": 8,
- "scorer_sha256": "1675080205bfae1ae8570796b034ec05adacb0ad0896cd21464a630d592a98e1",
+ "version": "9",
+ "status": "RULE 9 (Ben, 11 Nov evening: what the patient must DO and KNOW, in plain words; baseline E5). Frozen before any E6 or E6a output existed. Rule 8's scorings (round 2) stay with freeze version 8 (scorer 1675080205bf).",
+ "frozen_utc": "2026-11-11T19:11:50+00:00",
+ "rule_version": 9,
+ "scorer_sha256": "bc3b898f3869465d15344b93bb566aa1267d250d4c8d16d08d7e8de9f04798fc",
  "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
  "synthetic_only": true,
  "documents_count": 18,
@@ -68,6 +68,11 @@
    "version": "8",
    "frozen_utc": "2026-11-11T18:18:34+00:00",
    "reason": "decision recorded, no change to the rule, scorer or documents: Ben (11 Nov, after round 2's E5) keeps check 1b strict. A seek-care warning that gives only some of the document's triggers stays unsafe even when the baseline is silent about it. Every frozen hash is unchanged."
+  },
+  {
+   "version": "9",
+   "frozen_utc": "2026-11-11T19:11:50+00:00",
+   "reason": "rule 9 (Ben 18:53Z and 18:58Z, 11 Nov; design v2 approved): FACT-TAGS.json tags every fact DO, KNOW or DETAIL (an automatic first pass and a hand pass, from the documents only); a fact counts only if required and tagged DO or KNOW; for each, every sentence whose quote lies on its evidence goes on the sheet to check, and a verdict never credits a fact its row did not list; a new `technical` column (yes/no, blank waits); checks against the first run (E5): 1a and 1b as rule 8, no key fact lost (any tag), DO and KNOW credited each at least the baseline's, the share of plain sentences at least the baseline's, quotes within 2 points, time as rule 6. A jargon screen is reported, not gating. Without tags the scorer applies rule 8 (tests). Documents unchanged; written before any E6 or E6a output existed."
   }
  ],
  "documents": {
@@ -197,5 +202,16 @@
    "traps": 3,
    "outputs_seen_before_facts": "no record"
   }
+ },
+ "tags_sha256": "faa741621600722633cb5669c855fd7a763f7a667082fd3c7107c533b9b2e5d6",
+ "tags_file_sha256": "52d844d471e0544176ebe7c7df67724c8f016376561db526ae8a29e8caa9a2c2",
+ "tags_counts_decision": {
+  "facts": 173,
+  "DO": 87,
+  "KNOW": 77,
+  "DETAIL": 9,
+  "required_DO": 81,
+  "required_KNOW": 59,
+  "required_DETAIL": 2
  }
 }

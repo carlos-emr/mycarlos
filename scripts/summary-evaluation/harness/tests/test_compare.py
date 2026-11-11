@@ -901,7 +901,8 @@ class DecisionV2Test(RunTest):
         scores = json.loads((out / "scores.json").read_text(encoding="utf-8"))
         identity = scores["scoring"]
         self.assertEqual(len(identity["id"]), 64)
-        self.assertEqual(identity["thresholds_values"]["rule_version"], compare.RULE_VERSION)
+        # Scored without fact tags, so rule 8 decides (rule 9 needs FACT-TAGS.json: RuleNineTest).
+        self.assertEqual(identity["thresholds_values"]["rule_version"], compare.RULE_WITHOUT_TAGS)
         self.assertTrue((out / "compare.md").read_text(encoding="utf-8").startswith(f"Scoring {identity['id'][:16]}"))
         changed = dict(self.docs)
         changed["fake-letter"] = fake_doc()
@@ -950,7 +951,7 @@ class RuleV3Test(RunTest):
 
 
 class FrozenTest(unittest.TestCase):
-    """The decision is held to HARNESS-FREEZE.json: scorer, rule version and documents."""
+    """The decision is held to HARNESS-FREEZE.json: scorer, rule version, documents and (rule 9) fact tags."""
 
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
@@ -963,22 +964,27 @@ class FrozenTest(unittest.TestCase):
         ]
         self.runs = [write_run(self.folder.name, v, lines(v)) for v in ("B0", "E1")]
         self.review = Path(self.folder.name) / "filled.csv"
-        self.review.write_text("run,doc,sentence,verdict\nE1,demo-celiac-lab,0,correct\n", encoding="utf-8")
+        self.review.write_text("run,doc,sentence,verdict,technical\nE1,demo-celiac-lab,0,correct,no\n", encoding="utf-8")
+        self.tags = compare.load_tags()
 
     def test_the_repository_set_is_frozen_with_its_scorer_and_rule(self):
         frozen = compare.read_json(compare.FREEZE)
         self.assertEqual(frozen["rule_version"], compare.RULE_VERSION)
-        self.assertEqual(compare.pinning_problems(compare.scoring_identity(REPO, {})), [])
-        _, decisions = compare.score(self.runs, Path(self.folder.name) / "f", REPO, self.review, freeze=compare.FREEZE)
+        self.assertEqual(compare.pinning_problems(compare.scoring_identity(REPO, {}, self.tags)), [])
+        # The freeze is rule 9's: a scoring without the fact tags (rule 8) is not frozen.
+        self.assertIn("the freeze pins fact tags; this scoring has none",
+                      compare.pinning_problems(compare.scoring_identity(REPO, {})))
+        _, decisions = compare.score(self.runs, Path(self.folder.name) / "f", REPO, self.review, freeze=compare.FREEZE,
+                                     tags=self.tags)
         self.assertEqual(decisions[1]["verdict"], "PASS")
 
     def test_a_drifted_document_is_never_a_pass(self):
         drifted = json.loads(json.dumps(REPO))
         drifted["demo-celiac-lab"]["facts"][0]["match"][0].append("FAKE-extra")
-        problems = compare.pinning_problems(compare.scoring_identity(drifted, {}))
+        problems = compare.pinning_problems(compare.scoring_identity(drifted, {}, self.tags))
         self.assertEqual(problems, ["the documents as scored differ from the freeze"])
         out = Path(self.folder.name) / "d"
-        _, decisions = compare.score(self.runs, out, drifted, self.review, freeze=compare.FREEZE)
+        _, decisions = compare.score(self.runs, out, drifted, self.review, freeze=compare.FREEZE, tags=self.tags)
         self.assertEqual(decisions[1]["verdict"], "UNFROZEN")
         self.assertIn("NOT FROZEN", (out / "compare.md").read_text(encoding="utf-8"))
 
@@ -1368,3 +1374,194 @@ class RuleEightTest(unittest.TestCase):
         self.assertEqual(blank, 0)
         carried = {r["id"][0]: r for r in compare.read_csv_rows(out) if r["id"][0] in "TP"}
         self.assertEqual((carried["T"]["unsafe"], carried["P"]["verdict"]), ("yes", "same"))
+
+
+TAGS9 = {"fake-letter/weight": "KNOW", "fake-letter/gluten": "DO", "fake-letter/timing": "DO"}
+# Both facts' evidence in one quote: the sentence carries the weight fact by its words, and
+# states the gluten instruction in plain words the match groups do not know.
+BOTH_PLAIN = sentence("You lost 4 kg, and keep having bread and pasta for now.",
+                      "They have lost 4 kg. I have asked them to keep eating gluten for now.")
+
+
+class RuleNineTest(unittest.TestCase):
+    """Rule 9 (Ben, 11 Nov evening): a summary tells the patient what to DO and KNOW, in plain words;
+    the baseline is E5. Facts are tagged DO, KNOW or DETAIL; the reviewer credits plain sentences and
+    answers `technical` for every sentence."""
+    setUp = RunTest.setUp
+    run_pair = RuleEightTest.run_pair
+    write = RuleEightTest.write
+    check = RuleEightTest.check
+
+    def score(self, runs, out, review=None, tags=TAGS9):
+        summaries, decisions = compare.score(list(runs), Path(self.folder.name) / out, self.docs, review, tags=tags)
+        with (Path(self.folder.name) / out / "review" / "review.csv").open(encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        return summaries, decisions[-1], rows
+
+    def reviewed(self, rows, technical=(), answer_technical=True):
+        """Every sentence row correct (every listed fact stated); `technical` answered yes for the
+        sentences named, no for the rest, or left blank."""
+        for row in rows:
+            if row["id"].startswith("S"):
+                row["verdict"], row["note"] = "correct", "states: all"
+                row["technical"] = ("yes" if row["sentence"] in technical else "no") if answer_technical else ""
+        return rows
+
+    def test_the_jargon_screen_flags_only_unexplained_terms(self):
+        cases = {
+            "Your LVEF was 40%.": ["LVEF"],
+            "Your potassium is 5.4 mmol/L.": ["mmol/L"],
+            "The ECG showed ST depression.": ["ECG", "ST depression"],
+            "Get a CBC, ferritin, ALT and vitamin D in 3 months.": ["CBC", "ferritin", "ALT"],
+            "You had pyelonephritis (a kidney infection).": [],
+            "You had an NSTEMI, a type of heart attack.": [],
+            "Your ferritin, which shows your iron stores, is low.": [],
+            "You have a kidney infection (pyelonephritis).": [],
+            "Your tissue transglutaminase IgA 92 U/mL (a celiac blood test) was high.": [],
+            "Take metformin 500 mg twice a day.": [],
+            "Call the FAKE clinic or go to the ER.": [],
+        }
+        for text, terms in cases.items():
+            self.assertEqual(compare.jargon_terms(text), terms, text)
+
+    def test_the_tags_must_fit_the_documents(self):
+        docs = {"fake-letter": fake_doc()}
+        self.assertEqual(compare.tag_problems(docs, TAGS9), [])
+        missing = {k: v for k, v in TAGS9.items() if not k.endswith("timing")}
+        self.assertEqual(compare.tag_problems(docs, missing), ["fact fake-letter/timing has no DO/KNOW/DETAIL tag"])
+        self.assertEqual(len(compare.tag_problems(docs, dict(TAGS9, **{"fake-letter/timing": "MAYBE"}))), 1)
+        self.assertEqual(len(compare.tag_problems(docs, dict(TAGS9, **{"fake-letter/none": "DO"}))), 1)
+        with self.assertRaises(ValueError):
+            compare.score([write_run(self.folder.name, "B0", run_lines("B0", BASE))], Path(self.folder.name) / "x",
+                          docs, tags=missing)
+        # The repository's tags fit its documents, PR 295's cases included.
+        self.assertEqual(compare.tag_problems(REPO, compare.load_tags()), [])
+
+    def test_a_detail_fact_is_not_required_and_do_and_know_are_counted(self):
+        entry = run_lines("E5", BETTER)[1]
+        tags = dict(TAGS9, **{"fake-letter/timing": "DETAIL"})
+        scored = compare.score_document(fake_doc(), entry, "en", tags=tags)
+        required = {f["id"]: f["required"] for f in scored["facts"]}
+        self.assertEqual(required, {"weight": True, "gluten": True, "timing": False})
+        self.assertEqual((scored["do_total"], scored["know_total"], scored["required_total"]), (1, 1, 2))
+        self.assertEqual({f["id"]: f["tag"] for f in scored["facts"]}["timing"], "DETAIL")
+        # Rule 8 (no tags) is unchanged: every required fact counts.
+        self.assertEqual(compare.score_document(fake_doc(), entry, "en")["required_total"], 3)
+
+    def test_a_plain_sentence_on_the_evidence_is_checked_and_credited_by_the_review(self):
+        entry = run_lines("E6", [BOTH_PLAIN])[1]
+        facts = lambda scored: {f["id"]: f for f in scored["facts"]}
+        rule8 = facts(compare.score_document(fake_doc(), entry, "en"))
+        # Rule 8 checks only sentences that carry no fact; this one carries the weight fact.
+        self.assertEqual(rule8["gluten"]["to_check"], [])
+        held = compare.score_document(fake_doc(), entry, "en", tags=TAGS9)
+        self.assertEqual((facts(held)["gluten"]["to_check"], facts(held)["gluten"]["standing"]), ([0], "held"))
+        credited = compare.score_document(fake_doc(), entry, "en", {0: "correct"}, tags=TAGS9)
+        self.assertEqual(facts(credited)["gluten"]["standing"], "credited")
+        self.assertEqual((credited["do_found"], credited["know_found"]), (1, 1))
+
+    def test_the_technical_column_is_yes_no_or_waiting(self):
+        self.assertEqual([compare.technical_of(dict(technical=v)) for v in ("yes", "No", "", None)],
+                         [True, False, None, None])
+        with self.assertRaises(ValueError):
+            compare.technical_of(dict(technical="maybe"))
+        runs = self.run_pair(BASE, BASE)
+        sheet = Path(self.folder.name) / "two.csv"
+        sheet.write_text("run,doc,sentence,verdict,technical\nB0,fake-letter,0,correct,yes\n"
+                         "E1,fake-letter,0,correct,no\n", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self.score(runs, "t", sheet)
+
+    def test_the_plain_share_waits_for_the_technical_answers_then_decides(self):
+        extra = sentence("Your BMI fell.", "They have lost 4 kg.")
+        runs = self.run_pair(BETTER, BETTER + [extra])
+        _, decision, rows = self.score(runs, "a")
+        self.assertIsNone(self.check(decision, "plain sentences"))
+        summaries, decision, _ = self.score(runs, "b", self.write(self.reviewed(rows, answer_technical=False), "f.csv"))
+        self.assertEqual((summaries[1]["plain"], summaries[1]["technical_pending"]), (0, 4))
+        self.assertIsNone(self.check(decision, "plain sentences"))
+        self.assertEqual(decision["verdict"], "PENDING")
+        summaries, decision, _ = self.score(runs, "c", self.write(self.reviewed(rows), "g.csv"))
+        self.assertEqual((summaries[1]["plain"], summaries[1]["technical"]), (4, 0))
+        self.assertEqual(decision["verdict"], "PASS")
+        summaries, decision, _ = self.score(runs, "d", self.write(self.reviewed(rows, {extra["text"]}), "h.csv"))
+        self.assertEqual((summaries[0]["plain"], summaries[1]["plain"], summaries[1]["technical"]), (3, 3, 1))
+        self.assertFalse(self.check(decision, "plain sentences"))
+        self.assertEqual(decision["verdict"], "FAIL")
+        self.assertIn("| E1 | 2/2 | 1/1 | 3 | 1 | 0 | 1/4 |",
+                      (Path(self.folder.name) / "d" / "compare.md").read_text(encoding="utf-8"))
+
+    def test_fewer_do_facts_than_the_baseline_fail_and_a_lost_detail_does_not(self):
+        runs = self.run_pair(BETTER, BETTER[:2])
+        _, _, rows = self.score(runs, "a")
+        _, decision, _ = self.score(runs, "b", self.write(self.reviewed(rows), "f.csv"))
+        self.assertFalse(self.check(decision, "DO facts credited"))
+        self.assertTrue(self.check(decision, "KNOW facts credited"))
+        self.assertEqual((decision["lost"], decision["verdict"]), (["fake-letter/timing"], "FAIL"))
+        tags = dict(TAGS9, **{"fake-letter/timing": "DETAIL"})
+        _, _, rows = self.score(runs, "c", tags=tags)
+        _, decision, _ = self.score(runs, "d", self.write(self.reviewed(rows), "g.csv"), tags=tags)
+        self.assertEqual((decision["lost"], decision["verdict"]), ([], "PASS"))
+
+    def test_a_lost_key_fact_fails_whatever_its_tag(self):
+        runs = self.run_pair(BETTER, BETTER[1:])
+        tags = dict(TAGS9, **{"fake-letter/weight": "DETAIL"})
+        with unittest.mock.patch.dict(compare.KEY_FACTS, {"fake-letter/weight": compare.ALLERGY}):
+            _, _, rows = self.score(runs, "a", tags=tags)
+            _, decision, _ = self.score(runs, "b", self.write(self.reviewed(rows), "f.csv"), tags=tags)
+        self.assertEqual(decision["key_lost"], ["fake-letter/weight"])
+        self.assertFalse(self.check(decision, "no key fact lost"))
+        self.assertTrue(self.check(decision, "KNOW facts credited"))
+        self.assertEqual(decision["verdict"], "FAIL")
+
+    def test_the_tags_are_part_of_what_scored_it_and_of_the_freeze(self):
+        docs = {"fake-letter": fake_doc()}
+        tagged = compare.scoring_identity(docs, {}, TAGS9)
+        untagged = compare.scoring_identity(docs, {})
+        self.assertEqual((tagged["thresholds_values"]["rule_version"], untagged["thresholds_values"]["rule_version"]),
+                         (compare.RULE_VERSION, compare.RULE_WITHOUT_TAGS))
+        self.assertNotIn("tags", untagged)
+        other = compare.scoring_identity(docs, {}, dict(TAGS9, **{"fake-letter/timing": "DETAIL"}))
+        self.assertNotEqual(other["id"], tagged["id"])
+        freeze = Path(self.folder.name) / "freeze.json"
+        freeze.write_text(json.dumps(dict(rule_version=compare.RULE_VERSION, scorer_sha256=tagged["scorer"],
+                                          scoring_documents_sha256=tagged["documents"], tags_sha256=tagged["tags"])),
+                          encoding="utf-8")
+        self.assertEqual(compare.pinning_problems(tagged, freeze), [])
+        self.assertEqual(compare.pinning_problems(other, freeze), ["the fact tags differ from the freeze"])
+        self.assertEqual(compare.pinning_problems(untagged, freeze),
+                         [f"the rule is version {compare.RULE_WITHOUT_TAGS}, the freeze says {compare.RULE_VERSION}",
+                          "the freeze pins fact tags; this scoring has none"])
+
+    def test_prefill_carries_the_technical_answers(self):
+        runs = self.run_pair(BETTER, BETTER)
+        _, _, rows = self.score(runs, "a")
+        filled = self.write(self.reviewed(rows, {BETTER[0]["text"]}), "f.csv")
+        out = Path(self.folder.name) / "prefilled.csv"
+        compare.prefill(Path(self.folder.name) / "a" / "review" / "review.csv", filled,
+                        {label: compare.read_run(path)[1] for label, path in zip(("B0", "E1"), runs)}, None, out)
+        answers = {r["sentence"]: r["technical"] for r in compare.read_csv_rows(out)}
+        self.assertEqual(answers, {BETTER[0]["text"]: "yes", BETTER[1]["text"]: "no", BETTER[2]["text"]: "no"})
+
+    def test_a_verdict_never_credits_a_fact_its_row_did_not_list(self):
+        # Reviewed under rule 8, the row listed only the weight fact; rule 9 also lists the gluten
+        # instruction there. The old "correct" credits weight, and gluten waits for a new verdict.
+        runs = self.run_pair([BOTH_PLAIN], [BOTH_PLAIN])
+        _, _, rows8 = self.score(runs, "a", tags=None)
+        self.assertEqual([r["fact_it_may_state"] for r in rows8], ["They lost 4 kg."])
+        filled8 = self.write(self.reviewed(rows8), "f8.csv")
+        summaries, decision, rows9 = self.score(runs, "b", filled8)
+        self.assertEqual([r["fact_it_may_state"] for r in rows9], ["They lost 4 kg. | Keep eating gluten for now."])
+        self.assertEqual((summaries[1]["know_found"], summaries[1]["do_found"], summaries[1]["do_held"]), (1, 0, 1))
+        self.assertIsNone(self.check(decision, "DO facts credited"))
+        out = Path(self.folder.name) / "prefilled.csv"
+        filled, blank = compare.prefill(Path(self.folder.name) / "b" / "review" / "review.csv", filled8,
+                                        {label: compare.read_run(path)[1] for label, path in zip(("B0", "E1"), runs)},
+                                        None, out)
+        row = compare.read_csv_rows(out)[0]
+        self.assertEqual((filled, blank, row["verdict"], row["technical"]), (0, 1, "", "no"))
+        self.assertEqual(row["note"], "rule 9: 1 more fact(s) listed than when reviewed; earlier verdict correct for 1")
+        # Answered again on the rule-9 row (both facts stated), it credits both.
+        row["verdict"], row["note"] = "correct", "states: all"
+        summaries, decision, _ = self.score(runs, "c", self.write([row], "f9.csv"))
+        self.assertEqual((summaries[1]["know_found"], summaries[1]["do_found"]), (1, 1))
