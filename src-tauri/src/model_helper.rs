@@ -371,9 +371,15 @@ struct ErrorAnswer {
     error: String,
 }
 
-fn hello_line(name: &str, sha256: &str) -> String {
-    serde_json::json!({ "hello": CONTRACT, "model": { "name": name, "sha256": sha256 } })
-        .to_string()
+/// The first line: the contract and the model, and once llama.cpp has loaded the file, what it
+/// found (`card`, checked again by the parent: `model_limits`).
+fn hello_line(name: &str, sha256: &str, card: Option<&crate::model_limits::ModelCard>) -> String {
+    let mut hello =
+        serde_json::json!({ "hello": CONTRACT, "model": { "name": name, "sha256": sha256 } });
+    if let Some(card) = card.and_then(|card| serde_json::to_value(card).ok()) {
+        hello["card"] = card;
+    }
+    hello.to_string()
 }
 
 /// Writes one line and flushes it; `false` when it could not be written.
@@ -508,7 +514,16 @@ pub(crate) fn fit_pages(
 
 /// The room left for the document: the context, less the answer and the prompt around it.
 pub(crate) const fn document_budget(prompt_tokens: usize, answer_tokens: usize) -> usize {
-    (CONTEXT_TOKENS as usize).saturating_sub(prompt_tokens + answer_tokens + PROMPT_MARGIN)
+    document_budget_at(CONTEXT_TOKENS, prompt_tokens, answer_tokens)
+}
+
+/// The same room in a context of `context` tokens (model limits: the context the helper made).
+pub(crate) const fn document_budget_at(
+    context: u32,
+    prompt_tokens: usize,
+    answer_tokens: usize,
+) -> usize {
+    (context as usize).saturating_sub(prompt_tokens + answer_tokens + PROMPT_MARGIN)
 }
 
 // --- The summary's grammar and its reading back ---------------------------------------------
@@ -661,7 +676,11 @@ fn serve_model(settings: &Settings) -> i32 {
         return exit::NO_SANDBOX;
     }
     let mut output = std::io::stdout().lock();
-    if !send(&mut output, &hello_line(&settings.name, &settings.sha256)) {
+    let card = engine.card();
+    if !send(
+        &mut output,
+        &hello_line(&settings.name, &settings.sha256, Some(&card)),
+    ) {
         return exit::OUTPUT;
     }
     let mut input = std::io::stdin().lock();
@@ -725,7 +744,8 @@ mod stub {
             return exit::NO_SANDBOX;
         }
         let mut output = std::io::stdout().lock();
-        if !send(&mut output, &hello_line(STUB_NAME, &"0".repeat(64))) {
+        // No model loaded, so no card: the parent keeps the catalogue's limits.
+        if !send(&mut output, &hello_line(STUB_NAME, &"0".repeat(64), None)) {
             return exit::OUTPUT;
         }
         let mut input = std::io::stdin().lock();

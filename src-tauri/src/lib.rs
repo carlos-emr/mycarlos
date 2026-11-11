@@ -32,6 +32,7 @@ mod model_acl;
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
+mod model_limits;
 mod model_runtime;
 mod page_boxes;
 mod pdf_unlock;
@@ -1747,6 +1748,29 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
 #[tauri::command]
 fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::ModelRow> {
     models.models()
+}
+
+/// Each model's limits, for the AI helper settings (model limits): how much of a document it
+/// reads at a time, the file's size, and the free memory a start needs by today's rule. Once the
+/// helper has run a model in this session, its room follows the context the helper made, and
+/// the file's own claims (trained context, parameters) are given as such. Nothing here reads
+/// the model file: the helper's checked card does (`model_limits`).
+#[tauri::command]
+fn ai_model_limits(models: State<'_, Arc<local_model::Store>>) -> Vec<model_limits::ModelLimits> {
+    let runner = model_runtime::app().runner();
+    models
+        .models()
+        .into_iter()
+        .map(|row| {
+            let card = runner.card_for(row.model.sha256);
+            model_limits::limits(
+                row.index,
+                &row.model,
+                card.as_ref(),
+                model_runtime::needed_bytes(row.model.size_bytes),
+            )
+        })
+        .collect()
 }
 
 /// Which catalog entry a model command is about (`ai_models`' `index`).
@@ -5301,6 +5325,7 @@ pub fn run() {
             ai_model_catalog,
             ai_model_status,
             ai_models,
+            ai_model_limits,
             ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,

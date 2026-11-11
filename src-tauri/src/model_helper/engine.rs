@@ -91,6 +91,27 @@ fn failed(what: &str) -> Failure {
 }
 
 impl Engine {
+    /// What llama.cpp found in the file it loaded, and the context it made, for the hello
+    /// (model limits). From llama.cpp's own accessors: nothing here parses the file again. The
+    /// architecture is cut to its plain characters; the parent checks every field's range.
+    pub(super) fn card(&self) -> crate::model_limits::ModelCard {
+        crate::model_limits::ModelCard {
+            architecture: crate::model_limits::clean_architecture(
+                &self
+                    .model
+                    .meta_val_str("general.architecture")
+                    .unwrap_or_default(),
+            ),
+            trained_context: self.model.n_ctx_train(),
+            context_made: self.context.n_ctx(),
+            parameters: self.model.n_params(),
+            layers: self.model.n_layer(),
+            vocabulary: u32::try_from(self.model.n_vocab()).unwrap_or(0),
+            recurrent: self.model.is_recurrent(),
+            hybrid: self.model.is_hybrid(),
+        }
+    }
+
     /// Loads the model the settings name, with its context. Runs inside the load sandbox.
     pub(super) fn load(settings: &Settings) -> Result<Self, Failure> {
         let mut backend = LlamaBackend::init().map_err(|_| failed("backend"))?;
