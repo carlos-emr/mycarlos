@@ -436,14 +436,35 @@ repeat them as the document's instructions. Do not repeat anyone's phone number,
 address, or any identity number such as a health card or record number, unless the document tells \
 the patient to use it, such as the clinic's number to call.";
 
-/// Part (a) of the 11 Nov variant design: what a summary says first, then what it says next.
-/// After the instructions-first run (E3), it also says what is not an instruction: E1 and E3
-/// wrote visits from a printed date, a report time or the signing doctor.
-const SUMMARY_ORDER: &str =
-    "First say what the document found: the main problem or diagnosis and the key results, each \
-     with its number and unit. Then say what the patient must do and when, only where the \
-     document tells the patient to do it: a doctor's name or signature, a printed, collected or \
-     reported date, or a medicine already given is not an instruction.";
+/// E6 (round 3, Ben's goal: say what to do and know, in plain words): the summary speaks to
+/// the patient as "you", and keeps each medical term with a few plain words after it.
+const SUMMARY_PLAIN: &str =
+    "Write to the patient as \"you\", in plain everyday words; keep the medical term the \
+     document uses, and follow it with a few plain words that explain it.";
+
+/// E6: what the document found and what it means comes first, even with no instructions (E5
+/// shrank a findings-only referral to 2 sentences). A result's number only when it is acted on:
+/// E5's "each with its number and unit" pushed numbers and technical names.
+const SUMMARY_FOUND: &str =
+    "First say what the document found and what it means for you, in 2 to 4 sentences, even \
+     when the document gives you no instructions; give a test result's number or unit only \
+     when you must act on it.";
+
+/// E6: then every instruction, one in each sentence, with E5's list of what is not an
+/// instruction kept word for word.
+const SUMMARY_TO_DO: &str =
+    "Then say what you must do and when, only where the document tells you to, one \
+     instruction in each sentence: every medicine that is new, changed, stopped or on hold \
+     (say stopped or on hold), every test or visit with its date, and every rule to follow. A \
+     doctor's name or signature, a printed, collected or reported date, or a medicine already \
+     given is not an instruction.";
+
+/// E6: a line written to another doctor is not the patient's task (E5 kept a doctor-to-doctor
+/// "call me at ... ext. 21" line), but an instruction the patient was given is.
+const SUMMARY_OTHER_DOCTOR: &str =
+    "A question or suggestion the document writes to another doctor is not your task: say it \
+     as the doctor's, or leave it out; an instruction the document says you were given is \
+     yours.";
 
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
@@ -453,17 +474,21 @@ const SUMMARY_WHOLE_RULES: &str =
      limit the document gives for it; if they do not all fit in one sentence, leave that \
      sentence out.";
 
-/// Part (c) of the 11 Nov variant design: which, how much and when, in one sentence.
-const SUMMARY_SAME_SENTENCE: &str =
-    "Say which, how much and when in the same sentence: the test or medicine by name, the \
-     number with its unit, the date or time.";
+/// E6: a warning keeps every reason to get help, or says that the document lists them (E5 cut an
+/// emergency return rule to 1 of its 7 reasons). E5's part (c), "the number with its unit", is
+/// gone: it pushed numbers the patient cannot use.
+const SUMMARY_WARNING: &str =
+    "For a warning about when to get help or call, give every reason the document lists, in \
+     one sentence or in two sentences next to each other; if they do not fit, say that the \
+     document lists when to get help.";
 
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
-         sentences (fewer if the document is short). {SUMMARY_ORDER} Put one fact in each \
-         sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each sentence, copy into \
+         sentences (fewer if the document is short). {SUMMARY_PLAIN} {SUMMARY_FOUND} \
+         {SUMMARY_TO_DO} {SUMMARY_OTHER_DOCTOR} {SUMMARY_WHOLE_RULES} {SUMMARY_WARNING} For each \
+         sentence, copy into \
          \"quote\" one continuous piece of the document, 3 to 25 words, exactly as written (same \
          spelling, numbers, accents and punctuation, no '...' and no joined pieces), in the \
          document's own language (only the quote is copied; the sentence itself is written in \
@@ -1109,31 +1134,43 @@ mod tests {
     }
 
     #[test]
-    fn e5_asks_found_first_whole_rules_one_clause_and_the_language_twice() {
-        // E5 = E2 + parts (a), (b) and (c) + L1 and L2, word for word as the design note gives it.
+    fn e6_asks_plain_words_found_and_meaning_first_then_every_instruction() {
+        // E6 = E5's system text, cap and language lines, with the round-3 request word for word as
+        // the design note gives it: E5's "key results, each with its number and unit" and its
+        // part (c) are gone, and the whole-rules sentence is kept.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
             before,
             "Summarize this document for the patient in English, in at most 10 short sentences \
-             (fewer if the document is short). First say what the document found: the main \
-             problem or diagnosis and the key results, each with its number and unit. Then say \
-             what the patient must do and when, only where the document tells the patient to do \
-             it: a doctor's name or signature, a printed, collected or reported date, or a \
-             medicine already given is not an instruction. Put one fact in each sentence. When \
-             a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
+             (fewer if the document is short). Write to the patient as \"you\", in plain \
+             everyday words; keep the medical term the document uses, and follow it with a few \
+             plain words that explain it. First say what the document found and what it means \
+             for you, in 2 to 4 sentences, even when the document gives you no instructions; \
+             give a test result's number or unit only when you must act on it. Then say what \
+             you must do and when, only where the document tells you to, one instruction in \
+             each sentence: every medicine that is new, changed, stopped or on hold (say \
+             stopped or on hold), every test or visit with its date, and every rule to follow. \
+             A doctor's name or signature, a printed, collected or reported date, or a \
+             medicine already given is not an instruction. A question or suggestion the \
+             document writes to another doctor is not your task: say it as the doctor's, or \
+             leave it out; an instruction the document says you were given is yours. When a \
+             sentence gives a rule with a condition (if, when, unless) or names a medicine or \
              a group of medicines, keep every condition, every medicine or group, and every \
-             number or limit the document gives for it; if they do not all fit in one sentence, \
-             leave that sentence out. Say which, how much and when in the same sentence: the \
-             test or \
-             medicine by name, the number with its unit, the date or time. For each sentence, \
-             copy into \"quote\" one continuous piece of the document, 3 to 25 words, exactly \
-             as written (same spelling, numbers, accents and punctuation, no '...' and no \
-             joined pieces), in the document's own language (only the quote is copied; the \
-             sentence itself is written in English). If you cannot find such a piece for a \
-             sentence, leave that sentence out.\n\nReply only with JSON in this shape: \
-             {\"sentences\": [{\"text\": \"...\", \"quote\": \"...\"}]}\n\nDocument:\n<<<\n"
+             number or limit the document gives for it; if they do not all fit in one \
+             sentence, leave that sentence out. For a warning about when to get help or call, \
+             give every reason the document lists, in one sentence or in two sentences next to \
+             each other; if they do not fit, say that the document lists when to get help. For \
+             each sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 \
+             words, exactly as written (same spelling, numbers, accents and punctuation, no \
+             '...' and no joined pieces), in the document's own language (only the quote is \
+             copied; the sentence itself is written in English). If you cannot find such a \
+             piece for a sentence, leave that sentence out.\n\nReply only with JSON in this \
+             shape: {\"sentences\": [{\"text\": \"...\", \"quote\": \
+             \"...\"}]}\n\nDocument:\n<<<\n"
         );
+        assert!(!prompt.contains("number and unit"));
+        assert!(!prompt.contains("Say which, how much and when"));
         assert_eq!(
             after,
             "\n>>>\n\nWrite every \"text\" in English, even though the document may be in \
