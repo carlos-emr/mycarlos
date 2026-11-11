@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { fakeDocumentText } from "../test/fakeLocalModel";
 import {
   BYTES_PER_TOKEN,
+  SUMMARY_PROMPT_TOKENS,
   capacityInPages,
+  documentTokens,
   estimateFit,
   estimateTokens,
+  planWindow,
   preTokenCount,
 } from "./capacity";
 
@@ -130,5 +133,65 @@ describe("estimateFit", () => {
     const fit = estimateFit(report, HELPER);
     expect(fit.fits).toBe(false);
     expect(fit.fits === false && fit.lastPage).toBeLessThan(12);
+  });
+});
+
+describe("planWindow (D249)", () => {
+  // Five FAKE pages of 1,051 tokens: 5,255 and 4 separators.
+  const pages = Array.from(
+    { length: 5 },
+    (_, index) => "FAKE long page text. ".repeat(150) + index,
+  );
+  const document = fakeDocumentText(pages);
+  const size = (contextTokens: number, documentTokens: number) => ({
+    contextTokens,
+    documentTokens,
+  });
+  const sizes = [size(8192, 2200), size(12288, 6000), size(16384, 9000)];
+
+  it("counts the pages and their separators as estimateFit does", () => {
+    expect(documentTokens(document)).toBe(5 * 1051 + 4);
+    expect(documentTokens(fakeDocumentText([]))).toBe(0);
+  });
+
+  it("takes the smallest window that holds the document, as memory allows", () => {
+    const plan = planWindow(document, { sizes, memoryAllows: 32768 })!;
+    expect(plan.window).toEqual(size(12288, 6000));
+    expect(plan.fit).toEqual({ fits: true });
+    expect(plan.memoryLimited).toBe(false);
+    expect(plan.promptTokens).toBe(5259 + SUMMARY_PROMPT_TOKENS);
+    // In any order.
+    expect(
+      planWindow(document, {
+        sizes: [...sizes].reverse(),
+        memoryAllows: 32768,
+      })!.window,
+    ).toEqual(size(12288, 6000));
+  });
+
+  it("takes the largest when none holds it, and says the pages that fit", () => {
+    const plan = planWindow(document, {
+      sizes: [size(8192, 2200), size(12288, 3200)],
+      memoryAllows: 32768,
+    })!;
+    expect(plan.window).toEqual(size(12288, 3200));
+    expect(plan.fit).toMatchObject({ fits: false, lastPage: 3 });
+    expect(plan.memoryLimited).toBe(false);
+    expect(plan.promptTokens).toBe(3200 + SUMMARY_PROMPT_TOKENS);
+  });
+
+  it("steps down to what free memory allows, and says memory set the limit", () => {
+    const plan = planWindow(document, { sizes, memoryAllows: 8192 })!;
+    expect(plan.window).toEqual(size(8192, 2200));
+    expect(plan.fit).toMatchObject({ fits: false, lastPage: 2 });
+    expect(plan.memoryLimited).toBe(true);
+    // Memory between two windows: the smaller.
+    expect(
+      planWindow(document, { sizes, memoryAllows: 16000 })!.window,
+    ).toEqual(size(12288, 6000));
+  });
+
+  it("plans nothing without a window", () => {
+    expect(planWindow(document, { sizes: [], memoryAllows: 32768 })).toBeNull();
   });
 });

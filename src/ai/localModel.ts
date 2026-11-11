@@ -1,5 +1,6 @@
 import { hasVaultErrorCode } from "../vault";
 import { locateQuote } from "./locateQuote";
+import { rememberReadRate } from "./readRate";
 import {
   ModelCancelled,
   ModelNotInstalled,
@@ -47,6 +48,7 @@ export interface ModelBridge {
     pages: DocumentPageText[],
     lang: string,
     keep?: { recordId: string; ticket: string },
+    contextTokens?: number,
   ): Promise<ModelSummary>;
   aiExplain(
     term: string,
@@ -78,12 +80,13 @@ export function nativeLocalModel(bridge: ModelBridge): LocalModel {
     // while they fit, and says which was the last. Kept for a document's
     // save (#212), the native side checks they are the pages that the text
     // read with this ticket gave.
-    summarize: (document, lang, keepFor) =>
+    summarize: (document, lang, keepFor, contextTokens) =>
       bridge
         .aiSummarize(
           document.pages,
           lang,
           keepFor ? { recordId: keepFor, ticket: document.ticket } : undefined,
+          contextTokens,
         )
         .catch(refused),
     explain: (term, context, lang, keepFor) =>
@@ -110,8 +113,13 @@ export async function summarizeDocument(
   lang: string,
   now: () => number = Date.now,
   keepFor?: string,
+  contextTokens?: number,
 ): Promise<SummaryResult> {
-  const written = await model.summarize(document, lang, keepFor);
+  const written = await model.summarize(document, lang, keepFor, contextTokens);
+  // This computer's reading speed with this model, for the next long read's
+  // expected minutes (D250).
+  if (written.readRate)
+    rememberReadRate(written.model.sha256, written.readRate);
   return {
     tool: "summary",
     ...(written.keptId ? { keptId: written.keptId } : {}),

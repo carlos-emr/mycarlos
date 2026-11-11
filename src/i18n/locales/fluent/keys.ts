@@ -827,6 +827,12 @@ export const MESSAGE_KEYS = [
   "ai.summary.tooLongAfter",
   "ai.summary.readPages",
   "ai.summary.readStart",
+  "ai.summary.long",
+  "ai.summary.readAllTime",
+  "ai.summary.readPagesTime",
+  "ai.summary.memoryHint",
+  "ai.summary.readAll",
+  "ai.summary.firstPages",
   "ai.summary.noText",
   "ai.explain.box",
   "ai.explain.hint",
@@ -951,6 +957,7 @@ export const MESSAGE_KEYS = [
   "ai.model.accepted",
   "ai.model.reads",
   "ai.model.readsEstimate",
+  "ai.model.readsLonger",
   "ai.model.loadCheck",
   "ai.model.loadCheckCannotRun",
   "ai.model.loadCheckMemory",
@@ -1984,6 +1991,12 @@ const FLUENT_IDS_BY_KEY = {
   "ai.summary.tooLongAfter": "ai-summary-tooLongAfter",
   "ai.summary.readPages": "ai-summary-readPages",
   "ai.summary.readStart": "ai-summary-readStart",
+  "ai.summary.long": "ai-summary-long",
+  "ai.summary.readAllTime": "ai-summary-readAllTime",
+  "ai.summary.readPagesTime": "ai-summary-readPagesTime",
+  "ai.summary.memoryHint": "ai-summary-memoryHint",
+  "ai.summary.readAll": "ai-summary-readAll",
+  "ai.summary.firstPages": "ai-summary-firstPages",
   "ai.summary.noText": "ai-summary-noText",
   "ai.explain.box": "ai-explain-box",
   "ai.explain.hint": "ai-explain-hint",
@@ -2166,6 +2179,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.accepted": "ai-model-accepted",
   "ai.model.reads": "ai-model-reads",
   "ai.model.readsEstimate": "ai-model-readsEstimate",
+  "ai.model.readsLonger": "ai-model-readsLonger",
   "ai.model.loadCheck": "ai-model-loadCheck",
   "ai.model.loadCheckCannotRun": "ai-model-loadCheckCannotRun",
   "ai.model.loadCheckMemory": "ai-model-loadCheckMemory",
@@ -3160,6 +3174,12 @@ export interface MessageArgsByKey {
   "ai.summary.tooLongAfter": undefined;
   "ai.summary.readPages": { last: FluentArgument };
   "ai.summary.readStart": undefined;
+  "ai.summary.long": { pages: FluentArgument };
+  "ai.summary.readAllTime": { minutes: FluentArgument };
+  "ai.summary.readPagesTime": { minutes: FluentArgument };
+  "ai.summary.memoryHint": undefined;
+  "ai.summary.readAll": undefined;
+  "ai.summary.firstPages": undefined;
   "ai.summary.noText": undefined;
   "ai.explain.box": undefined;
   "ai.explain.hint": undefined;
@@ -3292,6 +3312,7 @@ export interface MessageArgsByKey {
   };
   "ai.model.reads": { characters: FluentArgument; pages: FluentArgument };
   "ai.model.readsEstimate": undefined;
+  "ai.model.readsLonger": { pages: FluentArgument };
   "ai.model.loadCheck": undefined;
   "ai.model.loadCheckCannotRun": undefined;
   "ai.model.loadCheckMemory": undefined;

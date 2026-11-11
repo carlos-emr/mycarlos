@@ -146,7 +146,7 @@ describe("native idle deadline bridge", () => {
       lastPage: 2,
       lastPageCut: false,
     });
-    await bridge.aiSummarize(pages, "fr", undefined, "summary-id");
+    await bridge.aiSummarize(pages, "fr", undefined, undefined, "summary-id");
     invoke.mockResolvedValue({
       text: "FAKE",
       model: { name: "FAKE", sha256: "test-only" },
@@ -191,6 +191,7 @@ describe("native idle deadline bridge", () => {
         pages,
         "fr",
         { recordId: "rec", ticket: "t-1" },
+        undefined,
         "summary-id",
       ),
     ).resolves.toMatchObject({ keptId: "kept-1" });

@@ -13,6 +13,7 @@ import {
   type ModelBridge,
 } from "./localModel";
 import { ModelCancelled, ModelNotInstalled, type ModelStatus } from "./types";
+import { readDeviceRate } from "./readRate";
 
 // FAKE documents only.
 const document = fakeDocumentText(
@@ -174,9 +175,11 @@ describe("nativeLocalModel", () => {
       document,
       "fr",
     );
+    // The default window: none named.
     expect(native.aiSummarize).toHaveBeenCalledWith(
       document.pages,
       "fr",
+      undefined,
       undefined,
     );
     expect(result.sentences).toEqual([
@@ -191,6 +194,41 @@ describe("nativeLocalModel", () => {
       lastPage: 3,
       partial: true,
     });
+  });
+
+  it("sends the window the patient agreed to, and keeps this computer's reading speed (D249, D250)", async () => {
+    window.localStorage.removeItem("mycarlos.aiReadRate.v1");
+    const native = bridge({
+      aiSummarize: vi.fn().mockResolvedValue({
+        sentences: [{ text: "FAKE summary.", quote: "Repeat in 2 weeks." }],
+        model: FAKE_MODEL,
+        lastPage: 2,
+        lastPageCut: false,
+        readRate: { promptTokens: 7000, promptMs: 503000, answerMs: 40000 },
+      }),
+    });
+    try {
+      await summarizeDocument(
+        nativeLocalModel(native),
+        document,
+        "fr",
+        Date.now,
+        undefined,
+        16384,
+      );
+      expect(native.aiSummarize).toHaveBeenCalledWith(
+        document.pages,
+        "fr",
+        undefined,
+        16384,
+      );
+      expect(readDeviceRate(FAKE_MODEL.sha256)).toEqual({
+        msPerToken: expect.any(Number),
+        answerSeconds: 40,
+      });
+    } finally {
+      window.localStorage.removeItem("mycarlos.aiReadRate.v1");
+    }
   });
 
   it("sends a term with its sentence and the language", async () => {
@@ -234,10 +272,12 @@ describe("nativeLocalModel", () => {
       Date.now,
       "FAKE-record",
     );
-    expect(native.aiSummarize).toHaveBeenCalledWith(document.pages, "fr", {
-      recordId: "FAKE-record",
-      ticket: document.ticket,
-    });
+    expect(native.aiSummarize).toHaveBeenCalledWith(
+      document.pages,
+      "fr",
+      { recordId: "FAKE-record", ticket: document.ticket },
+      undefined,
+    );
     expect(summary.keptId).toBe("FAKE-kept-1");
     const explained = await explainTerm(
       model,

@@ -1685,6 +1685,18 @@ ai-summary-readPages =
 
 ai-summary-readStart = 为第 1 页的开头部分生成摘要
 
+ai-summary-long = 这是一份较长的文档（约 { $pages } 页）。
+
+ai-summary-readAllTime = 在此电脑上全部读完可能需要约 { $minutes } 分钟。
+
+ai-summary-readPagesTime = 在此电脑上读完这些页可能需要约 { $minutes } 分钟。
+
+ai-summary-memoryHint = 关闭其他程序也许能让 AI 助手读取这份文档的更多内容。
+
+ai-summary-readAll = 读取全文
+
+ai-summary-firstPages = 仅读前几页
+
 ai-summary-noText = myCarlos 无法读取此文档中的任何文本，因此无法生成摘要。这可能是扫描件。
 
 ai-explain-box = 字词或短语
@@ -1708,6 +1720,8 @@ ai-model-accepted = { $name }，{ $size } MB。许可证：{ $licence }。
 ai-model-reads = 每次约可读 { $pages } 页（约 { $characters } 个英文字符）。表格和某些语言会更少。
 
 ai-model-readsEstimate = 在下次使用此模型之前，这只是估计值。
+
+ai-model-readsLonger = 可用内存充足时，长文档最多约可读 { $pages } 页。
 ai-model-loadCheck = 正在检查此模型能否在此电脑上运行…
 ai-model-loadCheckCannotRun = 此电脑未能运行此模型。请稍后重试，或选择其他模型。
 ai-model-loadCheckMemory = 目前可用内存不足，无法试用此模型。请关闭其他程序后重试。

@@ -1869,6 +1869,33 @@ ai-summary-readPages =
 
 ai-summary-readStart = Resumir el comienzo de la página 1
 
+ai-summary-long =
+    { $pages ->
+    [one] Este es un documento largo (aproximadamente { $pages } página).
+    [many] Este es un documento largo (aproximadamente { $pages } de páginas).
+   *[other] Este es un documento largo (aproximadamente { $pages } páginas).
+    }
+
+ai-summary-readAllTime =
+    { $minutes ->
+    [one] Leerlo completo puede tardar aproximadamente { $minutes } minuto en este equipo.
+    [many] Leerlo completo puede tardar aproximadamente { $minutes } de minutos en este equipo.
+   *[other] Leerlo completo puede tardar aproximadamente { $minutes } minutos en este equipo.
+    }
+
+ai-summary-readPagesTime =
+    { $minutes ->
+    [one] Leerlas puede tardar aproximadamente { $minutes } minuto en este equipo.
+    [many] Leerlas puede tardar aproximadamente { $minutes } de minutos en este equipo.
+   *[other] Leerlas puede tardar aproximadamente { $minutes } minutos en este equipo.
+    }
+
+ai-summary-memoryHint = Cerrar otros programas puede permitir que el asistente de IA lea una parte mayor de este documento.
+
+ai-summary-readAll = Leerlo completo
+
+ai-summary-firstPages = Solo las primeras páginas
+
 ai-summary-noText = myCarlos no pudo leer ningún texto en este documento, así que no puede resumirlo. Puede que sea un documento escaneado.
 
 ai-explain-box = Palabra o frase
@@ -1897,6 +1924,13 @@ ai-model-reads =
     }
 
 ai-model-readsEstimate = Es una estimación hasta la próxima vez que se use este modelo.
+
+ai-model-readsLonger =
+    { $pages ->
+    [one] Con suficiente memoria libre, puede leer hasta aproximadamente { $pages } página de un documento largo.
+    [many] Con suficiente memoria libre, puede leer hasta aproximadamente { $pages } de páginas de un documento largo.
+   *[other] Con suficiente memoria libre, puede leer hasta aproximadamente { $pages } páginas de un documento largo.
+    }
 ai-model-loadCheck = Comprobando que este modelo funciona en este equipo…
 ai-model-loadCheckCannotRun = Este equipo no pudo ejecutar este modelo. Intente de nuevo más tarde o elija otro modelo.
 ai-model-loadCheckMemory = Ahora mismo no hay suficiente memoria libre para probar este modelo. Cierre otros programas e intente de nuevo.

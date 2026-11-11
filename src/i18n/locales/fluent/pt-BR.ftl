@@ -1869,6 +1869,33 @@ ai-summary-readPages =
 
 ai-summary-readStart = Resumir o início da página 1
 
+ai-summary-long =
+    { $pages ->
+    [one] Este é um documento longo (cerca de { $pages } página).
+    [many] Este é um documento longo (cerca de { $pages } de páginas).
+   *[other] Este é um documento longo (cerca de { $pages } páginas).
+    }
+
+ai-summary-readAllTime =
+    { $minutes ->
+    [one] Ler tudo pode levar cerca de { $minutes } minuto neste computador.
+    [many] Ler tudo pode levar cerca de { $minutes } de minutos neste computador.
+   *[other] Ler tudo pode levar cerca de { $minutes } minutos neste computador.
+    }
+
+ai-summary-readPagesTime =
+    { $minutes ->
+    [one] Ler essas páginas pode levar cerca de { $minutes } minuto neste computador.
+    [many] Ler essas páginas pode levar cerca de { $minutes } de minutos neste computador.
+   *[other] Ler essas páginas pode levar cerca de { $minutes } minutos neste computador.
+    }
+
+ai-summary-memoryHint = Fechar outros programas pode permitir que o assistente de IA leia uma parte maior deste documento.
+
+ai-summary-readAll = Ler tudo
+
+ai-summary-firstPages = Somente as primeiras páginas
+
 ai-summary-noText = O myCarlos não conseguiu ler nenhum texto neste documento, então não pode resumi-lo. Ele pode ser uma digitalização.
 
 ai-explain-box = Palavra ou expressão
@@ -1897,6 +1924,13 @@ ai-model-reads =
     }
 
 ai-model-readsEstimate = É uma estimativa até a próxima vez que este modelo for usado.
+
+ai-model-readsLonger =
+    { $pages ->
+    [one] Com memória livre suficiente, ele consegue ler até cerca de { $pages } página de um documento longo.
+    [many] Com memória livre suficiente, ele consegue ler até cerca de { $pages } de páginas de um documento longo.
+   *[other] Com memória livre suficiente, ele consegue ler até cerca de { $pages } páginas de um documento longo.
+    }
 ai-model-loadCheck = Verificando se este modelo funciona neste computador…
 ai-model-loadCheckCannotRun = Este computador não conseguiu executar este modelo. Tente de novo mais tarde ou escolha outro modelo.
 ai-model-loadCheckMemory = Não há memória livre suficiente para testar este modelo agora. Feche outros programas e tente de novo.

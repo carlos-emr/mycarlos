@@ -9,7 +9,8 @@ import {
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
 import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
-import { estimateFit, type FitEstimate } from "../ai/capacity";
+import { estimateFit, planWindow, type FitEstimate } from "../ai/capacity";
+import { expectedMinutes, readDeviceRate } from "../ai/readRate";
 import {
   ModelCancelled,
   ModelNotInstalled,
@@ -17,6 +18,7 @@ import {
   type DocumentText,
   type ExplainResult,
   type LocalModel,
+  type ModelCapacity,
   type ModelInfo,
   type ModelStatus,
   type SourceSpan,
@@ -91,10 +93,19 @@ export function ReaderAiPanel({
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   // A document longer than the model reads at a time, waiting for the
   // patient's choice before the model starts (#301), with the pages it
-  // would read.
+  // would read. With a larger window free memory allows (D249), the longer
+  // read the patient may choose: what it reads and about how many minutes
+  // it takes here (D250). `memoryLimited`: free memory, not the largest
+  // window, keeps it from reading more (D251).
   const [tooLong, setTooLong] = useState<{
     document: DocumentText;
     fit: Extract<FitEstimate, { fits: false }>;
+    longer: {
+      window: ModelCapacity;
+      fit: FitEstimate;
+      minutes: number | null;
+    } | null;
+    memoryLimited: boolean;
   } | null>(null);
   const tooLongRef = useRef<HTMLButtonElement | null>(null);
   const againRef = useRef<HTMLButtonElement | null>(null);
@@ -207,8 +218,12 @@ export function ReaderAiPanel({
     }
   };
 
-  // The model's summary of `document`, shown, said once, and kept.
-  const writeSummary = async (document: DocumentText) => {
+  // The model's summary of `document`, shown, said once, and kept. In the
+  // larger window `contextTokens` when the patient chose the longer read.
+  const writeSummary = async (
+    document: DocumentText,
+    contextTokens?: number,
+  ) => {
     const result = await asModel(() =>
       summarizeDocument(
         aiRef.current.model,
@@ -216,6 +231,7 @@ export function ReaderAiPanel({
         lang,
         Date.now,
         aiRef.current.kept?.recordId,
+        contextTokens,
       ),
     );
     if (!live.current) return;
@@ -273,8 +289,32 @@ export function ReaderAiPanel({
         const capacity =
           current?.state === "installed" ? current.capacity : null;
         const fit = capacity ? estimateFit(document, capacity) : null;
-        if (fit && !fit.fits) {
-          setTooLong({ document, fit });
+        if (capacity && fit && !fit.fits) {
+          // A larger window may read more of it, as free memory allows now
+          // (D249); the patient chooses before the model starts (D250).
+          const plan =
+            current?.state === "installed" && current.windows
+              ? planWindow(document, current.windows)
+              : null;
+          const longer =
+            plan && plan.window.contextTokens > capacity.contextTokens
+              ? {
+                  window: plan.window,
+                  fit: plan.fit,
+                  minutes: expectedMinutes(
+                    plan.promptTokens,
+                    current?.state === "installed"
+                      ? readDeviceRate(current.model.sha256)
+                      : null,
+                  ),
+                }
+              : null;
+          setTooLong({
+            document,
+            fit,
+            longer,
+            memoryLimited: plan?.memoryLimited ?? false,
+          });
           return;
         }
         await writeSummary(document);
@@ -304,15 +344,19 @@ export function ReaderAiPanel({
     } else onCancel();
   };
 
-  // Summarize the pages the model can read: the choice goes, the focus goes
-  // back to Summary, and the status says the work.
-  const summarizeAnyway = () => {
+  // Summarize the pages the model can read, in the larger window when the
+  // patient chose the longer read: the choice goes, the focus goes back to
+  // Summary, and the status says the work.
+  const summarizeAnyway = (longer: boolean) => {
     const waiting = tooLong;
     if (!waiting || working) return;
     setTooLong(null);
     setWorking(true);
     onReturnFocus();
-    writeSummary(waiting.document)
+    writeSummary(
+      waiting.document,
+      longer ? waiting.longer?.window.contextTokens : undefined,
+    )
       .catch(stopped)
       .finally(() => live.current && setWorking(false));
   };
@@ -405,31 +449,86 @@ export function ReaderAiPanel({
           focus. */}
       {tooLong && tool === "summary" && (
         <div className="native-reader-ai-choice">
-          <p id="reader-ai-too-long">
-            {tooLong.fit.firstPageCut
-              ? t("ai.summary.tooLongStart")
-              : t("ai.summary.tooLong", {
-                  last: tooLong.fit.lastPage,
-                  total: tooLong.fit.pageCount,
-                })}
-          </p>
-          <p id="reader-ai-too-long-after">{t("ai.summary.tooLongAfter")}</p>
-          <div className="native-reader-ai-choice-actions">
-            <button
-              ref={tooLongRef}
-              className="button primary"
-              type="button"
-              aria-describedby="reader-ai-too-long reader-ai-too-long-after"
-              onClick={summarizeAnyway}
-            >
-              {tooLong.fit.firstPageCut
-                ? t("ai.summary.readStart")
-                : t("ai.summary.readPages", { last: tooLong.fit.lastPage })}
-            </button>
-            <button className="button" type="button" onClick={cancelQuestion}>
-              {t("common.cancel")}
-            </button>
-          </div>
+          {(() => {
+            // What the longer read covers, when there is one (D249, D250);
+            // otherwise what the default window reads (#301).
+            const { longer, memoryLimited } = tooLong;
+            const shown = longer?.fit ?? tooLong.fit;
+            const described = [
+              "reader-ai-too-long",
+              longer?.minutes != null && "reader-ai-too-long-time",
+              memoryLimited && "reader-ai-too-long-memory",
+              "reader-ai-too-long-after",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <>
+                <p id="reader-ai-too-long">
+                  {shown.fits
+                    ? t("ai.summary.long", { pages: tooLong.fit.pageCount })
+                    : shown.firstPageCut
+                      ? t("ai.summary.tooLongStart")
+                      : t("ai.summary.tooLong", {
+                          last: shown.lastPage,
+                          total: shown.pageCount,
+                        })}
+                </p>
+                {longer?.minutes != null && (
+                  <p id="reader-ai-too-long-time">
+                    {t(
+                      longer.fit.fits
+                        ? "ai.summary.readAllTime"
+                        : "ai.summary.readPagesTime",
+                      { minutes: longer.minutes },
+                    )}
+                  </p>
+                )}
+                {memoryLimited && (
+                  <p id="reader-ai-too-long-memory">
+                    {t("ai.summary.memoryHint")}
+                  </p>
+                )}
+                <p id="reader-ai-too-long-after">
+                  {t("ai.summary.tooLongAfter")}
+                </p>
+                <div className="native-reader-ai-choice-actions">
+                  <button
+                    ref={tooLongRef}
+                    className="button primary"
+                    type="button"
+                    aria-describedby={described}
+                    onClick={() => summarizeAnyway(Boolean(longer))}
+                  >
+                    {shown.fits
+                      ? t("ai.summary.readAll")
+                      : shown.firstPageCut
+                        ? t("ai.summary.readStart")
+                        : t("ai.summary.readPages", { last: shown.lastPage })}
+                  </button>
+                  {/* The default window's read, as before: the first pages. */}
+                  {longer && (
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={() => summarizeAnyway(false)}
+                    >
+                      {tooLong.fit.firstPageCut
+                        ? t("ai.summary.readStart")
+                        : t("ai.summary.firstPages")}
+                    </button>
+                  )}
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={cancelQuestion}
+                  >
+                    {t("common.cancel")}
+                  </button>
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
       {/* Not in the status above, so a screen reader is not told each

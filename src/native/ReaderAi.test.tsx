@@ -1,7 +1,7 @@
 import { humanText, visibleText } from "../test/humanText";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
 import { DocumentReader, sentenceAround } from "./DocumentReader";
 import { PreferencesSettings } from "./PreferencesSettings";
@@ -19,6 +19,12 @@ import {
   type FakeLocalModel,
 } from "../test/fakeLocalModel";
 import type { VaultRecord, ViewedPage } from "../vault";
+import { documentTokens } from "../ai/capacity";
+import {
+  expectedMinutes,
+  readDeviceRate,
+  rememberReadRate,
+} from "../ai/readRate";
 
 // FAKE documents only. A real 1 x 1 PNG, drawn here, so the picture loads.
 const PNG = (() => {
@@ -1438,6 +1444,226 @@ describe("a document longer than the model reads at a time (#301)", () => {
           `${locale} ${pages}`,
         ).toContain(reads[index]),
       );
+    }
+  });
+});
+
+describe("a long document read in a larger window (D249-D251)", () => {
+  // As above: five FAKE pages of 1,051 tokens, about 5,260 in all.
+  const longPages = Array.from(
+    { length: 5 },
+    (_, index) => "FAKE long page text. ".repeat(150) + index,
+  );
+  const long = async () => fakeDocumentText(longPages);
+  afterEach(() => window.localStorage.removeItem("mycarlos.aiReadRate.v1"));
+  // The default window has room for two pages; the larger ones as given.
+  const DEFAULT: [number, number] = [8192, 2200];
+  const withWindows = (sizes: [number, number][], memoryAllows: number) =>
+    fakeLocalModel({
+      status: {
+        state: "installed",
+        model: FAKE_MODEL,
+        capacity: { contextTokens: DEFAULT[0], documentTokens: DEFAULT[1] },
+        windows: {
+          sizes: sizes.map(([contextTokens, documentTokens]) => ({
+            contextTokens,
+            documentTokens,
+          })),
+          memoryAllows,
+        },
+      },
+    });
+  const ask = async (model: FakeLocalModel) => {
+    renderReader(model, { loadText: long });
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    return user;
+  };
+  const described = (button: HTMLElement) =>
+    visibleText(
+      (button.getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" "),
+    );
+
+  it("asks before reading all of it in a larger window, and reads it there only on Read all of it", async () => {
+    const model = withWindows([DEFAULT, [12288, 6000], [16384, 9000]], 16384);
+    const user = await ask(model);
+    const all = await screen.findByRole("button", { name: "Read all of it" });
+    await waitFor(() => expect(all).toHaveFocus());
+    expect(described(all)).toBe(
+      "This is a long document (about 5 pages). The summary will say which pages it read.",
+    );
+    // No reading time measured on this computer yet: no minutes. Memory
+    // allows the window that holds it: no hint.
+    expect(screen.queryByText(/may take about/)).toBeNull();
+    expect(screen.queryByText(/Closing other programs/)).toBeNull();
+    expect(model.calls).toHaveLength(0);
+    await user.tab();
+    expect(
+      screen.getByRole("button", { name: "First pages only" }),
+    ).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.click(all);
+    expect(screen.queryByText(/long document/)).toBeNull();
+    expect(model.calls).toHaveLength(1);
+    // The smallest window that holds it: 12k, not 16k.
+    expect(model.calls[0].contextTokens).toBe(12288);
+    expect(model.calls[0].input).toContain(longPages[4]);
+  });
+
+  it("reads the first pages in the default window on First pages only", async () => {
+    const model = withWindows([DEFAULT, [12288, 6000]], 12288);
+    const user = await ask(model);
+    await user.click(
+      await screen.findByRole("button", { name: "First pages only" }),
+    );
+    expect(model.calls).toHaveLength(1);
+    expect(model.calls[0].contextTokens).toBeUndefined();
+  });
+
+  it("says about how many minutes it may take, from this computer's last summary with the model", async () => {
+    rememberReadRate(FAKE_MODEL.sha256, {
+      promptTokens: 7000,
+      promptMs: 503000,
+      answerMs: 40000,
+    });
+    const minutes = expectedMinutes(
+      Math.min(documentTokens(fakeDocumentText(longPages)), 6000) + 750,
+      readDeviceRate(FAKE_MODEL.sha256),
+    );
+    // About 7.4 minutes at that rate: said as 8.
+    expect(minutes).toBe(8);
+    const model = withWindows([DEFAULT, [12288, 6000]], 12288);
+    await ask(model);
+    const all = await screen.findByRole("button", { name: "Read all of it" });
+    expect(described(all)).toBe(
+      "This is a long document (about 5 pages). Reading all of it may take about 8 minutes on this computer. The summary will say which pages it read.",
+    );
+  });
+
+  it("says the pages a larger window reads when even it cannot hold the document", async () => {
+    // 3,200 tokens of room: three pages of 1,051 and their separators.
+    const model = withWindows([DEFAULT, [12288, 3200]], 12288);
+    const user = await ask(model);
+    const read = await screen.findByRole("button", {
+      name: humanText("Summarize pages 1 to 3"),
+    });
+    expect(described(read)).toBe(
+      "This document is probably too long for the AI helper to read at once. It can read about pages 1 to 3 of 5. The summary will say which pages it read.",
+    );
+    expect(screen.queryByText(/Closing other programs/)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "First pages only" }),
+    ).toBeVisible();
+    await user.click(read);
+    expect(model.calls[0].contextTokens).toBe(12288);
+  });
+
+  it("says closing other programs may let it read more when memory, not the largest window, limits it", async () => {
+    // Only the default window fits in memory now: the question as before,
+    // with the hint, and no longer read to choose.
+    const model = withWindows([DEFAULT, [12288, 6000]], 8192);
+    const user = await ask(model);
+    const read = await screen.findByRole("button", {
+      name: humanText("Summarize pages 1 to 2"),
+    });
+    expect(described(read)).toBe(
+      "This document is probably too long for the AI helper to read at once. It can read about pages 1 to 2 of 5. Closing other programs may let the AI helper read more of this document. The summary will say which pages it read.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "First pages only" }),
+    ).toBeNull();
+    await user.click(read);
+    expect(model.calls[0].contextTokens).toBeUndefined();
+  });
+
+  it("offers the window memory allows, with the hint, when the one that holds the document does not fit", async () => {
+    const model = withWindows([DEFAULT, [12288, 3200], [16384, 9000]], 12288);
+    const user = await ask(model);
+    const read = await screen.findByRole("button", {
+      name: humanText("Summarize pages 1 to 3"),
+    });
+    expect(described(read)).toContain(
+      "Closing other programs may let the AI helper read more of this document.",
+    );
+    await user.click(read);
+    expect(model.calls[0].contextTokens).toBe(12288);
+  });
+
+  it("says the long read in every language", () => {
+    const expected: Record<
+      (typeof LOCALES)[number],
+      { minutes: [string, string, string]; pages: string }
+    > = {
+      en: {
+        minutes: ["about 1 minute", "about 2 minutes", "about 5 minutes"],
+        pages: "about 31 pages",
+      },
+      fr: {
+        minutes: ["environ 1 minute", "environ 2 minutes", "environ 5 minutes"],
+        pages: "environ 31 pages",
+      },
+      es: {
+        minutes: [
+          "aproximadamente 1 minuto",
+          "aproximadamente 2 minutos",
+          "aproximadamente 5 minutos",
+        ],
+        pages: "aproximadamente 31 páginas",
+      },
+      pl: {
+        minutes: ["około 1 minuty", "około 2 minut", "około 5 minut"],
+        pages: "około 31 stron",
+      },
+      "pt-BR": {
+        minutes: [
+          "cerca de 1 minuto",
+          "cerca de 2 minutos",
+          "cerca de 5 minutos",
+        ],
+        pages: "cerca de 31 páginas",
+      },
+      "zh-CN": {
+        minutes: ["约 1 分钟", "约 2 分钟", "约 5 分钟"],
+        pages: "约可读 31 页",
+      },
+      "zh-TW": {
+        minutes: ["約 1 分鐘", "約 2 分鐘", "約 5 分鐘"],
+        pages: "約可讀 31 頁",
+      },
+    };
+    for (const locale of LOCALES) {
+      const say = (key: Parameters<typeof translate>[1], params = {}) =>
+        visibleText(translate(locale, key, params));
+      const { minutes, pages } = expected[locale];
+      [1, 2, 5].forEach((count, index) => {
+        expect(
+          say("ai.summary.readAllTime", { minutes: count }),
+          `${locale} ${count}`,
+        ).toContain(minutes[index]);
+        expect(
+          say("ai.summary.readPagesTime", { minutes: count }),
+          `${locale} ${count}`,
+        ).toContain(minutes[index]);
+      });
+      expect(say("ai.summary.long", { pages: 14 }), locale).toContain("14");
+      expect(say("ai.model.readsLonger", { pages: 31 }), locale).toContain(
+        pages,
+      );
+      for (const key of [
+        "ai.summary.memoryHint",
+        "ai.summary.readAll",
+        "ai.summary.firstPages",
+      ] as const)
+        expect(say(key).length, `${locale} ${key}`).toBeGreaterThan(3);
+      if (locale !== "en")
+        expect(say("ai.summary.memoryHint"), locale).not.toBe(
+          visibleText(translate("en", "ai.summary.memoryHint", {})),
+        );
     }
   });
 });

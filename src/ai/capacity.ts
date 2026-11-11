@@ -1,5 +1,5 @@
 import type { DocumentText } from "../documentText";
-import type { ModelCapacity } from "./types";
+import type { ModelCapacity, SummaryWindows } from "./types";
 
 /**
  * How much of a document a model reads at a time (#301), estimated from the
@@ -124,5 +124,67 @@ export function estimateFit(
           : 1,
     firstPageCut: fitted === 0,
     pageCount: document.pageCount,
+  };
+}
+
+/** The helper's own words around a summary's pages, in tokens, with room to
+ * spare: `local_runner.rs` SUMMARY_PROMPT_TOKENS. */
+export const SUMMARY_PROMPT_TOKENS = 750;
+
+/** About how many tokens a document's pages take, as `estimateFit` counts
+ * them: each page, and the separator between pages. */
+export function documentTokens(document: DocumentText): number {
+  const separator = estimateTokens(SEPARATOR);
+  return document.pages.reduce(
+    (total, page, position) =>
+      total + estimateTokens(page.text) + (position > 0 ? separator : 0),
+    0,
+  );
+}
+
+/** How a long document would be read (D249–D251). */
+export interface WindowPlan {
+  /** The window: the smallest whose room holds the document, or the
+   * largest, and never larger than free memory allows now. */
+  window: ModelCapacity;
+  /** What it would read in that window. */
+  fit: FitEstimate;
+  /** Free memory, not the largest window, keeps it from reading more. */
+  memoryLimited: boolean;
+  /** About how many tokens the prompt would be, for the expected minutes:
+   * the pages it would read and the helper's own words. */
+  promptTokens: number;
+}
+
+/** The window a document would be read in, from the sizes the model offers
+ * and the largest free memory allows now (`ai_model_status`); null when it
+ * offers none. The answer still says the pages it read: memory is checked
+ * again when the read starts. */
+export function planWindow(
+  document: DocumentText,
+  windows: SummaryWindows,
+): WindowPlan | null {
+  const sizes = windows.sizes
+    .filter((size) => size.contextTokens > 0)
+    .sort((a, b) => a.contextTokens - b.contextTokens);
+  if (sizes.length === 0) return null;
+  const tokens = documentTokens(document);
+  const wanted =
+    sizes.find((size) => size.documentTokens >= tokens) ?? sizes.at(-1)!;
+  const window =
+    sizes
+      .filter(
+        (size) =>
+          size.contextTokens <=
+          Math.min(wanted.contextTokens, windows.memoryAllows),
+      )
+      .at(-1) ?? sizes[0];
+  return {
+    window,
+    fit: estimateFit(document, window),
+    memoryLimited: window.contextTokens < wanted.contextTokens,
+    promptTokens:
+      Math.min(tokens, Math.max(0, window.documentTokens)) +
+      SUMMARY_PROMPT_TOKENS,
   };
 }

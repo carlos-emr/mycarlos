@@ -30,6 +30,24 @@ export interface ModelCapacity {
   documentTokens: number;
 }
 
+/** The windows a summary may be read in on the model in use (D249), from
+ * `ai_model_status`: each from the default up to the cap and the model's own
+ * context, smallest first, with its room for the document; and the largest
+ * one free memory allows now. Absent for a model with no larger window. */
+export interface SummaryWindows {
+  sizes: ModelCapacity[];
+  memoryAllows: number;
+}
+
+/** How long the last summary took on this computer (D250): the prompt
+ * tokens the helper read and the time that took, and the answer's time.
+ * Counts and times only. */
+export interface ReadRate {
+  promptTokens: number;
+  promptMs: number;
+  answerMs: number;
+}
+
 /** What `ai_model_status` says about the model on this computer. */
 export type ModelStatus =
   | { state: "notInstalled" }
@@ -39,6 +57,9 @@ export type ModelStatus =
       /** How much of a document it reads at a time; null or absent when
        * not known, and the reader then starts as before. */
       capacity?: ModelCapacity | null;
+      /** The larger windows a long document may be read in (D249); absent
+       * when there are none, and the reader then asks as before. */
+      windows?: SummaryWindows | null;
     }
   /** The model cannot run here: too little memory in all, a processor
    * without the instructions it needs, or a system it does not run on yet
@@ -60,6 +81,8 @@ export interface ModelSummary {
   /** The id the native side kept this answer under for the document's save
    * (#212), when the request named the document. */
   keptId?: string;
+  /** How long it took (D250), when the helper said. */
+  readRate?: ReadRate;
 }
 
 /** A term explained, as the model writes it. */
@@ -105,6 +128,9 @@ export interface ModelLimits {
   parameters: number | null;
   fileBytes: number;
   neededBytes: number;
+  /** The most it reads at a time when memory allows a larger window (D249);
+   * absent when it has none. */
+  longest?: ModelCapacity;
 }
 
 /** What loading the model in use once said (`ai_model_check`, D218): it runs
@@ -193,11 +219,14 @@ export interface ExplainResult {
 export interface LocalModel {
   status(): Promise<ModelStatus>;
   /** With `keepFor` (the document's record id), the native side also keeps
-   * the answer for that document's save and gives its `keptId`. */
+   * the answer for that document's save and gives its `keptId`. With
+   * `contextTokens`, the larger window the patient agreed to read it in
+   * (D249, D250); without, the default one. */
   summarize(
     document: DocumentText,
     lang: string,
     keepFor?: string,
+    contextTokens?: number,
   ): Promise<ModelSummary>;
   explain(
     term: string,
