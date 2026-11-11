@@ -7,42 +7,69 @@ import type { ModelCapacity } from "./types";
  * count, and the helper fits the pages with it: the answer still reports the
  * pages it read (`lastPage`, `lastPageCut`). These numbers are "about".
  *
- * A text's tokens are the larger of two counts:
- * - Its bytes: a token for every 3 bytes of UTF-8 (the cautious rate the
- *   native side already uses for an answer's time limit, `local_runner.rs`
- *   prompt_tokens), and a token for every digit. This errs high for prose:
- *   English letters run nearer 4 to 4.5 bytes a token. Accented letters are
- *   2 bytes in UTF-8, so French, Spanish, Polish and Portuguese cost more, as
- *   in the model; Chinese is 3 bytes a character, about a token each.
- * - Its pre-tokens: the pieces the Qwen3.5 tokenizer cuts a text into before
- *   it looks anything up (llama.cpp `LLAMA_VOCAB_PRE_TYPE_QWEN35`, the same
- *   expression). A piece never merges with the next, so this never counts
- *   more than the model does. It matters for tables of results, where a
- *   space before a number, every digit, and each "-", "." or "/" between
- *   digits and units is a piece of its own. Gemma 4 splits digits too, so
- *   it is a close guide there.
+ * A text is counted by the pieces the Qwen3.5 tokenizer cuts it into before
+ * it looks anything up (llama.cpp `LLAMA_VOCAB_PRE_TYPE_QWEN35`, the same
+ * expression). A piece never merges with the next, so each is at least one
+ * token. Each piece then costs:
+ * - a digit, or a run of spaces or line breaks: one token, as in the model;
+ * - signs (".", ", ", "/", " (", "’"): one, or one for every 3 bytes of a
+ *   longer run;
+ * - a word, with its leading space: one for every so many bytes of its
+ *   UTF-8, by its letters (`WORD_BYTES_PER_TOKEN`), never less than one.
+ *   Plain letters a to z, 4. A word in capitals ("ALT", "TSH"), 1.75:
+ *   abbreviations split into more tokens. A word with any other letter
+ *   (French, Spanish, Polish, Portuguese), 2: the model's vocabulary is
+ *   mostly English, so those words split too. Chinese, 3: about a token a
+ *   character.
  *
- * So prose is counted high (a question can come for a document that would
- * just fit), and tables are counted at least at their pieces. Not yet
- * checked against real counts per language: the rate is one constant.
+ * Checked against real counts (11 Nov 2026):
+ * - the evaluation's baseline run, 30 FAKE documents in English, French,
+ *   Polish and Portuguese: the prompt tokens the helper reported, less the
+ *   320 of the request around the pages;
+ * - 128 more texts in all 7 languages (the deidentify fixtures, the app's
+ *   own messages, a table of results), counted offline with llama.cpp's
+ *   QWEN35 pieces and the model's own vocabulary; that count matched the
+ *   run's on all 30 documents.
+ *
+ * Every one of those texts counts at least 3% above the model's count, so
+ * the question comes before a document is too long, never after: English
+ * documents about 16% above (a question can come for a document that would
+ * just fit), French about 25%. Chinese is not checked against real Chinese
+ * documents yet (its rate is today's, cautious one); Gemma 4 splits digits
+ * too, so this is a close guide there.
  *
  * A page, for the settings' "about so many pages", is 3,000 characters: a
- * full page of single-spaced typed text. Most pages hold less, so that count
- * errs small.
+ * full page of single-spaced typed text, read at `BYTES_PER_TOKEN`. The
+ * run's English documents took 3.0 to 3.5 bytes a token over all their text
+ * (digits and signs included), so the settings' figure errs small, as do
+ * most pages, which hold less.
  */
 export const BYTES_PER_TOKEN = 3;
 export const PAGE_CHARACTERS = 3_000;
+/** Bytes of a word's UTF-8 that one token stands for, by its letters (see
+ * above). */
+export const WORD_BYTES_PER_TOKEN = {
+  plain: 4,
+  capitals: 1.75,
+  accented: 2,
+  chinese: 3,
+} as const;
+/** Bytes of a run of signs that one token stands for. */
+const SIGN_BYTES_PER_TOKEN = 3;
+/** The first code point counted as Chinese (CJK and the scripts after it). */
+const CHINESE_FROM = 0x2e80;
 
 /** The pages' separator in the joined text, as `documentText.ts` and the
  * helper's `fit_pages` join them. */
 const SEPARATOR = "\n\n";
 
 const encoder = new TextEncoder();
-const DIGIT = /\p{Nd}/u;
 /** llama.cpp's Qwen3.5 pre-tokenizer expression (llama-vocab.cpp,
  * LLAMA_VOCAB_PRE_TYPE_QWEN35), as is. */
 const PRE_TOKEN =
   /(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+/gu;
+const LETTER = /[\p{L}\p{M}]/u;
+const ONE_TOKEN = /^(?:\p{N}|\s+)$/u;
 
 /** The pieces the Qwen3.5 tokenizer cuts `text` into first: never more than
  * its tokens. */
@@ -50,19 +77,39 @@ export function preTokenCount(text: string): number {
   return text.match(PRE_TOKEN)?.length ?? 0;
 }
 
-/** About how many of the model's tokens `text` takes: the larger of its
- * byte count and its pre-token count (see above). */
-export function estimateTokens(text: string): number {
-  let digits = 0;
-  let otherBytes = 0;
-  for (const char of text) {
-    if (DIGIT.test(char)) digits += 1;
-    else otherBytes += encoder.encode(char).length;
+/** About how many tokens one piece takes (see above), not rounded. */
+function pieceTokens(piece: string): number {
+  if (ONE_TOKEN.test(piece)) return 1;
+  const bytes = encoder.encode(piece).length;
+  let letters = 0;
+  let highest = 0;
+  let lowercase = false;
+  for (const char of piece) {
+    if (!LETTER.test(char)) continue;
+    letters += 1;
+    highest = Math.max(highest, char.codePointAt(0) ?? 0);
+    if (char >= "a" && char <= "z") lowercase = true;
   }
-  return Math.max(
-    digits + Math.ceil(otherBytes / BYTES_PER_TOKEN),
-    preTokenCount(text),
-  );
+  const rate =
+    letters === 0
+      ? SIGN_BYTES_PER_TOKEN
+      : highest >= CHINESE_FROM
+        ? WORD_BYTES_PER_TOKEN.chinese
+        : highest >= 0x80
+          ? WORD_BYTES_PER_TOKEN.accented
+          : letters >= 2 && !lowercase
+            ? WORD_BYTES_PER_TOKEN.capitals
+            : WORD_BYTES_PER_TOKEN.plain;
+  return Math.max(1, bytes / rate);
+}
+
+/** About how many of the model's tokens `text` takes, rounded up: its
+ * pieces, each at what its kind costs (see above). Never fewer than its
+ * pieces. */
+export function estimateTokens(text: string): number {
+  let tokens = 0;
+  for (const piece of text.match(PRE_TOKEN) ?? []) tokens += pieceTokens(piece);
+  return Math.ceil(tokens);
 }
 
 /** A model's room for a document, as the settings say it: about so many

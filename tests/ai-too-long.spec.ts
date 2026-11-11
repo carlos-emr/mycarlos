@@ -32,7 +32,7 @@ const en = (
 const LETTER = "FAKE Letter.pdf";
 // The helper's room for a catalogue model (local_model.rs Capacity::HELPER).
 const HELPER: FakeCapacity = { contextTokens: 8192, documentTokens: 6510 };
-// Three dense FAKE pages of 9,000 bytes: about 3,000 tokens each by the
+// Three dense FAKE pages of about 9,150 bytes: about 2,900 tokens each by the
 // estimate (capacity.ts), so pages 1 to 2 fit the room and page 3 does not.
 const LONG_PAGES = Array.from(
   { length: FAKE_PAGE_COUNT },
