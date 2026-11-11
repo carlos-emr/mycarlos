@@ -648,6 +648,7 @@
   "portal.copy",
   "portal.copyFailed",
   "portal.dateNotRecorded",
+  "portal.defaultDeviceName",
   "portal.deviceCode",
   "portal.deviceName",
   "portal.deviceDetailsShow",

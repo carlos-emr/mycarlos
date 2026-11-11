@@ -1512,6 +1512,8 @@ portal-copyFailed = Zaznacz cały kod urządzenia i skopiuj go.
 
 portal-dateNotRecorded = Data nie została zapisana
 
+portal-defaultDeviceName = myCarlos na { $platform }
+
 portal-deviceCode = Kod urządzenia
 
 portal-deviceName = Nazwa tego urządzenia

@@ -3867,6 +3867,22 @@ button:disabled,
   border: 1px solid var(--line);
   border-radius: 0.5rem;
 }
+/* #124 review: "Clinic documents" is a Security section like the others, so
+   its heading has their size (.setting-row h2), and a clinic's name in its
+   card is no larger than that heading. */
+.portal-documents > h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.4;
+}
+.portal-link h3 {
+  margin: 0 0 0.5rem;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
 .portal-documents label {
   display: grid;
   gap: 0.35rem;
