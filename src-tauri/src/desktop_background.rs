@@ -997,24 +997,48 @@ mod tests {
 
     #[test]
     fn login_files_go_where_each_system_looks_and_are_written_and_removed() {
-        let home = Path::new("/home/fake");
+        // Paths absolute on every system: on Windows "/x/conf" has no drive, so it is not
+        // absolute there and XDG_CONFIG_HOME's rule would ignore it.
+        let root = tempfile::tempdir().unwrap();
+        let (home, conf) = (root.path().join("home/fake"), root.path().join("x/conf"));
         assert_eq!(
-            login_file(true, home, None),
-            Path::new("/home/fake/Library/LaunchAgents/ca.carlos.mycarlos.plist")
+            login_file(true, &home, None),
+            home.join("Library/LaunchAgents/ca.carlos.mycarlos.plist")
         );
         assert_eq!(
-            login_file(false, home, None),
-            Path::new("/home/fake/.config/autostart/ca.carlos.mycarlos.desktop")
+            login_file(false, &home, None),
+            home.join(".config/autostart/ca.carlos.mycarlos.desktop")
         );
         assert_eq!(
-            login_file(false, home, Some(Path::new("/x/conf"))),
-            Path::new("/x/conf/autostart/ca.carlos.mycarlos.desktop")
+            login_file(false, &home, Some(&conf)),
+            conf.join("autostart/ca.carlos.mycarlos.desktop")
         );
-        // A relative XDG_CONFIG_HOME is ignored, as the specification says.
         assert_eq!(
-            login_file(false, home, Some(Path::new("rel"))),
-            Path::new("/home/fake/.config/autostart/ca.carlos.mycarlos.desktop")
+            login_file(false, &home, Some(Path::new("rel"))),
+            home.join(".config/autostart/ca.carlos.mycarlos.desktop")
         );
+        // The same, as the macOS and Linux paths are written.
+        #[cfg(unix)]
+        {
+            let home = Path::new("/home/fake");
+            assert_eq!(
+                login_file(true, home, None),
+                Path::new("/home/fake/Library/LaunchAgents/ca.carlos.mycarlos.plist")
+            );
+            assert_eq!(
+                login_file(false, home, None),
+                Path::new("/home/fake/.config/autostart/ca.carlos.mycarlos.desktop")
+            );
+            assert_eq!(
+                login_file(false, home, Some(Path::new("/x/conf"))),
+                Path::new("/x/conf/autostart/ca.carlos.mycarlos.desktop")
+            );
+            // A relative XDG_CONFIG_HOME is ignored, as the specification says.
+            assert_eq!(
+                login_file(false, home, Some(Path::new("rel"))),
+                Path::new("/home/fake/.config/autostart/ca.carlos.mycarlos.desktop")
+            );
+        }
         let dir = tempfile::tempdir().unwrap();
         let file = login_file(false, dir.path(), None);
         apply_login_file(&file, Some("entry")).unwrap();
@@ -1028,15 +1052,26 @@ mod tests {
 
     #[test]
     fn a_program_path_that_could_break_out_of_a_quoted_entry_is_refused() {
-        for bad in [
-            "/opt/a\"b",
-            "/opt/a$b",
-            "/opt/a`b",
-            "/opt/a%b",
-            "/opt/a\nb",
-            "",
-        ] {
+        // Everywhere: a quote ends the quoted program, % names a variable, and a control
+        // character breaks the line.
+        for bad in ["/opt/a\"b", "/opt/a%b", "/opt/a\nb", "/opt/a\tb", ""] {
             assert!(!login_path_ok(Path::new(bad)), "{bad:?}");
+        }
+        // A macOS or Linux login entry is read as a shell would read a quoted word: $, ` and \
+        // act inside double quotes there.
+        #[cfg(not(windows))]
+        for bad in ["/opt/a$b", "/opt/a`b", "/opt/a\\b"] {
+            assert!(!login_path_ok(Path::new(bad)), "{bad:?}");
+        }
+        // Windows starts the Run value's program without a shell: $ and ` mean nothing there,
+        // and \ is its folder separator.
+        #[cfg(windows)]
+        for good in [
+            r"C:\Program Files\myCarlos\myCarlos.exe",
+            r"C:\Users\a$b\AppData\Local\myCarlos\myCarlos.exe",
+            r"C:\Users\a`b\myCarlos.exe",
+        ] {
+            assert!(login_path_ok(Path::new(good)), "{good:?}");
         }
         assert!(login_path_ok(Path::new("/opt/myCarlos/my carlos")));
         assert!(set_login_item(true, Path::new("/opt/a\"b")).is_err());
