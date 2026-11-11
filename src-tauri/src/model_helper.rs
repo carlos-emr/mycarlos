@@ -428,16 +428,25 @@ document says so. Do not reassure and do not warn. Do not add a diagnosis, do no
 advice, and do not suggest changing any medicine. If the document gives instructions, you may \
 repeat them as the document's instructions.";
 
+/// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
+/// condition, medicine or group, number and limit, or not at all.
+const SUMMARY_WHOLE_RULES: &str =
+    "When a sentence gives a rule with a condition (if, when, unless) or names a medicine or a \
+     group of medicines, keep every condition, every medicine or group, and every number or \
+     limit the document gives for it; if they do not all fit in one sentence, leave that \
+     sentence out.";
+
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
          sentences (fewer if the document is short). Start with the most important point; put \
-         one fact in each sentence. For each sentence, copy into \"quote\" one continuous piece \
-         of the document, 3 to 25 words, exactly as written (same spelling, numbers, accents and \
-         punctuation, no '...' and no joined pieces), in the document's own language. If you \
-         cannot find such a piece for a sentence, leave that sentence out.\n\nReply only with \
-         JSON in this shape: {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
+         one fact in each sentence. {SUMMARY_WHOLE_RULES} For each sentence, copy into \"quote\" \
+         one continuous piece of the document, 3 to 25 words, exactly as written (same spelling, \
+         numbers, accents and punctuation, no '...' and no joined pieces), in the document's own \
+         language. If you cannot find such a piece for a sentence, leave that sentence out.\n\n\
+         Reply only with JSON in this shape: \
+         {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
          Document:\n<<<\n{SLOT}\n>>>"
     )
 }
@@ -985,6 +994,28 @@ mod tests {
             CONTEXT_TOKENS as usize - 300 - SUMMARY_TOKENS - PROMPT_MARGIN
         );
         assert_eq!(document_budget(9_000, SUMMARY_TOKENS), 0);
+    }
+
+    #[test]
+    fn p1_a_rule_is_stated_whole_or_left_out() {
+        // P1 = E2 + part (b) only, word for word as the design note gives it.
+        let prompt = summary_prompt("English", MAX_SENTENCES);
+        let (before, after) = prompt.split_once(SLOT).unwrap();
+        assert_eq!(
+            before,
+            "Summarize this document for the patient in English, in at most 10 short sentences \
+             (fewer if the document is short). Start with the most important point; put one \
+             fact in each sentence. When a sentence gives a rule with a condition (if, when, \
+             unless) or names a medicine or a group of medicines, keep every condition, every \
+             medicine or group, and every number or limit the document gives for it; if they do \
+             not all fit in one sentence, leave that sentence out. For each sentence, copy into \
+             \"quote\" one continuous piece of the document, 3 to 25 words, exactly as written \
+             (same spelling, numbers, accents and punctuation, no '...' and no joined pieces), \
+             in the document's own language. If you cannot find such a piece for a sentence, \
+             leave that sentence out.\n\nReply only with JSON in this shape: {\"sentences\": \
+             [{\"text\": \"...\", \"quote\": \"...\"}]}\n\nDocument:\n<<<\n"
+        );
+        assert_eq!(after, "\n>>>");
     }
 
     #[test]
