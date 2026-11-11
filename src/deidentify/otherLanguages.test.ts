@@ -11,12 +11,15 @@ const gone = (text: string, ...parts: string[]) => {
 };
 
 describe("phones in es/pl/pt", () => {
+  // Numbers no one can be reached on, in each country's written form: Spanish
+  // numbers never start with 1, Polish ones never with 0, and (30) is not a
+  // Brazilian area code. The phone rules go by shape, so each is still a phone.
   it.each([
-    ["Llamar al +34 655 908 117 por la tarde.", "655"],
-    ["Kontakt: +48 512 330 908.", "512"],
-    ["Ligar para (31) 98877-1203 amanhã.", "98877"],
-    ["Móvil: 655 908 117", "655"],
-    ["Tel. kom. 512 330 908", "512"],
+    ["Llamar al +34 155 908 117 por la tarde.", "155"],
+    ["Kontakt: +48 012 330 908.", "012"],
+    ["Ligar para (30) 98877-1203 amanhã.", "98877"],
+    ["Móvil: 155 908 117", "155"],
+    ["Tel. kom. 012 330 908", "012"],
   ])("%s", (text, part) => {
     expect(gone(text, part)).toMatch(/\[PHONE 1\]/);
   });
@@ -29,7 +32,8 @@ describe("national identity numbers and health cards", () => {
     ["Numer PESEL 90010154321 w dokumentacji.", "90010154321"],
     ["CPF: 987.654.321-01", "987.654.321"],
     ["Seu CPF é 987.654.321-01.", "987.654.321"],
-    ["Tarjeta sanitaria: MRGA870512345011", "MRGA870512345011"],
+    // The birth date inside the card is impossible (month 13, day 32).
+    ["Tarjeta sanitaria: MRGA871332345011", "MRGA871332345011"],
     ["Cartão Nacional de Saúde 700 5009 1234 5678", "5009"],
   ])("%s", (text, part) => {
     gone(text, part);
