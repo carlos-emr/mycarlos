@@ -1851,6 +1851,10 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver no documento
 
+ai-summary-folded = O resumo está recolhido para dar espaço à página.
+
+ai-summary-showWhole = Ver o resumo inteiro
+
 ai-summary-partial = Este resumo cobre apenas o início do documento: páginas 1 a { $last }.
 
 ai-summary-noText = O myCarlos não conseguiu ler nenhum texto neste documento, então não pode resumi-lo. Ele pode ser uma digitalização.

@@ -109,6 +109,11 @@ const picture = (reader: Locator, number: number) =>
 const boxes = (reader: Locator) =>
   reader.locator(".native-reader-boxes > span");
 const mark = (reader: Locator) => reader.locator(".native-reader-text mark");
+const unfold = (reader: Locator) =>
+  reader.getByRole("button", {
+    name: en("ai.summary.showWhole"),
+    exact: true,
+  });
 
 /** Summary (after the AI helper's notice), then the page-2 sentence's Show
  * in document. */
@@ -217,6 +222,8 @@ test("marks the quote on the page picture and in the text, and keeps the helper'
   await expect
     .poll(() => inView(mark(reader), reader.locator(".native-reader-text")))
     .toBe(true);
+  // A large window keeps the whole summary.
+  await expect(unfold(reader)).toHaveCount(0);
   await shot(page, "show-in-document-1280");
 
   // Larger, twice: the boxes keep their place on the picture. The fake gives
@@ -265,10 +272,47 @@ for (const width of [560, 412]) {
     await expect
       .poll(() => inView(mark(reader), reader.locator(".native-reader-text")))
       .toBe(true);
+    // The summary is folded to one line, its button says so.
+    await expect(unfold(reader)).toBeVisible();
+    await expect(unfold(reader)).toHaveAttribute("aria-expanded", "false");
+    await expect(unfold(reader)).toHaveAccessibleDescription(
+      en("ai.summary.folded"),
+    );
     await shot(page, `show-in-document-${width}`);
+    // Unfolded on request, with the focus on the sentence shown.
+    await unfold(reader).click();
+    const shown = reader
+      .getByRole("button", {
+        name: en("ai.summary.showInDocument"),
+        exact: true,
+      })
+      .nth(1);
+    await expect(shown).toBeFocused();
+    await expect(unfold(reader)).toHaveCount(0);
+    await shot(page, `show-in-document-${width}-unfolded`);
     await expectOnlyFakedCommands(page);
   });
 }
+
+test("folds the summary on a short window, as a large screen at 200% zoom, and keeps the words in view", async ({
+  page,
+}) => {
+  // 1280 x 800 at 200% zoom is 640 x 400 to the page; a short window of
+  // full width is folded as well.
+  await page.setViewportSize({ width: 1280, height: 400 });
+  const reader = await openReader(page);
+  await showQuote(page, reader);
+  await expect(boxes(reader)).toHaveCount(2);
+  await expect(unfold(reader)).toBeVisible();
+  await expect(mark(reader)).toBeFocused();
+  await expect
+    .poll(() =>
+      inView(boxes(reader).first(), reader.locator(".native-reader-page")),
+    )
+    .toBe(true);
+  await shot(page, "show-in-document-1280x400");
+  await expectOnlyFakedCommands(page);
+});
 
 test("draws no box where the helper cannot place every word, and says the words are in the text", async ({
   page,

@@ -2,6 +2,7 @@ import { humanText, visibleText } from "../test/humanText";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { page as browser } from "vitest/browser";
 import { StrictMode } from "react";
 import { DocumentReader, sentenceAround } from "./DocumentReader";
 import { PreferencesSettings } from "./PreferencesSettings";
@@ -1450,6 +1451,115 @@ describe("Show in document also marks the page picture (#292)", () => {
     await firstPage();
     expect(reader).not.toHaveClass("native-reader-highlighting");
     expect(height(panel)).toBeCloseTo(window.innerHeight * 0.4, 0);
+  });
+
+  // On a narrow or short window, browser zoom included, the summary folds to
+  // one line while a quote is shown, so the picture keeps room (#292).
+  const oneBox = () =>
+    vi.fn(async () => ({
+      rects: [[0.1, 0.2, 0.5, 0.25]] as [number, number, number, number][],
+    }));
+  const unfoldButton = () =>
+    screen.queryByRole("button", { name: "Show the whole summary" });
+
+  it.each([
+    [560, 760, "narrow"],
+    [1100, 400, "short, as a large screen at 200% zoom"],
+  ])(
+    "folds the summary to one line on a %i x %i window (%s) while a quote is shown, and unfolds it on request",
+    async (width, height) => {
+      await browser.viewport(width, height);
+      try {
+        const { user } = await show({ pageBoxes: oneBox() });
+        const unfold = await screen.findByRole("button", {
+          name: "Show the whole summary",
+        });
+        // Its state and why it is folded are said with the button.
+        expect(unfold).toHaveAttribute("aria-expanded", "false");
+        expect(unfold).toHaveAccessibleDescription(
+          "The summary is folded so the page has room.",
+        );
+        // Still the summary's region, by its name; the sentences are folded
+        // away, kept rather than written again.
+        expect(
+          screen.getByRole("region", { name: "Summary in plain words" }),
+        ).toContainElement(unfold);
+        expect(
+          screen.queryByRole("button", { name: "Show in document" }),
+        ).toBeNull();
+        expect(document.getElementById("reader-ai-whole")).not.toBeVisible();
+        // The marked words keep the focus, as on a large window.
+        await waitFor(() =>
+          expect(
+            document.querySelector(".native-reader-text mark"),
+          ).toHaveFocus(),
+        );
+        // Unfolded: the whole summary, with its label, and the focus back on
+        // the sentence whose words are shown.
+        await user.click(unfold);
+        const shown = screen.getByRole("button", { name: "Show in document" });
+        await waitFor(() => expect(shown).toHaveFocus());
+        expect(unfoldButton()).toBeNull();
+        expect(
+          screen.getByText(
+            "Written by AI and may be wrong. Check with your doctor.",
+          ),
+        ).toBeVisible();
+        // Showing the words again folds it again.
+        await user.click(shown);
+        expect(
+          await screen.findByRole("button", { name: "Show the whole summary" }),
+        ).toBeVisible();
+        await waitFor(() =>
+          expect(
+            document.querySelector(".native-reader-text mark"),
+          ).toHaveFocus(),
+        );
+      } finally {
+        await browser.viewport(1100, 760);
+      }
+    },
+  );
+
+  it("keeps the whole summary on a large window", async () => {
+    await show({ pageBoxes: oneBox() });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    expect(unfoldButton()).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Show in document" }),
+    ).toBeVisible();
+  });
+
+  it("folds when the window gets smaller while a quote is shown, and keeps the focus in the panel", async () => {
+    try {
+      await show({ pageBoxes: oneBox() });
+      await waitFor(() => expect(overlay()).not.toBeNull());
+      const shown = screen.getByRole("button", { name: "Show in document" });
+      act(() => shown.focus());
+      await browser.viewport(1100, 400);
+      const unfold = await screen.findByRole("button", {
+        name: "Show the whole summary",
+      });
+      await waitFor(() => expect(unfold).toHaveFocus());
+    } finally {
+      await browser.viewport(1100, 760);
+    }
+  });
+
+  it("does not fold once the quote's page is left", async () => {
+    try {
+      await browser.viewport(560, 760);
+      const { user } = await show({ pageBoxes: oneBox() });
+      await screen.findByRole("button", { name: "Show the whole summary" });
+      await user.click(screen.getByRole("button", { name: "Previous page" }));
+      await firstPage();
+      expect(unfoldButton()).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Show in document" }),
+      ).toBeVisible();
+    } finally {
+      await browser.viewport(1100, 760);
+    }
   });
 
   it("marks the text only where the boxes cannot be asked for", async () => {

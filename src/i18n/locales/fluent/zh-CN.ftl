@@ -1667,6 +1667,10 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文档中显示
 
+ai-summary-folded = 摘要已收起，以便为页面留出空间。
+
+ai-summary-showWhole = 显示完整摘要
+
 ai-summary-partial = 此摘要仅涵盖文档开头部分：第 1 页至第 { $last } 页。
 
 ai-summary-noText = myCarlos 无法读取此文档中的任何文本，因此无法生成摘要。这可能是扫描件。
