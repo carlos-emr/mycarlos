@@ -1853,6 +1853,10 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver en el documento
 
+ai-summary-folded = El resumen está plegado para dejar espacio a la página.
+
+ai-summary-showWhole = Ver todo el resumen
+
 ai-summary-partial = Este resumen solo abarca el comienzo del documento: páginas 1 a { $last }.
 
 ai-summary-noText = myCarlos no pudo leer ningún texto en este documento, así que no puede resumirlo. Puede que sea un documento escaneado.

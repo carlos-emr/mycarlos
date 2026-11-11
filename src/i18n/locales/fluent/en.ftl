@@ -1817,6 +1817,10 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Show in document
 
+ai-summary-folded = The summary is folded so the page has room.
+
+ai-summary-showWhole = Show the whole summary
+
 ai-summary-partial = This summary covers only the start of the document: pages 1 to { $last }.
 
 ai-summary-noText = myCarlos could not read any text in this document, so it can't summarize it. It may be a scan.

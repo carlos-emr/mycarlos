@@ -719,6 +719,7 @@ function ReadingDocument({
                 initialTerm={aiTool === "explain" ? selected.current : ""}
                 contextFor={(term) => sentenceAround(pageText, term)}
                 onShowSource={showSource}
+                quoteShown={marked !== null}
               />
             )}
           </>

@@ -1891,6 +1891,10 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Pokaż w dokumencie
 
+ai-summary-folded = Podsumowanie jest zwinięte, żeby zrobić miejsce dla strony.
+
+ai-summary-showWhole = Pokaż całe podsumowanie
+
 ai-summary-partial = To podsumowanie obejmuje tylko początek dokumentu: strony od 1 do { $last }.
 
 ai-summary-noText = Nie udało się odczytać żadnego tekstu w tym dokumencie, więc nie można go podsumować. To może być skan.

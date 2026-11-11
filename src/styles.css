@@ -1040,6 +1040,22 @@ p {
   max-width: 70ch;
   margin: 4px 0;
 }
+/* On a narrow or short window (browser zoom included), while a quote is
+   shown, the summary folds to one line with a button that unfolds it, so the
+   page picture keeps room (#292). */
+.native-reader-ai.native-reader-ai-folded {
+  padding-block: 6px;
+}
+.native-reader-ai-fold {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.native-reader-ai .native-reader-ai-fold p {
+  flex: 1 1 14em;
+  margin: 0;
+}
 .native-reader-ai .native-reader-ai-wait {
   color: var(--ink-soft);
   font-size: 0.875rem;
