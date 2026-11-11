@@ -737,6 +737,91 @@ def prefill(sheet_path, other_path, runs, key_path, out_path):
     return filled, len(rows) - filled
 
 
+# --- Reading report (reporting only: no score or decision reads it) -----------------------------
+
+READING_LABELS = ("read", "partly read", "not read")
+
+
+def pages_read(doc, answer):
+    """(read, partly): the page indexes a run's model read whole, and the one it read only in part.
+    From the answer's lastPage, lastPageCut and tailPage (a variant that keeps room for the last
+    page reads it after a gap)."""
+    if not answer or answer.get("lastPage") is None:
+        return set(), None
+    last, tail = answer["lastPage"], answer.get("tailPage")
+    read = {p["index"] for p in doc["pages"] if p["index"] <= last}
+    partly = None
+    if answer.get("lastPageCut"):
+        read.discard(last)
+        partly = last
+    if tail is not None:
+        read.add(tail)
+        if partly == tail:
+            partly = None
+    return read, partly
+
+
+def fact_pages(doc, fact):
+    """The pages that hold the fact's source evidence or any of its spans (folded)."""
+    return {p["index"] for span in evidence_spans(fact) for p in doc["pages"] if fold(span) in fold(p["text"])}
+
+
+def reading_label(pages, read, partly):
+    """Whether the model could have seen the fact: "read" (a page holding it was read whole, or the
+    evidence is on no single page), "partly read" (only on the page read in part) or "not read"."""
+    if not pages or pages & read:
+        return "read"
+    return "partly read" if partly in pages else "not read"
+
+
+def reading_report(labels, runs, docs, all_scores):
+    """Per run, the required facts of the decision documents by whether their page was read, and
+    how each group fared: credited, held, or lost (for a read page: the model left it out)."""
+    report = []
+    for label, entries, scores in zip(labels, runs, all_scores):
+        groups = {name: dict(facts=0, credited=0, held=0, lost=0) for name in READING_LABELS}
+        documents = {}
+        for doc_id, doc in docs.items():
+            score = scores.get(doc_id, {})
+            if not in_decision(doc) or not score.get("present") or score.get("error"):
+                continue
+            read, partly = pages_read(doc, (entries.get(doc_id) or {}).get("result"))
+            by_id = {f["id"]: f for f in doc.get("facts", [])}
+            for fact in score["facts"]:
+                if not fact["required"]:
+                    continue
+                name = reading_label(fact_pages(doc, by_id[fact["id"]]), read, partly)
+                outcome = {"credited": "credited", "held": "held"}.get(fact["standing"], "lost")
+                groups[name]["facts"] += 1
+                groups[name][outcome] += 1
+                if name != "read":
+                    documents.setdefault(doc_id, {}).setdefault(name, []).append(f"{fact['id']} ({outcome})")
+        read_facts = groups["read"]["facts"]
+        report.append(dict(label=label, groups=groups, documents=documents,
+                           read_credited_pct=round(100 * groups["read"]["credited"] / read_facts, 1) if read_facts else None))
+    return report
+
+
+def reading_markdown(report):
+    lines = ["Reading report (reporting only: the decision does not use it). Required facts of the decision "
+             "documents, by whether the run's model read a page that holds them (from lastPage, lastPageCut "
+             "and tailPage). Lost on a read page: the model left it out. Lost on a page not read: the model "
+             "never saw it.", "",
+             "| Run | read: credited / held / left out (of) | credited of read | partly read: credited / held / lost (of) | not read: credited / held / lost (of) |",
+             "|---|---|---|---|---|"]
+    for run in report:
+        g = run["groups"]
+        cell = lambda name: f"{g[name]['credited']} / {g[name]['held']} / {g[name]['lost']} ({g[name]['facts']})"
+        pct = "" if run["read_credited_pct"] is None else f"{run['read_credited_pct']}%"
+        lines.append(f"| {run['label']} | {cell('read')} | {pct} | {cell('partly read')} | {cell('not read')} |")
+    for run in report:
+        if run["documents"]:
+            lines += ["", f"{run['label']}: facts on pages not read whole"]
+            for doc_id, names in sorted(run["documents"].items()):
+                lines.append(f"- {doc_id}: " + "; ".join(f"{name}: {', '.join(items)}" for name, items in names.items()))
+    return "\n".join(lines) + "\n"
+
+
 def summarize_run(scores, wrong, holdout=False):
     """A run's totals over the documents the decision uses (or over the holdout ones)."""
     chosen = {d: s for d, s in scores.items() if s.get("decision", True) != holdout}
@@ -969,7 +1054,7 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
 
 
 def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, require_gain=False,
-          noise_pair=None, freeze=None, review_key=None):
+          noise_pair=None, freeze=None, review_key=None, reading=True):
     """Scores the runs, the first as the baseline. `require_gain`: True for every variant, or the
     labels of the variants aimed at patient actions. `freeze`: HARNESS-FREEZE.json to hold the
     scorer and documents to; a decision under anything else is never PASS ("UNFROZEN")."""
@@ -1049,6 +1134,11 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
               f"{'; NOT FROZEN' if unfrozen else ''})\n\n")
     (out / "compare.md").write_text(header + table(labels, docs, all_scores, summaries, decisions, memories, holdouts)
                                     + "".join(f"\nNOTE: {n}\n" for n in notes), encoding="utf-8")
+    if reading:
+        # Reporting only, in files of its own: scores.json, compare.md and the sheet are the same without it.
+        report = reading_report(labels, [entries for _, entries in loaded.values()], docs, all_scores)
+        (out / "reading.json").write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        (out / "reading.md").write_text(reading_markdown(report), encoding="utf-8")
     return summaries, decisions
 
 

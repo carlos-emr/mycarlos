@@ -543,6 +543,68 @@ class CrossLanguageTest(unittest.TestCase):
         self.assertEqual(compare.guess_language("Il doit revenir à la clinique et à la pharmacie avec le formulaire."), "fr")
 
 
+class ReadingReportTest(unittest.TestCase):
+    """Reporting only (rule v5 line): a fact lost on a page the model never read is told apart from
+    one the model read and left out; the scores and decisions do not change."""
+
+    LONG = "new-long-hospital-record"
+
+    def test_pages_read_from_the_answer(self):
+        doc = REPO[self.LONG]
+        self.assertEqual(compare.pages_read(doc, dict(lastPage=16, lastPageCut=False)), (set(range(17)), None))
+        self.assertEqual(compare.pages_read(doc, dict(lastPage=14, lastPageCut=False, tailPage=17)),
+                         (set(range(15)) | {17}, None))
+        self.assertEqual(compare.pages_read(doc, dict(lastPage=16, lastPageCut=True)), (set(range(16)), 16))
+        self.assertEqual(compare.pages_read(doc, None), (set(), None))
+
+    def test_a_fact_on_a_page_not_read_is_labelled_so(self):
+        doc = REPO[self.LONG]
+        aki = compare.fact_pages(doc, evidence_of(self.LONG, "aki_recovered"))
+        self.assertEqual(aki, {17})
+        head = compare.pages_read(doc, dict(lastPage=16, lastPageCut=False))
+        head_and_tail = compare.pages_read(doc, dict(lastPage=14, lastPageCut=False, tailPage=17))
+        self.assertEqual(compare.reading_label(aki, *head), "not read")
+        self.assertEqual(compare.reading_label(aki, *head_and_tail), "read")
+        self.assertEqual(compare.reading_label({16}, set(range(16)), 16), "partly read")
+        self.assertEqual(compare.reading_label(set(), set(), None), "read")
+
+    def test_the_report_splits_lost_facts_by_reading(self):
+        doc = REPO[self.LONG]
+        sentences = [sentence("FAKE: nothing from the document.", "no such words anywhere")]
+        entry = dict(kind="document", id=self.LONG, wallMs=1,
+                     result=dict(sentences=sentences, lastPage=16, lastPageCut=False))
+        scores = {self.LONG: compare.score_document(doc, entry, "en")}
+        report = compare.reading_report(["B0"], [{self.LONG: entry}], {self.LONG: doc}, [scores])[0]
+        required = [f for f in doc["facts"] if f.get("required", True)]
+        on_17 = [f for f in required if compare.fact_pages(doc, f) == {17}]
+        self.assertEqual(report["groups"]["not read"]["lost"], len(on_17))
+        self.assertEqual(report["groups"]["read"]["lost"], len(required) - len(on_17))
+        self.assertIn("aki_recovered (lost)", report["documents"][self.LONG]["not read"])
+        self.assertIn("| B0 |", compare.reading_markdown([report]))
+
+
+class ReadingIsReportingOnlyTest(unittest.TestCase):
+    setUp = RunTest.setUp
+
+    def test_scores_decisions_and_sheet_are_byte_identical_with_and_without_the_report(self):
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        variant = write_run(self.folder.name, "E1", run_lines("E1", BETTER))
+        outs = []
+        for reading in (False, True):
+            out = Path(self.folder.name) / f"reading-{reading}"
+            _, decisions = compare.score([base, variant], out, self.docs, reading=reading)
+            outs.append((out, decisions))
+        (plain, plain_decisions), (reported, reported_decisions) = outs
+        self.assertEqual(plain_decisions, reported_decisions)
+        for name in ("compare.md", "review/review.csv", "key/review-key.csv"):
+            self.assertEqual((plain / name).read_bytes(), (reported / name).read_bytes(), name)
+        without_time = lambda path: {k: v for k, v in json.loads(path.read_text(encoding="utf-8")).items()
+                                     if k != "scored_at"}
+        self.assertEqual(without_time(plain / "scores.json"), without_time(reported / "scores.json"))
+        self.assertFalse((plain / "reading.md").exists())
+        self.assertTrue((reported / "reading.md").exists() and (reported / "reading.json").exists())
+
+
 class DecisionV2Test(RunTest):
     def test_a_speed_variant_passes_when_not_worse(self):
         rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")]

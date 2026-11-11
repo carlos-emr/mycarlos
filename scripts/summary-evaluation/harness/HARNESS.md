@@ -149,6 +149,16 @@ page, run through the app's own text extraction once and kept as their `pages`.
   - `answerHash` (token-for-token comparison: greedy decoding repeats exactly on the same build and
     threads).
 
+- **Reading report** (`reading.md`, `reading.json`; reporting only, no score or decision uses it):
+  - each required fact of a decision document is labelled per run by the pages its evidence is on:
+    `read` (the model read such a page whole), `partly read` (only the page it read in part) or
+    `not read`, from the answer's `lastPage`, `lastPageCut` and `tailPage`;
+  - per run: credited / held / lost in each group, and credited of read. A fact lost on a read
+    page was left out by the model; one lost on a page not read was never seen. So a variant that
+    reads pages 1-15 and 18 of the 18-page record is not charged with "missing" what it never read;
+  - `scores.json`, `compare.md` and the review sheet are byte for byte the same with and without it
+    (a test).
+
 ## What decides a score is pinned
 `scores.json` (`scoring`) and the first line of `compare.md` name, by SHA-256:
 - `compare.py` itself;
