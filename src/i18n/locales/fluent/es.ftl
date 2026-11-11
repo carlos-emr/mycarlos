@@ -1490,6 +1490,8 @@ portal-copyFailed = Seleccione el código completo del dispositivo y cópielo.
 
 portal-dateNotRecorded = Fecha no registrada
 
+portal-defaultDeviceName = myCarlos en { $platform }
+
 portal-deviceCode = Código del dispositivo
 
 portal-deviceName = Nombre de este dispositivo

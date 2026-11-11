@@ -654,6 +654,7 @@ export const MESSAGE_KEYS = [
   "portal.copy",
   "portal.copyFailed",
   "portal.dateNotRecorded",
+  "portal.defaultDeviceName",
   "portal.deviceCode",
   "portal.deviceName",
   "portal.deviceDetailsShow",
@@ -1777,6 +1778,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.copy": "portal-copy",
   "portal.copyFailed": "portal-copyFailed",
   "portal.dateNotRecorded": "portal-dateNotRecorded",
+  "portal.defaultDeviceName": "portal-defaultDeviceName",
   "portal.deviceCode": "portal-deviceCode",
   "portal.deviceName": "portal-deviceName",
   "portal.deviceDetailsShow": "portal-deviceDetailsShow",
@@ -2965,6 +2967,7 @@ export interface MessageArgsByKey {
   "portal.copy": undefined;
   "portal.copyFailed": undefined;
   "portal.dateNotRecorded": undefined;
+  "portal.defaultDeviceName": { platform: FluentArgument };
   "portal.deviceCode": undefined;
   "portal.deviceName": undefined;
   "portal.deviceDetailsShow": undefined;
