@@ -81,6 +81,12 @@ pub(crate) struct Accepted {
     /// context is shorter than the helper's can say so; a model added from any file would take
     /// it from the file's header (not yet: catalogue models only).
     pub(crate) capacity: Capacity,
+    /// The model's cache for each token of window above the default, in bytes (D249): its
+    /// full-attention layers that keep their own cache × 2 (keys and values) × KV heads × head
+    /// size × 2 bytes (f16), read from the file's header. 0 when not known: the model then keeps
+    /// the default window.
+    #[serde(skip)]
+    pub(crate) cache_bytes_per_token: u32,
     /// Whether Preferences lists it (name, address, Copy). An entry that is
     /// not listed is still accepted by "Add a model file…": its size and hash
     /// are on the list.
@@ -103,6 +109,9 @@ pub(crate) const CATALOG: &[Accepted] = &[
         source_url: "https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
         chat_format: crate::model_helper::ChatFormat::Builtin,
         capacity: Capacity::HELPER,
+        // Hybrid: full attention in 8 of its layers, 4 KV heads of 256 (GGUF header). The rest
+        // are recurrent, with a state that does not grow with the window.
+        cache_bytes_per_token: 8 * 2 * 4 * 256 * 2,
         listed: true,
     },
     // Listed since #276 (several models, one in use). The default is the first
@@ -118,6 +127,10 @@ pub(crate) const CATALOG: &[Accepted] = &[
         source_url: "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf",
         chat_format: crate::model_helper::ChatFormat::Gemma4,
         capacity: Capacity::HELPER,
+        // 3 full-attention layers keep a growing cache (1 KV head of 512); the 20 last layers
+        // share earlier layers' cache, and the sliding-window ones keep 512 tokens whatever
+        // the window (GGUF header).
+        cache_bytes_per_token: 3 * 2 * 512 * 2,
         listed: true,
     },
 ];
@@ -421,6 +434,8 @@ pub(crate) struct VerifiedModel {
     pub(crate) info: ModelInfo,
     pub(crate) size_bytes: u64,
     pub(crate) chat_format: crate::model_helper::ChatFormat,
+    /// The model's cache per token of window (from its list entry; see [`Accepted`]).
+    pub(crate) cache_bytes_per_token: u32,
 }
 
 impl Store {
@@ -564,6 +579,7 @@ impl crate::model_runtime::ModelSource for RuntimeSource {
             info: model.info,
             size_bytes: model.size_bytes,
             chat_format: model.chat_format,
+            cache_bytes_per_token: model.cache_bytes_per_token,
         })
     }
 }
@@ -1080,6 +1096,7 @@ impl Store {
                 },
                 size_bytes: model.size_bytes,
                 chat_format: model.chat_format,
+                cache_bytes_per_token: model.cache_bytes_per_token,
             });
         }
         Err(ModelError::NotInstalled)
@@ -1462,6 +1479,7 @@ mod tests {
             source_url: "https://example.invalid/fake",
             chat_format: crate::model_helper::ChatFormat::Builtin,
             capacity: Capacity::HELPER,
+            cache_bytes_per_token: 0,
             listed: true,
         }];
         (bytes, Box::leak(list.into_boxed_slice()))
@@ -1572,6 +1590,7 @@ mod tests {
             lang: "en".into(),
             pages: vec![],
             max_sentences: 1,
+            context_tokens: None,
         };
         assert!(matches!(
             runner.summarize(old, &request),

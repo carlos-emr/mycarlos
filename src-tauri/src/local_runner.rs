@@ -101,11 +101,33 @@ impl AnswerLimit {
     /// The limit for a request whose prompt is about `prompt_tokens` and whose answer may run
     /// to `answer_tokens`.
     pub(crate) fn for_request(&self, prompt_tokens: u32, answer_tokens: u32) -> Duration {
+        self.for_window(
+            prompt_tokens,
+            answer_tokens,
+            crate::model_helper::CONTEXT_TOKENS,
+        )
+    }
+
+    /// As [`AnswerLimit::for_request`], for a prompt read in a window of `window` tokens
+    /// (D249): the ceiling grows in step with the window, so a long document read in a larger
+    /// window is not cut off by the ceiling set for the default one. The floor stays.
+    pub(crate) fn for_window(
+        &self,
+        prompt_tokens: u32,
+        answer_tokens: u32,
+        window: u32,
+    ) -> Duration {
+        let scale = window.max(crate::model_helper::CONTEXT_TOKENS);
+        let ceiling = self
+            .ceiling
+            .saturating_mul(scale)
+            .checked_div(crate::model_helper::CONTEXT_TOKENS)
+            .unwrap_or(self.ceiling);
         self.fixed
             .saturating_add(self.per_prompt_token.saturating_mul(prompt_tokens))
             .saturating_add(self.per_answer_token.saturating_mul(answer_tokens))
             .max(self.floor)
-            .min(self.ceiling)
+            .min(ceiling)
     }
 }
 
@@ -396,6 +418,10 @@ pub(crate) struct SummaryRequest {
     pub(crate) lang: String,
     pub(crate) pages: Vec<Page>,
     pub(crate) max_sentences: usize,
+    /// The window to read the pages in (D249; see `model_runtime::choose_window`); none is the
+    /// helper's default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) context_tokens: Option<u32>,
 }
 
 /// One sentence of a summary: the words, and the words of the document it
@@ -1782,6 +1808,39 @@ mod tests {
     }
 
     #[test]
+    fn an_answer_limit_ceiling_grows_with_its_window() {
+        let limit = AnswerLimit {
+            fixed: Duration::from_secs(30),
+            per_prompt_token: Duration::from_millis(150),
+            per_answer_token: Duration::from_millis(600),
+            floor: Duration::from_secs(5 * 60),
+            ceiling: Duration::from_secs(20 * 60),
+        };
+        // The default window keeps today's limit, ceiling included.
+        assert_eq!(
+            limit.for_window(30_000, 900, 8_192),
+            Duration::from_secs(20 * 60)
+        );
+        assert_eq!(
+            limit.for_request(30_000, 900),
+            limit.for_window(30_000, 900, 8_192)
+        );
+        // Four times the window, four times the ceiling; the request's own cost still decides.
+        assert_eq!(
+            limit.for_window(31_000, 900, 32_768),
+            Duration::from_secs(80 * 60)
+        );
+        assert_eq!(
+            limit.for_window(100, 100, 32_768),
+            Duration::from_secs(5 * 60)
+        );
+        assert_eq!(
+            limit.for_window(10_000, 900, 16_384),
+            Duration::from_secs(30) + Duration::from_millis(150 * 10_000 + 600 * 900)
+        );
+    }
+
+    #[test]
     fn an_answer_limit_grows_with_its_request_between_its_floor_and_ceiling() {
         let fixed = AnswerLimit::fixed(Duration::from_secs(7));
         assert_eq!(fixed.for_request(0, 0), Duration::from_secs(7));
@@ -1983,6 +2042,7 @@ mod tests {
                     },
                 ],
                 max_sentences: 5,
+                context_tokens: None,
             }
         }
 
@@ -2046,6 +2106,7 @@ mod tests {
                     runner.ticket(),
                     &SummaryRequest {
                         max_sentences: 2,
+                        context_tokens: None,
                         ..request()
                     },
                 )
