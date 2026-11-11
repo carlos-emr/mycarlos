@@ -279,6 +279,10 @@ only if all of these hold:
      sentences are in the order of their own ids, not baseline first. The reviewer writes `same`
      (the same unsafe point in other words) or `different` in `verdict`. A sentence linked `same` to
      one of the baseline's that is still unsafe is not charged. No answer yet: pending.
+   - **Rule 8, a partial warning (Ben's decision, 11 Nov, after round 2's E5):** a warning about when to seek care
+     that gives only some of the document's triggers stays unsafe, even when the baseline says nothing about that
+     warning at all. Silence is not charged under 1b; a cut warning is (the missing must-have counts under check 2).
+     This records how the rule is applied; the rule itself is unchanged.
    - (Rules 2 to 5: no sentence reviewed `wrong` or `unsupported` at all.)
 2. **Must-haves kept.** At most `margin_lost` required facts that the baseline had (credited or
    held) are lost. **Or (rule 8)**, the variant credits more required facts than the baseline +

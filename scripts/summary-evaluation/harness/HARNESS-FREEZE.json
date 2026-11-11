@@ -63,6 +63,11 @@
    "version": "8",
    "frozen_utc": "2026-11-11T14:58:09+00:00",
    "reason": "rule 8 of the rescore line: Ben's decisions D211, D212 (14:41Z 11 Nov) and D213 (14:51Z), made after B0, E1, E4, E2 and E3 had been scored and reviewed under rule 6. Check 2: must-haves may be lost if more are credited in all (+ margin) and no key fact is lost (an allergy, a held or stopped medicine, a warning about when to seek care, and two medicine warnings added in review; PR 295's cases by tag, the harness documents by KEY_FACTS in compare.py). Check 1b: a sentence marked unsafe is read with the sentences beside it (blind 'together' rows), and a variant's unsafe sentence the reviewer links as the same point as one of the baseline's ('same point' rows) is not new. Facts, credit and documents unchanged."
+  },
+  {
+   "version": "8",
+   "frozen_utc": "2026-11-11T18:18:34+00:00",
+   "reason": "decision recorded, no change to the rule, scorer or documents: Ben (11 Nov, after round 2's E5) keeps check 1b strict. A seek-care warning that gives only some of the document's triggers stays unsafe even when the baseline is silent about it. Every frozen hash is unchanged."
   }
  ],
  "documents": {
