@@ -107,6 +107,7 @@ export function ReaderAiPanel({
     fit: Extract<FitEstimate, { fits: false }>;
   } | null>(null);
   const tooLongRef = useRef<HTMLButtonElement | null>(null);
+  const againRef = useRef<HTMLButtonElement | null>(null);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
   // The tool whose answer the model just wrote, to say so once (#253). A
   // summary read back from the vault is not new: the panel is made again
@@ -320,6 +321,17 @@ export function ReaderAiPanel({
     if (tooLong) tooLongRef.current?.focus();
   }, [tooLong]);
 
+  // Not now. With a summary on screen (a kept one, asked to summarize
+  // again), only the question goes: the summary stays, and the focus goes
+  // back to Summarize again. With nothing else to show, the panel closes.
+  const cancelQuestion = () => {
+    if (summary) {
+      setTooLong(null);
+      if (againRef.current) againRef.current.focus();
+      else onReturnFocus();
+    } else onCancel();
+  };
+
   // Summarize the pages the model can read: the choice goes, the focus goes
   // back to Summary, and the status says the work.
   const summarizeAnyway = () => {
@@ -512,7 +524,11 @@ export function ReaderAiPanel({
                   ? t("ai.summary.readStart")
                   : t("ai.summary.readPages", { last: tooLong.fit.lastPage })}
               </button>
-              <button className="button" type="button" onClick={onCancel}>
+              <button
+                className="button"
+                type="button"
+                onClick={cancelQuestion}
+              >
                 {t("common.cancel")}
               </button>
             </div>
@@ -583,6 +599,7 @@ export function ReaderAiPanel({
             {keepFailed && <p role="alert">{t(keepFailed)}</p>}
             {fromKept && (
               <button
+                ref={againRef}
                 className="button"
                 type="button"
                 disabled={working}
