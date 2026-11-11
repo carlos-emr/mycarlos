@@ -201,10 +201,10 @@ describe("Add a model file", () => {
     render(
       <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
     );
-    // Until the model has run on this computer, the catalogue's figure: an
+    // Until the model has started in this session, the catalogue's figure: an
     // estimate, and said to be one (model limits).
     const reads = humanText(
-      "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages. An estimate until the model has run on this computer.",
+      "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages. An estimate until you next use this model.",
     );
     const line = await screen.findByText(reads);
     expect(line).toBeVisible();
@@ -273,7 +273,7 @@ describe("Add a model file", () => {
     expect(
       await screen.findByText(
         humanText(
-          "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages. An estimate until the model has run on this computer.",
+          "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages. An estimate until you next use this model.",
         ),
       ),
     ).toBeVisible();

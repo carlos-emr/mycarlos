@@ -1908,7 +1908,7 @@ ai-model-reads =
    *[other] Lee alrededor de { $pages } páginas a la vez (alrededor de { $characters } caracteres de texto en inglés). Menos con tablas y en algunos idiomas.
     }
 
-ai-model-readsEstimate = Es una estimación hasta que el modelo se haya ejecutado en este equipo.
+ai-model-readsEstimate = Es una estimación hasta la próxima vez que se use este modelo.
 
 ai-model-where = Dónde obtener el archivo
 

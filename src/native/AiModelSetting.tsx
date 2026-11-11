@@ -266,7 +266,8 @@ export function AiModelSetting({
     }
   };
   /** What a row says it reads at a time: the confirmed limits once the model
-   * has run on this computer, otherwise the catalogue's figure, an estimate. */
+   * has started in this session (they are not kept), otherwise the
+   * catalogue's figure, an estimate. */
   const readingOf = (row: ModelRow) => {
     const found = limits?.find((entry) => entry.index === row.index);
     const capacity = found?.capacity ?? row.model.capacity;
@@ -716,8 +717,9 @@ export function AiModelSetting({
                   reading && (
                     <p id={`${prefix}-reads`}>
                       {t("ai.model.reads", capacityInPages(reading.capacity))}
-                      {/* Until the model has run here, the catalogue's
-                          figure: said to be an estimate (model limits). */}
+                      {/* Until the model has started in this session, the
+                          catalogue's figure: said to be an estimate (model
+                          limits). */}
                       {!reading.confirmed && (
                         <> {t("ai.model.readsEstimate")}</>
                       )}

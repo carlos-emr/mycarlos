@@ -1719,7 +1719,7 @@ ai-model-accepted = { $name }，{ $size } MB。许可证：{ $licence }。
 
 ai-model-reads = 每次约可读 { $pages } 页（约 { $characters } 个英文字符）。表格和某些语言会更少。
 
-ai-model-readsEstimate = 在模型于此电脑上运行之前，这只是估计值。
+ai-model-readsEstimate = 在下次使用此模型之前，这只是估计值。
 
 ai-model-where = 在哪里获取文件
 

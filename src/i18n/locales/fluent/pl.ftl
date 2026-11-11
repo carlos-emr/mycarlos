@@ -1947,7 +1947,7 @@ ai-model-reads =
    *[other] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
     }
 
-ai-model-readsEstimate = To wartość szacunkowa, dopóki model nie zadziała na tym komputerze.
+ai-model-readsEstimate = To wartość szacunkowa do następnego użycia tego modelu.
 
 ai-model-where = Gdzie pobrać plik
 
