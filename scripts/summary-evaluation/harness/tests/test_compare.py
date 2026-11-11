@@ -210,6 +210,7 @@ class RunTest(unittest.TestCase):
         (_, decisions), _ = self.score(run_lines("E1", BETTER), rows)
         self.assertEqual(decisions[1]["verdict"], "FAIL")
 
+    @unittest.mock.patch.object(compare, "REVIEW_SAMPLE", 0.2)  # this test is about a partial sample
     def test_losing_a_must_have_the_baseline_had_fails_it(self):
         rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")]
         (_, decisions), _ = self.score(run_lines("E1", BETTER[1:2]), rows)
@@ -315,6 +316,7 @@ class CounterExampleTest(unittest.TestCase):
         self.assertIsNone(facts["iron_deficiency_anemia"]["standing"])
         self.assertIn("ADVICE_OR_JUDGEMENT:fine", scored["flags"][0]["flags"])
 
+    @unittest.mock.patch.object(compare, "REVIEW_SAMPLE", 0.2)  # this test is about a partial sample
     def test_a_table_row_quote_earns_the_credit(self):
         row = "25-hydroxy vitamin D\t41\tL\t75–250\tnmol/L"
         facts, scored = score_sentences("demo-celiac-lab", [sentence("Your vitamin D was low.", row)])
@@ -412,6 +414,7 @@ class CreditTest(unittest.TestCase):
         self.assertEqual(self.standing([self.timing, plain])["timing"], "held")
         self.assertEqual(self.standing([self.timing, plain], {1: "correct"})["timing"], "credited")
 
+    @unittest.mock.patch.object(compare, "REVIEW_SAMPLE", 0.2)  # this test is about a partial sample
     def test_an_unflagged_sentence_credits_a_fact_that_is_not_critical(self):
         weight = sentence("You have lost 4 kg.", "They have lost 4 kg.")
         self.assertEqual(self.standing([weight])["weight"], "credited")
@@ -783,6 +786,107 @@ class ReadingIsReportingOnlyTest(unittest.TestCase):
         self.assertEqual(without_time(plain / "scores.json"), without_time(reported / "scores.json"))
         self.assertFalse((plain / "reading.md").exists())
         self.assertTrue((reported / "reading.md").exists() and (reported / "reading.json").exists())
+
+
+class FullReviewTest(unittest.TestCase):
+    """Since B0 and E1 were scored (11 Nov), every distinct sentence goes on the sheet: a sample let an
+    invented appointment through by chance. Review coverage only: the credit and the decision rule
+    are unchanged, so a set where every sentence has a verdict scores the same at any sample."""
+    setUp = RunTest.setUp
+
+    def test_every_sentence_goes_on_the_sheet(self):
+        self.assertEqual(compare.REVIEW_SAMPLE, 1.0)
+        entry = run_lines("E1", BETTER)[1]
+        scored = compare.score_document(fake_doc(), entry, "en")
+        self.assertEqual([item["index"] for item in scored["sheet"]], list(range(len(BETTER))))
+
+    def test_a_fully_reviewed_set_gets_the_same_decisions_at_any_sample(self):
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        variant = write_run(self.folder.name, "E1", run_lines("E1", BETTER))
+        review = Path(self.folder.name) / "all.csv"
+        verdicts = ["correct", "vague", "correct"]
+        with review.open("w", newline="", encoding="utf-8") as target:
+            writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "verdict"])
+            writer.writeheader()
+            writer.writerow(dict(run="B0", doc="fake-letter", sentence=0, verdict="correct"))
+            for index, verdict in enumerate(verdicts):
+                writer.writerow(dict(run="E1", doc="fake-letter", sentence=index, verdict=verdict))
+        outcomes = []
+        for sample in (0.2, 1.0):
+            with unittest.mock.patch.object(compare, "REVIEW_SAMPLE", sample):
+                summaries, decisions = compare.score([base, variant], Path(self.folder.name) / f"s{sample}",
+                                                     self.docs, review)
+            outcomes.append((json.dumps(decisions, sort_keys=True),
+                             [{k: v for k, v in s.items() if not k.startswith("unreviewed")} for s in summaries]))
+        self.assertEqual(outcomes[0], outcomes[1])
+        # The vague row is a fact the baseline never had, so nothing is lost, at either sample.
+        self.assertEqual(json.loads(outcomes[1][0])[1]["verdict"], "PASS")
+
+
+class StatedFactsTest(unittest.TestCase):
+    """A correct row that lists several facts credits only those its note names ("states: 1, 2");
+    with no such note it is not reviewed yet (11 Nov, after round 2, rescore line 5.2)."""
+    setUp = RunTest.setUp
+    DOC = "bakeoff-hospital-header"
+    LIVER = sentence("The ultrasound shows a normal liver and no gallstones.", "Normal liver echotexture. No gallstones.")
+
+    def sheet(self, note):
+        listed = " | ".join(evidence_of(self.DOC, f)["approved_statements"][0]
+                            for f in ("liver_normal", "no_gallstones", "normal_study"))
+        key = compare.sentence_key(self.DOC, self.LIVER)
+        path = Path(self.folder.name) / "stated.csv"
+        with path.open("w", newline="", encoding="utf-8") as target:
+            writer = csv.DictWriter(target, fieldnames=compare.SHEET_FIELDS)
+            writer.writeheader()
+            writer.writerow(dict(id=compare.sentence_id(key), document=self.DOC, language="en",
+                                 sentence=self.LIVER["text"], quote=self.LIVER["quote"], context="",
+                                 fact_it_may_state=listed, verdict="correct", note=note))
+        return path, key
+
+    def standings(self, note):
+        path, key = self.sheet(note)
+        verdicts = compare.read_review(path, {})
+        mine = {0: verdicts[key]} if key in verdicts else {}
+        states = {0: verdicts.states[key]} if key in verdicts.states else {}
+        facts, _ = score_sentences(self.DOC, [self.LIVER], mine) if not states else (None, None)
+        if states:
+            entry = dict(kind="document", id=self.DOC, wallMs=1,
+                         result=dict(sentences=[self.LIVER], lastPage=0, lastPageCut=False))
+            facts = {f["id"]: f for f in compare.score_document(REPO[self.DOC], entry, "en", mine, states)["facts"]}
+        return {f: facts[f]["standing"] for f in ("liver_normal", "no_gallstones", "normal_study")}
+
+    def test_only_the_named_facts_are_credited(self):
+        self.assertEqual(self.standings("States two of the three. states: 1, 2"),
+                         dict(liver_normal="credited", no_gallstones="credited", normal_study="rejected"))
+
+    def test_states_all_credits_every_listed_fact(self):
+        self.assertEqual(self.standings("states: all"),
+                         dict(liver_normal="credited", no_gallstones="credited", normal_study="credited"))
+
+    def test_a_several_fact_row_without_states_is_not_reviewed_yet(self):
+        path, key = self.sheet("looks fine")
+        self.assertNotIn(key, compare.read_review(path, {}))
+        self.assertEqual(self.standings("looks fine"),
+                         dict(liver_normal="held", no_gallstones="held", normal_study="held"))
+
+    def test_a_place_the_row_does_not_list_is_refused(self):
+        path, _ = self.sheet("states: 4")
+        with self.assertRaises(ValueError):
+            compare.read_review(path, {})
+
+    def test_prefill_carries_the_named_facts_over(self):
+        source, key = self.sheet("states: 2, 1")
+        target = Path(self.folder.name) / "target.csv"
+        rows = compare.read_csv_rows(source)
+        rows[0].update(verdict="", note="")
+        with target.open("w", newline="", encoding="utf-8") as out:
+            writer = csv.DictWriter(out, fieldnames=compare.SHEET_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+        result = Path(self.folder.name) / "prefilled.csv"
+        compare.prefill(target, source, {}, None, result)
+        row = compare.read_csv_rows(result)[0]
+        self.assertEqual((row["verdict"], row["note"]), ("correct", "states: 1, 2"))
 
 
 class DecisionV2Test(RunTest):
