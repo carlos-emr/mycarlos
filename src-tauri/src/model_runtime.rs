@@ -414,6 +414,33 @@ pub(crate) fn choose_window(
         .unwrap_or(model_helper::CONTEXT_TOKENS)
 }
 
+/// About the window a summary of `text_bytes` of pages needs to read them all (D249, design
+/// section 4): the pages at about 3 bytes a token, the helper's words around them
+/// ([`local_runner::SUMMARY_PROMPT_TOKENS`]), its longest summary and its margin. The helper
+/// counts the pages' own tokens and reads the ones that fit.
+pub(crate) fn summary_need(text_bytes: usize) -> u32 {
+    let need = model_helper::window_need(
+        local_runner::SUMMARY_PROMPT_TOKENS as usize,
+        text_bytes.div_ceil(3),
+        model_helper::SUMMARY_TOKENS,
+    );
+    u32::try_from(need).unwrap_or(u32::MAX)
+}
+
+/// The next smaller listed window than `window`, down to the default: what a summary asks for
+/// once more when the helper could not make the one it asked (D249).
+pub(crate) fn smaller_window(window: u32) -> u32 {
+    model_helper::CONTEXT_WINDOWS
+        .iter()
+        .rev()
+        .copied()
+        .find(|smaller| *smaller < window)
+        .unwrap_or(model_helper::CONTEXT_TOKENS)
+}
+
+/// The helper's word for a window it could not make (`Engine::use_window`).
+const WINDOW_REFUSED: &str = "window";
+
 /// Checks a summary request: 1 to [`MAX_PAGES`] pages, indexes strictly increasing and below
 /// [`MAX_PAGES`], each page at most [`MAX_PAGE_BYTES`], all at most [`MAX_TEXT_BYTES`], some
 /// text, and a language myCarlos speaks.
@@ -461,6 +488,9 @@ pub(crate) struct ModelRuntime {
     answering: Mutex<Option<crate::local_runner::Ticket>>,
     /// A load check is running: a second one is not queued behind it.
     checking: AtomicBool,
+    /// The cache cost per token of window of the model the helper was last started with, by
+    /// its SHA-256 (D249): a summary's window is chosen for the model that is running.
+    window_cost: Mutex<Option<(String, u32)>>,
 }
 
 /// Ends an answer's claim on the load check, however the answer ends.
@@ -509,6 +539,7 @@ impl ModelRuntime {
             answered: Mutex::new(None),
             answering: Mutex::new(None),
             checking: AtomicBool::new(false),
+            window_cost: Mutex::new(None),
         }
     }
 
@@ -531,8 +562,8 @@ impl ModelRuntime {
     }
 
     /// Starts the helper if it is not running: the memory first, from the model's listed size,
-    /// then the model verified again, then the start.
-    fn start(&self, ticket: crate::local_runner::Ticket) -> Result<(), AiError> {
+    /// then the model verified again, then the start. The model that is running.
+    fn start(&self, ticket: crate::local_runner::Ticket) -> Result<ModelInfo, AiError> {
         let mut unavailable = None;
         let prepare = || {
             let size = self.source.installed_size().ok_or_else(|| {
@@ -561,6 +592,11 @@ impl ModelRuntime {
                 });
                 RunnerError::NotRunning
             })?;
+            *self
+                .window_cost
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) =
+                Some((verified.info.sha256.clone(), verified.cache_bytes_per_token));
             (self.launch)(&verified).map_err(|error| {
                 unavailable = Some(error);
                 RunnerError::NotRunning
@@ -568,7 +604,7 @@ impl ModelRuntime {
         };
         let started = self.runner.start_for(ticket, &*self.probe, prepare);
         match (started, unavailable) {
-            (Ok(_), _) => Ok(()),
+            (Ok(model), _) => Ok(model),
             (Err(_), Some(error)) => Err(error),
             (Err(error), None) => Err(from_runner(&error)),
         }
@@ -645,7 +681,7 @@ impl ModelRuntime {
             return LoadCheck::Ready;
         }
         let outcome = match self.start(claim) {
-            Ok(()) => LoadCheck::Ready,
+            Ok(_) => LoadCheck::Ready,
             Err(error) => LoadCheck::from(error),
         };
         loaded();
@@ -673,19 +709,28 @@ impl ModelRuntime {
         let _ends = self.answer_ends(ticket);
         check_summary(&request)?;
         self.runner.watch_answer(ticket, watch);
-        self.start(ticket)?;
-        let summary = self
-            .runner
-            .summarize(
-                ticket,
-                &SummaryRequest {
-                    lang: request.lang,
-                    pages: request.pages,
-                    max_sentences: model_helper::MAX_SENTENCES,
-                    context_tokens: None,
-                },
-            )
-            .map_err(|error| from_runner(&error))?;
+        let model = self.start(ticket)?;
+        let text_bytes = request.pages.iter().map(|page| page.text.len()).sum();
+        let window = self.window_for(&model, text_bytes);
+        let mut asked = SummaryRequest {
+            lang: request.lang,
+            pages: request.pages,
+            max_sentences: model_helper::MAX_SENTENCES,
+            context_tokens: (window > model_helper::CONTEXT_TOKENS).then_some(window),
+        };
+        let summary = match self.runner.summarize(ticket, &asked) {
+            // llama.cpp could not make the window after all: once more, one size smaller. The
+            // watch was told the larger window's limit, which covers the smaller one's.
+            Err(RunnerError::Model(reason))
+                if reason == WINDOW_REFUSED && window > model_helper::CONTEXT_TOKENS =>
+            {
+                let smaller = smaller_window(window);
+                asked.context_tokens = (smaller > model_helper::CONTEXT_TOKENS).then_some(smaller);
+                self.runner.summarize(ticket, &asked)
+            }
+            outcome => outcome,
+        }
+        .map_err(|error| from_runner(&error))?;
         self.answered_by(&summary.model);
         Ok(SummaryResult {
             sentences: summary.sentences,
@@ -693,6 +738,29 @@ impl ModelRuntime {
             last_page: summary.last_page,
             last_page_cut: summary.last_page_cut,
         })
+    }
+
+    /// The window a summary of `text_bytes` of pages is read in by the running `model` (D249,
+    /// design section 4): the smallest that holds them, up to the cap and the model's own
+    /// context, as free memory allows the extra cache (the helper is running, so only that is
+    /// still to find). The default window for a model whose cache cost or card is not known.
+    fn window_for(&self, model: &ModelInfo, text_bytes: usize) -> u32 {
+        let cost = self
+            .window_cost
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .filter(|(sha256, _)| *sha256 == model.sha256)
+            .map_or(0, |(_, cost)| *cost);
+        let Some(card) = self.runner.card_for(&model.sha256) else {
+            return model_helper::CONTEXT_TOKENS;
+        };
+        choose_window(
+            summary_need(text_bytes),
+            card.trained_context,
+            cost,
+            |extra| matches!(check_budget(extra, &*self.probe), Budget::Fits { .. }),
+        )
     }
 
     /// What a term means in its sentence, in the language asked. `watch` is told the answer's
@@ -869,6 +937,30 @@ mod tests {
             record_id: None,
             ticket: None,
         }
+    }
+
+    #[test]
+    fn a_summary_needs_its_pages_and_the_helpers_prompt_answer_and_margin() {
+        assert_eq!(summary_need(0), 750 + 900 + 32);
+        // The default window's room for the document (6,510 tokens, #301) needs it exactly.
+        assert_eq!(summary_need(6_510 * 3), model_helper::CONTEXT_TOKENS);
+        assert_eq!(
+            summary_need(6_510 * 3 + 1),
+            model_helper::CONTEXT_TOKENS + 1
+        );
+        assert_eq!(summary_need(usize::MAX), u32::MAX);
+    }
+
+    #[test]
+    fn a_refused_window_is_asked_again_one_size_smaller() {
+        assert_eq!(smaller_window(32_768), 24_576);
+        assert_eq!(smaller_window(24_576), 16_384);
+        assert_eq!(smaller_window(16_384), 12_288);
+        assert_eq!(smaller_window(12_288), model_helper::CONTEXT_TOKENS);
+        assert_eq!(
+            smaller_window(model_helper::CONTEXT_TOKENS),
+            model_helper::CONTEXT_TOKENS
+        );
     }
 
     #[test]
@@ -1230,6 +1322,10 @@ mod tests {
         size: Option<u64>,
         verified: Result<(), Unavailable>,
         asked: Arc<std::sync::atomic::AtomicUsize>,
+        /// The model file's path, its SHA-256 and its cache per token of window (D249).
+        path: PathBuf,
+        sha256: String,
+        cache_bytes_per_token: u32,
     }
 
     impl ModelSource for Fake {
@@ -1241,14 +1337,14 @@ mod tests {
             self.verified?;
             Ok(Verified {
                 file: tempfile::tempfile().unwrap(),
-                path: PathBuf::from("/FAKE/model.gguf"),
+                path: self.path.clone(),
                 info: ModelInfo {
                     name: "FAKE model".to_owned(),
-                    sha256: "ab".repeat(32),
+                    sha256: self.sha256.clone(),
                 },
                 size_bytes: 1024,
                 chat_format: model_helper::ChatFormat::Builtin,
-                cache_bytes_per_token: 0,
+                cache_bytes_per_token: self.cache_bytes_per_token,
             })
         }
     }
@@ -1271,6 +1367,9 @@ mod tests {
                 size,
                 verified,
                 asked: Arc::clone(&asked),
+                path: PathBuf::from("/FAKE/model.gguf"),
+                sha256: "ab".repeat(32),
+                cache_bytes_per_token: 0,
             },
             asked,
         )
@@ -1576,6 +1675,120 @@ mod tests {
             assert_eq!(check(&runtime), LoadCheck::Ready);
             assert!(runtime.runner.is_running());
             assert_eq!(asked.load(SeqCst), 1);
+            runtime.stop();
+        }
+
+        /// Free memory a test changes as it goes.
+        struct Shared(Arc<std::sync::atomic::AtomicU64>);
+
+        impl MemoryProbe for Shared {
+            fn available_bytes(&self) -> Option<u64> {
+                Some(self.0.load(SeqCst))
+            }
+        }
+
+        /// A launch is a plain function, so the fake model's path names the file its windows
+        /// are logged to (`--log-windows`).
+        fn windows_log(verified: &Verified) -> &str {
+            verified.path.to_str().expect("a log path")
+        }
+
+        fn logs_windows(verified: &Verified) -> Result<RunnerConfig, AiError> {
+            let log = windows_log(verified);
+            Ok(fake_model(
+                &["--card", "--log-windows", log],
+                Duration::from_secs(10),
+            ))
+        }
+
+        fn refuses_windows(verified: &Verified) -> Result<RunnerConfig, AiError> {
+            let log = windows_log(verified);
+            Ok(fake_model(
+                &["--card", "--refuse-window", "--log-windows", log],
+                Duration::from_secs(10),
+            ))
+        }
+
+        fn logs_windows_without_a_card(verified: &Verified) -> Result<RunnerConfig, AiError> {
+            let log = windows_log(verified);
+            Ok(fake_model(&["--log-windows", log], Duration::from_secs(10)))
+        }
+
+        /// A runtime whose model costs Qwen3.5 4B's 32 KiB a token of window, with `free`
+        /// bytes free; and the log of the windows its summaries asked for.
+        fn windowed(
+            launch: fn(&Verified) -> Result<RunnerConfig, AiError>,
+            free: &Arc<std::sync::atomic::AtomicU64>,
+        ) -> (ModelRuntime, tempfile::TempDir) {
+            let folder = tempfile::tempdir().unwrap();
+            let (mut source, _) = fake(Some(GIB), Ok(()));
+            source.path = folder.path().join("windows.log");
+            // The fake model's hello names this file.
+            source.sha256 = "0".repeat(64);
+            source.cache_bytes_per_token = 32 * 1024;
+            let probe = Box::new(Shared(Arc::clone(free)));
+            (ModelRuntime::new(Box::new(source), probe, launch), folder)
+        }
+
+        fn windows_asked(folder: &tempfile::TempDir) -> String {
+            std::fs::read_to_string(folder.path().join("windows.log")).unwrap_or_default()
+        }
+
+        /// One FAKE page of about `bytes` bytes (about a third as many tokens).
+        fn long(bytes: usize) -> SummarizeRequest {
+            let text = "FAKE clinic note. ".repeat(bytes / 18);
+            summary(vec![page(0, &text)], "en")
+        }
+
+        #[test]
+        fn a_long_summary_is_read_in_the_window_that_holds_it_as_memory_allows() {
+            const MIB: u64 = 1024 * 1024;
+            let free = Arc::new(std::sync::atomic::AtomicU64::new(64 * GIB));
+            let (runtime, folder) = windowed(logs_windows, &free);
+            // About 1,700, 9,700, 13,700 and 31,700 tokens: 8k, 12k, 16k and 32k.
+            for bytes in [0, 24_000, 36_000, 90_000] {
+                let request = if bytes == 0 {
+                    summary(vec![page(0, "FAKE text. The FAKE clinic phoned.")], "en")
+                } else {
+                    long(bytes)
+                };
+                assert!(runtime.summarize(request, Box::new(|_| ())).is_ok());
+            }
+            assert_eq!(windows_asked(&folder), "none\n12288\n16384\n32768\n");
+            // Memory for 128 MiB more but not 256: 12k for the 16k document; then none at all.
+            free.store(200 * MIB, SeqCst);
+            assert!(runtime.summarize(long(36_000), Box::new(|_| ())).is_ok());
+            free.store(0, SeqCst);
+            assert!(runtime.summarize(long(36_000), Box::new(|_| ())).is_ok());
+            assert_eq!(
+                windows_asked(&folder),
+                "none\n12288\n16384\n32768\n12288\nnone\n"
+            );
+            runtime.stop();
+        }
+
+        #[test]
+        fn a_window_the_helper_cannot_make_is_asked_once_more_one_size_smaller() {
+            let free = Arc::new(std::sync::atomic::AtomicU64::new(64 * GIB));
+            let (runtime, folder) = windowed(refuses_windows, &free);
+            // 12k refused: read in the default window.
+            assert!(runtime.summarize(long(24_000), Box::new(|_| ())).is_ok());
+            assert_eq!(windows_asked(&folder), "12288\nnone\n");
+            // 32k refused, then 24k: once only, and the answer fails.
+            assert_eq!(
+                runtime.summarize(long(90_000), Box::new(|_| ())).err(),
+                Some(AiError::Failed)
+            );
+            assert_eq!(windows_asked(&folder), "12288\nnone\n32768\n24576\n");
+            runtime.stop();
+        }
+
+        #[test]
+        fn a_model_without_a_card_keeps_the_default_window() {
+            let free = Arc::new(std::sync::atomic::AtomicU64::new(64 * GIB));
+            let (runtime, folder) = windowed(logs_windows_without_a_card, &free);
+            assert!(runtime.summarize(long(36_000), Box::new(|_| ())).is_ok());
+            assert_eq!(windows_asked(&folder), "none\n");
             runtime.stop();
         }
     }

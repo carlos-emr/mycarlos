@@ -550,6 +550,19 @@ pub(crate) const fn document_budget(prompt_tokens: usize, answer_tokens: usize) 
     document_budget_at(CONTEXT_TOKENS, prompt_tokens, answer_tokens)
 }
 
+/// The window a document of `document_tokens` needs to be read whole, its prompt and answer
+/// around it (D249): what [`document_budget_at`] leaves room for, the other way round.
+pub(crate) const fn window_need(
+    prompt_tokens: usize,
+    document_tokens: usize,
+    answer_tokens: usize,
+) -> usize {
+    prompt_tokens
+        .saturating_add(document_tokens)
+        .saturating_add(answer_tokens)
+        .saturating_add(PROMPT_MARGIN)
+}
+
 /// The same room in a context of `context` tokens (model limits: the context the helper made).
 pub(crate) const fn document_budget_at(
     context: u32,

@@ -99,7 +99,8 @@ impl AnswerLimit {
     }
 
     /// The limit for a request whose prompt is about `prompt_tokens` and whose answer may run
-    /// to `answer_tokens`.
+    /// to `answer_tokens`, read in the default window. Requests use [`AnswerLimit::for_window`].
+    #[cfg(test)]
     pub(crate) fn for_request(&self, prompt_tokens: u32, answer_tokens: u32) -> Duration {
         self.for_window(
             prompt_tokens,
@@ -136,8 +137,13 @@ impl AnswerLimit {
 /// three bytes a token. That is a cautious rate (English runs about 4.5, accented and CJK text
 /// fewer), so the estimate errs long, and so does the limit. At most the model's context.
 fn prompt_tokens(fixed: u32, text_bytes: usize) -> u32 {
+    prompt_tokens_in(fixed, text_bytes, crate::model_helper::CONTEXT_TOKENS)
+}
+
+/// As [`prompt_tokens`], for a prompt read in a window of `window` tokens (D249): at most that.
+fn prompt_tokens_in(fixed: u32, text_bytes: usize, window: u32) -> u32 {
     let tokens = u64::from(fixed).saturating_add((text_bytes as u64).div_ceil(3));
-    tokens.min(u64::from(crate::model_helper::CONTEXT_TOKENS)) as u32
+    tokens.min(u64::from(window)) as u32
 }
 
 /// The helper's own words around a summary's pages, and around a term and its sentence, in
@@ -971,10 +977,26 @@ impl Runner {
             "summary",
             request_json,
             (
-                prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
+                prompt_tokens_in(
+                    SUMMARY_PROMPT_TOKENS,
+                    text_bytes,
+                    request
+                        .context_tokens
+                        .unwrap_or(crate::model_helper::CONTEXT_TOKENS),
+                ),
                 SUMMARY_ANSWER_TOKENS,
             ),
         )?;
+        // Read in at most the window asked (D249), as a card's context is checked.
+        let window = request
+            .context_tokens
+            .unwrap_or(crate::model_helper::CONTEXT_TOKENS);
+        if answer
+            .stats
+            .is_some_and(|stats| stats.context_tokens > window)
+        {
+            return Err(RunnerError::Protocol("window larger than asked".to_owned()));
+        }
         let Some(sentences) = answer.sentences else {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
         };
@@ -1130,7 +1152,13 @@ impl Runner {
         self.set_status(RunnerStatus::Working {
             model: model.clone(),
         });
-        let answer_timeout = running.answer_limit.for_request(size.0, size.1);
+        // A summary read in a larger window (D249) is allowed the time that window takes.
+        let window = request
+            .get("contextTokens")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|window| u32::try_from(window).ok())
+            .unwrap_or(crate::model_helper::CONTEXT_TOKENS);
+        let answer_timeout = running.answer_limit.for_window(size.0, size.1, window);
         // Only this ticket's watch: a newer request's waits for its own answer.
         let watch = {
             let mut slot = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
@@ -1870,6 +1898,9 @@ mod tests {
     #[test]
     fn a_prompt_is_estimated_long_from_its_bytes_and_never_past_the_context() {
         assert_eq!(prompt_tokens(750, 0), 750);
+        // In a larger window the prompt may grow to that window (D249).
+        assert_eq!(prompt_tokens_in(750, 90_000, 32_768), 750 + 30_000);
+        assert_eq!(prompt_tokens_in(750, usize::MAX, 32_768), 32_768);
         assert_eq!(prompt_tokens(750, 3_563), 750 + 1_188);
         assert_eq!(
             prompt_tokens(750, usize::MAX),
@@ -2374,6 +2405,63 @@ mod tests {
                 Err(RunnerError::Cancelled)
             );
             assert_eq!(heard.try_recv(), Err(mpsc::TryRecvError::Empty));
+            runner.stop();
+        }
+
+        #[test]
+        fn a_summary_read_in_a_larger_window_is_allowed_that_windows_time() {
+            // A second per prompt token: the default window's ceiling is reached at once.
+            let limit = AnswerLimit {
+                fixed: Duration::from_secs(2),
+                per_prompt_token: Duration::from_secs(1),
+                per_answer_token: Duration::from_millis(1),
+                floor: Duration::from_secs(1),
+                ceiling: Duration::from_secs(60),
+            };
+            let runner = Runner::new(RunnerConfig {
+                answer_limit: limit,
+                ..config(&[], GIB)
+            });
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let long = SummaryRequest {
+                context_tokens: Some(16_384),
+                ..request()
+            };
+            let text_bytes = long.pages.iter().map(|page| page.text.len()).sum();
+            let own = limit.for_window(
+                prompt_tokens_in(SUMMARY_PROMPT_TOKENS, text_bytes, 16_384),
+                SUMMARY_ANSWER_TOKENS,
+                16_384,
+            );
+            assert_eq!(own, Duration::from_secs(120));
+            let (told, heard) = mpsc::channel();
+            let ticket = runner.ticket();
+            runner.watch_answer(ticket, Box::new(move |limit| told.send(limit).unwrap()));
+            runner.summarize(ticket, &long).unwrap();
+            assert_eq!(heard.try_recv(), Ok(own));
+
+            // The default window keeps the default ceiling.
+            let (told, heard) = mpsc::channel();
+            let ticket = runner.ticket();
+            runner.watch_answer(ticket, Box::new(move |limit| told.send(limit).unwrap()));
+            runner.summarize(ticket, &request()).unwrap();
+            assert_eq!(heard.try_recv(), Ok(Duration::from_secs(60)));
+            runner.stop();
+        }
+
+        #[test]
+        fn an_answer_read_in_a_larger_window_than_asked_is_refused() {
+            let runner = Runner::new(config(&["--context-made", "16384"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let long = SummaryRequest {
+                context_tokens: Some(16_384),
+                ..request()
+            };
+            assert!(runner.summarize(runner.ticket(), &long).is_ok());
+            assert_eq!(
+                runner.summarize(runner.ticket(), &request()),
+                Err(RunnerError::Protocol("window larger than asked".to_owned()))
+            );
             runner.stop();
         }
 
