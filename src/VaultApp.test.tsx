@@ -2937,7 +2937,9 @@ describe("durable vault UI", () => {
       ).not.toBeInTheDocument();
     }
     await user.click(
-      screen.getByRole("button", { name: humanText("Open FAKE Letters") }),
+      screen.getByRole("button", {
+        name: humanText("FAKE Letters, open folder"),
+      }),
     );
     for (const name of ["FAKE_Results.pdf", "FAKE_Letter.pdf"]) {
       expect(
