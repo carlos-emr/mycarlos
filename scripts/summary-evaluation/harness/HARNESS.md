@@ -233,8 +233,8 @@ counts as unsafe). Facts, credit and the other checks are as in version 5. Under
 review: B0 median 87 s, E1 81 s, E4 77 s per document.
 
 **Version 5** was written on 11 Nov **after model outputs had been seen**:
-- B0's outputs were read in full (the rescore and Agent 4's blind review of its 94 rows);
-- E1's outputs were read by Agent 1, who reported the ibuprofen pair above;
+- B0's outputs were read in full (the rescore and the reviewer's blind review of its 94 rows);
+- E1's outputs were read by the evaluation runner, who reported the ibuprofen pair above;
 - B0R (5 documents) and the running E4 existed but were not read for this change.
 
 It adds the "to check" rows and the LANGUAGE fix. It never removes a credit: carriers and their

@@ -37,7 +37,7 @@
   {
    "version": 5,
    "frozen_utc": "2026-11-11T02:13:17+00:00",
-   "reason": "rule version 5 (rescore line), written after B0's outputs were read in full and E1's were read by Agent 1 (the ibuprofen pair); B0R and the running E4 existed, not read for this. A required fact no sentence carries, quoted by a sentence that carries no fact, puts that sentence on the sheet 'to check'; a correct verdict credits it in every run alike. A standalone French 'a' with a grave accent no longer counts as the Portuguese stopword in the LANGUAGE guess. A reading report (reporting only: facts on pages read, partly read or not read) in reading.md/json; scores, decisions and the sheet unchanged by it. Documents unchanged; PR 295's cases untouched."
+   "reason": "rule version 5 (rescore line), written after B0's outputs were read in full and E1's were read by the evaluation runner (the ibuprofen pair); B0R and the running E4 existed, not read for this. A required fact no sentence carries, quoted by a sentence that carries no fact, puts that sentence on the sheet 'to check'; a correct verdict credits it in every run alike. A standalone French 'a' with a grave accent no longer counts as the Portuguese stopword in the LANGUAGE guess. A reading report (reporting only: facts on pages read, partly read or not read) in reading.md/json; scores, decisions and the sheet unchanged by it. Documents unchanged; PR 295's cases untouched."
   },
   {
    "version": "5.1",
