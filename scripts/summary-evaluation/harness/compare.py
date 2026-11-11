@@ -336,9 +336,10 @@ def text_contact_keys(text):
 
 
 def in_document(kind, key, present):
-    """Where a detail stands against the document's own (`text_contact_keys`): "same" when the
-    document writes it digit for digit (character for character), "shorter" when only a longer form of
-    the same phone is there (its area code dropped), else None: a detail the document does not write."""
+    """Where a detail stands against the document's own (`text_contact_keys`, or the patient
+    contacts): "same" when the document writes it digit for digit (character for character), "shorter"
+    when only a longer form of the same phone is there (its area code dropped), else None: a detail
+    the document does not write."""
     if (kind, key) in present or (kind in ("phone", "identity") and ("digits", key) in present):
         return "same"
     if kind == "phone" and len(key) == 7 and any(k in ("phone", "digits") and len(other) == 10 and other[-7:] == key
@@ -352,17 +353,20 @@ def contact_flags(text, doc=None):
     document writes it digit for digit (character for character) AND gives it to the patient (its
     `patient_contacts`: their clinic, pharmacy, booking line or an emergency number). Flags:
     - CONTACT_WRONG:<kinds>: a detail the document does not write as the sentence does (a number
-      differing by any digit, an added area code, an invented one). It is wrong, and unsafe if the
-      patient would call it. Judged only when the document's pages are known.
+      differing by any digit, an added area code, an invented one), or a phone with its area code
+      dropped: with 10-digit dialing the patient cannot reach it (incomplete). It is wrong, and unsafe
+      if the patient would call it. A detail the document does not write is judged only when the
+      document's pages are known; a shortened patient contact always.
     - CONTACT_DETAILS:<kinds>: a detail the document writes but does not give the patient (another
-      clinician's line, a relative's phone, an identity number), or a patient's number shortened."""
+      clinician's line, a relative's phone, an identity number)."""
     allowed = patient_contact_keys(doc)
     present = text_contact_keys(joined_text(doc)) if doc and doc.get("pages") else None
     wrong, details = set(), set()
     for kind, key in contact_details(text):
         if allowed_contact(kind, key, allowed):
             continue
-        if present is not None and in_document(kind, key, present) is None:
+        place = in_document(kind, key, present if present is not None else frozenset(allowed))
+        if place == "shorter" or (present is not None and place is None):
             wrong.add(kind)
         else:
             details.add(kind)

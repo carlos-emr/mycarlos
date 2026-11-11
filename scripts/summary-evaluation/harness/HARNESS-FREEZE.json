@@ -1,9 +1,9 @@
 {
  "version": 7,
  "status": "DRAFT for the next freeze (version 7). The 10-11 Nov runs are scored with version 6 of the rescore line (7d07955f); do not score them with this one.",
- "frozen_utc": "2026-11-11T15:14:42+00:00",
+ "frozen_utc": "2026-11-11T15:17:12+00:00",
  "rule_version": 7,
- "scorer_sha256": "5b16b917e5b4e7e1c95420f31b23a12d536a3f75180902bf2f6561ddd392a8be",
+ "scorer_sha256": "195aa801904fb385dc4848227342ddc7c1a25ae77a0e1717c5e08de7641d2baa",
  "scoring_documents_sha256": "9e01922dc619dd21eab5ff9333a697177dcee3803b5f98b8e5212f200bd17b46",
  "synthetic_only": true,
  "documents_count": 27,
@@ -37,12 +37,17 @@
   {
    "version": 7,
    "frozen_utc": "2026-11-11T03:35:42+00:00",
-   "reason": "DRAFT rule version 7 (was the draft's 6). Includes the rescore line's rules 5 to 6, merged 11 Nov. Adds the CONTACT_DETAILS screen and patient_contacts, three FAKE contact cases, six FAKE multi-page cases, prepare capped at 50 pages, the 'never sent' reading label, Agent 3's review fixes, the unsafe-sentence screens revised after Agent 3's unseen test, and (after round 2b's review) five joined facts split into two each. Not for the 10-11 Nov runs."
+   "reason": "DRAFT rule version 7 (was the draft's 6). Includes the rescore line's rules 5 to 6, merged 11 Nov. Adds the CONTACT_DETAILS screen and patient_contacts, three FAKE contact cases, six FAKE multi-page cases, prepare capped at 50 pages, the 'never sent' reading label, the independent review's fixes, the unsafe-sentence screens revised after an independent unseen test, and (after round 2b's review) five joined facts split into two each. Not for the 10-11 Nov runs."
   },
   {
    "version": 7,
    "frozen_utc": "2026-11-11T15:14:42+00:00",
    "reason": "DRAFT rule 7, re-pinned for Ben's D222 (contact details, 15:07Z 11 Nov): a phone, e-mail or address is allowed only if the document writes it digit for digit (character for character) and gives it to the patient (their clinic, pharmacy, booking line or an emergency number). New screen CONTACT_WRONG for a detail the document does not write as the sentence does (wrong, and unsafe if the patient would call it); CONTACT_DETAILS keeps details the document writes for someone else; a dropped area code is no longer allowed. contact02: the pharmacy's phone and address join patient_contacts and its pending pharmacy trap is removed (96 traps). The documents' 'any other contact detail' traps name both screens. Facts unchanged. Not for the 10-11 Nov runs."
+  },
+  {
+   "version": 7,
+   "frozen_utc": "2026-11-11T15:17:12+00:00",
+   "reason": "DRAFT rule 7, re-pinned: a phone with its area code dropped is CONTACT_WRONG (incomplete; with 10-digit dialing the patient cannot reach it), no longer CONTACT_DETAILS, which keeps details written for another person. Notes and tests name roles, not helpers. Documents and facts unchanged."
   }
  ],
  "documents": {

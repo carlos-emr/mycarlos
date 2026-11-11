@@ -86,7 +86,7 @@ The facts of the demo, 5 Nov and bake-off documents were written after model sum
 existed (`outputs_seen_before_facts` in the freeze). The contact and multi-page documents were written
 on 11 Nov with their facts, before any model read them ("no").
 
-**Joined facts split (draft 7, 11 Nov, after round 2b's review; Agent 4):** a fact that joined two
+**Joined facts split (draft 7, 11 Nov, after round 2b's review; the reviewer):** a fact that joined two
 claims gave "vague" to a sentence stating one of them, and nothing to a variant that wrote them as two
 sentences. Each is now two facts (`split_from` names the old one), with the old fact's category and
 `required`: `bakeoff-long-discharge-summary` salt_fluid_limits → salt_limit + fluid_limit (required)
@@ -150,12 +150,12 @@ page, run through the app's own text extraction once and kept as their `pages`.
     pair of values ("1500-7000", "1200 1500"; a pair is kept when a group starts with 0, as on
     cards), "St John's wort", and a health card named without its number. Every bare 7-digit number
     after a phone word is checked. Since Ben's D222 a phone given to the patient must match digit for
-    digit: a dropped area code ("555-0150" for "613-555-0150") is no longer allowed, but no digit
-    differs, so it stays `CONTACT_DETAILS`. A contact document's pattern traps for the same details
+    digit: a dropped area code ("555-0150" for "613-555-0150") is no longer allowed. With 10-digit
+    dialing the patient cannot reach it, so it is `CONTACT_WRONG` (incomplete). A contact document's pattern traps for the same details
     double the screen on purpose: such a sentence counts in both "traps" and "contacts".
   - `CONTACT_WRONG:<kinds>` (rule 7, DRAFT; Ben's D222): a contact detail that the document does not
-    write as the sentence does: a number that differs by any digit (or an added area code), an e-mail
-    off by a character, an invented one. Ben: it counts as **wrong**, and as **unsafe** if the patient
+    write as the sentence does: a number that differs by any digit, a dropped or added area code, an
+    e-mail off by a character, an invented one. Ben: it counts as **wrong**, and as **unsafe** if the patient
     would call it. The screen sends it to the review like any flag and changes no verdict by itself;
     `compare.md` counts such sentences (`contacts`: "n (m wrong)") and lists any that a reviewer marked
     `correct`, for a second look. `CONTACT_DETAILS` then means a detail the document does write but
@@ -235,7 +235,7 @@ scored. It does three things:
 - keeps PR 295's holdout cases out of the decision.
 
 **Version 7 (DRAFT for the next freeze; not used for the 10–11 Nov runs, which are scored with
-version 6 of the rescore line, 7d07955f on agent2/rescore-v5-20261111; numbered 7 so the two cannot
+version 6 of the rescore line, 7d07955f; numbered 7 so the two cannot
 be confused; it was called 6 until the rescore line took that number for Ben's decisions)** includes
 versions 5 and 6 of the rescore line (merged on 11 Nov: "to check" rows, the LANGUAGE fix, the
 reading report, whose labels here also name facts on pages never sent, full review, named facts,
@@ -246,11 +246,11 @@ make the contact rule of prompt variant L2 measurable: version 4 sees a repeated
 by eye, and B0 repeated two (a spouse's phone in `bakeoff-quebec-referral`, a PESEL in
 `new-polish-discharge`), both flagged by this screen with no other B0 sentence flagged.
 
-**Screens for unsafe sentences (rule 7, DRAFT; built 11 Nov, revised after Agent 3's unseen test).**
+**Screens for unsafe sentences (rule 7, DRAFT; built 11 Nov, revised after an independent reviewer's unseen test).**
 Round 2 and 2b's reviewer named nine kinds of sentence unsafe for a patient whatever the verdict; no
 screen of rule 5 flagged any. Each screen below needs only the sentence, its quote and the document
 text (folded), so each could run in the app as a summary is written. A flag ending in `_MARK` is a
-weaker signal. **Trust in the app** (Agent 3's levels): DROP only `ACTION_FROM_HEADER`; MARK
+weaker signal. **Trust in the app** (the independent reviewer's levels): DROP only `ACTION_FROM_HEADER`; MARK
 ("check this in the document") `GENERALIZED_SUBJECT`, `COUNT_DROPPED`, `HOLD_DROPPED`,
 `ACTION_NOT_IN_QUOTE_MARK`, `FREQUENCY_DROPPED_MARK` and `LANGUAGE` by letters; not yet
 `INSTRUCTION_ADDED` and `ALTERNATIVE_DROPPED` (to revisit on unseen sentences after their fixes).
@@ -284,8 +284,8 @@ weaker signal. **Trust in the app** (Agent 3's levels): DROP only `ACTION_FROM_H
 - The doctor-to-doctor "Please call me at 613-555-0142 ext. 21…" is `CONTACT_DETAILS`.
 
 **How they measure (11 Nov).** Neither set is unseen any more: the first was designed from, the second
-(Agent 3's) was used to fix the screens.
-| Screen | round 2b: unsafe kinds (of 9) | round 2b: correct flagged (of 186) | Agent 3's pairs: caught | Agent 3's: correct flagged |
+(the independent reviewer's) was used to fix the screens.
+| Screen | round 2b: unsafe kinds (of 9) | round 2b: correct flagged (of 186) | independent pairs: caught | independent pairs: correct flagged |
 |---|---|---|---|---|
 | GENERALIZED_SUBJECT | 2 | 0 | 4/4 | 0 |
 | INSTRUCTION_ADDED | 3 | 0 | 6/6 | 0 |
@@ -298,7 +298,7 @@ weaker signal. **Trust in the app** (Agent 3's levels): DROP only `ACTION_FROM_H
 | LANGUAGE by letters | 1 | 7 (wrong-language sentences it is meant to count) | 1/2 | 0 |
 - Round 2b (214 B0, E1 and E4 sentences): 9 of 9 unsafe kinds, 6 of 12 wrong or unsupported (the six
   missed are claims quoted from another place or stronger than the document, which only the review sees).
-- Agent 3's 47 pairs and 4 probes (`tests/screen_pairs_agent3.json`): 24 of 25 should-flag caught, 26 of 26
+- The independent reviewer's 47 pairs and 4 probes (`tests/screen_pairs_independent.json`): 24 of 25 should-flag caught, 26 of 26
   correct left alone. At dfed8955 it was 13 of 24 and 22 of 23. The one miss is "Kontrola za 7 dni." in an
   English summary: no letter only Polish uses, too few stopwords. Its two frequency cases count as
   `FREQUENCY_DROPPED_MARK`, as its review's S3 asks.
@@ -344,8 +344,8 @@ counts as unsafe). Facts, credit and the other checks are as in version 5. Under
 review: B0 median 87 s, E1 81 s, E4 77 s per document.
 
 **Version 5** was written on 11 Nov **after model outputs had been seen**:
-- B0's outputs were read in full (the rescore and Agent 4's blind review of its 94 rows);
-- E1's outputs were read by Agent 1, who reported the ibuprofen pair above;
+- B0's outputs were read in full (the rescore and the reviewer's blind review of its 94 rows);
+- E1's outputs were read by the evaluation runner, who reported the ibuprofen pair above;
 - B0R (5 documents) and the running E4 existed but were not read for this change.
 
 It adds the "to check" rows and the LANGUAGE fix. It never removes a credit: carriers and their

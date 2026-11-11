@@ -1,5 +1,5 @@
 {
- "source": "Agent 3's unseen test of the rule-6 screens at dfed8955 (11 Nov 2026), written from the harness documents without the round-2b sheet or key. Seen from 11 Nov: tuned against since.",
+ "source": "An independent reviewer's unseen test of the rule-6 screens at dfed8955 (11 Nov 2026), written from the harness documents without the round-2b sheet or key. Seen from 11 Nov: tuned against since.",
  "pairs": [
   {
    "id": "G1",
@@ -150,7 +150,7 @@
    "expect": [
     "FREQUENCY_DROPPED_MARK"
    ],
-   "note": "Agent 3 expected COUNT_DROPPED; its own S3 splits a dropped frequency off as a mark"
+   "note": "The independent reviewer expected COUNT_DROPPED; its own S3 splits a dropped frequency off as a mark"
   },
   {
    "id": "C3",
@@ -161,7 +161,7 @@
    "expect": [
     "FREQUENCY_DROPPED_MARK"
    ],
-   "note": "Agent 3 expected COUNT_DROPPED; its own S3 splits a dropped frequency off as a mark"
+   "note": "The independent reviewer expected COUNT_DROPPED; its own S3 splits a dropped frequency off as a mark"
   },
   {
    "id": "H1",
@@ -183,7 +183,7 @@
     "ACTION_FROM_HEADER",
     "INSTRUCTION_ADDED"
    ],
-   "note": "INSTRUCTION_ADDED also fires, rightly (Agent 3's review): an instruction from a 'Reported' line"
+   "note": "INSTRUCTION_ADDED also fires, rightly (the independent review): an instruction from a 'Reported' line"
   },
   {
    "id": "H3",
@@ -445,7 +445,7 @@
    "text": "Keep taking alendronate.",
    "quote": "Alendronate 70 mg once weekly. Continued.",
    "expect": [],
-   "note": "Agent 3's frequency probe: a kept medicine"
+   "note": "The independent reviewer's frequency probe: a kept medicine"
   },
   {
    "id": "F2",
@@ -454,7 +454,7 @@
    "text": "Keep using fluticasone-salmeterol 250/50.",
    "quote": "Keep taking fluticasone-salmeterol 250/50, 1 inhalation twice a day, and rinse your mouth after.",
    "expect": [],
-   "note": "Agent 3's frequency probe, reworded by Agent 2 from its review"
+   "note": "The independent reviewer's frequency probe, reworded by the scorer's author from that review"
   },
   {
    "id": "F3",
@@ -465,7 +465,7 @@
    "expect": [
     "FREQUENCY_DROPPED_MARK"
    ],
-   "note": "Agent 3's frequency probe: a dropped frequency is a mark, not COUNT_DROPPED"
+   "note": "The independent reviewer's frequency probe: a dropped frequency is a mark, not COUNT_DROPPED"
   }
  ]
 }

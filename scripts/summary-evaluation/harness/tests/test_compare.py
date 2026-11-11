@@ -560,7 +560,7 @@ class ContactScreenTest(unittest.TestCase):
 
 
 class ContactReviewFixesTest(unittest.TestCase):
-    """Agent 3's review of the contact screen (S1-S4, C1, C2, C4)."""
+    """The independent review of the contact screen (S1-S4, C1, C2, C4)."""
 
     def kinds(self, text, doc=None):
         flag = compare.contact_flag(text, doc)
@@ -665,10 +665,10 @@ class UnsafeScreensTest(unittest.TestCase):
         for doc_id, text, quote in cases:
             self.assertEqual(self.flags(doc_id, text, quote) & new, set(), text)
 
-    def test_agent3_s_pairs_give_their_expected_flags(self):
-        """Agent 3's 47 unseen pairs (and 4 probes) of 11 Nov, seen since: every new screen flag as expected,
+    def test_the_independent_pairs_give_their_expected_flags(self):
+        """The independent reviewer's 47 unseen pairs (and 4 probes) of 11 Nov, seen since: every new screen flag as expected,
         except the misses it lists (which must still be misses, so a fix is noticed)."""
-        data = json.loads((Path(__file__).parent / "screen_pairs_agent3.json").read_text(encoding="utf-8"))
+        data = json.loads((Path(__file__).parent / "screen_pairs_independent.json").read_text(encoding="utf-8"))
         new = {"GENERALIZED_SUBJECT", "INSTRUCTION_ADDED", "ALTERNATIVE_DROPPED", "COUNT_DROPPED", "ACTION_FROM_HEADER",
                "HOLD_DROPPED", "FREQUENCY_DROPPED_MARK", "ACTION_NOT_IN_QUOTE_MARK", "LANGUAGE"}
         for pair in data["pairs"]:
@@ -695,7 +695,7 @@ class UnsafeScreensTest(unittest.TestCase):
 
 
 class SplitFactsTest(unittest.TestCase):
-    """DRAFT 7 (11 Nov, after round 2b; Agent 4): facts that joined two claims are split, so a sentence
+    """DRAFT 7 (11 Nov, after round 2b; the reviewer): facts that joined two claims are split, so a sentence
     that states one half earns that half, and a variant that writes the halves apart loses nothing."""
 
     SPLIT = {"bakeoff-long-discharge-summary": [("salt_fluid_limits", "salt_limit", "fluid_limit"),
@@ -1489,10 +1489,17 @@ class ContactRuleD222Test(unittest.TestCase):
         self.assertEqual(self.flags("contact01-leg-discharge", "His daughter Maria can be reached at 613-555-0172."),
                          ["CONTACT_DETAILS:phone"])
 
-    def test_a_shortened_patient_number_is_not_digit_for_digit_but_no_digit_is_wrong(self):
+    def test_a_dropped_area_code_is_a_wrong_number_for_the_patient(self):
+        # With 10-digit dialing, "555-0150" for "613-555-0150" does not reach the ward: incomplete, so wrong.
         self.assertEqual(self.flags("contact01-leg-discharge", "Call the ward at 555-0150 if the redness spreads."),
-                         ["CONTACT_DETAILS:phone"])
+                         ["CONTACT_WRONG:phone"])
         self.assertEqual(self.flags("contact01-leg-discharge", "Call the ward at 613-555-0150 if the redness spreads."), [])
+        # Without the document's pages it is still caught against the patient's contacts.
+        self.assertEqual(compare.contact_flags("Call the clinic at 555-0100.", dict(patient_contacts=["Tel 613-555-0100"])),
+                         ["CONTACT_WRONG:phone"])
+        # A relative's number shortened is wrong too: it cannot be reached as written.
+        self.assertEqual(self.flags("contact01-leg-discharge", "His daughter can be reached at 555-0172."),
+                         ["CONTACT_WRONG:phone"])
 
     def test_wrong_and_clinician_details_in_one_sentence_get_both_flags(self):
         self.assertEqual(self.flags("bakeoff-referral-letter", "Call 613-555-0142 or 613-555-0149."),
