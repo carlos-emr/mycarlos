@@ -359,6 +359,10 @@ interface-reader-textFollows = Página { $page } de { $total }. A continuación,
 
 interface-reader-where = Página { $page } de { $total }
 
+interface-reader-markedOnPage = Página { $page }: las palabras citadas están marcadas en la imagen de la página y en el texto de esta página.
+
+interface-reader-markedInText = Página { $page }: las palabras citadas están marcadas en el texto de esta página. No se pudieron marcar en la imagen de la página.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =
@@ -1850,6 +1854,10 @@ aiHelper-resultLabel = Escrito por IA; puede contener errores. Consulte con su m
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver en el documento
+
+ai-summary-folded = El resumen está plegado para dejar espacio a la página.
+
+ai-summary-showWhole = Ver todo el resumen
 
 ai-summary-partial = Este resumen solo abarca el comienzo del documento: páginas 1 a { $last }.
 

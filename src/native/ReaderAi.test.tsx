@@ -1,7 +1,8 @@
-import { humanText } from "../test/humanText";
+import { humanText, visibleText } from "../test/humanText";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { page as browser } from "vitest/browser";
 import { StrictMode } from "react";
 import { DocumentReader, sentenceAround } from "./DocumentReader";
 import { PreferencesSettings } from "./PreferencesSettings";
@@ -58,6 +59,7 @@ function renderReader(
     startWithAid?: boolean;
     beforeFirstUse?: ReaderAi["beforeFirstUse"];
     kept?: KeptAnswers;
+    pageBoxes?: Parameters<typeof DocumentReader>[0]["pageBoxes"];
   } = {},
 ) {
   const onOpenPreferences = vi.fn();
@@ -70,6 +72,7 @@ function renderReader(
       record={options.record ?? record}
       startWithAid={options.startWithAid}
       viewPage={vi.fn(async (index: number) => page(index))}
+      pageBoxes={options.pageBoxes}
       onClose={vi.fn()}
       ai={
         model
@@ -1273,4 +1276,385 @@ describe("the AI helper beside a clinic reading aid", () => {
       await waitFor(() => expect(heading).toHaveFocus());
     },
   );
+});
+
+describe("Show in document also marks the page picture (#292)", () => {
+  const repeat = () =>
+    fakeLocalModel({
+      sentences: () => [
+        {
+          text: "FAKE: repeat the test in two weeks.",
+          quote: "Repeat in 2 weeks.",
+        },
+      ],
+    });
+  const show = async (pageBoxes: Parameters<typeof renderReader>[1]) => {
+    const { unmount } = renderReader(repeat(), pageBoxes);
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Show in document" }),
+    );
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
+    return { user, unmount };
+  };
+  const overlay = () =>
+    document.querySelector<HTMLElement>(".native-reader-boxes");
+  const status = () =>
+    Array.from(
+      document.querySelectorAll('[role="status"], [aria-live="polite"]'),
+    ).map((node) => visibleText(node.textContent ?? ""));
+
+  it("draws the quote's boxes over the picture, hidden from screen readers, while the marked text keeps the focus", async () => {
+    const pageBoxes = vi.fn(async () => ({
+      rects: [
+        [0.1, 0.2, 0.5, 0.25],
+        [0.1, 0.26, 0.3, 0.31],
+      ] as [number, number, number, number][],
+    }));
+    await show({ pageBoxes });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    // Asked once, for the words as the page's text holds them there.
+    const start = pageTexts[1].indexOf("Repeat in 2 weeks");
+    expect(pageBoxes).toHaveBeenCalledTimes(1);
+    expect(pageBoxes).toHaveBeenCalledWith(
+      1,
+      {
+        start,
+        end: start + "Repeat in 2 weeks".length,
+        quoted: "Repeat in 2 weeks",
+      },
+      undefined,
+    );
+    const boxes = overlay()!;
+    expect(boxes).toHaveAttribute("aria-hidden", "true");
+    expect(boxes.children).toHaveLength(2);
+    const first = boxes.children[0] as HTMLElement;
+    expect(first.style.left).toBe("10%");
+    expect(first.style.top).toBe("20%");
+    expect(first.style.width).toBe("40%");
+    expect(first.style.height).toBe("5%");
+    // Outline and fill: not colour alone.
+    const look = getComputedStyle(first);
+    expect(look.outlineStyle).toBe("solid");
+    expect(look.outlineWidth).toBe("3px");
+    expect(look.pointerEvents).toBe("none");
+    const mark = document.querySelector(".native-reader-text mark");
+    await waitFor(() => expect(mark).toHaveFocus());
+    expect(getComputedStyle(mark!).outlineStyle).toBe("solid");
+    await waitFor(() =>
+      expect(status()).toContain(
+        "Page 2: the quoted words are marked on the page picture and in Text on this page.",
+      ),
+    );
+  });
+
+  it("keeps the boxes on their words at every zoom, in fractions of the picture", async () => {
+    const pageBoxes = vi.fn(async () => ({
+      rects: [[0.25, 0.5, 0.75, 0.6]] as [number, number, number, number][],
+    }));
+    const { user } = await show({ pageBoxes });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    const place = () => {
+      const picture = screen
+        .getByRole("img", { name: humanText(/^Page 2 of 2/) })
+        .getBoundingClientRect();
+      const box = (
+        overlay()!.children[0] as HTMLElement
+      ).getBoundingClientRect();
+      return [
+        (box.left - picture.left) / picture.width,
+        (box.top - picture.top) / picture.height,
+        box.width / picture.width,
+        picture.width,
+      ];
+    };
+    const before = place();
+    await user.click(screen.getByRole("button", { name: "Larger" }));
+    await waitFor(() => expect(place()[3]).toBeGreaterThan(before[3] * 1.2));
+    const after = place();
+    for (const index of [0, 1, 2])
+      expect(after[index]).toBeCloseTo(before[index], 2);
+    expect(before[0]).toBeCloseTo(0.25, 2);
+    expect(before[1]).toBeCloseTo(0.5, 2);
+    expect(pageBoxes).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws nothing on the picture when the helper cannot place every word, and says the words are in the text", async () => {
+    const pageBoxes = vi.fn(async () => ({ rects: [], absent: "unaligned" }));
+    await show({ pageBoxes });
+    await waitFor(() =>
+      expect(status()).toContain(
+        "Page 2: the quoted words are marked in Text on this page. They could not be marked on the page picture.",
+      ),
+    );
+    expect(overlay()).toBeNull();
+    const mark = document.querySelector(".native-reader-text mark");
+    expect(mark).toHaveTextContent(/^Repeat in 2 weeks$/);
+    await waitFor(() => expect(mark).toHaveFocus());
+  });
+
+  it("draws nothing when an answer is not a box on the picture, or the request fails", async () => {
+    for (const answer of [
+      async () => ({
+        rects: [[0.5, 0.2, 0.4, 0.25]] as [number, number, number, number][],
+      }),
+      async () => {
+        throw { code: "pdfViewFailed" };
+      },
+    ]) {
+      const pageBoxes = vi.fn(answer);
+      const { unmount } = await show({ pageBoxes });
+      await waitFor(() => expect(pageBoxes).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(status().join(" ")).toContain(
+          "They could not be marked on the page picture.",
+        ),
+      );
+      expect(overlay()).toBeNull();
+      expect(screen.queryByRole("alert")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("shows the boxes on the quote's own page only, and asks once however often it is pressed", async () => {
+    const pageBoxes = vi.fn(async () => ({
+      rects: [[0.1, 0.2, 0.5, 0.25]] as [number, number, number, number][],
+    }));
+    const { user } = await show({ pageBoxes });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    await user.click(screen.getByRole("button", { name: "Show in document" }));
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    expect(pageBoxes).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Previous page" }));
+    await firstPage();
+    expect(overlay()).toBeNull();
+  });
+
+  it("gives the picture room while a quote is shown: the page text and the AI panel take less height", async () => {
+    const pageBoxes = vi.fn(async () => ({
+      rects: [[0.1, 0.2, 0.5, 0.25]] as [number, number, number, number][],
+    }));
+    const { user } = await show({ pageBoxes });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    const reader = document.querySelector(".native-reader")!;
+    const text = document.querySelector("details.native-reader-text")!;
+    const panel = document.querySelector(".native-reader-ai")!;
+    const height = (element: Element) =>
+      parseFloat(getComputedStyle(element).maxHeight);
+    expect(reader).toHaveClass("native-reader-highlighting");
+    expect(height(text)).toBeCloseTo(window.innerHeight * 0.2, 0);
+    expect(height(panel)).toBeCloseTo(window.innerHeight * 0.25, 0);
+    // A page turn ends the highlight, and the usual heights come back.
+    await user.click(screen.getByRole("button", { name: "Previous page" }));
+    await firstPage();
+    expect(reader).not.toHaveClass("native-reader-highlighting");
+    expect(height(panel)).toBeCloseTo(window.innerHeight * 0.4, 0);
+  });
+
+  // On a narrow or short window, browser zoom included, the summary folds to
+  // one line while a quote is shown, so the picture keeps room (#292).
+  const oneBox = () =>
+    vi.fn(async () => ({
+      rects: [[0.1, 0.2, 0.5, 0.25]] as [number, number, number, number][],
+    }));
+  const unfoldButton = () =>
+    screen.queryByRole("button", { name: "Show the whole summary" });
+
+  it.each([
+    [560, 760, "narrow"],
+    [1100, 400, "short, as a large screen at 200% zoom"],
+  ])(
+    "folds the summary to one line on a %i x %i window (%s) while a quote is shown, and unfolds it on request",
+    async (width, height) => {
+      await browser.viewport(width, height);
+      try {
+        const { user } = await show({ pageBoxes: oneBox() });
+        const unfold = await screen.findByRole("button", {
+          name: "Show the whole summary",
+        });
+        // Its state and why it is folded are said with the button.
+        expect(unfold).toHaveAttribute("aria-expanded", "false");
+        expect(unfold).toHaveAccessibleDescription(
+          "The summary is folded so the page has room.",
+        );
+        // Still the summary's region, by its name; the sentences are folded
+        // away, kept rather than written again.
+        expect(
+          screen.getByRole("region", { name: "Summary in plain words" }),
+        ).toContainElement(unfold);
+        expect(
+          screen.queryByRole("button", { name: "Show in document" }),
+        ).toBeNull();
+        expect(document.getElementById("reader-ai-whole")).not.toBeVisible();
+        // The marked words keep the focus, as on a large window.
+        await waitFor(() =>
+          expect(
+            document.querySelector(".native-reader-text mark"),
+          ).toHaveFocus(),
+        );
+        // Unfolded: the whole summary, with its label, and the focus back on
+        // the sentence whose words are shown.
+        await user.click(unfold);
+        const shown = screen.getByRole("button", { name: "Show in document" });
+        await waitFor(() => expect(shown).toHaveFocus());
+        expect(unfoldButton()).toBeNull();
+        expect(
+          screen.getByText(
+            "Written by AI and may be wrong. Check with your doctor.",
+          ),
+        ).toBeVisible();
+        // Showing the words again folds it again.
+        await user.click(shown);
+        expect(
+          await screen.findByRole("button", { name: "Show the whole summary" }),
+        ).toBeVisible();
+        await waitFor(() =>
+          expect(
+            document.querySelector(".native-reader-text mark"),
+          ).toHaveFocus(),
+        );
+      } finally {
+        await browser.viewport(1100, 760);
+      }
+    },
+  );
+
+  it("keeps the whole summary on a large window", async () => {
+    await show({ pageBoxes: oneBox() });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    expect(unfoldButton()).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Show in document" }),
+    ).toBeVisible();
+  });
+
+  it("folds when the window gets smaller while a quote is shown, and keeps the focus in the panel", async () => {
+    try {
+      await show({ pageBoxes: oneBox() });
+      await waitFor(() => expect(overlay()).not.toBeNull());
+      const shown = screen.getByRole("button", { name: "Show in document" });
+      act(() => shown.focus());
+      await browser.viewport(1100, 400);
+      const unfold = await screen.findByRole("button", {
+        name: "Show the whole summary",
+      });
+      await waitFor(() => expect(unfold).toHaveFocus());
+    } finally {
+      await browser.viewport(1100, 760);
+    }
+  });
+
+  it("does not fold once the quote's page is left", async () => {
+    try {
+      await browser.viewport(560, 760);
+      const { user } = await show({ pageBoxes: oneBox() });
+      await screen.findByRole("button", { name: "Show the whole summary" });
+      await user.click(screen.getByRole("button", { name: "Previous page" }));
+      await firstPage();
+      expect(unfoldButton()).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Show in document" }),
+      ).toBeVisible();
+    } finally {
+      await browser.viewport(1100, 760);
+    }
+  });
+
+  it("does not fold while Summarize again is working, and forgets the sentence shown once the new summary is in", async () => {
+    await browser.viewport(560, 760);
+    try {
+      // A kept summary whose sentence has a place, then a re-run that waits.
+      const start = pageTexts[1].indexOf("Repeat in 2 weeks");
+      const model = repeat();
+      const answer = model.summarize;
+      let release: () => void = () => undefined;
+      model.summarize = (...args: Parameters<typeof answer>) =>
+        new Promise<Awaited<ReturnType<typeof answer>>>((resolve) => {
+          release = () => resolve(answer(...args));
+        });
+      const { kept } = fakeKept(
+        [
+          {
+            input: { tool: "summary", lang: "en" },
+            content: JSON.stringify({
+              tool: "summary",
+              sentences: [
+                {
+                  text: "FAKE: kept, repeat the test.",
+                  quote: "Repeat in 2 weeks",
+                  source: {
+                    page: 1,
+                    start,
+                    end: start + "Repeat in 2 weeks".length,
+                  },
+                },
+              ],
+              model: { name: "FAKE older model", sha256: "cd".repeat(32) },
+              lang: "en",
+              createdAt: Date.UTC(2026, 9, 1),
+              partial: false,
+              lastPage: 2,
+              pagesMissing: false,
+            }),
+          },
+        ],
+        model,
+      );
+      renderReader(model, { kept, pageBoxes: oneBox() });
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      await screen.findByText("FAKE: kept, repeat the test.");
+      await user.click(screen.getByRole("button", { name: "Summarize again" }));
+      // While it works, the old sentence's words can still be shown, but
+      // the panel stays whole: the working line and the status stay heard.
+      await user.click(
+        screen.getByRole("button", { name: "Show in document" }),
+      );
+      await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
+      expect(unfoldButton()).toBeNull();
+      expect(document.getElementById("reader-ai-whole")).toBeVisible();
+      act(() => release());
+      // The new summary is in and said; no fold with the old sentence's place.
+      await screen.findByText("FAKE: repeat the test in two weeks.");
+      await waitFor(() => expect(status()).toContain("The summary is ready."));
+      expect(unfoldButton()).toBeNull();
+      expect(document.activeElement).not.toBe(document.body);
+    } finally {
+      await browser.viewport(1100, 760);
+    }
+  });
+
+  it("gives the focus to the sentence shown when the window grows while the fold's button has it", async () => {
+    try {
+      await browser.viewport(560, 760);
+      await show({ pageBoxes: oneBox() });
+      const unfold = await screen.findByRole("button", {
+        name: "Show the whole summary",
+      });
+      act(() => unfold.focus());
+      await browser.viewport(1100, 760);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Show in document" }),
+        ).toHaveFocus(),
+      );
+    } finally {
+      await browser.viewport(1100, 760);
+    }
+  });
+
+  it("marks the text only where the boxes cannot be asked for", async () => {
+    await show({});
+    const mark = await waitFor(() => {
+      const found = document.querySelector(".native-reader-text mark");
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    await waitFor(() => expect(mark).toHaveFocus());
+    expect(overlay()).toBeNull();
+    expect(status().join(" ")).not.toContain("page picture");
+  });
 });

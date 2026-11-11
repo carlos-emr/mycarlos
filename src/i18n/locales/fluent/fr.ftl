@@ -359,6 +359,10 @@ interface-reader-textFollows = Page { $page } sur { $total }. Le texte de la pag
 
 interface-reader-where = Page { $page } sur { $total }
 
+interface-reader-markedOnPage = Page { $page } : les mots cités sont marqués sur l’image de la page et dans « Texte de cette page ».
+
+interface-reader-markedInText = Page { $page } : les mots cités sont marqués dans « Texte de cette page ». Ils n’ont pas pu être marqués sur l’image de la page.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =
@@ -1850,6 +1854,10 @@ aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Voir dans le document
+
+ai-summary-folded = Le résumé est replié pour laisser de la place à la page.
+
+ai-summary-showWhole = Voir tout le résumé
 
 ai-summary-partial = Ce résumé ne couvre que le début du document : pages 1 à { $last }.
 

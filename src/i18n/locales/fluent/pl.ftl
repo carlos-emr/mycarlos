@@ -372,6 +372,10 @@ interface-reader-textFollows = Strona { $page } z { $total }. Poniżej znajduje 
 
 interface-reader-where = Strona { $page } z { $total }
 
+interface-reader-markedOnPage = Strona { $page }: cytowane słowa są zaznaczone na obrazie strony i w sekcji „Tekst na tej stronie”.
+
+interface-reader-markedInText = Strona { $page }: cytowane słowa są zaznaczone w sekcji „Tekst na tej stronie”. Nie udało się ich zaznaczyć na obrazie strony.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =
@@ -1888,6 +1892,10 @@ aiHelper-resultLabel = Napisane przez AI, może zawierać błędy. Proszę skons
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Pokaż w dokumencie
+
+ai-summary-folded = Podsumowanie jest zwinięte, żeby zrobić miejsce dla strony.
+
+ai-summary-showWhole = Pokaż całe podsumowanie
 
 ai-summary-partial = To podsumowanie obejmuje tylko początek dokumentu: strony od 1 do { $last }.
 

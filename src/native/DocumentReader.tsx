@@ -15,9 +15,11 @@ import { ReadingAidView } from "./ReadingAidView";
 import {
   hasVaultErrorCode,
   vaultErrorMessage,
+  type PageBoxes,
   type VaultRecord,
   type ViewedPage,
 } from "../vault";
+import { boxesToDraw, boxStyle, centreIn, type Box } from "./pageHighlight";
 
 /** Zoom steps, as a share of the reader's width: 1 fits the page to it. */
 const ZOOM_MIN = 0.5;
@@ -94,6 +96,13 @@ type DocumentReaderProps = {
   ) => Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView?: () => void;
+  /** Where a quoted span of a page's text is on its picture (#292), exactly
+   * or not at all. Without it, Show in document marks the text only. */
+  pageBoxes?: (
+    page: number,
+    span: { start: number; end: number; quoted: string },
+    password?: string,
+  ) => Promise<PageBoxes>;
   onClose: () => void;
   /** The AI helper's actions (#72), where this computer can offer them. */
   ai?: ReaderAi;
@@ -116,6 +125,7 @@ function ReadingDocument({
   record,
   viewPage,
   cancelView,
+  pageBoxes,
   onClose,
   ai,
   startWithAid = false,
@@ -174,6 +184,15 @@ function ReadingDocument({
   const [highlight, setHighlight] = useState<SourceSpan | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
   const markRef = useRef<HTMLElement | null>(null);
+  // The quote's boxes on the picture (#292), for the highlight they were
+  // asked for: `boxes` is empty when the helper could not place every word.
+  const [placed, setPlaced] = useState<{
+    key: string;
+    boxes: Box[];
+  } | null>(null);
+  const firstBoxRef = useRef<HTMLSpanElement | null>(null);
+  const pageBoxesRef = useRef(pageBoxes);
+  pageBoxesRef.current = pageBoxes;
   const selected = useRef("");
   const offersAi = Boolean(ai);
   useEffect(() => {
@@ -341,11 +360,53 @@ function ReadingDocument({
         }
       : null;
   // Each "Show in document" brings the words into view and focus, even
-  // the same words again: the highlight is a new object each time.
+  // the same words again: the highlight is a new object each time. Only the
+  // text box scrolls to them: the focus stays on the marked words, the
+  // version a screen reader reads, and the picture keeps its own scroll.
   useEffect(() => {
-    markRef.current?.scrollIntoView?.({ block: "center" });
-    markRef.current?.focus();
+    const mark = markRef.current;
+    const box = mark?.closest<HTMLElement>(".native-reader-text");
+    if (mark && box) centreIn(box, mark);
+    mark?.focus({ preventScroll: true });
   }, [highlight, current]);
+  // The same words on the page picture (#292), asked of the PDF helper once
+  // for each quote shown.
+  const placeKey =
+    highlight && current && highlight.page === shown.page && !showingAid
+      ? `${shown.page}:${highlight.start}:${highlight.end}`
+      : null;
+  const quoted =
+    placeKey && highlight ? pageText.slice(highlight.start, highlight.end) : "";
+  const latestKey = useRef<string | null>(null);
+  latestKey.current = placeKey;
+  useEffect(() => {
+    const ask = pageBoxesRef.current;
+    if (!placeKey || !ask || !highlight || !quoted.trim()) return;
+    if (placed?.key === placeKey) return;
+    let settled = false;
+    const settle = (boxes: Box[]) => {
+      if (settled || latestKey.current !== placeKey) return;
+      settled = true;
+      setPlaced({ key: placeKey, boxes });
+    };
+    ask(
+      highlight.page,
+      { start: highlight.start, end: highlight.end, quoted },
+      password,
+    ).then(
+      (answer) => settle(boxesToDraw(answer)),
+      () => settle([]),
+    );
+    // `placed` is read, not watched: an answer must not ask again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeKey, quoted, password]);
+  const boxes = placed && placed.key === placeKey ? placed.boxes : null;
+  // The picture scrolls itself to the first box, on each press as well.
+  useEffect(() => {
+    const area = pageRef.current;
+    const first = firstBoxRef.current;
+    if (area && first) centreIn(area, first);
+  }, [highlight, boxes]);
   // The page text and its highlight, and the AI helper, belong to the original view only; the
   // clinician-approved aid is never shown beside or acted on by the helper.
   const openAid = () => {
@@ -375,7 +436,9 @@ function ReadingDocument({
     <div className="dialog-backdrop" role="presentation">
       <section
         ref={dialogRef}
-        className="record-dialog native-reader"
+        className={`record-dialog native-reader${
+          marked ? " native-reader-highlighting" : ""
+        }`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="reader-title"
@@ -581,16 +644,45 @@ function ReadingDocument({
               })}
             >
               {current && (
-                <img
-                  src={shown.image}
-                  alt={translateNow("interface.reader.textFollows", {
-                    page: shown.page + 1,
-                    total: shown.pageCount,
-                  })}
-                  style={{ width: `${cssWidth}px` }}
-                />
+                <span className="native-reader-picture">
+                  <img
+                    src={shown.image}
+                    alt={translateNow("interface.reader.textFollows", {
+                      page: shown.page + 1,
+                      total: shown.pageCount,
+                    })}
+                    style={{ width: `${cssWidth}px` }}
+                  />
+                  {/* The quoted words on the picture: for seeing only. The
+                  marked text below is what a screen reader reads (#292). */}
+                  {boxes && boxes.length > 0 && (
+                    <span className="native-reader-boxes" aria-hidden="true">
+                      {boxes.map((box, index) => (
+                        <span
+                          key={index}
+                          ref={index === 0 ? firstBoxRef : undefined}
+                          style={boxStyle(box)}
+                        />
+                      ))}
+                    </span>
+                  )}
+                </span>
               )}
             </div>
+            {/* Said once the boxes are known (#292). A live region of its
+            own, beside the reader's status, which says the page. */}
+            {pageBoxes && (
+              <p className="sr-only" id="reader-marked" aria-live="polite">
+                {boxes && highlight
+                  ? translateNow(
+                      boxes.length > 0
+                        ? "interface.reader.markedOnPage"
+                        : "interface.reader.markedInText",
+                      { page: highlight.page + 1 },
+                    )
+                  : ""}
+              </p>
+            )}
             {current && (
               <details
                 className="native-reader-text"
@@ -627,6 +719,7 @@ function ReadingDocument({
                 initialTerm={aiTool === "explain" ? selected.current : ""}
                 contextFor={(term) => sentenceAround(pageText, term)}
                 onShowSource={showSource}
+                quoteShown={marked !== null}
               />
             )}
           </>

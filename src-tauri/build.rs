@@ -152,6 +152,7 @@ fn main() {
             "vault_unlock_pdf",
             "vault_view_page",
             "vault_view_cancel",
+            "vault_page_boxes",
             "vault_document_text",
             "vault_document_text_cancel",
             "vault_record_known_details",

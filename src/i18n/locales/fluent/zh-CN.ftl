@@ -493,6 +493,10 @@ interface-reader-textFollows = 第 { $page } 页，共 { $total } 页。以下�
 
 interface-reader-where = 第 { $page } 页，共 { $total } 页
 
+interface-reader-markedOnPage = 第 { $page } 页：引用的文字已在页面图像和「本页文本」中标出。
+
+interface-reader-markedInText = 第 { $page } 页：引用的文字已在「本页文本」中标出，但无法在页面图像上标出。
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped = 有 { $count } 个分享项目未接收：myCarlos 只接受 PDF 文件。
@@ -1666,6 +1670,10 @@ aiHelper-resultLabel = 由 AI 撰写，可能有误。请向您的医生核实�
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文档中显示
+
+ai-summary-folded = 摘要已收起，以便为页面留出空间。
+
+ai-summary-showWhole = 显示完整摘要
 
 ai-summary-partial = 此摘要仅涵盖文档开头部分：第 1 页至第 { $last } 页。
 

@@ -346,6 +346,10 @@ interface-reader-textFollows = Page { $page } of { $total }. The page's text fol
 
 interface-reader-where = Page { $page } of { $total }
 
+interface-reader-markedOnPage = Page { $page }: the quoted words are marked on the page picture and in Text on this page.
+
+interface-reader-markedInText = Page { $page }: the quoted words are marked in Text on this page. They could not be marked on the page picture.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =
@@ -1814,6 +1818,10 @@ aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Show in document
+
+ai-summary-folded = The summary is folded so the page has room.
+
+ai-summary-showWhole = Show the whole summary
 
 ai-summary-partial = This summary covers only the start of the document: pages 1 to { $last }.
 
