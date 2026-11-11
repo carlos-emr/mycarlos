@@ -21,7 +21,7 @@ Nothing here runs in CI and nothing here runs a model on its own. Every document
 
 ## Documents and facts
 Each document: `id`, `title`, `lang`, `synthetic: true`, `source`, `pages` (`index`, `text`),
-`facts`, `traps` (wrong statements to watch for), `trap_checks`, `notes`, and (rule 5) an optional
+`facts`, `traps` (wrong statements to watch for), `trap_checks`, `notes`, and (rule 6, DRAFT) an optional
 `patient_contacts`: the phone numbers, e-mail addresses and street addresses the document gives the
 patient to use ("call the lab at 613-555-0150"), copied from it. A sentence may repeat those; the
 `CONTACT_DETAILS` screen flags any other contact detail.
@@ -71,7 +71,7 @@ Categories add `instruction`, `timing` and `follow_up`. Those, with PR 295's
 | 5 Nov texts | `fake01-cardiology-referral`, `fake02-cardiac-discharge`, `fake03-cardiac-lab` |
 | Bake-off (29 Oct) | 9 `bakeoff-*`: six short (one French) and three longer (one Brazilian Portuguese) |
 | New | `new-rheumatology-letter` (instructions and timing at the end), `new-french-nephrology`, `new-polish-discharge`, `new-long-hospital-record` (18 pages, about 26 KB / 6k tokens, instructions on the last page) |
-| Contacts (draft, rule 5) | `contact01-leg-discharge` (a daughter's phone and e-mail, a health card and home address; the ward's number is given to the patient), `contact02-thyroid-letter-fr` (a pharmacy's address and phone, a daughter's phone, RAMQ and file numbers; an e-mail and the clinic's number are given to the patient), `contact03-referral-booking` (a referral number, the patient's own phone on file, the family doctor's phone; the clinic's address and number are given to the patient) |
+| Contacts (draft, rule 6) | `contact01-leg-discharge` (a daughter's phone and e-mail, a health card and home address; the ward's number is given to the patient), `contact02-thyroid-letter-fr` (a pharmacy's address and phone, a daughter's phone, RAMQ and file numbers; an e-mail and the clinic's number are given to the patient), `contact03-referral-booking` (a referral number, the patient's own phone on file, the family doctor's phone; the clinic's address and number are given to the patient) |
 | Multi-page (draft) | Written by `tools/long_documents.py` (fixed seeds), 800-1,150 tokens a page like the one-page letters: `long01-pneumonia-record` (12 pages; the patient's instructions on page 9 only, and pages 1-8 are longer than the summary's room, so neither the start nor the start plus the last page reads them: the honest failure case); `long02-surgery-blank-last-page` (10 pages; the follow-up on page 9, page 10 a blank scanned back page); `long03-heart-failure-54p` (54 pages, over the 50-page text-read cap; the discharge instructions on page 54, never read); `long04-neurology-consult-3p` (fits whole: the control); `long05-lab-series-6p` (the same header, with a health number, and the same footer, "call the clinic at 613-555-0156", on every page); `long06-lettre-cardio-2p-fr` (two-page French letter, for the language variants). Each has a `reading_note`. |
 | PR 295 | 12 EN/FR cases, 48 facts: 6 development and 6 holdout |
 
@@ -120,7 +120,7 @@ page, run through the app's own text extraction once and kept as their `pages`.
   - `LANGUAGE`: not the summary language.
   - `QUANTITY_MISMATCH`: a value or unit that differs from a fact's own.
   - `TRAP:<n>`: the sentence falls into the document's listed trap `n`.
-  - `CONTACT_DETAILS:<kinds>` (rule 5): the sentence repeats a phone number, an e-mail address, a
+  - `CONTACT_DETAILS:<kinds>` (rule 6, DRAFT): the sentence repeats a phone number, an e-mail address, a
     street address or postal code, or an identity number (a health card, RAMQ, PESEL, record, chart,
     visit, referral or requisition number, or any run of 8 or more digits that is not a date) that
     is not in the document's `patient_contacts`. Kinds: `phone`, `email`, `address`, `identity`.
@@ -179,8 +179,9 @@ scored. It does three things:
 - adds margins from an A/A pair;
 - keeps PR 295's holdout cases out of the decision.
 
-**Version 5 (DRAFT for the next freeze; not used for the 10–11 Nov runs, which are scored with
-version 4 at 97e401aa)** adds the `CONTACT_DETAILS` screen, the documents' `patient_contacts`, and
+**Version 6 (DRAFT for the next freeze; not used for the 10–11 Nov runs, which are scored with
+version 5 of the rescore line, 43bc7612 on agent2/rescore-v5-20261111; numbered 6 so the two
+cannot be confused, and to be merged with version 5 before it is frozen)** adds the `CONTACT_DETAILS` screen, the documents' `patient_contacts`, and
 three FAKE contact cases. A flagged sentence goes on the review sheet like any other, so a fact it
 carries is held until reviewed; the screen changes no verdict by itself. It was written on 11 Nov to
 make the contact rule of prompt variant L2 measurable: version 4 sees a repeated contact detail only

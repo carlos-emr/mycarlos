@@ -1,9 +1,9 @@
 {
- "version": 5,
- "status": "DRAFT for the next freeze. The 10-11 Nov runs are scored with version 4 (commit 97e401aa); do not score them with this one.",
- "frozen_utc": "2026-11-11T02:06:57+00:00",
- "rule_version": 5,
- "scorer_sha256": "ef5b934c882795993913bf9e466069fabb5e30b545205a7d3eb16a49ad92dfc9",
+ "version": 6,
+ "status": "DRAFT for the next freeze (version 6). The 10-11 Nov runs are scored with version 5 of the rescore line (43bc7612); do not score them with this one.",
+ "frozen_utc": "2026-11-11T02:15:02+00:00",
+ "rule_version": 6,
+ "scorer_sha256": "872e12b0fa178cec1f6edb2598f429af5afbc72f3177790e7c065cb63d47e2b3",
  "scoring_documents_sha256": "09b3c8d3c03f932e4a2b9cfa47e07405fab351e691f471ee52500e559270a08d",
  "synthetic_only": true,
  "documents_count": 27,
@@ -35,9 +35,9 @@
    "reason": "rule version 4: one verdict per distinct sentence from a blind sheet (opaque content ids, key apart), a sampled sentence waits for its verdict too; the two celiac traps no longer flag 'test you for', 'asks about', 'can cause', 'If ... is confirmed' or 'a positive celiac screen'; demo-gastro-referral's opening line is an evidence span for its positive celiac screen. Page text unchanged."
   },
   {
-   "version": 5,
-   "frozen_utc": "2026-11-11T02:06:57+00:00",
-   "reason": "DRAFT rule version 5: the CONTACT_DETAILS screen and the documents' patient_contacts (added to bakeoff-cumulative-lab, bakeoff-discharge-summary and bakeoff-lab-report; their pages, facts and traps unchanged); three FAKE contact cases (contact01-03); six FAKE multi-page cases (long01-06, tools/long_documents.py); prepare sends at most 50 pages, as the app reads. Not for the 10-11 Nov runs."
+   "version": 6,
+   "frozen_utc": "2026-11-11T02:15:02+00:00",
+   "reason": "DRAFT rule version 6 (renumbered from the draft's 5 so it cannot be confused with rule 5 of the rescore line, 43bc7612): the CONTACT_DETAILS screen and the documents' patient_contacts (added to bakeoff-cumulative-lab, bakeoff-discharge-summary and bakeoff-lab-report; their pages, facts and traps unchanged); three FAKE contact cases (contact01-03); six FAKE multi-page cases (long01-06, tools/long_documents.py); prepare sends at most 50 pages, as the app reads. To be merged with rule 5 before it is frozen. Not for the 10-11 Nov runs."
   }
  ],
  "documents": {

@@ -473,7 +473,7 @@ class NewScreenTest(unittest.TestCase):
 
 
 class ContactScreenTest(unittest.TestCase):
-    """Rule 5 (draft for the next freeze): a sentence that repeats a contact detail the document does
+    """Rule 6 (DRAFT for the next freeze): a sentence that repeats a contact detail the document does
     not give the patient to use is flagged for the review."""
 
     def kinds(self, text, doc=None):

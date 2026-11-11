@@ -60,7 +60,7 @@ MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
 # The decision rule (HARNESS.md): its version and its fixed numbers.
-RULE_VERSION = 5
+RULE_VERSION = 6
 LOCATED_POINTS = 2
 TIME_RATIO = 1.3
 SCREENS = {"SOURCE_NOT_FOUND", "NUMBER_NOT_IN_QUOTE", "NEGATION_MISMATCH", "HEDGE_DROPPED",
@@ -121,7 +121,7 @@ STOPWORDS = {
     "es": {"el", "la", "los", "las", "y", "de", "del", "en", "con", "para", "que", "usted", "es"},
 }
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
-# Contact details a summary sentence should not repeat (rule v5): a phone number, an e-mail address, a
+# Contact details a summary sentence should not repeat (rule v6, DRAFT): a phone number, an e-mail address, a
 # street address or an identity number (health card, record, visit or requisition number), unless the
 # document gives it to the patient to use (the document's `patient_contacts`). Matched with accents
 # dropped and case kept: the street patterns need capitals ("2 mm ST depression" is no street).
