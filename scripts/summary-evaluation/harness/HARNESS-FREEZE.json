@@ -1,9 +1,9 @@
 {
- "version": "6",
- "status": "RESCORE LINE, rule 6: scores the 10-11 Nov runs (B0, B0R, E1, E4, E2, E3, L1, L2, ...). The DRAFT next-freeze branch is renumbered 7 so the two cannot be confused.",
- "frozen_utc": "2026-11-11T03:26:05+00:00",
- "rule_version": 6,
- "scorer_sha256": "29b0e79f73e26f4b28aed7e373c8e203de612ce0170126455d533a3e69744d7b",
+ "version": "8",
+ "status": "RESCORE LINE, rule 8: scores the 10-11 Nov runs and round 2 (B0, B0R, E1, E4, E2, E3, P1, P2, E5, L1, ...). Rule 7 is the DRAFT next freeze's number, so the rescore line goes from 6 to 8.",
+ "frozen_utc": "2026-11-11T14:58:09+00:00",
+ "rule_version": 8,
+ "scorer_sha256": "1675080205bfae1ae8570796b034ec05adacb0ad0896cd21464a630d592a98e1",
  "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
  "synthetic_only": true,
  "documents_count": 18,
@@ -58,6 +58,11 @@
    "version": "6",
    "frozen_utc": "2026-11-11T03:26:05+00:00",
    "reason": "rule 6 of the rescore line: Ben's decisions (popup, about 03:20Z 11 Nov), made after B0, E1 and E4 had been scored and reviewed (E2 had finished, not scored). Check 1: a variant's wrong or unsupported sentences on decision documents not above the baseline's, and no reviewer-marked unsafe sentence (any document) the baseline does not also write; the baseline's own unsafe sentences reported apart. Check 5: the median wall time per answered decision document at most 180 s and no new failure. The review sheet gains an 'unsafe' column. Facts, credit and documents unchanged."
+  },
+  {
+   "version": "8",
+   "frozen_utc": "2026-11-11T14:58:09+00:00",
+   "reason": "rule 8 of the rescore line: Ben's decisions D211, D212 (14:41Z 11 Nov) and D213 (14:51Z), made after B0, E1, E4, E2 and E3 had been scored and reviewed under rule 6. Check 2: must-haves may be lost if more are credited in all (+ margin) and no key fact is lost (an allergy, a held or stopped medicine, a warning about when to seek care, and two medicine warnings added in review; PR 295's cases by tag, the harness documents by KEY_FACTS in compare.py). Check 1b: a sentence marked unsafe is read with the sentences beside it (blind 'together' rows), and a variant's unsafe sentence the reviewer links as the same point as one of the baseline's ('same point' rows) is not new. Facts, credit and documents unchanged."
   }
  ],
  "documents": {

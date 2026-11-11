@@ -49,6 +49,37 @@ CATEGORIES = {
 }
 # Facts that tell the patient what to do or when: reported on their own line.
 ACTION_CATEGORIES = {"instruction", "timing", "follow_up", "conditional_instruction", "date_instruction"}
+# Rule 8 (Ben, 11 Nov): key facts. A variant may lose must-haves the baseline has only if it finds more
+# in all and loses no key fact. PR 295's cases say what they are by their tags (`key_kind`); the
+# harness documents have no status tag and their "instruction" category mixes these warnings with
+# other advice, so their key facts are named here. Must-have or not, a key fact counts. Two
+# medicine warnings were added in review (11 Nov): do not stop the antiplatelets, do not take loperamide.
+ALLERGY, HELD_OR_STOPPED, SEEK_CARE = "allergy", "held or stopped medicine", "when to seek care"
+MEDICINE_WARNING = "do not stop or do not take"
+KEY_FACTS = {
+    "fake02-cardiac-discharge/dont_stop_antiplatelets": MEDICINE_WARNING,
+    "new-long-hospital-record/no_loperamide": MEDICINE_WARNING,
+    "fake01-cardiology-referral/penicillin_allergy": ALLERGY,
+    "bakeoff-long-discharge-summary/ibuprofen_stopped": HELD_OR_STOPPED,
+    "fake02-cardiac-discharge/glyburide_stopped": HELD_OR_STOPPED,
+    "new-french-nephrology/stop_ibuprofen": HELD_OR_STOPPED,
+    "new-french-nephrology/stop_hctz": HELD_OR_STOPPED,
+    "new-long-hospital-record/perindopril_on_hold": HELD_OR_STOPPED,
+    "bakeoff-long-discharge-summary/daily_weight": SEEK_CARE,
+    "fake01-cardiology-referral/call_911": SEEK_CARE,
+    "fake02-cardiac-discharge/chest_pain_911": SEEK_CARE,
+    "fake02-cardiac-discharge/daily_weight": SEEK_CARE,
+    "new-french-nephrology/call_if": SEEK_CARE,
+    "new-long-hospital-record/return_if": SEEK_CARE,
+    "new-polish-discharge/urgent_112": SEEK_CARE,
+    "new-rheumatology-letter/call_for_fever": SEEK_CARE,
+}
+# Rule 8 (Ben, 11 Nov): one instruction split across side-by-side sentences is not unsafe. A sentence
+# marked unsafe is read again with the sentence before and after it in the same summary ("together").
+# And a variant's unsafe sentence making the same unsafe point as one of the baseline's, in other
+# words, is not new: the reviewer links the two on a "same point" row.
+TOGETHER = " ‖ "
+PAIR_VERDICTS = {"", "same", "different"}
 WRONG_VERDICTS = {"wrong", "unsupported"}
 # A sentence a reviewer did not accept as carrying its fact.
 NOT_CREDITED_VERDICTS = WRONG_VERDICTS | {"vague"}
@@ -57,8 +88,9 @@ REVIEW_SAMPLE = 1.0
 MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
-# The decision rule (HARNESS.md): its version and its fixed numbers.
-RULE_VERSION = 6
+# The decision rule (HARNESS.md): its version and its fixed numbers. Rule 7 is the DRAFT next freeze's
+# (another branch); the rescore line goes from 6 to 8 so the two cannot be confused.
+RULE_VERSION = 8
 LOCATED_POINTS = 2
 # Rule 6 (Ben, 11 Nov): a summary may take up to about 3 minutes: the median per document.
 TIME_LIMIT_MS = 180_000
@@ -408,6 +440,25 @@ def in_decision(doc):
     return doc.get("split") != "holdout"
 
 
+def key_kind(doc_id, fact):
+    """Rule 8: which key fact this is (an allergy, a held or stopped medicine, a warning about when to
+    seek care), or None. PR 295's cases by their tags, the harness documents by KEY_FACTS."""
+    category = fact.get("category")
+    if category == "allergy":
+        return ALLERGY
+    if category == "medication_status" and (fact.get("expected_attributes") or {}).get("status") == "stop":
+        return HELD_OR_STOPPED
+    if category == "conditional_instruction":
+        return SEEK_CARE
+    return KEY_FACTS.get(f"{doc_id}/{fact.get('id')}")
+
+
+def key_problems(docs):
+    """KEY_FACTS names that are not a fact of the document set."""
+    known = {f"{doc_id}/{f.get('id')}" for doc_id, doc in docs.items() for f in doc.get("facts", [])}
+    return [f"key fact {name} is not a fact of the documents" for name in sorted(set(KEY_FACTS) - known)]
+
+
 def prepare(out, docs):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -517,6 +568,105 @@ def sentence_id(key):
     return "S" + hashlib.sha256("\x1f".join(key).encode("utf-8")).hexdigest()[:12]
 
 
+def window_key(doc_id, sentences, index):
+    """Rule 8: the sentence at `index` read together with the one before and the one after it in the
+    same summary: (document, its place in the window, each sentence's words and quote). None when it
+    stands alone."""
+    start, end = max(0, index - 1), min(len(sentences), index + 2)
+    if end - start < 2:
+        return None
+    return (doc_id, index - start, tuple(sentence_key(doc_id, s)[1:] for s in sentences[start:end]))
+
+
+def window_id(wkey):
+    """A "together" row's opaque, stable id on the review sheet."""
+    doc_id, place, parts = wkey
+    text = "\x1e".join("\x1f".join(part) for part in parts)
+    return "T" + hashlib.sha256(f"together\x1f{doc_id}\x1f{place}\x1f{text}".encode("utf-8")).hexdigest()[:12]
+
+
+def window_of_row(row):
+    """A "together" row's window, read back from its `sentence` and `quote` columns (the sentences
+    joined by TOGETHER, the marked one between ⟦ ⟧)."""
+    texts, quotes = row.get("sentence", "").split(TOGETHER), row.get("quote", "").split(TOGETHER)
+    marked = [i for i, t in enumerate(texts) if t.startswith("⟦") and t.endswith("⟧")]
+    if len(texts) != len(quotes) or len(texts) < 2 or len(marked) != 1:
+        raise ValueError(f"together row {row.get('id')}: needs 2 or 3 sentences and quotes, one marked ⟦ ⟧")
+    texts[marked[0]] = texts[marked[0]][1:-1]
+    return (row["document"], marked[0], tuple((normalized(t), normalized(q)) for t, q in zip(texts, quotes)))
+
+
+def unsafe_states(doc_id, sentences, verdicts):
+    """Rule 8: each sentence a reviewer marked unsafe, in one summary, by `sentence_key`: "unsafe"
+    (alone, or still unsafe read together with the sentences beside it), "pending" (its together row
+    has no review yet) or "cleared" (not unsafe read together: one instruction split across
+    side-by-side sentences). A sentence written twice keeps its worst state."""
+    rank = {"cleared": 0, "pending": 1, "unsafe": 2}
+    states = {}
+    for index, s in enumerate(sentences):
+        skey = sentence_key(doc_id, s)
+        if skey not in getattr(verdicts, "unsafe", set()):
+            continue
+        wkey = window_key(doc_id, sentences, index)
+        together = getattr(verdicts, "windows", {}).get(wkey) if wkey else True
+        state = "pending" if together is None else "unsafe" if together else "cleared"
+        if rank[state] > rank.get(states.get(skey), -1):
+            states[skey] = state
+    return states
+
+
+def pair_key(first, second):
+    """Rule 8: two unsafe sentences of one document (`sentence_key`s), in the order of their own ids,
+    so the row does not tell which run wrote which."""
+    if first[0] != second[0]:
+        raise ValueError("a same-point pair is two sentences of one document")
+    a, b = sorted((first, second), key=sentence_id)
+    return (a[0], a[1:], b[1:])
+
+
+def pair_id(pkey):
+    """A "same point" row's opaque, stable id on the review sheet."""
+    doc_id, a, b = pkey
+    return "P" + hashlib.sha256("\x1f".join(("same", doc_id) + a + b).encode("utf-8")).hexdigest()[:12]
+
+
+def pair_of_row(row):
+    """A "same point" row's pair, read back from its `sentence` and `quote` columns."""
+    texts, quotes = row.get("sentence", "").split(TOGETHER), row.get("quote", "").split(TOGETHER)
+    if len(texts) != 2 or len(quotes) != 2:
+        raise ValueError(f"same-point row {row.get('id')}: needs two sentences and two quotes")
+    return pair_key(*[(row["document"], normalized(t), normalized(q)) for t, q in zip(texts, quotes)])
+
+
+def charged_unsafe(mine, base, pairs):
+    """Rule 8, check 1b: a variant's unsafe sentences the baseline does not also write, from both runs'
+    `unsafe_states` (by `sentence_key`) and the reviewer's same-point links `pairs` (True: same point,
+    False: different, absent: not reviewed). A sentence is excused by one of the baseline's own unsafe
+    sentences in the same document that is the same sentence or linked as the same point. Returns
+    (charged, pending, linked): pending while a review could still change the answer either way."""
+    charged, pending, linked = [], [], []
+    for skey, state in sorted(mine.items()):
+        if state == "cleared":
+            continue
+        excused = maybe = False
+        for other, other_state in base.items():
+            if other[0] != skey[0] or other_state == "cleared":
+                continue
+            same = True if other == skey else pairs.get(pair_key(skey, other))
+            if same is True and other_state == "unsafe":
+                excused = True
+            elif same is not False:
+                maybe = True
+        if excused:
+            if skey not in base:
+                linked.append(skey)
+        elif maybe or state == "pending":
+            pending.append(skey)
+        else:
+            charged.append(skey)
+    return charged, pending, linked
+
+
 def sampled(key):
     """The seeded fifth of the other sentences that goes on the sheet, chosen by the sentence itself,
     so a sentence two runs share is sampled in both or in neither."""
@@ -595,7 +745,8 @@ def score_document(doc, entry, run_lang, verdicts=None, states=None):
         if standing == "credited" and how is None:
             how, index = "reviewed", next(i for i in checks[fact["id"]] if own.get(i) == "correct")
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
-                          critical=fact.get("critical", False), found=how if standing == "credited" else None,
+                          critical=fact.get("critical", False), key=key_kind(doc["id"], fact),
+                          found=how if standing == "credited" else None,
                           standing=standing, matched=how, sentence=index,
                           sentences=[i for _, i in found], to_check=checks[fact["id"]]))
     required = [f for f in facts if f["required"]]
@@ -669,10 +820,92 @@ SHEET_FIELDS = ["id", "document", "language", "sentence", "quote", "context", "f
 KEY_FIELDS = ["id", "run", "doc", "sentence", "why"]
 
 
-def review_sheet(runs, docs, all_scores):
+def together_rows(runs, docs, all_scores, verdicts):
+    """Rule 8: a "together" row for each sentence marked unsafe, in each run where a sentence stands
+    beside it: the sentence before, the marked one (between ⟦ ⟧) and the sentence after, with their
+    quotes and contexts. The reviewer says whether the marked sentence is still unsafe read with them.
+    One row per distinct window; the key names every (run, document, marked sentence)."""
+    rows, key = {}, []
+    if verdicts is None or not verdicts.unsafe:
+        return rows, key
+    for (label, entries), scores in zip(runs.items(), all_scores):
+        for doc_id, score in scores.items():
+            entry = entries.get(doc_id)
+            if not entry or not entry.get("result"):
+                continue
+            sentences = entry["result"]["sentences"]
+            facts = {f["id"]: f for f in docs[doc_id].get("facts", [])}
+            for index, s in enumerate(sentences):
+                wkey = window_key(doc_id, sentences, index)
+                if wkey is None or sentence_key(doc_id, s) not in verdicts.unsafe:
+                    continue
+                rid = window_id(wkey)
+                key.append(dict(id=rid, run=label, doc=doc_id, sentence=index, why="together"))
+                if rid in rows:
+                    continue
+                start = index - wkey[1]
+                part = sentences[start:start + len(wkey[2])]
+                if any(TOGETHER.strip() in (p.get("text", "") + p.get("quote", "")) for p in part):
+                    raise ValueError(f"{doc_id}: a sentence holds {TOGETHER.strip()!r}; the together row cannot show it")
+                places = range(start, start + len(part))
+                carried = []
+                for f in score.get("facts", []):
+                    if any(i in f["sentences"] or i in f.get("to_check", []) for i in places):
+                        wording = facts[f["id"]]["approved_statements"][0]
+                        if wording not in carried:
+                            carried.append(wording)
+                rows[rid] = dict(
+                    id=rid, document=doc_id, language=docs[doc_id].get("lang", ""),
+                    sentence=TOGETHER.join(f"⟦{p['text']}⟧" if i == wkey[1] else p["text"] for i, p in enumerate(part)),
+                    quote=TOGETHER.join(p.get("quote", "") for p in part),
+                    context=TOGETHER.join(quote_context(docs[doc_id], p.get("quote", ""), width=120) for p in part),
+                    fact_it_may_state=" | ".join(carried), verdict="", unsafe="", note="")
+    return rows, key
+
+
+def same_point_rows(runs, docs, verdicts):
+    """Rule 8: a "same point" row for each sentence a variant writes that is marked unsafe, against
+    each other sentence marked unsafe that the baseline (the first run) writes in the same document:
+    the two sentences in the order of their ids, so the row does not say which run wrote which. The
+    reviewer writes `same` when both make the same unsafe point in other words, else `different`."""
+    rows, key = {}, []
+    if verdicts is None or not verdicts.unsafe or len(runs) < 2:
+        return rows, key
+    sentences_of = lambda entries, doc_id: (((entries.get(doc_id) or {}).get("result") or {}).get("sentences") or [])
+    (_, base_entries), *variants = runs.items()
+    for label, entries in variants:
+        for doc_id in sorted(entries):
+            if doc_id not in docs:
+                continue
+            base_unsafe = {sentence_key(doc_id, s): s for s in sentences_of(base_entries, doc_id)
+                           if sentence_key(doc_id, s) in verdicts.unsafe}
+            for index, s in enumerate(sentences_of(entries, doc_id)):
+                skey = sentence_key(doc_id, s)
+                if skey not in verdicts.unsafe:
+                    continue
+                for other, written in sorted(base_unsafe.items()):
+                    if other == skey:
+                        continue
+                    pkey = pair_key(skey, other)
+                    rid = pair_id(pkey)
+                    key.append(dict(id=rid, run=label, doc=doc_id, sentence=index, why="same-point"))
+                    if rid in rows:
+                        continue
+                    pair = [s, written] if sentence_id(skey) < sentence_id(other) else [written, s]
+                    rows[rid] = dict(
+                        id=rid, document=doc_id, language=docs[doc_id].get("lang", ""),
+                        sentence=TOGETHER.join(p["text"] for p in pair),
+                        quote=TOGETHER.join(p.get("quote", "") for p in pair),
+                        context=TOGETHER.join(quote_context(docs[doc_id], p.get("quote", ""), width=120) for p in pair),
+                        fact_it_may_state="", verdict="", unsafe="", note="")
+    return rows, key
+
+
+def review_sheet(runs, docs, all_scores, verdicts=None):
     """The blind review sheet: one row per distinct sentence (document, words, quote) on the sheet in
     any run, in the order of its opaque id (a hash: shuffled, and stable across runs and scorings),
-    with no run, flag or score on it; and the key: every (run, sentence) each row stands for."""
+    with no run, flag or score on it; and the key: every (run, sentence) each row stands for.
+    With a review that marks sentences unsafe, the "together" rows (rule 8) follow, ids starting T."""
     rows, key = {}, []
     for (label, entries), scores in zip(runs.items(), all_scores):
         for doc_id, score in scores.items():
@@ -695,7 +928,10 @@ def review_sheet(runs, docs, all_scores):
                                         sentence=sentence["text"], quote=sentence.get("quote", ""),
                                         context=quote_context(docs[doc_id], sentence.get("quote", "")),
                                         fact_it_may_state=" | ".join(carried), verdict="", unsafe="", note="")
-    return [rows[i] for i in sorted(rows)], key
+    windows, window_key_rows = together_rows(runs, docs, all_scores, verdicts)
+    pairs, pair_key_rows = same_point_rows(runs, docs, verdicts)
+    return ([rows[i] for i in sorted(rows)] + [windows[i] for i in sorted(windows)] + [pairs[i] for i in sorted(pairs)],
+            key + window_key_rows + pair_key_rows)
 
 
 def read_csv_rows(path):
@@ -712,6 +948,11 @@ class Verdicts(dict):
         self.states = {}
         self.states_all = set()
         self.unsafe = set()
+        # Rule 8: together rows (window -> still unsafe read together?) and same-point rows (pair ->
+        # same point?), and each row's verdict as written, for prefill.
+        self.windows = {}
+        self.pairs = {}
+        self.window_rows = {}
 
 
 STATES_NOTE = re.compile(r"\bstates?\s*:\s*(all\b|\d+(?:\s*,\s*\d+)*)", re.IGNORECASE)
@@ -777,8 +1018,25 @@ def read_review(path, runs, key_path=None):
         if not 0 <= index < len(sentences):
             raise ValueError(f"{path}: no sentence {index} of {doc} in run {run}")
         return sentence_key(doc, sentences[index])
+    def put_window(wkey, row, where):
+        verdict, unsafe = verdict_of(row), unsafe_of(row)
+        if not verdict and not unsafe:
+            return
+        if found.windows.get(wkey, unsafe) != unsafe:
+            raise ValueError(f"{path}: two different answers for one together row ({where})")
+        found.windows[wkey] = unsafe
+        found.window_rows[wkey] = (verdict, unsafe)
     if sheet and "run" in sheet[0] and "quote" not in sheet[0]:
         for row in sheet:
+            if (row.get("kind") or "").strip() == "together":
+                # Rule 8: the window around sentence `sentence` of that run, read together.
+                entries = runs.get(row["run"]) or {}
+                sentences = ((entries.get(row["doc"]) or {}).get("result") or {}).get("sentences") or []
+                wkey = window_key(row["doc"], sentences, int(row["sentence"]))
+                if wkey is None:
+                    raise ValueError(f"{path}: sentence {row['sentence']} of {row['doc']} in {row['run']} stands alone")
+                put_window(wkey, row, f"{row['run']} {row['doc']} {row['sentence']}")
+                continue
             skey = sentence_of(row["run"], row["doc"], int(row["sentence"]))
             if unsafe_of(row):
                 found.unsafe.add(skey)
@@ -790,6 +1048,25 @@ def read_review(path, runs, key_path=None):
             key.setdefault(row.get("id") or row.get("row"), []).append(row)
     for row in sheet:
         rid = row.get("id") or row.get("row")
+        if rid and rid[0] in "TP" and TOGETHER in row.get("sentence", ""):
+            # Rule 8 rows, checked by their own content ids (never a hand sheet's).
+            if rid[0] == "T":
+                wkey = window_of_row(row)
+                if rid != window_id(wkey):
+                    raise ValueError(f"{path}: together row {rid} does not match its sentences")
+                put_window(wkey, row, rid)
+                continue
+            pkey = pair_of_row(row)
+            if rid != pair_id(pkey):
+                raise ValueError(f"{path}: same-point row {rid} does not match its sentences")
+            answer = (row.get("verdict") or "").strip().lower()
+            if answer not in PAIR_VERDICTS:
+                raise ValueError(f"{path}: same-point row {rid}: write same or different, not {answer!r}")
+            if answer:
+                if found.pairs.get(pkey, answer == "same") != (answer == "same"):
+                    raise ValueError(f"{path}: two different answers for one same-point row ({rid})")
+                found.pairs[pkey] = answer == "same"
+            continue
         skey = (row["document"], normalized(row.get("sentence", "")), normalized(row.get("quote", "")))
         if key_path:
             if rid not in key:
@@ -828,6 +1105,23 @@ def prefill(sheet_path, other_path, runs, key_path, out_path):
     rows = read_csv_rows(sheet_path)
     filled = 0
     for row in rows:
+        if row["id"][0] in "TP" and TOGETHER in row.get("sentence", ""):
+            if row["id"][0] == "T":
+                wkey = window_of_row(row)
+                if row["id"] != window_id(wkey):
+                    raise ValueError(f"{sheet_path}: together row {row['id']} does not match its sentences")
+                if wkey in verdicts.window_rows:
+                    verdict, unsafe = verdicts.window_rows[wkey]
+                    row["verdict"], row["unsafe"] = verdict, "yes" if unsafe else ""
+                    filled += 1
+            else:
+                pkey = pair_of_row(row)
+                if row["id"] != pair_id(pkey):
+                    raise ValueError(f"{sheet_path}: same-point row {row['id']} does not match its sentences")
+                if pkey in verdicts.pairs:
+                    row["verdict"] = "same" if verdicts.pairs[pkey] else "different"
+                    filled += 1
+            continue
         skey = (row["document"], normalized(row.get("sentence", "")), normalized(row.get("quote", "")))
         if row["id"] != sentence_id(skey):
             raise ValueError(f"{sheet_path}: row {row['id']} does not match its sentence")
@@ -1015,13 +1309,24 @@ def three_way(best, worst):
     return True if worst else False if not best else None
 
 
+def any3(*answers):
+    """Either holds: True if one is True, pending (None) if one is, else False."""
+    return True if True in answers else None if None in answers else False
+
+
+def all3(*answers):
+    """Both hold: False if one is False, pending (None) if one is, else True."""
+    return False if False in answers else None if None in answers else True
+
+
 def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_actions=0, require_gain=False,
-           own_unsafe=()):
-    """The written-down rule (HARNESS.md; version 6 for checks 1 and 5): PASS only if every check
-    holds; PENDING while held facts or sentences on the sheet wait for the review. Only documents in
-    the decision count (PR 295's holdout cases never do), except that an unsafe sentence counts on
-    any document. `own_unsafe`: the variant's sentences a reviewer marked unsafe that the baseline
-    did not also write."""
+           own_unsafe=(), own_unsafe_pending=()):
+    """The written-down rule (HARNESS.md; version 6 for checks 1 and 5, version 8 for 1b and 2):
+    PASS only if every check holds; PENDING while held facts or rows on the sheet wait for the
+    review. Only documents in the decision count (PR 295's holdout cases never do), except that an
+    unsafe sentence counts on any document. `own_unsafe`: the variant's unsafe sentences the
+    baseline does not also write (`charged_unsafe`); `own_unsafe_pending`: those a review can still
+    turn either way."""
     checks = []
     mine, base = summary["reviewed_wrong"], base_summary["reviewed_wrong"]
     if mine is None or base is None:
@@ -1030,29 +1335,41 @@ def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_act
         # A sentence both runs wrote counts on both sides. Rows still unreviewed could only add to a count.
         checks.append((f"wrong or unsupported not above the baseline's ({mine} vs {base})",
                        three_way(mine <= base + base_summary["unreviewed"], mine + summary["unreviewed"] <= base)))
-    if own_unsafe:
-        checks.append((f"no unsafe sentence the baseline does not also write ({len(own_unsafe)})", False))
-    else:
-        checks.append(("no unsafe sentence the baseline does not also write (0)",
-                       None if summary.get("unreviewed_any") else True))
-    sure, maybe = [], []
+    pending_note = f", {len(own_unsafe_pending)} pending" if own_unsafe_pending else ""
+    checks.append((f"no unsafe sentence the baseline does not also write ({len(own_unsafe)}{pending_note})",
+                   False if own_unsafe else None if own_unsafe_pending or summary.get("unreviewed_any") else True))
+    sure, maybe, key_sure, key_maybe, holdout_key = [], [], [], [], []
     for doc_id, base in base_scores.items():
-        if not base.get("decision", True) or not base.get("present") or base.get("error"):
+        if not base.get("present") or base.get("error"):
             continue
         mine = {f["id"]: f["standing"] for f in scores.get(doc_id, {}).get("facts", [])}
         for f in base["facts"]:
-            if not f["required"] or f["standing"] not in ("credited", "held"):
+            if f["standing"] not in ("credited", "held") or not (f["required"] or f.get("key")):
                 continue
             standing = mine.get(f["id"])
             if standing == "credited":
                 continue
-            if f["standing"] == "credited" and standing != "held":
-                sure.append(f"{doc_id}/{f['id']}")
-            else:
-                maybe.append(f"{doc_id}/{f['id']}")
+            name = f"{doc_id}/{f['id']}"
+            certain = f["standing"] == "credited" and standing != "held"
+            if not base.get("decision", True):
+                if f.get("key"):
+                    holdout_key.append(name)
+                continue
+            if f["required"]:
+                (sure if certain else maybe).append(name)
+            if f.get("key"):
+                (key_sure if certain else key_maybe).append(name)
     lost = sure + maybe
-    checks.append((f"must-haves lost at most {margin_lost} ({len(sure)} lost, {len(maybe)} pending)",
-                   three_way(len(sure) <= margin_lost, len(lost) <= margin_lost)))
+    # Rule 8 (Ben, 11 Nov): must-haves may be lost if more are found in all and no key fact is lost.
+    found, held = summary["required_found"], summary["required_held"]
+    base_found, base_held = base_summary["required_found"], base_summary["required_held"]
+    shown = f"{found}" + (f" (+{held} held)" if held else "")
+    checks.append((f"must-haves lost at most {margin_lost} ({len(sure)} lost, {len(maybe)} pending), "
+                   f"or more found than the baseline + {margin_lost} ({shown} vs {base_found}) with no key fact lost "
+                   f"({len(key_sure)} lost, {len(key_maybe)} pending)",
+                   any3(three_way(len(sure) <= margin_lost, len(lost) <= margin_lost),
+                        all3(three_way(found + held > base_found + margin_lost, found > base_found + base_held + margin_lost),
+                             three_way(not key_sure, not key_sure and not key_maybe)))))
     best = summary["action_found"] + summary["action_held"]
     worst = summary["action_found"]
     base_best = base_summary["action_found"] + base_summary["action_held"]
@@ -1076,7 +1393,8 @@ def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_act
     checks.append((f"median time per document at most {TIME_LIMIT_MS // 1000} s, no new failure",
                    not slower and not new_failures))
     verdict = "FAIL" if any(ok is False for _, ok in checks) else "PENDING" if any(ok is None for _, ok in checks) else "PASS"
-    return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures)
+    return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures,
+                key_lost=key_sure + key_maybe, holdout_key_lost=holdout_key)
 
 
 def noise(first, second, docs, pages=None):
@@ -1158,13 +1476,19 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
         lines.append(f"| {label} | {summary['required_found']}/{summary['required_total']} | {summary['required_held']} | "
                      f"{summary['action_found']}/{summary['action_total']} | {summary['located_pct']}% | "
                      f"{summary['flags']} | {summary['traps']} | {median} | {summary['capped']} | {summary['cut']} | "
-                     f"{summary['gap']} | {summary['failed']} | {wrong} | {summary.get('unsafe', 0)} | "
+                     f"{summary['gap']} | {summary['failed']} | {wrong} | {summary.get('unsafe', 0)}"
+                     f"{' (+' + str(summary['unsafe_pending']) + ' pending)' if summary.get('unsafe_pending') else ''} | "
                      f"{decision['verdict'] if decision else 'baseline'} |")
     if summaries and summaries[0].get("unsafe"):
         lines.append("")
         lines.append(f"The baseline's own unsafe sentences ({summaries[0]['unsafe']}; a variant is not charged for "
                      "writing the same sentence):")
         lines += [f"- {u['document']}: {u['sentence']}" for u in summaries[0]["unsafe_sentences"]]
+    cleared = [(label, u) for label, summary in zip(labels, summaries) for u in summary.get("unsafe_cleared_sentences", [])]
+    if cleared:
+        lines.append("")
+        lines.append("Marked unsafe alone, but not unsafe read with the sentences beside them (rule 8, not counted):")
+        lines += [f"- {label}: {u['document']}: {u['sentence']}" for label, u in cleared]
     if any(h["documents"] for h in holdouts):
         lines.append("")
         lines.append("Holdout (PR 295's holdout families, reported only):")
@@ -1178,6 +1502,15 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
                                                    for name, ok in decision["checks"]))
             if decision["lost"]:
                 lines.append(f"  lost or pending: {', '.join(decision['lost'])}")
+            for name, field in (("key facts lost or pending", "key_lost"),
+                                ("key facts lost on holdout documents (reported only)", "holdout_key_lost")):
+                if decision.get(field):
+                    lines.append(f"  {name}: {', '.join(decision[field])}")
+            for name, field in (("unsafe, not in the baseline", "unsafe_new"),
+                                ("unsafe, pending the review", "unsafe_new_pending"),
+                                ("unsafe, the same point as a baseline sentence (rule 8, not counted)", "unsafe_linked")):
+                if decision.get(field):
+                    lines.append(f"  {name}: " + " / ".join(f"{u['document']}: {u['sentence']}" for u in decision[field]))
     lines += memory_lines(labels, memories)
     return "\n".join(lines) + "\n"
 
@@ -1210,6 +1543,7 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
     docs = as_read(docs, loaded, pages)
     read_pages = {doc_id: pages_hash(doc["pages"]) for doc_id, doc in docs.items()}
     labels, all_scores, summaries, holdouts, metas, memories = [], [], [], [], [], []
+    unsafe_states_of = []
     for label, (meta, entries) in loaded.items():
         labels.append(label)
         metas.append(meta)
@@ -1227,11 +1561,19 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
                 wrong += sum(1 for v in mine.values() if v in WRONG_VERDICTS)
         all_scores.append(scores)
         summaries.append(summarize_run(scores, wrong))
-        unsafe = sorted({(doc_id, sentence_key(doc_id, s)[1], sentence_key(doc_id, s)[2])
-                         for doc_id in docs for s in (((entries.get(doc_id) or {}).get("result") or {}).get("sentences") or [])
-                         if verdicts is not None and sentence_key(doc_id, s) in getattr(verdicts, "unsafe", set())})
-        summaries[-1]["unsafe"] = len(unsafe)
-        summaries[-1]["unsafe_sentences"] = [dict(document=d, sentence=t, quote=q) for d, t, q in unsafe]
+        # Rule 8: each unsafe-marked sentence's state in this run (alone, or read with the sentences beside it).
+        states = {}
+        if verdicts is not None:
+            for doc_id in docs:
+                states.update(unsafe_states(doc_id, ((entries.get(doc_id) or {}).get("result") or {}).get("sentences") or [],
+                                            verdicts))
+        unsafe_states_of.append(states)
+        listed = lambda state: [dict(document=d, sentence=t, quote=q) for (d, t, q), s in sorted(states.items()) if s == state]
+        summaries[-1]["unsafe_sentences"] = listed("unsafe")
+        summaries[-1]["unsafe"] = len(summaries[-1]["unsafe_sentences"])
+        summaries[-1]["unsafe_pending_sentences"] = listed("pending")
+        summaries[-1]["unsafe_pending"] = len(summaries[-1]["unsafe_pending_sentences"])
+        summaries[-1]["unsafe_cleared_sentences"] = listed("cleared")
         # Any sentence on the sheet, holdout included, still without a verdict (an unsafe mark may come).
         summaries[-1]["unreviewed_any"] = sum(sc.get("unreviewed", 0) for sc in scores.values() if sc.get("present"))
         holdouts.append(summarize_run(scores, None, holdout=True))
@@ -1239,11 +1581,14 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
     base_model = metas[0].get("model", {}).get("sha256")
     notes = [f"{label}: another model file" for label, meta in zip(labels, metas)
              if meta.get("model", {}).get("sha256") != base_model]
-    base_unsafe = {(u["document"], u["sentence"], u["quote"]) for u in summaries[0]["unsafe_sentences"]}
-    decisions = [None] + [decide(all_scores[0], summaries[0], s, m, margin_lost, margin_actions, gains(label),
-                                 [u for u in m["unsafe_sentences"]
-                                  if (u["document"], u["sentence"], u["quote"]) not in base_unsafe])
-                          for label, s, m in zip(labels[1:], all_scores[1:], summaries[1:])]
+    as_rows = lambda keys: [dict(document=d, sentence=t, quote=q) for d, t, q in keys]
+    decisions = [None]
+    for label, s, m, states in zip(labels[1:], all_scores[1:], summaries[1:], unsafe_states_of[1:]):
+        charged, pending, linked = charged_unsafe(states, unsafe_states_of[0], getattr(verdicts, "pairs", {}))
+        decision = decide(all_scores[0], summaries[0], s, m, margin_lost, margin_actions, gains(label),
+                          charged, pending)
+        decision.update(unsafe_new=as_rows(charged), unsafe_new_pending=as_rows(pending), unsafe_linked=as_rows(linked))
+        decisions.append(decision)
     for decision in decisions[1:]:
         if unfrozen and decision["verdict"] == "PASS":
             decision["verdict"] = "UNFROZEN"
@@ -1254,7 +1599,7 @@ def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, re
         runs=[dict(label=l, meta=m, summary=s, holdout=h, decision=d, memory=mem, documents=sc)
               for l, m, s, h, d, mem, sc in zip(labels, metas, summaries, holdouts, decisions, memories, all_scores)],
         notes=notes), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    rows, key = review_sheet({label: entries for label, (_, entries) in loaded.items()}, docs, all_scores)
+    rows, key = review_sheet({label: entries for label, (_, entries) in loaded.items()}, docs, all_scores, verdicts)
     (out / "review").mkdir(exist_ok=True)
     # The reviewer's documents: the same page text the contexts and the quote placement used.
     (out / "review" / "docs").mkdir(exist_ok=True)
@@ -1355,6 +1700,8 @@ def main(argv=None):
         fixture_ids = {d for d, doc in docs.items() if doc.get("source") == "PR 295 fixtures"}
         problems = {doc_id: check_document(doc, fixture=doc_id in fixture_ids) for doc_id, doc in docs.items()}
         bad = {doc_id: p for doc_id, p in problems.items() if p}
+        if key_problems(docs):
+            bad["key facts"] = key_problems(docs)
         for doc_id, p in bad.items():
             print(f"{doc_id}: " + "; ".join(p))
         frozen = freeze_problems(args.documents) if Path(args.documents).resolve() == DOCUMENTS else []

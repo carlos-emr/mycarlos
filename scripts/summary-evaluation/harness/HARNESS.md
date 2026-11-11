@@ -208,6 +208,22 @@ is turned down is "rejected", i.e. lost). Such a row without a `states:` note is
 are unchanged. Made after B0 and E1 had been scored: 5 of round 2's 6 several-fact rows were
 `correct` with no such note.
 
+**Version 8 of the rescore line** (11 Nov; 7 stays the DRAFT next freeze's number, so the rescore line
+goes from 6 to 8) records **three more of Ben's decisions, made after B0, E1, E4, E2 and E3 had all been
+scored and reviewed under version 6**:
+- **Net gain (check 2).** A variant may lose must-haves the baseline has if it credits more must-haves
+  in all than the baseline (+ `margin_lost`) and loses no key fact. Key facts are an allergy, a held
+  or stopped medicine, a warning about when to seek care, and (added in review) a medicine
+  warning: do not stop, do not take. They are listed below.
+- **A split instruction (check 1b).** One instruction split across side-by-side sentences is not
+  unsafe. Each sentence marked unsafe is read again with the sentence before and after it in the same
+  summary, on a "together" row.
+- **The same unsafe point (check 1b).** A variant's unsafe sentence that makes the same unsafe point as
+  one of the baseline's, in other words, is not one the baseline lacks. The reviewer links the two on
+  a "same point" row.
+
+Facts, credit, documents and the other checks are as in version 6.
+
 **Version 6 of the rescore line** (11 Nov; the DRAFT next freeze is renumbered 7 so the two cannot be
 confused) records **Ben's decisions, made after B0, E1 and E4 had been scored and reviewed** (E2 had
 finished but was not scored): "compare to today" for wrong statements, any reviewer-marked unsafe
@@ -252,9 +268,43 @@ only if all of these hold:
    - b. No sentence the reviewer marked **unsafe** (the sheet's `unsafe` column) that the baseline
      did not also write, on any document, holdout included. The baseline's own unsafe sentences are
      listed apart in `compare.md` (and `unsafe_sentences` in `scores.json`).
+   - **Rule 8, read together:** a marked sentence with a sentence beside it in its summary gets a
+     blind "together" row (id `T…`). The row holds the sentence before it, the marked sentence
+     between ⟦ ⟧ and the sentence after it, with their quotes, joined by " ‖ ". The reviewer gives
+     a verdict and marks `unsafe` if the marked sentence is still unsafe read with them. Not unsafe
+     together: the mark does not count in that run (`compare.md` lists it). No answer yet: the
+     check is pending. A sentence alone counts at once. The baseline's marks are read the same way.
+   - **Rule 8, the same point:** each variant's marked sentence gets a blind "same point" row (id
+     `P…`) with each other marked sentence the baseline writes in the same document. The two
+     sentences are in the order of their own ids, not baseline first. The reviewer writes `same`
+     (the same unsafe point in other words) or `different` in `verdict`. A sentence linked `same` to
+     one of the baseline's that is still unsafe is not charged. No answer yet: pending.
    - (Rules 2 to 5: no sentence reviewed `wrong` or `unsupported` at all.)
 2. **Must-haves kept.** At most `margin_lost` required facts that the baseline had (credited or
-   held) are lost.
+   held) are lost. **Or (rule 8)**, the variant credits more required facts than the baseline +
+   `margin_lost` (held facts counted both ways) **and** loses no key fact the baseline had, sure or
+   pending.
+   - A key fact counts whether or not it is a must-have, on the decision documents only. Key facts
+     lost on holdout documents are reported, not decided.
+   - PR 295's cases name key facts by their tags: category `allergy`; `medication_status` with
+     status `stop`; `conditional_instruction`.
+   - The harness documents have no status tag, and their `instruction` category mixes these
+     warnings with other advice, so `compare.py` names their key facts (`KEY_FACTS`):
+     - allergy: fake01-cardiology-referral/penicillin_allergy;
+     - held or stopped medicine: bakeoff-long-discharge-summary/ibuprofen_stopped,
+       fake02-cardiac-discharge/glyburide_stopped, new-french-nephrology/stop_ibuprofen and
+       stop_hctz, new-long-hospital-record/perindopril_on_hold;
+     - when to seek care: bakeoff-long-discharge-summary/daily_weight, fake01-cardiology-referral/call_911,
+       fake02-cardiac-discharge/chest_pain_911 and daily_weight, new-french-nephrology/call_if,
+       new-long-hospital-record/return_if, new-polish-discharge/urgent_112,
+       new-rheumatology-letter/call_for_fever;
+     - medicine warning: fake02-cardiac-discharge/dont_stop_antiplatelets,
+       new-long-hospital-record/no_loperamide.
+   - Left out on purpose: planned end dates (amox_clav_until_31, vancomycin_until_3,
+     prednisone_taper), stop_smoking (not a medicine), and PR 295's "not prescribed", "no change"
+     and "planned, not started".
+   - Gaps for the next freeze: the long hospital record's sulfa allergy has no fact, and no
+     decision document has a must-have allergy.
 3. **Patient actions not worse.** Patient actions found are at least the baseline's −
    `margin_actions`.
    - For a variant named with `--require-gain-for LABEL` (an experiment aimed at them), they must be
