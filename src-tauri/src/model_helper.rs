@@ -436,20 +436,40 @@ repeat them as the document's instructions. Do not repeat anyone's phone number,
 address, or any identity number such as a health card or record number, unless the document tells \
 the patient to use it, such as the clinic's number to call.";
 
+/// Part (a) of the 11 Nov variant design: what a summary says first, then what it says next.
+/// Kept in this one place, as it may be revised once the instructions-first run (E3) is scored.
+const SUMMARY_ORDER: &str =
+    "First say what the document found: the main problem or diagnosis and the key results, each \
+     with its number and unit. Then say what the patient must do and when.";
+
+/// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
+/// condition, medicine or group, number and limit, or not at all.
+const SUMMARY_WHOLE_RULES: &str =
+    "When a sentence gives a rule with a condition (if, when, unless) or names a medicine or a \
+     group of medicines, keep every condition, every medicine or group, and every number or \
+     limit the document gives for it; if they do not all fit in one sentence, leave that \
+     sentence out.";
+
+/// Part (c) of the 11 Nov variant design: which, how much and when, in one sentence.
+const SUMMARY_SAME_SENTENCE: &str =
+    "Say which, how much and when in the same sentence: the test or medicine by name, the \
+     number with its unit, the date or time.";
+
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
-         sentences (fewer if the document is short). Start with the most important point; put \
-         one fact in each sentence. For each sentence, copy into \"quote\" one continuous piece \
-         of the document, 3 to 25 words, exactly as written (same spelling, numbers, accents and \
-         punctuation, no '...' and no joined pieces), in the document's own language (only the \
-         quote is copied; the sentence itself is written in {language}). If you cannot find such \
-         a piece for a sentence, leave that sentence out.\n\nReply only with \
-         JSON in this shape: {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
-         Document:\n<<<\n{SLOT}\n>>>\n\nWrite every \"text\" in {language}, even though the document \
-         may be in another language. Only \"quote\" stays in the document's own language, copied \
-         exactly."
+         sentences (fewer if the document is short). {SUMMARY_ORDER} Put one fact in each \
+         sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each sentence, copy into \
+         \"quote\" one continuous piece of the document, 3 to 25 words, exactly as written (same \
+         spelling, numbers, accents and punctuation, no '...' and no joined pieces), in the \
+         document's own language (only the quote is copied; the sentence itself is written in \
+         {language}). If you cannot find such a piece for a sentence, leave that sentence out.\n\n\
+         Reply only with JSON in this shape: \
+         {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
+         Document:\n<<<\n{SLOT}\n>>>\n\nWrite every \"text\" in {language}, even though the \
+         document may be in another language. Only \"quote\" stays in the document's own \
+         language, copied exactly."
     )
 }
 
@@ -1083,6 +1103,37 @@ mod tests {
             CONTEXT_TOKENS as usize - 300 - SUMMARY_TOKENS - PROMPT_MARGIN
         );
         assert_eq!(document_budget(9_000, SUMMARY_TOKENS), 0);
+    }
+
+    #[test]
+    fn e5_asks_found_first_whole_rules_one_clause_and_the_language_twice() {
+        // E5 = E2 + parts (a), (b) and (c) + L1 and L2, word for word as the design note gives it.
+        let prompt = summary_prompt("English", MAX_SENTENCES);
+        let (before, after) = prompt.split_once(SLOT).unwrap();
+        assert_eq!(
+            before,
+            "Summarize this document for the patient in English, in at most 10 short sentences \
+             (fewer if the document is short). First say what the document found: the main \
+             problem or diagnosis and the key results, each with its number and unit. Then say \
+             what the patient must do and when. Put one fact in each sentence. When a sentence \
+             gives a rule with a condition (if, when, unless) or names a medicine or a group of \
+             medicines, keep every condition, every medicine or group, and every number or \
+             limit the document gives for it; if they do not all fit in one sentence, leave \
+             that sentence out. Say which, how much and when in the same sentence: the test or \
+             medicine by name, the number with its unit, the date or time. For each sentence, \
+             copy into \"quote\" one continuous piece of the document, 3 to 25 words, exactly \
+             as written (same spelling, numbers, accents and punctuation, no '...' and no \
+             joined pieces), in the document's own language (only the quote is copied; the \
+             sentence itself is written in English). If you cannot find such a piece for a \
+             sentence, leave that sentence out.\n\nReply only with JSON in this shape: \
+             {\"sentences\": [{\"text\": \"...\", \"quote\": \"...\"}]}\n\nDocument:\n<<<\n"
+        );
+        assert_eq!(
+            after,
+            "\n>>>\n\nWrite every \"text\" in English, even though the document may be in \
+             another language. Only \"quote\" stays in the document's own language, copied \
+             exactly."
+        );
     }
 
     #[test]
