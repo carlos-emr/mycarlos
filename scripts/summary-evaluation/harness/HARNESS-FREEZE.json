@@ -1,10 +1,10 @@
 {
  "version": 6,
  "status": "DRAFT for the next freeze (version 6). The 10-11 Nov runs are scored with version 5 of the rescore line (43bc7612); do not score them with this one.",
- "frozen_utc": "2026-11-11T02:20:34+00:00",
+ "frozen_utc": "2026-11-11T02:31:36+00:00",
  "rule_version": 6,
- "scorer_sha256": "2ccd85fec190e347d9addd783962c983b677ab7281422b371037dea276501b37",
- "scoring_documents_sha256": "09b3c8d3c03f932e4a2b9cfa47e07405fab351e691f471ee52500e559270a08d",
+ "scorer_sha256": "982b668a6767311e4e142a7c64ec761a076d2015185803bc6f39e4c561bac724",
+ "scoring_documents_sha256": "3f8dbe2676009f15fbed8df167860de848bed163fc63ab14eef8ee617a713fe4",
  "synthetic_only": true,
  "documents_count": 27,
  "facts": 212,
@@ -36,8 +36,8 @@
   },
   {
    "version": 6,
-   "frozen_utc": "2026-11-11T02:20:34+00:00",
-   "reason": "DRAFT rule version 6, numbered apart from rule 5 of the rescore line (43bc7612) and now including it (merged 11 Nov: to-check rows, the LANGUAGE fix, the reading report, here with a 'never sent' label). Adds the CONTACT_DETAILS screen and the documents' patient_contacts (added to bakeoff-cumulative-lab, bakeoff-discharge-summary and bakeoff-lab-report; their pages, facts and traps unchanged); three FAKE contact cases (contact01-03); six FAKE multi-page cases (long01-06, tools/long_documents.py); prepare sends at most 50 pages, as the app reads. Not for the 10-11 Nov runs."
+   "frozen_utc": "2026-11-11T02:31:36+00:00",
+   "reason": "DRAFT rule version 6 (includes rule 5 of the rescore line, merged 11 Nov). Adds the CONTACT_DETAILS screen and the documents' patient_contacts, three FAKE contact cases, six FAKE multi-page cases (tools/long_documents.py), prepare capped at 50 pages, the 'never sent' reading label; after Agent 3's reviews: phones matched by their last 7 digits, every bare number after a phone word, no identity flag for years, ranges or plain pairs, 'numero de dossier' and 'Ul.', 'St John's wort'; pending trap checks (contact02's pharmacy, Ben's open question 2); long03's page-54-only facts not required (beyond_text_read); RAMQ numbers with impossible months. Not for the 10-11 Nov runs."
   }
  ],
  "documents": {
@@ -112,7 +112,7 @@
    "outputs_seen_before_facts": "no"
   },
   "contact02-thyroid-letter-fr": {
-   "sha256": "2db2e063681616c3490602d7481e993518df4af3f69841bc10e7986ff4c5a194",
+   "sha256": "5deb87739262ffb6d8682af6a71b452eebad71c040bc92dc6ec0dc4ddaa0aeda",
    "facts": 5,
    "critical": 3,
    "traps": 5,
@@ -175,7 +175,7 @@
    "outputs_seen_before_facts": "no"
   },
   "long03-heart-failure-54p": {
-   "sha256": "9624d0fa28d0122159b07375bba77ffe3b86e053550cbf23d178741971c16551",
+   "sha256": "4c5b2610fbb2787365400d15e7a455abe4e6110ae001dc59dd0ade09e2716fdf",
    "facts": 7,
    "critical": 6,
    "traps": 4,
@@ -189,14 +189,14 @@
    "outputs_seen_before_facts": "no"
   },
   "long05-lab-series-6p": {
-   "sha256": "f10c46fc2db85b26c53be14294847801e766a3fc930d8eeddf67945f00d6fa37",
+   "sha256": "ce58c15269da239cfc5fdc04537dab6f78c3a9c0a0d97892a3790211d3123818",
    "facts": 8,
    "critical": 5,
    "traps": 5,
    "outputs_seen_before_facts": "no"
   },
   "long06-lettre-cardio-2p-fr": {
-   "sha256": "04e73bd4ca093877a4e7e23e531cfdad954792445c4c9cbd20d6350d88b0b688",
+   "sha256": "4902ad35bbc85eb804a6ddbe40ba4ebbc3f95ec1319508e7b9c6d82b94d92b57",
    "facts": 7,
    "critical": 6,
    "traps": 4,

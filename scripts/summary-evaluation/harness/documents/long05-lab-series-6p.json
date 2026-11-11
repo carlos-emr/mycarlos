@@ -308,6 +308,6 @@
  "patient_contacts": [
   "613-555-0156"
  ],
- "reading_note": "Every page repeats the header (name, PHN, provider) and the footer, which tells the patient to call the clinic. The clinic's comments for the patient are on page 6.",
+ "reading_note": "Every page repeats the header (name, PHN, provider) and the footer, which tells the patient to call the clinic. The clinic's comments for the patient are on page 6. The optional call_the_clinic fact is only in the repeated footer: a variant that treats running lines as no source (H1) cannot credit it, which is H1's stated cost, not a model's loss.",
  "notes": "Every name, place, phone (555-01xx), e-mail and number is FAKE; card numbers fail their checksum. Written by tools/long_documents.py (11 Nov 2026). Draft for the next freeze; not in v4."
 }

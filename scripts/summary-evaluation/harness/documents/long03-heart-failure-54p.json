@@ -321,7 +321,7 @@
   {
    "id": "ramipril_stopped",
    "category": "medication_status",
-   "required": true,
+   "required": false,
    "critical": true,
    "source_evidence": "STOPPED for now: ramipril. Do not take it until the heart function clinic tells you to.",
    "approved_statements": [
@@ -343,12 +343,13 @@
      "hold"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "beyond_text_read": "page 54 only: past the app's 50-page text read"
   },
   {
    "id": "daily_weight",
    "category": "conditional_instruction",
-   "required": true,
+   "required": false,
    "critical": true,
    "source_evidence": "Call your family doctor or the heart function clinic if your weight goes up by more than 2 kg in\n  3 days,",
    "approved_statements": [
@@ -370,12 +371,13 @@
      "3 days"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "beyond_text_read": "page 54 only: past the app's 50-page text read"
   },
   {
    "id": "clinic_9_november",
    "category": "follow_up",
-   "required": true,
+   "required": false,
    "critical": true,
    "source_evidence": "Heart Function Clinic, Testville General Hospital, on 9 November 2026 at 9:00, with Dr. Morgan\n  FAKE-Achebe.",
    "approved_statements": [
@@ -399,12 +401,13 @@
      "9:00"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "beyond_text_read": "page 54 only: past the app's 50-page text read"
   },
   {
    "id": "blood_test_3_november",
    "category": "follow_up",
-   "required": true,
+   "required": false,
    "critical": false,
    "source_evidence": "Blood test (creatinine and potassium) on 3 November 2026 at any Testville lab;",
    "approved_statements": [
@@ -428,7 +431,8 @@
      "november 3"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "beyond_text_read": "page 54 only: past the app's 50-page text read"
   }
  ],
  "traps": [

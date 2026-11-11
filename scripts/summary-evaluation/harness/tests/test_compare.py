@@ -552,6 +552,54 @@ class ContactScreenTest(unittest.TestCase):
         self.assertTrue(any("names no contact detail" in p for p in compare.check_document(doc)))
 
 
+class ContactReviewFixesTest(unittest.TestCase):
+    """Agent 3's review of the contact screen (S1-S4, C1, C2, C4)."""
+
+    def kinds(self, text, doc=None):
+        flag = compare.contact_flag(text, doc)
+        return flag.split(":", 1)[1].split(",") if flag else []
+
+    def test_a_phone_given_to_the_patient_matches_with_or_without_its_area_code(self):
+        with_area = dict(patient_contacts=["Tel 613-555-0100"])
+        self.assertEqual(self.kinds("Call the clinic at 555-0100.", with_area), [])
+        self.assertEqual(self.kinds("Call the clinic at 613-555-0100.", dict(patient_contacts=["Tel 555-0100"])), [])
+        self.assertEqual(self.kinds("Call the clinic at 613-555-0199.", with_area), ["phone"])
+
+    def test_every_bare_number_after_a_phone_word_is_found(self):
+        self.assertEqual([k for k, _ in compare.contact_details("Call 555-0142 or 555-0143.")], ["phone", "phone"])
+        self.assertEqual(self.kinds("Call 555-0142 or 555-0143.", dict(patient_contacts=["Tel 555-0142"])), ["phone"])
+
+    def test_years_ranges_and_plain_pairs_are_not_identity_numbers(self):
+        for text in ("The 2025-2026 season vaccine is due.", "It was checked in 2024 2025 and 2026.",
+                     "Neutrophils 1500-7000 per microlitre.", "Doses of 1200 1500 were tried.",
+                     "Your health card expires in 2027."):
+            self.assertEqual(self.kinds(text), [], text)
+        self.assertEqual(self.kinds("Her card is FAKE 5803 0299."), ["identity"])
+        self.assertEqual(self.kinds("Her number is 1234 567 891."), ["identity"])
+
+    def test_a_file_number_named_before_it_and_a_capital_ul_are_found(self):
+        self.assertEqual(self.kinds("Votre numéro de dossier est le 0077123."), ["identity"])
+        self.assertEqual(self.kinds("Ul. Przykładowa 12 to adres apteki."), ["address"])
+
+    def test_st_john_s_wort_is_no_street(self):
+        self.assertEqual(self.kinds("Take 1 St John's wort tablet."), [])
+        self.assertEqual(self.kinds("He lives at 12 Main St."), ["address"])
+
+    def test_a_pending_trap_is_not_counted_but_the_screen_still_sends_it_to_review(self):
+        doc = REPO["contact02-thyroid-letter-fr"]
+        pending = [i for i, c in enumerate(doc["trap_checks"]) if c.get("pending")]
+        self.assertEqual(len(pending), 1)
+        text = "La pharmacie est au 45, rue de l'Exemple, téléphone 514 555-0166."
+        self.assertNotIn(pending[0], compare.trap_flags(doc, text))
+        self.assertIn("CONTACT_DETAILS:address,phone", compare.screen(sentence(text, text), "fr", doc["facts"], doc))
+
+    def test_quoting_the_normal_range_does_not_trip_the_tsh_trap(self):
+        doc = REPO["contact02-thyroid-letter-fr"]
+        tsh = next(i for i, c in enumerate(doc["trap_checks"]) if c["trap"] == "calling the TSH normal")
+        self.assertNotIn(tsh, compare.trap_flags(doc, "Votre TSH est à 7,8 ; les valeurs normales sont de 0,35 à 5,0."))
+        self.assertIn(tsh, compare.trap_flags(doc, "Votre TSH est normale."))
+
+
 class LongDocumentTest(unittest.TestCase):
     """The multi-page documents (DRAFT for the next freeze) keep the layout each one is for."""
 
@@ -585,6 +633,25 @@ class LongDocumentTest(unittest.TestCase):
         self.assertEqual(compare.reading_label(pages, read, partly), "never sent")
         early = compare.fact_pages(doc, evidence_of("long03-heart-failure-54p", "heart_failure_admission"))
         self.assertEqual(compare.reading_label(early, read, partly), "read")
+
+    def test_a_fact_past_the_text_read_is_not_a_must_have_and_says_why(self):
+        doc = json.loads(json.dumps(REPO["long03-heart-failure-54p"]))
+        beyond = [f["id"] for f in doc["facts"] if f.get("beyond_text_read")]
+        self.assertEqual(sorted(beyond), ["blood_test_3_november", "clinic_9_november", "daily_weight", "ramipril_stopped"])
+        self.assertTrue(all(not f["required"] for f in doc["facts"] if f["id"] in beyond))
+        self.assertEqual(compare.check_document(doc), [])
+        clinic = next(f for f in doc["facts"] if f["id"] == "clinic_9_november")
+        clinic["required"] = True
+        self.assertTrue(any("past the 50-page text read" in p for p in compare.check_document(doc)))
+
+    def test_the_reading_report_counts_facts_past_the_text_read_as_never_sent(self):
+        doc = REPO["long03-heart-failure-54p"]
+        entry = dict(kind="document", id=doc["id"], wallMs=1, result=dict(
+            sentences=[sentence("FAKE: nothing.", "no such words")], lastPage=7, lastPageCut=True))
+        scores = {doc["id"]: compare.score_document(doc, entry, "en")}
+        report = compare.reading_report(["B0"], [{doc["id"]: entry}], {doc["id"]: doc}, [scores])[0]
+        self.assertEqual(report["groups"]["never sent"]["facts"], 4)
+        self.assertIn("| 4 |", compare.reading_markdown([report]))
 
     def test_the_lab_series_repeats_its_header_and_footer_on_every_page(self):
         pages = REPO["long05-lab-series-6p"]["pages"]

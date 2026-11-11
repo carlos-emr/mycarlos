@@ -1293,19 +1293,23 @@ Nurse: L. FAKE-Chen, RN    Patient and daughter: copy received, 27 October 2026,
         fact("ramipril_stopped", "medication_status",
              "STOPPED for now: ramipril. Do not take it until the heart function clinic tells you to.",
              ["Ramipril is stopped for now; do not take it until the heart function clinic says so."],
-             [["ramipril"], ["stop", "do not take", "hold"]], critical=True),
+             [["ramipril"], ["stop", "do not take", "hold"]], required=False, critical=True,
+             beyond_text_read="page 54 only: past the app's 50-page text read"),
         fact("daily_weight", "conditional_instruction",
              "Call your family doctor or the heart function clinic if your weight goes up by more than 2 kg in\n  3 days,",
              ["Weigh yourself every morning, and call your family doctor or the heart function clinic if your weight goes up by more than 2 kg in 3 days."],
-             [["weigh", "weight"], ["2 kg", "3 days"]], critical=True),
+             [["weigh", "weight"], ["2 kg", "3 days"]], required=False, critical=True,
+             beyond_text_read="page 54 only: past the app's 50-page text read"),
         fact("clinic_9_november", "follow_up",
              "Heart Function Clinic, Testville General Hospital, on 9 November 2026 at 9:00, with Dr. Morgan\n  FAKE-Achebe.",
              ["He has an appointment at the Heart Function Clinic on 9 November 2026 at 9:00 with Dr. Morgan FAKE-Achebe."],
-             [["heart function clinic", "fake-achebe"], ["9 november", "november 9", "9:00"]], critical=True),
+             [["heart function clinic", "fake-achebe"], ["9 november", "november 9", "9:00"]], required=False,
+             critical=True, beyond_text_read="page 54 only: past the app's 50-page text read"),
         fact("blood_test_3_november", "follow_up",
              "Blood test (creatinine and potassium) on 3 November 2026 at any Testville lab;",
              ["Have a blood test for creatinine and potassium on 3 November 2026."],
-             [["blood test", "creatinine", "potassium"], ["3 november", "november 3"]]),
+             [["blood test", "creatinine", "potassium"], ["3 november", "november 3"]], required=False,
+             beyond_text_read="page 54 only: past the app's 50-page text read"),
     ]
     traps = [
         trap("saying he had a heart attack this time",
@@ -1693,7 +1697,10 @@ Dr. Casey FAKE-Okoro (FAKE)
                     "Multi-page: 6-page cumulative lab series, the same header (with a PHN) and footer on every page",
                     "en", pages, facts, traps, ["613-555-0156"],
                     reading_note="Every page repeats the header (name, PHN, provider) and the footer, which tells "
-                                 "the patient to call the clinic. The clinic's comments for the patient are on page 6.")
+                                 "the patient to call the clinic. The clinic's comments for the patient are on page 6. "
+                                 "The optional call_the_clinic fact is only in the repeated footer: a variant that "
+                                 "treats running lines as no source (H1) cannot credit it, which is H1's stated cost, "
+                                 "not a model's loss.")
 
 
 # --- (f) a two-page French letter -----------------------------------------------------------------
@@ -1710,7 +1717,7 @@ Docteure Sophie FAKE-Bélanger (FICTIVE)
 Groupe de médecine de famille du Quartier (FICTIF)
 
 Objet : M. Antoine FAKE-Gauthier (FICTIF) · Date de naissance : 19 août 1957
-RAMQ : FAKE 5708 1990 · Dossier no : 0102233
+RAMQ : FAKE 5768 1990 · Dossier no : 0102233
 
 Chère collègue,
 
@@ -1829,7 +1836,7 @@ c. c. M. Antoine FAKE-Gauthier
         trap("parler d'un AVC qui a eu lieu / saying he had a stroke",
              r"^(?!.*\b(risque|risk|signes?|signs?|pas|no|not|n'|prevent\w*|reduire|lower|reduce)\b).*\b(avc|accident vasculaire|stroke)\b",
              "Il a fait un AVC."),
-        trap("repeating the RAMQ or file number", r"5708\W*1990|0102233", "Son numéro RAMQ est FAKE 5708 1990."),
+        trap("repeating the RAMQ or file number", r"5768\W*1990|0102233", "Son numéro RAMQ est FAKE 5768 1990."),
         OTHER,
     ]
     return document("long06-lettre-cardio-2p-fr", "Multi-page: two-page French cardiology letter", "fr", pages,

@@ -129,6 +129,7 @@ NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 # them ("dossier no", "chart #", "accession:"), since "dossier" or "file" alone are everyday words.
 ID_WORDS = (r"health ?card(?: number| no\.?)?|health (?:insurance )?number|ohip|ramq|msp|phn|mrn|pesel|cpf|"
             r"carte d'assurance maladie|numero d'assurance maladie|cartao (?:sus|nacional de saude)|"
+            r"(?:numero|no|n\u00b0) de dossier|"
             r"(?:medical record|record|chart|requisition|accession|dossier|prontuario|"
             r"numer (?:karty|ubezpieczenia|dokumentacji|pacjenta)) ?(?:number|numero|no\.?|n[o\u00b0]|#|id|:)|"
             r"(?:file|visit|card|hospital|patient|referral) ?(?:number|numero|no\.?|n[o\u00b0]|#|id)")
@@ -142,19 +143,21 @@ CONTACT_PHONE = re.compile(
     r"|\(\d{2}\) ?\d{4,5}-\d{4}\b"
     r"|\b(?:" + PHONE_WORDS + r")\b[^\d\n]{0,25}?(?<![\d.,/-])\d{3}[ .-]\d{4}(?![\w/]|[.,-]\d| ?\d)",
     re.IGNORECASE)
+CONTACT_PHONE_WORD = re.compile(r"\b(?:" + PHONE_WORDS + r")\b", re.IGNORECASE)
+CONTACT_PHONE7 = re.compile(r"(?<![\d.,/-])\d{3}[ .-]\d{4}(?![\w/]|[.,-]\d| ?\d)")
 CONTACT_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 CONTACT_ADDRESS = re.compile(
     r"(?<![\w.,])\d{1,5}[A-Za-z]?,? (?:[A-Z][\w'.-]* ){0,3}"
-    r"(?:(?i:street|avenue|road|boulevard|lane|crescent|highway)\b|(?:St|Ave|Rd|Blvd|Cres|Hwy)\b)"
+    r"(?:(?i:street|avenue|road|boulevard|lane|crescent|highway)\b|St\b(?!\.? John)|(?:Ave|Rd|Blvd|Cres|Hwy)\b)"
     r"|(?<![\w.,])\d{1,5},? (?i:rue|avenue|av\.|boulevard|boul\.?|chemin|rang|montee)(?!\w)"
-    r"|\b(?:ul\.|al\.|os\.|(?i:ulica|aleja|osiedle)) ?[A-Z][\w-]+(?: [A-Z][\w-]+)? \d{1,4}[a-z]?\b"
+    r"|\b(?i:ul\.|al\.|os\.|ulica|aleja|osiedle) ?[A-Z][\w-]+(?: [A-Z][\w-]+)? \d{1,4}[a-z]?\b"
     r"|\b(?:Rua|Avenida|Av\.|Travessa|Alameda|Rodovia|Calle) (?:[\w'.,-]+ ){0,5}?\d{1,5}\b"
     r"|\b(?:PO|P\.O\.) Box \d+"
     r"|\b(?!T\d[A-Z] ?\dM)[A-Z]\d[A-Z] ?\d[A-Z]\d\b|\b\d{5}-\d{3}\b")
 # A long number on its own: 8 or more digits in one run (not a date such as 20261022), or in groups of
 # at least 3 digits that start with 4 (1234 567 890, FAKE 5803 0299). Shorter groups are table values.
-CONTACT_LONG_NUMBER = re.compile(r"(?<![\w.,/-])\d{8,}(?![\w.,/-])"
-                                 r"|(?<![\w.,/-])\d{4}(?:[ -]\d{3,4}){1,3}(?![\w.,/-]|\.\d)")
+CONTACT_LONG_NUMBER = re.compile(r"(?<![\w.,/-])\d{8,}(?![\w/]|[.,-]\d)"
+                                 r"|(?<![\w.,/-])\d{4}(?:[ -]\d{3,4}){1,3}(?![\w/]|[.,-]\d)")
 
 
 # --- Text ---------------------------------------------------------------------------------------
@@ -254,6 +257,16 @@ def looks_like_date(digits):
             and 1 <= int(digits[6:]) <= 31)
 
 
+def is_year(digits):
+    """A 4-digit year, 1900 to 2099."""
+    return len(digits) == 4 and digits[:2] in ("19", "20")
+
+
+def same_phone(a, b):
+    """Two phone keys name the same line: equal, or the same last 7 digits when one has no area code."""
+    return a == b or ((len(a) == 7 or len(b) == 7) and a[-7:] == b[-7:])
+
+
 def contact_details(text):
     """The contact details in `text`, as (kind, key) pairs: kind is phone, email, address or identity;
     the key is what the same detail is recognised by elsewhere (its digits, the folded address or
@@ -268,33 +281,52 @@ def contact_details(text):
 
     for m in CONTACT_IDENTITY.finditer(text):
         digits = re.sub(r"\D", "", m.group(1))
-        if not looks_like_date(digits):
+        # A date, or a year after a label ("your health card expires in 2027"), is not the number.
+        if not looks_like_date(digits) and not is_year(digits):
             claim("identity", digits, m.span(1))
     for m in CONTACT_EMAIL.finditer(text):
         claim("email", m.group(0).casefold(), m.span())
     for m in CONTACT_PHONE.finditer(text):
         number = re.search(r"\+?[\d(][\d() .-]*\d$", m.group(0)).group(0)
         claim("phone", re.sub(r"\D", "", number)[-10:], (m.end() - len(number), m.end()))
+    word = CONTACT_PHONE_WORD.search(text)
+    if word:
+        # "Call 555-0142 or 555-0143": every bare 7-digit number after a phone word, not only the first.
+        for m in CONTACT_PHONE7.finditer(text, word.end()):
+            claim("phone", re.sub(r"\D", "", m.group(0)), m.span())
     for m in CONTACT_ADDRESS.finditer(text):
         claim("address", " ".join(fold(m.group(0)).replace(",", " ").split()[:2]), m.span())
     for m in CONTACT_LONG_NUMBER.finditer(text):
         digits = re.sub(r"\D", "", m.group(0))
-        if len(digits) >= 8 and not looks_like_date(digits):
-            claim("identity", digits, m.span())
+        groups = re.split(r"[ -]", m.group(0))
+        if len(digits) < 8 or looks_like_date(digits) or all(is_year(g) for g in groups):
+            continue
+        # Two groups only: "1500-7000" is a range and "1200 1500" two values, unless a group starts
+        # with 0 as numbers on cards do ("5803 0299"); a labelled number is caught above.
+        if len(groups) == 2 and not any(g.startswith("0") for g in groups):
+            continue
+        claim("identity", digits, m.span())
     return found
 
 
 def patient_contact_keys(doc):
-    """The contact details the document gives the patient to use (its `patient_contacts`): a sentence
-    may repeat these."""
-    return {key for entry in (doc or {}).get("patient_contacts", []) for _, key in contact_details(entry)}
+    """The contact details the document gives the patient to use (its `patient_contacts`), as
+    (kind, key): a sentence may repeat these."""
+    return {found for entry in (doc or {}).get("patient_contacts", []) for found in contact_details(entry)}
+
+
+def allowed_contact(kind, key, allowed):
+    """Whether a detail is one the document gives the patient (a phone with or without its area code)."""
+    if kind == "phone":
+        return any(k == "phone" and same_phone(key, other) for k, other in allowed)
+    return (kind, key) in allowed
 
 
 def contact_flag(text, doc=None):
     """The CONTACT_DETAILS flag for a sentence, or None: the kinds it repeats that the document does
     not give the patient to use."""
     allowed = patient_contact_keys(doc)
-    kinds = sorted({kind for kind, key in contact_details(text) if key not in allowed})
+    kinds = sorted({kind for kind, key in contact_details(text) if not allowed_contact(kind, key, allowed)})
     return "CONTACT_DETAILS:" + ",".join(kinds) if kinds else None
 
 
@@ -339,7 +371,7 @@ def trap_flags(doc, text):
     """The listed traps a sentence falls into, by their pattern (folded text)."""
     folded = fold(text)
     return [index for index, check in enumerate(doc.get("trap_checks", []))
-            if check.get("pattern") and re.search(check["pattern"], folded)]
+            if check.get("pattern") and not check.get("pending") and re.search(check["pattern"], folded)]
 
 
 def check_document(doc, fixture=False):
@@ -388,6 +420,16 @@ def check_document(doc, fixture=False):
             problems.append(f"{where}: a required fact needs a qualifier group, or a `no_qualifier` reason")
     if fixture:
         return problems
+    for f in doc.get("facts", []):
+        # A fact whose evidence lies only past the app's text read can be carried by no run: it is
+        # kept to show what the cut costs, but it is not a must-have, and it says why.
+        pages = fact_pages(doc, f)
+        beyond = bool(pages) and min(pages) >= TEXT_READ_PAGES
+        if beyond and (f.get("required", True) or not f.get("beyond_text_read")):
+            problems.append(f"fact {f.get('id')}: lies past the {TEXT_READ_PAGES}-page text read: "
+                            "make it not required, with a beyond_text_read reason")
+        if f.get("beyond_text_read") and not beyond:
+            problems.append(f"fact {f.get('id')}: beyond_text_read, but a page the app reads holds it")
     for entry in doc.get("patient_contacts", []):
         if not entry or normalized(entry) not in joined:
             problems.append(f"patient contact is not in the document: {entry[:40]!r}")
@@ -885,8 +927,9 @@ def reading_label(pages, read, partly):
 
 
 def reading_report(labels, runs, docs, all_scores):
-    """Per run, the required facts of the decision documents by whether their page was read, and
-    how each group fared: credited, held, or lost (for a read page: the model left it out)."""
+    """Per run, the required facts of the decision documents (and those past the text read,
+    `beyond_text_read`) by whether their page was read, and how each group fared: credited, held,
+    or lost (for a read page: the model left it out)."""
     report = []
     for label, entries, scores in zip(labels, runs, all_scores):
         groups = {name: dict(facts=0, credited=0, held=0, lost=0) for name in READING_LABELS}
@@ -898,7 +941,7 @@ def reading_report(labels, runs, docs, all_scores):
             read, partly = pages_read(doc, (entries.get(doc_id) or {}).get("result"))
             by_id = {f["id"]: f for f in doc.get("facts", [])}
             for fact in score["facts"]:
-                if not fact["required"]:
+                if not fact["required"] and not by_id[fact["id"]].get("beyond_text_read"):
                     continue
                 name = reading_label(fact_pages(doc, by_id[fact["id"]]), read, partly)
                 outcome = {"credited": "credited", "held": "held"}.get(fact["standing"], "lost")

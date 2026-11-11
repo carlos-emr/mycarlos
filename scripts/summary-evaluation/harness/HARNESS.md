@@ -44,7 +44,9 @@ Each fact follows PR 295's fixture schema: `id`, `category`, `required`, `critic
 
   So a sentence that names the fact but says something else is not credited: "Your iron is fine."
   for iron-deficiency anemia, or "Your liver is damaged." for a mildly high ALT to repeat.
-- `trap_checks`: one per listed trap, in order. Either a `pattern` (a regular expression on the
+- `trap_checks`: one per listed trap, in order. A check with a `pending` reason (rule 6) stands for a
+  question not decided yet (contact02's pharmacy phone: Ben's open question 2): it is checked like
+  the others but never flags or counts, until the question is answered. Either a `pattern` (a regular expression on the
   sentence's folded text) with an `example` sentence that must fall into it, or the `screens`
   that already check it (wrong numbers: `NUMBER_NOT_IN_QUOTE`, `QUANTITY_MISMATCH`).
 
@@ -81,7 +83,11 @@ on 11 Nov with their facts, before any model read them ("no").
 
 `prepare` sends at most the first 50 pages of a document (`TEXT_READ_PAGES`): the app reads no more
 (`MAX_TEXT_PAGES`) and the helper refuses more. A document's facts may lie past them, as in
-`long03-heart-failure-54p`; no variant can carry those, and the run is marked `cut`. Still to add: an image-only scan and a form
+`long03-heart-failure-54p`; no variant can carry those, and the run is marked `cut`. Such a fact is
+`required: false` with a `beyond_text_read` reason (`check` insists), so it is kept to show what the
+cut costs a patient without counting as a must-have; the reading report counts it as "never sent".
+Not modelled: the app's 180-second text-read time limit (`TEXT_READ_TIME_LIMIT`), which can stop
+the read of a slow PDF before page 50; `prepare` always sends the first 50 pages. Still to add: an image-only scan and a form
 page, run through the app's own text extraction once and kept as their `pages`.
 
 ## What a run measures, per document
@@ -126,7 +132,12 @@ page, run through the app's own text extraction once and kept as their `pages`.
     visit, referral or requisition number, or any run of 8 or more digits that is not a date) that
     is not in the document's `patient_contacts`. Kinds: `phone`, `email`, `address`, `identity`.
     The count per run is in `compare.md` (`contacts`). Not flagged: dates, lab values, doses, "911",
-    "ST depression", TNM stages, and a health card named without its number.
+    "ST depression", TNM stages, years and year spans ("2025-2026"), a hyphenated range or a plain
+    pair of values ("1500-7000", "1200 1500"; a pair is kept when a group starts with 0, as on
+    cards), "St John's wort", and a health card named without its number. A phone given to the
+    patient matches with or without its area code (the last 7 digits), and every bare 7-digit number
+    after a phone word is checked. A contact document's pattern traps for the same details double
+    the screen on purpose: such a sentence counts in both "traps" and "contacts".
 - **To check** (rule 5): a required fact that no sentence carries, while a sentence that carries no
   fact quotes its source (the quote lies on the fact's evidence or spans), puts that sentence on the
   sheet "to check" with the fact's own wording. A reviewer's `correct` credits the fact in every run
@@ -209,6 +220,22 @@ carries is held until reviewed; the screen changes no verdict by itself. It was 
 make the contact rule of prompt variant L2 measurable: version 4 sees a repeated contact detail only
 by eye, and B0 repeated two (a spouse's phone in `bakeoff-quebec-referral`, a PESEL in
 `new-polish-discharge`), both flagged by this screen with no other B0 sentence flagged.
+
+**Planned for the next freeze (not built yet):** screens for the five sentences round 2's reviewer
+found unsafe whatever the verdict (none was flagged by any screen or trap):
+- `GENERALIZED_SUBJECT`: a date or duration said of a class word (medicines, leki, médicaments,
+  remédios) while the quote's evidence names one drug ("leki do 05.11.2026" for the antibiotic's
+  end date); and LANGUAGE for short sentences by letters unique to a language (ł ą ę ż ś ć ń, ã õ);
+- `INSTRUCTION_ADDED`: an imperative or "if you…" sentence (tell, call, see, take, stop, avoid)
+  whose quote has no instruction ("Tell a doctor if you have a rash after taking penicillin." from
+  "A penicillin allergy with a rash is recorded.");
+- every trigger of a `conditional_instruction` fact as its own match group (fake01 call_911 gains
+  "at rest"), and a screen for an "or …" alternative in the quote missing from the sentence;
+- `COUNT_DROPPED`: once, twice, one dose or a single in the quote but not in the sentence (the
+  nitroglycerin spray "once"; fake02's spray fact gains a "once" group);
+- `ACTION_FROM_HEADER`: an appointment or action sentence (see, visit, appointment, book + a date or
+  time) whose quote is a header or timestamp line (Reported, Collected, Printed, Received, DOB) or
+  has no action ("See Dr. Sampleton on 3 November 2026 at 16:05." from the lab's issue time).
 
 **Version 5** was written on 11 Nov **after model outputs had been seen**:
 - B0's outputs were read in full (the rescore and Agent 4's blind review of its 94 rows);
