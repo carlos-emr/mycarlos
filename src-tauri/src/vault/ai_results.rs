@@ -238,6 +238,8 @@ fn within(text: &str, max_chars: usize) -> bool {
 /// separate from it, so that lowering that cap later never makes kept answers unreadable.
 pub(crate) const MAX_KEPT_SENTENCES: usize = 20;
 const _: () = assert!(crate::model_helper::MAX_SENTENCES <= MAX_KEPT_SENTENCES);
+// K5: a long document's summary is kept too.
+const _: () = assert!(crate::model_helper::LONG_MAX_SENTENCES <= MAX_KEPT_SENTENCES);
 
 /// Refuses an answer to keep unless its bytes are a summary or an
 /// explanation as the reader writes them, within the helper's caps (its

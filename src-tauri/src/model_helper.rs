@@ -71,8 +71,21 @@ pub(crate) const BATCH_TOKENS: u32 = 512;
 pub(crate) const SUMMARY_TOKENS: usize = 900;
 pub(crate) const EXPLAIN_TOKENS: usize = 220;
 /// At most this many summary sentences, each part at most so many characters (the grammar
-/// holds the model to them).
+/// holds the model to them). A long document may have more ([`summary_limits`]).
 pub(crate) const MAX_SENTENCES: usize = 10;
+/// K5 (round-4 candidate on E6, board "Try"): a document with at least this many tokens of page
+/// text, all its pages as sent, is long. A discharge summary with many instructions runs past it;
+/// a one-page result or letter does not.
+pub(crate) const LONG_DOCUMENT_TOKENS: usize = 1_400;
+/// K5: the most summary sentences for a long document, where ten may not hold every instruction
+/// (a discharge summary's medicines, visits and rules) after what it found.
+pub(crate) const LONG_MAX_SENTENCES: usize = 14;
+/// K5: the answer tokens allowed for each sentence, as today: [`SUMMARY_TOKENS`] is ten of them.
+pub(crate) const TOKENS_PER_SENTENCE: usize = 90;
+/// K5: the longest summary of a long document, in tokens.
+pub(crate) const LONG_SUMMARY_TOKENS: usize = LONG_MAX_SENTENCES * TOKENS_PER_SENTENCE;
+const _: () = assert!(SUMMARY_TOKENS == MAX_SENTENCES * TOKENS_PER_SENTENCE);
+const _: () = assert!(MAX_SENTENCES < LONG_MAX_SENTENCES);
 pub(crate) const MAX_TEXT_CHARS: usize = 300;
 pub(crate) const MAX_QUOTE_CHARS: usize = 240;
 /// The longest request line the helper reads: 1 MiB of text, escaped.
@@ -482,6 +495,19 @@ const SUMMARY_WARNING: &str =
      one sentence or in two sentences next to each other; if they do not fit, say that the \
      document lists when to get help.";
 
+/// The sentence cap and the answer tokens for a summary of a document with `document_tokens`
+/// tokens of page text, asked for at most `requested` sentences (K5). A long document asked for the
+/// full cap ([`MAX_SENTENCES`], as the app always asks) gets [`LONG_MAX_SENTENCES`] and
+/// [`LONG_SUMMARY_TOKENS`]; otherwise the request's cap, at most [`MAX_SENTENCES`], and
+/// [`SUMMARY_TOKENS`]. A smaller request is kept whatever the length.
+pub(crate) fn summary_limits(document_tokens: usize, requested: usize) -> (usize, usize) {
+    if document_tokens >= LONG_DOCUMENT_TOKENS && requested >= MAX_SENTENCES {
+        (LONG_MAX_SENTENCES, LONG_SUMMARY_TOKENS)
+    } else {
+        (requested.clamp(1, MAX_SENTENCES), SUMMARY_TOKENS)
+    }
+}
+
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
@@ -617,10 +643,11 @@ pub(crate) fn document_budget(prompt_tokens: usize, answer_tokens: usize) -> usi
 
 // --- The summary's grammar and its reading back ---------------------------------------------
 
-/// The GBNF grammar a summary is sampled under: compact JSON, 1 to `max_sentences` sentences,
-/// each part 1 to its cap of characters, no raw control characters.
+/// The GBNF grammar a summary is sampled under: compact JSON, 1 to `max_sentences` sentences
+/// (never more than a long document's [`LONG_MAX_SENTENCES`]), each part 1 to its cap of
+/// characters, no raw control characters.
 pub(crate) fn summary_grammar(max_sentences: usize) -> String {
-    let more = max_sentences.clamp(1, MAX_SENTENCES) - 1;
+    let more = max_sentences.clamp(1, LONG_MAX_SENTENCES) - 1;
     format!(
         r#"root ::= "{{\"sentences\":[" sentence ("," sentence){{0,{more}}} "]}}"
 sentence ::= "{{\"text\":\"" char{{1,{MAX_TEXT_CHARS}}} "\",\"quote\":\"" char{{1,{MAX_QUOTE_CHARS}}} "\"}}"
@@ -1341,8 +1368,40 @@ mod tests {
         assert!(summary_grammar(MAX_SENTENCES).contains(r#"("," sentence){0,9}"#));
         assert!(grammar.contains("char{1,300}"));
         assert!(grammar.contains("char{1,240}"));
-        assert!(summary_grammar(40).contains("{0,9}"));
+        assert!(summary_grammar(LONG_MAX_SENTENCES).contains(r#"("," sentence){0,13}"#));
+        assert!(summary_grammar(40).contains("{0,13}"));
         assert!(summary_grammar(0).contains("{0,0}"));
+    }
+
+    #[test]
+    fn k5_gives_a_long_document_fourteen_sentences_and_the_answer_tokens_for_them() {
+        // Board K5, as the screening overlay has it: at least 1,400 tokens of page text gets up
+        // to 14 sentences and 90 answer tokens each (1,260); a shorter one keeps E6's 10 and 900.
+        assert_eq!(
+            (
+                LONG_DOCUMENT_TOKENS,
+                LONG_MAX_SENTENCES,
+                LONG_SUMMARY_TOKENS
+            ),
+            (1_400, 14, 1_260)
+        );
+        assert_eq!(summary_limits(1_400, MAX_SENTENCES), (14, 1_260));
+        assert_eq!(summary_limits(7_000, MAX_SENTENCES), (14, 1_260));
+        assert_eq!(summary_limits(1_399, MAX_SENTENCES), (10, 900));
+        assert_eq!(summary_limits(0, MAX_SENTENCES), (10, 900));
+        // A request above the cap is the cap; a smaller request is kept, however long the
+        // document.
+        assert_eq!(summary_limits(1_399, 40), (10, 900));
+        assert_eq!(summary_limits(1_400, 40), (14, 1_260));
+        assert_eq!(summary_limits(5_000, 6), (6, 900));
+        assert_eq!(summary_limits(5_000, 0), (1, 900));
+        // The prompt names the long cap, and the grammar holds the model to it.
+        assert!(summary_prompt("English", LONG_MAX_SENTENCES).contains("in at most 14 short"));
+        // A long document leaves less room for its pages: the answer takes 360 more tokens.
+        assert_eq!(
+            document_budget(600, SUMMARY_TOKENS) - document_budget(600, LONG_SUMMARY_TOKENS),
+            360
+        );
     }
 
     #[test]

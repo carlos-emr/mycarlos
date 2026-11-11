@@ -1354,9 +1354,13 @@ pub mod engine_testing {
             model_helper::language_name(lang).ok_or_else(|| format!("unknown language {lang}"))?;
         let prompt = model_helper::summary_prompt(language, model_helper::MAX_SENTENCES);
         let grammar = model_helper::summary_grammar(model_helper::MAX_SENTENCES);
+        // K5: a long document's own caps are part of what a summary is made under.
         let caps = serde_json::json!({
             "maxSentences": model_helper::MAX_SENTENCES,
             "summaryTokens": model_helper::SUMMARY_TOKENS,
+            "longDocumentTokens": model_helper::LONG_DOCUMENT_TOKENS,
+            "longMaxSentences": model_helper::LONG_MAX_SENTENCES,
+            "longSummaryTokens": model_helper::LONG_SUMMARY_TOKENS,
             "contextTokens": model_helper::CONTEXT_TOKENS,
             "maxTextChars": model_helper::MAX_TEXT_CHARS,
             "maxQuoteChars": model_helper::MAX_QUOTE_CHARS,

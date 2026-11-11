@@ -3,9 +3,9 @@
 
 use super::{
     answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
-    read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
-    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    read_explanation, read_summary, summary_grammar, summary_limits, summary_prompt, thinking_off,
+    without_slot, ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START,
+    BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, PAGE_SEPARATOR, SLOT, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -474,10 +474,6 @@ impl Engine {
         max_sentences: usize,
     ) -> Result<(Vec<Sentence>, Fit), Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
-        let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
-        let user = summary_prompt(language, max_sentences);
-        let around = self.prompt_tokens(&user, &[""])?.0.len();
-        let budget = document_budget(around, SUMMARY_TOKENS);
         let pages: Vec<Page> = pages
             .iter()
             .map(|page| Page {
@@ -485,6 +481,17 @@ impl Engine {
                 text: without_slot(&page.text),
             })
             .collect();
+        // K5: a long document, by the tokens of all its pages as sent, may have more sentences,
+        // and its answer more tokens; the pages then have that much less room.
+        let whole = pages
+            .iter()
+            .map(|page| page.text.as_str())
+            .collect::<Vec<_>>()
+            .join(PAGE_SEPARATOR);
+        let (max_sentences, answer_tokens) = summary_limits(self.count(&whole), max_sentences);
+        let user = summary_prompt(language, max_sentences);
+        let around = self.prompt_tokens(&user, &[""])?.0.len();
+        let budget = document_budget(around, answer_tokens);
         let fit = fit_pages(
             &pages,
             budget,
@@ -495,7 +502,7 @@ impl Engine {
         let (tokens, prefix_len) = self.prompt_tokens(&user, &[&fit.text])?;
         let grammar = summary_grammar(max_sentences);
         let (written, capped) =
-            self.generate(&tokens, prefix_len, SUMMARY_TOKENS, Some(&grammar))?;
+            self.generate(&tokens, prefix_len, answer_tokens, Some(&grammar))?;
         let sentences = read_summary(&written, capped).ok_or_else(|| failed("unreadable"))?;
         Ok((sentences, fit))
     }

@@ -126,14 +126,26 @@ const EXPLAIN_PROMPT_TOKENS: u32 = 400;
 /// 2026), so ten sentences (`MAX_SENTENCES`) run to about 530; its cap (`SUMMARY_TOKENS`, 900)
 /// stops it anyway, keeping the sentences it finished.
 const SUMMARY_ANSWER_TOKENS: u32 = 600;
+/// K5: a long document may have up to `LONG_MAX_SENTENCES` (14) sentences, so its limit allows
+/// for 14 of the same 60 tokens.
+const LONG_SUMMARY_ANSWER_TOKENS: u32 = 840;
+const _: () = assert!(
+    LONG_SUMMARY_ANSWER_TOKENS as usize * crate::model_helper::MAX_SENTENCES
+        == SUMMARY_ANSWER_TOKENS as usize * crate::model_helper::LONG_MAX_SENTENCES
+);
 
 /// The size a summary's limit is reckoned from, for `text_bytes` of pages: its prompt's
-/// estimated tokens and the answer tokens it allows (`AnswerLimit::for_request`).
+/// estimated tokens and the answer tokens it allows (`AnswerLimit::for_request`). Only the
+/// helper knows whether a document is long (`LONG_DOCUMENT_TOKENS` tokens); a token is at least
+/// one byte, so pages of at least that many bytes may be, and their limit allows for the longer
+/// answer. It errs long, like the rest of the estimate.
 pub(crate) fn summary_request_size(text_bytes: usize) -> (u32, u32) {
-    (
-        prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
-        SUMMARY_ANSWER_TOKENS,
-    )
+    let answer = if text_bytes >= crate::model_helper::LONG_DOCUMENT_TOKENS {
+        LONG_SUMMARY_ANSWER_TOKENS
+    } else {
+        SUMMARY_ANSWER_TOKENS
+    };
+    (prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes), answer)
 }
 
 /// What a runner starts and how much it may use.
@@ -1647,6 +1659,17 @@ mod tests {
             prompt_tokens(750, usize::MAX),
             crate::model_helper::CONTEXT_TOKENS
         );
+    }
+
+    #[test]
+    fn a_summary_that_may_be_long_is_allowed_the_longer_answer() {
+        // K5: the helper gives a document of 1,400 tokens or more up to 14 sentences. A token is
+        // at least one byte, so pages of 1,400 bytes or more may be such a document.
+        let long = crate::model_helper::LONG_DOCUMENT_TOKENS;
+        assert_eq!(summary_request_size(long - 1).1, 600);
+        assert_eq!(summary_request_size(long).1, 840);
+        assert_eq!(summary_request_size(60_000).1, 840);
+        assert_eq!(summary_request_size(long).0, prompt_tokens(750, long));
     }
 
     #[test]

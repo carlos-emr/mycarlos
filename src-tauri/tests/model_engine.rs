@@ -511,6 +511,19 @@ fn a_summary_build_names_its_prompt_grammar_and_caps_by_one_fingerprint() {
         .as_str()
         .unwrap()
         .contains(&format!("{{0,{}}}", cap - 1)));
+    // K5: a long document's caps are named too, so a K5 build has its own fingerprint.
+    assert_eq!(
+        (
+            &en["caps"]["longDocumentTokens"],
+            &en["caps"]["longMaxSentences"],
+            &en["caps"]["longSummaryTokens"]
+        ),
+        (
+            &serde_json::json!(1_400),
+            &serde_json::json!(14),
+            &serde_json::json!(1_260)
+        )
+    );
     assert!(summary_build("xx").is_err());
 }
 
