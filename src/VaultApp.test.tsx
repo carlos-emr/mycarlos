@@ -2606,8 +2606,12 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByRole("button", { name: "FAKE_Already_focused.pdf" }),
     ).toBeVisible();
+    // Shown as its status, then its source (#135): Unverified, Manual import.
+    expect(screen.getAllByText(humanText("Unverified")).length).toBeGreaterThan(
+      0,
+    );
     expect(
-      screen.getAllByText("Manual import — unverified").length,
+      screen.getAllByText(humanText("Manual import")).length,
     ).toBeGreaterThan(0);
   });
 

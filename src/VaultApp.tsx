@@ -180,8 +180,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [snapshot, setSnapshot] = useState<VaultSnapshot | null>(null);
   const [notice, setNotice, noticeValue] = useTextState();
   // Locked, show only the waiting count. Unlocked, import into Shared with me.
-  // Serialize every list+accept cycle: a second arrival during an import must
-  // request another pass, including when this window was already focused.
+  // One list at a time; an arrival during a list asks for another pass, even
+  // when this window was already focused (#53). An import is not waited for
+  // here: `acceptShared` takes one at a time and asks again once it is done, so
+  // a pending import never holds back a later list, including a new session's.
   const [received, setReceived] = useState<ReceivedFile[]>([]);
   const acceptSharedRef = useRef<() => Promise<void>>(async () => undefined);
   const receiveGeneration = useRef(0);
@@ -210,7 +212,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               const text = receiveNoticeText(missed);
               if (text)
                 setNotice(deferredText(() => receiveNoticeText(missed)));
-              if (files.length) await acceptSharedRef.current();
+              if (files.length) void acceptSharedRef.current();
             } catch {
               // No automatic retry. A later arrival/focus/unlock asks again.
             }
