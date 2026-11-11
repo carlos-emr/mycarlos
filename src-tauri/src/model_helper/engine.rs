@@ -2,10 +2,11 @@
 //! one thing at a time, each from a fresh cache. Only the helper process runs this.
 
 use super::{
-    answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
-    read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
-    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    answer_hash, document_budget_at, explain_prompt, fit_pages, gemma4_conversation, is_window,
+    language_name, read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off,
+    without_slot, ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START,
+    BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
+    SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -30,9 +31,14 @@ const MAP_FILE: bool = cfg!(windows);
 pub(super) struct Engine {
     backend: &'static LlamaBackend,
     model: &'static LlamaModel,
-    /// The context. Missing only while it is made again (see [`Engine::use_threads`]); the
-    /// helper ends when it cannot be made at all.
+    /// The context. Missing only while it is made again (see [`Engine::use_threads`] and
+    /// [`Engine::use_window`]); the helper ends when it cannot be made at all.
     context: Option<LlamaContext<'static>>,
+    /// The context's size in tokens (llama.cpp's `n_ctx`): [`CONTEXT_TOKENS`] between answers,
+    /// a larger window only while a long document's summary is made (see [`Engine::use_window`]).
+    window: u32,
+    /// The context the model was trained for (0 when unknown): a window never goes above it.
+    trained: u32,
     /// The model's own template, for [`ChatFormat::Builtin`] only.
     template: Option<LlamaChatTemplate>,
     chat_format: ChatFormat,
@@ -90,11 +96,11 @@ fn assemble<T>(
     Some((tokens, prefix_len))
 }
 
-/// The context: the model's whole window, prompts read in batches, answers written on
+/// The context: a window of `window` tokens, prompts read in batches, answers written on
 /// `threads` threads and prompts read on `batch_threads`.
-fn context_params(threads: i32, batch_threads: i32) -> LlamaContextParams {
+fn context_params(window: u32, threads: i32, batch_threads: i32) -> LlamaContextParams {
     LlamaContextParams::default()
-        .with_n_ctx(NonZeroU32::new(CONTEXT_TOKENS))
+        .with_n_ctx(NonZeroU32::new(window))
         .with_n_batch(BATCH_TOKENS)
         .with_n_ubatch(BATCH_TOKENS)
         .with_n_threads(threads)
@@ -186,19 +192,26 @@ impl Engine {
         };
         let threads = i32::try_from(settings.threads).map_err(|_| failed("threads"))?;
         let context = model
-            .new_context(backend, context_params(threads, threads))
+            .new_context(backend, context_params(CONTEXT_TOKENS, threads, threads))
             .map_err(|_| failed("context"))?;
-        Ok(Self {
+        let architecture = model
+            .meta_val_str("general.architecture")
+            .unwrap_or_default();
+        let mut engine = Self {
             backend,
             model,
             context: Some(context),
+            window: CONTEXT_TOKENS,
+            trained: 0,
             template,
             chat_format: settings.chat_format,
             prefixes: Vec::new(),
             threads,
             batch_threads: threads,
             stats: Stats::default(),
-        })
+        };
+        engine.trained = engine.trained_context(&architecture);
+        Ok(engine)
     }
 
     /// Answers from now on are written on `threads` threads (between one and the prompt's),
@@ -223,9 +236,13 @@ impl Engine {
             context.clear_kv_cache();
         }
         self.context = None;
+        let window = self.window;
         let made = |threads| {
             self.model
-                .new_context(self.backend, context_params(threads, self.batch_threads))
+                .new_context(
+                    self.backend,
+                    context_params(window, threads, self.batch_threads),
+                )
                 .ok()
         };
         if let Some(context) = made(threads) {
@@ -241,6 +258,51 @@ impl Engine {
         } else {
             Err(failed("context"))
         }
+    }
+
+    /// The next answer is read in a window of `window` tokens; none means the default,
+    /// [`CONTEXT_TOKENS`] (D249: a long document's summary asks for a larger one, and the
+    /// helper goes back to the default before it waits again). Only a listed window
+    /// ([`is_window`]), and never above the model's trained context. The context is made again
+    /// when the size changes; the weights stay loaded. When llama.cpp cannot make the larger
+    /// window (not enough memory), the old one is made again and the request is refused with
+    /// "window", so the app can ask one size smaller; with no context at all, the helper ends.
+    pub(super) fn use_window(&mut self, window: Option<u32>) -> Result<(), Failure> {
+        let wanted = window.unwrap_or(CONTEXT_TOKENS);
+        if !is_window(wanted) || (self.trained != 0 && wanted > self.trained) {
+            return Err(failed("window"));
+        }
+        if wanted == self.window {
+            return Ok(());
+        }
+        // As in use_threads: the old context goes first, zeroed, with its kept prefixes.
+        self.prefixes.clear();
+        if let Some(context) = self.context.as_mut() {
+            context.clear_kv_cache();
+        }
+        self.context = None;
+        let (threads, batch_threads) = (self.threads, self.batch_threads);
+        let made = |window| {
+            self.model
+                .new_context(self.backend, context_params(window, threads, batch_threads))
+                .ok()
+        };
+        if let Some(context) = made(wanted) {
+            self.context = Some(context);
+            self.window = wanted;
+            return Ok(());
+        }
+        self.context = made(self.window);
+        if self.context.is_some() {
+            Err(failed("window"))
+        } else {
+            Err(failed("context"))
+        }
+    }
+
+    /// The window the next answer is read in (see [`Engine::use_window`]).
+    pub(super) fn window(&self) -> u32 {
+        self.window
     }
 
     /// Whether the engine still has its context (see [`Engine::use_threads`]).
@@ -341,7 +403,7 @@ impl Engine {
         max: usize,
         grammar: Option<&str>,
     ) -> Result<(String, bool), Failure> {
-        if tokens.is_empty() || tokens.len() + max > CONTEXT_TOKENS as usize {
+        if tokens.is_empty() || tokens.len() + max > self.window as usize {
             return Err(failed("too long"));
         }
         // The last token must be read in this answer, so that its scores are this prompt's,
@@ -361,6 +423,7 @@ impl Engine {
             answer_hash: ANSWER_HASH_START,
             threads: self.threads as u32,
             batch_threads: self.batch_threads as u32,
+            context_tokens: self.window,
             ..Stats::default()
         };
         let mut grammar = match grammar {
@@ -527,7 +590,7 @@ impl Engine {
         let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
         let user = summary_prompt(language, max_sentences);
         let around = self.prompt_tokens(&user, &[""])?.0.len();
-        let budget = document_budget(around, SUMMARY_TOKENS);
+        let budget = document_budget_at(self.window, around, SUMMARY_TOKENS);
         let pages: Vec<Page> = pages
             .iter()
             .map(|page| Page {

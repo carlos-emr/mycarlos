@@ -63,8 +63,26 @@ pub(crate) const MODEL_FD: i32 = 3;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) const APP_CONTAINER: &str = "mycarlos.modelhelper";
 
-/// The context the model runs with, in tokens: about 25,000 characters of English.
+/// The context the model runs with between answers, in tokens: about 25,000 characters of
+/// English, and the window every answer is read in unless a summary asks for a larger one.
 pub(crate) const CONTEXT_TOKENS: u32 = 8_192;
+/// The windows a summary may ask for, smallest first (D249: a long document asks for the
+/// smallest that holds it, as free memory allows). The largest is the cap.
+pub(crate) const CONTEXT_WINDOWS: [u32; 5] = [CONTEXT_TOKENS, 12_288, 16_384, 24_576, 32_768];
+/// The largest window (see [`CONTEXT_WINDOWS`]).
+pub(crate) const CONTEXT_CAP: u32 = CONTEXT_WINDOWS[CONTEXT_WINDOWS.len() - 1];
+
+/// Whether `tokens` is one of the [`CONTEXT_WINDOWS`].
+pub(crate) const fn is_window(tokens: u32) -> bool {
+    let mut i = 0;
+    while i < CONTEXT_WINDOWS.len() {
+        if CONTEXT_WINDOWS[i] == tokens {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
 /// Tokens read per step.
 pub(crate) const BATCH_TOKENS: u32 = 512;
 /// The longest summary, and the longest explanation, in tokens.
@@ -297,6 +315,10 @@ enum Request {
         /// The threads to write the answer on (see `Engine::use_threads`); none keeps them.
         #[serde(default)]
         threads: Option<u32>,
+        /// The window to read the document in (see `Engine::use_window`); none is the
+        /// default, [`CONTEXT_TOKENS`].
+        #[serde(default)]
+        context_tokens: Option<u32>,
     },
     #[serde(rename_all = "camelCase")]
     Explain {
@@ -361,6 +383,8 @@ pub(crate) struct Stats {
     /// The threads the answer was written on, and the prompt read on.
     pub(crate) threads: u32,
     pub(crate) batch_threads: u32,
+    /// The window the prompt was read in (llama.cpp's `n_ctx`; see [`CONTEXT_WINDOWS`]).
+    pub(crate) context_tokens: u32,
 }
 
 /// FNV-1a's starting value and step (64-bit).
@@ -704,8 +728,10 @@ fn serve_model(settings: &Settings) -> i32 {
                 pages,
                 max_sentences,
                 threads,
+                context_tokens,
             }) => match engine
                 .use_threads(threads)
+                .and_then(|()| engine.use_window(context_tokens))
                 .and_then(|()| engine.summarize(&lang, &pages, max_sentences))
             {
                 Ok((sentences, fit)) => serde_json::to_string(&SummaryAnswer {
@@ -725,6 +751,7 @@ fn serve_model(settings: &Settings) -> i32 {
                 threads,
             }) => match engine
                 .use_threads(threads)
+                .and_then(|()| engine.use_window(None))
                 .and_then(|()| engine.explain(&term, &context, &lang))
             {
                 Ok(text) => serde_json::to_string(&TextAnswer {
@@ -745,6 +772,11 @@ fn serve_model(settings: &Settings) -> i32 {
         match answer {
             Ok(line) if send(&mut output, &line) => {}
             _ => return exit::OUTPUT,
+        }
+        // A long document's larger window is not kept while the helper waits: back to the
+        // default, so its cache does not hold memory between answers (D249).
+        if engine.has_context() && engine.window() != CONTEXT_TOKENS {
+            let _ = engine.use_window(None);
         }
         // Its context could not be made again: the helper ends, and the next request starts
         // a new one.
@@ -1135,6 +1167,71 @@ mod tests {
         ));
         let unknown = r#"{"tool":"explain","id":2,"term":"a","context":"b","lang":"en","x":1}"#;
         assert!(serde_json::from_str::<Request>(unknown).is_err());
+    }
+
+    #[test]
+    fn a_summary_may_ask_for_a_listed_window() {
+        let long = r#"{"tool":"summary","id":1,"lang":"en","pages":[],"maxSentences":6,"contextTokens":16384}"#;
+        assert!(matches!(
+            serde_json::from_str::<Request>(long),
+            Ok(Request::Summary {
+                context_tokens: Some(16_384),
+                ..
+            })
+        ));
+        let plain = r#"{"tool":"summary","id":1,"lang":"en","pages":[],"maxSentences":6}"#;
+        assert!(matches!(
+            serde_json::from_str::<Request>(plain),
+            Ok(Request::Summary {
+                context_tokens: None,
+                ..
+            })
+        ));
+        // An explanation is always read in the default window: it has no such field.
+        let explain = r#"{"tool":"explain","id":2,"term":"a","context":"b","lang":"en","contextTokens":16384}"#;
+        assert!(serde_json::from_str::<Request>(explain).is_err());
+    }
+
+    #[test]
+    fn the_windows_run_from_the_default_to_the_cap_and_nothing_else_is_one() {
+        assert_eq!(CONTEXT_WINDOWS[0], CONTEXT_TOKENS);
+        assert_eq!(CONTEXT_CAP, 32_768);
+        assert!(CONTEXT_WINDOWS.windows(2).all(|pair| pair[0] < pair[1]));
+        for window in CONTEXT_WINDOWS {
+            assert!(is_window(window));
+        }
+        for other in [
+            0,
+            1,
+            4_096,
+            8_191,
+            8_193,
+            20_000,
+            32_767,
+            32_769,
+            65_536,
+            u32::MAX,
+        ] {
+            assert!(!is_window(other), "{other}");
+        }
+    }
+
+    #[test]
+    fn each_window_leaves_its_room_for_the_document() {
+        // The room grows by exactly the window's extra tokens; prompt, answer and margin stay.
+        let at_default = document_budget_at(CONTEXT_TOKENS, 750, SUMMARY_TOKENS);
+        for window in CONTEXT_WINDOWS {
+            assert_eq!(
+                document_budget_at(window, 750, SUMMARY_TOKENS),
+                at_default + (window - CONTEXT_TOKENS) as usize
+            );
+        }
+        // The cap holds 31,086 tokens of document: about 31 pages at #301's 1,000 tokens a page
+        // (3 bytes a token, 3,000 characters a page).
+        assert_eq!(
+            document_budget_at(CONTEXT_CAP, 750, SUMMARY_TOKENS) / 1_000,
+            31
+        );
     }
 
     #[test]
