@@ -15,7 +15,16 @@ import { ConfirmDialog } from "./ConfirmDialog";
 const MB = 1_000_000;
 // What the last load check said about a model (by its hash) that does not run
 // now, for this app session only (D218): the settings may close and open again.
-const loadChecks = new Map<string, "cannotRun" | "memory">();
+// `confirmed`: whether its limits were confirmed then; a confirmation that
+// comes later means the model has since started, and the note goes.
+const loadChecks = new Map<
+  string,
+  { outcome: "cannotRun" | "memory"; confirmed: boolean }
+>();
+/** Forgets every load check's note (tests: each case starts with none). */
+export function forgetLoadChecks() {
+  loadChecks.clear();
+}
 // Only a reconciliation signal: a reopened view reads the current native pair.
 const MUTATION_SETTLED = "mycarlos-model-mutation-settled";
 /** The host an address leads to, for the note beside Download. */
@@ -151,6 +160,8 @@ export function AiModelSetting({
   // How much each model reads at a time, once the native side says (model
   // limits); until then, and without an answer, a row keeps the catalogue's.
   const [limits, setLimits] = useState<ModelLimits[] | null>(null);
+  const limitsRef = useRef(limits);
+  limitsRef.current = limits;
   const [progress, setProgress] = useState<CopyProgress | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [working, setWorking] = useState(false);
@@ -165,6 +176,8 @@ export function AiModelSetting({
   const [eventsRefused, setEventsRefused] = useState(false);
   // The row whose model is being loaded once to check it runs here (D218).
   const [checking, setChecking] = useState<number | null>(null);
+  // The last check found the model runs here: said once, in the status line.
+  const [checkedReady, setCheckedReady] = useState(false);
   const [, setChecked] = useState(0);
   const checkChain = useRef<Promise<void>>(Promise.resolve());
   // Which row to check once the rows have caught up: the one just chosen, or
@@ -254,8 +267,18 @@ export function AiModelSetting({
           // Asked after the rows, never holding them up.
           void invoke<ModelLimits[]>("ai_model_limits").then(
             (found) => {
-              if (mounted.current)
-                setLimits(Array.isArray(found) ? found : null);
+              if (!mounted.current) return;
+              const read = Array.isArray(found) ? found : null;
+              // A model confirmed since its note was made has started since:
+              // the note no longer holds (D218).
+              for (const entry of read ?? []) {
+                const hash = next.find((row) => row.index === entry.index)
+                  ?.model.sha256;
+                const note = hash ? loadChecks.get(hash) : undefined;
+                if (hash && note && entry.confirmed && !note.confirmed)
+                  loadChecks.delete(hash);
+              }
+              setLimits(read);
             },
             () => undefined,
           );
@@ -402,10 +425,15 @@ export function AiModelSetting({
     progressObserved.current = false;
     setNote(null);
     setProgress(null);
-    if (result.outcome === "added" && !foreign)
+    // Whichever view started it: a reattached view compares with the rows it
+    // showed (D218). A copy that ends with the settings closed tells at first
+    // use, as before.
+    if (result.outcome === "added")
       checkAfter.current = {
         inUseBefore:
-          beforeAdd.current.find((row) => row.inUse)?.model.sha256 ?? null,
+          (foreign ? rowsRef.current : beforeAdd.current).find(
+            (row) => row.inUse,
+          )?.model.sha256 ?? null,
       };
     if (result.outcome === "added" && (!foreign || !mutationNotice.current)) {
       after.current = "installed";
@@ -506,6 +534,7 @@ export function AiModelSetting({
     mutationNotice.current = false;
     setRefusal(null);
     setMessage(null);
+    setCheckedReady(false);
     setNote(null);
     setDownloading(command === "ai_model_download");
     starter.current = command === "ai_model_download" ? "download" : "add";
@@ -574,6 +603,7 @@ export function AiModelSetting({
     setWorking(true);
     setRefusal(null);
     setMessage(null);
+    setCheckedReady(false);
     setConfirming(null);
     after.current = command === "ai_model_remove" ? "removed" : null;
     if (command === "ai_model_remove") targetIndex.current = index;
@@ -607,16 +637,25 @@ export function AiModelSetting({
    * (D218), one check after another; the native side stops it again. */
   const checkLoad = (row: ModelRow) => {
     const hash = row.model.sha256;
+    // A new check replaces the old note, even one that ends up skipped: the
+    // first use then tells, as it would have.
     loadChecks.delete(hash);
+    setCheckedReady(false);
     setChecking(row.index);
     checkChain.current = checkChain.current.then(async () => {
       const outcome = await invoke<LoadCheck>("ai_model_check", {
         request: { index: row.index },
       }).catch((): LoadCheck => "skipped");
       if (outcome === "cannotRun" || outcome === "memory")
-        loadChecks.set(hash, outcome);
+        loadChecks.set(hash, {
+          outcome,
+          confirmed:
+            limitsRef.current?.find((entry) => entry.index === row.index)
+              ?.confirmed ?? false,
+        });
       if (!mounted.current) return;
       setChecking((now) => (now === row.index ? null : now));
+      setCheckedReady(outcome === "ready");
       setChecked((count) => count + 1);
       // Ready: the helper's card now confirms what it reads. Damaged: the row
       // says so.
@@ -663,8 +702,13 @@ export function AiModelSetting({
         : message
           ? t(message as "ai.model.added")
           : "";
-  // Said after "Model in use changed" or "added", never in its place.
-  const checkText = checking !== null ? t("ai.model.loadCheck") : "";
+  // Said after "Model in use changed" or "Model added", in a line of its own.
+  const checkText =
+    checking !== null
+      ? t("ai.model.loadCheck")
+      : checkedReady
+        ? t("ai.model.loadCheckReady")
+        : "";
   const copyContent = () => (
     <>
       {copyIndex !== null && progress?.total === 0 && (
@@ -753,13 +797,15 @@ export function AiModelSetting({
                     <button
                       type="button"
                       className="button"
-                      aria-disabled={busy}
+                      aria-disabled={busy || checking === row.index}
                       aria-labelledby={`${prefix}-remove ${prefix}-name`}
                       ref={(node) => {
                         if (node) removeRefs.current.set(row.index, node);
                         else removeRefs.current.delete(row.index);
                       }}
-                      onClick={() => !busy && setConfirming(row)}
+                      onClick={() =>
+                        !busy && checking !== row.index && setConfirming(row)
+                      }
                     >
                       <span id={`${prefix}-remove`}>
                         {t("ai.models.remove")}
@@ -812,32 +858,35 @@ export function AiModelSetting({
                 )}
               </p>
               {/* What loading it once said, when it does not run now (D218). */}
-              {row.inUse &&
-                checking !== row.index &&
-                loadChecks.get(row.model.sha256) === "cannotRun" && (
-                  <p role="alert" className="native-ai-model-note">
-                    {t("ai.model.loadCheckCannotRun")}
-                  </p>
-                )}
-              {row.inUse &&
-                checking !== row.index &&
-                loadChecks.get(row.model.sha256) === "memory" && (
-                  <>
-                    <p role="alert" className="native-ai-model-note">
-                      {t("ai.model.loadCheckMemory")}
-                    </p>
-                    <button
-                      type="button"
-                      className="button"
-                      aria-disabled={busy || checking !== null}
-                      onClick={() =>
-                        !busy && checking === null && checkLoad(row)
-                      }
-                    >
-                      {t("ai.model.loadCheckRetry")}
-                    </button>
-                  </>
-                )}
+              {(() => {
+                const note = row.inUse
+                  ? loadChecks.get(row.model.sha256)
+                  : undefined;
+                return (
+                  note &&
+                  checking !== row.index && (
+                    <>
+                      <p role="alert" className="native-ai-model-note">
+                        {t(
+                          note.outcome === "memory"
+                            ? "ai.model.loadCheckMemory"
+                            : "ai.model.loadCheckCannotRun",
+                        )}
+                      </p>
+                      <button
+                        type="button"
+                        className="button"
+                        aria-disabled={busy || checking !== null}
+                        onClick={() =>
+                          !busy && checking === null && checkLoad(row)
+                        }
+                      >
+                        {t("ai.model.loadCheckRetry")}
+                      </button>
+                    </>
+                  )
+                );
+              })()}
               {!unsupported && row.state === "notDownloaded" && (
                 <>
                   <p>{t("ai.model.where")}</p>
@@ -889,7 +938,13 @@ export function AiModelSetting({
         className={copyIndex === null ? "native-ai-model-status" : "sr-only"}
       >
         {copyText}
-        {copyText && checkText && <br />}
+      </p>
+      {/* The load check's own live line (D218), after the status, never in its
+          place: mounted always, so what it says is announced. */}
+      <p
+        aria-live="polite"
+        className={checkText ? "native-ai-model-status" : "sr-only"}
+      >
         {checkText}
       </p>
       {copyIndex === null && copyContent()}

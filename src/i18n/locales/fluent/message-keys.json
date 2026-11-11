@@ -953,6 +953,7 @@
   "ai.model.loadCheck",
   "ai.model.loadCheckCannotRun",
   "ai.model.loadCheckMemory",
+  "ai.model.loadCheckReady",
   "ai.model.loadCheckRetry",
   "ai.model.where",
   "ai.model.copy",

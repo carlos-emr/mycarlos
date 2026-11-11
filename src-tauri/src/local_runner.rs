@@ -425,6 +425,17 @@ pub(crate) struct Summary {
 
 // --- Cancellation -------------------------------------------------------
 
+/// What a load check's stop did ([`Runner::stop_if_current`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CheckStop {
+    /// No model process is left from the check.
+    Stopped,
+    /// A newer claim (an answer asked meanwhile, a lock) has the runner: left to it.
+    Claimed,
+    /// Something held the process for a moment: nothing was done.
+    Held,
+}
+
 /// A request's claim on its runner: current until the vault locks or the
 /// reader asks that runner for something else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -855,23 +866,33 @@ impl Runner {
     }
 
     /// Stops the model process, as [`Self::stop`] does, only while `ticket` is still the claim
-    /// in force and nothing holds the process: after a load check, so that an answer asked
-    /// meanwhile keeps the model it may already be using. Never waits. True when stopped.
-    pub(crate) fn stop_if_current(&self, ticket: Ticket) -> bool {
+    /// in force: after a load check, so that an answer asked meanwhile keeps the model it may
+    /// already be using. `release` is called as soon as that is decided, before the process
+    /// is waited for: the caller's own locks go first, so nothing waits for a model to exit
+    /// while holding them. The process lock is kept until the process has ended, so the next
+    /// start finds its memory free. Never waits for that lock: `Held` when something has it.
+    pub(crate) fn stop_if_current(&self, ticket: Ticket, release: impl FnOnce()) -> CheckStop {
         let mut slot = match self.sidecar.try_lock() {
             Ok(slot) => slot,
             Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-            Err(std::sync::TryLockError::WouldBlock) => return false,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                release();
+                return CheckStop::Held;
+            }
         };
         if !self.is_current(ticket) {
-            return false;
+            release();
+            return CheckStop::Claimed;
         }
-        let model = slot.as_ref().map(|running| running.model.clone());
-        *slot = None;
-        if let Some(model) = model {
-            self.set_status(RunnerStatus::Installed { model });
+        let taken = slot.take();
+        if let Some(running) = &taken {
+            self.set_status(RunnerStatus::Installed {
+                model: running.model.clone(),
+            });
         }
-        true
+        release();
+        drop(taken);
+        CheckStop::Stopped
     }
 
     /// How the last answer was made, when the model said (counts and times only).
@@ -1972,13 +1993,30 @@ mod tests {
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
             // An answer asked since has a newer claim: the model stays for it.
             let answer = runner.ticket();
-            assert!(!runner.stop_if_current(check));
+            assert_eq!(runner.stop_if_current(check, || ()), CheckStop::Claimed);
             assert!(runner.is_running());
             assert!(runner.is_current(answer));
             // Taking the claim in force ends none; under it, the model stops.
             let check = runner.current_ticket();
             assert!(runner.is_current(answer));
-            assert!(runner.stop_if_current(check));
+            // Held for a moment by something else: nothing is done, and the caller's locks
+            // are released all the same.
+            {
+                let _held = runner.sidecar.lock().unwrap();
+                let mut released = false;
+                assert_eq!(
+                    runner.stop_if_current(check, || released = true),
+                    CheckStop::Held
+                );
+                assert!(released);
+            }
+            assert!(runner.is_running());
+            let mut released = false;
+            assert_eq!(
+                runner.stop_if_current(check, || released = true),
+                CheckStop::Stopped
+            );
+            assert!(released);
             assert!(!runner.is_running());
             assert!(matches!(runner.status(), RunnerStatus::Installed { .. }));
         }

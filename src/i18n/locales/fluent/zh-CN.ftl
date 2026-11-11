@@ -1709,8 +1709,9 @@ ai-model-reads = 每次约可读 { $pages } 页（约 { $characters } 个英文�
 
 ai-model-readsEstimate = 在下次使用此模型之前，这只是估计值。
 ai-model-loadCheck = 正在检查此模型能否在此电脑上运行…
-ai-model-loadCheckCannotRun = 此电脑无法运行此模型。请稍后重试，或选择其他模型。
+ai-model-loadCheckCannotRun = 此电脑未能运行此模型。请稍后重试，或选择其他模型。
 ai-model-loadCheckMemory = 目前可用内存不足，无法试用此模型。请关闭其他程序后重试。
+ai-model-loadCheckReady = 此模型可以在此电脑上运行。
 ai-model-loadCheckRetry = 重试
 
 ai-model-where = 在哪里获取文件

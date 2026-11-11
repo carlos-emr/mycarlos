@@ -1821,15 +1821,23 @@ async fn ai_model_check(
     request: ModelIndexRequest,
 ) -> Result<model_runtime::LoadCheck, ModelFailure> {
     use model_runtime::LoadCheck;
+    if !cfg!(desktop) {
+        return Ok(LoadCheck::Skipped);
+    }
+    let runtime = model_runtime::app();
+    // The claim first: a lock after this point ends the check rather than loading while locked.
+    let Some(claim) = runtime.load_check_claim() else {
+        return Ok(LoadCheck::Skipped);
+    };
     let in_use = models
         .models()
         .iter()
         .any(|row| row.index == request.index && row.in_use);
-    if !cfg!(desktop) || !in_use || store.answer_origin().is_none() {
+    if !in_use || store.answer_origin().is_none() {
         return Ok(LoadCheck::Skipped);
     }
     Ok(
-        tauri::async_runtime::spawn_blocking(|| model_runtime::app().check_load())
+        tauri::async_runtime::spawn_blocking(move || runtime.check_load(claim))
             .await
             .unwrap_or(LoadCheck::Skipped),
     )

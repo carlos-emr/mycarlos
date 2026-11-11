@@ -954,6 +954,7 @@ export const MESSAGE_KEYS = [
   "ai.model.loadCheck",
   "ai.model.loadCheckCannotRun",
   "ai.model.loadCheckMemory",
+  "ai.model.loadCheckReady",
   "ai.model.loadCheckRetry",
   "ai.model.where",
   "ai.model.copy",
@@ -2168,6 +2169,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.loadCheck": "ai-model-loadCheck",
   "ai.model.loadCheckCannotRun": "ai-model-loadCheckCannotRun",
   "ai.model.loadCheckMemory": "ai-model-loadCheckMemory",
+  "ai.model.loadCheckReady": "ai-model-loadCheckReady",
   "ai.model.loadCheckRetry": "ai-model-loadCheckRetry",
   "ai.model.where": "ai-model-where",
   "ai.model.copy": "ai-model-copy",
@@ -3293,6 +3295,7 @@ export interface MessageArgsByKey {
   "ai.model.loadCheck": undefined;
   "ai.model.loadCheckCannotRun": undefined;
   "ai.model.loadCheckMemory": undefined;
+  "ai.model.loadCheckReady": undefined;
   "ai.model.loadCheckRetry": undefined;
   "ai.model.where": undefined;
   "ai.model.copy": undefined;
