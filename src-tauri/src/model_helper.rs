@@ -480,9 +480,9 @@ pub(crate) struct Fit {
 pub(crate) const PAGE_SEPARATOR: &str = "\n\n";
 
 /// Whole pages, in order, while their tokens fit `budget`. When they do not all fit, the last
-/// page is read too if it takes at most half of `budget`: the pages from page 1 then fill the
-/// rest, and `tail_page` names the last page, read after the gap. When the first page alone does
-/// not fit, its start: `cut` then says so. `tokens` counts a text's tokens; `prefix` gives the
+/// page with text is read too if it takes at most half of `budget`: the pages from page 1 then
+/// fill the rest, and `tail_page` names that page, read after the gap. When the first page alone
+/// does not fit, its start: `cut` then says so. `tokens` counts a text's tokens; `prefix` gives the
 /// longest start of a text within so many tokens. `None` when there is no page or no room at all.
 pub(crate) fn fit_pages(
     pages: &[Page],
@@ -513,13 +513,17 @@ pub(crate) fn fit_pages(
             .join(PAGE_SEPARATOR)
     };
     let fitted = from_first(pages, budget);
-    if fitted < pages.len() && pages.len() >= 2 {
-        let (head, last) = pages.split_at(pages.len() - 1);
-        let last = &last[0];
+    // The tail is the last page with text (E4b): a blank last page, a scan or an empty one,
+    // has nothing to read. A page the PDF helper refused is never sent, so it is never the tail.
+    // Only a page the pages from the first did not reach.
+    let tail_at = pages.iter().rposition(|page| !page.text.trim().is_empty());
+    if let Some(tail_at) = tail_at.filter(|&at| at >= 1 && fitted <= at) {
+        let (head, rest) = pages.split_at(tail_at);
+        let last = &rest[0];
         let tail_cost = tokens(&last.text) + separator;
         if tail_cost <= budget / 2 {
             let kept = from_first(head, budget - tail_cost);
-            if kept > 0 {
+            if kept > 0 && kept < head.len() {
                 let mut read: Vec<&Page> = head[..kept].iter().collect();
                 read.push(last);
                 return Some(Fit {
@@ -1024,6 +1028,27 @@ mod tests {
             (fit.text.as_str(), fit.cut, fit.tail_page),
             ("abcdefghij", true, None)
         );
+    }
+
+    #[test]
+    fn the_tail_is_the_last_page_with_text_never_a_blank_one() {
+        // Four pages of 4, then a blank last page (index 8). In 20 the tail is the last page with
+        // text, index 6 (4 + 2), and pages 1 and 2 fill the 14 left: never the blank page.
+        let all = pages(&["aaaa", "bbbb", "cccc", "dddd", "   "]);
+        let fit = fit_pages(&all, 20, chars, start).unwrap();
+        assert_eq!(fit.text, "aaaa\n\nbbbb\n\ndddd");
+        assert_eq!((fit.last_page, fit.tail_page, fit.cut), (2, Some(6), false));
+        // Only the first page has text: no tail, the pages from the first as before.
+        let blank_after = pages(&["aaaaaaaaaa", " ", "\n", "  "]);
+        let fit = fit_pages(&blank_after, 12, chars, start).unwrap();
+        assert_eq!(
+            (fit.text.as_str(), fit.last_page, fit.tail_page),
+            ("aaaaaaaaaa", 0, None)
+        );
+        // Every page with text was reached from the first: no tail, whatever blank pages follow.
+        let short = pages(&["aaaa", "bbbb", "  ", "  "]);
+        let fit = fit_pages(&short, 14, chars, start).unwrap();
+        assert_eq!((fit.last_page, fit.tail_page), (4, None));
     }
 
     #[test]
