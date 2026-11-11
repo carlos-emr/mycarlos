@@ -55,6 +55,10 @@ and kept as their `pages`.
 - **The review sheet** (`review.csv`) has every flagged sentence and a seeded fifth of the others,
   each with its quote, the facts it carries and the document's traps. A reviewer fills `verdict`
   (`correct`, `wrong`, `unsupported`, `vague`). One `wrong` or `unsupported` fails a variant.
+- It also has every sentence that quotes the source of a must-have fact the scorer did not
+  recognize (`check_facts`, with their source text in `check_evidence`): a summary in another
+  language or other words. The reviewer writes in `carries` the ids the sentence does carry (or
+  `yes` for all); a confirmed fact counts as found, in every run alike.
 - **Helper memory** (Linux runs): the helper's resident memory once the model has loaded, and each
   document's own peak (reset just before the document), with its anonymous, file and shared parts
   and the memory the computer still had. `compare.md` sets the highest peak above the model file
@@ -66,7 +70,10 @@ and kept as their `pages`.
 ## The decision rule (written before any run)
 The first run given to `score` is the baseline. A variant **passes** only if all of these hold:
 1. no reviewed wrong or unsupported statement;
-2. no required fact that the baseline found is lost, on any document;
+2. no required fact that the baseline found is lost, on any document (a lost fact whose source the
+   variant still quotes waits for the review's `carries`; added on 11 Nov 2026 after the first runs
+   showed English sentences for French facts that only had French approved wordings, before any
+   scoring was reported);
 3. patient actions found on more facts than the baseline;
 4. quotes found within 2 points of the baseline;
 5. median time at most 30% above the baseline, and no document fails that the baseline answered.

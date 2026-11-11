@@ -176,7 +176,9 @@ class RunTest(unittest.TestCase):
         if review_rows is not None:
             review = Path(self.folder.name) / "filled.csv"
             with review.open("w", newline="", encoding="utf-8") as target:
-                writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "verdict"])
+                names = ["run", "doc", "sentence", "verdict"]
+                names += [key for row in review_rows for key in row if key not in names]
+                writer = csv.DictWriter(target, fieldnames=list(dict.fromkeys(names)))
                 writer.writeheader()
                 writer.writerows(review_rows)
         return compare.score([base, variant], out, self.docs, review), out
@@ -207,6 +209,31 @@ class RunTest(unittest.TestCase):
         (_, decisions), _ = self.score(run_lines("E1", BETTER[1:2]), rows)
         self.assertEqual(decisions[1]["verdict"], "FAIL")
         self.assertEqual(decisions[1]["lost"], ["fake-letter/weight"])
+
+    def test_a_fact_said_in_other_words_waits_for_a_person_and_counts_once_confirmed(self):
+        other_words = [sentence("Ils ont perdu quatre kilos.", "They have lost 4 kg.")] + BETTER[1:]
+        (summaries, decisions), out = self.score(run_lines("E1", other_words))
+        self.assertEqual((decisions[1]["lost"], decisions[1]["to_check"]), ([], ["fake-letter/weight"]))
+        self.assertEqual(decisions[1]["verdict"], "PENDING")
+        with (out / "review.csv").open(encoding="utf-8") as sheet:
+            row = next(r for r in csv.DictReader(sheet) if r["run"] == "E1" and r["sentence"] == "0")
+        self.assertEqual((row["check_facts"], row["check_evidence"]), ("weight", "They have lost 4 kg."))
+
+        confirmed = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct", check_facts="weight",
+                          carries="yes")] + [dict(run="E1", doc="fake-letter", sentence=i, verdict="correct")
+                                             for i in (1, 2)]
+        (summaries, decisions), _ = self.score(run_lines("E1", other_words), confirmed)
+        self.assertEqual((summaries[1]["required_found"], decisions[1]["verdict"]), (3, "PASS"))
+
+        confirmed[0]["carries"] = ""
+        (summaries, decisions), _ = self.score(run_lines("E1", other_words), confirmed)
+        self.assertEqual((decisions[1]["lost"], decisions[1]["verdict"]), (["fake-letter/weight"], "FAIL"))
+
+    def test_carries_may_only_name_a_fact_the_row_checks(self):
+        rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct", check_facts="weight",
+                     carries="gluten")]
+        with self.assertRaises(ValueError):
+            self.score(run_lines("E1", BETTER), rows)
 
     def test_a_new_failure_or_a_slower_run_fails_it(self):
         rows = []

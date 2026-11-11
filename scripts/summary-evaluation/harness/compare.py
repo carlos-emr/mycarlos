@@ -260,8 +260,12 @@ def score_document(doc, entry, run_lang):
     facts = []
     for fact in doc.get("facts", []):
         how, index = find_fact(fact, sentences)
+        # Not recognized, but a sentence quotes the fact's source: it may carry the fact in other
+        # words or another language. A person checks it (review sheet, `carries`).
+        quoted = None if how else next((i for i, s in enumerate(sentences)
+                                        if quote_overlaps(s.get("quote", ""), fact["source_evidence"])), None)
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
-                          critical=fact.get("critical", False), found=how, sentence=index))
+                          critical=fact.get("critical", False), found=how, sentence=index, quoted=quoted))
     required = [f for f in facts if f["required"]]
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
     flagged = [dict(index=i, flags=screen(s, run_lang, doc.get("facts", []))) for i, s in enumerate(sentences)]
@@ -297,34 +301,47 @@ def score_document(doc, entry, run_lang):
 
 
 def review_rows(label, meta, docs, entries, scores, seed_text):
-    """Every flagged sentence, and a seeded fifth of the others."""
+    """Every flagged sentence, every sentence that quotes the source of a fact not recognized
+    (`check_facts`: the reviewer writes in `carries` the ids it does carry, or yes for all), and a
+    seeded fifth of the others."""
     rows = []
     for doc_id, score in scores.items():
         entry = entries.get(doc_id)
         if not entry or not entry.get("result"):
             continue
         rng = random.Random(hashlib.sha256(f"{seed_text}:{doc_id}".encode()).hexdigest())
+        evidence = {f["id"]: f["source_evidence"] for f in docs[doc_id].get("facts", [])}
         for flagged, sentence in zip(score["flags"], entry["result"]["sentences"]):
-            if not flagged["flags"] and rng.random() >= REVIEW_SAMPLE:
+            check = [f["id"] for f in score["facts"] if f["required"] and f.get("quoted") == flagged["index"]]
+            sampled = rng.random() < REVIEW_SAMPLE
+            if not flagged["flags"] and not check and not sampled:
                 continue
             candidates = [f["id"] for f in score["facts"] if f["sentence"] == flagged["index"]]
             rows.append(dict(run=label, doc=doc_id, sentence=flagged["index"], text=sentence["text"],
                              quote=sentence.get("quote", ""), located=sentence.get("located"),
                              flags=" ".join(flagged["flags"]), facts=" ".join(candidates),
+                             check_facts=" ".join(check),
+                             check_evidence=" | ".join(evidence[fact_id] for fact_id in check), carries="",
                              traps=" | ".join(docs[doc_id].get("traps", [])), verdict="", note=""))
     return rows
 
 
 def read_review(path):
-    """Filled review sheets: (run, doc, sentence) -> verdict."""
-    verdicts = {}
+    """Filled review sheets: {(run, doc, sentence): verdict} and the set of (run, doc, fact) a
+    reviewer confirmed a sentence carries (`carries`: fact ids, or yes for all its `check_facts`)."""
+    verdicts, carried = {}, set()
     with open(path, newline="", encoding="utf-8") as source:
         for row in csv.DictReader(source):
             verdict = (row.get("verdict") or "").strip().lower()
             if verdict not in VERDICTS:
                 raise ValueError(f"unknown verdict {verdict!r} in {path}")
             verdicts[(row["run"], row["doc"], int(row["sentence"]))] = verdict
-    return verdicts
+            carries = (row.get("carries") or "").strip()
+            ids = (row.get("check_facts") or "").split() if carries.lower() == "yes" else carries.split()
+            if carries.lower() not in ("", "no", "yes") and not set(ids) <= set((row.get("check_facts") or "").split()):
+                raise ValueError(f"{path}: carries names a fact the row does not check: {carries!r}")
+            carried |= {(row["run"], row["doc"], fact_id) for fact_id in ids}
+    return verdicts, carried
 
 
 def summarize_run(scores, wrong):
@@ -402,14 +419,21 @@ def decide(base_scores, base_summary, scores, summary):
         checks.append(("no reviewed wrong statement", None))
     else:
         checks.append(("no reviewed wrong statement", summary["reviewed_wrong"] == 0))
-    lost = []
+    lost, to_check = [], []
     for doc_id, base in base_scores.items():
         if not base.get("present") or base.get("error"):
             continue
-        mine = scores.get(doc_id, {})
-        kept = {f["id"] for f in mine.get("facts", []) if f["found"]}
-        lost += [f"{doc_id}/{f['id']}" for f in base["facts"] if f["required"] and f["found"] and f["id"] not in kept]
-    checks.append((f"no must-have lost ({len(lost)} lost)", not lost))
+        mine = {f["id"]: f for f in scores.get(doc_id, {}).get("facts", [])}
+        for f in base["facts"]:
+            if f["required"] and f["found"] and not (mine.get(f["id"]) or {}).get("found"):
+                quoted = (mine.get(f["id"]) or {}).get("quoted") is not None
+                # Before the review, a fact whose source is still quoted may be there in other words.
+                (to_check if quoted and summary["reviewed_wrong"] is None else lost).append(f"{doc_id}/{f['id']}")
+    if lost:
+        kept_check = False
+    else:
+        kept_check = None if to_check else True
+    checks.append((f"no must-have lost ({len(lost)} lost, {len(to_check)} to check)", kept_check))
     checks.append(("instructions/timing found on more", summary["action_found"] > base_summary["action_found"]))
     if summary["located_pct"] is None or base_summary["located_pct"] is None:
         checks.append(("quotes found within 2 points", False))
@@ -420,7 +444,7 @@ def decide(base_scores, base_summary, scores, summary):
     new_failures = [d for d, s in scores.items() if s.get("error") and not base_scores.get(d, {}).get("error")]
     checks.append(("median time within 30%, no new failure", not slower and not new_failures))
     verdict = "FAIL" if any(ok is False for _, ok in checks) else "PENDING" if any(ok is None for _, ok in checks) else "PASS"
-    return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures)
+    return dict(verdict=verdict, checks=checks, lost=lost, to_check=to_check, new_failures=new_failures)
 
 
 def table(labels, docs, all_scores, summaries, decisions, memories=()):
@@ -461,6 +485,8 @@ def table(labels, docs, all_scores, summaries, decisions, memories=()):
                                                    for name, ok in decision["checks"]))
             if decision["lost"]:
                 lines.append(f"  lost: {', '.join(decision['lost'])}")
+            if decision.get("to_check"):
+                lines.append(f"  to check (source quoted, not recognized): {', '.join(decision['to_check'])}")
     lines += memory_lines(labels, memories)
     return "\n".join(lines) + "\n"
 
@@ -468,7 +494,7 @@ def table(labels, docs, all_scores, summaries, decisions, memories=()):
 def score(run_paths, out, docs, review=None):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    verdicts = read_review(review) if review else None
+    verdicts, carried = read_review(review) if review else (None, set())
     labels, all_scores, summaries, metas, sheets, memories = [], [], [], [], [], []
     for path in run_paths:
         meta, entries = read_run(path)
@@ -479,6 +505,14 @@ def score(run_paths, out, docs, review=None):
         metas.append(meta)
         lang = meta.get("lang", "en")
         scores = {doc_id: score_document(doc, entries.get(doc_id), lang) for doc_id, doc in docs.items()}
+        for doc_id, s in scores.items():
+            for f in s.get("facts", []):
+                if not f["found"] and (label, doc_id, f["id"]) in carried:
+                    f.update(found="reviewed", sentence=f["quoted"])
+            required = [f for f in s.get("facts", []) if f["required"]]
+            if s.get("facts") is not None:
+                s.update(required_found=sum(1 for f in required if f["found"]),
+                         action_found=sum(1 for f in required if f["found"] and f["category"] in ACTION_CATEGORIES))
         all_scores.append(scores)
         wrong = None
         if verdicts is not None:
@@ -499,7 +533,8 @@ def score(run_paths, out, docs, review=None):
     if not sheet.exists():
         with sheet.open("w", newline="", encoding="utf-8") as target:
             writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "text", "quote", "located",
-                                                        "flags", "facts", "traps", "verdict", "note"])
+                                                        "flags", "facts", "check_facts", "check_evidence",
+                                                        "carries", "traps", "verdict", "note"])
             writer.writeheader()
             writer.writerows(sheets)
     (out / "compare.md").write_text(table(labels, docs, all_scores, summaries, decisions, memories)
