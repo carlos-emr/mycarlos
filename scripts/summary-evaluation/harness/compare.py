@@ -10,6 +10,7 @@ wrong statements only flag sentences for that review; they never decide on their
   compare.py check                         validate the document set
   compare.py prepare --out DIR             write the run's input documents (<id>.json)
   compare.py score --run A.jsonl [--run B.jsonl ...] --out DIR [--review FILLED.csv]
+  compare.py repeat --run A.jsonl --run B.jsonl   same build, same answers token for token?
 
 The first run given is the baseline the others are compared with (see HARNESS.md).
 """
@@ -265,6 +266,7 @@ def score_document(doc, entry, run_lang):
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
     flagged = [dict(index=i, flags=screen(s, run_lang, doc.get("facts", []))) for i, s in enumerate(sentences)]
     stats = (answer or {}).get("stats") or {}
+    last_index = max(p["index"] for p in doc["pages"])
     result.update(
         sentences=len(sentences),
         located=sum(1 for s in sentences if s.get("located")),
@@ -282,8 +284,13 @@ def score_document(doc, entry, run_lang):
         capped=stats.get("capped"),
         answer_hash=stats.get("answerHash"),
         last_page=(answer or {}).get("lastPage"),
-        cut=bool(answer and (answer.get("lastPageCut")
-                              or answer.get("lastPage") != max(p["index"] for p in doc["pages"]))),
+        tail_page=(answer or {}).get("tailPage"),
+        # The end was read: the pages ran to the last one, or the last one was read after a gap
+        # (a variant that keeps room for it). "cut": the end, or the start of page 1 only.
+        cut=bool(answer and (answer.get("lastPageCut") or last_index not in
+                              (answer.get("lastPage"), answer.get("tailPage")))),
+        gap=bool(answer and answer.get("tailPage") is not None
+                 and answer.get("tailPage") != answer.get("lastPage")),
         answer_limit_ms=(answer or {}).get("answerLimitMs"),
     )
     return result
@@ -336,9 +343,55 @@ def summarize_run(scores, wrong):
         located_pct=round(100 * sum(s["located"] for s in present) / sentences, 1) if sentences else None,
         sentences=sentences, flags=sum(s["flag_count"] for s in present),
         capped=sum(1 for s in present if s.get("capped")), cut=sum(1 for s in present if s.get("cut")),
+        gap=sum(1 for s in present if s.get("gap")),
         median_wall_ms=statistics.median(walls) if walls else None,
         reviewed_wrong=wrong,
     )
+
+
+# What the app asks for beside the model file once it is verified (model_runtime.rs WORKING_BYTES).
+WORKING_MIB = 1536
+
+
+def memory(meta, entries):
+    """The helper's memory in a run (Linux runs carry it): after the model loaded, each document's
+    own peak, and how far the highest peak went above the model file, against WORKING_MIB."""
+    mib = lambda kib: round(kib / 1024)
+    model_mib = (meta.get("model") or {}).get("bytes", 0) / 1048576
+    load = meta.get("helperMemory") or {}
+    peaks = {doc_id: e["helperMemory"] for doc_id, e in entries.items() if (e.get("helperMemory") or {}).get("peakKiB")}
+    if not peaks and not load:
+        return None
+    own = [m["peakKiB"] for m in peaks.values() if m.get("peakSince") == "document"]
+    top = max(peaks, key=lambda doc_id: peaks[doc_id]["peakKiB"]) if peaks else None
+    highest = max([m["peakKiB"] for m in peaks.values()] + [load.get("peakKiB") or 0])
+    available = [m["availableKiB"] for m in list(peaks.values()) + [load] if m.get("availableKiB")]
+    return dict(
+        model_mib=round(model_mib), load_peak_mib=mib(load["peakKiB"]) if load.get("peakKiB") else None,
+        documents=len(peaks), own_peaks=len(own),
+        median_peak_mib=mib(statistics.median(own)) if own else None,
+        max_peak_mib=mib(peaks[top]["peakKiB"]) if top else None, max_peak_doc=top,
+        above_model_mib=round(highest / 1024 - model_mib) if model_mib else None,
+        working_mib=WORKING_MIB,
+        lowest_available_mib=mib(min(available)) if available else None,
+    )
+
+
+def memory_lines(labels, memories):
+    rows = [(label, m) for label, m in zip(labels, memories) if m]
+    if not rows:
+        return []
+    lines = ["", "Helper memory (MiB; per-document peaks are each document's own, reset before it):", "",
+             "| Run | model file | after load | median document peak | highest document peak | highest above the model file "
+             f"(app allows {WORKING_MIB}) | lowest available |",
+             "|---|---|---|---|---|---|---|"]
+    for label, m in rows:
+        top = f"{m['max_peak_mib']} ({m['max_peak_doc']})" if m["max_peak_doc"] else ""
+        own = "" if m["own_peaks"] == m["documents"] else f" ({m['own_peaks']} of {m['documents']} own)"
+        lines.append(f"| {label} | {m['model_mib']} | {m['load_peak_mib'] or ''} | {m['median_peak_mib'] or ''}{own} | "
+                     f"{top} | {m['above_model_mib'] if m['above_model_mib'] is not None else ''} | "
+                     f"{m['lowest_available_mib'] or ''} |")
+    return lines
 
 
 def decide(base_scores, base_summary, scores, summary):
@@ -370,7 +423,7 @@ def decide(base_scores, base_summary, scores, summary):
     return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures)
 
 
-def table(labels, docs, all_scores, summaries, decisions):
+def table(labels, docs, all_scores, summaries, decisions, memories=()):
     head = "| Document | " + " | ".join(labels) + " |"
     lines = [head, "|---|" + "---|" * len(labels)]
     for doc_id in sorted(docs):
@@ -383,21 +436,23 @@ def table(labels, docs, all_scores, summaries, decisions):
                 cells.append("failed" + (" (time)" if s.get("timed_out") else ""))
             else:
                 action = f" · act {s['action_found']}/{s['action_total']}" if s["action_total"] else ""
-                marks = (" · capped" if s.get("capped") else "") + (" · cut" if s.get("cut") else "")
+                marks = ((" · capped" if s.get("capped") else "") + (" · cut" if s.get("cut") else "")
+                         + (" · gap" if s.get("gap") else ""))
                 cells.append(f"{s['required_found']}/{s['required_total']}{action} · {s['sentences']} s · "
                              f"{s['located']} q · {s['flag_count']} fl · {(s['wall_ms'] or 0) / 1000:.0f} s{marks}")
         lines.append(f"| {doc_id} | " + " | ".join(cells) + " |")
     lines.append("")
-    lines.append("Cells: must-haves found/total · patient actions found/total · sentences · quotes found · flags · seconds.")
+    lines.append("Cells: must-haves found/total · patient actions found/total · sentences · quotes found · flags · seconds"
+                 " (capped: stopped at the token cap; cut: the end was not read; gap: the last page read after a gap).")
     lines.append("")
-    lines.append("| Run | must-haves | actions | quotes found | flags | median s | capped | cut | failed | reviewed wrong | verdict |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Run | must-haves | actions | quotes found | flags | median s | capped | cut | gap | failed | reviewed wrong | verdict |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for label, summary, decision in zip(labels, summaries, decisions):
         wrong = "not reviewed" if summary["reviewed_wrong"] is None else summary["reviewed_wrong"]
         median = "" if summary["median_wall_ms"] is None else f"{summary['median_wall_ms'] / 1000:.0f}"
         lines.append(f"| {label} | {summary['required_found']}/{summary['required_total']} | "
                      f"{summary['action_found']}/{summary['action_total']} | {summary['located_pct']}% | "
-                     f"{summary['flags']} | {median} | {summary['capped']} | {summary['cut']} | "
+                     f"{summary['flags']} | {median} | {summary['capped']} | {summary['cut']} | {summary['gap']} | "
                      f"{summary['failed']} | {wrong} | {decision['verdict'] if decision else 'baseline'} |")
     for label, decision in zip(labels, decisions):
         if decision:
@@ -406,6 +461,7 @@ def table(labels, docs, all_scores, summaries, decisions):
                                                    for name, ok in decision["checks"]))
             if decision["lost"]:
                 lines.append(f"  lost: {', '.join(decision['lost'])}")
+    lines += memory_lines(labels, memories)
     return "\n".join(lines) + "\n"
 
 
@@ -413,7 +469,7 @@ def score(run_paths, out, docs, review=None):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     verdicts = read_review(review) if review else None
-    labels, all_scores, summaries, metas, sheets = [], [], [], [], []
+    labels, all_scores, summaries, metas, sheets, memories = [], [], [], [], [], []
     for path in run_paths:
         meta, entries = read_run(path)
         label = run_label(meta, path)
@@ -428,6 +484,7 @@ def score(run_paths, out, docs, review=None):
         if verdicts is not None:
             wrong = sum(1 for (run, _, _), verdict in verdicts.items() if run == label and verdict in WRONG_VERDICTS)
         summaries.append(summarize_run(scores, wrong))
+        memories.append(memory(meta, entries))
         seed = meta.get("build", {}).get("fingerprint", "") + label
         sheets += review_rows(label, meta, docs, entries, scores, seed)
     base_model = metas[0].get("model", {}).get("sha256")
@@ -435,8 +492,8 @@ def score(run_paths, out, docs, review=None):
              if meta.get("model", {}).get("sha256") != base_model]
     decisions = [None] + [decide(all_scores[0], summaries[0], s, m) for s, m in zip(all_scores[1:], summaries[1:])]
     (out / "scores.json").write_text(json.dumps(dict(
-        runs=[dict(label=l, meta=m, summary=s, decision=d, documents=sc)
-              for l, m, s, d, sc in zip(labels, metas, summaries, decisions, all_scores)],
+        runs=[dict(label=l, meta=m, summary=s, decision=d, memory=mem, documents=sc)
+              for l, m, s, d, mem, sc in zip(labels, metas, summaries, decisions, memories, all_scores)],
         notes=notes), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     sheet = out / "review.csv"
     if not sheet.exists():
@@ -445,9 +502,23 @@ def score(run_paths, out, docs, review=None):
                                                         "flags", "facts", "traps", "verdict", "note"])
             writer.writeheader()
             writer.writerows(sheets)
-    (out / "compare.md").write_text(table(labels, docs, all_scores, summaries, decisions)
+    (out / "compare.md").write_text(table(labels, docs, all_scores, summaries, decisions, memories)
                                     + "".join(f"\nNOTE: {n}\n" for n in notes), encoding="utf-8")
     return summaries, decisions
+
+
+def repeat(first, second):
+    """Whether two runs of one build and model gave the same answers, token for token, on the
+    documents both answered: (same, different, compared, problems)."""
+    (meta_a, entries_a), (meta_b, entries_b) = read_run(first), read_run(second)
+    problems = [key for key in ("build", "lang", "threads") if meta_a.get(key) != meta_b.get(key)]
+    if meta_a.get("model", {}).get("sha256") != meta_b.get("model", {}).get("sha256"):
+        problems.append("model")
+    same, different = [], []
+    for doc_id in sorted(set(entries_a) & set(entries_b)):
+        hashes = [((e.get("result") or {}).get("stats") or {}).get("answerHash") for e in (entries_a[doc_id], entries_b[doc_id])]
+        (same if hashes[0] is not None and hashes[0] == hashes[1] else different).append(doc_id)
+    return same, different, len(same) + len(different), problems
 
 
 def main(argv=None):
@@ -463,7 +534,15 @@ def main(argv=None):
     sc.add_argument("--run", action="append", required=True)
     sc.add_argument("--out", required=True)
     sc.add_argument("--review")
+    rep = sub.add_parser("repeat")
+    rep.add_argument("--run", action="append", required=True)
     args = parser.parse_args(argv)
+    if args.command == "repeat":
+        if len(args.run) != 2:
+            raise SystemExit("repeat compares exactly two runs")
+        same, different, compared, problems = repeat(*args.run)
+        print(json.dumps(dict(compared=compared, same=same, different=different, not_comparable=problems)))
+        return 0 if compared and not different and not problems else 1
     docs = load_documents(args.documents, args.fixtures)
     if args.command == "check":
         problems = {doc_id: check_document(doc) for doc_id, doc in docs.items()}
