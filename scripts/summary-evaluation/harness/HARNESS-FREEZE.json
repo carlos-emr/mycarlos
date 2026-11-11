@@ -1,9 +1,9 @@
 {
- "version": 5,
+ "version": "5.1",
  "status": "RESCORE LINE: scores the 10-11 Nov runs (B0, B0R, E1, E4, L1, L2, ...). The DRAFT next-freeze branch (contacts, multi-page) is numbered 6 to keep the two apart.",
- "frozen_utc": "2026-11-11T02:13:17+00:00",
+ "frozen_utc": "2026-11-11T02:26:37+00:00",
  "rule_version": 5,
- "scorer_sha256": "6a170eca1f59fe7de88f3c7d89768b5a168b1c764e95e5ba254b95acbeeea39d",
+ "scorer_sha256": "8d5299953518e949489cc7c86cdfa3344f145f9b2dadbbab209f8ebbe792eaee",
  "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
  "synthetic_only": true,
  "documents_count": 18,
@@ -38,6 +38,11 @@
    "version": 5,
    "frozen_utc": "2026-11-11T02:13:17+00:00",
    "reason": "rule version 5 (rescore line), written after B0's outputs were read in full and E1's were read by Agent 1 (the ibuprofen pair); B0R and the running E4 existed, not read for this. A required fact no sentence carries, quoted by a sentence that carries no fact, puts that sentence on the sheet 'to check'; a correct verdict credits it in every run alike. A standalone French 'a' with a grave accent no longer counts as the Portuguese stopword in the LANGUAGE guess. A reading report (reporting only: facts on pages read, partly read or not read) in reading.md/json; scores, decisions and the sheet unchanged by it. Documents unchanged; PR 295's cases untouched."
+  },
+  {
+   "version": "5.1",
+   "frozen_utc": "2026-11-11T02:26:37+00:00",
+   "reason": "review coverage only, made after B0 and E1 had been scored and reviewed (round 2): every distinct sentence goes on the sheet (REVIEW_SAMPLE 1.0, was 0.2), for every run alike, because a 20% sample let an invented appointment through by chance. Rule 5 and its credit are unchanged; a fully reviewed set gets the same decisions at either sample (test). Documents unchanged."
   }
  ],
  "documents": {

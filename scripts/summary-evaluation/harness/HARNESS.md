@@ -182,6 +182,14 @@ scored. It does three things:
 - adds margins from an A/A pair;
 - keeps PR 295's holdout cases out of the decision.
 
+**Review coverage, 11 Nov (after B0 and E1 had been scored and reviewed):** every distinct
+sentence now goes on the review sheet (`REVIEW_SAMPLE` 1.0, was 0.2), for every run alike. The 20%
+sample let an invented appointment through by chance in round 2 (it reached the sheet only because
+it was sampled), so more like it could hide in any run, B0 included. This changes review coverage
+only: the credit and the decision rule are as in version 5, and a set where every sentence has a
+verdict gets the same decisions at either sample (a test). Tests that are about a partial sample
+pin it to 0.2.
+
 **Version 5** was written on 11 Nov **after model outputs had been seen**:
 - B0's outputs were read in full (the rescore and Agent 4's blind review of its 94 rows);
 - E1's outputs were read by Agent 1, who reported the ibuprofen pair above;

@@ -210,6 +210,7 @@ class RunTest(unittest.TestCase):
         (_, decisions), _ = self.score(run_lines("E1", BETTER), rows)
         self.assertEqual(decisions[1]["verdict"], "FAIL")
 
+    @unittest.mock.patch.object(compare, "REVIEW_SAMPLE", 0.2)  # this test is about a partial sample
     def test_losing_a_must_have_the_baseline_had_fails_it(self):
         rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")]
         (_, decisions), _ = self.score(run_lines("E1", BETTER[1:2]), rows)
@@ -315,6 +316,7 @@ class CounterExampleTest(unittest.TestCase):
         self.assertIsNone(facts["iron_deficiency_anemia"]["standing"])
         self.assertIn("ADVICE_OR_JUDGEMENT:fine", scored["flags"][0]["flags"])
 
+    @unittest.mock.patch.object(compare, "REVIEW_SAMPLE", 0.2)  # this test is about a partial sample
     def test_a_table_row_quote_earns_the_credit(self):
         row = "25-hydroxy vitamin D\t41\tL\t75–250\tnmol/L"
         facts, scored = score_sentences("demo-celiac-lab", [sentence("Your vitamin D was low.", row)])
@@ -412,6 +414,7 @@ class CreditTest(unittest.TestCase):
         self.assertEqual(self.standing([self.timing, plain])["timing"], "held")
         self.assertEqual(self.standing([self.timing, plain], {1: "correct"})["timing"], "credited")
 
+    @unittest.mock.patch.object(compare, "REVIEW_SAMPLE", 0.2)  # this test is about a partial sample
     def test_an_unflagged_sentence_credits_a_fact_that_is_not_critical(self):
         weight = sentence("You have lost 4 kg.", "They have lost 4 kg.")
         self.assertEqual(self.standing([weight])["weight"], "credited")
@@ -603,6 +606,41 @@ class ReadingIsReportingOnlyTest(unittest.TestCase):
         self.assertEqual(without_time(plain / "scores.json"), without_time(reported / "scores.json"))
         self.assertFalse((plain / "reading.md").exists())
         self.assertTrue((reported / "reading.md").exists() and (reported / "reading.json").exists())
+
+
+class FullReviewTest(unittest.TestCase):
+    """Since B0 and E1 were scored (11 Nov), every distinct sentence goes on the sheet: a sample let an
+    invented appointment through by chance. Review coverage only: the credit and the decision rule
+    are unchanged, so a set where every sentence has a verdict scores the same at any sample."""
+    setUp = RunTest.setUp
+
+    def test_every_sentence_goes_on_the_sheet(self):
+        self.assertEqual(compare.REVIEW_SAMPLE, 1.0)
+        entry = run_lines("E1", BETTER)[1]
+        scored = compare.score_document(fake_doc(), entry, "en")
+        self.assertEqual([item["index"] for item in scored["sheet"]], list(range(len(BETTER))))
+
+    def test_a_fully_reviewed_set_gets_the_same_decisions_at_any_sample(self):
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        variant = write_run(self.folder.name, "E1", run_lines("E1", BETTER))
+        review = Path(self.folder.name) / "all.csv"
+        verdicts = ["correct", "vague", "correct"]
+        with review.open("w", newline="", encoding="utf-8") as target:
+            writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "verdict"])
+            writer.writeheader()
+            writer.writerow(dict(run="B0", doc="fake-letter", sentence=0, verdict="correct"))
+            for index, verdict in enumerate(verdicts):
+                writer.writerow(dict(run="E1", doc="fake-letter", sentence=index, verdict=verdict))
+        outcomes = []
+        for sample in (0.2, 1.0):
+            with unittest.mock.patch.object(compare, "REVIEW_SAMPLE", sample):
+                summaries, decisions = compare.score([base, variant], Path(self.folder.name) / f"s{sample}",
+                                                     self.docs, review)
+            outcomes.append((json.dumps(decisions, sort_keys=True),
+                             [{k: v for k, v in s.items() if not k.startswith("unreviewed")} for s in summaries]))
+        self.assertEqual(outcomes[0], outcomes[1])
+        # The vague row is a fact the baseline never had, so nothing is lost, at either sample.
+        self.assertEqual(json.loads(outcomes[1][0])[1]["verdict"], "PASS")
 
 
 class DecisionV2Test(RunTest):

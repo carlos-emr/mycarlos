@@ -52,7 +52,7 @@ WRONG_VERDICTS = {"wrong", "unsupported"}
 # A sentence a reviewer did not accept as carrying its fact.
 NOT_CREDITED_VERDICTS = WRONG_VERDICTS | {"vague"}
 VERDICTS = {"", "correct", "wrong", "unsupported", "vague"}
-REVIEW_SAMPLE = 0.2
+REVIEW_SAMPLE = 1.0
 MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
