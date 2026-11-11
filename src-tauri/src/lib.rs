@@ -1740,7 +1740,21 @@ fn ai_model_catalog() -> Vec<local_model::Accepted> {
 /// why: not installed, this computer cannot run it, or the file is damaged.
 #[tauri::command]
 fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::ModelStatus {
-    models.status(&local_model::Here)
+    match models.status(&local_model::Here) {
+        // Once the helper has made this model's context, the reader's question reads from it,
+        // as the settings do (model limits).
+        local_model::ModelStatus::Installed {
+            model,
+            capacity: Some(capacity),
+        } => {
+            let card = model_runtime::app().runner().card_for(&model.sha256);
+            local_model::ModelStatus::Installed {
+                capacity: Some(model_limits::confirmed_capacity(capacity, card.as_ref())),
+                model,
+            }
+        }
+        status => status,
+    }
 }
 
 /// Every model the app offers, and any other accepted one on this computer, with its state,

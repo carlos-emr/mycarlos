@@ -2,7 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { useI18n } from "../i18n";
-import type { ModelRow, ModelAddOutcome, ModelStatus } from "../ai/types";
+import type {
+  ModelLimits,
+  ModelRow,
+  ModelAddOutcome,
+  ModelStatus,
+} from "../ai/types";
 import { capacityInPages } from "../ai/capacity";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -139,6 +144,9 @@ export function AiModelSetting({
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [listError, setListError] = useState(false);
+  // How much each model reads at a time, once the native side says (model
+  // limits); until then, and without an answer, a row keeps the catalogue's.
+  const [limits, setLimits] = useState<ModelLimits[] | null>(null);
   const [progress, setProgress] = useState<CopyProgress | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [working, setWorking] = useState(false);
@@ -229,6 +237,14 @@ export function AiModelSetting({
             return;
           }
           setRows(next);
+          // Asked after the rows, never holding them up.
+          void invoke<ModelLimits[]>("ai_model_limits").then(
+            (found) => {
+              if (mounted.current)
+                setLimits(Array.isArray(found) ? found : null);
+            },
+            () => undefined,
+          );
           if (
             nextStatus &&
             JSON.stringify(publishedStatus.current) !==
@@ -249,6 +265,14 @@ export function AiModelSetting({
       if (current()) setRefreshing(false);
     }
   };
+  /** What a row says it reads at a time: the confirmed limits once the model
+   * has run on this computer, otherwise the catalogue's figure, an estimate. */
+  const readingOf = (row: ModelRow) => {
+    const found = limits?.find((entry) => entry.index === row.index);
+    const capacity = found?.capacity ?? row.model.capacity;
+    return capacity ? { capacity, confirmed: found?.confirmed ?? false } : null;
+  };
+
   const reloadRef = useRef(reloadRows);
   reloadRef.current = reloadRows;
 
@@ -623,7 +647,7 @@ export function AiModelSetting({
                     disabled={row.state !== "installed" || unsupported}
                     aria-disabled={busy}
                     aria-describedby={
-                      row.model.capacity
+                      readingOf(row)
                         ? `${prefix}-details ${prefix}-reads ${prefix}-state`
                         : `${prefix}-details ${prefix}-state`
                     }
@@ -686,11 +710,21 @@ export function AiModelSetting({
               </p>
               {/* How much of a document it reads at a time (#301), pages
                   first: an estimate, rounded down (capacity.ts). */}
-              {row.model.capacity && (
-                <p id={`${prefix}-reads`}>
-                  {t("ai.model.reads", capacityInPages(row.model.capacity))}
-                </p>
-              )}
+              {(() => {
+                const reading = readingOf(row);
+                return (
+                  reading && (
+                    <p id={`${prefix}-reads`}>
+                      {t("ai.model.reads", capacityInPages(reading.capacity))}
+                      {/* Until the model has run here, the catalogue's
+                          figure: said to be an estimate (model limits). */}
+                      {!reading.confirmed && (
+                        <> {t("ai.model.readsEstimate")}</>
+                      )}
+                    </p>
+                  )
+                );
+              })()}
               <p id={`${prefix}-state`}>
                 {copyIndex === row.index
                   ? copyPhase

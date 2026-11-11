@@ -955,6 +955,7 @@
   "ai.model.add",
   "ai.model.accepted",
   "ai.model.reads",
+  "ai.model.readsEstimate",
   "ai.model.where",
   "ai.model.copy",
   "ai.model.copied",

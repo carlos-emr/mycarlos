@@ -1719,6 +1719,8 @@ ai-model-accepted = { $name }，{ $size } MB。授權：{ $licence }。
 
 ai-model-reads = 每次約可讀 { $pages } 頁（約 { $characters } 個英文字元）。表格和某些語言會更少。
 
+ai-model-readsEstimate = 在模型於此電腦上執行之前，這只是估計值。
+
 ai-model-where = 在哪裡取得檔案
 
 ai-model-copy = 複製網址

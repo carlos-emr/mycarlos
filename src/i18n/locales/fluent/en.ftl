@@ -1871,6 +1871,8 @@ ai-model-reads =
    *[other] Reads about { $pages } pages at a time (about { $characters } characters of English text). Less for tables and some languages.
     }
 
+ai-model-readsEstimate = An estimate until the model has run on this computer.
+
 ai-model-where = Where to get the file
 
 ai-model-copy = Copy address

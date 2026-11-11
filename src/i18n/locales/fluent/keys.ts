@@ -956,6 +956,7 @@ export const MESSAGE_KEYS = [
   "ai.model.add",
   "ai.model.accepted",
   "ai.model.reads",
+  "ai.model.readsEstimate",
   "ai.model.where",
   "ai.model.copy",
   "ai.model.copied",
@@ -2170,6 +2171,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.add": "ai-model-add",
   "ai.model.accepted": "ai-model-accepted",
   "ai.model.reads": "ai-model-reads",
+  "ai.model.readsEstimate": "ai-model-readsEstimate",
   "ai.model.where": "ai-model-where",
   "ai.model.copy": "ai-model-copy",
   "ai.model.copied": "ai-model-copied",
@@ -3296,6 +3298,7 @@ export interface MessageArgsByKey {
     size: FluentArgument;
   };
   "ai.model.reads": { characters: FluentArgument; pages: FluentArgument };
+  "ai.model.readsEstimate": undefined;
   "ai.model.where": undefined;
   "ai.model.copy": undefined;
   "ai.model.copied": undefined;

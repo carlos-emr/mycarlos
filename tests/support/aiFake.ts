@@ -30,6 +30,8 @@ export const AI_COMMANDS = {
   // Adding and removing the model (root-4a's side of the agreement).
   catalog: "ai_model_catalog",
   models: "ai_models",
+  // Each model's limits for the settings (model limits).
+  limits: "ai_model_limits",
   use: "ai_model_use",
   addPicked: "ai_model_add_picked",
   download: "ai_model_download",
@@ -117,6 +119,9 @@ export interface FakeAiSetup {
   /** The last page a summary reads, by its index, as the helper's own fit
    * would (#301). Default: every page. */
   readUpTo?: number;
+  /** Whether the helper has run the models in this session, so their limits
+   * are confirmed (model limits). Default: not yet. */
+  limitsConfirmed?: boolean;
   /** The one accepted model, as ai_model_catalog lists it: by default a
    * FAKE entry; a spec can give the real model's name, size and licence. */
   catalog?: Partial<FakeCatalogEntry>;
@@ -379,6 +384,20 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
         switch (command) {
           case c.modelStatus:
             return structuredClone(modelStatus());
+          // As native: the catalogue's capacity per offered row, not confirmed
+          // until the helper has run it; no memory figure is ever shown.
+          case c.limits:
+            return modelRows
+              .filter((row) => row.offered !== false && row.model.capacity)
+              .map((row) => ({
+                index: row.index,
+                capacity: structuredClone(row.model.capacity),
+                confirmed: setup.limitsConfirmed,
+                trainedContext: null,
+                parameters: null,
+                fileBytes: row.model.sizeBytes,
+                neededBytes: 0,
+              }));
           case c.catalog:
             return modelRows
               .filter((row) => row.offered !== false)
@@ -801,6 +820,7 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       knownDetails: setup.knownDetails ?? {},
       explanation: setup.explanation ?? null,
       readUpTo: setup.readUpTo ?? null,
+      limitsConfirmed: setup.limitsConfirmed ?? false,
       pickId: fakeUuid(1100),
       progressEvent: "ai-model-add-progress",
       // As ai_model_catalog lists the one accepted model. FAKE: no file.

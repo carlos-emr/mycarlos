@@ -1908,6 +1908,8 @@ ai-model-reads =
    *[other] Lê cerca de { $pages } páginas por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
     }
 
+ai-model-readsEstimate = É uma estimativa até o modelo ser executado neste computador.
+
 ai-model-where = Onde obter o arquivo
 
 ai-model-copy = Copiar endereço

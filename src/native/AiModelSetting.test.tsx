@@ -201,8 +201,10 @@ describe("Add a model file", () => {
     render(
       <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
     );
+    // Until the model has run on this computer, the catalogue's figure: an
+    // estimate, and said to be one (model limits).
     const reads = humanText(
-      "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages.",
+      "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages. An estimate until the model has run on this computer.",
     );
     const line = await screen.findByText(reads);
     expect(line).toBeVisible();
@@ -214,6 +216,67 @@ describe("Add a model file", () => {
       ?.split(" ");
     expect(describedBy).toHaveLength(3);
     expect(describedBy?.[1]).toBe(line.id);
+  });
+
+  it("says what the model reads in the context the helper made, once it has run here (model limits)", async () => {
+    const capacity = { contextTokens: 8192, documentTokens: 6510 };
+    answer({
+      ai_model_catalog: [{ ...fake, capacity }],
+      // The helper made a smaller context for it: 4,096 tokens, 2,414 for the
+      // document, about 7,242 bytes, so 2 pages and 7,000 characters.
+      ai_model_limits: [
+        {
+          index: 0,
+          capacity: { contextTokens: 4096, documentTokens: 2414 },
+          confirmed: true,
+          trainedContext: 262144,
+          parameters: 4330000000,
+          fileBytes: fake.sizeBytes,
+          neededBytes: 7000000000,
+        },
+      ],
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "Reads about 2 pages at a time (about 7,000 characters of English text). Less for tables and some languages.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/An estimate until/)).toBeNull();
+    // No memory figure, and none of the file's claims, are shown.
+    expect(screen.queryByText(/7,000,000,000|6\.5 GB|262,144|4\.3/)).toBeNull();
+  });
+
+  it("keeps saying it is an estimate while the limits are not confirmed", async () => {
+    const capacity = { contextTokens: 8192, documentTokens: 6510 };
+    answer({
+      ai_model_catalog: [{ ...fake, capacity }],
+      ai_model_limits: [
+        {
+          index: 0,
+          capacity,
+          confirmed: false,
+          trainedContext: null,
+          parameters: null,
+          fileBytes: fake.sizeBytes,
+          neededBytes: 7000000000,
+        },
+      ],
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages. An estimate until the model has run on this computer.",
+        ),
+      ),
+    ).toBeVisible();
   });
 
   it("says nothing of a model's reading capacity the native side did not give", async () => {
