@@ -53,6 +53,9 @@ WRONG_VERDICTS = {"wrong", "unsupported"}
 NOT_CREDITED_VERDICTS = WRONG_VERDICTS | {"vague"}
 VERDICTS = {"", "correct", "wrong", "unsupported", "vague"}
 REVIEW_SAMPLE = 0.2
+# The app reads the text of at most this many pages (src-tauri/src/lib.rs MAX_TEXT_PAGES), and the
+# helper refuses a request with more (model_runtime.rs MAX_PAGES): `prepare` sends no more either.
+TEXT_READ_PAGES = 50
 MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
@@ -472,7 +475,8 @@ def prepare(out, docs):
     out.mkdir(parents=True, exist_ok=True)
     for doc in docs.values():
         (out / f"{doc['id']}.json").write_text(json.dumps(
-            dict(id=doc["id"], lang=doc["lang"], pages=doc["pages"]), ensure_ascii=False) + "\n",
+            dict(id=doc["id"], lang=doc["lang"], pages=[p for p in doc["pages"] if p["index"] < TEXT_READ_PAGES]),
+            ensure_ascii=False) + "\n",
             encoding="utf-8")
     return len(docs)
 

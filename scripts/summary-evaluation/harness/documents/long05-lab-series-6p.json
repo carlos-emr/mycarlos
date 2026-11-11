@@ -1,0 +1,313 @@
+{
+ "id": "long05-lab-series-6p",
+ "title": "Multi-page: 6-page cumulative lab series, the same header (with a PHN) and footer on every page",
+ "lang": "en",
+ "synthetic": true,
+ "source": "Next-freeze draft, 11 Nov 2026: multi-page cases",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories (FAKE) - Cumulative report\nPatient: EXAMPLE, Robin   PHN: 9876 543 210 (FAKE)   DOB: 11-Feb-1968   Sex: M\nOrdering provider: Dr. Casey FAKE-Okoro, Maplewood Test Family Health Team (FAKE)\nReport printed: 2026-10-30 16:20\n\nHAEMATOLOGY\n\nTest                      2025-11-04   2026-02-10   2026-06-02   2026-10-27   Units         Reference\nHaemoglobin               148          146          147          145          g/L           135-175\nRed cells                 4.92         4.88         4.90         4.85         x10^12/L      4.50-6.00\nHaematocrit               0.44         0.44         0.44         0.43         L/L           0.40-0.52\nMCV                       89           90           90           89           fL            80-100\nMCH                       30.1         29.9         30.0         29.9         pg            27.0-33.0\nRDW                       13.1         13.0         13.2         13.1         %             11.5-14.5\nWhite cells               6.8          7.2          6.5          7.0          x10^9/L       4.0-11.0\nNeutrophils               4.1          4.4          3.9          4.2          x10^9/L       2.0-7.5\nLymphocytes               2.0          2.1          1.9          2.1          x10^9/L       1.0-4.0\nMonocytes                 0.5          0.5          0.5          0.5          x10^9/L       0.2-0.8\nEosinophils               0.2          0.2          0.2          0.2          x10^9/L       0.0-0.5\nBasophils                 0.0          0.0          0.0          0.0          x10^9/L       0.0-0.1\nPlatelets                 232          241          228          236          x10^9/L       150-400\n\nIron studies (2026-10-27): ferritin 142 ug/L (30-400); iron 18 umol/L (10-30); transferrin saturation 0.29 (0.20-0.50).\nBlood film (2026-10-27): not required; indices normal.\nComment: blood counts stable over four collections. No action needed from these results.\n\nQuestions about these results? Call the clinic at 613-555-0156 (Maplewood Test Family Health Team).\nFictional Valley Laboratories (FAKE) - accredited - Page 1 of 6\n"
+  },
+  {
+   "index": 1,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories (FAKE) - Cumulative report\nPatient: EXAMPLE, Robin   PHN: 9876 543 210 (FAKE)   DOB: 11-Feb-1968   Sex: M\nOrdering provider: Dr. Casey FAKE-Okoro, Maplewood Test Family Health Team (FAKE)\nReport printed: 2026-10-30 16:20\n\nCHEMISTRY - KIDNEYS AND ELECTROLYTES\n\nTest                      2025-11-04   2026-02-10   2026-06-02   2026-10-27   Units         Reference\nSodium                    140          139          141          140          mmol/L        135-145\nPotassium                 4.4          4.5          4.6          4.8          mmol/L        3.5-5.0\nChloride                  103          102          104          103          mmol/L        98-107\nBicarbonate               26           25           25           24           mmol/L        22-29\nUrea                      6.1          6.4          6.9          7.4          mmol/L        2.5-8.0\nCreatinine                102          108          114          121          umol/L        60-110\neGFR (CKD-EPI 2021)       73           68           64           58           mL/min/1.73m2  >60\nCalcium                   2.36         2.38         2.35         2.37         mmol/L        2.15-2.55\nPhosphate                 1.05         1.08         1.10         1.12         mmol/L        0.80-1.50\nUric acid                 388          402          396          410          umol/L        200-430\nMagnesium                 0.84         0.82         0.85         0.83         mmol/L        0.70-1.00\nOsmolality, calculated    287          286          290          290          mmol/kg       275-295\nAnion gap                 11           12           12           13           mmol/L        8-16\nTotal protein             72           71           73           72           g/L           60-80\nCK                        142          -            156          -            U/L           <200\n\nComment: creatinine above the reference range on 2026-10-27; eGFR 58 is lower than in November 2025 (73). Interpret with the urine albumin result (page 5) and the clinical picture.\nSpecimens: serum, fasting; no haemolysis on any collection.\n\nQuestions about these results? Call the clinic at 613-555-0156 (Maplewood Test Family Health Team).\nFictional Valley Laboratories (FAKE) - accredited - Page 2 of 6\n"
+  },
+  {
+   "index": 2,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories (FAKE) - Cumulative report\nPatient: EXAMPLE, Robin   PHN: 9876 543 210 (FAKE)   DOB: 11-Feb-1968   Sex: M\nOrdering provider: Dr. Casey FAKE-Okoro, Maplewood Test Family Health Team (FAKE)\nReport printed: 2026-10-30 16:20\n\nCHEMISTRY - LIVER AND LIPIDS\n\nTest                      2025-11-04   2026-02-10   2026-06-02   2026-10-27   Units         Reference\nALT                       28           31           34           29           U/L           <50\nAST                       24           26           27           25           U/L           <40\nAlkaline phosphatase      74           78           76           79           U/L           40-129\nGGT                       32           35           38           34           U/L           <60\nBilirubin, total          11           9            12           10           umol/L        <21\nAlbumin                   42           43           42           41           g/L           35-50\nCholesterol, total        5.6          -            5.2          4.9          mmol/L        <5.2\nTriglycerides             2.1          -            1.9          1.8          mmol/L        <1.7\nHDL cholesterol           1.05         -            1.08         1.10         mmol/L        >1.00\nLDL cholesterol (calc.)   3.6          -            3.3          3.0          mmol/L        <3.5\nNon-HDL cholesterol       4.6          -            4.1          3.8          mmol/L        <4.2\nApolipoprotein B          1.12         -            1.04         0.96         g/L           <1.05\nLipoprotein(a)            -            -            38           -            nmol/L        <75\nLDH                       182          -            176          -            U/L           <250\nLipase                    -            34           -            -            U/L           <60\n\nComment: lipid values fasting. LDL cholesterol has fallen from 3.6 to 3.0 mmol/L since November 2025. Targets depend on the patient's overall cardiovascular risk; see the clinic comments on page 6.\n\nQuestions about these results? Call the clinic at 613-555-0156 (Maplewood Test Family Health Team).\nFictional Valley Laboratories (FAKE) - accredited - Page 3 of 6\n"
+  },
+  {
+   "index": 3,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories (FAKE) - Cumulative report\nPatient: EXAMPLE, Robin   PHN: 9876 543 210 (FAKE)   DOB: 11-Feb-1968   Sex: M\nOrdering provider: Dr. Casey FAKE-Okoro, Maplewood Test Family Health Team (FAKE)\nReport printed: 2026-10-30 16:20\n\nCHEMISTRY - GLUCOSE, THYROID AND VITAMINS\n\nTest                      2025-11-04   2026-02-10   2026-06-02   2026-10-27   Units         Reference\nGlucose, fasting          5.9          6.2          6.4          6.9          mmol/L        3.6-6.0\nHaemoglobin A1c           5.9          6.1          6.3          6.6          %             <6.0\nTSH                       1.8          -            2.1          -            mU/L          0.32-4.00\nVitamin B12               -            -            -            312          pmol/L        >220\n25-hydroxy vitamin D      -            58           -            64           nmol/L        75-250\nFerritin                  -            -            -            142          ug/L          30-400\nFree T4                   -            -            14.2         -            pmol/L        9.0-19.0\nFolate, serum             -            -            -            24           nmol/L        >10\nPSA, total                1.1          -            -            1.3          ug/L          <4.5\nGlucose, random (capillary)  -            7.4          -            -            mmol/L        -\n\nComment: HbA1c 6.6% and fasting glucose 6.9 mmol/L (2026-10-27) are at or above the diagnostic thresholds for diabetes (HbA1c 6.5% or more; fasting glucose 7.0 mmol/L or more). In a person without symptoms, a second abnormal result on another day is needed to confirm the diagnosis.\nVitamin D below the optimal range; the clinic will advise.\nGlucose tolerance test: not performed.\nMethod notes: HbA1c by HPLC, IFCC-traceable (6.6% = 49 mmol/mol); haemoglobin variants not detected. PSA: immunoassay; results from different assays are not interchangeable.\n\nQuestions about these results? Call the clinic at 613-555-0156 (Maplewood Test Family Health Team).\nFictional Valley Laboratories (FAKE) - accredited - Page 4 of 6\n"
+  },
+  {
+   "index": 4,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories (FAKE) - Cumulative report\nPatient: EXAMPLE, Robin   PHN: 9876 543 210 (FAKE)   DOB: 11-Feb-1968   Sex: M\nOrdering provider: Dr. Casey FAKE-Okoro, Maplewood Test Family Health Team (FAKE)\nReport printed: 2026-10-30 16:20\n\nURINE\n\nTest                      2025-11-04   2026-02-10   2026-06-02   2026-10-27   Units         Reference\nAlbumin:creatinine ratio  1.4          -            2.8          4.6          mg/mmol       <2.0\nUrine creatinine          11.2         -            9.8          10.4         mmol/L        -\nUrine albumin             16           -            27           48           mg/L          -\n\nURINALYSIS (dipstick)\n\nTest                2025-11-04   2026-02-10   2026-06-02   2026-10-27\nColour              yellow       yellow       yellow       yellow\nClarity             clear        clear        clear        clear\nSpecific gravity    1.020        -            1.016        1.018\npH                  6.0          -            5.5          6.0\nProtein             negative     -            trace        trace\nGlucose             negative     -            negative     negative\nKetones             negative     -            negative     negative\nBlood               negative     -            negative     negative\nLeukocytes          negative     -            negative     negative\nNitrite             negative     -            negative     negative\nMicroscopy: not indicated.\n\nComment: the albumin:creatinine ratio is raised (4.6 mg/mmol) and has risen over the last year. A raised ratio should be confirmed on two of three samples over 3 to 6 months.\nUrine culture: not requested.\n\nQuestions about these results? Call the clinic at 613-555-0156 (Maplewood Test Family Health Team).\nFictional Valley Laboratories (FAKE) - accredited - Page 5 of 6\n"
+  },
+  {
+   "index": 5,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories (FAKE) - Cumulative report\nPatient: EXAMPLE, Robin   PHN: 9876 543 210 (FAKE)   DOB: 11-Feb-1968   Sex: M\nOrdering provider: Dr. Casey FAKE-Okoro, Maplewood Test Family Health Team (FAKE)\nReport printed: 2026-10-30 16:20\n\nCLINIC COMMENTS FOR THE PATIENT - Dr. Casey FAKE-Okoro, 30 October 2026\n\nDear Robin,\n\nI have looked at your blood and urine tests from 27 October 2026. Here is what they mean and what we\nwill do next.\n\n1. Blood sugar: your HbA1c is 6.6% and your fasting blood sugar is 6.9 mmol/L. This is the first time\n   your HbA1c has been in the diabetes range (6.5% or more). One result is not enough to say that you\n   have diabetes. We will repeat the HbA1c and the fasting blood sugar in 3 months, in late January\n   2027. In the meantime, the changes we talked about in June (walking 30 minutes most days, fewer\n   sweet drinks, smaller portions of bread, rice and pasta) are the best thing you can do.\n\n2. Kidneys: your kidney filtration (eGFR) is 58, lower than last year (73), and there is a small\n   amount of protein (albumin) in your urine. This needs a closer look. Please book a visit with me\n   within 4 weeks so that we can check your blood pressure, review your medicines and talk about the\n   next steps. Please avoid anti-inflammatory painkillers such as ibuprofen or naproxen until then.\n\n3. Cholesterol: your LDL cholesterol is 3.0 mmol/L, lower than last year. We will talk about it at\n   the same visit.\n\n   Blood pressure: please bring your home blood pressure readings to the visit (two readings in the\n   morning and two in the evening for 7 days before the visit), and your medicine bottles.\n\n4. Vitamin D is a little low (64). You can take vitamin D 1,000 units a day, which you can buy\n   without a prescription.\n\n5. Everything else (blood counts, liver tests, thyroid, iron, vitamin B12) is within the normal\n   range.\n\nPlease call the clinic to book the visit. A requisition for the January tests (HbA1c, fasting\nglucose, creatinine, urine albumin) will be ready at the front desk.\n\nDr. Casey FAKE-Okoro (FAKE)\n\n\nQuestions about these results? Call the clinic at 613-555-0156 (Maplewood Test Family Health Team).\nFictional Valley Laboratories (FAKE) - accredited - Page 6 of 6\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "hba1c_diabetes_range",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "your HbA1c is 6.6% and your fasting blood sugar is 6.9 mmol/L. This is the first time\n   your HbA1c has been in the diabetes range (6.5% or more).",
+   "approved_statements": [
+    "His HbA1c is 6.6%, in the diabetes range for the first time, but one result is not enough to say he has diabetes."
+   ],
+   "anchors": [
+    "6.6",
+    "a1c",
+    "blood sugar",
+    "diabetes range",
+    "first time",
+    "hba1c"
+   ],
+   "match": [
+    [
+     "hba1c",
+     "a1c",
+     "blood sugar"
+    ],
+    [
+     "6.6",
+     "diabetes range",
+     "first time"
+    ]
+   ],
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Haemoglobin A1c",
+    "One result is not enough to say that you\n   have diabetes."
+   ]
+  },
+  {
+   "id": "repeat_in_3_months",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "We will repeat the HbA1c and the fasting blood sugar in 3 months, in late January\n   2027.",
+   "approved_statements": [
+    "The HbA1c and fasting blood sugar will be repeated in 3 months, in late January 2027."
+   ],
+   "anchors": [
+    "3 months",
+    "again",
+    "january",
+    "recheck",
+    "repeat",
+    "three months"
+   ],
+   "match": [
+    [
+     "repeat",
+     "again",
+     "recheck"
+    ],
+    [
+     "3 months",
+     "three months",
+     "january"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "kidney_egfr_lower",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "your kidney filtration (eGFR) is 58, lower than last year (73), and there is a small\n   amount of protein (albumin) in your urine.",
+   "approved_statements": [
+    "His kidney filtration (eGFR) is 58, lower than last year's 73, and there is a little protein in the urine."
+   ],
+   "anchors": [
+    "58",
+    "albumin",
+    "down",
+    "egfr",
+    "kidney",
+    "lower",
+    "protein"
+   ],
+   "match": [
+    [
+     "egfr",
+     "kidney"
+    ],
+    [
+     "58",
+     "lower",
+     "down",
+     "protein",
+     "albumin"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "book_within_4_weeks",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Please book a visit with me\n   within 4 weeks so that we can check your blood pressure, review your medicines and talk about the\n   next steps.",
+   "approved_statements": [
+    "Book a visit with Dr. FAKE-Okoro within 4 weeks to check the blood pressure, review medicines and plan next steps."
+   ],
+   "anchors": [
+    "4 weeks",
+    "appointment",
+    "book",
+    "four weeks",
+    "visit"
+   ],
+   "match": [
+    [
+     "book",
+     "visit",
+     "appointment"
+    ],
+    [
+     "4 weeks",
+     "four weeks"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "avoid_nsaids",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Please avoid anti-inflammatory painkillers such as ibuprofen or naproxen until then.",
+   "approved_statements": [
+    "Avoid anti-inflammatory painkillers such as ibuprofen or naproxen until that visit."
+   ],
+   "anchors": [
+    "anti-inflammator",
+    "avoid",
+    "do not",
+    "don't",
+    "ibuprofen",
+    "naproxen"
+   ],
+   "match": [
+    [
+     "ibuprofen",
+     "naproxen",
+     "anti-inflammator"
+    ],
+    [
+     "avoid",
+     "do not",
+     "don't"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ldl_lower",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "your LDL cholesterol is 3.0 mmol/L, lower than last year.",
+   "approved_statements": [
+    "His LDL cholesterol is 3.0 mmol/L, lower than last year."
+   ],
+   "anchors": [
+    "3.0",
+    "cholesterol",
+    "ldl",
+    "lower"
+   ],
+   "match": [
+    [
+     "ldl",
+     "cholesterol"
+    ],
+    [
+     "3.0",
+     "lower"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "vitamin_d",
+   "category": "instruction",
+   "required": false,
+   "critical": false,
+   "source_evidence": "You can take vitamin D 1,000 units a day, which you can buy\n   without a prescription.",
+   "approved_statements": [
+    "He can take vitamin D 1,000 units a day, which is sold without a prescription."
+   ],
+   "anchors": [
+    "1,000",
+    "1000",
+    "vitamin d"
+   ],
+   "match": [
+    [
+     "vitamin d"
+    ],
+    [
+     "1,000",
+     "1000"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "call_the_clinic",
+   "category": "instruction",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Questions about these results? Call the clinic at 613-555-0156 (Maplewood Test Family Health Team).",
+   "approved_statements": [
+    "For questions about the results, call the clinic at 613-555-0156."
+   ],
+   "anchors": [
+    "613-555-0156",
+    "call",
+    "clinic",
+    "phone"
+   ],
+   "match": [
+    [
+     "call",
+     "phone"
+    ],
+    [
+     "clinic",
+     "613-555-0156"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying he has diabetes for certain",
+  "calling it kidney failure",
+  "repeating the PHN",
+  "calling the kidney or sugar results normal",
+  "repeating any other contact detail the document does not give the patient"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying he has diabetes for certain",
+   "pattern": "^(?!.*\\b(range|confirm\\w*|repeat\\w*|second|again|not enough|may|might|possibl\\w*|if|whether|first time)\\b).*\\b(has|have|diagnosed with)\\b.*\\bdiabet\\w*\\b",
+   "example": "Robin has diabetes."
+  },
+  {
+   "trap": "calling it kidney failure",
+   "pattern": "\\b(kidney|renal) failure\\b|\\bdialysis\\b",
+   "example": "His kidneys are failing; kidney failure."
+  },
+  {
+   "trap": "repeating the PHN",
+   "pattern": "9876\\W*543\\W*210",
+   "example": "His PHN is 9876 543 210."
+  },
+  {
+   "trap": "calling the kidney or sugar results normal",
+   "pattern": "(?=.*\\b(egfr|kidney\\w*|a1c|hba1c|sugar|glucose)\\b)(?=.*\\b(normal|fine|ok|okay|healthy)\\b)(?!.*\\b(everything else|other|lower|range|not)\\b)",
+   "example": "His kidney results are normal."
+  },
+  {
+   "trap": "repeating any other contact detail the document does not give the patient",
+   "screens": [
+    "CONTACT_DETAILS"
+   ]
+  }
+ ],
+ "patient_contacts": [
+  "613-555-0156"
+ ],
+ "reading_note": "Every page repeats the header (name, PHN, provider) and the footer, which tells the patient to call the clinic. The clinic's comments for the patient are on page 6.",
+ "notes": "Every name, place, phone (555-01xx), e-mail and number is FAKE; card numbers fail their checksum. Written by tools/long_documents.py (11 Nov 2026). Draft for the next freeze; not in v4."
+}

@@ -1,15 +1,15 @@
 {
  "version": 5,
  "status": "DRAFT for the next freeze. The 10-11 Nov runs are scored with version 4 (commit 97e401aa); do not score them with this one.",
- "frozen_utc": "2026-11-11T01:47:22+00:00",
+ "frozen_utc": "2026-11-11T02:06:57+00:00",
  "rule_version": 5,
- "scorer_sha256": "ccf607ada196c31036234c20ed56512d0d6ed1e9e886e7e0b915921b111467fc",
- "scoring_documents_sha256": "efccf19ce85fe35f3ad1aaa293bb5e73168c2a89aa01b9568ad5200ffa0b2a53",
+ "scorer_sha256": "ef5b934c882795993913bf9e466069fabb5e30b545205a7d3eb16a49ad92dfc9",
+ "scoring_documents_sha256": "09b3c8d3c03f932e4a2b9cfa47e07405fab351e691f471ee52500e559270a08d",
  "synthetic_only": true,
- "documents_count": 21,
- "facts": 164,
- "critical_facts": 78,
- "traps": 71,
+ "documents_count": 27,
+ "facts": 212,
+ "critical_facts": 111,
+ "traps": 97,
  "pages_as_run": "The 10-11 Nov evaluation runs read version 1's page text. Since version 2 the only page change is the lab's telephone line in bakeoff-lab-report and bakeoff-cumulative-lab, which no fact, evidence span, match option or trap touches, so those runs are scored with the current version.",
  "outputs_seen_note": "'yes': the facts were written after model summaries of the document existed (the bake-off, the 5 Nov runs, the demo). 'no record': no earlier model output of it is known.",
  "policy": "Do not change a frozen document after a run is scored with it; a change needs a new version here and a reason, and runs scored before and after it are not compared.",
@@ -36,8 +36,8 @@
   },
   {
    "version": 5,
-   "frozen_utc": "2026-11-11T01:47:22+00:00",
-   "reason": "DRAFT rule version 5: the CONTACT_DETAILS screen (a phone, e-mail, street address or identity number the document does not give the patient), the documents' patient_contacts (added to bakeoff-cumulative-lab, bakeoff-discharge-summary and bakeoff-lab-report; their page text, facts and traps unchanged), and three FAKE contact cases (contact01-03). Not for the 10-11 Nov runs."
+   "frozen_utc": "2026-11-11T02:06:57+00:00",
+   "reason": "DRAFT rule version 5: the CONTACT_DETAILS screen and the documents' patient_contacts (added to bakeoff-cumulative-lab, bakeoff-discharge-summary and bakeoff-lab-report; their pages, facts and traps unchanged); three FAKE contact cases (contact01-03); six FAKE multi-page cases (long01-06, tools/long_documents.py); prepare sends at most 50 pages, as the app reads. Not for the 10-11 Nov runs."
   }
  ],
  "documents": {
@@ -159,6 +159,48 @@
    "critical": 2,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
+  },
+  "long01-pneumonia-record": {
+   "sha256": "8b31a653cdb4f6749cb7b4509029dba3bacd75283da1f30c7d4f68b9e9298448",
+   "facts": 9,
+   "critical": 6,
+   "traps": 5,
+   "outputs_seen_before_facts": "no"
+  },
+  "long02-surgery-blank-last-page": {
+   "sha256": "c0a6210ae562931bceaf7f04aaa6d9ece17723cc0073f85865149f7a7403e36a",
+   "facts": 9,
+   "critical": 4,
+   "traps": 4,
+   "outputs_seen_before_facts": "no"
+  },
+  "long03-heart-failure-54p": {
+   "sha256": "9624d0fa28d0122159b07375bba77ffe3b86e053550cbf23d178741971c16551",
+   "facts": 7,
+   "critical": 6,
+   "traps": 4,
+   "outputs_seen_before_facts": "no"
+  },
+  "long04-neurology-consult-3p": {
+   "sha256": "24ba19e9d75a1127cec8cc6c23e7e5d1e61771c5cd6312a5e8d70944e3493aed",
+   "facts": 8,
+   "critical": 6,
+   "traps": 4,
+   "outputs_seen_before_facts": "no"
+  },
+  "long05-lab-series-6p": {
+   "sha256": "f10c46fc2db85b26c53be14294847801e766a3fc930d8eeddf67945f00d6fa37",
+   "facts": 8,
+   "critical": 5,
+   "traps": 5,
+   "outputs_seen_before_facts": "no"
+  },
+  "long06-lettre-cardio-2p-fr": {
+   "sha256": "04e73bd4ca093877a4e7e23e531cfdad954792445c4c9cbd20d6350d88b0b688",
+   "facts": 7,
+   "critical": 6,
+   "traps": 4,
+   "outputs_seen_before_facts": "no"
   },
   "new-french-nephrology": {
    "sha256": "77cd0eb40d3dd1d500383723fc55ef118205289744f2f5f49e2bb6e616759143",

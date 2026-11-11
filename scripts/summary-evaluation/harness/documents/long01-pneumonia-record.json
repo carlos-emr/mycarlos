@@ -1,0 +1,364 @@
+{
+ "id": "long01-pneumonia-record",
+ "title": "Multi-page: 12-page hospital record, patient instructions on page 9 only",
+ "lang": "en",
+ "synthetic": true,
+ "source": "Next-freeze draft, 11 Nov 2026: multi-page cases",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 1 of 12\n\nEMERGENCY DEPARTMENT NOTE AND ADMISSION\nDate and time seen: 2 November 2026, 14:20        Triage level: CTAS 3\nAttending: Dr. Morgan FAKE-Adeyemi (Emergency Medicine)\n\nChief complaint: cough with green sputum and fever for 4 days; more short of breath since yesterday.\n\nHistory of present illness: Mr. FAKE-Lindqvist is a 71-year-old man with COPD who reports four days\nof productive cough with green sputum, fevers up to 38.9 °C at home and chills. Since yesterday he\nis breathless walking from his bedroom to the kitchen (usual exercise tolerance is about two blocks).\nHe has used his salbutamol inhaler about every two hours today with little relief. He denies chest\npain, haemoptysis, leg swelling or recent travel. No sick contacts at home. He had his last COPD\nflare in March 2026, treated at home with prednisone and doxycycline.\n\nPast medical history:\n- COPD, spirometry 2025: FEV1 52% of predicted, FEV1/FVC 0.58\n- Hypertension\n- Type 2 diabetes, diet-controlled (HbA1c 6.4% in August 2026)\n- Former smoker, about 40 pack-years, quit in 2015\n- Right knee replacement 2019\n\nMedications at home:\n- Fluticasone-salmeterol 250/50 microgram, 1 inhalation twice a day\n- Salbutamol 100 microgram, 2 puffs every 4 hours as needed\n- Amlodipine 5 mg once a day\nAllergies: sulfa drugs (rash). No known penicillin allergy.\n\nExamination: temperature 38.6 °C, heart rate 104, blood pressure 138/82, respiratory rate 26,\noxygen saturation 88% on room air, 93% on 2 L/min by nasal prongs. Speaking in short sentences.\nCrackles and bronchial breathing at the right base; scattered expiratory wheeze on both sides.\nHeart sounds normal. No leg oedema. Alert and oriented.\n\nInvestigations in the department: white cell count 15.8, CRP 142 mg/L, creatinine 96 umol/L,\nlactate 1.6 mmol/L. Venous blood gas: pH 7.36, pCO2 48 mmHg. Chest X-ray: right lower lobe\nconsolidation (see the radiology report). ECG: sinus tachycardia, 104 per minute, no acute changes.\n\nAssessment: community-acquired pneumonia of the right lower lobe, with an exacerbation of COPD.\nCURB-65 score 2 (age, respiratory rate). Not septic; lactate normal.\n\nPlan:\n1. Admit to Medicine, unit 4B.\n2. Ceftriaxone 1 g IV once a day and azithromycin 500 mg by mouth once a day for 3 days.\n3. Prednisone 40 mg by mouth once a day for 5 days.\n4. Salbutamol and ipratropium by nebulizer every 4 hours and as needed.\n5. Oxygen to keep the saturation between 88 and 92%.\n6. Sputum culture and two sets of blood cultures before the first antibiotic dose (taken 14:55).\n7. Enoxaparin 40 mg under the skin once a day to prevent clots.\n8. Capillary glucose before meals and at bedtime while on prednisone.\n"
+  },
+  {
+   "index": 1,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 2 of 12\n\nHISTORY AND PHYSICAL (continued) - Internal Medicine admission, 2 November 2026, 19:10\nAdmitting physician: Dr. Jamie FAKE-Kowalczyk (Internal Medicine)\n\nSocial history: lives with his wife in a two-storey house in Testville; bedroom upstairs. Retired\nbus mechanic. Independent in all activities of daily living; drives. Drinks two beers on weekends.\nNo other substances. His wife manages the household finances; their son lives nearby.\n\nFunctional status before this illness: walks about two blocks on flat ground before stopping for\nbreath; climbs one flight of stairs slowly. No home oxygen. Has never attended pulmonary\nrehabilitation. Influenza vaccine last given in 2024; pneumococcal vaccine status unknown.\n\nReview of systems: no weight loss, no night sweats, no headache, no abdominal pain, no urinary\nsymptoms, no rash. Mild loss of appetite for three days. No calf pain.\n\nExamination on the ward: temperature 38.2 °C, heart rate 98, blood pressure 132/78, respiratory\nrate 24, saturation 91% on 2 L/min. Using accessory muscles slightly. Chest: dull to percussion at\nthe right base with bronchial breath sounds and coarse crackles; expiratory wheeze on both sides;\nair entry fair at the left base. Cardiovascular: regular rhythm, no murmur, jugular venous pressure\nnot raised. Abdomen soft, not tender. Calves soft, no swelling. Neurological: no focal deficit.\n\nProblem list and plan:\n1. Community-acquired pneumonia, right lower lobe. Continue ceftriaxone and azithromycin as\n   ordered in the department. Review the cultures. Switch to oral antibiotics once afebrile for\n   24 hours and able to eat and drink. Total antibiotic course planned: 7 days.\n2. COPD exacerbation. Prednisone 40 mg for 5 days. Nebulized salbutamol and ipratropium; change to\n   his own inhalers when the work of breathing settles. Target saturation 88-92%: risk of carbon\n   dioxide retention (pCO2 48). Repeat the blood gas if drowsy.\n3. Type 2 diabetes, diet-controlled. Steroid-induced high glucose is expected; sliding-scale\n   insulin per protocol if the glucose is over 14 mmol/L.\n4. Hypertension. Continue amlodipine.\n5. Prevention of clots: enoxaparin 40 mg daily.\n6. Disposition: expected stay 4-5 days. Physiotherapy and occupational therapy assessments.\n   Consider a referral to pulmonary rehabilitation before discharge.\n\nGoals of care discussed with the patient and his wife: full treatment, including the intensive care\nunit if needed. Code status: full code.\n\nElectronically signed: Dr. Jamie FAKE-Kowalczyk, 2 November 2026, 19:48\n"
+  },
+  {
+   "index": 2,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 3 of 12\n\nPROGRESS NOTES - Internal Medicine\n\n3 November 2026, 09:30 - Day 2\nS: Slept poorly because of coughing. Sputum still green but thinner. Breathing \"a little easier\".\nAte half of breakfast. No chest pain.\nO: Temperature maximum 38.1 °C overnight, now 37.6 °C. Heart rate 92, blood pressure 128/76,\nrespiratory rate 22, saturation 91% on 2 L/min. Crackles at the right base unchanged; wheeze less.\nGlucose 8.9 to 13.2 mmol/L. White cell count 13.1, CRP 118 mg/L, creatinine 91 umol/L.\nBlood cultures: no growth at 18 hours. Sputum: Gram-positive diplococci, culture pending.\nA: Pneumonia and COPD exacerbation, improving slowly.\nP: Continue ceftriaxone, azithromycin (day 2 of 3) and prednisone (day 2 of 5). Nebulizers every\n4 hours. Physiotherapy to start chest clearance. Insulin per protocol overnight if needed.\n\n3 November 2026, 17:10 - Physiotherapy note added to chart (see page 6).\n\n4 November 2026, 10:05 - Day 3\nS: Feels better. Walked to the bathroom with a walker without stopping. Appetite improving.\nAsking when he can go home; worried about his wife managing the stairs alone at home.\nO: Afebrile since 22:00 yesterday (maximum 37.4 °C). Heart rate 86, blood pressure 126/74,\nrespiratory rate 20, saturation 92% on 1 L/min, 89% on room air at rest. Fewer crackles at the\nright base. Glucose 7.8 to 12.4 mmol/L. White cell count 10.9, CRP 74 mg/L, creatinine 88 umol/L,\npotassium 4.1 mmol/L. Blood cultures: no growth at 42 hours.\nA: Improving. Not yet off oxygen.\nP: Last dose of azithromycin today. Continue ceftriaxone one more day, then switch to oral\namoxicillin-clavulanate if afebrile tomorrow. Wean oxygen to room air as tolerated. Change\nnebulizers to his own inhalers with a spacer. Occupational therapy home-safety assessment\nrequested. Pharmacist to review inhaler technique. Discussed pulmonary rehabilitation: he agrees\nto a referral.\n\n4 November 2026, 15:40 - Respiratory therapy: changed to metered-dose inhalers with spacer;\ntechnique adequate after teaching. Saturation 90% on room air at rest, 87% walking 40 metres;\noxygen 1 L/min continued with walking.\n"
+  },
+  {
+   "index": 3,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 4 of 12\n\nLABORATORY RESULTS - CUMULATIVE (Testville General Hospital Laboratory, FAKE)\n\nTest                        2 Nov 14:40   3 Nov 06:10   4 Nov 06:05   5 Nov 06:20   6 Nov 06:00   7 Nov 06:15   Reference\nWhite cells (x10^9/L)       15.8          13.1          10.9          9.4           8.7           8.1           4.0-11.0\nNeutrophils (x10^9/L)       13.2          10.8          8.6           7.1           6.2           5.6           2.0-7.5\nHaemoglobin (g/L)           138           131           129           130           132           133           135-175\nPlatelets (x10^9/L)         214           226           248           271           290           302           150-400\nSodium (mmol/L)             134           135           137           138           138           139           135-145\nPotassium (mmol/L)          4.3           4.0           4.1           4.4           4.2           4.3           3.5-5.0\nCreatinine (umol/L)         96            91            88            84            86            85            60-110\nUrea (mmol/L)               8.4           8.9           8.1           7.2           6.8           6.5           2.5-8.0\nGlucose, fasting (mmol/L)   9.8           8.9           7.8           7.6           6.9           6.4           3.6-6.0\nCRP (mg/L)                  142           118           74            41            22            14            <10\nLactate (mmol/L)            1.6           -             -             -             -             -             0.5-2.2\nVenous pH                   7.36          7.38          -             -             -             -             7.32-7.42\nVenous pCO2 (mmHg)          48            46            -             -             -             -             41-51\n\nFlags: values outside the reference range are reviewed by the attending physician.\nHaemoglobin slightly below the reference range on 3-5 Nov; no bleeding; recheck at follow-up.\nGlucose rose while on prednisone and is back near the usual range by 7 Nov.\n\nCapillary glucose (point of care, mmol/L)\n\nDate      Before breakfast    Before lunch    Before supper    Bedtime    Insulin given\n2 Nov     -                   -               11.8             13.6       none\n3 Nov     8.9                 12.4            13.2             14.6       2 units lispro at 22:00\n4 Nov     7.8                 11.6            12.4             12.9       none\n5 Nov     7.6                 10.8            11.2             11.5       none\n6 Nov     6.9                 9.4             9.9              8.8        none\n7 Nov     6.4                 7.9             -                -          none\n\nMicrobiology: see page 8.\n"
+  },
+  {
+   "index": 4,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 5 of 12\n\nDIAGNOSTIC IMAGING\n\nChest X-ray, PA and lateral - 2 November 2026, 15:12\nClinical information: fever, cough, hypoxia. COPD.\nFindings: Airspace consolidation in the right lower lobe with air bronchograms. No pleural\neffusion. Hyperinflated lungs in keeping with COPD. Heart size normal. No pneumothorax.\nImpression: Right lower lobe pneumonia.\nReported by: Dr. Robin FAKE-Haddad, Radiologist\n\nChest X-ray, portable AP - 5 November 2026, 08:40\nClinical information: follow-up of right lower lobe pneumonia.\nComparison: 2 November 2026.\nFindings: The right lower lobe consolidation is smaller. No new consolidation. No effusion.\nImpression: Partial improvement of the right lower lobe pneumonia. No new finding.\nReported by: Dr. Robin FAKE-Haddad, Radiologist\n\nRESPIRATORY THERAPY NOTES\n\n2 November 2026, 20:30: Nebulized salbutamol 5 mg and ipratropium 500 microgram given. Saturation\n93% on 2 L/min after the treatment. Coarse crackles right base. Patient coached on pursed-lip\nbreathing. Will reassess at 00:30.\n\n3 November 2026, 08:15: Nebulizer given. Productive cough, moderate green sputum. Saturation 91%\non 2 L/min. Encouraged deep breathing and coughing every hour while awake.\n\n3 November 2026, 20:05: Nebulizer given. Less wheeze. Saturation 92% on 2 L/min. Sputum sample\nalready sent on admission; no repeat needed.\n\n4 November 2026, 15:40: Changed from nebulizers to metered-dose inhalers with a spacer. Taught the\ntechnique: shake, exhale, seal lips on the spacer, press once, breathe in slowly, hold 10 seconds.\nReturn demonstration adequate.\n\n5 November 2026, 09:10: Saturation 92% on room air at rest; walked 80 metres with a walker, lowest\nsaturation 89%. Oxygen not needed at rest. Ambulatory oximetry to be repeated before discharge.\n\n6 November 2026, 10:20: Walk test 6 minutes: 210 metres, lowest saturation 88%, recovered to 91%\nwithin 1 minute of rest. No oxygen needed at home by the funded-oxygen criteria.\n\n7 November 2026, 08:30: Saturation 93% on room air at rest. Inhaler technique with the spacer\nchecked again: correct. Peak flow 210 L/min (best of three).\n"
+  },
+  {
+   "index": 5,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 6 of 12\n\nPHYSIOTHERAPY - assessment and treatment notes\n\n3 November 2026, 17:10 - Initial assessment\nReferral: chest clearance and mobility, COPD with right lower lobe pneumonia.\nSubjective: lives with his wife in a two-storey home, 14 stairs with a rail on the right. Before\nadmission walked about two blocks; no walking aid. Goal: return home and manage stairs.\nObjective: saturation 91% on 2 L/min at rest; 86% after walking 15 metres with a walker, recovered to\n90% within 90 seconds with pursed-lip breathing. Productive cough, moderate green sputum.\nTreatment: active cycle of breathing techniques taught; huff coughing; positioning on the left side\nto drain the right lower lobe. Walked 15 metres twice with a walker and one person.\nPlan: daily chest clearance; progress walking; stair assessment before discharge.\n\n5 November 2026, 11:30\nSaturation 92% on room air at rest; walked 80 metres with a walker, lowest 89%. Independent with\nthe breathing techniques. Sputum clearing more easily.\n\n6 November 2026, 14:00 - Stair assessment\nClimbed 12 stairs with the rail and a standby assist; rested after 6 stairs; lowest saturation 88%,\nrecovered to 91% within 1 minute. Safe for stairs with the rail, resting halfway.\nRecommendations: home exercise sheet given (walking twice a day, increasing by 2 minutes every\n2 days as tolerated); pulmonary rehabilitation recommended.\n\nOCCUPATIONAL THERAPY - home safety assessment\n\n5 November 2026, 15:15\nInterview with the patient and his wife. Bathroom upstairs with a tub-shower; no grab bars. Bed\nheight adequate. Patient independent with dressing; breathless with putting on socks and shoes.\nRecommendations:\n- Bath seat and a long-handled shoe horn (list of local vendors given; family will purchase).\n- Plan the day so that stairs are used twice a day at most for the first week.\n- Energy conservation: sit to dress and to shave; spread tasks out during the day.\n- Return to driving once his family doctor agrees; not before the end of the antibiotic course.\nNo home care services requested by the family at this time. Patient and wife agree with the plan.\n\nSOCIAL WORK - brief note\n\n6 November 2026, 13:00\nMet the patient and his wife at their request regarding his wife's worry about managing at home.\nInformation given on community supports and the caregiver respite program. Family declined a\nformal home care referral for now; will call the community care access line if needs change.\n"
+  },
+  {
+   "index": 6,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 7 of 12\n\nNURSING NOTES - Medicine Unit 4B\n\n2 Nov 07:30  Admitted to 4B from ED at 18:35 by stretcher. Oriented to room and call bell. Wife at bedside.  - T. FAKE-Nguyen, RN\n2 Nov 11:00  Saturation 91% on 2 L/min. Productive cough, green sputum. Temperature 38.4 °C, acetaminophen given.  - S. FAKE-Moreau, RN\n2 Nov 15:20  Falls risk assessed: moderate (oxygen tubing, night-time toileting). Bed alarm on, walker at bedside.  - T. FAKE-Nguyen, RN\n2 Nov 19:30  Skin intact. Braden score 19. Ate a few spoons of soup; encouraged fluids.  - T. FAKE-Nguyen, RN\n3 Nov 07:30  Slept in 1-2 hour stretches because of coughing. Repositioned. Saturation 90-92% on 2 L/min.  - S. FAKE-Moreau, RN\n3 Nov 11:00  Glucose 14.6 at bedtime; 2 units lispro given per scale. Patient informed about steroid effect.  - S. FAKE-Moreau, RN\n3 Nov 15:20  Walked to the bathroom with a walker and one assist. Mild breathlessness, recovered quickly.  - T. FAKE-Nguyen, RN\n3 Nov 19:30  Wife asked about visiting hours and parking; information sheet given.  - S. FAKE-Moreau, RN\n4 Nov 07:30  Afebrile. Oxygen reduced to 1 L/min, saturation 92%. Using inhalers with a spacer.  - S. FAKE-Moreau, RN\n4 Nov 11:00  Ate full lunch. Voiding well. Bowel movement today.  - S. FAKE-Moreau, RN\n4 Nov 15:20  Patient worried about the stairs at home; occupational therapy aware.  - T. FAKE-Nguyen, RN\n4 Nov 19:30  Evening: comfortable, watching television, no complaints.  - T. FAKE-Nguyen, RN\n5 Nov 07:30  Off oxygen at rest, saturation 92%. Walked to the nursing station and back twice.  - S. FAKE-Moreau, RN\n5 Nov 11:00  Ate all of supper; no nausea. Voiding well; bowel movement this evening.  - T. FAKE-Nguyen, RN\n5 Nov 15:20  Teaching started: inhaler technique, signs of a COPD flare, when to call for help.  - S. FAKE-Moreau, RN\n5 Nov 19:30  Slept well overnight, no oxygen required.  - S. FAKE-Moreau, RN\n6 Nov 07:30  Walk test with respiratory therapy: 210 m. Tolerated well.  - S. FAKE-Moreau, RN\n6 Nov 11:00  Medications given as ordered. Glucose 6.9 to 9.9 today.  - T. FAKE-Nguyen, RN\n6 Nov 15:20  Pharmacist visited for medication review and inhaler teaching; patient attentive.  - T. FAKE-Nguyen, RN\n6 Nov 19:30  Wife and son visited; discharge plan discussed, son will drive him home.  - T. FAKE-Nguyen, RN\n7 Nov 07:30  Vital signs stable. Saturation 93% on room air.  - S. FAKE-Moreau, RN\n7 Nov 11:00  Discharge instructions reviewed with patient and wife using teach-back; copy given.  - S. FAKE-Moreau, RN\n7 Nov 15:20  Prescriptions sent to the patient's pharmacy. Discharge package given to the patient.  - T. FAKE-Nguyen, RN\n7 Nov 19:30  Discharged home at 11:20 with his son, walking with a walker; belongings with patient.  - T. FAKE-Nguyen, RN\n\nPain scores (0-10) recorded every shift: 0-2 throughout; chest discomfort with coughing only.\nNo falls. No pressure injuries. Bed alarm discontinued 5 Nov (independent with walker).\n"
+  },
+  {
+   "index": 7,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 8 of 12\n\nMICROBIOLOGY\n\nBlood cultures x2 - collected 2 November 2026, 14:55\nFinal report (7 November 2026): No growth after 5 days.\n\nSputum culture - collected 2 November 2026, 15:05\nGram stain: many polymorphonuclear cells; moderate Gram-positive diplococci.\nCulture: Streptococcus pneumoniae, moderate growth.\nSusceptibility: penicillin susceptible (MIC 0.06); amoxicillin susceptible; ceftriaxone\nsusceptible; erythromycin resistant; levofloxacin susceptible; doxycycline susceptible.\nComment: normal respiratory flora also present.\n\nUrine Streptococcus pneumoniae antigen - 2 November 2026: positive.\nUrine Legionella antigen - 2 November 2026: negative.\nRespiratory virus panel (nasopharyngeal swab) - 2 November 2026: negative for influenza A and B,\nRSV and SARS-CoV-2.\n\nAdmission screening swabs - 2 November 2026, 18:50\nMRSA (nares): not detected.        VRE (rectal): not detected.        CPE (rectal): not detected.\nClostridioides difficile: not tested (no diarrhoea).\n\nADMISSION RISK SCREENING - 2 November 2026, 19:30\nFalls risk (Morse): 45, moderate - walker at the bedside, bed in low position, non-slip socks.\nPressure injury risk (Braden): 19, low - reposition as needed, heels checked each shift.\nDelirium screen (4AT): 0 - repeated daily, all scores 0 during the stay.\nNutrition screen: lost about 1 kg in the last month; appetite reduced for 3 days; dietitian referral.\nSwallowing screen: passed; regular diet with thin fluids.\nCognition: oriented to person, place and time; manages his own medications at home.\n\nINFECTION PREVENTION - no isolation required (respiratory virus panel negative).\n\nDIETITIAN - 4 November 2026: appetite improving; diabetic diet with snacks while on prednisone;\nno supplements needed. Weight 81.4 kg on admission, 80.9 kg on 6 November.\n\nOxygen therapy record\n\nDate      Flow at rest    Flow walking    Lowest saturation    Comment\n2 Nov     2 L/min         -               88% room air         nasal prongs started in ED\n3 Nov     2 L/min         -               90%                  target 88-92%\n4 Nov     1 L/min         1 L/min         87% walking          weaning\n5 Nov     room air        room air        89% walking          off oxygen at rest\n6 Nov     room air        room air        88% walking          walk test 210 m\n7 Nov     room air        room air        93% at rest          no home oxygen needed\n\nIntake and output (24 h)\n\nDate      Oral (mL)    IV (mL)    Urine (mL)    Bowel movement\n2 Nov     450          1250       900           no\n3 Nov     900          1000       1350          no\n4 Nov     1350         250        1500          yes\n5 Nov     1600         0          1700          yes\n6 Nov     1750         0          1650          yes\n"
+  },
+  {
+   "index": 8,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 9 of 12\n\nDISCHARGE INSTRUCTIONS - PATIENT COPY\nTestville General Hospital (FAKE), Medicine Unit 4B\n\nWhy you were in hospital: You were in hospital from 2 to 7 November 2026 for pneumonia (a lung\ninfection) in the lower part of your right lung. The infection also made your COPD worse.\n\nYour medicines:\n- Amoxicillin-clavulanate 875/125 mg: take 1 tablet twice a day with food for 5 more days. Your last\n  dose is on the evening of 12 November 2026. Finish all of the tablets even if you feel well.\n- Prednisone: you finished it in hospital. Do not take any more.\n- NEW: tiotropium 2.5 micrograms (soft mist inhaler), 2 puffs once a day in the morning. This is\n  added to your fluticasone-salmeterol; it does not replace it.\n- Keep taking fluticasone-salmeterol 250/50, 1 inhalation twice a day, and rinse your mouth after.\n- Keep using salbutamol, 2 puffs every 4 hours if you need it for breathlessness.\n- Amlodipine 5 mg once a day: no change.\n\nYour follow-up:\n- See your family doctor, Dr. Priya FAKE-Raman, within 1 week, by 14 November 2026. Please call her\n  office to book this visit.\n- Have a chest X-ray in 6 weeks, around 18 December 2026, to make sure the pneumonia has cleared.\n  The requisition is in your discharge package; take it to any Testville Imaging site.\n- Pulmonary rehabilitation: a referral was sent to the Testville COPD Program. They will call you\n  to book an assessment.\n- Ask your family doctor about the flu shot and the pneumococcal vaccine once you are well.\n\nWhen to get help:\n- Go to the nearest emergency department or call 911 if you are very short of breath, have chest\n  pain, your lips or fingertips turn blue, or you become confused or very drowsy.\n- Call your family doctor if the fever comes back (over 38 °C), if you cough up blood, or if your\n  cough is not better a few days after the antibiotic is finished.\n\nTaking care of yourself at home:\n- Rest, and increase your walking a little every day. Use pursed-lip breathing when you are short\n  of breath.\n- Drink plenty of fluids unless your doctor has told you to limit them.\n- Your blood sugar was higher while you took prednisone. It is now back near your usual range; no\n  diabetes medicine is needed.\n- Do not smoke, and avoid smoky places.\n\nQuestions about this hospital stay: Medicine Unit 4B, 613-555-0124 (24 hours).\n\nI have received and understood these instructions.\nPatient: signed on paper           Nurse: Taylor FAKE-Nguyen, RN           7 November 2026, 10:40\n"
+  },
+  {
+   "index": 9,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 10 of 12\n\nPROGRESS NOTES - Internal Medicine (continued)\n\n5 November 2026, 09:45 - Day 4\nS: Feels much better. Ate all of breakfast. Cough less frequent; sputum now yellow-white.\nO: Afebrile for 36 hours. Heart rate 82, blood pressure 124/72, respiratory rate 18, saturation 92%\non room air at rest. Few crackles at the right base. White cell count 9.4, CRP 41 mg/L. Chest X-ray\ntoday: partial improvement. Sputum culture: Streptococcus pneumoniae, susceptible to penicillin,\namoxicillin and ceftriaxone. Blood cultures: no growth at 66 hours.\nA: Improving pneumonia (pneumococcal) and COPD exacerbation.\nP: Stop ceftriaxone. Start amoxicillin-clavulanate 875/125 mg by mouth twice a day to complete\n10 days of antibiotics in total (penicillin-susceptible organism; course lengthened because of the\nslow early response). Prednisone day 4 of 5. Off oxygen at rest. Walk test tomorrow.\n\n6 November 2026, 10:30 - Day 5\nS: Walking the hallway twice a day. No fever. Sleeping better. Wife visited; they are confident\nabout going home tomorrow. Asked whether he still needs prednisone: last dose today.\nO: Temperature 36.9 °C, heart rate 80, blood pressure 130/76, respiratory rate 18, saturation 92% on\nroom air. Walk test: 210 metres, lowest saturation 88%. White cell count 8.7, CRP 22 mg/L,\ncreatinine 86 umol/L.\nA: Ready for discharge tomorrow if stable overnight.\nP: Last prednisone dose today (5 of 5). Add tiotropium (long-acting antimuscarinic) to his\nfluticasone-salmeterol, as he has had two exacerbations in 2026; pharmacist to teach. Pulmonary\nrehabilitation referral sent to the Testville COPD Program. Discharge tomorrow morning with\nwritten instructions. Follow-up chest X-ray in 6 weeks. Family physician follow-up within 1 week.\nInfluenza and pneumococcal vaccines to be given by the family physician once recovered.\n\n7 November 2026, 08:50 - Day of discharge\nS: Well. No fever overnight.\nO: Temperature 36.8 °C, saturation 93% on room air, heart rate 78. Chest: few crackles right base.\nWhite cell count 8.1, CRP 14 mg/L.\nA/P: Discharged home. Antibiotic to continue to complete the course. Instructions reviewed with\nthe patient and his wife (see the patient copy, page 9). Discharge summary sent to the family\nphysician, Dr. Priya FAKE-Raman.\n\nElectronically signed: Dr. Jamie FAKE-Kowalczyk\n"
+  },
+  {
+   "index": 10,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 11 of 12\n\nMEDICATION ADMINISTRATION RECORD - 2 to 7 November 2026 (times given)\n\nMedication                                      2 Nov    3 Nov         4 Nov     5 Nov         6 Nov         7 Nov\nCeftriaxone 1 g IV daily                        15:30    14:00         14:00     stopped       -             -\nAzithromycin 500 mg PO daily                    15:30    09:00         09:00     done          -             -\nAmoxicillin-clavulanate 875/125 mg PO BID       -        -             -         17:00         09:00 17:00   09:00\nPrednisone 40 mg PO daily                       16:00    09:00         09:00     09:00         09:00         done\nSalbutamol 5 mg + ipratropium 500 mcg neb q4h   x3       x6            x3        -             -             -\nSalbutamol MDI 2 puffs q4h PRN                  -        -             x2        x2            x1            x1\nFluticasone-salmeterol 250/50 1 inh BID         -        -             21:00     09:00 21:00   09:00 21:00   09:00\nTiotropium 2.5 mcg 2 puffs daily (new)          -        -             -         -             -             09:00\nAmlodipine 5 mg PO daily                        -        09:00         09:00     09:00         09:00         09:00\nEnoxaparin 40 mg SC daily                       21:00    21:00         21:00     21:00         21:00         -\nInsulin lispro per scale                        -        22:00 2u      -         -             -             -\nAcetaminophen 650 mg PO q6h PRN                 18:00    02:00 10:00   -         -             -             -\n\nHeld or refused doses: none. No adverse drug reactions recorded.\nPharmacist reconciliation completed 6 November 2026 (see page 11).\n\n\nPHARMACY - medication reconciliation and teaching\n\n6 November 2026, 11:15 - Clinical pharmacist, Jordan FAKE-Bisset\nHome medications confirmed with the patient, his wife and the community pharmacy record:\nfluticasone-salmeterol 250/50 twice a day, salbutamol as needed (filled monthly; uses about\n6 puffs a day when well), amlodipine 5 mg daily. No over-the-counter products or supplements.\nChanges in hospital:\n- Antibiotics: ceftriaxone and azithromycin, changed on 5 Nov to amoxicillin-clavulanate\n  875/125 mg twice a day to complete the course (10 days of antibiotics in total).\n- Prednisone 40 mg daily, 5 days, completed 6 Nov.\n- New: tiotropium soft mist inhaler, 2 puffs once a day (second exacerbation in 2026).\nInteractions checked: none of significance. Renal function normal for dosing.\nTeaching: tiotropium soft mist inhaler technique (turn, open, press, close); correct on return\ndemonstration. Reviewed rinsing after the steroid inhaler. Reviewed the COPD action plan. Advised\nthat tiotropium can cause a dry mouth.\nDischarge prescriptions sent electronically to the patient's community pharmacy.\n\n"
+  },
+  {
+   "index": 11,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nTestville General Hospital (FAKE) - Chart print\nPatient: FAKE-LINDQVIST, Harold   MRN: TGH-0072291   Health card: 4567 890 123 (FAKE)\nDate of birth: 14 March 1955   Admitted: 2 November 2026   Discharged: 7 November 2026\nPage 12 of 12\n\nVITAL SIGNS FLOWSHEET - last 72 hours before discharge\n\nDate     Time    Temp °C   HR    BP        RR    SpO2    Oxygen     Pain\n5 Nov    00:00   37.2      79    124/69    16    90%     room air   2\n5 Nov    04:00   37.0      80    131/70    16    93%     room air   0\n5 Nov    08:00   36.9      81    132/75    17    91%     room air   0\n5 Nov    12:00   36.6      87    127/73    18    92%     room air   1\n5 Nov    16:00   36.7      83    133/77    18    93%     room air   0\n5 Nov    20:00   37.2      81    130/77    17    93%     room air   1\n6 Nov    00:00   36.6      85    131/71    18    90%     room air   1\n6 Nov    04:00   36.9      76    133/74    19    93%     room air   2\n6 Nov    08:00   36.9      81    120/68    16    90%     room air   1\n6 Nov    12:00   37.0      81    120/68    18    93%     room air   2\n6 Nov    16:00   37.0      81    133/74    19    92%     room air   1\n6 Nov    20:00   36.7      87    133/77    16    90%     room air   1\n7 Nov    00:00   36.7      82    119/69    16    93%     room air   1\n7 Nov    04:00   36.9      76    125/72    17    91%     room air   0\n7 Nov    08:00   37.2      82    126/73    17    90%     room air   1\n\nEarly warning score: 0-1 on every set above (low risk).\n\nWeights (kg): 2 Nov 81.4 | 4 Nov 81.0 | 6 Nov 80.9\n\nLines and devices: peripheral IV right forearm inserted 2 Nov 14:30, removed 5 Nov 18:00, site clean.\nValuables: none held. Advance directive: none on file.\n\nEnd of chart print. Printed 7 November 2026 16:05 for the health records department (FAKE).\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "pneumonia_right_lower_lobe",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Assessment: community-acquired pneumonia of the right lower lobe, with an exacerbation of COPD.",
+   "approved_statements": [
+    "He was admitted with pneumonia, a lung infection, in the lower part of the right lung."
+   ],
+   "anchors": [
+    "lung infection",
+    "pneumonia",
+    "right"
+   ],
+   "match": [
+    [
+     "pneumonia",
+     "lung infection"
+    ],
+    [
+     "right"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "copd_flare",
+   "category": "finding",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Assessment: community-acquired pneumonia of the right lower lobe, with an exacerbation of COPD.",
+   "approved_statements": [
+    "The infection made his COPD worse."
+   ],
+   "anchors": [
+    "copd",
+    "exacerbation",
+    "flare",
+    "worse"
+   ],
+   "match": [
+    [
+     "copd"
+    ],
+    [
+     "exacerbation",
+     "worse",
+     "flare"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "antibiotic_5_more_days",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Amoxicillin-clavulanate 875/125 mg: take 1 tablet twice a day with food for 5 more days.",
+   "approved_statements": [
+    "Take amoxicillin-clavulanate 875/125 mg twice a day with food for 5 more days, until the evening of 12 November 2026."
+   ],
+   "anchors": [
+    "12 november",
+    "5 days",
+    "5 more days",
+    "amoxicillin",
+    "five days",
+    "november 12"
+   ],
+   "match": [
+    [
+     "amoxicillin"
+    ],
+    [
+     "5 more days",
+     "5 days",
+     "five days",
+     "12 november",
+     "november 12"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "tiotropium_new",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "NEW: tiotropium 2.5 micrograms (soft mist inhaler), 2 puffs once a day in the morning.",
+   "approved_statements": [
+    "A new inhaler, tiotropium 2.5 micrograms, is added: 2 puffs once a day in the morning."
+   ],
+   "anchors": [
+    "added",
+    "new",
+    "start",
+    "tiotropium"
+   ],
+   "match": [
+    [
+     "tiotropium"
+    ],
+    [
+     "new",
+     "added",
+     "start"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "prednisone_finished",
+   "category": "medication",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Prednisone: you finished it in hospital. Do not take any more.",
+   "approved_statements": [
+    "The prednisone was finished in hospital; do not take any more."
+   ],
+   "anchors": [
+    "do not take",
+    "finished",
+    "no more",
+    "prednisone",
+    "stopped"
+   ],
+   "match": [
+    [
+     "prednisone"
+    ],
+    [
+     "finished",
+     "do not take",
+     "no more",
+     "stopped"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "family_doctor_1_week",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "See your family doctor, Dr. Priya FAKE-Raman, within 1 week, by 14 November 2026.",
+   "approved_statements": [
+    "See your family doctor, Dr. Priya FAKE-Raman, within 1 week, by 14 November 2026."
+   ],
+   "anchors": [
+    "1 week",
+    "14 november",
+    "fake-raman",
+    "family doctor",
+    "november 14",
+    "one week"
+   ],
+   "match": [
+    [
+     "family doctor",
+     "fake-raman"
+    ],
+    [
+     "1 week",
+     "one week",
+     "14 november",
+     "november 14"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "xray_6_weeks",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Have a chest X-ray in 6 weeks, around 18 December 2026, to make sure the pneumonia has cleared.",
+   "approved_statements": [
+    "Have a chest X-ray in 6 weeks, around 18 December 2026, to check that the pneumonia has cleared."
+   ],
+   "anchors": [
+    "18 december",
+    "6 weeks",
+    "december 18",
+    "radiograph",
+    "six weeks",
+    "x-ray",
+    "xray"
+   ],
+   "match": [
+    [
+     "x-ray",
+     "xray",
+     "radiograph"
+    ],
+    [
+     "6 weeks",
+     "six weeks",
+     "18 december",
+     "december 18"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "emergency_signs",
+   "category": "conditional_instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Go to the nearest emergency department or call 911 if you are very short of breath, have chest\n  pain, your lips or fingertips turn blue, or you become confused or very drowsy.",
+   "approved_statements": [
+    "Go to the emergency department or call 911 if you are very short of breath, have chest pain, your lips turn blue or you become confused."
+   ],
+   "anchors": [
+    "911",
+    "blue",
+    "chest pain",
+    "confused",
+    "drowsy",
+    "emergency",
+    "short of breath"
+   ],
+   "match": [
+    [
+     "emergency",
+     "911"
+    ],
+    [
+     "short of breath",
+     "chest pain",
+     "blue",
+     "confused",
+     "drowsy"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "pneumococcus_culture",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Culture: Streptococcus pneumoniae, moderate growth.",
+   "approved_statements": [
+    "The sputum grew Streptococcus pneumoniae, a common pneumonia germ."
+   ],
+   "anchors": [
+    "culture",
+    "grew",
+    "pneumococ",
+    "pneumoniae",
+    "sputum"
+   ],
+   "match": [
+    [
+     "pneumoniae",
+     "pneumococ"
+    ],
+    [
+     "sputum",
+     "culture",
+     "grew"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "repeating the MRN or health card number",
+  "saying the antibiotics are finished",
+  "saying the pneumonia has gone or is cured",
+  "saying he needs oxygen at home",
+  "repeating any other contact detail the document does not give the patient"
+ ],
+ "trap_checks": [
+  {
+   "trap": "repeating the MRN or health card number",
+   "pattern": "tgh\\W*0072291|0072291|4567\\W*890\\W*123",
+   "example": "His record number is TGH-0072291."
+  },
+  {
+   "trap": "saying the antibiotics are finished",
+   "pattern": "(?=.*\\b(antibiotic\\w*|amoxicillin\\w*)\\b)(?=.*\\b(finished|completed|done|no more|stop\\w*)\\b)(?!.*\\b(5 more|five more|until|finish all|keep)\\b)",
+   "example": "He has finished his antibiotics."
+  },
+  {
+   "trap": "saying the pneumonia has gone or is cured",
+   "pattern": "^(?!.*\\b(make sure|check\\w*|confirm\\w*|whether)\\b)(?=.*\\bpneumonia\\b)(?=.*\\b(cured|resolved|gone|cleared|healed)\\b)",
+   "example": "The pneumonia is cured."
+  },
+  {
+   "trap": "saying he needs oxygen at home",
+   "pattern": "^(?!.*\\b(no|not|n't)\\b).*\\b(home oxygen|oxygen at home)\\b",
+   "example": "He will need oxygen at home."
+  },
+  {
+   "trap": "repeating any other contact detail the document does not give the patient",
+   "screens": [
+    "CONTACT_DETAILS"
+   ]
+  }
+ ],
+ "patient_contacts": [
+  "613-555-0124"
+ ],
+ "reading_note": "The patient's instructions are on page 9 of 12 and nowhere else: neither the pages from the start nor the start plus the last page read them.",
+ "notes": "Every name, place, phone (555-01xx), e-mail and number is FAKE; card numbers fail their checksum. Written by tools/long_documents.py (11 Nov 2026). Draft for the next freeze; not in v4."
+}

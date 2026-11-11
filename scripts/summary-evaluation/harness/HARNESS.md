@@ -72,10 +72,16 @@ Categories add `instruction`, `timing` and `follow_up`. Those, with PR 295's
 | Bake-off (29 Oct) | 9 `bakeoff-*`: six short (one French) and three longer (one Brazilian Portuguese) |
 | New | `new-rheumatology-letter` (instructions and timing at the end), `new-french-nephrology`, `new-polish-discharge`, `new-long-hospital-record` (18 pages, about 26 KB / 6k tokens, instructions on the last page) |
 | Contacts (draft, rule 5) | `contact01-leg-discharge` (a daughter's phone and e-mail, a health card and home address; the ward's number is given to the patient), `contact02-thyroid-letter-fr` (a pharmacy's address and phone, a daughter's phone, RAMQ and file numbers; an e-mail and the clinic's number are given to the patient), `contact03-referral-booking` (a referral number, the patient's own phone on file, the family doctor's phone; the clinic's address and number are given to the patient) |
+| Multi-page (draft) | Written by `tools/long_documents.py` (fixed seeds), 800-1,150 tokens a page like the one-page letters: `long01-pneumonia-record` (12 pages; the patient's instructions on page 9 only, and pages 1-8 are longer than the summary's room, so neither the start nor the start plus the last page reads them: the honest failure case); `long02-surgery-blank-last-page` (10 pages; the follow-up on page 9, page 10 a blank scanned back page); `long03-heart-failure-54p` (54 pages, over the 50-page text-read cap; the discharge instructions on page 54, never read); `long04-neurology-consult-3p` (fits whole: the control); `long05-lab-series-6p` (the same header, with a health number, and the same footer, "call the clinic at 613-555-0156", on every page); `long06-lettre-cardio-2p-fr` (two-page French letter, for the language variants). Each has a `reading_note`. |
 | PR 295 | 12 EN/FR cases, 48 facts: 6 development and 6 holdout |
 
 The facts of the demo, 5 Nov and bake-off documents were written after model summaries of them
-existed (`outputs_seen_before_facts` in the freeze). Still to add: an image-only scan and a form
+existed (`outputs_seen_before_facts` in the freeze). The contact and multi-page documents were written
+on 11 Nov with their facts, before any model read them ("no").
+
+`prepare` sends at most the first 50 pages of a document (`TEXT_READ_PAGES`): the app reads no more
+(`MAX_TEXT_PAGES`) and the helper refuses more. A document's facts may lie past them, as in
+`long03-heart-failure-54p`; no variant can carry those, and the run is marked `cut`. Still to add: an image-only scan and a form
 page, run through the app's own text extraction once and kept as their `pages`.
 
 ## What a run measures, per document

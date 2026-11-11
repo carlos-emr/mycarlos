@@ -544,6 +544,38 @@ class ContactScreenTest(unittest.TestCase):
         self.assertTrue(any("names no contact detail" in p for p in compare.check_document(doc)))
 
 
+class LongDocumentTest(unittest.TestCase):
+    """The multi-page documents (DRAFT for the next freeze) keep the layout each one is for."""
+
+    def text_of(self, doc_id, first, last):
+        return compare.fold(" ".join(p["text"] for p in REPO[doc_id]["pages"] if first <= p["index"] <= last))
+
+    def evidence_pages(self, doc_id, fact_id):
+        evidence = compare.fold(evidence_of(doc_id, fact_id)["source_evidence"])
+        return [p["index"] for p in REPO[doc_id]["pages"] if evidence in compare.fold(p["text"])]
+
+    def test_prepare_sends_no_more_pages_than_the_app_reads(self):
+        with tempfile.TemporaryDirectory() as folder:
+            compare.prepare(folder, {"long03-heart-failure-54p": REPO["long03-heart-failure-54p"]})
+            sent = json.loads((Path(folder) / "long03-heart-failure-54p.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(REPO["long03-heart-failure-54p"]["pages"]), 54)
+        self.assertEqual([p["index"] for p in sent["pages"]], list(range(compare.TEXT_READ_PAGES)))
+
+    def test_each_long_document_puts_its_instructions_where_it_says(self):
+        self.assertEqual(self.evidence_pages("long01-pneumonia-record", "family_doctor_1_week"), [8])
+        self.assertNotIn("fake-raman, within 1 week", self.text_of("long01-pneumonia-record", 0, 7))
+        self.assertEqual(self.evidence_pages("long02-surgery-blank-last-page", "clinic_24_november"), [8])
+        self.assertEqual(REPO["long02-surgery-blank-last-page"]["pages"][-1]["text"], "")
+        self.assertEqual(self.evidence_pages("long03-heart-failure-54p", "clinic_9_november"), [53])
+        self.assertGreaterEqual(53, compare.TEXT_READ_PAGES)
+
+    def test_the_lab_series_repeats_its_header_and_footer_on_every_page(self):
+        pages = REPO["long05-lab-series-6p"]["pages"]
+        self.assertTrue(all("PHN: 9876 543 210" in p["text"] and "Call the clinic at 613-555-0156" in p["text"]
+                            for p in pages))
+        self.assertEqual(compare.contact_flag("Call the clinic at 613-555-0156.", REPO["long05-lab-series-6p"]), None)
+
+
 class DecisionV2Test(RunTest):
     def test_a_speed_variant_passes_when_not_worse(self):
         rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")]
