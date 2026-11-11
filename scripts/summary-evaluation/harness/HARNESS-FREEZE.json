@@ -1,9 +1,9 @@
 {
- "version": 6,
- "status": "DRAFT for the next freeze (version 6). The 10-11 Nov runs are scored with version 5 of the rescore line (43bc7612); do not score them with this one.",
- "frozen_utc": "2026-11-11T03:02:21+00:00",
- "rule_version": 6,
- "scorer_sha256": "3da9e1edbb15913ddec94896a64d714829949c232b9d76ef1e3629e6628a5e76",
+ "version": 7,
+ "status": "DRAFT for the next freeze (version 7). The 10-11 Nov runs are scored with version 6 of the rescore line (7d07955f); do not score them with this one.",
+ "frozen_utc": "2026-11-11T03:28:10+00:00",
+ "rule_version": 7,
+ "scorer_sha256": "f180aa107f92dcf6ba390478a24d964e2d207994c7e1043c4817dfe7e00b42e8",
  "scoring_documents_sha256": "3f8dbe2676009f15fbed8df167860de848bed163fc63ab14eef8ee617a713fe4",
  "synthetic_only": true,
  "documents_count": 27,
@@ -35,9 +35,9 @@
    "reason": "rule version 4: one verdict per distinct sentence from a blind sheet (opaque content ids, key apart), a sampled sentence waits for its verdict too; the two celiac traps no longer flag 'test you for', 'asks about', 'can cause', 'If ... is confirmed' or 'a positive celiac screen'; demo-gastro-referral's opening line is an evidence span for its positive celiac screen. Page text unchanged."
   },
   {
-   "version": 6,
-   "frozen_utc": "2026-11-11T03:02:21+00:00",
-   "reason": "DRAFT rule version 6 (includes rule 5 of the rescore line with 5.1-5.3, merged 11 Nov). Adds the CONTACT_DETAILS screen and patient_contacts, three FAKE contact cases, six FAKE multi-page cases, prepare capped at 50 pages, the 'never sent' reading label, Agent 3's review fixes, and the unsafe-sentence screens (GENERALIZED_SUBJECT, INSTRUCTION_ADDED, ALTERNATIVE_DROPPED, COUNT_DROPPED, FREQUENCY_DROPPED_MARK, ACTION_FROM_HEADER, ACTION_NOT_IN_QUOTE_MARK, HOLD_DROPPED, LANGUAGE by letters), designed from round 2/2b's unsafe sentences and revised after Agent 3's unseen test (its pairs are now tests). Not for the 10-11 Nov runs."
+   "version": 7,
+   "frozen_utc": "2026-11-11T03:28:10+00:00",
+   "reason": "DRAFT rule version 7 (was the draft's 6; renumbered when the rescore line took 6 for Ben's decisions). Includes the rescore line's rules 5 to 6 (to-check rows, LANGUAGE fix, reading report, full review, named facts, page text as read, Ben's checks 1 and 5 and the unsafe column), merged 11 Nov. Adds the CONTACT_DETAILS screen and patient_contacts, three FAKE contact cases, six FAKE multi-page cases, prepare capped at 50 pages, the 'never sent' reading label, Agent 3's review fixes, and the unsafe-sentence screens revised after Agent 3's unseen test. Not for the 10-11 Nov runs."
   }
  ],
  "documents": {

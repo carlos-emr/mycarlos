@@ -207,7 +207,9 @@ class RunTest(unittest.TestCase):
         self.assertEqual(decisions[1]["verdict"], "PASS")
 
     def test_one_reviewed_wrong_statement_fails_it(self):
-        rows = [dict(run="E1", doc="fake-letter", sentence=1, verdict="wrong")]
+        # Rule 6: more wrong statements than the baseline's (whose sentence is reviewed correct) fail it.
+        rows = [dict(run="B0", doc="fake-letter", sentence=0, verdict="correct"),
+                dict(run="E1", doc="fake-letter", sentence=1, verdict="wrong")]
         (_, decisions), _ = self.score(run_lines("E1", BETTER), rows)
         self.assertEqual(decisions[1]["verdict"], "FAIL")
 
@@ -485,7 +487,7 @@ class NewScreenTest(unittest.TestCase):
 
 
 class ContactScreenTest(unittest.TestCase):
-    """Rule 6 (DRAFT for the next freeze): a sentence that repeats a contact detail the document does
+    """Rule 7 (DRAFT for the next freeze): a sentence that repeats a contact detail the document does
     not give the patient to use is flagged for the review."""
 
     def kinds(self, text, doc=None):
@@ -605,7 +607,7 @@ class ContactReviewFixesTest(unittest.TestCase):
 
 
 class UnsafeScreensTest(unittest.TestCase):
-    """Rule 6 (DRAFT): the screens for the nine kinds of sentence round 2 and 2b's reviewer called
+    """Rule 7 (DRAFT): the screens for the nine kinds of sentence round 2 and 2b's reviewer called
     unsafe. Designed from these very sentences (seen, not held out): each is a must-catch case, and
     the reviewed-correct sentences below must stay unflagged."""
 
@@ -1020,6 +1022,81 @@ class PagesAsReadTest(unittest.TestCase):
         self.assertEqual(compare.pages_hash(pages), expected)
 
 
+class RuleSixTest(unittest.TestCase):
+    """Rule 6 of the rescore line (Ben's decisions, 11 Nov, after B0, E1 and E4 were scored): wrong or
+    unsupported statements compared with the baseline's; no unsafe sentence the baseline lacks; a
+    median of at most 180 s per document."""
+    setUp = RunTest.setUp
+
+    def write_review(self, rows):
+        path = Path(self.folder.name) / f"review{len(list(Path(self.folder.name).glob('review*.csv')))}.csv"
+        with path.open("w", newline="", encoding="utf-8") as target:
+            writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "verdict", "unsafe"])
+            writer.writeheader()
+            writer.writerows(rows)
+        return path
+
+    def decide(self, base_sentences, variant_sentences, rows, variant_wall=100_000, out="r"):
+        base = write_run(self.folder.name, "B0", run_lines("B0", base_sentences))
+        variant = write_run(self.folder.name, "E1", run_lines("E1", variant_sentences, wall_ms=variant_wall))
+        summaries, decisions = compare.score([base, variant], Path(self.folder.name) / out, self.docs,
+                                             self.write_review(rows))
+        return summaries, decisions[1]
+
+    def check(self, decision, start):
+        return next(ok for name, ok in decision["checks"] if name.startswith(start))
+
+    def test_as_many_wrong_statements_as_the_baseline_is_not_worse(self):
+        base = [BETTER[1]]
+        variant = [BETTER[2]]
+        rows = [dict(run="B0", doc="fake-letter", sentence=0, verdict="unsupported", unsafe=""),
+                dict(run="E1", doc="fake-letter", sentence=0, verdict="wrong", unsafe="")]
+        _, decision = self.decide(base, variant, rows)
+        self.assertTrue(self.check(decision, "wrong or unsupported not above"))
+        rows[0]["verdict"] = "correct"
+        _, decision = self.decide(base, variant, rows, out="r2")
+        self.assertFalse(self.check(decision, "wrong or unsupported not above"))
+
+    def test_an_unsafe_sentence_only_the_variant_writes_fails_it(self):
+        rows = [dict(run="B0", doc="fake-letter", sentence=0, verdict="correct", unsafe=""),
+                dict(run="E1", doc="fake-letter", sentence=0, verdict="correct", unsafe=""),
+                dict(run="E1", doc="fake-letter", sentence=1, verdict="correct", unsafe="yes")]
+        _, decision = self.decide(BASE, BETTER[:2], rows)
+        self.assertFalse(self.check(decision, "no unsafe sentence"))
+        self.assertEqual(decision["verdict"], "FAIL")
+
+    def test_an_unsafe_sentence_the_baseline_also_writes_is_reported_not_charged(self):
+        rows = [dict(run="B0", doc="fake-letter", sentence=0, verdict="correct", unsafe="yes"),
+                dict(run="E1", doc="fake-letter", sentence=0, verdict="correct", unsafe="yes")]
+        summaries, decision = self.decide(BASE, BASE, rows)
+        self.assertTrue(self.check(decision, "no unsafe sentence"))
+        self.assertEqual(summaries[0]["unsafe"], 1)
+        self.assertIn("The baseline's own unsafe sentences (1", (Path(self.folder.name) / "r" / "compare.md").read_text(encoding="utf-8"))
+
+    def test_mild_counts_as_unsafe_and_other_marks_are_refused(self):
+        self.assertTrue(compare.unsafe_of(dict(unsafe="mild")))
+        self.assertFalse(compare.unsafe_of(dict(unsafe="")))
+        with self.assertRaises(ValueError):
+            compare.unsafe_of(dict(unsafe="maybe"))
+
+    def test_a_median_over_180_seconds_fails_whatever_the_baseline(self):
+        rows = [dict(run="B0", doc="fake-letter", sentence=0, verdict="correct", unsafe=""),
+                dict(run="E1", doc="fake-letter", sentence=0, verdict="correct", unsafe="")]
+        _, decision = self.decide(BASE, BASE, rows, variant_wall=170_000)
+        self.assertTrue(self.check(decision, "median time per document at most 180 s"))
+        _, decision = self.decide(BASE, BASE, rows, variant_wall=190_000, out="r2")
+        self.assertFalse(self.check(decision, "median time per document at most 180 s"))
+
+    def test_prefill_carries_the_unsafe_mark(self):
+        rows = [dict(run="B0", doc="fake-letter", sentence=0, verdict="correct", unsafe="yes")]
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        compare.score([base], Path(self.folder.name) / "p", self.docs)
+        out = Path(self.folder.name) / "prefilled.csv"
+        compare.prefill(Path(self.folder.name) / "p" / "review" / "review.csv", self.write_review(rows),
+                        {"B0": compare.read_run(base)[1]}, None, out)
+        self.assertEqual(compare.read_csv_rows(out)[0]["unsafe"], "yes")
+
+
 class DecisionV2Test(RunTest):
     def test_a_speed_variant_passes_when_not_worse(self):
         rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")]
@@ -1120,7 +1197,7 @@ class RuleV3Test(RunTest):
         variant = write_run(self.folder.name, "E1", run_lines("E1", gluten))
         review = self.write_review([dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")])
         _, decisions = compare.score([base, variant], Path(self.folder.name) / "w", self.docs, review)
-        check = next(ok for name, ok in decisions[1]["checks"] if name == "no reviewed wrong statement")
+        check = next(ok for name, ok in decisions[1]["checks"] if name.startswith("wrong or unsupported not above"))
         self.assertIsNone(check)
         self.assertEqual(decisions[1]["verdict"], "PENDING")
 

@@ -21,7 +21,7 @@ Nothing here runs in CI and nothing here runs a model on its own. Every document
 
 ## Documents and facts
 Each document: `id`, `title`, `lang`, `synthetic: true`, `source`, `pages` (`index`, `text`),
-`facts`, `traps` (wrong statements to watch for), `trap_checks`, `notes`, and (rule 6, DRAFT) an optional
+`facts`, `traps` (wrong statements to watch for), `trap_checks`, `notes`, and (rule 7, DRAFT) an optional
 `patient_contacts`: the phone numbers, e-mail addresses and street addresses the document gives the
 patient to use ("call the lab at 613-555-0150"), copied from it. A sentence may repeat those; the
 `CONTACT_DETAILS` screen flags any other contact detail.
@@ -127,7 +127,7 @@ page, run through the app's own text extraction once and kept as their `pages`.
     the Portuguese stopword "a", so French sentences rich in "à" were read as Portuguese.
   - `QUANTITY_MISMATCH`: a value or unit that differs from a fact's own.
   - `TRAP:<n>`: the sentence falls into the document's listed trap `n`.
-  - `CONTACT_DETAILS:<kinds>` (rule 6, DRAFT): the sentence repeats a phone number, an e-mail address, a
+  - `CONTACT_DETAILS:<kinds>` (rule 7, DRAFT): the sentence repeats a phone number, an e-mail address, a
     street address or postal code, or an identity number (a health card, RAMQ, PESEL, record, chart,
     visit, referral or requisition number, or any run of 8 or more digits that is not a date) that
     is not in the document's `patient_contacts`. Kinds: `phone`, `email`, `address`, `identity`.
@@ -211,17 +211,19 @@ scored. It does three things:
 - adds margins from an A/A pair;
 - keeps PR 295's holdout cases out of the decision.
 
-**Version 6 (DRAFT for the next freeze; not used for the 10–11 Nov runs, which are scored with
-version 5 of the rescore line, 43bc7612 on agent2/rescore-v5-20261111; numbered 6 so the two
-cannot be confused)** includes version 5 (merged on 11 Nov: "to check" rows, the LANGUAGE fix, the
-reading report, whose labels here also name facts on pages never sent) and adds the `CONTACT_DETAILS` screen, the documents' `patient_contacts`, and
+**Version 7 (DRAFT for the next freeze; not used for the 10–11 Nov runs, which are scored with
+version 6 of the rescore line, 7d07955f on agent2/rescore-v5-20261111; numbered 7 so the two cannot
+be confused; it was called 6 until the rescore line took that number for Ben's decisions)** includes
+versions 5 and 6 of the rescore line (merged on 11 Nov: "to check" rows, the LANGUAGE fix, the
+reading report, whose labels here also name facts on pages never sent, full review, named facts,
+page text as read, and Ben's checks 1 and 5) and adds the `CONTACT_DETAILS` screen, the documents' `patient_contacts`, and
 three FAKE contact cases. A flagged sentence goes on the review sheet like any other, so a fact it
 carries is held until reviewed; the screen changes no verdict by itself. It was written on 11 Nov to
 make the contact rule of prompt variant L2 measurable: version 4 sees a repeated contact detail only
 by eye, and B0 repeated two (a spouse's phone in `bakeoff-quebec-referral`, a PESEL in
 `new-polish-discharge`), both flagged by this screen with no other B0 sentence flagged.
 
-**Screens for unsafe sentences (rule 6, DRAFT; built 11 Nov, revised after Agent 3's unseen test).**
+**Screens for unsafe sentences (rule 7, DRAFT; built 11 Nov, revised after Agent 3's unseen test).**
 Round 2 and 2b's reviewer named nine kinds of sentence unsafe for a patient whatever the verdict; no
 screen of rule 5 flagged any. Each screen below needs only the sentence, its quote and the document
 text (folded), so each could run in the app as a summary is written. A flag ending in `_MARK` is a
@@ -310,6 +312,14 @@ is turned down is "rejected", i.e. lost). Such a row without a `states:` note is
 are unchanged. Made after B0 and E1 had been scored: 5 of round 2's 6 several-fact rows were
 `correct` with no such note.
 
+**Version 6 of the rescore line** (11 Nov; the DRAFT next freeze is renumbered 7 so the two cannot be
+confused) records **Ben's decisions, made after B0, E1 and E4 had been scored and reviewed** (E2 had
+finished but was not scored): "compare to today" for wrong statements, any reviewer-marked unsafe
+sentence the baseline lacks fails a variant, and a summary may take up to about 3 minutes (checks 1
+and 5 above). The review sheet gains the `unsafe` column (`yes` or blank, a reason in `note`; "mild"
+counts as unsafe). Facts, credit and the other checks are as in version 5. Under it, on the round-2b
+review: B0 median 87 s, E1 81 s, E4 77 s per document.
+
 **Version 5** was written on 11 Nov **after model outputs had been seen**:
 - B0's outputs were read in full (the rescore and Agent 4's blind review of its 94 rows);
 - E1's outputs were read by Agent 1, who reported the ibuprofen pair above;
@@ -339,8 +349,14 @@ To reproduce version 1, use `compare.py` as of 8fbc23e5.
 The first run given to `score` is the baseline. Only documents in the decision count; PR 295's
 6 holdout cases are scored and reported on their own line, never decided on. A variant **passes**
 only if all of these hold:
-1. **No wrong statement.** No sentence was reviewed `wrong` or `unsupported`, and every sentence on
-   the review sheet (flagged, carrying a critical fact, or sampled) has a verdict.
+1. **Wrong and unsafe statements, compared with today (rule 6).**
+   - a. The variant's sentences reviewed `wrong` or `unsupported` on the decision documents are no
+     more than the baseline's. A sentence both runs wrote counts on both sides. While rows are
+     unreviewed the check is pending, unless no review could change its answer.
+   - b. No sentence the reviewer marked **unsafe** (the sheet's `unsafe` column) that the baseline
+     did not also write, on any document, holdout included. The baseline's own unsafe sentences are
+     listed apart in `compare.md` (and `unsafe_sentences` in `scores.json`).
+   - (Rules 2 to 5: no sentence reviewed `wrong` or `unsupported` at all.)
 2. **Must-haves kept.** At most `margin_lost` required facts that the baseline had (credited or
    held) are lost.
 3. **Patient actions not worse.** Patient actions found are at least the baseline's −
@@ -350,8 +366,9 @@ only if all of these hold:
    - Other variants in the same call are held to "not worse". So a speed, fit or model-swap variant
      can pass.
 4. **Quotes.** Quotes found are within 2 points of the baseline.
-5. **Time.** The median time is at most 30% above the baseline, and no document fails that the
-   baseline answered.
+5. **Time (rule 6).** The median of the wall time per answered decision document is at most 180 s,
+   and no decision document fails, by the time limit or otherwise, that the baseline answered.
+   (Rules 2 to 5: the median at most 30% above the baseline's.)
 
 Held facts are counted both ways: as found and as not found.
 - A check that passes either way holds; one that fails either way fails.
