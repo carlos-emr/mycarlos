@@ -42,7 +42,9 @@ impl Capacity {
     /// A model the helper runs at its own context ([`crate::model_helper::CONTEXT_TOKENS`]).
     /// Every catalogue model is made for a longer context than that, so the helper's is the
     /// limit. The prompt is reserved as [`crate::local_runner::SUMMARY_PROMPT_TOKENS`] (about
-    /// 450 to 600 are used, by language and chat format), so the room errs small.
+    /// 450 to 600 are used, by language and chat format), so this room is 150 to 300 tokens
+    /// smaller than the helper's own. How many tokens a text takes is the renderer's estimate
+    /// (`capacity.ts`), a separate matter.
     pub(crate) const HELPER: Capacity = Capacity {
         context_tokens: crate::model_helper::CONTEXT_TOKENS,
         document_tokens: crate::model_helper::document_budget(
