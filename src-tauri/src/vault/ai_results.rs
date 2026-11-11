@@ -643,7 +643,7 @@ mod tests {
                 .map(|_| serde_json::json!({"text": "FAKE.", "quote": "", "source": null}))
                 .collect(),
         );
-        assert!(crate::model_helper::MAX_SENTENCES < MAX_KEPT_SENTENCES);
+        const { assert!(crate::model_helper::MAX_SENTENCES < MAX_KEPT_SENTENCES) };
         assert!(checked(&summary("en"), &longest).is_ok());
     }
 
