@@ -92,6 +92,21 @@ export interface AcceptedModel {
   capacity?: ModelCapacity;
 }
 
+/** One model's limits for the AI helper settings (`ai_model_limits`, model
+ * limits): how much of a document it reads at a time, the file's size and the
+ * free memory a start needs. `confirmed` once the helper has made its context
+ * for this model in this session; `trainedContext` and `parameters` are then
+ * what the file says, claims to quote, never promises. */
+export interface ModelLimits {
+  index: number;
+  capacity: ModelCapacity;
+  confirmed: boolean;
+  trainedContext: number | null;
+  parameters: number | null;
+  fileBytes: number;
+  neededBytes: number;
+}
+
 /** One native catalog row, keyed by its stable catalog index (#276A). */
 export interface ModelRow {
   index: number;

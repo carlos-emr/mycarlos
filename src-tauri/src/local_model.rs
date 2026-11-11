@@ -45,13 +45,20 @@ impl Capacity {
     /// 450 to 600 are used, by language and chat format), so this room is 150 to 300 tokens
     /// smaller than the helper's own. How many tokens a text takes is the renderer's estimate
     /// (`capacity.ts`), a separate matter.
-    pub(crate) const HELPER: Capacity = Capacity {
-        context_tokens: crate::model_helper::CONTEXT_TOKENS,
-        document_tokens: crate::model_helper::document_budget(
-            crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
-            crate::model_helper::SUMMARY_TOKENS,
-        ) as u32,
-    };
+    pub(crate) const HELPER: Capacity = Capacity::at(crate::model_helper::CONTEXT_TOKENS);
+
+    /// The room in a context of `context_tokens` (model limits: the context the helper made),
+    /// with the same reserve for the prompt and the same answer.
+    pub(crate) const fn at(context_tokens: u32) -> Capacity {
+        Capacity {
+            context_tokens,
+            document_tokens: crate::model_helper::document_budget_at(
+                context_tokens,
+                crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
+                crate::model_helper::SUMMARY_TOKENS,
+            ) as u32,
+        }
+    }
 }
 
 /// One accepted model. Swapping the model is a change to [`CATALOG`] only.

@@ -8,6 +8,7 @@
     "allow-ai-model-catalog",
     "allow-ai-model-status",
     "allow-ai-models",
+    "allow-ai-model-limits",
     "allow-ai-model-use",
     "allow-ai-model-add-picked",
     "allow-ai-model-add-cancel",
