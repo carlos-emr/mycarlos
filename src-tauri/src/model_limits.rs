@@ -128,6 +128,17 @@ pub(crate) struct ModelLimits {
     pub(crate) needed_bytes: u64,
 }
 
+/// A model's capacity: `catalogue`'s until the helper has made its context (`card`, already
+/// checked), then the room in that context, never more than the catalogue's. The settings
+/// (`limits`) and the reader's question (`ai_model_status`) both take it from here, so they
+/// never disagree.
+pub(crate) fn confirmed_capacity(catalogue: Capacity, card: Option<&ModelCard>) -> Capacity {
+    match card {
+        Some(card) => Capacity::at(card.context_made.min(catalogue.context_tokens)),
+        None => catalogue,
+    }
+}
+
 /// The limits of catalogue model `index`: the catalogue's capacity until the helper has made
 /// its context (`card`, already checked), then the room in that context.
 pub(crate) fn limits(
@@ -136,10 +147,7 @@ pub(crate) fn limits(
     card: Option<&ModelCard>,
     needed_bytes: u64,
 ) -> ModelLimits {
-    let capacity = match card {
-        Some(card) => Capacity::at(card.context_made.min(model.capacity.context_tokens)),
-        None => model.capacity,
-    };
+    let capacity = confirmed_capacity(model.capacity, card);
     ModelLimits {
         index,
         capacity,
@@ -316,6 +324,25 @@ mod tests {
             ..card()
         };
         assert_eq!(limits(0, model, Some(&large), 0).capacity, Capacity::HELPER);
+    }
+
+    #[test]
+    fn the_settings_and_the_reader_take_the_same_capacity() {
+        assert_eq!(confirmed_capacity(Capacity::HELPER, None), Capacity::HELPER);
+        let small = ModelCard {
+            context_made: 4_096,
+            ..card()
+        };
+        assert_eq!(
+            confirmed_capacity(Capacity::HELPER, Some(&small)),
+            Capacity::at(4_096)
+        );
+        // 4,096 less the prompt's reserve (750), the summary (900) and the margin (32).
+        assert_eq!(Capacity::at(4_096).document_tokens, 2_414);
+        assert_eq!(
+            limits(0, &CATALOG[0], Some(&small), 0).capacity,
+            confirmed_capacity(CATALOG[0].capacity, Some(&small))
+        );
     }
 
     #[test]
