@@ -686,6 +686,34 @@ class UnsafeScreensTest(unittest.TestCase):
             evidence_of("new-french-nephrology", "call_if")["source_evidence"]))
 
 
+class SplitFactsTest(unittest.TestCase):
+    """DRAFT 7 (11 Nov, after round 2b; Agent 4): facts that joined two claims are split, so a sentence
+    that states one half earns that half, and a variant that writes the halves apart loses nothing."""
+
+    SPLIT = {"bakeoff-long-discharge-summary": [("salt_fluid_limits", "salt_limit", "fluid_limit"),
+                                                ("iv_furosemide_fluid", "iv_furosemide", "fluid_lost_5_2")],
+             "bakeoff-ptbr-endocrinology": [("water_hygiene", "water_intake", "intimate_hygiene")],
+             "demo-gastro-referral": [("anemia_values", "hemoglobin_104", "ferritin_6")],
+             "bakeoff-imaging-report": [("no_new_findings", "no_new_consolidation", "heart_size_normal")]}
+
+    def test_each_joined_fact_is_two_facts_now(self):
+        for doc_id, splits in self.SPLIT.items():
+            ids = [f["id"] for f in REPO[doc_id]["facts"]]
+            for old, first, second in splits:
+                self.assertNotIn(old, ids)
+                self.assertIn(first, ids)
+                self.assertIn(second, ids)
+                self.assertEqual(evidence_of(doc_id, first)["split_from"], old)
+
+    def test_a_sentence_stating_one_half_earns_that_half(self):
+        fluid = evidence_of("bakeoff-long-discharge-summary", "fluid_limit")
+        facts, _ = score_sentences("bakeoff-long-discharge-summary",
+                                   [sentence("Limit fluids to about 1.5 to 2 litres a day.", fluid["source_evidence"])],
+                                   {0: "correct"})
+        self.assertEqual(facts["fluid_limit"]["standing"], "credited")
+        self.assertIsNone(facts["salt_limit"]["standing"])
+
+
 class LongDocumentTest(unittest.TestCase):
     """The multi-page documents (DRAFT for the next freeze) keep the layout each one is for."""
 

@@ -81,6 +81,15 @@ The facts of the demo, 5 Nov and bake-off documents were written after model sum
 existed (`outputs_seen_before_facts` in the freeze). The contact and multi-page documents were written
 on 11 Nov with their facts, before any model read them ("no").
 
+**Joined facts split (draft 7, 11 Nov, after round 2b's review; Agent 4):** a fact that joined two
+claims gave "vague" to a sentence stating one of them, and nothing to a variant that wrote them as two
+sentences. Each is now two facts (`split_from` names the old one), with the old fact's category and
+`required`: `bakeoff-long-discharge-summary` salt_fluid_limits → salt_limit + fluid_limit (required)
+and iv_furosemide_fluid → iv_furosemide + fluid_lost_5_2; `bakeoff-ptbr-endocrinology` water_hygiene →
+water_intake + intimate_hygiene (required); `demo-gastro-referral` anemia_values → hemoglobin_104 +
+ferritin_6; `bakeoff-imaging-report` no_new_findings → no_new_consolidation + heart_size_normal. The
+rescore line's facts are unchanged.
+
 `prepare` sends at most the first 50 pages of a document (`TEXT_READ_PAGES`): the app reads no more
 (`MAX_TEXT_PAGES`) and the helper refuses more. A document's facts may lie past them, as in
 `long03-heart-failure-54p`; no variant can carry those, and the run is marked `cut`. Such a fact is

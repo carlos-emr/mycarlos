@@ -92,25 +92,56 @@
    ]
   },
   {
-   "id": "no_new_findings",
+   "id": "no_new_consolidation",
    "category": "result",
    "required": false,
    "critical": false,
-   "source_evidence": "No new consolidation. Heart size normal.",
+   "source_evidence": "No new consolidation.",
    "approved_statements": [
-    "There is no new consolidation and the heart size is normal."
+    "There is no new consolidation."
    ],
    "anchors": [
     "consolidation",
-    "heart"
+    "no",
+    "no new",
+    "without"
    ],
    "match": [
     [
-     "consolidation",
-     "heart"
+     "consolidation"
+    ],
+    [
+     "no new",
+     "no",
+     "without"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "split_from": "no_new_findings"
+  },
+  {
+   "id": "heart_size_normal",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Heart size normal.",
+   "approved_statements": [
+    "The heart size is normal."
+   ],
+   "anchors": [
+    "heart",
+    "normal"
+   ],
+   "match": [
+    [
+     "heart"
+    ],
+    [
+     "normal"
+    ]
+   ],
+   "expected_attributes": {},
+   "split_from": "no_new_findings"
   },
   {
    "id": "follow_up_ct_12_months",

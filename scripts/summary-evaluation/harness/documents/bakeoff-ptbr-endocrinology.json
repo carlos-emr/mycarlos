@@ -185,42 +185,72 @@
    "expected_attributes": {}
   },
   {
-   "id": "water_hygiene",
+   "id": "water_intake",
    "category": "instruction",
    "required": true,
    "critical": false,
-   "source_evidence": "Orientei sobre beber água\n   suficiente e sobre a higiene íntima",
+   "source_evidence": "Orientei sobre beber água suficiente",
    "approved_statements": [
-    "Beber água suficiente e cuidar da higiene íntima.",
-    "Drink enough water and keep up intimate hygiene."
+    "Beber água suficiente.",
+    "Drink enough water."
    ],
    "anchors": [
+    "adequ",
     "agua",
-    "higien",
-    "hygien",
-    "water",
-    "água"
+    "bastante",
+    "beber",
+    "drink",
+    "enough",
+    "hidrat",
+    "plenty",
+    "suficiente",
+    "water"
    ],
    "match": [
     [
-     "água",
      "agua",
      "water",
+     "beber",
+     "drink",
+     "hidrat"
+    ],
+    [
+     "suficiente",
+     "enough",
+     "bastante",
+     "plenty",
+     "adequ"
+    ]
+   ],
+   "expected_attributes": {},
+   "split_from": "water_hygiene"
+  },
+  {
+   "id": "intimate_hygiene",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "sobre a higiene íntima",
+   "approved_statements": [
+    "Cuidar da higiene íntima.",
+    "Keep up intimate hygiene."
+   ],
+   "anchors": [
+    "higien",
+    "hygien",
+    "intim"
+   ],
+   "match": [
+    [
      "higien",
      "hygien"
     ],
     [
-     "drink",
-     "beber",
-     "enough",
-     "suficiente",
-     "care",
-     "cuidar",
-     "clean",
      "intim"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "split_from": "water_hygiene"
   },
   {
    "id": "dietitian",

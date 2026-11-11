@@ -1,13 +1,13 @@
 {
  "version": 7,
  "status": "DRAFT for the next freeze (version 7). The 10-11 Nov runs are scored with version 6 of the rescore line (7d07955f); do not score them with this one.",
- "frozen_utc": "2026-11-11T03:28:10+00:00",
+ "frozen_utc": "2026-11-11T03:35:42+00:00",
  "rule_version": 7,
  "scorer_sha256": "f180aa107f92dcf6ba390478a24d964e2d207994c7e1043c4817dfe7e00b42e8",
- "scoring_documents_sha256": "3f8dbe2676009f15fbed8df167860de848bed163fc63ab14eef8ee617a713fe4",
+ "scoring_documents_sha256": "726bdc2b3d0f086b7754c98e15c26b6e9e749420d148a15c5cf200bde257a1c1",
  "synthetic_only": true,
  "documents_count": 27,
- "facts": 212,
+ "facts": 217,
  "critical_facts": 111,
  "traps": 97,
  "pages_as_run": "The 10-11 Nov evaluation runs read version 1's page text. Since version 2 the only page change is the lab's telephone line in bakeoff-lab-report and bakeoff-cumulative-lab, which no fact, evidence span, match option or trap touches, so those runs are scored with the current version.",
@@ -36,8 +36,8 @@
   },
   {
    "version": 7,
-   "frozen_utc": "2026-11-11T03:28:10+00:00",
-   "reason": "DRAFT rule version 7 (was the draft's 6; renumbered when the rescore line took 6 for Ben's decisions). Includes the rescore line's rules 5 to 6 (to-check rows, LANGUAGE fix, reading report, full review, named facts, page text as read, Ben's checks 1 and 5 and the unsafe column), merged 11 Nov. Adds the CONTACT_DETAILS screen and patient_contacts, three FAKE contact cases, six FAKE multi-page cases, prepare capped at 50 pages, the 'never sent' reading label, Agent 3's review fixes, and the unsafe-sentence screens revised after Agent 3's unseen test. Not for the 10-11 Nov runs."
+   "frozen_utc": "2026-11-11T03:35:42+00:00",
+   "reason": "DRAFT rule version 7 (was the draft's 6). Includes the rescore line's rules 5 to 6, merged 11 Nov. Adds the CONTACT_DETAILS screen and patient_contacts, three FAKE contact cases, six FAKE multi-page cases, prepare capped at 50 pages, the 'never sent' reading label, Agent 3's review fixes, the unsafe-sentence screens revised after Agent 3's unseen test, and (after round 2b's review) five joined facts split into two each. Not for the 10-11 Nov runs."
   }
  ],
  "documents": {
@@ -63,8 +63,8 @@
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-imaging-report": {
-   "sha256": "a36f7b2511dd1cf673595c2173dab0e2261c1a9f4c4f3d5c6cf6702180805049",
-   "facts": 5,
+   "sha256": "25d33c16001d7bf0ca2df056d38a4f3cf1b1d6d1e9640645f446788f01bc28c1",
+   "facts": 6,
    "critical": 3,
    "traps": 3,
    "outputs_seen_before_facts": "yes"
@@ -77,15 +77,15 @@
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-long-discharge-summary": {
-   "sha256": "194c68a58b46c33f97b76eb0acabd1d2503d9edd64dcb5fdee27ee2b2ce25eaa",
-   "facts": 16,
+   "sha256": "04a80f5e32b3950becce1805e882f05d26c648047dcc74cdbb34476685b07280",
+   "facts": 18,
    "critical": 6,
    "traps": 5,
    "outputs_seen_before_facts": "yes"
   },
   "bakeoff-ptbr-endocrinology": {
-   "sha256": "88d03cb29631e97cf48ffb17b822a5f70b8a7be5726df05b6bc3dd67b64f7410",
-   "facts": 9,
+   "sha256": "82996522acd1a4fa1fb15ed3f32c2afc86f4d66f9fba9edf3cb0828fe3ead2bb",
+   "facts": 10,
    "critical": 4,
    "traps": 4,
    "outputs_seen_before_facts": "yes"
@@ -133,8 +133,8 @@
    "outputs_seen_before_facts": "yes"
   },
   "demo-gastro-referral": {
-   "sha256": "8129ff0ba30e7708ad20fcf9ddada0394c65a508d8c0a10cdd586602c3bb9c26",
-   "facts": 9,
+   "sha256": "3ddbab775fd6f21c163f6a9e630c40bba0a047900a9fd8028e45b0b4e2522855",
+   "facts": 10,
    "critical": 4,
    "traps": 3,
    "outputs_seen_before_facts": "yes"

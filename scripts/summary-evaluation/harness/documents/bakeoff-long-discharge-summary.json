@@ -101,25 +101,62 @@
    "expected_attributes": {}
   },
   {
-   "id": "iv_furosemide_fluid",
+   "id": "iv_furosemide",
+   "category": "finding",
+   "required": false,
+   "critical": false,
+   "source_evidence": "He was treated with furosemide 40 mg IV twice daily for three days.",
+   "approved_statements": [
+    "He was treated with furosemide 40 mg IV twice daily for three days."
+   ],
+   "anchors": [
+    "drip",
+    "furosemide",
+    "intravenous",
+    "iv",
+    "vein"
+   ],
+   "match": [
+    [
+     "furosemide"
+    ],
+    [
+     "iv",
+     "intravenous",
+     "vein",
+     "drip"
+    ]
+   ],
+   "expected_attributes": {},
+   "split_from": "iv_furosemide_fluid"
+  },
+  {
+   "id": "fluid_lost_5_2",
    "category": "finding",
    "required": false,
    "critical": false,
    "source_evidence": "His breathing improved and he lost 5.2 kg of fluid.",
    "approved_statements": [
-    "He was given IV furosemide and lost 5.2 kg of fluid."
+    "He lost 5.2 kg of fluid, and his breathing improved."
    ],
    "anchors": [
     "5.2",
-    "fluid"
+    "fluid",
+    "kg",
+    "weight"
    ],
    "match": [
     [
      "fluid",
+     "weight",
+     "kg"
+    ],
+    [
      "5.2"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "split_from": "iv_furosemide_fluid"
   },
   {
    "id": "ef_35_unchanged",
@@ -341,24 +378,67 @@
    "expected_attributes": {}
   },
   {
-   "id": "salt_fluid_limits",
+   "id": "salt_limit",
    "category": "instruction",
    "required": true,
    "critical": false,
-   "source_evidence": "Limit salt to less than 2 g of sodium a day. Limit fluids to about 1.5 to 2 litres a day.",
+   "source_evidence": "Limit salt to less than 2 g of sodium a day.",
    "approved_statements": [
-    "Limit salt to under 2 g of sodium a day and fluids to about 1.5 to 2 litres a day."
+    "Limit salt to under 2 g of sodium a day."
    ],
    "anchors": [
-    "fluid",
+    "2 g",
+    "less",
+    "limit",
+    "reduce",
+    "restrict",
     "salt",
-    "sodium"
+    "sodium",
+    "under"
    ],
    "match": [
     [
      "salt",
-     "sodium",
-     "fluid"
+     "sodium"
+    ],
+    [
+     "limit",
+     "less",
+     "under",
+     "restrict",
+     "reduce",
+     "2 g"
+    ]
+   ],
+   "expected_attributes": {},
+   "split_from": "salt_fluid_limits"
+  },
+  {
+   "id": "fluid_limit",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Limit fluids to about 1.5 to 2 litres a day.",
+   "approved_statements": [
+    "Limit fluids to about 1.5 to 2 litres a day."
+   ],
+   "anchors": [
+    "1.5",
+    "fluid",
+    "less",
+    "limit",
+    "liquid",
+    "liter",
+    "litre",
+    "no more",
+    "reduce",
+    "restrict",
+    "under"
+   ],
+   "match": [
+    [
+     "fluid",
+     "liquid"
     ],
     [
      "limit",
@@ -367,13 +447,13 @@
      "no more",
      "restrict",
      "reduce",
-     "2 g",
      "1.5",
      "litre",
      "liter"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "split_from": "salt_fluid_limits"
   },
   {
    "id": "blood_test_1_week",

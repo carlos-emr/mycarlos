@@ -147,29 +147,54 @@
    ]
   },
   {
-   "id": "anemia_values",
+   "id": "hemoglobin_104",
    "category": "result",
    "required": false,
    "critical": false,
-   "source_evidence": "hemoglobin 104 g/L with an MCV of 74 fL, ferritin 6 µg/L",
+   "source_evidence": "hemoglobin 104 g/L with an MCV of 74 fL",
    "approved_statements": [
-    "Hemoglobin was 104 g/L and ferritin 6 µg/L."
+    "Hemoglobin was 104 g/L."
    ],
    "anchors": [
     "104",
-    "ferritin",
     "haemoglobin",
     "hemoglobin"
    ],
    "match": [
     [
-     "104",
-     "ferritin",
      "hemoglobin",
      "haemoglobin"
+    ],
+    [
+     "104"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "split_from": "anemia_values"
+  },
+  {
+   "id": "ferritin_6",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "ferritin 6 µg/L",
+   "approved_statements": [
+    "Ferritin was 6 µg/L."
+   ],
+   "anchors": [
+    "6",
+    "ferritin"
+   ],
+   "match": [
+    [
+     "ferritin"
+    ],
+    [
+     "6"
+    ]
+   ],
+   "expected_attributes": {},
+   "split_from": "anemia_values"
   },
   {
    "id": "question_gastroscopy",
