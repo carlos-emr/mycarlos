@@ -83,6 +83,14 @@ fn assemble<T>(
     Some((tokens, prefix_len))
 }
 
+/// Whether a number as llama.cpp writes out the model file's value fits llama.cpp's `int32_t`
+/// accessors, which turn a larger one negative.
+fn fits_int32(value: Option<&str>) -> bool {
+    value
+        .and_then(|value| value.trim().parse::<i32>().ok())
+        .is_some_and(|value| value >= 0)
+}
+
 /// Why a request got no answer, as the helper's error line says it: short, fixed words.
 type Failure = String;
 
@@ -95,20 +103,41 @@ impl Engine {
     /// (model limits). From llama.cpp's own accessors: nothing here parses the file again. The
     /// architecture is cut to its plain characters; the parent checks every field's range.
     pub(super) fn card(&self) -> crate::model_limits::ModelCard {
+        let architecture = self
+            .model
+            .meta_val_str("general.architecture")
+            .unwrap_or_default();
         crate::model_limits::ModelCard {
-            architecture: crate::model_limits::clean_architecture(
-                &self
-                    .model
-                    .meta_val_str("general.architecture")
-                    .unwrap_or_default(),
-            ),
-            trained_context: self.model.n_ctx_train(),
+            architecture: crate::model_limits::clean_architecture(&architecture),
+            trained_context: self.trained_context(&architecture),
             context_made: self.context.n_ctx(),
             parameters: self.model.n_params(),
+            // llama-cpp-2 unwraps llama.cpp's int32_t here, which cannot fail: llama.cpp refuses
+            // to load a file of more than 512 blocks (LLAMA_MAX_LAYERS), and its extra
+            // prediction layers are never more than its blocks.
             layers: self.model.n_layer(),
             vocabulary: u32::try_from(self.model.n_vocab()).unwrap_or(0),
             recurrent: self.model.is_recurrent(),
             hybrid: self.model.is_hybrid(),
+        }
+    }
+
+    /// The context the model was trained for, or 0 when the file's number does not fit an
+    /// `int32_t`. llama.cpp hands that number back as one, and llama-cpp-2's `n_ctx_train`
+    /// panics on a negative one: a file claiming 2^31 or more would end the helper before its
+    /// hello. llama.cpp takes the number as it stands in the file's
+    /// `<architecture>.context_length`, so the helper reads that first, through llama.cpp too,
+    /// and asks only when it fits. The parent refuses 0 (TrainedContext), so the card is
+    /// dropped, and the model runs as before.
+    fn trained_context(&self, architecture: &str) -> u32 {
+        let claimed = self
+            .model
+            .meta_val_str(&format!("{architecture}.context_length"))
+            .ok();
+        if fits_int32(claimed.as_deref()) {
+            self.model.n_ctx_train()
+        } else {
+            0
         }
     }
 
@@ -482,6 +511,18 @@ mod tests {
     }
 
     const MARKER: &str = "FAKE-MARKER-Q7 Rowan Testwood 148/88";
+
+    #[test]
+    fn a_trained_context_is_asked_for_only_when_it_fits_llama_cpp_s_int32() {
+        for fits in ["0", "4096", "8192", "262144", "2147483647", " 8192 "] {
+            assert!(fits_int32(Some(fits)), "{fits}");
+        }
+        // 2^31 and more come back negative (llama-cpp-2 would panic); no number, or none read.
+        for refused in ["2147483648", "4294967295", "-1", "", "8k", "8192.0", "1e5"] {
+            assert!(!fits_int32(Some(refused)), "{refused}");
+        }
+        assert!(!fits_int32(None));
+    }
 
     #[test]
     fn the_instruction_prefix_never_holds_a_document_a_term_or_a_sentence() {

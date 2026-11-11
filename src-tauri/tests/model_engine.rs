@@ -122,6 +122,11 @@ impl Gguf {
 /// A one-layer llama-architecture model, 64 wide, with a byte vocabulary: `"`, `a`, every
 /// other byte, then unknown, start and end. Weights are small pseudo-random numbers made here.
 fn tiny_model() -> Vec<u8> {
+    tiny_model_claiming(8_192)
+}
+
+/// The tiny model, its header claiming it was trained for `context` tokens.
+fn tiny_model_claiming(context: u32) -> Vec<u8> {
     const EMBED: u64 = 64;
     const FEED: u64 = 128;
     const HEADS: u32 = 4;
@@ -137,7 +142,7 @@ fn tiny_model() -> Vec<u8> {
     let mut gguf = Gguf::new();
     gguf.text("general.architecture", "llama");
     gguf.text("general.name", "FAKE tiny model");
-    gguf.u32("llama.context_length", 8_192);
+    gguf.u32("llama.context_length", context);
     gguf.u32("llama.embedding_length", EMBED as u32);
     gguf.u32("llama.block_count", 1);
     gguf.u32("llama.feed_forward_length", FEED as u32);
@@ -299,6 +304,26 @@ fn the_helper_says_what_it_found_in_the_model_file_and_the_app_checks_it() {
     // Far smaller than any real model: the app does not keep it, and its limits stay the
     // catalogue's.
     assert_eq!(rejected.as_deref(), Some("Parameters"));
+    runner.stop();
+}
+
+#[test]
+fn a_model_file_claiming_more_context_than_llama_cpp_can_say_still_runs_without_its_card() {
+    let dir = tempfile::tempdir().unwrap();
+    // 2^31: llama.cpp hands it back as a negative int32_t, where llama-cpp-2's n_ctx_train
+    // panics. The helper must still greet, and the app drop the card.
+    let model = model_file(dir.path(), &tiny_model_claiming(1 << 31));
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let (card, rejected) = runner
+        .card()
+        .expect("the helper describes the model it loaded in its hello");
+    assert_eq!(card["trainedContext"], 0, "{card}");
+    assert_eq!(card["contextMade"], 8_192, "{card}");
+    assert_eq!(rejected.as_deref(), Some("TrainedContext"));
+    // And the model answers as before.
+    runner
+        .summarize("en", &[(0, "FAKE: a blood test was done.")])
+        .unwrap();
     runner.stop();
 }
 

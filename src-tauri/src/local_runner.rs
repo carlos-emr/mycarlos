@@ -436,8 +436,8 @@ pub(crate) struct Runner {
     /// The checked cards of the models started in this session, by their SHA-256 (model
     /// limits): kept after the helper ends, for the settings.
     cards: Mutex<Vec<(String, crate::model_limits::ModelCard)>>,
-    /// The last card a helper sent, kept or not, and why not: for support and the engine
-    /// test, never for the settings.
+    /// The last card a helper sent, kept or not, and why not, its architecture cut to a short
+    /// name: for support and the engine test, never for the settings.
     last_card: Mutex<
         Option<(
             crate::model_limits::ModelCard,
@@ -682,8 +682,16 @@ impl Runner {
                     if rejected.is_none() {
                         self.remember_card(&model.sha256, card.clone());
                     }
-                    *self.last_card.lock().unwrap_or_else(|e| e.into_inner()) =
-                        Some((card, rejected));
+                    // Its numbers as sent, its architecture cut as a checked card's is: no
+                    // more of the helper's own text is kept than a short name.
+                    let architecture = crate::model_limits::clean_architecture(&card.architecture);
+                    *self.last_card.lock().unwrap_or_else(|e| e.into_inner()) = Some((
+                        crate::model_limits::ModelCard {
+                            architecture,
+                            ..card
+                        },
+                        rejected,
+                    ));
                 }
                 *slot = Some(sidecar);
                 self.set_status(RunnerStatus::Ready {
