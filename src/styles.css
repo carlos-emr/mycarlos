@@ -861,6 +861,7 @@ p {
   width: min(1100px, 100%);
   max-width: none;
   height: 92vh;
+  container: native-reader / inline-size;
 }
 /* #135: the status and source line, and the service date, run under the title and Close across
    the whole header, so that Close does not squeeze the status into a narrow column. Two classes,
@@ -920,23 +921,116 @@ p {
   padding: 8px 20px;
   border-bottom: 1px solid var(--line);
 }
+/* Digits of one width: the count keeps its width from page to page until the number gains a digit. */
 .native-reader-where {
   min-width: 7em;
   text-align: center;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .native-reader-zoom {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
+}
+/* D144: the page buttons in a bar at the reader's foot. When large text makes the reader scroll,
+   the bar stays in view at its bottom edge. One row, centred; a webview without container
+   queries wraps the row instead of using the grid below. */
+.native-reader-pages {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+/* aria-disabled keeps the focus (DocumentReader.tsx); hovering does not make it look usable. */
+.native-reader .button[aria-disabled="true"],
+.native-reader .button[aria-disabled="true"]:hover {
+  cursor: not-allowed;
+  background: var(--disabled-bg);
+}
+/* A narrow reader (a phone, a window about 560px wide, or large text; Ben, 10 Nov): the reader's
+   buttons in centred rows on one centre line, each at least 44px tall. In em, so that it follows
+   the text size; measured on the reader, which stops growing at 1100px, not on the window. */
+@container native-reader (max-width: 52em) {
+  /* The page bar: the count on top, then Previous | Next, the two used most, then First | Last.
+     The order read out and tabbed through stays First, Previous, the count, Next, Last. */
+  .native-reader-pages {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 11em));
+    justify-content: center;
+    grid-template-areas:
+      "where where"
+      "previous next"
+      "first last";
+    padding-inline: 12px;
+  }
+  /* The size buttons, then the AI helper's: centred rows of buttons at their own width. A row with
+     no room for its buttons wraps. */
+  .native-reader-controls {
+    display: grid;
+    justify-items: center;
+    padding-inline: 12px;
+  }
+  .native-reader-controls .native-reader-zoom,
+  .native-reader-controls .native-reader-ai-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .native-reader-controls .button,
+  .native-reader-pages .button {
+    min-height: 44px;
+    padding-inline: 8px;
+    /* A word too long for its button breaks with a hyphen where the system can, and is never
+       cut. */
+    hyphens: auto;
+    overflow-wrap: anywhere;
+  }
+  .native-reader-pages .button {
+    width: 100%;
+  }
+  /* The percentage keeps one width from 50% to 400%, so the buttons beside it never move. */
+  .native-reader-zoom > span {
+    align-self: center;
+    min-width: 4ch;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .native-reader-first {
+    grid-area: first;
+  }
+  .native-reader-previous {
+    grid-area: previous;
+  }
+  .native-reader-pages .native-reader-where {
+    grid-area: where;
+    min-width: 0;
+  }
+  .native-reader-next {
+    grid-area: next;
+  }
+  .native-reader-last {
+    grid-area: last;
+  }
+  .native-reader-pages.one-page {
+    display: flex;
+  }
 }
 /* The gutter is kept, so that a page fitted to the width does not scroll sideways once a tall page
-   brings a classic scrollbar. */
+   brings a classic scrollbar. D144: the page keeps room to be read; when the text is large for
+   the window, the reader scrolls instead, with the page bar kept at its foot. */
 .native-reader-page {
   flex: 1;
-  min-height: 0;
+  min-height: min(16em, 40vh);
   overflow: auto;
   scrollbar-gutter: stable;
   padding: 12px;
@@ -950,9 +1044,11 @@ p {
   box-shadow: var(--shadow-sm);
   background: var(--paper);
 }
+/* "Text on this page" keeps its height in a reader too short for everything (large text on a
+   phone), and the reader scrolls instead. Its text scrolls in a box of its own (below), so the
+   details box does not shrink by itself either; flex-shrink: 0 keeps it that way. */
 .native-reader-text {
-  max-height: 30vh;
-  overflow: auto;
+  flex-shrink: 0;
   padding: 8px 20px 14px;
   border-top: 1px solid var(--line);
 }
@@ -960,7 +1056,10 @@ p {
   cursor: pointer;
   font-weight: 700;
 }
+/* The text scrolls in its own box, which takes the focus (DocumentReader.tsx). */
 .native-reader-text div {
+  max-height: 30vh;
+  overflow: auto;
   margin-top: 6px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
