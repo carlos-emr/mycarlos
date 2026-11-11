@@ -861,17 +861,21 @@ impl Runner {
         else {
             return Err(RunnerError::Protocol("last page not sent".to_owned()));
         };
-        let text = request.pages[..=read]
+        let pages: Vec<&str> = request.pages[..=read]
             .iter()
             .map(|page| page.text.as_str())
-            .collect::<Vec<_>>()
-            .join(PAGE_SEPARATOR);
+            .collect();
+        let text = pages.join(PAGE_SEPARATOR);
+        let content = content_parts(&pages);
         let mut unlocated_quotes = Vec::new();
         let sentences = sentences
             .into_iter()
             .take(request.max_sentences)
             .map(|mut sentence| {
-                if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
+                if !quote_in(&text, &sentence.quote)
+                    || quote_is_heading(&text, &sentence.quote)
+                    || !quote_in_content(&content, &sentence.quote)
+                {
                     unlocated_quotes.push(std::mem::take(&mut sentence.quote));
                 }
                 sentence
@@ -1426,6 +1430,211 @@ fn folded(text: &str) -> String {
     fold(text.trim_matches(|c: char| c.is_whitespace() || QUOTE_ENDS.contains(&c)))
 }
 
+// --- Header, footer and identity lines are no source (evaluation variant H1) -------------
+
+/// The pages read without their running headers and footers and their identity lines, folded
+/// as quotes are compared: the parts between those lines. A quote that stands only on such a
+/// line names the patient or the letterhead rather than supporting its sentence, and the reader
+/// would point to it as the source. It is emptied as a quote not in the pages is (AI-05).
+///
+/// A line is left out when, folded:
+/// - the same line stands on more than half of the pages read, and on at least
+///   [`REPEATED_ON_PAGES`] of them (a running header or footer). A document of one page has
+///   none. Lines are compared whole: a line with a page number in it differs on each page,
+///   and is caught as an identity line instead;
+/// - or it is an identity line ([`is_identity_line`]).
+///
+/// What it can wrongly leave out: anything that a document repeats on most pages, such as a
+/// footer "If your symptoms get worse, call the clinic at …" that the letter also tells the
+/// patient to do, an allergy or a diagnosis in a running patient banner, or a short table line
+/// ("Negative") that happens to be the same on most pages of a long report. A quote of those
+/// words found anywhere else in the pages still counts.
+fn content_parts(pages: &[&str]) -> Vec<String> {
+    let repeated = repeated_lines(pages);
+    let mut parts = Vec::new();
+    let mut part = String::new();
+    for (at, page) in pages.iter().enumerate() {
+        if at > 0 {
+            part.push_str(PAGE_SEPARATOR);
+        }
+        for line in page.lines() {
+            if repeated.contains(&folded(line)) || is_identity_line(line) {
+                parts.push(fold(&std::mem::take(&mut part)));
+            } else {
+                part.push_str(line);
+                part.push('\n');
+            }
+        }
+    }
+    parts.push(fold(&part));
+    parts.retain(|part| !part.is_empty());
+    parts
+}
+
+/// Whether the quote stands in one of the [`content_parts`], as [`quote_in`] compares.
+fn quote_in_content(content: &[String], quote: &str) -> bool {
+    let quote = folded(quote);
+    !quote.is_empty() && content.iter().any(|part| part.contains(&quote))
+}
+
+/// The fewest pages a line must stand on to be a running header or footer.
+const REPEATED_ON_PAGES: usize = 2;
+
+/// The folded lines that stand on more than half of `pages`, and on at least
+/// [`REPEATED_ON_PAGES`] of them.
+fn repeated_lines(pages: &[&str]) -> std::collections::HashSet<String> {
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for page in pages {
+        let lines: std::collections::HashSet<String> = page
+            .lines()
+            .map(folded)
+            .filter(|line| !line.is_empty())
+            .collect();
+        for line in lines {
+            *counts.entry(line).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .filter(|(_, on)| *on >= REPEATED_ON_PAGES && on * 2 > pages.len())
+        .map(|(line, _)| line)
+        .collect()
+}
+
+/// Labels of an identity field, matched in a folded line as whole words: a date of birth, a
+/// health card, a record number, in the reader's languages.
+const IDENTITY_WORDS: &[&str] = &[
+    "date of birth",
+    "birth date",
+    "d.o.b",
+    "health card",
+    "health number",
+    "medical record",
+    "chart number",
+    "patient id",
+    "hospital number",
+    "date de naissance",
+    "né le",
+    "née le",
+    "assurance maladie",
+    "no de dossier",
+    "fecha de nacimiento",
+    "historia clínica",
+    "tarjeta sanitaria",
+    "data de nascimento",
+    "prontuário",
+    "data urodzenia",
+    "出生日期",
+    "病历号",
+    "住院号",
+];
+
+/// Identity labels written in capitals, matched as written, as whole words: lower case,
+/// several are ordinary words ("dni" is "days" and "nie" is "not" in Polish). Each counts
+/// only with a digit in its own field, since some are medical words too ("PHN" is also
+/// post-herpetic neuralgia).
+const IDENTITY_CODES: &[&str] = &[
+    "DOB", "DDN", "MRN", "HCN", "PHN", "OHIP", "RAMQ", "NAM", "NHC", "DNI", "NIE", "CPF", "PESEL",
+];
+
+/// At most this many words make a field of an identity line.
+const IDENTITY_FIELD_WORDS: usize = 6;
+
+/// Whether a line is a page number ("Page 2 of 3"), or names the patient by identity fields.
+/// A line's fields are what a header separates them with: "·", "•", "|", ";", ",", a dash
+/// between spaces, or a tab. It is an identity line when one of its fields has an identity
+/// label ([`IDENTITY_WORDS`], [`IDENTITY_CODES`]) and a digit, and every field is short: at
+/// most [`IDENTITY_FIELD_WORDS`] words between runs of two spaces, as a table lays out
+/// "Patient  Rowan Testwood  DOB  21 June 1958  Sex  M". So "Jordan FAKE-Rivers · DOB: 3 March
+/// 1979 · Health card: 9999990117" is one; a sentence that mentions a date of birth ("Her
+/// date of birth is 3 March 1979 and her hands are swollen.") is not, nor is "PHN, 2 weeks of
+/// gabapentin".
+fn is_identity_line(line: &str) -> bool {
+    if is_page_number(line) {
+        return true;
+    }
+    let fields: Vec<&str> = line
+        .split(['\u{00B7}', '\u{2022}', '|', ';', ',', '\t'])
+        .flat_map(|field| field.split(" - "))
+        .flat_map(|field| field.split(" \u{2013} "))
+        .flat_map(|field| field.split(" \u{2014} "))
+        .collect();
+    let identity_field = fields
+        .iter()
+        .any(|field| field.chars().any(|c| c.is_ascii_digit()) && has_identity_label(field));
+    identity_field
+        && fields
+            .iter()
+            .flat_map(|field| field.split("  "))
+            .all(|part| part.split_whitespace().count() <= IDENTITY_FIELD_WORDS)
+}
+
+/// Whether a field has an identity label ([`IDENTITY_WORDS`], [`IDENTITY_CODES`]).
+fn has_identity_label(field: &str) -> bool {
+    let lower = fold(field);
+    IDENTITY_WORDS.iter().any(|label| has_word(&lower, label))
+        || IDENTITY_CODES.iter().any(|code| has_word(field, code))
+}
+
+/// Whether `word` stands in `text` with no letter or digit right before or after it. Chinese
+/// is written without spaces, so a Chinese label only has to be there.
+fn has_word(text: &str, word: &str) -> bool {
+    if word.chars().any(|c| u32::from(c) >= 0x2E80) {
+        return text.contains(word);
+    }
+    text.match_indices(word).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + word.len()..].chars().next();
+        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+    })
+}
+
+/// Whether a line is only a page number: "Page 2", "Page 2 of 3", "p. 2/3", "Página 2 de 3",
+/// "Strona 2 z 3", "第 2 页", "第2页，共3页".
+fn is_page_number(line: &str) -> bool {
+    let number = |word: &str| !word.is_empty() && word.chars().all(|c| c.is_ascii_digit());
+    let compact: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+    if let Some(rest) = compact.strip_prefix('第') {
+        // A number, then 页 or 頁; then nothing, or "共" (of), a number and 页 again.
+        let page = |text: &str| -> Option<String> {
+            let after = text.trim_start_matches(|c: char| c.is_ascii_digit());
+            if after.len() == text.len() {
+                return None;
+            }
+            after.strip_prefix(['页', '頁']).map(str::to_owned)
+        };
+        return match page(rest) {
+            Some(after) if after.is_empty() => true,
+            Some(after) => after
+                .trim_start_matches(['，', ',', '/'])
+                .strip_prefix('共')
+                .and_then(page)
+                .is_some_and(|after| after.is_empty()),
+            None => false,
+        };
+    }
+    let spaced = fold(line).replace('/', " / ");
+    let words: Vec<&str> = spaced.split_whitespace().collect();
+    match words.as_slice() {
+        [label, n] => is_page_label(*label) && number(*n),
+        [label, n, of, total] => {
+            is_page_label(*label)
+                && number(*n)
+                && ["of", "/", "de", "z", "sur", "di"].contains(of)
+                && number(*total)
+        }
+        _ => false,
+    }
+}
+
+/// The word for "page" before a page number, in the reader's languages.
+fn is_page_label(word: &str) -> bool {
+    [
+        "page", "p.", "pg", "pg.", "página", "pagina", "strona", "str.",
+    ]
+    .contains(&word)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1556,6 +1765,151 @@ mod tests {
         ] {
             assert!(!quote_is_heading(summary, content), "{content}");
         }
+    }
+
+    /// Three FAKE pages of a letter as its PDF text reads: a running header, the patient's
+    /// identity line, and a page number at the foot.
+    const LETTER: [&str; 3] = [
+        "FAKE Rheumatology Clinic \u{00B7} 100 Example Road \u{00B7} Tel 555-0100\n\
+         Jordan FAKE-Rivers \u{00B7} DOB: 3 March 1979 \u{00B7} Health card: 9999990117 (FAKE)\n\
+         Jordan has painful, swollen hands and knees.\n\
+         Page 1 of 3",
+        "FAKE Rheumatology Clinic \u{00B7} 100 Example Road \u{00B7} Tel 555-0100\n\
+         Start methotrexate 15 mg once a week.\n\
+         Page 2 of 3",
+        "FAKE Rheumatology Clinic \u{00B7} 100 Example Road \u{00B7} Tel 555-0100\n\
+         Book a blood test in 4 weeks at the FAKE Rheumatology Clinic.\n\
+         Page 3 of 3",
+    ];
+
+    #[test]
+    fn a_quote_only_on_a_running_header_or_an_identity_line_is_no_source() {
+        let text = LETTER.join(PAGE_SEPARATOR);
+        let content = content_parts(&LETTER);
+        for quote in [
+            "FAKE Rheumatology Clinic \u{00B7} 100 Example Road \u{00B7} Tel 555-0100",
+            "100 Example Road",
+            "Tel 555-0100",
+            "Jordan FAKE-Rivers \u{00B7} DOB: 3 March 1979 \u{00B7} Health card: 9999990117 (FAKE)",
+            "DOB: 3 March 1979",
+            "Health card: 9999990117",
+            "Page 2 of 3",
+        ] {
+            // In the pages, word for word, but only on those lines.
+            assert!(quote_in(&text, quote), "{quote}");
+            assert!(!quote_in_content(&content, quote), "{quote}");
+        }
+        for quote in [
+            "painful, swollen hands and knees",
+            "\u{201C}Start methotrexate 15 mg once a week.\u{201D}",
+            // On the header, and also in a sentence of the letter: found there.
+            "FAKE Rheumatology Clinic",
+            "Jordan",
+        ] {
+            assert!(quote_in_content(&content, quote), "{quote}");
+        }
+        assert!(!quote_in_content(&content, ""));
+    }
+
+    #[test]
+    fn a_running_line_stands_on_more_than_half_of_the_pages_read() {
+        let header = "FAKE Example Hospital, Ward 4";
+        let pages = |with: &[bool]| -> Vec<String> {
+            with.iter()
+                .enumerate()
+                .map(|(at, with)| {
+                    let own = format!("FAKE text of page {}.", at + 1);
+                    if *with {
+                        format!("  {header}  \n{own}")
+                    } else {
+                        own
+                    }
+                })
+                .collect()
+        };
+        let running = |with: &[bool]| {
+            let pages = pages(with);
+            let pages: Vec<&str> = pages.iter().map(String::as_str).collect();
+            repeated_lines(&pages).contains(&folded(header))
+        };
+        // A page alone has no running lines.
+        assert!(!running(&[true]));
+        assert!(running(&[true, true]));
+        assert!(running(&[false, true, true]));
+        assert!(running(&[false, true, true, true]));
+        assert!(!running(&[true, false, false]));
+        assert!(!running(&[true, true, false, false]));
+        // Each page's own line stands once: never a running line.
+        let four = pages(&[true; 4]);
+        let four: Vec<&str> = four.iter().map(String::as_str).collect();
+        assert_eq!(repeated_lines(&four).len(), 1);
+    }
+
+    #[test]
+    fn an_identity_line_has_a_label_a_digit_and_only_short_fields() {
+        for line in [
+            "Jordan FAKE-Rivers \u{00B7} DOB: 3 March 1979 \u{00B7} Health card: 9999990117 (FAKE)",
+            "  Patient  Rowan Testwood  DOB  21 June 1958  Sex  M",
+            "Re: Jordan FAKE-Rivers, D.O.B. 1979-03-03, MRN 0000123",
+            "Date de naissance : 1958/03/02",
+            "RAMQ : FAKE 5803 0299",
+            "Paciente: Luc\u{00ED}a Prueba Sanz | NHC 0000000",
+            "Pacjent: Tomasz FAKE-Nowak \u{2013} PESEL: 00000000000 (FIKCYJNY)",
+            "\u{60A3}\u{8005}\u{FF1A}\u{738B}\u{6D4B}\u{8BD5} \u{51FA}\u{751F}\u{65E5}\u{671F}\u{FF1A}1959-01-01",
+            "Page 2 of 3",
+            "p. 2/3",
+            "P\u{00E1}gina 1 de 2",
+            "Strona 1 z 2",
+            "\u{7B2C} 2 \u{9875}",
+            "\u{7B2C}2\u{9875}\u{FF0C}\u{5171}3\u{9875}",
+        ] {
+            assert!(is_identity_line(line), "{line}");
+        }
+        for line in [
+            // A sentence that mentions a date of birth or a health card.
+            "Her date of birth is 3 March 1979 and her hands have been swollen since May.",
+            "Health card renewed at the clinic on 3 March after the old one expired in 2025",
+            // Polish: "dni" is days and "nie" is not.
+            "Ramipril 5 mg przez 7 dni, potem nie.",
+            "Palenie: nie",
+            // No digit: a name alone is no identity field here.
+            "Patient: Jordan FAKE-Rivers",
+            // Medical abbreviations that are also identity labels, with no number of their own.
+            "PHN, 2 weeks of gabapentin",
+            "CNS lymphoma, 2 lesions",
+            "Page two of the results follows.",
+            "Strona 2 z 3 wynik\u{00F3}w jest pusta.",
+            "\u{7B2C}2\u{9875}\u{6709}\u{7ED3}\u{679C}",
+            "",
+        ] {
+            assert!(!is_identity_line(line), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_footer_on_most_pages_is_no_source_unless_the_letter_says_it_too() {
+        // The rule's stated cost: a clinic's number in a footer that the patient is told to call.
+        let footer = "If your symptoms get worse, call the FAKE clinic at 555-0100.";
+        let quote = "call the FAKE clinic at 555-0100";
+        let only_footer = [
+            format!("FAKE page one.\n{footer}"),
+            format!("FAKE page two.\n{footer}"),
+        ];
+        let pages: Vec<&str> = only_footer.iter().map(String::as_str).collect();
+        assert!(!quote_in_content(&content_parts(&pages), quote));
+        let said_too = [
+            format!(
+                "FAKE page one. If you have a fever, call the FAKE clinic at 555-0100.\n{footer}"
+            ),
+            format!("FAKE page two.\n{footer}"),
+        ];
+        let pages: Vec<&str> = said_too.iter().map(String::as_str).collect();
+        assert!(quote_in_content(&content_parts(&pages), quote));
+        // On one page of one, the same footer is no running line.
+        assert!(quote_in_content(
+            &content_parts(&[only_footer[0].as_str()]),
+            quote
+        ));
     }
 
     #[test]
@@ -2265,6 +2619,47 @@ mod tests {
                 .iter()
                 .all(|sentence| sentence.quote.is_empty() && !sentence.text.is_empty()));
             assert!(runner.is_running());
+        }
+
+        #[test]
+        fn a_quote_of_a_running_header_is_emptied_as_a_quote_not_found_is() {
+            let runner = Runner::new(config(&["--read-all"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let header = "FAKE Example Clinic, Tel 555-0100.";
+            let request = SummaryRequest {
+                lang: "en".to_owned(),
+                pages: vec![
+                    Page {
+                        index: 0,
+                        text: format!("{header}\n{TEXT}"),
+                    },
+                    Page {
+                        index: 1,
+                        text: format!("{header}\nFAKE page two says the clinic phoned."),
+                    },
+                ],
+                max_sentences: 5,
+            };
+            let summary = runner.summarize(runner.ticket(), &request).unwrap();
+            // The fake model quotes each sentence's first three words: "FAKE Example Clinic,"
+            // from the header on each page, and the letter's own three sentences.
+            assert_eq!(summary.unlocated, 2);
+            assert_eq!(summary.unlocated_quotes, vec!["FAKE Example Clinic,"; 2]);
+            let quotes: Vec<&str> = summary
+                .sentences
+                .iter()
+                .map(|sentence| sentence.quote.as_str())
+                .collect();
+            assert_eq!(
+                quotes,
+                [
+                    "",
+                    "The blood test",
+                    "The next visit",
+                    "Take one tablet",
+                    ""
+                ]
+            );
         }
 
         #[test]
