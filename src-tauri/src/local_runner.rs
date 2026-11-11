@@ -1437,18 +1437,24 @@ fn folded(text: &str) -> String {
 /// line names the patient or the letterhead rather than supporting its sentence, and the reader
 /// would point to it as the source. It is emptied as a quote not in the pages is (AI-05).
 ///
-/// A line is left out when, folded:
-/// - the same line stands on more than half of the pages read, and on at least
-///   [`REPEATED_ON_PAGES`] of them (a running header or footer). A document of one page has
-///   none. Lines are compared whole: a line with a page number in it differs on each page,
-///   and is caught as an identity line instead;
-/// - or it is an identity line ([`is_identity_line`]).
+/// A line is left out when it is
+/// - a running header or footer: short ([`RUNNING_LINE_WORDS`] words at most), among the first or
+///   last [`EDGE_LINES`] lines with words of its page, and, folded, the same such line on more
+///   than half of the pages read and on at least [`REPEATED_ON_PAGES`] of them. A document of
+///   one page has none. Lines are compared whole: a header with its page number in it differs
+///   on each page, and is caught as an identity line instead;
+/// - or an identity line ([`is_identity_line`]);
 ///
-/// What it can wrongly leave out: anything that a document repeats on most pages, such as a
-/// footer "If your symptoms get worse, call the clinic at …" that the letter also tells the
-/// patient to do, an allergy or a diagnosis in a running patient banner, or a short table line
-/// ("Negative") that happens to be the same on most pages of a long report. A quote of those
-/// words found anywhere else in the pages still counts.
+/// and never when it names allergies ([`names_allergies`]): an allergy in a patient banner is
+/// what a summary should be able to quote.
+///
+/// `pages` are the pages actually read, in order (with a last page read after a gap, those
+/// too), so that unread pages never count towards "more than half".
+///
+/// What it can still wrongly leave out: a short line a document repeats at the top or bottom of
+/// most pages, such as a footer "If your symptoms get worse, call the clinic at …" that the
+/// letter also tells the patient to do (a quote of those words found anywhere else in the pages
+/// still counts), or a short table cell ("Negative") that falls at a page's edge on most pages.
 fn content_parts(pages: &[&str]) -> Vec<String> {
     let repeated = repeated_lines(pages);
     let mut parts = Vec::new();
@@ -1457,8 +1463,10 @@ fn content_parts(pages: &[&str]) -> Vec<String> {
         if at > 0 {
             part.push_str(PAGE_SEPARATOR);
         }
-        for line in page.lines() {
-            if repeated.contains(&folded(line)) || is_identity_line(line) {
+        let edges = edge_lines(page);
+        for (index, line) in page.lines().enumerate() {
+            let running = edges.contains(&index) && repeated.contains(&folded(line));
+            if !names_allergies(line) && (running || is_identity_line(line)) {
                 parts.push(fold(&std::mem::take(&mut part)));
             } else {
                 part.push_str(line);
@@ -1479,15 +1487,41 @@ fn quote_in_content(content: &[String], quote: &str) -> bool {
 
 /// The fewest pages a line must stand on to be a running header or footer.
 const REPEATED_ON_PAGES: usize = 2;
+/// How many lines with words, at the top and at the bottom of a page, a running header or
+/// footer can be among.
+const EDGE_LINES: usize = 3;
+/// At most this many words make a running header or footer ([`words`]).
+const RUNNING_LINE_WORDS: usize = 15;
 
-/// The folded lines that stand on more than half of `pages`, and on at least
+/// The indexes (in `page.lines()`) of the page's first and last [`EDGE_LINES`] lines with words.
+fn edge_lines(page: &str) -> std::collections::HashSet<usize> {
+    let filled: Vec<usize> = page
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| !folded(line).is_empty())
+        .map(|(index, _)| index)
+        .collect();
+    let bottom = filled.len().saturating_sub(EDGE_LINES);
+    filled
+        .iter()
+        .enumerate()
+        .filter(|(rank, _)| *rank < EDGE_LINES || *rank >= bottom)
+        .map(|(_, index)| *index)
+        .collect()
+}
+
+/// The folded lines that stand at a page's edges ([`edge_lines`]), short
+/// ([`RUNNING_LINE_WORDS`]), on more than half of `pages` and on at least
 /// [`REPEATED_ON_PAGES`] of them.
 fn repeated_lines(pages: &[&str]) -> std::collections::HashSet<String> {
     let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for page in pages {
+        let edges = edge_lines(page);
         let lines: std::collections::HashSet<String> = page
             .lines()
-            .map(folded)
+            .enumerate()
+            .filter(|(index, line)| edges.contains(index) && words(line) <= RUNNING_LINE_WORDS)
+            .map(|(_, line)| folded(line))
             .filter(|line| !line.is_empty())
             .collect();
         for line in lines {
@@ -1499,6 +1533,45 @@ fn repeated_lines(pages: &[&str]) -> std::collections::HashSet<String> {
         .filter(|(_, on)| *on >= REPEATED_ON_PAGES && on * 2 > pages.len())
         .map(|(line, _)| line)
         .collect()
+}
+
+/// A character of Chinese (or a script after it), written without spaces between words.
+fn is_cjk(c: char) -> bool {
+    u32::from(c) >= 0x2E80 && c.is_alphanumeric()
+}
+
+/// How many words `text` has: each Chinese character counts as one, and each other run between
+/// spaces with a letter or digit in it as one ("·" or ":" alone is none).
+fn words(text: &str) -> usize {
+    let cjk = text.chars().filter(|c| is_cjk(*c)).count();
+    let rest: String = text
+        .chars()
+        .map(|c| if is_cjk(c) { ' ' } else { c })
+        .collect();
+    cjk + rest
+        .split_whitespace()
+        .filter(|word| word.chars().any(char::is_alphanumeric))
+        .count()
+}
+
+/// Words that name allergies, as the start of a word in a folded line ("Allergies",
+/// "Allergie", "Alergia", "Alergie", "Uczulenia", "NKDA"), or anywhere in Chinese.
+const ALLERGY_WORDS: &[&str] = &["allerg", "alerg", "uczul", "nkda", "过敏", "過敏"];
+
+/// Whether a line names allergies ([`ALLERGY_WORDS`]): such a line is never left out.
+fn names_allergies(line: &str) -> bool {
+    let lower = fold(line);
+    ALLERGY_WORDS.iter().any(|word| {
+        if word.chars().any(is_cjk) {
+            return lower.contains(word);
+        }
+        lower.match_indices(word).any(|(at, _)| {
+            !lower[..at]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+        })
+    })
 }
 
 /// Labels of an identity field, matched in a folded line as whole words: a date of birth, a
@@ -1530,50 +1603,178 @@ const IDENTITY_WORDS: &[&str] = &[
 ];
 
 /// Identity labels written in capitals, matched as written, as whole words: lower case,
-/// several are ordinary words ("dni" is "days" and "nie" is "not" in Polish). Each counts
-/// only with a digit in its own field, since some are medical words too ("PHN" is also
-/// post-herpetic neuralgia).
+/// several are ordinary words ("dni" is "days" and "nie" is "not" in Polish). Like the others,
+/// each counts only with an identity value right after it, since some are also ordinary or
+/// medical words in capitals ("NIE stosować…" is "do NOT use…"; "PHN" is also post-herpetic
+/// neuralgia).
 const IDENTITY_CODES: &[&str] = &[
     "DOB", "DDN", "MRN", "HCN", "PHN", "OHIP", "RAMQ", "NAM", "NHC", "DNI", "NIE", "CPF", "PESEL",
 ];
 
-/// At most this many words make a field of an identity line.
+/// At most this many words make a field of an identity line ([`words`]); a field with Chinese
+/// in it may have [`IDENTITY_FIELD_CJK_WORDS`].
 const IDENTITY_FIELD_WORDS: usize = 6;
+/// At most this many words (each Chinese character one) make a field with Chinese in it.
+const IDENTITY_FIELD_CJK_WORDS: usize = 12;
+/// The fewest digits an identity number has (a health card, a record number).
+const IDENTITY_NUMBER_DIGITS: usize = 6;
 
 /// Whether a line is a page number ("Page 2 of 3"), or names the patient by identity fields.
-/// A line's fields are what a header separates them with: "·", "•", "|", ";", ",", a dash
-/// between spaces, or a tab. It is an identity line when one of its fields has an identity
-/// label ([`IDENTITY_WORDS`], [`IDENTITY_CODES`]) and a digit, and every field is short: at
-/// most [`IDENTITY_FIELD_WORDS`] words between runs of two spaces, as a table lays out
-/// "Patient  Rowan Testwood  DOB  21 June 1958  Sex  M". So "Jordan FAKE-Rivers · DOB: 3 March
-/// 1979 · Health card: 9999990117" is one; a sentence that mentions a date of birth ("Her
-/// date of birth is 3 March 1979 and her hands are swollen.") is not, nor is "PHN, 2 weeks of
-/// gabapentin".
+///
+/// A line's fields are what a header separates them with: "·", "•", "|", ";", ",", "，", "、",
+/// "；", a dash between spaces, or a tab. It is an identity line when
+/// - one of its fields has an identity label ([`IDENTITY_WORDS`], [`IDENTITY_CODES`]) with an
+///   identity value right after it ([`starts_with_identity_value`]): a full date, a number of
+///   at least [`IDENTITY_NUMBER_DIGITS`] digits, or a code of letters and such a number;
+/// - and every field is short: at most [`IDENTITY_FIELD_WORDS`] words between runs of two
+///   spaces, as a table lays out "Patient  Rowan Testwood  DOB  21 June 1958  Sex  M" (a part
+///   with Chinese in it is also cut at single spaces, and may have
+///   [`IDENTITY_FIELD_CJK_WORDS`], each character a word).
+///
+/// So "Jordan FAKE-Rivers · DOB: 3 March 1979 · Health card: 9999990117" is one. These are not:
+/// "Her date of birth is 3 March 1979 and her hands are swollen.", "PHN, 2 weeks of
+/// gabapentin", "Post-herpetic neuralgia (PHN) since 2019", "NIE stosować ibuprofenu przez 2
+/// tygodnie.", "DOB checked against wristband at 08:00", and a Chinese clinical sentence that
+/// mentions 出生日期. Still taken: a short labelled birth date followed by short clinical words
+/// in the same line ("Né le 3 mars 1979, suivi pour polyarthrite."), which only a line made of
+/// identity fields alone would spare.
 fn is_identity_line(line: &str) -> bool {
     if is_page_number(line) {
         return true;
     }
     let fields: Vec<&str> = line
-        .split(['\u{00B7}', '\u{2022}', '|', ';', ',', '\t'])
+        .split([
+            '\u{00B7}', '\u{2022}', '|', ';', ',', '\t', '\u{FF0C}', '\u{3001}', '\u{FF1B}',
+        ])
         .flat_map(|field| field.split(" - "))
         .flat_map(|field| field.split(" \u{2013} "))
         .flat_map(|field| field.split(" \u{2014} "))
         .collect();
-    let identity_field = fields
-        .iter()
-        .any(|field| field.chars().any(|c| c.is_ascii_digit()) && has_identity_label(field));
+    let identity_field = fields.iter().any(|field| is_identity_field(field));
     identity_field
         && fields
             .iter()
             .flat_map(|field| field.split("  "))
-            .all(|part| part.split_whitespace().count() <= IDENTITY_FIELD_WORDS)
+            .all(|part| {
+                if part.chars().any(is_cjk) {
+                    part.split_whitespace()
+                        .all(|piece| words(piece) <= IDENTITY_FIELD_CJK_WORDS)
+                } else {
+                    words(part) <= IDENTITY_FIELD_WORDS
+                }
+            })
 }
 
-/// Whether a field has an identity label ([`IDENTITY_WORDS`], [`IDENTITY_CODES`]).
-fn has_identity_label(field: &str) -> bool {
+/// Whether a field has an identity label ([`IDENTITY_WORDS`], [`IDENTITY_CODES`]) with an
+/// identity value right after it ([`starts_with_identity_value`]).
+fn is_identity_field(field: &str) -> bool {
     let lower = fold(field);
-    IDENTITY_WORDS.iter().any(|label| has_word(&lower, label))
-        || IDENTITY_CODES.iter().any(|code| has_word(field, code))
+    IDENTITY_WORDS
+        .iter()
+        .any(|label| value_after_label(&lower, label))
+        || IDENTITY_CODES
+            .iter()
+            .any(|code| value_after_label(field, code))
+}
+
+/// Whether `label` stands in `text` as a whole word ([`has_word`]) with an identity value right
+/// after it.
+fn value_after_label(text: &str, label: &str) -> bool {
+    has_word(text, label)
+        && text
+            .match_indices(label)
+            .any(|(at, _)| starts_with_identity_value(&text[at + label.len()..]))
+}
+
+/// Whether `text` starts, after a colon, "#", "=", a dot or spaces, with an identity value: a
+/// full date ([`starts_with_date`]), a number of at least [`IDENTITY_NUMBER_DIGITS`] digits
+/// (groups joined by spaces or dashes: "9999990117", "1234 567 891"), or a code of up to six
+/// letters and such a number ("TGH-0072291", "FAKE 5803 0299").
+fn starts_with_identity_value(text: &str) -> bool {
+    let text = text.trim_start_matches(|c: char| {
+        c.is_whitespace() || matches!(c, ':' | '\u{FF1A}' | '#' | '=' | '.')
+    });
+    if starts_with_date(text) {
+        return true;
+    }
+    let letters = text.chars().take_while(char::is_ascii_alphabetic).count();
+    let number = if (1..=6).contains(&letters) {
+        text[letters..].trim_start_matches(['-', ' '])
+    } else {
+        text
+    };
+    leading_digits(number) >= IDENTITY_NUMBER_DIGITS
+}
+
+/// How many digits `text` starts with, in groups joined by single spaces or dashes.
+fn leading_digits(text: &str) -> usize {
+    let mut digits = 0;
+    let mut joined = false;
+    for c in text.chars() {
+        if c.is_ascii_digit() {
+            digits += 1;
+            joined = false;
+        } else if matches!(c, ' ' | '-') && digits > 0 && !joined {
+            joined = true;
+        } else {
+            break;
+        }
+    }
+    digits
+}
+
+/// Whether `text` starts with a full date: "1958-03-02", "1958/03/02", "04/02/1968",
+/// "14.05.1961", "3 March 1979", "11-Feb-1968", "3 de marzo de 1979", "March 3, 1979",
+/// "1979年3月3日".
+fn starts_with_date(text: &str) -> bool {
+    // Chinese: a year, 年, a month, 月, a day.
+    let digits = |s: &str| s.chars().take_while(char::is_ascii_digit).count();
+    let year = digits(text);
+    if year == 4 {
+        if let Some(rest) = text[4..].strip_prefix('年') {
+            let month = digits(rest);
+            if (1..=2).contains(&month) {
+                if let Some(rest) = rest[month..].strip_prefix('月') {
+                    return (1..=2).contains(&digits(rest));
+                }
+            }
+        }
+    }
+    let tokens: Vec<&str> = text
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | '-' | '/' | '.'))
+        .filter(|token| !token.is_empty())
+        .take(6)
+        .collect();
+    match tokens.as_slice() {
+        // Numbers only: the year first or last.
+        [a, b, c, ..] if is_number(a, 4..=4) && is_number(b, 1..=2) && is_number(c, 1..=2) => true,
+        [a, b, c, ..] if is_number(a, 1..=2) && is_number(b, 1..=2) && is_number(c, 4..=4) => true,
+        // A month's name first: "March 3, 1979".
+        [m, d, y, ..] if is_month_name(m) && is_number(d, 1..=2) && is_number(y, 4..=4) => true,
+        // A day, a month's name (with "de" around it), a year.
+        [d, rest @ ..] if is_number(d, 1..=2) => {
+            let names = rest.iter().take_while(|token| is_name(token)).count();
+            (1..=3).contains(&names)
+                && rest[..names].iter().any(|token| is_month_name(token))
+                && rest.get(names).is_some_and(|year| is_number(year, 4..=4))
+        }
+        _ => false,
+    }
+}
+
+/// Whether `token` is a number of so many digits.
+fn is_number(token: &str, digits: std::ops::RangeInclusive<usize>) -> bool {
+    token.chars().all(|c| c.is_ascii_digit()) && digits.contains(&token.len())
+}
+
+/// Whether `token` is a word of letters, at least two.
+fn is_name(token: &str) -> bool {
+    token.chars().all(char::is_alphabetic) && token.chars().count() >= 2
+}
+
+/// Whether `token` could be a month's name or its short form: 3 to 12 letters.
+fn is_month_name(token: &str) -> bool {
+    is_name(token) && (3..=12).contains(&token.chars().count())
 }
 
 /// Whether `word` stands in `text` with no letter or digit right before or after it. Chinese
@@ -1877,12 +2078,116 @@ mod tests {
             // Medical abbreviations that are also identity labels, with no number of their own.
             "PHN, 2 weeks of gabapentin",
             "CNS lymphoma, 2 lesions",
+            "Post-herpetic neuralgia (PHN) since 2019",
+            "- PHN 2019, on gabapentin",
+            "DOB checked against wristband at 08:00",
+            // Polish instructions in capitals: NIE is "do not", with a number later in the line.
+            "NIE stosowa\u{0107} ibuprofenu przez 2 tygodnie.",
+            "Przez 2 tygodnie NIE prowadzi\u{0107} samochodu.",
+            "NIE odstawia\u{0107} tikagreloru przez 12 miesi\u{0119}cy.",
+            "NIE 2 razy dziennie",
+            // A Chinese clinical sentence that mentions the date of birth, with no spaces.
+            "\u{60A3}\u{8005}\u{51FA}\u{751F}\u{65E5}\u{671F}\u{4E3A}1979\u{5E74}3\u{6708}3\u{65E5}\u{FF0C}\u{56E0}\u{53CC}\u{624B}\u{80BF}\u{75DB}\u{4E09}\u{4E2A}\u{6708}\u{5C31}\u{8BCA}\u{FF0C}\u{7C7B}\u{98CE}\u{6E7F}\u{56E0}\u{5B50}\u{9633}\u{6027}\u{3002}",
             "Page two of the results follows.",
             "Strona 2 z 3 wynik\u{00F3}w jest pusta.",
             "\u{7B2C}2\u{9875}\u{6709}\u{7ED3}\u{679C}",
             "",
         ] {
             assert!(!is_identity_line(line), "{line}");
+        }
+    }
+
+    #[test]
+    fn a_running_line_is_a_short_line_at_the_top_or_bottom_of_its_pages() {
+        // Each FAKE page: a banner on top, a daily note, and the note's long last line.
+        let nursing = "Vital signs every 4 hours. Fluid balance charted. Pressure areas checked \
+                       twice; skin intact. Falls risk high: bed alarm on, call bell within reach.";
+        let pages: Vec<String> = (1..=4)
+            .map(|day| {
+                format!(
+                    "FAKE Example Hospital, Ward 4\nDay {day} of the stay.\nSubjective: FAKE \
+                     note {day}.\nObjective: FAKE findings {day}.\nThe same plan as yesterday.\n\
+                     Results: FAKE values {day}.\nAssessment: FAKE {day}.\n{nursing}"
+                )
+            })
+            .collect();
+        let pages: Vec<&str> = pages.iter().map(String::as_str).collect();
+        let running = repeated_lines(&pages);
+        // The banner is short and on top of every page: running.
+        assert!(running.contains(&folded("FAKE Example Hospital, Ward 4")));
+        // A line repeated in the middle of the page is the note's own words.
+        assert!(!running.contains(&folded("The same plan as yesterday.")));
+        // The nursing line is the last line of every page, but too long to be a footer.
+        assert!(!running.contains(&folded(nursing)));
+        let content = content_parts(&pages);
+        assert!(quote_in_content(&content, "Falls risk high: bed alarm on"));
+        assert!(quote_in_content(&content, "The same plan as yesterday."));
+        assert!(!quote_in_content(&content, "FAKE Example Hospital, Ward 4"));
+    }
+
+    #[test]
+    fn a_line_that_names_allergies_is_always_a_source() {
+        // In a running banner, and in an identity line.
+        let pages = [
+            "FAKE Example Hospital\nAllergies: penicillin\nDay 1: FAKE note.",
+            "FAKE Example Hospital\nAllergies: penicillin\nDay 2: FAKE note.",
+        ];
+        let content = content_parts(&pages);
+        assert!(quote_in_content(&content, "Allergies: penicillin"));
+        assert!(!quote_in_content(&content, "FAKE Example Hospital"));
+        let banner =
+            "Patient: FAKE Avery \u{00B7} DOB 1979-03-03 (age 47) \u{00B7} Allergies: penicillin";
+        assert!(quote_in_content(
+            &content_parts(&[banner]),
+            "Allergies: penicillin"
+        ));
+        for line in [
+            "Allergies: penicillin",
+            "Allergie : p\u{00E9}nicilline",
+            "Alergias: penicilina",
+            "Uczulenia: penicylina",
+            "NKDA",
+            "\u{8FC7}\u{654F}\u{FF1A}\u{9752}\u{9709}\u{7D20}",
+        ] {
+            assert!(names_allergies(line), "{line}");
+        }
+        assert!(!names_allergies("Nonallergic rhinitis, 2019"));
+    }
+
+    #[test]
+    fn an_identity_value_is_a_full_date_six_digits_or_a_code_right_after_its_label() {
+        for value in [
+            ": 3 March 1979",
+            " 21 June 1958  Sex  M",
+            ". 1979-03-03",
+            " : 1958/03/02",
+            ": 04/02/1968",
+            ": 14.05.1961",
+            ": 11-Feb-1968",
+            " 3 de marzo de 1979",
+            ": March 3, 1979",
+            "\u{FF1A}1979\u{5E74}3\u{6708}3\u{65E5}",
+            ": 9999990117 (FAKE)",
+            ": 1234 567 891",
+            ": FAKE 5803 0299",
+            " TGH-0072291",
+            " FAKE-778899",
+        ] {
+            assert!(starts_with_identity_value(value), "{value:?}");
+        }
+        for value in [
+            " stosowa\u{0107} ibuprofenu przez 2 tygodnie.",
+            " 2 razy dziennie",
+            " 2019, on gabapentin",
+            ") since 2019",
+            " checked against wristband at 08:00",
+            " is 3 March 1979",
+            "\u{4E3A}1979\u{5E74}3\u{6708}3\u{65E5}",
+            ": 12345",
+            ": 3 March",
+            "",
+        ] {
+            assert!(!starts_with_identity_value(value), "{value:?}");
         }
     }
 
