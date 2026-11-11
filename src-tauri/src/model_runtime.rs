@@ -15,6 +15,7 @@ use crate::model_helper;
 use crate::vault::{AiResultInput, AiTool};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
@@ -279,6 +280,34 @@ pub(crate) struct ExplainResult {
     pub(crate) model: ModelInfo,
 }
 
+/// What loading the model in use once says (D218), as the settings are told: it runs here, it
+/// cannot run here, there is not enough free memory to try it now, or its file is damaged.
+/// `Skipped` loads nothing and says nothing: an answer is asked or being written (its own start
+/// then tells, as before), another check runs, the model is being added or removed, or the
+/// vault locked meanwhile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum LoadCheck {
+    Ready,
+    CannotRun,
+    Memory,
+    Damaged,
+    Skipped,
+}
+
+impl From<AiError> for LoadCheck {
+    fn from(error: AiError) -> Self {
+        match error {
+            AiError::Failed => Self::CannotRun,
+            AiError::Memory => Self::Memory,
+            AiError::Damaged => Self::Damaged,
+            AiError::NotInstalled | AiError::Busy | AiError::Storage | AiError::Cancelled => {
+                Self::Skipped
+            }
+        }
+    }
+}
+
 /// Why a run gave nothing, as the renderer is told (`code`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiError {
@@ -371,6 +400,38 @@ pub(crate) struct ModelRuntime {
     /// The model the last answer here came from: the vault keeps an answer
     /// only under the model that gave one (#212).
     answered: Mutex<Option<ModelInfo>>,
+    /// The claim of the last answer asked, until it ends: while it is current, a load check
+    /// loads nothing (D218). Taken with the claim itself, so a check never misses an answer.
+    answering: Mutex<Option<crate::local_runner::Ticket>>,
+    /// A load check is running: a second one is not queued behind it.
+    checking: AtomicBool,
+}
+
+/// Ends an answer's claim on the load check, however the answer ends.
+struct AnswerEnds<'a> {
+    answering: &'a Mutex<Option<crate::local_runner::Ticket>>,
+    ticket: crate::local_runner::Ticket,
+}
+
+impl Drop for AnswerEnds<'_> {
+    fn drop(&mut self) {
+        let mut answering = self
+            .answering
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if *answering == Some(self.ticket) {
+            *answering = None;
+        }
+    }
+}
+
+/// Lets the next load check run, however this one ends.
+struct CheckEnds<'a>(&'a AtomicBool);
+
+impl Drop for CheckEnds<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 impl ModelRuntime {
@@ -385,6 +446,8 @@ impl ModelRuntime {
             probe,
             launch,
             answered: Mutex::new(None),
+            answering: Mutex::new(None),
+            checking: AtomicBool::new(false),
         }
     }
 
@@ -462,7 +525,56 @@ impl ModelRuntime {
     }
 
     pub(crate) fn reserve_answer(&self) -> crate::local_runner::Ticket {
-        self.runner.ticket()
+        let mut answering = self.answers();
+        let ticket = self.runner.ticket();
+        *answering = Some(ticket);
+        ticket
+    }
+
+    fn answers(&self) -> std::sync::MutexGuard<'_, Option<crate::local_runner::Ticket>> {
+        self.answering
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn answer_ends(&self, ticket: crate::local_runner::Ticket) -> AnswerEnds<'_> {
+        AnswerEnds {
+            answering: &self.answering,
+            ticket,
+        }
+    }
+
+    /// Loads the model in use once, to say now whether it runs on this computer, then stops it:
+    /// no model stays loaded for a check (D218). It goes through an answer's own start (the
+    /// memory, the model verified again, the helper's hello and card), so a model that passes
+    /// starts the same way for its first answer, and its card confirms what the settings say it
+    /// reads. While an answer is asked or written it loads nothing (`Skipped`): it never waits
+    /// behind one, never cancels one, and an answer asked during the check ends the check
+    /// instead. A model an earlier answer loaded is `Ready` and stays loaded, as it would have.
+    pub(crate) fn check_load(&self) -> LoadCheck {
+        if self.checking.swap(true, Ordering::SeqCst) {
+            return LoadCheck::Skipped;
+        }
+        let _ends = CheckEnds(&self.checking);
+        let ticket = {
+            let answering = self.answers();
+            if answering.is_some_and(|answer| self.runner.is_current(answer)) {
+                return LoadCheck::Skipped;
+            }
+            self.runner.current_ticket()
+        };
+        if self.runner.is_running() {
+            return LoadCheck::Ready;
+        }
+        let outcome = match self.start(ticket) {
+            Ok(()) => LoadCheck::Ready,
+            Err(error) => LoadCheck::from(error),
+        };
+        // Under the answers' lock: an answer asked before this point has a newer claim and keeps
+        // the model; one asked after it starts its own.
+        let _answering = self.answers();
+        self.runner.stop_if_current(ticket);
+        outcome
     }
 
     pub(crate) fn summarize_for(
@@ -471,6 +583,7 @@ impl ModelRuntime {
         request: SummarizeRequest,
         watch: AnswerWatch,
     ) -> Result<SummaryResult, AiError> {
+        let _ends = self.answer_ends(ticket);
         check_summary(&request)?;
         self.runner.watch_answer(ticket, watch);
         self.start(ticket)?;
@@ -502,6 +615,7 @@ impl ModelRuntime {
         request: ExplainRequest,
         watch: AnswerWatch,
     ) -> Result<ExplainResult, AiError> {
+        let _ends = self.answer_ends(ticket);
         check_explain(&request)?;
         self.runner.watch_answer(ticket, watch);
         self.start(ticket)?;
@@ -1077,6 +1191,180 @@ mod tests {
             .summarize(summary(vec![page(0, "FAKE text")], "en"), Box::new(|_| ()))
             .is_err());
         assert_eq!(runtime.answered_model(), None);
+    }
+
+    #[test]
+    fn a_load_check_says_why_a_model_cannot_start_here_or_not_now() {
+        // A start the app cannot build: this computer cannot run it.
+        let (source, asked) = fake(Some(GIB), Ok(()));
+        assert_eq!(
+            runtime(source, Some(64 * GIB)).check_load(),
+            LoadCheck::CannotRun
+        );
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // Too little free memory: not even verified, and no figure is given.
+        let (source, asked) = fake(Some(4 * GIB), Ok(()));
+        assert_eq!(runtime(source, Some(GIB)).check_load(), LoadCheck::Memory);
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
+        for (reason, outcome) in [
+            (Unavailable::Damaged, LoadCheck::Damaged),
+            (Unavailable::Unsupported, LoadCheck::CannotRun),
+            (Unavailable::Memory, LoadCheck::Memory),
+            (Unavailable::Busy, LoadCheck::Skipped),
+            (Unavailable::Storage, LoadCheck::Skipped),
+            (Unavailable::NotInstalled, LoadCheck::Skipped),
+        ] {
+            let (source, _) = fake(Some(GIB), Err(reason));
+            assert_eq!(
+                runtime(source, Some(64 * GIB)).check_load(),
+                outcome,
+                "{reason:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_load_check_loads_nothing_while_an_answer_is_asked_and_never_ends_it() {
+        let (source, asked) = fake(Some(GIB), Ok(()));
+        let runtime = runtime(source, Some(64 * GIB));
+        let answer = runtime.reserve_answer();
+        assert_eq!(runtime.check_load(), LoadCheck::Skipped);
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(runtime.runner.is_current(answer));
+        // Once that answer has ended (here, refused at its start), a check loads again.
+        assert_eq!(
+            runtime.summarize_for(
+                answer,
+                summary(vec![page(0, "FAKE text")], "en"),
+                Box::new(|_| ())
+            ),
+            Err(AiError::Failed)
+        );
+        assert_eq!(runtime.check_load(), LoadCheck::CannotRun);
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 2);
+        // An answer that never ran because the vault locked holds nothing back either.
+        let _never_run = runtime.reserve_answer();
+        runtime.cancel();
+        assert_eq!(runtime.check_load(), LoadCheck::CannotRun);
+    }
+
+    #[test]
+    fn the_load_check_outcomes_have_the_shape_the_settings_read() {
+        for (outcome, word) in [
+            (LoadCheck::Ready, "ready"),
+            (LoadCheck::CannotRun, "cannotRun"),
+            (LoadCheck::Memory, "memory"),
+            (LoadCheck::Damaged, "damaged"),
+            (LoadCheck::Skipped, "skipped"),
+        ] {
+            assert_eq!(serde_json::to_value(outcome).unwrap(), word);
+        }
+    }
+
+    /// The fake model of `local_runner`'s tests, through the Python on the test machine: it
+    /// greets as the helper does, unsandboxed, and any hello is accepted.
+    #[cfg(unix)]
+    mod with_the_fake_model {
+        use super::*;
+        use crate::local_runner::RunnerStatus;
+        use std::sync::atomic::Ordering::SeqCst;
+
+        fn fake_model(args: &[&str], start_timeout: Duration) -> RunnerConfig {
+            let path = std::env::var_os("PATH").expect("PATH");
+            let python3 = std::env::split_paths(&path)
+                .map(|dir| dir.join("python3"))
+                .find(|candidate| candidate.is_file())
+                .expect("python3 on PATH");
+            let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/local-runner/fake-model.py");
+            let mut all = vec![script.into_os_string()];
+            all.extend(args.iter().map(std::ffi::OsString::from));
+            RunnerConfig {
+                command: python3,
+                args: all,
+                needed_bytes: 0,
+                start_timeout,
+                answer_limit: crate::local_runner::AnswerLimit::fixed(Duration::from_secs(10)),
+                memory_limit_bytes: None,
+                expected_model: None,
+                model_file: None,
+                sandboxed: false,
+                generation_threads: None,
+            }
+        }
+
+        fn greets(_: &Verified) -> Result<RunnerConfig, AiError> {
+            Ok(fake_model(&[], Duration::from_secs(10)))
+        }
+
+        fn never_greets(_: &Verified) -> Result<RunnerConfig, AiError> {
+            Ok(fake_model(&["--mute"], Duration::from_secs(1)))
+        }
+
+        fn answers_slowly(_: &Verified) -> Result<RunnerConfig, AiError> {
+            Ok(fake_model(&["--slow", "2"], Duration::from_secs(10)))
+        }
+
+        fn with(
+            launch: fn(&Verified) -> Result<RunnerConfig, AiError>,
+        ) -> (ModelRuntime, Arc<std::sync::atomic::AtomicUsize>) {
+            let (source, asked) = fake(Some(GIB), Ok(()));
+            (
+                ModelRuntime::new(Box::new(source), Box::new(Fixed(Some(64 * GIB))), launch),
+                asked,
+            )
+        }
+
+        #[test]
+        fn a_load_check_starts_the_model_once_and_stops_it_again() {
+            let (runtime, asked) = with(greets);
+            assert_eq!(runtime.check_load(), LoadCheck::Ready);
+            assert_eq!(asked.load(SeqCst), 1);
+            assert!(!runtime.runner.is_running());
+            assert!(matches!(
+                runtime.runner.status(),
+                RunnerStatus::Installed { .. }
+            ));
+        }
+
+        #[test]
+        fn a_model_that_never_greets_within_the_start_limit_cannot_run_here() {
+            let (runtime, _) = with(never_greets);
+            assert_eq!(runtime.check_load(), LoadCheck::CannotRun);
+            assert!(!runtime.runner.is_running());
+        }
+
+        #[test]
+        fn a_load_check_while_an_answer_is_written_loads_nothing_and_keeps_its_model() {
+            let (runtime, asked) = with(answers_slowly);
+            let runtime = Arc::new(runtime);
+            let ticket = runtime.reserve_answer();
+            let writer = {
+                let runtime = Arc::clone(&runtime);
+                std::thread::spawn(move || {
+                    runtime.summarize_for(
+                        ticket,
+                        summary(vec![page(0, "FAKE text. The FAKE clinic phoned.")], "en"),
+                        Box::new(|_| ()),
+                    )
+                })
+            };
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while !matches!(runtime.runner.status(), RunnerStatus::Working { .. }) {
+                assert!(std::time::Instant::now() < deadline, "never answering");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            assert_eq!(runtime.check_load(), LoadCheck::Skipped);
+            assert!(writer.join().unwrap().is_ok());
+            // One load, the answer's; its model stays loaded, as before.
+            assert_eq!(asked.load(SeqCst), 1);
+            assert!(runtime.runner.is_running());
+            // A check now finds it loaded: it runs here, and it stays.
+            assert_eq!(runtime.check_load(), LoadCheck::Ready);
+            assert!(runtime.runner.is_running());
+            assert_eq!(asked.load(SeqCst), 1);
+            runtime.stop();
+        }
     }
 
     #[cfg(target_os = "linux")]

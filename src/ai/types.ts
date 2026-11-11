@@ -107,6 +107,17 @@ export interface ModelLimits {
   neededBytes: number;
 }
 
+/** What loading the model in use once said (`ai_model_check`, D218): it runs
+ * on this computer, it cannot run here, there is not enough free memory to try
+ * it now, or its file is damaged. `skipped` says nothing: an answer was being
+ * written, or the model changed meanwhile; its first use then tells. */
+export type LoadCheck =
+  | "ready"
+  | "cannotRun"
+  | "memory"
+  | "damaged"
+  | "skipped";
+
 /** One native catalog row, keyed by its stable catalog index (#276A). */
 export interface ModelRow {
   index: number;

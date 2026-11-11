@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { useI18n } from "../i18n";
 import type {
+  LoadCheck,
   ModelLimits,
   ModelRow,
   ModelAddOutcome,
@@ -12,6 +13,9 @@ import { capacityInPages } from "../ai/capacity";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 const MB = 1_000_000;
+// What the last load check said about a model (by its hash) that does not run
+// now, for this app session only (D218): the settings may close and open again.
+const loadChecks = new Map<string, "cannotRun" | "memory">();
 // Only a reconciliation signal: a reopened view reads the current native pair.
 const MUTATION_SETTLED = "mycarlos-model-mutation-settled";
 /** The host an address leads to, for the note beside Download. */
@@ -159,6 +163,15 @@ export function AiModelSetting({
   // The window may not listen for the app's events (a missing capability):
   // progress then comes from asking the native side instead.
   const [eventsRefused, setEventsRefused] = useState(false);
+  // The row whose model is being loaded once to check it runs here (D218).
+  const [checking, setChecking] = useState<number | null>(null);
+  const [, setChecked] = useState(0);
+  const checkChain = useRef<Promise<void>>(Promise.resolve());
+  // Which row to check once the rows have caught up: the one just chosen, or
+  // the one a finished download or add made the model in use.
+  const checkAfter = useRef<
+    { index: number } | { inUseBefore: string | null } | null
+  >(null);
   const pollInFlight = useRef(false);
   const mounted = useRef(true);
   const activityRevision = useRef(0);
@@ -389,6 +402,11 @@ export function AiModelSetting({
     progressObserved.current = false;
     setNote(null);
     setProgress(null);
+    if (result.outcome === "added" && !foreign)
+      checkAfter.current = {
+        inUseBefore:
+          beforeAdd.current.find((row) => row.inUse)?.model.sha256 ?? null,
+      };
     if (result.outcome === "added" && (!foreign || !mutationNotice.current)) {
       after.current = "installed";
       if (!foreign) onStatusRef.current(result.status);
@@ -562,7 +580,10 @@ export function AiModelSetting({
     try {
       await invoke<ModelStatus>(command, { request: { index } });
       if (!mounted.current || mutation !== mutationRequest.current) return;
-      if (command === "ai_model_use") setMessage("ai.models.changed");
+      if (command === "ai_model_use") {
+        setMessage("ai.models.changed");
+        checkAfter.current = { index };
+      }
     } catch (failure) {
       if (!mounted.current || mutation !== mutationRequest.current) return;
       after.current = null;
@@ -582,6 +603,42 @@ export function AiModelSetting({
       }
     }
   };
+  /** Loads the model in use once to say now whether it runs on this computer
+   * (D218), one check after another; the native side stops it again. */
+  const checkLoad = (row: ModelRow) => {
+    const hash = row.model.sha256;
+    loadChecks.delete(hash);
+    setChecking(row.index);
+    checkChain.current = checkChain.current.then(async () => {
+      const outcome = await invoke<LoadCheck>("ai_model_check", {
+        request: { index: row.index },
+      }).catch((): LoadCheck => "skipped");
+      if (outcome === "cannotRun" || outcome === "memory")
+        loadChecks.set(hash, outcome);
+      if (!mounted.current) return;
+      setChecking((now) => (now === row.index ? null : now));
+      setChecked((count) => count + 1);
+      // Ready: the helper's card now confirms what it reads. Damaged: the row
+      // says so.
+      if (outcome === "ready" || outcome === "damaged")
+        void reloadRef.current(true);
+    });
+  };
+  useEffect(() => {
+    const wanted = checkAfter.current;
+    if (!wanted || adding || working || refreshing || !loaded || listError)
+      return;
+    checkAfter.current = null;
+    const inUse = rows.find((row) => row.inUse && row.state === "installed");
+    if (!inUse) return;
+    if (
+      "index" in wanted
+        ? inUse.index === wanted.index
+        : inUse.model.sha256 !== wanted.inUseBefore
+    )
+      checkLoad(inUse);
+  }, [rows, loaded, adding, working, refreshing, listError]);
+
   const progressIndex = progress?.index;
   const copyIndex =
     downloading &&
@@ -606,6 +663,8 @@ export function AiModelSetting({
         : message
           ? t(message as "ai.model.added")
           : "";
+  // Said after "Model in use changed" or "added", never in its place.
+  const checkText = checking !== null ? t("ai.model.loadCheck") : "";
   const copyContent = () => (
     <>
       {copyIndex !== null && progress?.total === 0 && (
@@ -752,6 +811,33 @@ export function AiModelSetting({
                   </>
                 )}
               </p>
+              {/* What loading it once said, when it does not run now (D218). */}
+              {row.inUse &&
+                checking !== row.index &&
+                loadChecks.get(row.model.sha256) === "cannotRun" && (
+                  <p role="alert" className="native-ai-model-note">
+                    {t("ai.model.loadCheckCannotRun")}
+                  </p>
+                )}
+              {row.inUse &&
+                checking !== row.index &&
+                loadChecks.get(row.model.sha256) === "memory" && (
+                  <>
+                    <p role="alert" className="native-ai-model-note">
+                      {t("ai.model.loadCheckMemory")}
+                    </p>
+                    <button
+                      type="button"
+                      className="button"
+                      aria-disabled={busy || checking !== null}
+                      onClick={() =>
+                        !busy && checking === null && checkLoad(row)
+                      }
+                    >
+                      {t("ai.model.loadCheckRetry")}
+                    </button>
+                  </>
+                )}
               {!unsupported && row.state === "notDownloaded" && (
                 <>
                   <p>{t("ai.model.where")}</p>
@@ -803,6 +889,8 @@ export function AiModelSetting({
         className={copyIndex === null ? "native-ai-model-status" : "sr-only"}
       >
         {copyText}
+        {copyText && checkText && <br />}
+        {checkText}
       </p>
       {copyIndex === null && copyContent()}
       {listError && (

@@ -129,6 +129,27 @@ test("lists both offered models; downloading several keeps the first In use", as
   await expectOnlyFakedCommands(page);
 });
 
+test("choosing a model loads it once; one this computer cannot run says so in its row (D218)", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await fakeAiWith(page, {
+    models: catalogRows([0, 1]),
+    loadCheck: "cannotRun",
+  });
+  await page.goto("/");
+  await aiSettings(page);
+  await page.getByRole("radio", { name: second.name, exact: true }).check();
+  await expect(region(page, 1).getByRole("alert")).toHaveText(
+    tr("ai.model.loadCheckCannotRun"),
+  );
+  await expect(region(page, 0).getByRole("alert")).toHaveCount(0);
+  expect(await aiCalls(page, AI_COMMANDS.check)).toEqual([
+    { request: { index: 1 } },
+  ]);
+  await expectOnlyFakedCommands(page);
+});
+
 test("another download leaves the answer running; switching In use stops it", async ({
   page,
 }) => {

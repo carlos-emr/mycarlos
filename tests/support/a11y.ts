@@ -123,6 +123,9 @@ export async function fakeVault(
             case "ai_model_catalog":
             case "ai_model_limits":
               return [];
+            // No model in use to check (D218).
+            case "ai_model_check":
+              return "skipped";
             // No add or download running when the row opens (#275).
             case "ai_model_add_active":
               return null;

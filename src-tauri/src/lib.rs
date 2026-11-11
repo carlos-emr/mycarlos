@@ -1810,6 +1810,31 @@ async fn ai_model_use(
     .map_err(|_| local_model::ModelError::Storage)?
 }
 
+/// Loads the model in use once, right after the patient picks it or its download or file is
+/// added (D218), to say now whether it runs on this computer; it is stopped again at once.
+/// Only for the row in use and only while the vault is unlocked; otherwise, and while an answer
+/// is asked or written, nothing is loaded (`skipped`).
+#[tauri::command]
+async fn ai_model_check(
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+    request: ModelIndexRequest,
+) -> Result<model_runtime::LoadCheck, ModelFailure> {
+    use model_runtime::LoadCheck;
+    let in_use = models
+        .models()
+        .iter()
+        .any(|row| row.index == request.index && row.in_use);
+    if !cfg!(desktop) || !in_use || store.answer_origin().is_none() {
+        return Ok(LoadCheck::Skipped);
+    }
+    Ok(
+        tauri::async_runtime::spawn_blocking(|| model_runtime::app().check_load())
+            .await
+            .unwrap_or(LoadCheck::Skipped),
+    )
+}
+
 /// Why adding or removing a model was refused, as a word for the renderer.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -5231,6 +5256,7 @@ pub fn run() {
             ai_model_status,
             ai_models,
             ai_model_limits,
+            ai_model_check,
             ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,

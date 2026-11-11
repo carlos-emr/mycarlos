@@ -703,6 +703,16 @@ impl Runner {
         self.generation.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// The claim in force now, without ending any (as [`Self::start_with`] uses): a load check
+    /// starts under it, so it never cancels an answer, and a newer claim (an answer asked
+    /// meanwhile, a lock) ends the check instead.
+    pub(crate) fn current_ticket(&self) -> Ticket {
+        Ticket {
+            runner: self as *const Self as usize,
+            generation: self.generation.load(Ordering::SeqCst),
+        }
+    }
+
     /// Starts the model process if it is not running, with the config it was made with.
     #[allow(dead_code)] // The tests' way in; the app uses `start_with`.
     pub(crate) fn start(&self, probe: &dyn MemoryProbe) -> Result<ModelInfo, RunnerError> {
@@ -721,14 +731,7 @@ impl Runner {
         probe: &dyn MemoryProbe,
         prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
     ) -> Result<ModelInfo, RunnerError> {
-        self.start_for(
-            Ticket {
-                runner: self as *const Self as usize,
-                generation: self.generation.load(Ordering::SeqCst),
-            },
-            probe,
-            prepare,
-        )
+        self.start_for(self.current_ticket(), probe, prepare)
     }
 
     /// An answer's ticket is reserved at admission, never when its worker resumes.
@@ -851,6 +854,26 @@ impl Runner {
         });
     }
 
+    /// Stops the model process, as [`Self::stop`] does, only while `ticket` is still the claim
+    /// in force and nothing holds the process: after a load check, so that an answer asked
+    /// meanwhile keeps the model it may already be using. Never waits. True when stopped.
+    pub(crate) fn stop_if_current(&self, ticket: Ticket) -> bool {
+        let mut slot = match self.sidecar.try_lock() {
+            Ok(slot) => slot,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return false,
+        };
+        if !self.is_current(ticket) {
+            return false;
+        }
+        let model = slot.as_ref().map(|running| running.model.clone());
+        *slot = None;
+        if let Some(model) = model {
+            self.set_status(RunnerStatus::Installed { model });
+        }
+        true
+    }
+
     /// How the last answer was made, when the model said (counts and times only).
     #[allow(dead_code)] // For measuring: the real-model test prints it.
     pub(crate) fn last_stats(&self) -> Option<crate::model_helper::Stats> {
@@ -874,9 +897,7 @@ impl Runner {
         }
     }
 
-    /// Whether a model process is running now.
-    // Used by the tests and the stub's tests only.
-    #[allow(dead_code)]
+    /// Whether a model process is running now: a load check finds the model already loaded.
     pub(crate) fn is_running(&self) -> bool {
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
         match slot.as_mut() {
@@ -1942,6 +1963,24 @@ mod tests {
                 ],
                 max_sentences: 5,
             }
+        }
+
+        #[test]
+        fn a_load_check_stops_the_model_only_while_its_claim_stands() {
+            let runner = Runner::new(config(&[], GIB));
+            let check = runner.current_ticket();
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            // An answer asked since has a newer claim: the model stays for it.
+            let answer = runner.ticket();
+            assert!(!runner.stop_if_current(check));
+            assert!(runner.is_running());
+            assert!(runner.is_current(answer));
+            // Taking the claim in force ends none; under it, the model stops.
+            let check = runner.current_ticket();
+            assert!(runner.is_current(answer));
+            assert!(runner.stop_if_current(check));
+            assert!(!runner.is_running());
+            assert!(matches!(runner.status(), RunnerStatus::Installed { .. }));
         }
 
         #[test]

@@ -1708,6 +1708,10 @@ ai-model-accepted = { $name }，{ $size } MB。授權：{ $licence }。
 ai-model-reads = 每次約可讀 { $pages } 頁（約 { $characters } 個英文字元）。表格和某些語言會更少。
 
 ai-model-readsEstimate = 在下次使用此模型之前，這只是估計值。
+ai-model-loadCheck = 正在檢查此模型能否在此電腦上執行…
+ai-model-loadCheckCannotRun = 此電腦無法執行此模型。請稍後重試，或選擇其他模型。
+ai-model-loadCheckMemory = 目前可用記憶體不足，無法試用此模型。請關閉其他程式後重試。
+ai-model-loadCheckRetry = 重試
 
 ai-model-where = 在哪裡取得檔案
 

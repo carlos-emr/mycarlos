@@ -4,7 +4,12 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
 import { humanText, visibleText } from "../test/humanText";
-import type { AcceptedModel, ModelRow, ModelStatus } from "../ai/types";
+import type {
+  AcceptedModel,
+  LoadCheck,
+  ModelRow,
+  ModelStatus,
+} from "../ai/types";
 import { AiModelSetting } from "./AiModelSetting";
 
 const native = vi.hoisted(() => ({
@@ -1918,5 +1923,171 @@ describe("Catalog copy focus and global picker ownership", () => {
     await screen.findByRole("button", { name: "Remove FAKE model" });
     expect(onStatus).toHaveBeenCalledWith(installed);
     expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+});
+
+describe("Loading the chosen model once (D218)", () => {
+  // Hashes of their own: what a check said is kept for the app session.
+  const first: AcceptedModel = {
+    ...fake,
+    name: "FAKE first",
+    sha256: "2".repeat(64),
+  };
+  const other: AcceptedModel = {
+    ...fake,
+    name: "FAKE other",
+    fileName: "FAKE-other.gguf",
+    sha256: "3".repeat(64),
+    sourceUrl: "https://example.invalid/FAKE-other.gguf",
+  };
+  const firstInUse: ModelStatus = {
+    state: "installed",
+    model: { name: first.name, sha256: first.sha256 },
+  };
+  const usedOther: ModelStatus = {
+    state: "installed",
+    model: { name: other.name, sha256: other.sha256 },
+  };
+  const rows = (otherState: ModelRow["state"] = "installed"): ModelRow[] => [
+    { index: 0, model: first, state: "installed", inUse: true, addedByYou: false },
+    { index: 1, model: other, state: otherState, inUse: false, addedByYou: false },
+  ];
+  const checks = () =>
+    native.invoke.mock.calls.filter(([command]) => command === "ai_model_check");
+  const row = (name: string) => screen.getByRole("region", { name });
+  const pickOther = async () => {
+    render(<AiModelSetting status={firstInUse} onStatus={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("radio", { name: other.name }),
+    );
+  };
+
+  it("loads a chosen model once and says when this computer cannot run it", async () => {
+    answer({
+      ai_models: rows(),
+      ai_model_use: usedOther,
+      ai_model_check: "cannotRun",
+    });
+    await pickOther();
+    const alert = await within(row(other.name)).findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "This computer could not run this model. Try again later, or choose another model.",
+    );
+    expect(checks()).toEqual([["ai_model_check", { request: { index: 1 } }]]);
+    expect(screen.getByRole("status")).toHaveTextContent("Model in use changed");
+    expect(screen.getByRole("status")).not.toHaveTextContent("Checking");
+    expect(within(row(first.name)).queryByRole("alert")).toBeNull();
+  });
+
+  it("says it is checking after the change, then confirms what the model reads", async () => {
+    let finish!: (outcome: LoadCheck) => void;
+    let limitsAsked = 0;
+    answer({
+      ai_models: rows(),
+      ai_model_use: usedOther,
+      ai_model_check: () =>
+        new Promise<LoadCheck>((resolve) => {
+          finish = resolve;
+        }),
+      ai_model_limits: () => {
+        limitsAsked += 1;
+        return Promise.resolve([]);
+      },
+    });
+    await pickOther();
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Checking that this model runs on this computer…",
+      ),
+    );
+    // Said after the change, never in its place.
+    expect(screen.getByRole("status")).toHaveTextContent("Model in use changed");
+    const before = limitsAsked;
+    await act(async () => finish("ready"));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).not.toHaveTextContent("Checking"),
+    );
+    // Its card now confirms what it reads: the limits are asked again.
+    await waitFor(() => expect(limitsAsked).toBeGreaterThan(before));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(checks()).toHaveLength(1);
+  });
+
+  it("says there is not enough free memory now, with no figure, and Try again checks again", async () => {
+    const outcomes: LoadCheck[] = ["memory", "ready"];
+    answer({
+      ai_models: rows(),
+      ai_model_use: usedOther,
+      ai_model_check: () => Promise.resolve(outcomes.shift()),
+    });
+    await pickOther();
+    const alert = await within(row(other.name)).findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "There isn't enough free memory to try this model now. Close some other programs, then try again.",
+    );
+    expect(alert.textContent).not.toMatch(/\d/);
+    await userEvent.click(
+      within(row(other.name)).getByRole("button", { name: "Try again" }),
+    );
+    await waitFor(() => expect(checks()).toHaveLength(2));
+    await waitFor(() =>
+      expect(within(row(other.name)).queryByRole("alert")).toBeNull(),
+    );
+    expect(
+      within(row(other.name)).queryByRole("button", { name: "Try again" }),
+    ).toBeNull();
+  });
+
+  it("says nothing when the check was skipped, as an answer was being written", async () => {
+    answer({
+      ai_models: rows(),
+      ai_model_use: usedOther,
+      ai_model_check: "skipped",
+    });
+    await pickOther();
+    await waitFor(() => expect(checks()).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).not.toHaveTextContent("Checking"),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("checks a download that becomes the model in use, and not one beside the model in use", async () => {
+    answer(
+      {
+        ai_model_download: { outcome: "added", status: installed },
+        ai_model_check: "ready",
+      },
+      { state: "notInstalled" },
+    );
+    const { unmount } = render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Download FAKE model" }),
+    );
+    await waitFor(() =>
+      expect(checks()).toEqual([["ai_model_check", { request: { index: 0 } }]]),
+    );
+    unmount();
+
+    native.invoke.mockReset();
+    answer({
+      ai_models: rows("notDownloaded"),
+      ai_model_download: { outcome: "added", status: firstInUse },
+      ai_model_check: "ready",
+    });
+    render(<AiModelSetting status={firstInUse} onStatus={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Download FAKE other" }),
+    );
+    await waitFor(() =>
+      expect(row(other.name)).toHaveTextContent("Installed"),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Model added"),
+    );
+    expect(checks()).toEqual([]);
   });
 });
