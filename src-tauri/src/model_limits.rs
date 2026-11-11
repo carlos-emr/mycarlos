@@ -126,6 +126,12 @@ pub(crate) struct ModelLimits {
     pub(crate) file_bytes: u64,
     /// The free memory a start needs, by today's rule (`model_runtime::needed_bytes`).
     pub(crate) needed_bytes: u64,
+    /// The most it reads at a time when memory allows a larger window (D249): the room in the
+    /// largest listed window, up to its own context once the helper has read it. `None` when it
+    /// has no larger window (its cache cost is not known, or its context is no longer than
+    /// `capacity`'s). The same on every computer: it promises nothing about memory now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) longest: Option<Capacity>,
 }
 
 /// A model's capacity: `catalogue`'s until the helper has made its context (`card`, already
@@ -148,6 +154,14 @@ pub(crate) fn limits(
     needed_bytes: u64,
 ) -> ModelLimits {
     let capacity = confirmed_capacity(model.capacity, card);
+    let trained = card.map_or(0, |card| card.trained_context);
+    let longest = crate::model_helper::CONTEXT_WINDOWS
+        .iter()
+        .copied()
+        .filter(|window| trained == 0 || *window <= trained)
+        .max()
+        .filter(|window| model.cache_bytes_per_token > 0 && *window > capacity.context_tokens)
+        .map(Capacity::at);
     ModelLimits {
         index,
         capacity,
@@ -156,6 +170,7 @@ pub(crate) fn limits(
         parameters: card.map(|card| card.parameters),
         file_bytes: model.size_bytes,
         needed_bytes,
+        longest,
     }
 }
 
@@ -303,6 +318,7 @@ mod tests {
                 parameters: None,
                 file_bytes: model.size_bytes,
                 needed_bytes: 7_000_000_000,
+                longest: Some(Capacity::at(32_768)),
             }
         );
         let confirmed = limits(0, model, Some(&card()), 7_000_000_000);
@@ -324,6 +340,37 @@ mod tests {
             ..card()
         };
         assert_eq!(limits(0, model, Some(&large), 0).capacity, Capacity::HELPER);
+    }
+
+    #[test]
+    fn the_longest_read_is_the_largest_window_up_to_the_models_own_context() {
+        let model = &CATALOG[0];
+        // 32,768 less the prompt's reserve, the summary and the margin: about 31 pages.
+        let longest = limits(0, model, None, 0).longest.unwrap();
+        assert_eq!(longest, Capacity::at(32_768));
+        assert_eq!(longest.document_tokens, 31_086);
+        // A model trained for 16k reads at most that.
+        let shorter = ModelCard {
+            trained_context: 16_384,
+            ..card()
+        };
+        assert_eq!(
+            limits(0, model, Some(&shorter), 0).longest,
+            Some(Capacity::at(16_384))
+        );
+        // No larger window: none for a model trained for no more than the default, or one
+        // whose cache cost is not known.
+        let small = ModelCard {
+            trained_context: 4_096,
+            context_made: 4_096,
+            ..card()
+        };
+        assert_eq!(limits(0, model, Some(&small), 0).longest, None);
+        let unknown = Accepted {
+            cache_bytes_per_token: 0,
+            ..*model
+        };
+        assert_eq!(limits(0, &unknown, None, 0).longest, None);
     }
 
     #[test]
@@ -358,7 +405,8 @@ mod tests {
                 "trainedContext": 262_144,
                 "parameters": 4_330_000_000u64,
                 "fileBytes": model.size_bytes,
-                "neededBytes": 1
+                "neededBytes": 1,
+                "longest": { "contextTokens": 32_768, "documentTokens": 31_086 }
             })
         );
     }

@@ -285,7 +285,8 @@ pub(crate) struct SummaryResult {
     pub(crate) read_rate: Option<ReadRate>,
 }
 
-/// An answer's reading time (from the helper's [`model_helper::Stats`]).
+/// An answer's reading time (from the helper's [`model_helper::Stats`]): the prompt tokens it
+/// read and how long that took, and how long the answer took.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReadRate {
@@ -296,8 +297,14 @@ pub(crate) struct ReadRate {
 
 impl From<model_helper::Stats> for ReadRate {
     fn from(stats: model_helper::Stats) -> Self {
+        // A kept instruction prefix put back was not read: its tokens took no reading time.
+        let read = if stats.cache_hit {
+            stats.prompt_tokens.saturating_sub(stats.prefix_len)
+        } else {
+            stats.prompt_tokens
+        };
         Self {
-            prompt_tokens: stats.prompt_tokens,
+            prompt_tokens: read,
             prompt_ms: stats.prompt_ms,
             answer_ms: stats.answer_ms,
         }
@@ -1324,6 +1331,21 @@ mod tests {
                 "lastPageCut": false
             })
         );
+        // The reading rate leaves out a kept prefix put back, which took no reading time.
+        let stats = model_helper::Stats {
+            prompt_tokens: 7_450,
+            prompt_ms: 503_000,
+            answer_ms: 40_000,
+            prefix_len: 450,
+            cache_hit: true,
+            ..model_helper::Stats::default()
+        };
+        assert_eq!(ReadRate::from(stats).prompt_tokens, 7_000);
+        let read_all = model_helper::Stats {
+            cache_hit: false,
+            ..stats
+        };
+        assert_eq!(ReadRate::from(read_all).prompt_tokens, 7_450);
         // With the helper's reading time (D250): counts and times only.
         assert_eq!(
             serde_json::to_value(ReadRate {
