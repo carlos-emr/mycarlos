@@ -9,7 +9,7 @@
 
 use crate::local_runner::{
     self, check_budget, AnswerLimit, AnswerWatch, Budget, CheckStop, MemoryProbe, ModelInfo, Page,
-    Runner, RunnerConfig, RunnerError, Sentence, SummaryRequest,
+    Runner, RunnerConfig, RunnerError, RunnerStatus, Sentence, SummaryRequest,
 };
 use crate::model_helper;
 use crate::vault::{AiResultInput, AiTool};
@@ -117,6 +117,11 @@ pub(crate) struct SummarizeRequest {
     pub(crate) record_id: Option<uuid::Uuid>,
     #[serde(default)]
     pub(crate) ticket: Option<uuid::Uuid>,
+    /// The window the patient agreed to read the document in (D249, D250: the reader asks
+    /// before every read above the default window). Only a listed window; absent, the default,
+    /// as before. Free memory may still make it smaller when the read starts.
+    #[serde(default)]
+    pub(crate) context_tokens: Option<u32>,
 }
 
 /// An explain request from the renderer.
@@ -274,6 +279,41 @@ pub(crate) struct SummaryResult {
     pub(crate) model: ModelInfo,
     pub(crate) last_page: u32,
     pub(crate) last_page_cut: bool,
+    /// How fast this computer read the prompt and wrote the answer, when the helper said (D250:
+    /// the reader's expected minutes before a long read). Counts and times only, never words.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) read_rate: Option<ReadRate>,
+}
+
+/// An answer's reading time (from the helper's [`model_helper::Stats`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReadRate {
+    pub(crate) prompt_tokens: u32,
+    pub(crate) prompt_ms: u64,
+    pub(crate) answer_ms: u64,
+}
+
+impl From<model_helper::Stats> for ReadRate {
+    fn from(stats: model_helper::Stats) -> Self {
+        Self {
+            prompt_tokens: stats.prompt_tokens,
+            prompt_ms: stats.prompt_ms,
+            answer_ms: stats.answer_ms,
+        }
+    }
+}
+
+/// The windows a summary may be read in on the model in use (D249), as `ai_model_status` tells
+/// the reader.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SummaryWindows {
+    /// Each listed window from the default up to the cap and the model's own context, smallest
+    /// first, with its room for the document.
+    pub(crate) sizes: Vec<crate::local_model::Capacity>,
+    /// The largest of them free memory allows now.
+    pub(crate) memory_allows: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -414,19 +454,6 @@ pub(crate) fn choose_window(
         .unwrap_or(model_helper::CONTEXT_TOKENS)
 }
 
-/// About the window a summary of `text_bytes` of pages needs to read them all (D249, design
-/// section 4): the pages at about 3 bytes a token, the helper's words around them
-/// ([`local_runner::SUMMARY_PROMPT_TOKENS`]), its longest summary and its margin. The helper
-/// counts the pages' own tokens and reads the ones that fit.
-pub(crate) fn summary_need(text_bytes: usize) -> u32 {
-    let need = model_helper::window_need(
-        local_runner::SUMMARY_PROMPT_TOKENS as usize,
-        text_bytes.div_ceil(3),
-        model_helper::SUMMARY_TOKENS,
-    );
-    u32::try_from(need).unwrap_or(u32::MAX)
-}
-
 /// The next smaller listed window than `window`, down to the default: what a summary asks for
 /// once more when the helper could not make the one it asked (D249).
 pub(crate) fn smaller_window(window: u32) -> u32 {
@@ -456,7 +483,8 @@ pub(crate) fn check_summary(request: &SummarizeRequest) -> Result<(), AiError> {
             .all(|page| (page.index as usize) < MAX_PAGES && page.text.len() <= MAX_PAGE_BYTES)
         && total <= MAX_TEXT_BYTES
         && pages.iter().any(|page| !page.text.trim().is_empty())
-        && model_helper::language_name(&request.lang).is_some();
+        && model_helper::language_name(&request.lang).is_some()
+        && request.context_tokens.is_none_or(model_helper::is_window);
     valid.then_some(()).ok_or(AiError::Failed)
 }
 
@@ -710,8 +738,13 @@ impl ModelRuntime {
         check_summary(&request)?;
         self.runner.watch_answer(ticket, watch);
         let model = self.start(ticket)?;
-        let text_bytes = request.pages.iter().map(|page| page.text.len()).sum();
-        let window = self.window_for(&model, text_bytes);
+        // A larger window only when the patient agreed to the longer read (D250).
+        let window = match request.context_tokens {
+            Some(agreed) if agreed > model_helper::CONTEXT_TOKENS => {
+                self.window_for(&model, agreed)
+            }
+            _ => model_helper::CONTEXT_TOKENS,
+        };
         let mut asked = SummaryRequest {
             lang: request.lang,
             pages: request.pages,
@@ -737,14 +770,16 @@ impl ModelRuntime {
             model: summary.model,
             last_page: summary.last_page,
             last_page_cut: summary.last_page_cut,
+            read_rate: self.runner.last_stats().map(ReadRate::from),
         })
     }
 
-    /// The window a summary of `text_bytes` of pages is read in by the running `model` (D249,
-    /// design section 4): the smallest that holds them, up to the cap and the model's own
-    /// context, as free memory allows the extra cache (the helper is running, so only that is
-    /// still to find). The default window for a model whose cache cost or card is not known.
-    fn window_for(&self, model: &ModelInfo, text_bytes: usize) -> u32 {
+    /// The window a summary the patient agreed to read in `agreed` tokens is read in by the
+    /// running `model` (D249, design section 4): that one, never above the cap and the model's
+    /// own context, and smaller while free memory refuses its extra cache (the helper is
+    /// running, so only that is still to find). The default window for a model whose cache cost
+    /// or card is not known.
+    fn window_for(&self, model: &ModelInfo, agreed: u32) -> u32 {
         let cost = self
             .window_cost
             .lock()
@@ -755,12 +790,61 @@ impl ModelRuntime {
         let Some(card) = self.runner.card_for(&model.sha256) else {
             return model_helper::CONTEXT_TOKENS;
         };
-        choose_window(
-            summary_need(text_bytes),
-            card.trained_context,
-            cost,
-            |extra| matches!(check_budget(extra, &*self.probe), Budget::Fits { .. }),
-        )
+        choose_window(agreed, card.trained_context, cost, |extra| {
+            matches!(check_budget(extra, &*self.probe), Budget::Fits { .. })
+        })
+    }
+
+    /// The windows a summary may be read in on the model in use (D249–D251), for the reader's
+    /// question before a long read; `None` when it has no larger one (its cache cost is not
+    /// known, or its own context is no longer than the default). `size_bytes` and
+    /// `cache_bytes_per_token` are its list entry's. Free memory is read now: for the extra
+    /// cache when the helper runs this model, and for its start as well when it does not.
+    /// Never waits for an answer: the runner's status, not its process, says what runs.
+    pub(crate) fn summary_windows(
+        &self,
+        model: &ModelInfo,
+        size_bytes: u64,
+        cache_bytes_per_token: u32,
+    ) -> Option<SummaryWindows> {
+        if cache_bytes_per_token == 0 {
+            return None;
+        }
+        let trained = self
+            .runner
+            .card_for(&model.sha256)
+            .map_or(0, |card| card.trained_context);
+        let sizes: Vec<_> = model_helper::CONTEXT_WINDOWS
+            .iter()
+            .copied()
+            .filter(|window| trained == 0 || *window <= trained)
+            .map(crate::local_model::Capacity::at)
+            .collect();
+        if sizes.len() < 2 {
+            return None;
+        }
+        let running = match self.runner.status() {
+            RunnerStatus::Ready { model: running } | RunnerStatus::Working { model: running } => {
+                running.sha256 == model.sha256
+            }
+            _ => false,
+        };
+        let start = if running { 0 } else { needed_bytes(size_bytes) };
+        let memory_allows = choose_window(
+            model_helper::CONTEXT_CAP,
+            trained,
+            cache_bytes_per_token,
+            |extra| {
+                matches!(
+                    check_budget(start.saturating_add(extra), &*self.probe),
+                    Budget::Fits { .. }
+                )
+            },
+        );
+        Some(SummaryWindows {
+            sizes,
+            memory_allows,
+        })
     }
 
     /// What a term means in its sentence, in the language asked. `watch` is told the answer's
@@ -936,19 +1020,8 @@ mod tests {
             lang: lang.to_owned(),
             record_id: None,
             ticket: None,
+            context_tokens: None,
         }
-    }
-
-    #[test]
-    fn a_summary_needs_its_pages_and_the_helpers_prompt_answer_and_margin() {
-        assert_eq!(summary_need(0), 750 + 900 + 32);
-        // The default window's room for the document (6,510 tokens, #301) needs it exactly.
-        assert_eq!(summary_need(6_510 * 3), model_helper::CONTEXT_TOKENS);
-        assert_eq!(
-            summary_need(6_510 * 3 + 1),
-            model_helper::CONTEXT_TOKENS + 1
-        );
-        assert_eq!(summary_need(usize::MAX), u32::MAX);
     }
 
     #[test]
@@ -988,10 +1061,60 @@ mod tests {
                     .collect(),
                 "en",
             ),
+            // A window the patient agreed to is a listed one (D249).
+            SummarizeRequest {
+                context_tokens: Some(10_000),
+                ..summary(vec![page(0, "FAKE text")], "en")
+            },
         ];
         for request in refused {
             assert_eq!(check_summary(&request), Err(AiError::Failed));
         }
+        for window in model_helper::CONTEXT_WINDOWS {
+            let request = SummarizeRequest {
+                context_tokens: Some(window),
+                ..summary(vec![page(0, "FAKE text")], "en")
+            };
+            assert_eq!(check_summary(&request), Ok(()));
+        }
+    }
+
+    #[test]
+    fn the_reader_is_told_the_windows_memory_allows_before_the_model_starts() {
+        const MIB: u64 = 1024 * 1024;
+        let model = ModelInfo {
+            name: "FAKE model".to_owned(),
+            sha256: "ab".repeat(32),
+        };
+        let qwen = 32 * 1024;
+        let windows = |free: u64, cost: u32| {
+            let (source, _) = fake(Some(GIB), Ok(()));
+            runtime(source, Some(free)).summary_windows(&model, GIB, cost)
+        };
+        // A model whose cache cost is not known has no larger window.
+        assert_eq!(windows(64 * GIB, 0), None);
+        let all = windows(64 * GIB, qwen).unwrap();
+        assert_eq!(
+            all.sizes
+                .iter()
+                .map(|size| size.context_tokens)
+                .collect::<Vec<_>>(),
+            model_helper::CONTEXT_WINDOWS
+        );
+        assert_eq!(all.sizes[0], crate::local_model::Capacity::HELPER);
+        assert_eq!(all.memory_allows, model_helper::CONTEXT_CAP);
+        // Not running: its start counts too. 300 MiB beyond it holds 16k's 256 MiB, not 24k's.
+        assert_eq!(
+            windows(needed_bytes(GIB) + 300 * MIB, qwen)
+                .unwrap()
+                .memory_allows,
+            16_384
+        );
+        // Not even the start: the default, which the start itself then refuses as before.
+        assert_eq!(
+            windows(GIB, qwen).unwrap().memory_allows,
+            model_helper::CONTEXT_TOKENS
+        );
     }
 
     #[test]
@@ -1191,6 +1314,7 @@ mod tests {
                 model: model.clone(),
                 last_page: 3,
                 last_page_cut: false,
+                read_rate: None,
             })
             .unwrap(),
             serde_json::json!({
@@ -1198,6 +1322,27 @@ mod tests {
                 "model": {"name": "FAKE model", "sha256": "0".repeat(64)},
                 "lastPage": 3,
                 "lastPageCut": false
+            })
+        );
+        // With the helper's reading time (D250): counts and times only.
+        assert_eq!(
+            serde_json::to_value(ReadRate {
+                prompt_tokens: 7_000,
+                prompt_ms: 503_000,
+                answer_ms: 40_000,
+            })
+            .unwrap(),
+            serde_json::json!({"promptTokens": 7_000, "promptMs": 503_000, "answerMs": 40_000})
+        );
+        assert_eq!(
+            serde_json::to_value(SummaryWindows {
+                sizes: vec![crate::local_model::Capacity::at(8_192)],
+                memory_allows: 8_192,
+            })
+            .unwrap(),
+            serde_json::json!({
+                "sizes": [{"contextTokens": 8_192, "documentTokens": 6_510}],
+                "memoryAllows": 8_192
             })
         );
         assert_eq!(
@@ -1517,7 +1662,6 @@ mod tests {
     #[cfg(unix)]
     mod with_the_fake_model {
         use super::*;
-        use crate::local_runner::RunnerStatus;
         use std::sync::atomic::Ordering::SeqCst;
 
         fn fake_model(args: &[&str], start_timeout: Duration) -> RunnerConfig {
@@ -1734,35 +1878,44 @@ mod tests {
             std::fs::read_to_string(folder.path().join("windows.log")).unwrap_or_default()
         }
 
-        /// One FAKE page of about `bytes` bytes (about a third as many tokens).
-        fn long(bytes: usize) -> SummarizeRequest {
-            let text = "FAKE clinic note. ".repeat(bytes / 18);
-            summary(vec![page(0, &text)], "en")
+        /// One FAKE page of about `bytes` bytes, the patient having agreed to read it in
+        /// `window` tokens (or not asked: `None`).
+        fn agreed(bytes: usize, window: Option<u32>) -> SummarizeRequest {
+            let text = "FAKE clinic note. ".repeat(bytes.div_ceil(18));
+            SummarizeRequest {
+                context_tokens: window,
+                ..summary(vec![page(0, &text)], "en")
+            }
         }
 
         #[test]
-        fn a_long_summary_is_read_in_the_window_that_holds_it_as_memory_allows() {
+        fn a_summary_is_read_in_the_window_the_patient_agreed_to_as_memory_allows() {
             const MIB: u64 = 1024 * 1024;
             let free = Arc::new(std::sync::atomic::AtomicU64::new(64 * GIB));
             let (runtime, folder) = windowed(logs_windows, &free);
-            // About 1,700, 9,700, 13,700 and 31,700 tokens: 8k, 12k, 16k and 32k.
-            for bytes in [0, 24_000, 36_000, 90_000] {
-                let request = if bytes == 0 {
-                    summary(vec![page(0, "FAKE text. The FAKE clinic phoned.")], "en")
-                } else {
-                    long(bytes)
-                };
+            for window in [None, Some(8_192), Some(12_288), Some(16_384), Some(32_768)] {
+                let request = agreed(90_000, window);
                 assert!(runtime.summarize(request, Box::new(|_| ())).is_ok());
             }
-            assert_eq!(windows_asked(&folder), "none\n12288\n16384\n32768\n");
-            // Memory for 128 MiB more but not 256: 12k for the 16k document; then none at all.
+            // Never larger than agreed: a long document not agreed to is read as before (D250).
+            assert_eq!(windows_asked(&folder), "none\nnone\n12288\n16384\n32768\n");
+            // The helper runs: the reader is told what the extra cache alone allows.
+            free.store(300 * MIB, SeqCst);
+            let model = runtime.answered_model().unwrap();
+            let windows = runtime.summary_windows(&model, GIB, 32 * 1024).unwrap();
+            assert_eq!(windows.memory_allows, 16_384);
+            // Memory for 128 MiB more but not 256: 12k for 16k agreed; then none at all.
             free.store(200 * MIB, SeqCst);
-            assert!(runtime.summarize(long(36_000), Box::new(|_| ())).is_ok());
+            assert!(runtime
+                .summarize(agreed(90_000, Some(16_384)), Box::new(|_| ()))
+                .is_ok());
             free.store(0, SeqCst);
-            assert!(runtime.summarize(long(36_000), Box::new(|_| ())).is_ok());
+            assert!(runtime
+                .summarize(agreed(90_000, Some(16_384)), Box::new(|_| ()))
+                .is_ok());
             assert_eq!(
                 windows_asked(&folder),
-                "none\n12288\n16384\n32768\n12288\nnone\n"
+                "none\nnone\n12288\n16384\n32768\n12288\nnone\n"
             );
             runtime.stop();
         }
@@ -1772,11 +1925,15 @@ mod tests {
             let free = Arc::new(std::sync::atomic::AtomicU64::new(64 * GIB));
             let (runtime, folder) = windowed(refuses_windows, &free);
             // 12k refused: read in the default window.
-            assert!(runtime.summarize(long(24_000), Box::new(|_| ())).is_ok());
+            assert!(runtime
+                .summarize(agreed(24_000, Some(12_288)), Box::new(|_| ()))
+                .is_ok());
             assert_eq!(windows_asked(&folder), "12288\nnone\n");
             // 32k refused, then 24k: once only, and the answer fails.
             assert_eq!(
-                runtime.summarize(long(90_000), Box::new(|_| ())).err(),
+                runtime
+                    .summarize(agreed(90_000, Some(32_768)), Box::new(|_| ()))
+                    .err(),
                 Some(AiError::Failed)
             );
             assert_eq!(windows_asked(&folder), "12288\nnone\n32768\n24576\n");
@@ -1787,7 +1944,9 @@ mod tests {
         fn a_model_without_a_card_keeps_the_default_window() {
             let free = Arc::new(std::sync::atomic::AtomicU64::new(64 * GIB));
             let (runtime, folder) = windowed(logs_windows_without_a_card, &free);
-            assert!(runtime.summarize(long(36_000), Box::new(|_| ())).is_ok());
+            assert!(runtime
+                .summarize(agreed(36_000, Some(16_384)), Box::new(|_| ()))
+                .is_ok());
             assert_eq!(windows_asked(&folder), "none\n");
             runtime.stop();
         }
