@@ -54,10 +54,18 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false });
 }
 
-async function start(page: Page) {
+async function start(
+  page: Page,
+  windows?: { sizes: FakeCapacity[]; memoryAllows: number },
+) {
   await fakeVaultWith(page, { start: "unlocked" });
   await fakeAiWith(page, {
-    model: { state: "installed", model: FAKE_MODEL, capacity: HELPER },
+    model: {
+      state: "installed",
+      model: FAKE_MODEL,
+      capacity: HELPER,
+      ...(windows ? { windows } : {}),
+    },
     catalog: { capacity: HELPER },
     documents: { [LETTER]: LONG_PAGES },
     // As the helper's own count would: pages 1 to 2.
@@ -160,6 +168,58 @@ test("at 560 px wide the question fits without scrolling sideways", async ({
     ),
   ).toBe(true);
   await shot(page, "2-reader-question-560");
+});
+
+// D249-D251: with a larger window free memory allows, the question offers the
+// longer read, and the window goes to the model only on that answer.
+const WINDOW_12K: FakeCapacity = {
+  contextTokens: 12288,
+  documentTokens: 10606,
+};
+
+test("offers to read all of a long document in a larger window, and asks for that window only on Read all of it", async ({
+  page,
+}) => {
+  await start(page, { sizes: [HELPER, WINDOW_12K], memoryAllows: 12288 });
+  const reader = await openReader(page);
+  await openSummary(page, reader);
+  const panel = summaryPanel(reader);
+  const long = en("ai.summary.long", { pages: FAKE_PAGE_COUNT });
+  await expect(panel.getByText(long, { exact: true })).toBeVisible();
+  const all = button(panel, en("ai.summary.readAll"));
+  await expect(all).toBeFocused();
+  await expect(all).toHaveAccessibleDescription(
+    `${long} ${en("ai.summary.tooLongAfter")}`,
+  );
+  await expect(button(panel, en("ai.summary.firstPages"))).toBeVisible();
+  expect(await aiCalls(page, AI_COMMANDS.summarize)).toHaveLength(0);
+  await shot(page, "4-reader-long-read-desktop");
+
+  await all.click();
+  await expect(panel.getByText(long, { exact: true })).toHaveCount(0);
+  const calls = await aiCalls(page, AI_COMMANDS.summarize);
+  expect(calls).toHaveLength(1);
+  expect(calls[0].request?.contextTokens).toBe(12288);
+  await expectOnlyFakedCommands(page);
+});
+
+test("says closing other programs may help when memory allows only the default window", async ({
+  page,
+}) => {
+  await start(page, { sizes: [HELPER, WINDOW_12K], memoryAllows: 8192 });
+  const reader = await openReader(page);
+  await openSummary(page, reader);
+  const panel = summaryPanel(reader);
+  await expect(panel.getByText(QUESTION(), { exact: true })).toBeVisible();
+  await expect(
+    panel.getByText(en("ai.summary.memoryHint"), { exact: true }),
+  ).toBeVisible();
+  await expect(button(panel, en("ai.summary.firstPages"))).toHaveCount(0);
+  await button(panel, en("ai.summary.readPages", { last: 2 })).click();
+  const calls = await aiCalls(page, AI_COMMANDS.summarize);
+  expect(calls).toHaveLength(1);
+  expect(calls[0].request).not.toHaveProperty("contextTokens");
+  await expectOnlyFakedCommands(page);
 });
 
 test("Cancel closes the panel, asks no model, and puts the focus back on Summary", async ({
