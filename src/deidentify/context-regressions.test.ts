@@ -92,8 +92,8 @@ describe("identity roles and clinical occurrences", () => {
   });
 
   it.each([
-    "SIN invented checksum-valid: 913704680; checksum-invalid control: 913704681.",
-    "NAS inventé à somme valide : 913704680; contrôle à somme invalide : 913704681.",
+    "SIN invented checksum-valid: 013704689; checksum-invalid control: 013704680.",
+    "NAS inventé à somme valide : 013704689; contrôle à somme invalide : 013704680.",
   ])(
     "protects sensitive labelled values including a linked mistyped control: %s",
     (source) => {
@@ -102,16 +102,16 @@ describe("identity roles and clinical occurrences", () => {
         "sin",
         "sin",
       ]);
-      expect(result.toSend).not.toMatch(/91370468[01]/);
+      expect(result.toSend).not.toMatch(/01370468[09]/);
       expect(restore(result.toSend, result)).toBe(source);
     },
   );
 
   it("keeps unrelated nine-digit measurements outside the sensitive field", () => {
     const source =
-      "NAS inventé à somme valide 926183401; instrument count: 123456789.\nCount 987654321.";
+      "NAS inventé à somme valide 026183400; instrument count: 123456789.\nCount 987654321.";
     const result = run(source);
-    expect(result.toSend).not.toContain("926183401");
+    expect(result.toSend).not.toContain("026183400");
     expect(result.toSend).toContain("instrument count: 123456789");
     expect(result.toSend).toContain("Count 987654321");
   });
