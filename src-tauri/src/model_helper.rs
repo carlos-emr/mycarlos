@@ -429,10 +429,13 @@ advice, and do not suggest changing any medicine. If the document gives instruct
 repeat them as the document's instructions.";
 
 /// Part (a) of the 11 Nov variant design: what a summary says first, then what it says next.
-/// Kept in this one place, as it may be revised once the instructions-first run (E3) is scored.
+/// After the instructions-first run (E3), it also says what is not an instruction: E1 and E3
+/// wrote visits from a printed date, a report time or the signing doctor.
 const SUMMARY_ORDER: &str =
     "First say what the document found: the main problem or diagnosis and the key results, each \
-     with its number and unit. Then say what the patient must do and when.";
+     with its number and unit. Then say what the patient must do and when, only where the \
+     document tells the patient to do it: a doctor's name or signature, a printed, collected or \
+     reported date, or a medicine already given is not an instruction.";
 
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
@@ -1004,11 +1007,14 @@ mod tests {
             "Summarize this document for the patient in English, in at most 10 short sentences \
              (fewer if the document is short). First say what the document found: the main \
              problem or diagnosis and the key results, each with its number and unit. Then say \
-             what the patient must do and when. Put one fact in each sentence. For each \
-             sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 words, \
-             exactly as written (same spelling, numbers, accents and punctuation, no '...' and \
-             no joined pieces), in the document's own language. If you cannot find such a piece \
-             for a sentence, leave that sentence out.\n\nReply only with JSON in this shape: \
+             what the patient must do and when, only where the document tells the patient to do \
+             it: a doctor's name or signature, a printed, collected or reported date, or a \
+             medicine already given is not an instruction. Put one fact in each sentence. For \
+             each sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 \
+             words, exactly as written (same spelling, numbers, accents and punctuation, no \
+             '...' and no joined pieces), in the document's own language. If you cannot find \
+             such a piece for a sentence, leave that sentence out.\n\nReply only with JSON in \
+             this shape: \
              {\"sentences\": [{\"text\": \"...\", \"quote\": \"...\"}]}\n\nDocument:\n<<<\n"
         );
         assert_eq!(after, "\n>>>");
