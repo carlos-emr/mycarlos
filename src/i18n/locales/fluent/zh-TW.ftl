@@ -377,8 +377,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = 此相片已在保險庫�
 
 interface-VaultLibrary-topLevel = 最上層
 
-interface-VaultLibrary-unlockedLockNow = 已解鎖 · 立即鎖定
-
 interface-VaultLibrary-working = 處理中…
 
 interface-camera-denied = myCarlos 無法使用相機。{ $help } 接著請選擇「重試」。
@@ -586,6 +584,12 @@ library-folder-open = 開啟 { $name }
 library-folder-rename = 重新命名資料夾 { $name }
 
 library-items = { $count } 個可見紀錄項目
+
+library-location-documents = 位置：{ $place }。{ $documents }。
+
+library-location-summary = 位置：{ $place }。{ $folders }，{ $documents }。
+
+library-lock-unlocked = 已解鎖
 
 library-noMatch-help = 請嘗試其他搜尋內容。
 
@@ -859,8 +863,6 @@ readingAid-title = 診所提供的閱讀輔助
 readingAid-unavailable = 無法安全顯示此閱讀輔助。請改為開啟原始文件。
 
 record-kind-document = 文件
-
-record-source-manual = 手動匯入 — 未驗證
 
 recover-intro = 使用復原金鑰開啟保險庫並選擇新密語。
 
@@ -1246,6 +1248,16 @@ personDetails-futureDate = 出生日期不能是未來的日期。
 
 personDetails-help = 這些資料保存在此加密保險庫中，用於提示分享的文件可能屬於誰。這些資料不會驗證文件的來源。
 
+personDetails-setup = 全名和出生日期
+
+personDetails-later = 稍後新增
+
+personDetails-reminder = 請新增 { $name } 的全名和出生日期。這些資料可幫助 myCarlos 判斷文件屬於誰。
+
+personDetails-notNow = 暫不
+
+personDetails-notSaved = 保險庫已就緒，但全名和出生日期未能保存。請在「編輯資料」中新增。
+
 personDetails-invalidDate = 請依年、月、日輸入有效的出生日期。
 
 personDetails-list = 個人資料
@@ -1312,9 +1324,19 @@ portal-copyFailed = 請選取完整的裝置代碼並複製。
 
 portal-dateNotRecorded = 未記錄日期
 
+portal-defaultDeviceName = { $platform } 上的 myCarlos
+
 portal-deviceCode = 裝置代碼
 
 portal-deviceName = 此裝置的名稱
+
+portal-deviceDetailsShow = 顯示裝置詳細資料
+
+portal-deviceDetailsHide = 隱藏裝置詳細資料
+
+portal-earlierShow = 顯示先前的 { $count } 次嘗試
+
+portal-earlierHide = 隱藏先前的嘗試
 
 portal-errorAddress = 請輸入入口網站的 HTTPS 網址，不要包含使用者名稱、密碼、查詢參數或片段識別碼。
 
@@ -1491,6 +1513,8 @@ interface-history-event-imported = 文件已新增
 
 interface-history-event-moved = 文件已移動
 
+interface-history-event-other = 其他事件
+
 interface-history-event-passphraseChanged = 密語已變更
 
 interface-history-event-portalLinkStarted = 已開始連結診所
@@ -1538,6 +1562,8 @@ interface-history-how-movedFromShared = 從「與我分享」移出
 interface-history-how-passphrase = 密語
 
 interface-history-how-patient = 由您隱藏
+
+interface-history-how-personFolder = 某人的資料夾
 
 interface-history-how-picked = 從所選檔案匯入
 
@@ -1624,6 +1650,8 @@ portal-codeRefused = 診所入口網站未接受此驗證碼。請幾分鐘後�
 portal-codeSubmit = 確認驗證碼
 
 portal-codeSubmitted = 驗證碼已送出。正在等待診所確認此裝置。如果 10 分鐘內仍未確認，請重新申請。
+
+portal-linkAnother = 連結另一家診所
 
 ai-summary-button = 摘要
 

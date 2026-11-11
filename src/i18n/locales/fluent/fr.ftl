@@ -620,8 +620,6 @@ interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = Cette photo est déjà dan
 
 interface-VaultLibrary-topLevel = Niveau supérieur
 
-interface-VaultLibrary-unlockedLockNow = Déverrouillé · Verrouiller maintenant
-
 interface-VaultLibrary-working = Opération en cours…
 
 kit-keep = Conservez-la dans un endroit privé, loin de l’appareil. Toute personne qui a cette clé et une copie de votre coffre-fort peut l’ouvrir. Si vous configurez une nouvelle clé de récupération, celle-ci n’ouvre plus le coffre-fort sur cet appareil.
@@ -681,6 +679,12 @@ library-items =
     [many] { $count } d’éléments visibles dans la bibliothèque
     *[other] { $count } éléments visibles dans la bibliothèque
     }
+
+library-location-documents = Dans { $place } : { $documents }.
+
+library-location-summary = Dans { $place } : { $folders }, { $documents }.
+
+library-lock-unlocked = Déverrouillé
 
 library-noMatch-help = Essayez une autre recherche.
 
@@ -974,8 +978,6 @@ readingAid-title = Aide à la lecture de votre clinique
 readingAid-unavailable = Cette aide à la lecture ne peut pas être affichée en toute sécurité. Ouvrez plutôt le document original.
 
 record-kind-document = Document
-
-record-source-manual = Importation manuelle — non vérifiée
 
 recover-intro = Utilisez votre clé de récupération pour ouvrir le coffre-fort et choisir une nouvelle phrase secrète.
 
@@ -1406,6 +1408,16 @@ personDetails-futureDate = La date de naissance ne peut pas être dans le futur.
 
 personDetails-help = Conservés dans ce coffre chiffré pour suggérer à qui un document partagé est destiné. Ces renseignements ne vérifient pas la source d'un document.
 
+personDetails-setup = Nom complet et date de naissance
+
+personDetails-later = Les ajouter plus tard
+
+personDetails-reminder = Ajoutez le nom complet et la date de naissance de { $name }. Ils aident myCarlos à savoir à qui un document est destiné.
+
+personDetails-notNow = Pas maintenant
+
+personDetails-notSaved = Le coffre-fort est prêt, mais le nom complet et la date de naissance n’ont pas été enregistrés. Ajoutez-les dans Modifier les renseignements.
+
 personDetails-invalidDate = Saisissez une date de naissance valide : année, mois et jour.
 
 personDetails-list = Renseignements des personnes
@@ -1472,9 +1484,23 @@ portal-copyFailed = Sélectionnez le code entier de l’appareil et copiez-le.
 
 portal-dateNotRecorded = Date non consignée
 
+portal-defaultDeviceName = myCarlos sur { $platform }
+
 portal-deviceCode = Code de l’appareil
 
 portal-deviceName = Nom de cet appareil
+
+portal-deviceDetailsShow = Afficher les détails de l’appareil
+
+portal-deviceDetailsHide = Masquer les détails de l’appareil
+
+portal-earlierShow =
+    { $count ->
+    [one] Afficher { $count } tentative précédente
+    *[other] Afficher { $count } tentatives précédentes
+    }
+
+portal-earlierHide = Masquer les tentatives précédentes
 
 portal-errorAddress = Saisissez l’adresse HTTPS du portail sans nom d’utilisateur, mot de passe, paramètres de requête ni fragment.
 
@@ -1656,6 +1682,8 @@ interface-history-event-imported = Document ajouté
 
 interface-history-event-moved = Document déplacé
 
+interface-history-event-other = Autre événement
+
 interface-history-event-passphraseChanged = Phrase secrète modifiée
 
 interface-history-event-portalLinkStarted = Liaison avec la clinique commencée
@@ -1708,6 +1736,8 @@ interface-history-how-movedFromShared = Déplacé depuis Partagé avec moi
 interface-history-how-passphrase = Phrase secrète
 
 interface-history-how-patient = Masqué par vous
+
+interface-history-how-personFolder = Dossier d’une personne
 
 interface-history-how-picked = Importé depuis un fichier choisi
 
@@ -1804,6 +1834,8 @@ portal-codeRefused = Le portail de la clinique n’a pas accepté le code. Rées
 portal-codeSubmit = Confirmer le code
 
 portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
+
+portal-linkAnother = Associer une autre clinique
 
 ai-summary-button = Résumé
 
