@@ -3,9 +3,10 @@
 
 use super::{
     answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
-    read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
-    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    read_actions, read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off,
+    without_slot, ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START,
+    BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
+    SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -466,13 +467,14 @@ impl Engine {
         )
     }
 
-    /// A summary of the pages that fit, in `lang`, with the fit it read.
+    /// A summary of the pages that fit, in `lang`, with the actions it listed apart (V5) and the
+    /// fit it read.
     pub(super) fn summarize(
         &mut self,
         lang: &str,
         pages: &[Page],
         max_sentences: usize,
-    ) -> Result<(Vec<Sentence>, Fit), Failure> {
+    ) -> Result<(Vec<Sentence>, Vec<Sentence>, Fit), Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
         let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
         let user = summary_prompt(language, max_sentences);
@@ -497,7 +499,8 @@ impl Engine {
         let (written, capped) =
             self.generate(&tokens, prefix_len, SUMMARY_TOKENS, Some(&grammar))?;
         let sentences = read_summary(&written, capped).ok_or_else(|| failed("unreadable"))?;
-        Ok((sentences, fit))
+        let actions = read_actions(&written, capped);
+        Ok((sentences, actions, fit))
     }
 
     /// What `term` means in `context`, in `lang`.

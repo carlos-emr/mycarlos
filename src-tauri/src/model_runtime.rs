@@ -1261,6 +1261,10 @@ pub mod engine_testing {
         pub text: String,
         pub quote: String,
         pub located: bool,
+        /// V5 (evaluation): one of the actions listed apart, scored as a sentence after the
+        /// summary's own (`"action": true`; left out for a summary sentence).
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        pub action: bool,
     }
 
     /// What a summary is made under in this build, for telling measurements apart: the system
@@ -1276,6 +1280,7 @@ pub mod engine_testing {
             "contextTokens": model_helper::CONTEXT_TOKENS,
             "maxTextChars": model_helper::MAX_TEXT_CHARS,
             "maxQuoteChars": model_helper::MAX_QUOTE_CHARS,
+            "maxActions": model_helper::MAX_ACTIONS,
         });
         let caps_text = caps.to_string();
         let mut hash = Sha256::new();
@@ -1375,24 +1380,34 @@ pub mod engine_testing {
                 .map_err(|error| format!("{error:?}"))?;
             // The runner empties a quote it cannot find, in sentence order, and keeps what it
             // said in `unlocated_quotes`; the grammar never lets the model write an empty one.
-            let mut missing = summary.unlocated_quotes.into_iter();
-            let sentences = summary
-                .sentences
-                .into_iter()
-                .map(|sentence| {
-                    let located = !sentence.quote.is_empty();
-                    let quote = if located {
-                        sentence.quote
-                    } else {
-                        missing.next().unwrap_or_default()
-                    };
-                    MeasuredSentence {
-                        text: sentence.text,
-                        quote,
-                        located,
-                    }
-                })
-                .collect();
+            // V5: the actions follow the sentences, the same way, marked, so a scorer that reads
+            // sentences scores them too.
+            let measured = |sentences: Vec<Sentence>, unlocated: Vec<String>, action: bool| {
+                let mut missing = unlocated.into_iter();
+                sentences
+                    .into_iter()
+                    .map(|sentence| {
+                        let located = !sentence.quote.is_empty();
+                        let quote = if located {
+                            sentence.quote
+                        } else {
+                            missing.next().unwrap_or_default()
+                        };
+                        MeasuredSentence {
+                            text: sentence.text,
+                            quote,
+                            located,
+                            action,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let mut sentences = measured(summary.sentences, summary.unlocated_quotes, false);
+            sentences.extend(measured(
+                summary.actions,
+                summary.action_unlocated_quotes,
+                true,
+            ));
             Ok(Measured {
                 sentences,
                 last_page: summary.last_page,

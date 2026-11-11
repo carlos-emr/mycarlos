@@ -430,6 +430,14 @@ pub(crate) struct Summary {
     /// What those quotes said, for measuring a model's quoting (tests print them); never shown.
     #[allow(dead_code)]
     pub(crate) unlocated_quotes: Vec<String>,
+    /// V5 (evaluation): the instructions and times the model listed apart, at most
+    /// `MAX_ACTIONS`, their quotes checked the same way. For measuring only: the app's result
+    /// does not carry them, and nothing keeps them.
+    #[allow(dead_code)]
+    pub(crate) actions: Vec<Sentence>,
+    /// What the actions' unlocated quotes said, in order; never shown.
+    #[allow(dead_code)]
+    pub(crate) action_unlocated_quotes: Vec<String>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -568,6 +576,9 @@ struct Answer {
     id: u64,
     #[serde(default)]
     sentences: Option<Vec<Sentence>>,
+    /// V5 (evaluation): the instructions and times listed apart.
+    #[serde(default)]
+    actions: Option<Vec<Sentence>>,
     #[serde(default)]
     last_page: Option<u32>,
     #[serde(default)]
@@ -845,7 +856,8 @@ impl Runner {
         if sentences.is_empty() {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
         }
-        if sentences.iter().any(|sentence| {
+        let actions = answer.actions.unwrap_or_default();
+        if sentences.iter().chain(&actions).any(|sentence| {
             sentence.text.chars().count() > MAX_SENTENCE_CHARS
                 || sentence.quote.chars().count() > MAX_SENTENCE_CHARS
         }) {
@@ -877,6 +889,17 @@ impl Runner {
                 sentence
             })
             .collect();
+        let mut action_unlocated_quotes = Vec::new();
+        let actions = actions
+            .into_iter()
+            .take(crate::model_helper::MAX_ACTIONS)
+            .map(|mut action| {
+                if !quote_in(&text, &action.quote) || quote_is_heading(&text, &action.quote) {
+                    action_unlocated_quotes.push(std::mem::take(&mut action.quote));
+                }
+                action
+            })
+            .collect();
         Ok(Summary {
             sentences,
             model,
@@ -884,6 +907,8 @@ impl Runner {
             last_page_cut: answer.last_page_cut,
             unlocated: unlocated_quotes.len(),
             unlocated_quotes,
+            actions,
+            action_unlocated_quotes,
         })
     }
 
@@ -2275,6 +2300,32 @@ mod tests {
             let summary = runner.summarize(runner.ticket(), &request()).unwrap();
             assert_eq!(summary.last_page, 0);
             assert_eq!(summary.unlocated, 1);
+        }
+
+        #[test]
+        fn v5_actions_come_back_apart_and_their_quotes_are_checked_like_sentences() {
+            // The fake model lists two actions: one quoting the page it read, one quoting page
+            // 2, which it did not read.
+            let runner = Runner::new(config(&["--actions"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(summary.actions.len(), 2);
+            assert!(!summary.actions[0].quote.is_empty());
+            assert!(summary.actions[1].quote.is_empty());
+            assert_eq!(
+                summary.action_unlocated_quotes,
+                vec!["FAKE page three says".to_owned()]
+            );
+            // The sentences are as without actions.
+            assert_eq!(summary.unlocated, 0);
+            // Without any, none.
+            let plain = Runner::new(config(&[], GIB));
+            plain.start(&Fixed(Some(8 * GIB))).unwrap();
+            assert!(plain
+                .summarize(plain.ticket(), &request())
+                .unwrap()
+                .actions
+                .is_empty());
         }
 
         #[test]

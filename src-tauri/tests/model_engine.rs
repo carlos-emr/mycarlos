@@ -468,7 +468,13 @@ fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
     ];
     let measured = runner.summarize_measured("en", &pages).unwrap();
     assert_eq!((measured.last_page, measured.last_page_cut), (1, false));
-    assert_eq!(measured.sentences.len(), 6, "{measured:?}");
+    // V5: the summary's 6 sentences, then 0 to 4 actions listed apart, marked, which a scorer
+    // reads as sentences too.
+    let summary_sentences = measured.sentences.iter().filter(|s| !s.action).count();
+    let actions = measured.sentences.iter().filter(|s| s.action).count();
+    assert_eq!(summary_sentences, 6, "{measured:?}");
+    assert!(actions <= 4, "{measured:?}");
+    assert!(measured.sentences[..6].iter().all(|s| !s.action));
     for sentence in &measured.sentences {
         assert_eq!(
             (sentence.text.as_str(), sentence.quote.as_str()),

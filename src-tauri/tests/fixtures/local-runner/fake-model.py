@@ -16,6 +16,7 @@ file or opens a connection. Modes, by argument:
   --cut-first       reads only the start of the first page
   --last-page N     names page N as the last read, whatever was sent
   --quote-unread    adds a sentence quoting a page it did not read
+  --actions         lists two actions (V5): one quoting the page read, one quoting page 2
   --read-fd         explains with the first bytes of descriptor 3
   --greet-after S   waits that long before greeting (for the lock-during-start test)
 """
@@ -76,8 +77,15 @@ for line in sys.stdin:
             answer.append({"text": f"In short: {sentence.rstrip('.')}.", "quote": quote})
         if "--quote-unread" in args and len(pages) > 1:
             answer.append({"text": "In short: the clinic phoned.", "quote": pages[1]["text"][:20]})
-        print(json.dumps({"id": request["id"], "sentences": answer, "lastPage": last,
-                          "lastPageCut": "--cut-first" in args}), flush=True)
+        reply = {"id": request["id"], "sentences": answer, "lastPage": last,
+                 "lastPageCut": "--cut-first" in args}
+        if "--actions" in args and read:
+            reply["actions"] = [{"text": "Do as the page says.",
+                                 "quote": " ".join(read[0]["text"].split()[:3])}]
+            if len(pages) > 1:
+                reply["actions"].append({"text": "Call the clinic.",
+                                         "quote": " ".join(pages[1]["text"].split()[:4])})
+        print(json.dumps(reply), flush=True)
     elif request.get("tool") == "explain":
         if "--read-fd" in args:
             import os
