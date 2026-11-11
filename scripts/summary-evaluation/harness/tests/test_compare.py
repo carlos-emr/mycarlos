@@ -296,6 +296,11 @@ class CounterExampleTest(unittest.TestCase):
         fact = evidence_of("demo-celiac-lab", "ttg_high_suggests_celiac")
         wrong = sentence("Celiac disease is confirmed.", fact["source_evidence"])
         facts, scored = score_sentences("demo-celiac-lab", [wrong])
+        # Rule v5: it quotes the fact's source without its words, so it waits on the sheet "to check";
+        # the review turns it down and the fact is not credited.
+        self.assertEqual(facts["ttg_high_suggests_celiac"]["standing"], "held")
+        self.assertIn("to-check", scored["sheet"][0]["why"])
+        facts, _ = score_sentences("demo-celiac-lab", [wrong], {0: "wrong"})
         self.assertIsNone(facts["ttg_high_suggests_celiac"]["standing"])
         flags = scored["flags"][0]["flags"]
         self.assertIn("CERTAINTY_ADDED:confirmed", flags)
@@ -303,7 +308,10 @@ class CounterExampleTest(unittest.TestCase):
 
     def test_the_opposite_of_a_fact_is_not_credited(self):
         fact = evidence_of("demo-celiac-lab", "iron_deficiency_anemia")
-        facts, scored = score_sentences("demo-celiac-lab", [sentence("Your iron is fine.", fact["source_evidence"])])
+        fine = [sentence("Your iron is fine.", fact["source_evidence"])]
+        facts, scored = score_sentences("demo-celiac-lab", fine)
+        self.assertEqual(facts["iron_deficiency_anemia"]["standing"], "held")
+        facts, _ = score_sentences("demo-celiac-lab", fine, {0: "wrong"})
         self.assertIsNone(facts["iron_deficiency_anemia"]["standing"])
         self.assertIn("ADVICE_OR_JUDGEMENT:fine", scored["flags"][0]["flags"])
 
@@ -470,6 +478,69 @@ class NewScreenTest(unittest.TestCase):
         doc["facts"][1]["required"] = True
         doc["facts"][1]["no_qualifier"] = "the word carries the fact"
         self.assertEqual(compare.check_document(doc), [])
+
+
+class CrossLanguageTest(unittest.TestCase):
+    """Rule v5: a must-have stated in the summary's language, quoting the document's own words, is
+    reviewed rather than lost (PR 295's French cases have French approved wordings only)."""
+
+    def test_the_ibuprofen_pair_is_credited_alike_once_reviewed(self):
+        fact = evidence_of("fr-medication_plan", "ibuprofen")
+        english = sentence("Stop taking ibuprofen.", "Arrêter l'ibuprofène.")
+        french = sentence("Arrêter l'ibuprofène.", "Arrêter l'ibuprofène.")
+        # Before the review: the French copy is an approved wording (a critical fact waits for a
+        # reviewer); the English sentence is not recognized but quotes the source, so it waits too.
+        facts_en, scored_en = score_sentences("fr-medication_plan", [english])
+        facts_fr, scored_fr = score_sentences("fr-medication_plan", [french])
+        self.assertEqual(facts_en["ibuprofen"]["standing"], "held")
+        self.assertEqual(facts_fr["ibuprofen"]["standing"], "held")
+        self.assertEqual(facts_en["ibuprofen"]["to_check"], [0])
+        self.assertIn("to-check", scored_en["sheet"][0]["why"])
+        self.assertEqual(scored_en["required_held"], 1)
+        # A reviewer accepts each: both runs are credited alike.
+        facts_en, scored_en = score_sentences("fr-medication_plan", [english], {0: "correct"})
+        facts_fr, scored_fr = score_sentences("fr-medication_plan", [french], {0: "correct"})
+        self.assertEqual(facts_en["ibuprofen"]["standing"], "credited")
+        self.assertEqual(facts_en["ibuprofen"]["found"], "reviewed")
+        self.assertEqual(facts_fr["ibuprofen"]["standing"], "credited")
+        self.assertEqual(scored_en["required_found"], scored_fr["required_found"])
+        self.assertEqual(fact["source_evidence"], "Arrêter l'ibuprofène.")
+
+    def test_a_rejected_or_vague_to_check_sentence_credits_nothing(self):
+        english = [sentence("Keep taking ibuprofen.", "Arrêter l'ibuprofène.")]
+        for verdict in ("wrong", "vague", "unsupported"):
+            facts, _ = score_sentences("fr-medication_plan", english, {0: verdict})
+            self.assertIsNone(facts["ibuprofen"]["standing"], verdict)
+
+    def test_a_sentence_that_carries_another_fact_is_not_to_check(self):
+        both = sentence("Ramipril 5 mg continues; stop taking ibuprofen.",
+                        "Continuer le ramipril 5 mg une fois par jour.\nL'amlodipine 10 mg une fois par jour reste inchangée.\nArrêter l'ibuprofène.")
+        facts, _ = score_sentences("fr-medication_plan", [both])
+        self.assertEqual(facts["ramipril"]["sentences"], [0])
+        self.assertEqual(facts["ibuprofen"]["to_check"], [])
+
+    def test_a_sentence_that_quotes_nothing_of_the_fact_is_still_lost(self):
+        facts, scored = score_sentences("fr-medication_plan",
+                                        [sentence("Stop taking ibuprofen.", "Si la fièvre revient, contacter la clinique.")])
+        self.assertIsNone(facts["ibuprofen"]["standing"])
+        self.assertEqual(facts["ibuprofen"]["to_check"], [])
+
+    def test_the_sheet_lists_the_fact_to_check_with_the_document_s_wording(self):
+        english = sentence("Stop taking ibuprofen.", "Arrêter l'ibuprofène.")
+        _, scored = score_sentences("fr-medication_plan", [english])
+        entry = dict(kind="document", id="fr-medication_plan", wallMs=1,
+                     result=dict(sentences=[english], lastPage=0, lastPageCut=False))
+        rows, key = compare.review_sheet({"E1": {"fr-medication_plan": entry}}, REPO,
+                                         [{"fr-medication_plan": scored}])
+        self.assertEqual(rows[0]["fact_it_may_state"], "Arrêter l'ibuprofène.")
+        self.assertIn("to-check", key[0]["why"])
+
+    def test_french_a_with_a_grave_accent_is_not_read_as_portuguese(self):
+        self.assertEqual(compare.guess_language(
+            "La dose de lévothyroxine passe de 50 µg à 75 µg par jour, à prendre le matin à jeun."), "fr")
+        self.assertEqual(compare.guess_language(
+            "O paciente deve voltar à clínica em 6 semanas para repetir o exame de sangue."), "pt-BR")
+        self.assertEqual(compare.guess_language("Il doit revenir à la clinique et à la pharmacie avec le formulaire."), "fr")
 
 
 class DecisionV2Test(RunTest):

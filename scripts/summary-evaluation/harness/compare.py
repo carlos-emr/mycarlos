@@ -57,7 +57,7 @@ MIN_OVERLAP = 20
 # Options of this many characters or fewer, and options with a digit, must be whole words.
 SHORT_OPTION = 3
 # The decision rule (HARNESS.md): its version and its fixed numbers.
-RULE_VERSION = 4
+RULE_VERSION = 5
 LOCATED_POINTS = 2
 TIME_RATIO = 1.3
 SCREENS = {"SOURCE_NOT_FOUND", "NUMBER_NOT_IN_QUOTE", "NEGATION_MISMATCH", "HEDGE_DROPPED",
@@ -206,7 +206,10 @@ def quote_on_evidence(quote, spans, folded_document):
 
 
 def guess_language(text):
-    words = fold(text).replace("'", " ").split()
+    """The language whose stopwords the text uses most (two or more), else None. A standalone "à" is
+    left out: folded it is the Portuguese stopword "a", and French uses it constantly (rule v5)."""
+    kept = [word for word in normalized(text).replace("'", " ").split() if word.casefold().strip(",.;:") != "à"]
+    words = fold(" ".join(kept)).split()
     scores = {lang: sum(word in stop for word in words) for lang, stop in STOPWORDS.items()}
     best = max(scores, key=scores.get)
     return best if scores[best] >= 2 else None
@@ -484,11 +487,13 @@ def sampled(key):
     return int(digest[:8], 16) < REVIEW_SAMPLE * 0x100000000
 
 
-def credit(found, on_sheet, verdicts):
+def credit(found, on_sheet, verdicts, to_check=()):
     """A fact's standing from the sentences that carry it: "credited" when a reviewer marked one of
     them correct, or one is not on the review sheet and has no verdict against it; "held" while
     every carrier is on the sheet without a verdict (a flagged sentence, one carrying a critical
-    fact, or one in the sample); "rejected" when the review turned down every one."""
+    fact, or one in the sample); "rejected" when the review turned down every one.
+    `to_check` (rule v5): sentences that quote the fact's source in words the scorer does not
+    recognize. One a reviewer marked correct credits the fact; one without a verdict holds it."""
     standing = "rejected" if found else None
     for _, index in found:
         verdict = verdicts.get(index, "")
@@ -496,7 +501,26 @@ def credit(found, on_sheet, verdicts):
             return "credited"
         if verdict not in NOT_CREDITED_VERDICTS:
             standing = "held"
+    for index in to_check:
+        verdict = verdicts.get(index, "")
+        if verdict == "correct":
+            return "credited"
+        if verdict not in NOT_CREDITED_VERDICTS:
+            standing = "held"
     return standing
+
+
+def to_check(fact, sentences, founds, folded_document):
+    """Rule v5: for a required fact that no sentence carries, the sentences that carry no fact at all
+    but quote this fact's source. They go on the review sheet "to check": a summary in another
+    language than the document (or in other words) states the fact without the words the scorer
+    looks for, as in "Stop taking ibuprofen." quoting "Arrêter l'ibuprofène."."""
+    if not fact.get("required", True) or dict(founds)[fact["id"]]:
+        return []
+    carrying = {index for _, found in founds for _, index in found}
+    spans = evidence_spans(fact)
+    return [index for index, sentence in enumerate(sentences) if index not in carrying
+            and quote_on_evidence(sentence.get("quote", ""), spans, folded_document)]
 
 
 def score_document(doc, entry, run_lang, verdicts=None):
@@ -515,17 +539,23 @@ def score_document(doc, entry, run_lang, verdicts=None):
     keys = [sentence_key(doc["id"], s) for s in sentences]
     founds = [(fact, carriers(fact, sentences, folded_document)) for fact in doc.get("facts", [])]
     critical_carriers = {i for fact, found in founds if fact.get("critical", False) for _, i in found}
+    by_id = [(fact["id"], found) for fact, found in founds]
+    checks = {fact["id"]: to_check(fact, sentences, by_id, folded_document) for fact, _ in founds}
+    checked = {i for indexes in checks.values() for i in indexes}
     on_sheet = {i: ("flagged " if flags[i] else "") + ("critical " if i in critical_carriers else "")
+                + ("to-check " if i in checked else "")
                 + ("sampled" if sampled(keys[i]) else "") for i in range(len(sentences))}
     on_sheet = {i: why.strip() for i, why in on_sheet.items() if why.strip()}
     facts = []
     for fact, found in founds:
         how, index = found[0] if found else (None, None)
-        standing = credit(found, on_sheet, verdicts)
+        standing = credit(found, on_sheet, verdicts, checks[fact["id"]])
+        if standing == "credited" and how is None:
+            how, index = "reviewed", next(i for i in checks[fact["id"]] if verdicts.get(i) == "correct")
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
                           critical=fact.get("critical", False), found=how if standing == "credited" else None,
                           standing=standing, matched=how, sentence=index,
-                          sentences=[i for _, i in found]))
+                          sentences=[i for _, i in found], to_check=checks[fact["id"]]))
     required = [f for f in facts if f["required"]]
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
     flagged = [dict(index=i, flags=f) for i, f in enumerate(flags)]
@@ -611,10 +641,13 @@ def review_sheet(runs, docs, all_scores):
             for item in score.get("sheet", []):
                 sentence = sentences[item["index"]]
                 key.append(dict(id=item["id"], run=label, doc=doc_id, sentence=item["index"], why=item["why"]))
-                if item["id"] in rows:
-                    continue
                 carried = [facts[f["id"]]["approved_statements"][0] for f in score["facts"]
-                           if item["index"] in f["sentences"]]
+                           if item["index"] in f["sentences"] or item["index"] in f.get("to_check", [])]
+                if item["id"] in rows:
+                    # Another run wrote the same sentence: every fact it may state there is listed too.
+                    listed = rows[item["id"]]["fact_it_may_state"].split(" | ") if rows[item["id"]]["fact_it_may_state"] else []
+                    rows[item["id"]]["fact_it_may_state"] = " | ".join(listed + [c for c in carried if c not in listed])
+                    continue
                 rows[item["id"]] = dict(id=item["id"], document=doc_id, language=docs[doc_id].get("lang", ""),
                                         sentence=sentence["text"], quote=sentence.get("quote", ""),
                                         context=quote_context(docs[doc_id], sentence.get("quote", "")),

@@ -1,8 +1,9 @@
 {
- "version": 4,
- "frozen_utc": "2026-11-11T01:22:26+00:00",
- "rule_version": 4,
- "scorer_sha256": "23c6bb33d32036b47ada1f52d340951d7bb61297d223d790a7ebeb00693fdbbb",
+ "version": 5,
+ "status": "RESCORE LINE: scores the 10-11 Nov runs (B0, B0R, E1, E4, L1, L2, ...). The DRAFT next-freeze branch (contacts, multi-page) is numbered 6 to keep the two apart.",
+ "frozen_utc": "2026-11-11T02:11:10+00:00",
+ "rule_version": 5,
+ "scorer_sha256": "dff8b11651e02ac07ee29110fb2fc7504d2d4d44a7ca647c9556049e3d1caa5e",
  "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
  "synthetic_only": true,
  "documents_count": 18,
@@ -32,6 +33,11 @@
    "version": 4,
    "frozen_utc": "2026-11-11T01:22:26+00:00",
    "reason": "rule version 4: one verdict per distinct sentence from a blind sheet (opaque content ids, key apart), a sampled sentence waits for its verdict too; the two celiac traps no longer flag 'test you for', 'asks about', 'can cause', 'If ... is confirmed' or 'a positive celiac screen'; demo-gastro-referral's opening line is an evidence span for its positive celiac screen. Page text unchanged."
+  },
+  {
+   "version": 5,
+   "frozen_utc": "2026-11-11T02:11:10+00:00",
+   "reason": "rule version 5 (rescore line), written after B0's outputs were read in full and E1's were read by Agent 1 (the ibuprofen pair); B0R and the running E4 existed, not read for this. A required fact no sentence carries, quoted by a sentence that carries no fact, puts that sentence on the sheet 'to check'; a correct verdict credits it in every run alike. A standalone French 'a' with a grave accent no longer counts as the Portuguese stopword in the LANGUAGE guess. Documents unchanged; PR 295's cases untouched."
   }
  ],
  "documents": {

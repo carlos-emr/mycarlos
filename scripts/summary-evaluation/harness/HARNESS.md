@@ -105,9 +105,20 @@ page, run through the app's own text extraction once and kept as their `pages`.
   - `ACTOR_SHIFT`: the sentence talks to the patient while the quote names a doctor or clinic as the
     one who acts.
   - `ADVICE_OR_JUDGEMENT`: should, must, normal, abnormal, fine, worry… not in the quote.
-  - `LANGUAGE`: not the summary language.
+  - `LANGUAGE`: not the summary language. A standalone "à" is not counted (rule 5): folded, it is
+    the Portuguese stopword "a", so French sentences rich in "à" were read as Portuguese.
   - `QUANTITY_MISMATCH`: a value or unit that differs from a fact's own.
   - `TRAP:<n>`: the sentence falls into the document's listed trap `n`.
+- **To check** (rule 5): a required fact that no sentence carries, while a sentence that carries no
+  fact quotes its source (the quote lies on the fact's evidence or spans), puts that sentence on the
+  sheet "to check" with the fact's own wording. A reviewer's `correct` credits the fact in every run
+  that wrote the sentence; `wrong`, `unsupported` or `vague` credit nothing (and `wrong` or
+  `unsupported` count as a wrong statement, as for any row). Until then the fact is held, not lost.
+  This is how a summary in English of a French document is judged: PR 295's French cases have
+  French approved wordings only, so "Stop taking ibuprofen." (quoting "Arrêter l'ibuprofène.") was
+  never recognized while a copy of the French was. The frozen PR 295 cases are unchanged.
+  **For the reviewer:** a "to check" row is `correct` only if the sentence states the listed fact
+  (all of them, when several are listed) correctly; otherwise `vague` or `wrong`.
 - **The review sheet is blind** (`review/review.csv`).
   - **One row per distinct sentence** (document, words, quote) on the sheet in any run.
   - **Opaque id:** a hash of the sentence, the same in every run and scoring. Rows are in id order, so
@@ -160,6 +171,17 @@ scored. It does three things:
 - turns check 3 into "not worse" by default;
 - adds margins from an A/A pair;
 - keeps PR 295's holdout cases out of the decision.
+
+**Version 5** was written on 11 Nov **after model outputs had been seen**:
+- B0's outputs were read in full (the rescore and Agent 4's blind review of its 94 rows);
+- E1's outputs were read by Agent 1, who reported the ibuprofen pair above;
+- B0R (5 documents) and the running E4 existed but were not read for this change.
+
+It adds the "to check" rows and the LANGUAGE fix. It never removes a credit: carriers and their
+standing are as in version 4; a fact that version 4 lost can only become held, and credited after a
+`correct` verdict. LANGUAGE flags change only in which language they name for a sentence in another
+language than the run's, except that French sentences in a French run are no longer flagged as
+Portuguese. Use it for every run of 10-11 Nov (B0, B0R, E1, E4, L1, L2 and later), all alike.
 
 **Version 4** was written on 11 Nov, after a third review and before any variant was scored:
 - one verdict per distinct sentence, from a blind sheet;
