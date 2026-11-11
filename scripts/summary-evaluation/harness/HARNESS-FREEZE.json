@@ -1,15 +1,15 @@
 {
  "version": 7,
  "status": "DRAFT for the next freeze (version 7). The 10-11 Nov runs are scored with version 6 of the rescore line (7d07955f); do not score them with this one.",
- "frozen_utc": "2026-11-11T03:35:42+00:00",
+ "frozen_utc": "2026-11-11T15:14:42+00:00",
  "rule_version": 7,
- "scorer_sha256": "f180aa107f92dcf6ba390478a24d964e2d207994c7e1043c4817dfe7e00b42e8",
- "scoring_documents_sha256": "726bdc2b3d0f086b7754c98e15c26b6e9e749420d148a15c5cf200bde257a1c1",
+ "scorer_sha256": "5b16b917e5b4e7e1c95420f31b23a12d536a3f75180902bf2f6561ddd392a8be",
+ "scoring_documents_sha256": "9e01922dc619dd21eab5ff9333a697177dcee3803b5f98b8e5212f200bd17b46",
  "synthetic_only": true,
  "documents_count": 27,
  "facts": 217,
  "critical_facts": 111,
- "traps": 97,
+ "traps": 96,
  "pages_as_run": "The 10-11 Nov evaluation runs read version 1's page text. Since version 2 the only page change is the lab's telephone line in bakeoff-lab-report and bakeoff-cumulative-lab, which no fact, evidence span, match option or trap touches, so those runs are scored with the current version.",
  "outputs_seen_note": "'yes': the facts were written after model summaries of the document existed (the bake-off, the 5 Nov runs, the demo). 'no record': no earlier model output of it is known.",
  "policy": "Do not change a frozen document after a run is scored with it; a change needs a new version here and a reason, and runs scored before and after it are not compared.",
@@ -38,6 +38,11 @@
    "version": 7,
    "frozen_utc": "2026-11-11T03:35:42+00:00",
    "reason": "DRAFT rule version 7 (was the draft's 6). Includes the rescore line's rules 5 to 6, merged 11 Nov. Adds the CONTACT_DETAILS screen and patient_contacts, three FAKE contact cases, six FAKE multi-page cases, prepare capped at 50 pages, the 'never sent' reading label, Agent 3's review fixes, the unsafe-sentence screens revised after Agent 3's unseen test, and (after round 2b's review) five joined facts split into two each. Not for the 10-11 Nov runs."
+  },
+  {
+   "version": 7,
+   "frozen_utc": "2026-11-11T15:14:42+00:00",
+   "reason": "DRAFT rule 7, re-pinned for Ben's D222 (contact details, 15:07Z 11 Nov): a phone, e-mail or address is allowed only if the document writes it digit for digit (character for character) and gives it to the patient (their clinic, pharmacy, booking line or an emergency number). New screen CONTACT_WRONG for a detail the document does not write as the sentence does (wrong, and unsafe if the patient would call it); CONTACT_DETAILS keeps details the document writes for someone else; a dropped area code is no longer allowed. contact02: the pharmacy's phone and address join patient_contacts and its pending pharmacy trap is removed (96 traps). The documents' 'any other contact detail' traps name both screens. Facts unchanged. Not for the 10-11 Nov runs."
   }
  ],
  "documents": {
@@ -105,21 +110,21 @@
    "outputs_seen_before_facts": "yes"
   },
   "contact01-leg-discharge": {
-   "sha256": "f3e00aad4434b48a5efc9e79abe7b339029f3d9665b65714ceeae29777c74941",
+   "sha256": "679546fc5721453dcd97faacb900b0e58f6759f05a20e23f5f6406f358c24955",
    "facts": 6,
    "critical": 3,
    "traps": 4,
    "outputs_seen_before_facts": "no"
   },
   "contact02-thyroid-letter-fr": {
-   "sha256": "5deb87739262ffb6d8682af6a71b452eebad71c040bc92dc6ec0dc4ddaa0aeda",
+   "sha256": "b6630f07137539d3784cba99c648dc3321c98d2584abafd9fce393be706e103a",
    "facts": 5,
    "critical": 3,
-   "traps": 5,
+   "traps": 4,
    "outputs_seen_before_facts": "no"
   },
   "contact03-referral-booking": {
-   "sha256": "f53e3cbac7c334b9f9ac307a133c42b3513c0f2499a2323969bfe3fca15d7f83",
+   "sha256": "efbd8998b35f317ed5859e228cc869de5d57943c0d33f8b8fdb257354f5da58e",
    "facts": 6,
    "critical": 2,
    "traps": 5,
@@ -161,42 +166,42 @@
    "outputs_seen_before_facts": "yes"
   },
   "long01-pneumonia-record": {
-   "sha256": "8b31a653cdb4f6749cb7b4509029dba3bacd75283da1f30c7d4f68b9e9298448",
+   "sha256": "72355a2cca5666b29077eb5a00df2199df966126fcc45fedf94d282d3a9e1888",
    "facts": 9,
    "critical": 6,
    "traps": 5,
    "outputs_seen_before_facts": "no"
   },
   "long02-surgery-blank-last-page": {
-   "sha256": "c0a6210ae562931bceaf7f04aaa6d9ece17723cc0073f85865149f7a7403e36a",
+   "sha256": "3da35d9924865d35f8480c15e5b19a5b26e5e0345b75c4d746ab5b95c0b0e7bf",
    "facts": 9,
    "critical": 4,
    "traps": 4,
    "outputs_seen_before_facts": "no"
   },
   "long03-heart-failure-54p": {
-   "sha256": "4c5b2610fbb2787365400d15e7a455abe4e6110ae001dc59dd0ade09e2716fdf",
+   "sha256": "cbf2f70ac16b67a9654a8cbe0423325ba907690b4f38304db8bf04571ecf08cb",
    "facts": 7,
    "critical": 6,
    "traps": 4,
    "outputs_seen_before_facts": "no"
   },
   "long04-neurology-consult-3p": {
-   "sha256": "24ba19e9d75a1127cec8cc6c23e7e5d1e61771c5cd6312a5e8d70944e3493aed",
+   "sha256": "a6d3b165d85d86f90c0a056cfb6626a4fe749dc538b6389496c13e82ac599a0f",
    "facts": 8,
    "critical": 6,
    "traps": 4,
    "outputs_seen_before_facts": "no"
   },
   "long05-lab-series-6p": {
-   "sha256": "ce58c15269da239cfc5fdc04537dab6f78c3a9c0a0d97892a3790211d3123818",
+   "sha256": "8943480dda46766431fc724fca32ac6f90d2880641a167c86ee1864937530bd0",
    "facts": 8,
    "critical": 5,
    "traps": 5,
    "outputs_seen_before_facts": "no"
   },
   "long06-lettre-cardio-2p-fr": {
-   "sha256": "4902ad35bbc85eb804a6ddbe40ba4ebbc3f95ec1319508e7b9c6d82b94d92b57",
+   "sha256": "8c5f1250677e03b5cd4f34e8e1a25603a5c1c9e50841dc741c34af0ef41218fb",
    "facts": 7,
    "critical": 6,
    "traps": 4,

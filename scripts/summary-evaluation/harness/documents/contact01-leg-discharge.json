@@ -209,7 +209,8 @@
   {
    "trap": "repeating any other contact detail the document does not give the patient",
    "screens": [
-    "CONTACT_DETAILS"
+    "CONTACT_DETAILS",
+    "CONTACT_WRONG"
    ]
   }
  ],

@@ -522,7 +522,8 @@ class ContactScreenTest(unittest.TestCase):
     def test_a_contact_the_document_gives_the_patient_is_not_flagged(self):
         doc = REPO["contact02-thyroid-letter-fr"]
         self.assertEqual(self.kinds("Écrivez à rendezvous@example.org ou appelez la clinique au 514 555-0130.", doc), [])
-        self.assertEqual(self.kinds("La pharmacie est joignable au 514 555-0166.", doc), ["phone"])
+        # Ben's D222 (11 Nov): the patient's own pharmacy is a contact for the patient.
+        self.assertEqual(self.kinds("La pharmacie est joignable au 514 555-0166.", doc), [])
         self.assertEqual(self.kinds("Le télécopieur de la clinique est le 514 555-0131.", doc), ["phone"])
         booking = REPO["contact03-referral-booking"]
         self.assertEqual(self.kinds("The clinic is at 77 Placeholder Road, Suite 300; call 613-555-0190 to cancel.",
@@ -565,10 +566,13 @@ class ContactReviewFixesTest(unittest.TestCase):
         flag = compare.contact_flag(text, doc)
         return flag.split(":", 1)[1].split(",") if flag else []
 
-    def test_a_phone_given_to_the_patient_matches_with_or_without_its_area_code(self):
+    def test_a_phone_given_to_the_patient_must_match_digit_for_digit(self):
+        # S1 allowed a dropped or added area code; Ben's D222 (11 Nov) allows a number only digit for digit.
         with_area = dict(patient_contacts=["Tel 613-555-0100"])
-        self.assertEqual(self.kinds("Call the clinic at 555-0100.", with_area), [])
-        self.assertEqual(self.kinds("Call the clinic at 613-555-0100.", dict(patient_contacts=["Tel 555-0100"])), [])
+        self.assertEqual(self.kinds("Call the clinic at 613-555-0100.", with_area), [])
+        self.assertEqual(self.kinds("Call the clinic at (613) 555-0100.", with_area), [])
+        self.assertEqual(self.kinds("Call the clinic at 555-0100.", with_area), ["phone"])
+        self.assertEqual(self.kinds("Call the clinic at 613-555-0100.", dict(patient_contacts=["Tel 555-0100"])), ["phone"])
         self.assertEqual(self.kinds("Call the clinic at 613-555-0199.", with_area), ["phone"])
 
     def test_every_bare_number_after_a_phone_word_is_found(self):
@@ -592,11 +596,15 @@ class ContactReviewFixesTest(unittest.TestCase):
         self.assertEqual(self.kinds("He lives at 12 Main St."), ["address"])
 
     def test_a_pending_trap_is_not_counted_but_the_screen_still_sends_it_to_review(self):
-        doc = REPO["contact02-thyroid-letter-fr"]
-        pending = [i for i, c in enumerate(doc["trap_checks"]) if c.get("pending")]
-        self.assertEqual(len(pending), 1)
+        # contact02's pharmacy trap was pending until Ben's D222; the mechanism is kept, shown on a copy.
+        self.assertFalse([d for d in REPO.values() for c in d.get("trap_checks", []) if c.get("pending")])
+        doc = json.loads(json.dumps(REPO["contact02-thyroid-letter-fr"]))
+        doc["patient_contacts"] = ["rendezvous@example.org", "514 555-0130"]
+        doc["traps"].insert(0, "repeating the pharmacy's address or phone number")
+        doc["trap_checks"].insert(0, dict(trap=doc["traps"][0], pattern=r"45,? rue de l'exemple|514\W*555\W*0166",
+                                          example="La pharmacie est au 45, rue de l'Exemple.", pending="a test"))
         text = "La pharmacie est au 45, rue de l'Exemple, téléphone 514 555-0166."
-        self.assertNotIn(pending[0], compare.trap_flags(doc, text))
+        self.assertNotIn(0, compare.trap_flags(doc, text))
         self.assertIn("CONTACT_DETAILS:address,phone", compare.screen(sentence(text, text), "fr", doc["facts"], doc))
 
     def test_quoting_the_normal_range_does_not_trip_the_tsh_trap(self):
@@ -1447,3 +1455,60 @@ class FreezeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContactRuleD222Test(unittest.TestCase):
+    """Ben's D222 (11 Nov), DRAFT rule 7: a phone, e-mail or address in a summary is allowed only if the
+    document writes it digit for digit (character for character) and gives it to the patient. One that
+    differs by any digit is wrong (CONTACT_WRONG); one written for another clinician or about another
+    person stays out (CONTACT_DETAILS)."""
+
+    def flags(self, doc_id, text, quote=""):
+        return [f for f in compare.screen(sentence(text, quote or text), REPO[doc_id]["lang"], REPO[doc_id]["facts"],
+                                          REPO[doc_id]) if f.startswith("CONTACT_")]
+
+    def test_the_patient_s_own_pharmacy_is_allowed(self):
+        self.assertEqual(self.flags("contact02-thyroid-letter-fr",
+                                    "Votre ordonnance est à la pharmacie, 45, rue de l'Exemple (514 555-0166)."), [])
+
+    def test_a_number_that_differs_by_one_digit_is_wrong(self):
+        self.assertEqual(self.flags("contact02-thyroid-letter-fr", "Appelez la pharmacie au 514 555-0167."),
+                         ["CONTACT_WRONG:phone"])
+        self.assertEqual(self.flags("contact01-leg-discharge", "Call the ward at 613-555-0105 if the redness spreads."),
+                         ["CONTACT_WRONG:phone"])
+        self.assertEqual(self.flags("contact02-thyroid-letter-fr", "Écrivez à rendez-vous@example.org."),
+                         ["CONTACT_WRONG:email"])
+
+    def test_another_clinician_s_line_and_a_relative_s_phone_stay_out_but_are_not_wrong(self):
+        self.assertEqual(self.flags("bakeoff-referral-letter",
+                                    "Please call me at 613-555-0142 ext. 21 if you need anything else, Blake."),
+                         ["CONTACT_DETAILS:phone"])
+        self.assertEqual(self.flags("bakeoff-quebec-referral",
+                                    "Son conjoint, Jean FAKE-de la Cruz (FICTIF), est joignable au 4185550177."),
+                         ["CONTACT_DETAILS:phone"])
+        self.assertEqual(self.flags("contact01-leg-discharge", "His daughter Maria can be reached at 613-555-0172."),
+                         ["CONTACT_DETAILS:phone"])
+
+    def test_a_shortened_patient_number_is_not_digit_for_digit_but_no_digit_is_wrong(self):
+        self.assertEqual(self.flags("contact01-leg-discharge", "Call the ward at 555-0150 if the redness spreads."),
+                         ["CONTACT_DETAILS:phone"])
+        self.assertEqual(self.flags("contact01-leg-discharge", "Call the ward at 613-555-0150 if the redness spreads."), [])
+
+    def test_wrong_and_clinician_details_in_one_sentence_get_both_flags(self):
+        self.assertEqual(self.flags("bakeoff-referral-letter", "Call 613-555-0142 or 613-555-0149."),
+                         ["CONTACT_WRONG:phone", "CONTACT_DETAILS:phone"])
+
+    def test_a_wrong_number_reviewed_correct_is_listed_for_a_second_look(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        doc_id = "contact01-leg-discharge"
+        wrong = sentence("Call the ward at 613-555-0105 if the redness spreads.", "613-555-0150")
+        runs = [write_run(folder.name, label, run_lines(label, [wrong], doc_id=doc_id)) for label in ("B0", "E1")]
+        review = Path(folder.name) / "filled.csv"
+        review.write_text("run,doc,sentence,verdict\nB0,%s,0,correct\n" % doc_id, encoding="utf-8")
+        summaries, _ = compare.score(runs, Path(folder.name) / "o", {doc_id: REPO[doc_id]}, review)
+        self.assertEqual((summaries[0]["contacts"], summaries[0]["contacts_wrong"]), (1, 1))
+        text = (Path(folder.name) / "o" / "compare.md").read_text(encoding="utf-8")
+        self.assertIn("| 1 (1 wrong) |", text)
+        self.assertIn(f"- B0: {doc_id}, sentence 0", text)
+        self.assertIn(f"- E1: {doc_id}, sentence 0", text)

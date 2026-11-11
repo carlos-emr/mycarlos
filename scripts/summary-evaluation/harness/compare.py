@@ -67,7 +67,7 @@ LOCATED_POINTS = 2
 TIME_LIMIT_MS = 180_000
 SCREENS = {"SOURCE_NOT_FOUND", "NUMBER_NOT_IN_QUOTE", "NEGATION_MISMATCH", "HEDGE_DROPPED",
            "CERTAINTY_ADDED", "EXPERIENCER", "ACTOR_SHIFT", "ADVICE_OR_JUDGEMENT", "LANGUAGE",
-           "QUANTITY_MISMATCH", "TRAP", "CONTACT_DETAILS", "GENERALIZED_SUBJECT", "INSTRUCTION_ADDED",
+           "QUANTITY_MISMATCH", "TRAP", "CONTACT_DETAILS", "CONTACT_WRONG", "GENERALIZED_SUBJECT", "INSTRUCTION_ADDED",
            "ALTERNATIVE_DROPPED", "COUNT_DROPPED", "ACTION_FROM_HEADER", "HOLD_DROPPED", "FREQUENCY_DROPPED_MARK",
            "ACTION_NOT_IN_QUOTE_MARK"}
 
@@ -267,11 +267,6 @@ def is_year(digits):
     return len(digits) == 4 and digits[:2] in ("19", "20")
 
 
-def same_phone(a, b):
-    """Two phone keys name the same line: equal, or the same last 7 digits when one has no area code."""
-    return a == b or ((len(a) == 7 or len(b) == 7) and a[-7:] == b[-7:])
-
-
 def contact_details(text):
     """The contact details in `text`, as (kind, key) pairs: kind is phone, email, address or identity;
     the key is what the same detail is recognised by elsewhere (its digits, the folded address or
@@ -321,17 +316,64 @@ def patient_contact_keys(doc):
 
 
 def allowed_contact(kind, key, allowed):
-    """Whether a detail is one the document gives the patient (a phone with or without its area code)."""
-    if kind == "phone":
-        return any(k == "phone" and same_phone(key, other) for k, other in allowed)
+    """Whether a detail is one the document gives the patient, digit for digit (Ben's D222)."""
     return (kind, key) in allowed
 
 
-def contact_flag(text, doc=None):
-    """The CONTACT_DETAILS flag for a sentence, or None: the kinds it repeats that the document does
-    not give the patient to use."""
+# A run of digits as a document writes a number: "514 555-0166", "(613) 555-0142", "+1 613.555.0100".
+DIGIT_RUN = re.compile(r"(?<![\w])\+?\(?\d[\d() .-]{5,}\d(?![\w])")
+
+
+@functools.lru_cache(maxsize=256)
+def text_contact_keys(text):
+    """Every contact detail a document's text holds, as (kind, key), plus every run of digits it
+    writes (kind "digits"; the last 10 digits too), so a number is found however it was matched."""
+    keys = set(contact_details(text))
+    for m in DIGIT_RUN.finditer(plain(text)):
+        digits = re.sub(r"\D", "", m.group(0))
+        keys.update({("digits", digits), ("digits", digits[-10:])})
+    return frozenset(keys)
+
+
+def in_document(kind, key, present):
+    """Where a detail stands against the document's own (`text_contact_keys`): "same" when the
+    document writes it digit for digit (character for character), "shorter" when only a longer form of
+    the same phone is there (its area code dropped), else None: a detail the document does not write."""
+    if (kind, key) in present or (kind in ("phone", "identity") and ("digits", key) in present):
+        return "same"
+    if kind == "phone" and len(key) == 7 and any(k in ("phone", "digits") and len(other) == 10 and other[-7:] == key
+                                                 for k, other in present):
+        return "shorter"
+    return None
+
+
+def contact_flags(text, doc=None):
+    """Rule 7 (DRAFT; Ben's D222, 11 Nov): a contact detail in a summary is allowed only if the
+    document writes it digit for digit (character for character) AND gives it to the patient (its
+    `patient_contacts`: their clinic, pharmacy, booking line or an emergency number). Flags:
+    - CONTACT_WRONG:<kinds>: a detail the document does not write as the sentence does (a number
+      differing by any digit, an added area code, an invented one). It is wrong, and unsafe if the
+      patient would call it. Judged only when the document's pages are known.
+    - CONTACT_DETAILS:<kinds>: a detail the document writes but does not give the patient (another
+      clinician's line, a relative's phone, an identity number), or a patient's number shortened."""
     allowed = patient_contact_keys(doc)
-    kinds = sorted({kind for kind, key in contact_details(text) if not allowed_contact(kind, key, allowed)})
+    present = text_contact_keys(joined_text(doc)) if doc and doc.get("pages") else None
+    wrong, details = set(), set()
+    for kind, key in contact_details(text):
+        if allowed_contact(kind, key, allowed):
+            continue
+        if present is not None and in_document(kind, key, present) is None:
+            wrong.add(kind)
+        else:
+            details.add(kind)
+    return ([f"CONTACT_WRONG:{','.join(sorted(wrong))}"] if wrong else []) + \
+           ([f"CONTACT_DETAILS:{','.join(sorted(details))}"] if details else [])
+
+
+def contact_flag(text, doc=None):
+    """One flag naming every kind of contact detail a sentence may not repeat (wrong or not given to
+    the patient), or None: what `check` holds approved statements to."""
+    kinds = sorted({kind for flag in contact_flags(text, doc) for kind in flag.split(":", 1)[1].split(",")})
     return "CONTACT_DETAILS:" + ",".join(kinds) if kinds else None
 
 
@@ -933,9 +975,7 @@ def screen(sentence, run_lang, facts, doc=None):
             value, unit = found.groups()
             if value.replace(",", ".") != check["value"] or fold(unit) != fold(check["unit"]):
                 flags.append(f"QUANTITY_MISMATCH:{fact['id']}")
-    contact = contact_flag(text, doc)
-    if contact:
-        flags.append(contact)
+    flags += contact_flags(text, doc)
     if doc is not None:
         flags += [f"TRAP:{index}" for index in trap_flags(doc, text)]
     return flags
@@ -1051,7 +1091,13 @@ def score_document(doc, entry, run_lang, verdicts=None, states=None):
         flags=flagged,
         flag_count=sum(len(f["flags"]) for f in flagged),
         trap_count=sum(1 for f in flagged for flag in f["flags"] if flag.startswith("TRAP:")),
-        contact_count=sum(1 for f in flagged for flag in f["flags"] if flag.startswith("CONTACT_DETAILS:")),
+        # Sentences with a contact flag; of them, those with a detail the document does not write (D222),
+        # and those a reviewer still marked correct (a number that differs by any digit is wrong: check them).
+        contact_count=sum(1 for f in flagged if any(flag.startswith(("CONTACT_DETAILS:", "CONTACT_WRONG:"))
+                                                     for flag in f["flags"])),
+        contact_wrong_count=sum(1 for f in flagged if any(flag.startswith("CONTACT_WRONG:") for flag in f["flags"])),
+        contact_wrong_correct=[f["index"] for f in flagged if verdicts.get(f["index"]) == "correct"
+                               and any(flag.startswith("CONTACT_WRONG:") for flag in f["flags"])],
         unreviewed_flagged=sum(1 for f in flagged if f["flags"] and verdicts.get(f["index"], "") == ""),
         unreviewed_critical=sum(1 for i in critical_carriers if verdicts.get(i, "") == ""),
         unreviewed=sum(1 for i in on_sheet if verdicts.get(i, "") == ""),
@@ -1396,6 +1442,7 @@ def summarize_run(scores, wrong, holdout=False):
         sentences=sentences, flags=sum(s["flag_count"] for s in present),
         traps=sum(s["trap_count"] for s in present),
         contacts=sum(s.get("contact_count", 0) for s in present),
+        contacts_wrong=sum(s.get("contact_wrong_count", 0) for s in present),
         unreviewed_flagged=sum(s["unreviewed_flagged"] for s in present),
         unreviewed_critical=sum(s["unreviewed_critical"] for s in present),
         unreviewed=sum(s["unreviewed"] for s in present),
@@ -1582,7 +1629,8 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
                 action = f" · act {s['action_found']}/{s['action_total']}" if s["action_total"] else ""
                 marks = ((" · capped" if s.get("capped") else "") + (" · cut" if s.get("cut") else "")
                          + (" · gap" if s.get("gap") else "") + (f" · {s['trap_count']} trap" if s["trap_count"] else "")
-                         + (f" · {s['contact_count']} contact" if s.get("contact_count") else ""))
+                         + (f" · {s['contact_count']} contact" if s.get("contact_count") else "")
+                         + (f" ({s['contact_wrong_count']} wrong)" if s.get("contact_wrong_count") else ""))
                 cells.append(f"{s['required_found']}/{s['required_total']}{held}{action} · {s['sentences']} s · "
                              f"{s['located']} q · {s['flag_count']} fl · {(s['wall_ms'] or 0) / 1000:.0f} s{marks}")
         holdout = "" if in_decision(docs[doc_id]) else " (holdout)"
@@ -1601,7 +1649,9 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
         median = "" if summary["median_wall_ms"] is None else f"{summary['median_wall_ms'] / 1000:.0f}"
         lines.append(f"| {label} | {summary['required_found']}/{summary['required_total']} | {summary['required_held']} | "
                      f"{summary['action_found']}/{summary['action_total']} | {summary['located_pct']}% | "
-                     f"{summary['flags']} | {summary['traps']} | {summary['contacts']} | {median} | {summary['capped']} | {summary['cut']} | "
+                     f"{summary['flags']} | {summary['traps']} | {summary['contacts']}"
+                     f"{' (' + str(summary['contacts_wrong']) + ' wrong)' if summary.get('contacts_wrong') else ''} | "
+                     f"{median} | {summary['capped']} | {summary['cut']} | "
                      f"{summary['gap']} | {summary['failed']} | {wrong} | {summary.get('unsafe', 0)} | "
                      f"{decision['verdict'] if decision else 'baseline'} |")
     if summaries and summaries[0].get("unsafe"):
@@ -1609,6 +1659,13 @@ def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=
         lines.append(f"The baseline's own unsafe sentences ({summaries[0]['unsafe']}; a variant is not charged for "
                      "writing the same sentence):")
         lines += [f"- {u['document']}: {u['sentence']}" for u in summaries[0]["unsafe_sentences"]]
+    clashes = [(label, doc_id, index) for label, scores in zip(labels, all_scores) for doc_id, s in sorted(scores.items())
+               for index in s.get("contact_wrong_correct", [])]
+    if clashes:
+        lines.append("")
+        lines.append("Reviewed correct, but a contact detail is not as the document writes it (D222: a number that "
+                     "differs by any digit is wrong; check these):")
+        lines += [f"- {label}: {doc_id}, sentence {index}" for label, doc_id, index in clashes]
     if any(h["documents"] for h in holdouts):
         lines.append("")
         lines.append("Holdout (PR 295's holdout families, reported only):")

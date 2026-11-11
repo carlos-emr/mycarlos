@@ -24,7 +24,11 @@ Each document: `id`, `title`, `lang`, `synthetic: true`, `source`, `pages` (`ind
 `facts`, `traps` (wrong statements to watch for), `trap_checks`, `notes`, and (rule 7, DRAFT) an optional
 `patient_contacts`: the phone numbers, e-mail addresses and street addresses the document gives the
 patient to use ("call the lab at 613-555-0150"), copied from it. A sentence may repeat those; the
-`CONTACT_DETAILS` screen flags any other contact detail.
+`CONTACT_DETAILS` and `CONTACT_WRONG` screens flag any other contact detail. **Ben's D222 (11 Nov):** a
+contact detail is allowed only if it matches the document digit for digit (character for character)
+**and** is meant for the patient: their own clinic, their own pharmacy, a booking line, or an emergency
+number the document gives them. Details written for another clinician (a doctor-to-doctor "call me"
+line) and other people's details (a spouse's, a relative's) stay out.
 
 Each fact follows PR 295's fixture schema: `id`, `category`, `required`, `critical`,
 `source_evidence` (verbatim from the document), `approved_statements`, `anchors`,
@@ -45,8 +49,9 @@ Each fact follows PR 295's fixture schema: `id`, `category`, `required`, `critic
   So a sentence that names the fact but says something else is not credited: "Your iron is fine."
   for iron-deficiency anemia, or "Your liver is damaged." for a mildly high ALT to repeat.
 - `trap_checks`: one per listed trap, in order. A check with a `pending` reason (rule 6) stands for a
-  question not decided yet (contact02's pharmacy phone: Ben's open question 2): it is checked like
-  the others but never flags or counts, until the question is answered. Either a `pattern` (a regular expression on the
+  question not decided yet: it is checked like the others but never flags or counts, until the
+  question is answered. (contact02's pharmacy trap was the only one; Ben's D222 settled it, so the
+  pharmacy's phone and address are now in its `patient_contacts` and the trap is gone.) Either a `pattern` (a regular expression on the
   sentence's folded text) with an `example` sentence that must fall into it, or the `screens`
   that already check it (wrong numbers: `NUMBER_NOT_IN_QUOTE`, `QUANTITY_MISMATCH`).
 
@@ -143,10 +148,19 @@ page, run through the app's own text extraction once and kept as their `pages`.
     The count per run is in `compare.md` (`contacts`). Not flagged: dates, lab values, doses, "911",
     "ST depression", TNM stages, years and year spans ("2025-2026"), a hyphenated range or a plain
     pair of values ("1500-7000", "1200 1500"; a pair is kept when a group starts with 0, as on
-    cards), "St John's wort", and a health card named without its number. A phone given to the
-    patient matches with or without its area code (the last 7 digits), and every bare 7-digit number
-    after a phone word is checked. A contact document's pattern traps for the same details double
-    the screen on purpose: such a sentence counts in both "traps" and "contacts".
+    cards), "St John's wort", and a health card named without its number. Every bare 7-digit number
+    after a phone word is checked. Since Ben's D222 a phone given to the patient must match digit for
+    digit: a dropped area code ("555-0150" for "613-555-0150") is no longer allowed, but no digit
+    differs, so it stays `CONTACT_DETAILS`. A contact document's pattern traps for the same details
+    double the screen on purpose: such a sentence counts in both "traps" and "contacts".
+  - `CONTACT_WRONG:<kinds>` (rule 7, DRAFT; Ben's D222): a contact detail that the document does not
+    write as the sentence does: a number that differs by any digit (or an added area code), an e-mail
+    off by a character, an invented one. Ben: it counts as **wrong**, and as **unsafe** if the patient
+    would call it. The screen sends it to the review like any flag and changes no verdict by itself;
+    `compare.md` counts such sentences (`contacts`: "n (m wrong)") and lists any that a reviewer marked
+    `correct`, for a second look. `CONTACT_DETAILS` then means a detail the document does write but
+    does not give the patient. Judged only against a document with pages; the documents' "any other
+    contact detail" traps name both screens.
 - **To check** (rule 5): a required fact that no sentence carries, while a sentence that carries no
   fact quotes its source (the quote lies on the fact's evidence or spans), puts that sentence on the
   sheet "to check" with the fact's own wording. A reviewer's `correct` credits the fact in every run
