@@ -3,7 +3,7 @@ Clinique médicale Fictive
 88, boul. Émile-Exemple Ouest, app. 5
 Montréal (QC) H0Z 9Z9
 Tél. : 514-555-0199   Téléc. : 514-555-0198
-www.clinique-fictive.example.ca
+www.clinique-fictive.example.org
 
 Monday, October 6, 2025
 
@@ -26,7 +26,7 @@ He reports that his sister, Ewa Żółć, also has hypertension. Platelets 250 x
 Dose 5 µg daily; results ≥ 10 are flagged.
 
 Further details are at https://portal.example.org/results?id=4471 and on
-clinique-fictive.example.ca/patients.
+clinique-fictive.example.org/patients.
 
 Sincerely,
 Dre Anne-Marie Côté-Lévesque

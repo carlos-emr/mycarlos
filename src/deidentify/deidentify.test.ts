@@ -87,7 +87,7 @@ const documents = [
     text: imaging,
     gone: [
       "Avery Example",
-      "EXAA 6104 1799",
+      "EXAA 6164 1799",
       "0045123",
       "R-778812",
       "Hôpital Fictif de Testville",
@@ -669,8 +669,8 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
       "H0Z 9Z9",
       "514-555-0199",
       "514-555-0198",
-      "www.clinique-fictive.example.ca",
-      "clinique-fictive.example.ca/patients",
+      "www.clinique-fictive.example.org",
+      "clinique-fictive.example.org/patients",
       "https://portal.example.org/results?id=4471",
       "Kowalski",
       "Hôpital Fictif de Testville",
@@ -896,6 +896,11 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     expect(
       out("See www.example.com/info and https://x.example.org/a?b=1.").toSend,
     ).toBe("See [WEB ADDRESS 1] and [WEB ADDRESS 2].");
+    // A bare ".ca" address, the ending most clinic letters here carry (a public
+    // body's site, which names no one).
+    expect(out("Details at canada.ca/en/health-canada for more.").toSend).toBe(
+      "Details at [WEB ADDRESS 1] for more.",
+    );
     expect(
       out(
         "A 92-year-old man, aged 95, 101 yo; une femme âgée de 90 ans; 65-year-old.",
