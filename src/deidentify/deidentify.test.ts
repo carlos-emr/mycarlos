@@ -129,26 +129,26 @@ const documents = [
     name: "Quebec referral, in French",
     text: quebec,
     gone: [
-      "Clinique médicale Saint-Laurent",
-      "Saint-Laurent",
-      "1234, rue Sherbrooke Est",
-      "Sherbrooke",
+      "Clinique médicale Saint-Fictif",
+      "Saint-Fictif",
+      "1234, rue Imaginaire Est",
+      "Imaginaire",
       "app. 5",
       "Montréal",
-      "H2X 1A1",
+      "H0Z 9Z9",
       "514 555-0123",
       "5145550124",
       "Émilie Tremblay",
       "Tremblay",
       "Centre hospitalier de Fictiveville",
       "Fictiveville",
-      "88, boul. René-Lévesque Ouest",
-      "René-Lévesque",
-      "G1R 9Z9",
+      "88, boul. Émile-Exemple Ouest",
+      "Émile-Exemple",
+      "H0Z 9Z8",
       "Renée",
       "Côté",
       "1958/03/02",
-      "COTR 5803 0299",
+      "COTR 5863 0299",
       "0077123",
       "Jean de la Cruz",
       "de la Cruz",
@@ -304,8 +304,8 @@ describe("the name remover (#72)", () => {
     expect(out("Patient: Renée O'Brien-Lévesque")).toBe("Patient: [NAME 1]");
     // A French street address, street type first.
     expect(
-      out("Address 1234, rue Sherbrooke Est, Montréal, QC H2X 1A1"),
-    ).not.toMatch(/Sherbrooke|1234|Montréal|H2X/);
+      out("Address 1234, rue Imaginaire Est, Montréal, QC H0Z 9Z9"),
+    ).not.toMatch(/Imaginaire|1234|Montréal|H0Z/);
     // Dates of birth in every common form, and other dates in them numbered.
     for (const dob of [
       "Born 1958/03/02.",
@@ -664,9 +664,9 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     const text = result.toSend;
     for (const detail of [
       "Clinique médicale Fictive",
-      "boul. René-Lévesque",
+      "boul. Émile-Exemple",
       "Montréal",
-      "H2X 1A1",
+      "H0Z 9Z9",
       "514-555-0199",
       "514-555-0198",
       "www.clinique-fictive.example.ca",
