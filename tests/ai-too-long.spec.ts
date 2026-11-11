@@ -191,8 +191,8 @@ test("the AI helper's settings say how much a model reads at a time", async ({
   await expect(
     page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
   ).toBeVisible();
-  // The catalogue's figure until the model has run here: an estimate, and
-  // said to be one (model limits).
+  // The catalogue's figure until the model has started in this session: an
+  // estimate, and said to be one (model limits).
   const reads = page.getByText(
     `${en("ai.model.reads", { pages: 6, characters: 19000 })} ${en("ai.model.readsEstimate")}`,
     { exact: true },
