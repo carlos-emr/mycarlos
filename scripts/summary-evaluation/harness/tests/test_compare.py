@@ -604,6 +604,63 @@ class ContactReviewFixesTest(unittest.TestCase):
         self.assertIn(tsh, compare.trap_flags(doc, "Votre TSH est normale."))
 
 
+class UnsafeScreensTest(unittest.TestCase):
+    """Rule 6 (DRAFT): the screens for the nine kinds of sentence round 2 and 2b's reviewer called
+    unsafe. Designed from these very sentences (seen, not held out): each is a must-catch case, and
+    the reviewed-correct sentences below must stay unflagged."""
+
+    def flags(self, doc_id, text, quote, lang="en"):
+        return {f.split(":")[0] for f in compare.screen(sentence(text, quote), lang, REPO[doc_id]["facts"], REPO[doc_id])}
+
+    def test_each_unsafe_sentence_is_caught(self):
+        cases = [
+            ("new-polish-discharge", "Pacjent ma przyjmować leki do 05.11.2026.", "do 05.11.2026", "GENERALIZED_SUBJECT"),
+            ("new-long-hospital-record", "Your kidney function is getting better, but you must finish all your medicines to stay safe.",
+             "Finish both antibiotics, even when you feel well.", "GENERALIZED_SUBJECT"),
+            ("en-family_context", "Tell a doctor if you have a rash after taking penicillin.",
+             "A penicillin allergy with a rash is recorded.", "INSTRUCTION_ADDED"),
+            ("fake01-cardiology-referral", "Call 911 if the pain lasts more than 10 minutes.",
+             "asked him to call 911 if the pain lasts more than 10 minutes.", "ALTERNATIVE_DROPPED"),
+            ("fake01-cardiology-referral", "Dr. Fakeham asked him to call 911 if the pain lasts more than 10 minutes.",
+             "call 911 if the pain lasts more than 10 minutes", "ALTERNATIVE_DROPPED"),
+            ("fake02-cardiac-discharge", "Call 911 if chest pain is not gone after using the spray for five minutes.",
+             "For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.", "COUNT_DROPPED"),
+            ("demo-celiac-lab", "See Dr. Ian Sampleton on 3 November 2026 at 16:05.", "Reported 3 November 2026, 16:05",
+             "ACTION_FROM_HEADER"),
+            ("fake03-cardiac-lab", "See Dr. Ian Sampleton on 26 October 2026.", "Reported 26 October 2026, 15:42",
+             "ACTION_FROM_HEADER"),
+            ("new-long-hospital-record", "Your doctor will review your blood pressure medicine perindopril when you return home.",
+             "Perindopril and metformin remain on hold.", "HOLD_DROPPED"),
+            ("bakeoff-referral-letter", "Please call me at 613-555-0142 ext. 21 if you need anything else, Blake.",
+             "Please call me at 613-555-0142 ext. 21 if you need anything else, Blake.", "CONTACT_DETAILS"),
+        ]
+        for doc_id, text, quote, expected in cases:
+            self.assertIn(expected, self.flags(doc_id, text, quote), text)
+        self.assertIn("LANGUAGE", self.flags("new-polish-discharge", "Pacjent ma przyjmować leki do 05.11.2026.", "do 05.11.2026"))
+
+    def test_reviewed_correct_sentences_stay_unflagged(self):
+        new = {"GENERALIZED_SUBJECT", "INSTRUCTION_ADDED", "ALTERNATIVE_DROPPED", "COUNT_DROPPED",
+               "ACTION_FROM_HEADER", "HOLD_DROPPED"}
+        cases = [
+            ("fr-medication_plan", "Keep taking amlodipine 10 mg once a day.", "L'amlodipine 10 mg une fois par jour reste inchangée."),
+            ("new-long-hospital-record", "You must wash your hands with soap and water after using the toilet and before eating.",
+             "wash hands with soap and water after the toilet and before food"),
+            ("bakeoff-long-discharge-summary", "You must see your family doctor within 1 week.", "Family doctor, Dr. Placeholder, within 1 week."),
+            ("bakeoff-long-discharge-summary", "Metoprolol, ramipril, apixaban and metformin continue with no change.",
+             "Continue metoprolol 25 mg twice daily, ramipril 5 mg once daily, apixaban 5 mg twice daily and metformin 500 mg twice daily."),
+            ("new-long-hospital-record", "Take amoxicillin-clavulanate twice daily until 31 October 2026.",
+             evidence_of("new-long-hospital-record", "amox_clav_until_31")["source_evidence"]),
+            ("contact01-leg-discharge", "Keep the left leg raised when sitting.", "Keep the left leg raised when sitting."),
+        ]
+        for doc_id, text, quote in cases:
+            self.assertEqual(self.flags(doc_id, text, quote) & new, set(), text)
+
+    def test_an_alternative_in_another_language_is_not_judged(self):
+        self.assertNotIn("ALTERNATIVE_DROPPED", self.flags(
+            "new-french-nephrology", "Call the clinic if she passes much less urine.",
+            evidence_of("new-french-nephrology", "call_if")["source_evidence"]))
+
+
 class LongDocumentTest(unittest.TestCase):
     """The multi-page documents (DRAFT for the next freeze) keep the layout each one is for."""
 

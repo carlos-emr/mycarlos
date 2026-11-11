@@ -221,26 +221,54 @@ make the contact rule of prompt variant L2 measurable: version 4 sees a repeated
 by eye, and B0 repeated two (a spouse's phone in `bakeoff-quebec-referral`, a PESEL in
 `new-polish-discharge`), both flagged by this screen with no other B0 sentence flagged.
 
-**Planned for the next freeze (not built yet):** screens for the five sentences round 2's reviewer
-found unsafe whatever the verdict (none was flagged by any screen or trap):
-- `GENERALIZED_SUBJECT`: a date or duration said of a class word (medicines, leki, médicaments,
-  remédios) while the quote's evidence names one drug ("leki do 05.11.2026" for the antibiotic's
-  end date); and LANGUAGE for short sentences by letters unique to a language (ł ą ę ż ś ć ń, ã õ);
-- `INSTRUCTION_ADDED`: an imperative or "if you…" sentence (tell, call, see, take, stop, avoid)
-  whose quote has no instruction ("Tell a doctor if you have a rash after taking penicillin." from
-  "A penicillin allergy with a rash is recorded.");
-- every trigger of a `conditional_instruction` fact as its own match group (fake01 call_911 gains
-  "at rest"), and a screen for an "or …" alternative in the quote missing from the sentence;
-- `COUNT_DROPPED`: once, twice, one dose or a single in the quote but not in the sentence (the
-  nitroglycerin spray "once"; fake02's spray fact gains a "once" group);
-- `ACTION_FROM_HEADER`: an appointment or action sentence (see, visit, appointment, book + a date or
-  time) whose quote is a header or timestamp line (Reported, Collected, Printed, Received, DOB) or
-  has no action ("See Dr. Sampleton on 3 November 2026 at 16:05." from the lab's issue time; round 2b
-  found a second, "See Dr. Ian Sampleton on 26 October 2026." from "Reported 26 October 2026, 15:42");
-- `HOLD_DROPPED`: "on hold", "held", "stopped" or "do not take" in the quote with no hold or stop word in
-  the sentence ("Your doctor will review … perindopril when you return home." from "Perindopril and
-  metformin remain on hold."). (Round 2b's doctor-to-doctor "Please call me at … ext. 21", marked
-  correct as literally true, is already flagged by `CONTACT_DETAILS`.)
+**Screens for unsafe sentences (rule 6, DRAFT; built 11 Nov).** Round 2 and 2b's reviewer named
+nine kinds of sentence unsafe for a patient whatever the verdict, and no screen of rule 5 flagged
+any of them. Each new screen needs only the sentence, its quote and the document text (folded), so
+each could also run in the app as a summary is written:
+- `GENERALIZED_SUBJECT`: a general word for medicines (medicines, pills, leki, médicaments…) with a
+  date, a duration, "until" or "all/every", while the quote's own clause names one drug or a narrower
+  class (antibiotics, inhaler…) and no general word. "Pacjent ma przyjmować leki do 05.11.2026."
+  (the antibiotic's end date); "…you must finish all your medicines…" ("Finish both antibiotics").
+- `INSTRUCTION_ADDED`: an imperative or "if you…"/"you must…" sentence whose quote, with the two
+  lines before it, has no instruction word and is no dosing line. "Tell a doctor if you have a rash
+  after taking penicillin." ("A penicillin allergy with a rash is recorded.").
+- `ALTERNATIVE_DROPPED`: the quote's sentence in the document has "if … or …"; the summary sentence
+  names the first condition but none of the alternative. Only within one language. "Call 911 if the
+  pain lasts more than 10 minutes." ("…or comes at rest").
+- `COUNT_DROPPED`: once, twice, one dose… in the quote, and neither a count nor (for a frequency)
+  daily/a day… nor "unchanged" in the sentence. "…after using the spray for five minutes." ("use the
+  spray once").
+- `ACTION_FROM_HEADER`: an appointment or action word with a date or time, whose quote is a header
+  or timestamp line (Reported, Collected, Printed, DOB…) or has no action word. "See Dr. Ian
+  Sampleton on 3 November 2026 at 16:05." ("Reported 3 November 2026, 16:05"), and a second one.
+- `HOLD_DROPPED`: on hold, held, stopped, do not take… in the quote, and no hold or stop word in the
+  sentence (an end of course, "then stop", is kept by "until <date>"). "Your doctor will review …
+  perindopril when you return home." ("Perindopril and metformin remain on hold.").
+- `LANGUAGE` by letters: a sentence with too few stopwords to guess its language is still flagged by
+  letters only one language uses here (ł ą ę ż ś ć ń ź; ã õ; œ ù û ë ï è; ñ), in its lower-case words.
+- The ninth kind, the doctor-to-doctor "Please call me at 613-555-0142 ext. 21…", is `CONTACT_DETAILS`.
+
+**How they measure (11 Nov, against the 214 blind-reviewed B0, E1 and E4 sentences of round 2b,
+key included).** These screens were designed from these sentences, so this is a fit, not a test:
+| Screen | unsafe kinds caught (of 9) | wrong/unsupported caught (of 12) | reviewed-correct flagged (of 186) |
+|---|---|---|---|
+| GENERALIZED_SUBJECT | 2 (leki; finish all) | 2 | 0 |
+| INSTRUCTION_ADDED | 3 (penicillin; both appointments) | 3 | 0 |
+| ALTERNATIVE_DROPPED | 1 (call 911, both rows) | 0 | 1: a real dropped trigger ("or if your breathing or ankle swelling gets worse") |
+| COUNT_DROPPED | 1 (spray once) | 1 | 0 |
+| ACTION_FROM_HEADER | 2 (both appointments) | 2 | 0 |
+| HOLD_DROPPED | 1 (perindopril) | 0 | 0 |
+| LANGUAGE by letters | 1 (leki) | 1 | 7: Polish, Portuguese or French sentences in an English summary, which LANGUAGE exists to count |
+| CONTACT_DETAILS | 1 (ext. 21) | 0 | 4: the ext. 21 line, a spouse's phone, a PESEL line (all meant), and the lab's number in the text the runs read |
+All together: 9 of 9 unsafe kinds (10 of 10 rows), 6 of 12 wrong or unsupported; the six missed are
+claims quoted from another place or more than the document says, which only the review sees. On the
+352 approved statements of the 39 documents the six new sentence screens raise 2 flags, both a
+real dropped "or" alternative in an approved wording (two `daily_weight` facts, which should list
+every trigger).
+
+**Held out:** the first unseen test is the next runs' new sentences (E2, E3, L1, L2 and any later
+variant), once blind-reviewed: count what each screen flags among their reviewed-correct and
+reviewed-unsafe sentences before any screen is changed again.
 
 **Review coverage, 11 Nov (after B0 and E1 had been scored and reviewed):** every distinct
 sentence now goes on the review sheet (`REVIEW_SAMPLE` 1.0, was 0.2), for every run alike. The 20%
