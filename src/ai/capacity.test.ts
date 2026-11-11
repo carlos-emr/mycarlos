@@ -5,6 +5,7 @@ import {
   capacityInPages,
   estimateFit,
   estimateTokens,
+  preTokenCount,
 } from "./capacity";
 
 // The helper's room for a catalogue model today (local_model.rs Capacity::HELPER).
@@ -28,8 +29,30 @@ describe("estimateTokens", () => {
 
   it("counts every digit as a token, as both models' tokenizers split numbers", () => {
     expect(estimateTokens("12345")).toBe(5);
-    // 3 digits, and "Hb ", "." and " g/L" (8 bytes) at 3 a token.
-    expect(estimateTokens("Hb 13.5 g/L")).toBe(3 + 3);
+  });
+
+  it("counts a text at least at the pieces the Qwen3.5 tokenizer cuts it into", () => {
+    // llama.cpp's QWEN35 pre-tokenizer: words with their leading space, each
+    // digit, a space before a number, and runs of signs, each a piece.
+    expect(preTokenCount("The patient is well.")).toBe(5);
+    // "Hb", " ", "1", "3", ".", "5", " g", "/L"
+    expect(preTokenCount("Hb 13.5 g/L")).toBe(8);
+    // Prose: its bytes count higher (20 bytes, 7 tokens), and win.
+    expect(estimateTokens("The patient is well.")).toBe(7);
+    // Results: the pieces count higher than the bytes (3 digits + 3), and win.
+    expect(estimateTokens("Hb 13.5 g/L")).toBe(8);
+  });
+
+  it("never counts a table of results below its pieces, which the model never merges", () => {
+    // By bytes: 17 digits + 26 other bytes at 3 a token = 26 tokens. By
+    // pieces: 28, since the space before each number and each "-" and "/"
+    // between figures is a piece of its own.
+    const row = "FAKE Hemoglobin 135 g/L 120-160 2026-11-10\n";
+    expect(preTokenCount(row)).toBe(28);
+    expect(estimateTokens(row)).toBe(28);
+    const table = row.repeat(40);
+    expect(preTokenCount(table)).toBe(1120);
+    expect(estimateTokens(table)).toBeGreaterThanOrEqual(preTokenCount(table));
   });
 });
 
