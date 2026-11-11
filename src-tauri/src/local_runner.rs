@@ -894,10 +894,21 @@ impl Runner {
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
+        // K5: the helper gives a long document more sentences than the cap the app asks for. The
+        // runner cannot count tokens, but a token is at least one byte, so the pages' bytes, joined
+        // as the helper joins them, never give a lower cap than the helper's: the same rule
+        // (`summary_limits`), so a long document keeps its 14 and a request for fewer still wins.
+        let sent_bytes = request
+            .pages
+            .iter()
+            .map(|page| page.text.len())
+            .sum::<usize>()
+            + PAGE_SEPARATOR.len() * request.pages.len().saturating_sub(1);
+        let (kept, _) = crate::model_helper::summary_limits(sent_bytes, request.max_sentences);
         let mut unlocated_quotes = Vec::new();
         let sentences = sentences
             .into_iter()
-            .take(request.max_sentences)
+            .take(kept)
             .map(|mut sentence| {
                 if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
                     unlocated_quotes.push(std::mem::take(&mut sentence.quote));
@@ -1820,6 +1831,59 @@ mod tests {
                 sandboxed: false,
                 generation_threads: None,
             }
+        }
+
+        /// A one-page request of `count` FAKE sentences, each about `bytes` long, asking for the
+        /// app's full cap.
+        fn sentences_request(count: usize, bytes: usize) -> SummaryRequest {
+            let text: String = (1..=count)
+                .map(|n| {
+                    let sentence = format!("FAKE instruction {n:02} says to take one tablet");
+                    format!("{sentence:<width$}. ", width = bytes - 2)
+                })
+                .collect();
+            SummaryRequest {
+                lang: "en".to_owned(),
+                pages: vec![Page { index: 0, text }],
+                max_sentences: crate::model_helper::MAX_SENTENCES,
+            }
+        }
+
+        #[test]
+        fn a_long_documents_summary_keeps_up_to_fourteen_sentences_and_a_short_ones_ten() {
+            // K5: the helper gives a document of 1,400 tokens or more up to 14 sentences although
+            // the app asks for 10 (the runner kept 10 and dropped the late instructions). This
+            // fake helper writes up to 16 sentences, whatever it is asked.
+            let runner = Runner::new(config(&["--sentences", "16"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let long = crate::model_helper::LONG_DOCUMENT_TOKENS;
+
+            let fourteen = sentences_request(14, 110);
+            assert!(fourteen.pages[0].text.len() >= long);
+            let kept = runner.summarize(runner.ticket(), &fourteen).unwrap();
+            assert_eq!(kept.sentences.len(), 14);
+            assert!(kept.sentences[13].text.contains("FAKE instruction 14"));
+            assert_eq!(kept.unlocated, 0);
+
+            // Never more than a long document's cap.
+            let sixteen = sentences_request(16, 110);
+            let kept = runner.summarize(runner.ticket(), &sixteen).unwrap();
+            assert_eq!(kept.sentences.len(), 14);
+
+            // A short document keeps the app's 10.
+            let short = sentences_request(12, 60);
+            assert!(short.pages[0].text.len() < long);
+            let kept = runner.summarize(runner.ticket(), &short).unwrap();
+            assert_eq!(kept.sentences.len(), 10);
+
+            // A request for fewer still wins, however long the document.
+            let five = SummaryRequest {
+                max_sentences: 5,
+                ..sentences_request(14, 110)
+            };
+            let kept = runner.summarize(runner.ticket(), &five).unwrap();
+            assert_eq!(kept.sentences.len(), 5);
+            runner.stop();
         }
 
         /// The text on page 0, and a page 2 the fake model reads only when asked to.

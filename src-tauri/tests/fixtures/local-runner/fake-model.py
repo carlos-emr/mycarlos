@@ -20,6 +20,8 @@ file or opens a connection. Modes, by argument:
   --quote-unread    adds a sentence quoting a page it did not read
   --read-fd         explains with the first bytes of descriptor 3
   --greet-after S   waits that long before greeting (for the lock-during-start test)
+  --sentences N     answers with up to N sentences, whatever was asked (as the helper may
+                    for a long document)
 """
 import json
 import sys
@@ -75,7 +77,9 @@ for line in sys.stdin:
             last = int(args[args.index("--last-page") + 1])
         sentences = [s.strip() for s in text.replace("\n", " ").split(". ") if s.strip()]
         answer = []
-        for sentence in sentences[: request.get("maxSentences", 5)]:
+        limit = (int(args[args.index("--sentences") + 1]) if "--sentences" in args
+                 else request.get("maxSentences", 5))
+        for sentence in sentences[:limit]:
             words = sentence.split()
             quote = " ".join(words[:3])
             if "--unlocated" in args:
