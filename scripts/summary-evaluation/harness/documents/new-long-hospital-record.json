@@ -100,7 +100,11 @@
      "sepsis"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "no_qualifier": "the diagnosis word carries the fact; a negated or hedged sentence is caught by the NEGATION_MISMATCH, HEDGE_DROPPED and CERTAINTY_ADDED screens, which hold the credit",
+   "evidence_spans": [
+    "Sepsis from a right-sided kidney infection (pyelonephritis)"
+   ]
   },
   {
    "id": "aki_recovered",
@@ -140,9 +144,21 @@
     [
      "difficile",
      "diarrh"
+    ],
+    [
+     "difficile",
+     "c. diff",
+     "c diff",
+     "cdiff",
+     "infect",
+     "antibiot",
+     "vancomycin"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Stool test positive for C. difficile toxin."
+   ]
   },
   {
    "id": "delirium_resolved",
@@ -182,6 +198,12 @@
     [
      "amoxicillin",
      "clavulan"
+    ],
+    [
+     "31",
+     "until",
+     "875",
+     "twice"
     ]
    ],
    "expected_attributes": {}
@@ -201,6 +223,13 @@
    "match": [
     [
      "vancomycin"
+    ],
+    [
+     "3 november",
+     "november 3",
+     "until",
+     "four times",
+     "125"
     ]
    ],
    "expected_attributes": {}
@@ -244,9 +273,23 @@
    "match": [
     [
      "perindopril"
+    ],
+    [
+     "not restart",
+     "don't restart",
+     "do not restart",
+     "hold",
+     "paused",
+     "until",
+     "not take",
+     "stopped for now"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Perindopril: ON HOLD until the family physician reviews the kidney blood test.",
+    "Not in the dosette: perindopril (on hold)."
+   ]
   },
   {
    "id": "finish_antibiotics",
@@ -290,6 +333,13 @@
     [
      "wash",
      "soap"
+    ],
+    [
+     "hand",
+     "soap",
+     "water",
+     "gel",
+     "alcohol"
     ]
    ],
    "expected_attributes": {}
@@ -330,6 +380,18 @@
    "match": [
     [
      "emergency"
+    ],
+    [
+     "fever",
+     "38",
+     "shiver",
+     "confusion",
+     "urine",
+     "stool",
+     "blood",
+     "side",
+     "come back",
+     "return"
     ]
    ],
    "expected_attributes": {}
@@ -380,6 +442,14 @@
     [
      "10 days",
      "ten days"
+    ],
+    [
+     "family",
+     "physician",
+     "doctor",
+     "gp",
+     "fakeham",
+     "see"
     ]
    ],
    "expected_attributes": {}
@@ -389,6 +459,23 @@
   "saying perindopril is stopped for good or restarted now",
   "calling the delirium dementia",
   "saying the antibiotics are finished"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying perindopril is stopped for good or restarted now",
+   "pattern": "(?=.*\\bperindopril\\b)(?=.*\\b(for good|permanent\\w*|forever|never again)\\b)|(?=.*\\bperindopril\\b)(?=.*\\b(restart\\w*|resum\\w*|start again|take again)\\b)(?!.*(\\bnot\\b|n't|\\buntil\\b|\\bwhen\\b|\\bonce\\b|\\bif\\b))",
+   "example": "Restart perindopril at home."
+  },
+  {
+   "trap": "calling the delirium dementia",
+   "pattern": "\\b(dementia|alzheimer\\w*)\\b",
+   "example": "The confusion was dementia."
+  },
+  {
+   "trap": "saying the antibiotics are finished",
+   "pattern": "(?=.*\\b(antibiotic\\w*|amoxicillin\\w*|clavulan\\w*|vancomycin)\\b)(?=.*\\b(finished|completed|done|over|no longer|already stopped)\\b)(?!.*\\b(until|then stop|after|finish (both|the|your))\\b)",
+   "example": "The antibiotics are finished."
+  }
  ],
  "notes": "The patient instructions and follow-up are on the last page; about 26 KB of text. Whether the last page fits the model's room is part of what the run measures."
 }

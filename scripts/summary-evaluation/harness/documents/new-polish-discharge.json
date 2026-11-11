@@ -35,7 +35,8 @@
      "copd"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "no_qualifier": "the diagnosis word carries the fact; a negated or hedged sentence is caught by the NEGATION_MISMATCH, HEDGE_DROPPED and CERTAINTY_ADDED screens, which hold the credit"
   },
   {
    "id": "improved",
@@ -87,6 +88,19 @@
      "amoxicillin",
      "antybiotyk",
      "antibiotic"
+    ],
+    [
+     "3 days",
+     "three days",
+     "3 more",
+     "3 dni",
+     "05.11.2026",
+     "5 november",
+     "november 5",
+     "jeszcze",
+     "more",
+     "continu",
+     "until"
     ]
    ],
    "expected_attributes": {}
@@ -131,6 +145,15 @@
      "palen",
      "papieros",
      "smok"
+    ],
+    [
+     "stop",
+     "quit",
+     "zaprzesta",
+     "rzuc",
+     "no more",
+     "avoid",
+     "nie pal"
     ]
    ],
    "expected_attributes": {}
@@ -245,6 +268,15 @@
      "emergency",
      "pilny",
      "urgent"
+    ],
+    [
+     "fever",
+     "goraczk",
+     "breath",
+     "dusznos",
+     "blood",
+     "krwiopluc",
+     "cough"
     ]
    ],
    "expected_attributes": {}
@@ -254,6 +286,23 @@
   "saying the inhalers changed",
   "saying antibiotics are finished (3 more days)",
   "inventing a diagnosis such as lung cancer"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying the inhalers changed",
+   "pattern": "^(?!.*\\b(unchanged|same|continu\\w*|no change|not change\\w*|bez zmian|as before)\\b)(?=.*\\b(inhaler\\w*|inhalator\\w*|wziew\\w*|tiotropium|salbutamol)\\b)(?=.*\\b(chang\\w*|new|stop\\w*|increas\\w*|decreas\\w*|switch\\w*|add\\w*|zmian\\w*)\\b)",
+   "example": "His inhalers were changed."
+  },
+  {
+   "trap": "saying antibiotics are finished (3 more days)",
+   "pattern": "(?=.*\\b(antibiotic\\w*|antybiotyk\\w*|amoxicillin\\w*|amoksycylin\\w*)\\b)(?=.*\\b(finished|completed|done|over|no longer|already stopped|zakonczon\\w*)\\b)(?!.*\\b(3 (more )?days|three (more )?days|until|jeszcze)\\b)",
+   "example": "The antibiotics are finished."
+  },
+  {
+   "trap": "inventing a diagnosis such as lung cancer",
+   "pattern": "\\b(cancer\\w*|tumou?r\\w*|malignan\\w*|nowotw\\w*|rak\\w*|tuberculos\\w*|gruzlic\\w*|embol\\w*)\\b",
+   "example": "He may have lung cancer."
+  }
  ],
  "notes": ""
 }

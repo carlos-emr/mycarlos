@@ -92,5 +92,17 @@
   "saying the ECG was abnormal",
   "inventing a diagnosis such as heart attack or angina"
  ],
+ "trap_checks": [
+  {
+   "trap": "saying the ECG was abnormal",
+   "pattern": "(?=.*\\b(ecg|ekg|electrocardiogra\\w*)\\b)(?=.*\\b(abnormal\\w*|anormal\\w*|ischemi\\w*|ischemi\\w*|infarct\\w*|st (elevation|depression|segment)|arrhythm\\w*|irregular\\w*)\\b)",
+   "example": "The ECG was abnormal."
+  },
+  {
+   "trap": "inventing a diagnosis such as heart attack or angina",
+   "pattern": "^(?!.*(\\bno\\b|\\bnot\\b|n't|\\bnever\\b|\\bwithout\\b|\\bruled out\\b|\\bexclud\\w*)).*\\b(heart attack|myocardial infarct\\w*|infarct\\w*|mi|nstemi|stemi)\\b|\\b(angina|angine|coronary|coronar\\w*)\\b",
+   "example": "She has angina."
+  }
+ ],
  "notes": "The 29 Oct text had a real Montréal street, real postal areas, a RAMQ number in the real format and unmarked names; on 10 Nov 2026 they were made clearly FAKE before any run."
 }

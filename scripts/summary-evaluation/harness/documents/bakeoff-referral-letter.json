@@ -26,6 +26,15 @@
    "match": [
     [
      "chest"
+    ],
+    [
+     "exert",
+     "effort",
+     "walking",
+     "activity",
+     "exercise",
+     "september",
+     "18"
     ]
    ],
    "expected_attributes": {}
@@ -45,6 +54,13 @@
    "match": [
     [
      "ecg"
+    ],
+    [
+     "no acute",
+     "sinus",
+     "normal",
+     "no change",
+     "without"
     ]
    ],
    "expected_attributes": {}
@@ -120,6 +136,25 @@
   "saying the ECG was abnormal or there was a heart attack",
   "medication change advice",
   "wrong numbers"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying the ECG was abnormal or there was a heart attack",
+   "pattern": "(?=.*\\b(ecg|ekg|electrocardiogra\\w*)\\b)(?=.*\\b(abnormal\\w*|ischemi\\w*|infarct\\w*|st (elevation|depression)|arrhythm\\w*|irregular\\w*)\\b)(?!.*\\bno acute\\b)|^(?!.*(\\bno\\b|\\bnot\\b|n't|\\bnever\\b|\\bwithout\\b|\\bruled out\\b|\\bexclud\\w*)).*\\b(heart attack|myocardial infarct\\w*|infarct\\w*|mi|nstemi|stemi)\\b",
+   "example": "The ECG showed she had a heart attack."
+  },
+  {
+   "trap": "medication change advice",
+   "pattern": "\\b(start\\w*|stop\\w*|increas\\w*|decreas\\w*|chang\\w*|switch\\w*|add\\w*)\\b.{0,40}\\b(medication\\w*|medicine\\w*|aspirin|statin\\w*|nitro\\w*|beta|metoprolol|dose)\\b",
+   "example": "She should start aspirin."
+  },
+  {
+   "trap": "wrong numbers",
+   "screens": [
+    "NUMBER_NOT_IN_QUOTE",
+    "QUANTITY_MISMATCH"
+   ]
+  }
  ],
  "notes": ""
 }

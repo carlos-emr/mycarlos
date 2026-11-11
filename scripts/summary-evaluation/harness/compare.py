@@ -2,23 +2,30 @@
 
 A run is the JSON lines file written by the ignored test `a_real_model_evaluation_run`
 (src-tauri/tests/model_engine.rs): a first line naming the build and model, then one line per
-document. This tool never runs a model. Its checks are bounded: a fact counts as found when a
-sentence matches one of its approved statements, or names it (its `match` groups) with a quote
-that covers its source evidence; anything else is left to the hand review sheet. The screens for
-wrong statements only flag sentences for that review; they never decide on their own.
+document. This tool never runs a model.
 
-  compare.py check                         validate the document set
+A fact counts as found when a sentence matches one of its approved statements, or names it (every
+one of its `match` groups, each option matched at a word start) with a quote that lies on one of
+its evidence spans in the document. A fact found only by a sentence that a screen flagged is held
+until a reviewer marks that sentence correct; one marked wrong, unsupported or vague does not
+count. Anything else is left to the hand review sheet. See HARNESS.md for every rule.
+
+  compare.py check                         validate the document set (and its freeze)
   compare.py prepare --out DIR             write the run's input documents (<id>.json)
   compare.py score --run A.jsonl [--run B.jsonl ...] --out DIR [--review FILLED.csv]
+                   [--noise A.jsonl --noise A2.jsonl] [--margin-lost N] [--margin-actions N]
+                   [--require-gain]
   compare.py repeat --run A.jsonl --run B.jsonl   same build, same answers token for token?
+  compare.py noise --run A.jsonl --run A2.jsonl   how many facts flip between an A/A pair
 
-The first run given is the baseline the others are compared with (see HARNESS.md).
+The first run given to `score` is the baseline the others are compared with.
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import difflib
+import functools
 import hashlib
 import json
 import random
@@ -26,11 +33,13 @@ import re
 import statistics
 import sys
 import unicodedata
+from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DOCUMENTS = HERE / "documents"
 FIXTURES = HERE.parent / "fixtures.json"
+FREEZE = HERE / "HARNESS-FREEZE.json"
 CATEGORIES = {
     "finding", "history", "medication", "result", "question", "instruction", "timing", "follow_up",
     # PR 295's fixture categories
@@ -41,13 +50,53 @@ CATEGORIES = {
 # Facts that tell the patient what to do or when: reported on their own line.
 ACTION_CATEGORIES = {"instruction", "timing", "follow_up", "conditional_instruction", "date_instruction"}
 WRONG_VERDICTS = {"wrong", "unsupported"}
+# A sentence a reviewer did not accept as carrying its fact.
+NOT_CREDITED_VERDICTS = WRONG_VERDICTS | {"vague"}
 VERDICTS = {"", "correct", "wrong", "unsupported", "vague"}
 REVIEW_SAMPLE = 0.2
 MIN_OVERLAP = 20
+# Options of this many characters or fewer, and options with a digit, must be whole words.
+SHORT_OPTION = 3
+# The decision rule (HARNESS.md): its version and its fixed numbers.
+RULE_VERSION = 2
+LOCATED_POINTS = 2
+TIME_RATIO = 1.3
+SCREENS = {"SOURCE_NOT_FOUND", "NUMBER_NOT_IN_QUOTE", "NEGATION_MISMATCH", "HEDGE_DROPPED",
+           "CERTAINTY_ADDED", "EXPERIENCER", "ACTOR_SHIFT", "ADVICE_OR_JUDGEMENT", "LANGUAGE",
+           "QUANTITY_MISMATCH", "TRAP"}
 
+# Screens run on folded text (case, accents and spacing folded), so the words below have no accents.
 NEGATION = re.compile(
     r"\b(no|not|never|none|without|denies|denied|negative|absent|nie|bez|brak|"
-    r"ne|pas|sans|aucun|aucune|jamais|nao|sem|nunca|nenhum|nenhuma|sin|ningun|ninguna)\b|n't")
+    r"ne|pas|sans|aucun|aucune|jamais|nao|sem|nunca|nenhum|nenhuma|sin|ningun|ninguna|"
+    r"ruled out|rules out|rule out|excluded|unremarkable|free of|"
+    r"exclu|exclue|ecarte|ecartee|wykluczon\w*|descartad\w*|afastad\w*)\b|n't")
+# Words that hedge a statement: dropping them overstates the document (certainty inflation).
+HEDGE = re.compile(
+    r"\b(suggest\w*(?!\s+(a\s+)?(repeat\w*|recheck\w*|review\w*|follow\w*|you\b|that you))|"
+    r"possibl\w*|probabl\w*|likely|unlikely|suspect\w*|consistent with|in keeping with|"
+    r"compatible|cannot (be )?(excluded|ruled out|exclude|rule out)|to confirm|needs? confirm\w*|"
+    r"(may|could) (indicate|suggest|reflect|represent|mean)|may (have|need|require)|"
+    r"(may|could) be (due|caused|a sign|related|from|the cause|consistent|in keeping|linked)|"
+    r"might|query|uncertain|questionable|equivocal|"
+    r"borderline|presum\w*|evoqu\w*|sugger\w*|a confirmer|peut-etre|prawdopodob\w*|mozliw\w*|"
+    r"podejrzen\w*|sugeruj\w*|do potwierdzenia|sugere\w*|sugestiv\w*|provavel\w*|possivel\w*|"
+    r"suspeit\w*|compativel|a confirmar|sospech\w*|posible\w*)\b")
+# Words that make a statement certain: added to a quote that lacks them, they overstate it.
+CERTAINTY = re.compile(
+    r"\b(confirmed|confirms|definite|definitely|certainly|proven|proves|diagnosed with|"
+    r"established|definitively|confirme|confirmee|confirmad\w*|confirmou|potwierdz\w*)\b")
+# Who a statement is about: a family member on one side only is a different experiencer.
+FAMILY = re.compile(
+    r"\b(mother|father|mom|dad|sister|brother|siblings?|sons?|daughters?|parents?|aunt|uncle|"
+    r"grand(mother|father|parent|son|daughter|child)\w*|cousins?|family history|family member\w*|"
+    r"relatives?|mere|pere|soeur|frere|famille|familial\w*|fille|fils|matk\w*|ojc\w*|ojciec|"
+    r"siostr\w*|brat|brata|bratu|rodzin\w*|corka|corki|syn|syna|mae|pai|irma|irmao|familia|"
+    r"familiar\w*|filh\w*|madre|padre|hermano|hermana|hijo|hija)\b")
+# Phrases that name a family-type doctor, not a relative: removed before FAMILY is looked for.
+FAMILY_DOCTOR = re.compile(
+    r"\bfamily (physician|doctor|practice|practitioner|medicine|gp|health team)\b|"
+    r"\bmedecin de famille\b|\blekarz\w* rodzinn\w*\b|\bmedic[oa] de famil\w*\b")
 SECOND_PERSON = re.compile(r"\b(you|your|yours|vous|votre|vos|ty|twoj|twoja|pan|pani|voce|seu|sua|usted|su)\b")
 ACTORS = re.compile(
     r"\b(dr|doctor|doctors|physician|specialist|cardiolog\w*|clinic|hospital|nurse|radiolog\w*|"
@@ -55,7 +104,8 @@ ACTORS = re.compile(
     r"medica|clinica|endocrinolog\w*)\b")
 ADVICE = re.compile(
     r"\b(should|must|recommend\w*|consider\w*|advis\w*|normal|abnormal|good|bad|healthy|worry\w*|"
-    r"concern\w*|serious|dangerous|devr\w*|devez|recommand\w*|anormal\w*|grave|powinien\w*|"
+    r"concern\w*|serious|dangerous|fine|ok|okay|reassur\w*|harmless|benign|nothing to worry|"
+    r"devr\w*|devez|recommand\w*|anormal\w*|grave|powinien\w*|"
     r"nalezy|zaleca\w*|normaln\w*|deve|recomend\w*|preocup\w*)\b")
 STOPWORDS = {
     "en": {"the", "and", "of", "to", "is", "was", "in", "for", "with", "your", "you", "on", "a"},
@@ -90,9 +140,28 @@ def numbers(text):
     return found
 
 
+@functools.lru_cache(maxsize=None)
+def option_pattern(option):
+    """How one `match` option is looked for in folded text. Every option starts at a word start,
+    so `iron` is not found in "environment". Options of SHORT_OPTION characters or fewer, and
+    options with a digit, must end at a word end too (`alt` is not "although", `2` is not "12"
+    or "2.5"); longer options are stems (`week` finds "weeks", `prediabet` "prediabetes")."""
+    folded = fold(option)
+    if any(c.isdigit() for c in folded):
+        return re.compile(r"(?<![\w.,])" + re.escape(folded) + r"(?!\w|[.,]\d)")
+    end = r"(?!\w)" if len(folded) <= SHORT_OPTION else ""
+    return re.compile(r"(?<!\w)" + re.escape(folded) + end)
+
+
+def names(text, option):
+    """Whether folded `text` names `option` (see option_pattern)."""
+    return option_pattern(option).search(text) is not None
+
+
 def quote_overlaps(quote, evidence):
     """Whether a sentence's quote covers a fact's source evidence: one holds the other, or they
-    share a run of at least 20 folded characters (all of the shorter one, when it is shorter)."""
+    share a run of at least 20 folded characters (all of the shorter one, when it is shorter).
+    Used only when the quote cannot be found in the document (see quote_on_evidence)."""
     a, b = fold(quote), fold(evidence)
     if not a or not b:
         return False
@@ -100,6 +169,37 @@ def quote_overlaps(quote, evidence):
         return True
     match = difflib.SequenceMatcher(None, a, b, autojunk=False).find_longest_match(0, len(a), 0, len(b))
     return match.size >= min(MIN_OVERLAP, len(a), len(b))
+
+
+def occurrences(text, piece):
+    """Every start of `piece` in `text`."""
+    starts, at = [], text.find(piece)
+    while piece and at >= 0:
+        starts.append(at)
+        at = text.find(piece, at + 1)
+    return starts
+
+
+def quote_on_evidence(quote, spans, folded_document):
+    """Whether the quote lies on one of the fact's evidence spans in the document: some place of
+    the quote and some place of a span overlap by at least 20 folded characters (all of the
+    shorter one, when it is shorter). A quote from elsewhere in the document never counts, even
+    when it shares words with the evidence (a dose table's "mg daily changed (was"). A quote
+    that is not in the document as folded here falls back to quote_overlaps."""
+    q = fold(quote)
+    if not q:
+        return False
+    places = occurrences(folded_document, q) if folded_document else []
+    if not places:
+        return any(quote_overlaps(quote, span) for span in spans)
+    for span in spans:
+        e = fold(span)
+        need = min(MIN_OVERLAP, len(q), len(e))
+        for start in occurrences(folded_document, e):
+            for place in places:
+                if min(place + len(q), start + len(e)) - max(place, start) >= need:
+                    return True
+    return False
 
 
 def guess_language(text):
@@ -115,8 +215,37 @@ def read_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def check_document(doc):
-    """Problems with one document, as text; empty when it is sound."""
+def joined_text(doc):
+    return "\n".join(p.get("text", "") for p in doc.get("pages") or [])
+
+
+def evidence_spans(fact):
+    """Where the document states the fact: its source evidence, then any other span that states
+    it (a table row beside its comment line)."""
+    return [fact["source_evidence"]] + list(fact.get("evidence_spans", []))
+
+
+def fact_groups(fact):
+    if fact.get("match"):
+        return fact["match"]
+    return [fact.get("anchors", [])]
+
+
+def carries_groups(fact, text):
+    folded = fold(text)
+    return all(any(names(folded, option) for option in group) for group in fact_groups(fact))
+
+
+def trap_flags(doc, text):
+    """The listed traps a sentence falls into, by their pattern (folded text)."""
+    folded = fold(text)
+    return [index for index, check in enumerate(doc.get("trap_checks", []))
+            if check.get("pattern") and re.search(check["pattern"], folded)]
+
+
+def check_document(doc, fixture=False):
+    """Problems with one document, as text; empty when it is sound. Fixture cases (PR 295, frozen
+    by FIXTURE-FREEZE.json) are not held to the harness's own additions."""
     problems = []
     if doc.get("synthetic") is not True:
         problems.append("not marked synthetic")
@@ -126,7 +255,7 @@ def check_document(doc):
     indexes = [p.get("index") for p in pages]
     if indexes != sorted(set(indexes)):
         problems.append("page indexes must rise")
-    joined = normalized("\n".join(p.get("text", "") for p in pages))
+    joined = normalized(joined_text(doc))
     seen = set()
     for f in doc.get("facts", []):
         where = f"fact {f.get('id')}"
@@ -137,6 +266,9 @@ def check_document(doc):
             problems.append(f"{where}: unknown category {f.get('category')}")
         if normalized(f.get("source_evidence", "")) not in joined or not f.get("source_evidence"):
             problems.append(f"{where}: source evidence is not in the document")
+        for span in f.get("evidence_spans", []):
+            if not span or normalized(span) not in joined:
+                problems.append(f"{where}: evidence span is not in the document: {span[:40]!r}")
         if not f.get("approved_statements"):
             problems.append(f"{where}: no approved statement")
         if not (f.get("match") or f.get("anchors")):
@@ -144,6 +276,39 @@ def check_document(doc):
         check = f.get("quantity_check")
         if check and re.compile(check["pattern"]).groups != 2:
             problems.append(f"{where}: quantity check must capture value and unit")
+        if fixture:
+            continue
+        for group in fact_groups(f):
+            for option in group:
+                if len(fold(option)) < 2 and not fold(option).isdigit():
+                    problems.append(f"{where}: option {option!r} is a single letter")
+        for statement in f.get("approved_statements", []):
+            if not carries_groups(f, statement):
+                problems.append(f"{where}: its approved statement does not name every group: {statement[:50]!r}")
+        if f.get("critical") and len(fact_groups(f)) < 2 and not f.get("no_qualifier"):
+            problems.append(f"{where}: a critical fact needs a qualifier group, or a `no_qualifier` reason")
+    if fixture:
+        return problems
+    traps = doc.get("traps", [])
+    checks = doc.get("trap_checks", [])
+    if [c.get("trap") for c in checks] != list(traps):
+        problems.append("trap_checks must list every trap, in order")
+    approved = [s for f in doc.get("facts", []) for s in f.get("approved_statements", [])]
+    for check in checks:
+        where = f"trap {check.get('trap', '')[:40]!r}"
+        if check.get("pattern"):
+            try:
+                pattern = re.compile(check["pattern"])
+            except re.error as error:
+                problems.append(f"{where}: pattern does not compile: {error}")
+                continue
+            if not check.get("example") or not pattern.search(fold(check["example"])):
+                problems.append(f"{where}: its example does not fall into it")
+            for statement in approved:
+                if pattern.search(fold(statement)):
+                    problems.append(f"{where}: an approved statement falls into it: {statement[:50]!r}")
+        elif not check.get("screens") or not set(check["screens"]) <= SCREENS:
+            problems.append(f"{where}: needs a pattern, or the screens that check it")
     return problems
 
 
@@ -164,6 +329,24 @@ def load_documents(documents=DOCUMENTS, fixtures=FIXTURES):
                 lang=case["language"], synthetic=case["synthetic"], source="PR 295 fixtures",
                 pages=case["pages"], facts=case["facts"], traps=[], split=case["split"])
     return docs
+
+
+def freeze_problems(documents=DOCUMENTS, freeze=FREEZE):
+    """Harness document files that differ from HARNESS-FREEZE.json, as text."""
+    if not Path(freeze).exists():
+        return ["no HARNESS-FREEZE.json"]
+    frozen = read_json(freeze)["documents"]
+    files = {p.stem: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(documents).glob("*.json")}
+    problems = [f"{doc_id}: not in the freeze" for doc_id in sorted(set(files) - set(frozen))]
+    problems += [f"{doc_id}: in the freeze but missing" for doc_id in sorted(set(frozen) - set(files))]
+    problems += [f"{doc_id}: changed since the freeze" for doc_id in sorted(set(files) & set(frozen))
+                 if files[doc_id] != frozen[doc_id]["sha256"]]
+    return problems
+
+
+def in_decision(doc):
+    """PR 295's holdout cases are reported, never decided on (HARNESS.md)."""
+    return doc.get("split") != "holdout"
 
 
 def prepare(out, docs):
@@ -196,28 +379,30 @@ def run_label(meta, path):
 
 # --- Scoring ------------------------------------------------------------------------------------
 
-def fact_groups(fact):
-    if fact.get("match"):
-        return fact["match"]
-    return [fact.get("anchors", [])]
-
-
-def find_fact(fact, sentences):
-    """(how, sentence index) for the first sentence that carries `fact`, else (None, None)."""
+def carriers(fact, sentences, folded_document=None):
+    """Every (how, sentence index) that carries `fact`: an approved statement word for word, or a
+    sentence that names every group with a quote on one of its evidence spans."""
     approved = {normalized(text) for text in fact.get("approved_statements", [])}
+    spans = evidence_spans(fact)
+    found = []
     for index, sentence in enumerate(sentences):
         if normalized(sentence["text"]) in approved:
-            return "approved", index
-    for index, sentence in enumerate(sentences):
-        text = fold(sentence["text"])
-        named = all(any(fold(option) in text for option in group) for group in fact_groups(fact))
-        if named and quote_overlaps(sentence.get("quote", ""), fact["source_evidence"]):
-            return "matched", index
-    return None, None
+            found.append(("approved", index))
+        elif carries_groups(fact, sentence["text"]) and quote_on_evidence(
+                sentence.get("quote", ""), spans, folded_document):
+            found.append(("matched", index))
+    return found
 
 
-def screen(sentence, run_lang, facts):
-    """Flags for the hand review: never verdicts."""
+def find_fact(fact, sentences, folded_document=None):
+    """(how, sentence index) for the first sentence that carries `fact`, else (None, None)."""
+    found = carriers(fact, sentences, folded_document)
+    return found[0] if found else (None, None)
+
+
+def screen(sentence, run_lang, facts, doc=None):
+    """Flags for the hand review: never verdicts. A fact carried only by flagged sentences is
+    held until the review."""
     text, quote = sentence["text"], sentence.get("quote", "")
     ftext, fquote = fold(text), fold(quote)
     flags = []
@@ -228,6 +413,14 @@ def screen(sentence, run_lang, facts):
         flags.append("NUMBER_NOT_IN_QUOTE:" + ",".join(missing))
     if bool(NEGATION.search(ftext)) != bool(NEGATION.search(fquote)):
         flags.append("NEGATION_MISMATCH")
+    if HEDGE.search(fquote) and not HEDGE.search(ftext):
+        flags.append("HEDGE_DROPPED")
+    added = sorted({m.group(0) for m in CERTAINTY.finditer(ftext)} - {m.group(0) for m in CERTAINTY.finditer(fquote)})
+    if added:
+        flags.append("CERTAINTY_ADDED:" + ",".join(added))
+    people = [bool(FAMILY.search(FAMILY_DOCTOR.sub(" ", side))) for side in (ftext, fquote)]
+    if people[0] != people[1]:
+        flags.append("EXPERIENCER")
     if SECOND_PERSON.search(ftext) and ACTORS.search(fquote) and not ACTORS.search(ftext):
         flags.append("ACTOR_SHIFT")
     added = sorted({word for word in ADVICE.findall(ftext) if not re.search(rf"\b{re.escape(word)}\b", fquote)})
@@ -244,12 +437,29 @@ def screen(sentence, run_lang, facts):
             value, unit = found.groups()
             if value.replace(",", ".") != check["value"] or fold(unit) != fold(check["unit"]):
                 flags.append(f"QUANTITY_MISMATCH:{fact['id']}")
+    if doc is not None:
+        flags += [f"TRAP:{index}" for index in trap_flags(doc, text)]
     return flags
 
 
-def score_document(doc, entry, run_lang):
-    """One document's scores in one run."""
-    result = dict(id=doc["id"], present=entry is not None)
+def credit(found, flags, verdicts):
+    """A fact's standing from the sentences that carry it: "credited" when one of them has no
+    flag and no verdict against it, or a reviewer marked it correct; "held" when every one is
+    flagged and not yet reviewed; "rejected" when the review turned down every one."""
+    standing = "rejected" if found else None
+    for _, index in found:
+        verdict = verdicts.get(index, "")
+        if verdict == "correct" or (not flags[index] and verdict not in NOT_CREDITED_VERDICTS):
+            return "credited"
+        if verdict not in NOT_CREDITED_VERDICTS:
+            standing = "held"
+    return standing
+
+
+def score_document(doc, entry, run_lang, verdicts=None):
+    """One document's scores in one run. `verdicts`: sentence index -> the review's verdict."""
+    verdicts = verdicts or {}
+    result = dict(id=doc["id"], present=entry is not None, decision=in_decision(doc))
     if entry is None:
         return result
     answer = entry.get("result")
@@ -257,26 +467,36 @@ def score_document(doc, entry, run_lang):
     result.update(wall_ms=entry.get("wallMs"), error=error,
                   timed_out=bool(error and re.search(r"time", error, re.IGNORECASE)))
     sentences = answer["sentences"] if answer else []
+    folded_document = fold(joined_text(doc))
+    flags = [screen(s, run_lang, doc.get("facts", []), doc) for s in sentences]
     facts = []
     for fact in doc.get("facts", []):
-        how, index = find_fact(fact, sentences)
+        found = carriers(fact, sentences, folded_document)
+        how, index = found[0] if found else (None, None)
+        standing = credit(found, flags, verdicts)
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
-                          critical=fact.get("critical", False), found=how, sentence=index))
+                          critical=fact.get("critical", False), found=how if standing == "credited" else None,
+                          standing=standing, matched=how, sentence=index,
+                          sentences=[i for _, i in found]))
     required = [f for f in facts if f["required"]]
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
-    flagged = [dict(index=i, flags=screen(s, run_lang, doc.get("facts", []))) for i, s in enumerate(sentences)]
+    flagged = [dict(index=i, flags=f) for i, f in enumerate(flags)]
     stats = (answer or {}).get("stats") or {}
     last_index = max(p["index"] for p in doc["pages"])
     result.update(
         sentences=len(sentences),
         located=sum(1 for s in sentences if s.get("located")),
         facts=facts,
-        required_found=sum(1 for f in required if f["found"]),
+        required_found=sum(1 for f in required if f["standing"] == "credited"),
+        required_held=sum(1 for f in required if f["standing"] == "held"),
         required_total=len(required),
-        action_found=sum(1 for f in actions if f["found"]),
+        action_found=sum(1 for f in actions if f["standing"] == "credited"),
+        action_held=sum(1 for f in actions if f["standing"] == "held"),
         action_total=len(actions),
         flags=flagged,
         flag_count=sum(len(f["flags"]) for f in flagged),
+        trap_count=sum(1 for f in flagged for flag in f["flags"] if flag.startswith("TRAP:")),
+        unreviewed_flagged=sum(1 for f in flagged if f["flags"] and verdicts.get(f["index"], "") == ""),
         prompt_tokens=stats.get("promptTokens"),
         answer_tokens=stats.get("answerTokens"),
         prompt_ms=stats.get("promptMs"),
@@ -297,21 +517,26 @@ def score_document(doc, entry, run_lang):
 
 
 def review_rows(label, meta, docs, entries, scores, seed_text):
-    """Every flagged sentence, and a seeded fifth of the others."""
+    """Every flagged sentence, every sentence that carries a critical fact, and a seeded fifth of
+    the others."""
     rows = []
     for doc_id, score in scores.items():
         entry = entries.get(doc_id)
         if not entry or not entry.get("result"):
             continue
         rng = random.Random(hashlib.sha256(f"{seed_text}:{doc_id}".encode()).hexdigest())
+        critical = {i for f in score["facts"] if f["critical"] for i in f["sentences"]}
+        traps = docs[doc_id].get("traps", [])
         for flagged, sentence in zip(score["flags"], entry["result"]["sentences"]):
-            if not flagged["flags"] and rng.random() >= REVIEW_SAMPLE:
+            sampled = rng.random() < REVIEW_SAMPLE
+            if not flagged["flags"] and flagged["index"] not in critical and not sampled:
                 continue
-            candidates = [f["id"] for f in score["facts"] if f["sentence"] == flagged["index"]]
+            candidates = [f["id"] for f in score["facts"] if flagged["index"] in f["sentences"]]
+            fell = [traps[int(flag.split(":")[1])] for flag in flagged["flags"] if flag.startswith("TRAP:")]
             rows.append(dict(run=label, doc=doc_id, sentence=flagged["index"], text=sentence["text"],
                              quote=sentence.get("quote", ""), located=sentence.get("located"),
                              flags=" ".join(flagged["flags"]), facts=" ".join(candidates),
-                             traps=" | ".join(docs[doc_id].get("traps", [])), verdict="", note=""))
+                             traps=" | ".join(fell or traps), verdict="", note=""))
     return rows
 
 
@@ -327,21 +552,27 @@ def read_review(path):
     return verdicts
 
 
-def summarize_run(scores, wrong):
-    present = [s for s in scores.values() if s.get("present") and not s.get("error")]
+def summarize_run(scores, wrong, holdout=False):
+    """A run's totals over the documents the decision uses (or over the holdout ones)."""
+    chosen = {d: s for d, s in scores.items() if s.get("decision", True) != holdout}
+    present = [s for s in chosen.values() if s.get("present") and not s.get("error")]
     sentences = sum(s["sentences"] for s in present)
     walls = [s["wall_ms"] for s in present if s.get("wall_ms") is not None]
     return dict(
-        documents=len(scores), answered=len(present),
-        failed=sum(1 for s in scores.values() if s.get("error")),
-        timed_out=sum(1 for s in scores.values() if s.get("timed_out")),
-        missing=sum(1 for s in scores.values() if not s.get("present")),
+        documents=len(chosen), answered=len(present),
+        failed=sum(1 for s in chosen.values() if s.get("error")),
+        timed_out=sum(1 for s in chosen.values() if s.get("timed_out")),
+        missing=sum(1 for s in chosen.values() if not s.get("present")),
         required_found=sum(s["required_found"] for s in present),
+        required_held=sum(s["required_held"] for s in present),
         required_total=sum(s["required_total"] for s in present),
         action_found=sum(s["action_found"] for s in present),
+        action_held=sum(s["action_held"] for s in present),
         action_total=sum(s["action_total"] for s in present),
         located_pct=round(100 * sum(s["located"] for s in present) / sentences, 1) if sentences else None,
         sentences=sentences, flags=sum(s["flag_count"] for s in present),
+        traps=sum(s["trap_count"] for s in present),
+        unreviewed_flagged=sum(s["unreviewed_flagged"] for s in present),
         capped=sum(1 for s in present if s.get("capped")), cut=sum(1 for s in present if s.get("cut")),
         gap=sum(1 for s in present if s.get("gap")),
         median_wall_ms=statistics.median(walls) if walls else None,
@@ -394,36 +625,111 @@ def memory_lines(labels, memories):
     return lines
 
 
-def decide(base_scores, base_summary, scores, summary):
-    """The written-down rule (HARNESS.md): PASS only if every check holds; PENDING while the
-    hand review has not been filled in."""
+def three_way(best, worst):
+    """A check's answer from its best and worst case over held facts: True when even the worst
+    holds, False when even the best fails, None (pending the review) between."""
+    return True if worst else False if not best else None
+
+
+def decide(base_scores, base_summary, scores, summary, margin_lost=0, margin_actions=0, require_gain=False):
+    """The written-down rule, version 2 (HARNESS.md): PASS only if every check holds; PENDING
+    while held facts or flagged sentences wait for the review. Only documents in the decision
+    count (PR 295's holdout cases never do)."""
     checks = []
     if summary["reviewed_wrong"] is None:
         checks.append(("no reviewed wrong statement", None))
+    elif summary["reviewed_wrong"]:
+        checks.append(("no reviewed wrong statement", False))
     else:
-        checks.append(("no reviewed wrong statement", summary["reviewed_wrong"] == 0))
-    lost = []
+        checks.append(("no reviewed wrong statement", None if summary["unreviewed_flagged"] else True))
+    sure, maybe = [], []
     for doc_id, base in base_scores.items():
-        if not base.get("present") or base.get("error"):
+        if not base.get("decision", True) or not base.get("present") or base.get("error"):
             continue
-        mine = scores.get(doc_id, {})
-        kept = {f["id"] for f in mine.get("facts", []) if f["found"]}
-        lost += [f"{doc_id}/{f['id']}" for f in base["facts"] if f["required"] and f["found"] and f["id"] not in kept]
-    checks.append((f"no must-have lost ({len(lost)} lost)", not lost))
-    checks.append(("instructions/timing found on more", summary["action_found"] > base_summary["action_found"]))
-    if summary["located_pct"] is None or base_summary["located_pct"] is None:
-        checks.append(("quotes found within 2 points", False))
+        mine = {f["id"]: f["standing"] for f in scores.get(doc_id, {}).get("facts", [])}
+        for f in base["facts"]:
+            if not f["required"] or f["standing"] not in ("credited", "held"):
+                continue
+            standing = mine.get(f["id"])
+            if standing == "credited":
+                continue
+            if f["standing"] == "credited" and standing != "held":
+                sure.append(f"{doc_id}/{f['id']}")
+            else:
+                maybe.append(f"{doc_id}/{f['id']}")
+    lost = sure + maybe
+    checks.append((f"must-haves lost at most {margin_lost} ({len(sure)} lost, {len(maybe)} pending)",
+                   three_way(len(sure) <= margin_lost, len(lost) <= margin_lost)))
+    best = summary["action_found"] + summary["action_held"]
+    worst = summary["action_found"]
+    base_best = base_summary["action_found"] + base_summary["action_held"]
+    base_worst = base_summary["action_found"]
+    if require_gain:
+        checks.append((f"patient actions found on more than the baseline + {margin_actions}",
+                       three_way(best > base_worst + margin_actions, worst > base_best + margin_actions)))
     else:
-        checks.append(("quotes found within 2 points", summary["located_pct"] >= base_summary["located_pct"] - 2))
+        checks.append((f"patient actions not worse than the baseline - {margin_actions}",
+                       three_way(best >= base_worst - margin_actions, worst >= base_best - margin_actions)))
+    if summary["located_pct"] is None or base_summary["located_pct"] is None:
+        checks.append((f"quotes found within {LOCATED_POINTS} points", False))
+    else:
+        checks.append((f"quotes found within {LOCATED_POINTS} points",
+                       summary["located_pct"] >= base_summary["located_pct"] - LOCATED_POINTS))
     slower = (summary["median_wall_ms"] is None or base_summary["median_wall_ms"] is None
-              or summary["median_wall_ms"] > 1.3 * base_summary["median_wall_ms"])
-    new_failures = [d for d, s in scores.items() if s.get("error") and not base_scores.get(d, {}).get("error")]
-    checks.append(("median time within 30%, no new failure", not slower and not new_failures))
+              or summary["median_wall_ms"] > TIME_RATIO * base_summary["median_wall_ms"])
+    new_failures = [d for d, s in scores.items() if s.get("decision", True)
+                    and s.get("error") and not base_scores.get(d, {}).get("error")]
+    checks.append((f"median time within {round((TIME_RATIO - 1) * 100)}%, no new failure",
+                   not slower and not new_failures))
     verdict = "FAIL" if any(ok is False for _, ok in checks) else "PENDING" if any(ok is None for _, ok in checks) else "PASS"
     return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures)
 
 
-def table(labels, docs, all_scores, summaries, decisions, memories=()):
+def noise(first, second, docs):
+    """An A/A pair: how many required (and patient-action) facts change standing between two runs
+    of what should be the same thing, on the documents the decision uses. With greedy decoding,
+    two runs of one build and threads answer token for token, so a same-build pair measures only
+    run-to-run noise (expected 0); a pair with a change meant to make no difference (the A/A'
+    pair) measures how far answers move by chance, which sets the margins (HARNESS.md)."""
+    runs = []
+    for path in (first, second):
+        meta, entries = read_run(path)
+        runs.append({doc_id: score_document(doc, entries.get(doc_id), meta.get("lang", "en"))
+                     for doc_id, doc in docs.items() if in_decision(doc)})
+    a, b = runs
+    flipped, flipped_actions, compared, same_answers = [], [], 0, 0
+    for doc_id in sorted(a):
+        if not (a[doc_id].get("present") and b[doc_id].get("present")) or a[doc_id].get("error") or b[doc_id].get("error"):
+            continue
+        compared += 1
+        same_answers += a[doc_id].get("answer_hash") is not None and a[doc_id]["answer_hash"] == b[doc_id].get("answer_hash")
+        b_facts = {f["id"]: f for f in b[doc_id]["facts"]}
+        for f in a[doc_id]["facts"]:
+            other = b_facts.get(f["id"], {})
+            if f["required"] and (f["standing"] == "credited") != (other.get("standing") == "credited"):
+                flipped.append(f"{doc_id}/{f['id']}")
+                if f["category"] in ACTION_CATEGORIES:
+                    flipped_actions.append(f"{doc_id}/{f['id']}")
+    return dict(documents=compared, same_answers=same_answers, flipped=flipped, flipped_actions=flipped_actions,
+                margin_lost=len(flipped), margin_actions=len(flipped_actions))
+
+
+def scoring_identity(docs, margins):
+    """What decides a score, by hash: this file, every document (facts, traps, pages; the PR 295
+    cases included), and the rule's fixed numbers. Written into every output."""
+    canonical = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    documents = {doc_id: hashlib.sha256(canonical(doc)).hexdigest() for doc_id, doc in sorted(docs.items())}
+    thresholds = dict(rule_version=RULE_VERSION, min_overlap=MIN_OVERLAP, short_option=SHORT_OPTION,
+                      review_sample=REVIEW_SAMPLE, located_points=LOCATED_POINTS, time_ratio=TIME_RATIO,
+                      **margins)
+    parts = dict(scorer=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                 documents=hashlib.sha256(canonical(documents)).hexdigest(),
+                 thresholds=hashlib.sha256(canonical(thresholds)).hexdigest())
+    return dict(id=hashlib.sha256(canonical(parts)).hexdigest(), **parts, thresholds_values=thresholds,
+                document_hashes=documents)
+
+
+def table(labels, docs, all_scores, summaries, decisions, memories=(), holdouts=()):
     head = "| Document | " + " | ".join(labels) + " |"
     lines = [head, "|---|" + "---|" * len(labels)]
     for doc_id in sorted(docs):
@@ -435,41 +741,57 @@ def table(labels, docs, all_scores, summaries, decisions, memories=()):
             elif s.get("error"):
                 cells.append("failed" + (" (time)" if s.get("timed_out") else ""))
             else:
+                held = f" (+{s['required_held']} held)" if s["required_held"] else ""
                 action = f" · act {s['action_found']}/{s['action_total']}" if s["action_total"] else ""
                 marks = ((" · capped" if s.get("capped") else "") + (" · cut" if s.get("cut") else "")
-                         + (" · gap" if s.get("gap") else ""))
-                cells.append(f"{s['required_found']}/{s['required_total']}{action} · {s['sentences']} s · "
+                         + (" · gap" if s.get("gap") else "") + (f" · {s['trap_count']} trap" if s["trap_count"] else ""))
+                cells.append(f"{s['required_found']}/{s['required_total']}{held}{action} · {s['sentences']} s · "
                              f"{s['located']} q · {s['flag_count']} fl · {(s['wall_ms'] or 0) / 1000:.0f} s{marks}")
-        lines.append(f"| {doc_id} | " + " | ".join(cells) + " |")
+        holdout = "" if in_decision(docs[doc_id]) else " (holdout)"
+        lines.append(f"| {doc_id}{holdout} | " + " | ".join(cells) + " |")
     lines.append("")
-    lines.append("Cells: must-haves found/total · patient actions found/total · sentences · quotes found · flags · seconds"
-                 " (capped: stopped at the token cap; cut: the end was not read; gap: the last page read after a gap).")
+    lines.append("Cells: must-haves credited/total (+ held: carried only by flagged sentences, until the review) · "
+                 "patient actions credited/total · sentences · quotes found · flags · seconds"
+                 " (capped: stopped at the token cap; cut: the end was not read; gap: the last page read after a gap;"
+                 " trap: sentences that fell into a listed trap). Holdout documents are never in the decision.")
     lines.append("")
-    lines.append("| Run | must-haves | actions | quotes found | flags | median s | capped | cut | gap | failed | reviewed wrong | verdict |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Run | must-haves | held | actions | quotes found | flags | traps | median s | capped | cut | gap | failed | reviewed wrong | verdict |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for label, summary, decision in zip(labels, summaries, decisions):
         wrong = "not reviewed" if summary["reviewed_wrong"] is None else summary["reviewed_wrong"]
         median = "" if summary["median_wall_ms"] is None else f"{summary['median_wall_ms'] / 1000:.0f}"
-        lines.append(f"| {label} | {summary['required_found']}/{summary['required_total']} | "
+        lines.append(f"| {label} | {summary['required_found']}/{summary['required_total']} | {summary['required_held']} | "
                      f"{summary['action_found']}/{summary['action_total']} | {summary['located_pct']}% | "
-                     f"{summary['flags']} | {median} | {summary['capped']} | {summary['cut']} | {summary['gap']} | "
-                     f"{summary['failed']} | {wrong} | {decision['verdict'] if decision else 'baseline'} |")
+                     f"{summary['flags']} | {summary['traps']} | {median} | {summary['capped']} | {summary['cut']} | "
+                     f"{summary['gap']} | {summary['failed']} | {wrong} | {decision['verdict'] if decision else 'baseline'} |")
+    if any(h["documents"] for h in holdouts):
+        lines.append("")
+        lines.append("Holdout (PR 295's holdout families, reported only):")
+        for label, h in zip(labels, holdouts):
+            lines.append(f"- {label}: must-haves {h['required_found']}/{h['required_total']} (+{h['required_held']} held), "
+                         f"actions {h['action_found']}/{h['action_total']}, failed {h['failed']}")
     for label, decision in zip(labels, decisions):
         if decision:
             lines.append("")
             lines.append(f"{label}: " + "; ".join(f"{name}: {'yes' if ok else 'pending' if ok is None else 'NO'}"
                                                    for name, ok in decision["checks"]))
             if decision["lost"]:
-                lines.append(f"  lost: {', '.join(decision['lost'])}")
+                lines.append(f"  lost or pending: {', '.join(decision['lost'])}")
     lines += memory_lines(labels, memories)
     return "\n".join(lines) + "\n"
 
 
-def score(run_paths, out, docs, review=None):
+def score(run_paths, out, docs, review=None, margin_lost=0, margin_actions=0, require_gain=False,
+          noise_pair=None):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     verdicts = read_review(review) if review else None
-    labels, all_scores, summaries, metas, sheets, memories = [], [], [], [], [], []
+    measured = noise(*noise_pair, docs) if noise_pair else None
+    if measured:
+        margin_lost, margin_actions = measured["margin_lost"], measured["margin_actions"]
+    margins = dict(margin_lost=margin_lost, margin_actions=margin_actions, require_gain=require_gain)
+    identity = scoring_identity(docs, margins)
+    labels, all_scores, summaries, holdouts, metas, sheets, memories = [], [], [], [], [], [], []
     for path in run_paths:
         meta, entries = read_run(path)
         label = run_label(meta, path)
@@ -478,22 +800,29 @@ def score(run_paths, out, docs, review=None):
         labels.append(label)
         metas.append(meta)
         lang = meta.get("lang", "en")
-        scores = {doc_id: score_document(doc, entries.get(doc_id), lang) for doc_id, doc in docs.items()}
+        mine = {(doc, index): verdict for (run, doc, index), verdict in (verdicts or {}).items() if run == label}
+        scores = {doc_id: score_document(doc, entries.get(doc_id), lang,
+                                         {i: v for (d, i), v in mine.items() if d == doc_id})
+                  for doc_id, doc in docs.items()}
         all_scores.append(scores)
         wrong = None
         if verdicts is not None:
-            wrong = sum(1 for (run, _, _), verdict in verdicts.items() if run == label and verdict in WRONG_VERDICTS)
+            wrong = sum(1 for (doc, _), verdict in mine.items()
+                        if verdict in WRONG_VERDICTS and in_decision(docs.get(doc, {})))
         summaries.append(summarize_run(scores, wrong))
+        holdouts.append(summarize_run(scores, None, holdout=True))
         memories.append(memory(meta, entries))
         seed = meta.get("build", {}).get("fingerprint", "") + label
         sheets += review_rows(label, meta, docs, entries, scores, seed)
     base_model = metas[0].get("model", {}).get("sha256")
     notes = [f"{label}: another model file" for label, meta in zip(labels, metas)
              if meta.get("model", {}).get("sha256") != base_model]
-    decisions = [None] + [decide(all_scores[0], summaries[0], s, m) for s, m in zip(all_scores[1:], summaries[1:])]
+    decisions = [None] + [decide(all_scores[0], summaries[0], s, m, margin_lost, margin_actions, require_gain)
+                          for s, m in zip(all_scores[1:], summaries[1:])]
     (out / "scores.json").write_text(json.dumps(dict(
-        runs=[dict(label=l, meta=m, summary=s, decision=d, memory=mem, documents=sc)
-              for l, m, s, d, mem, sc in zip(labels, metas, summaries, decisions, memories, all_scores)],
+        scoring=identity, scored_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), noise=measured,
+        runs=[dict(label=l, meta=m, summary=s, holdout=h, decision=d, memory=mem, documents=sc)
+              for l, m, s, h, d, mem, sc in zip(labels, metas, summaries, holdouts, decisions, memories, all_scores)],
         notes=notes), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     sheet = out / "review.csv"
     if not sheet.exists():
@@ -502,7 +831,12 @@ def score(run_paths, out, docs, review=None):
                                                         "flags", "facts", "traps", "verdict", "note"])
             writer.writeheader()
             writer.writerows(sheets)
-    (out / "compare.md").write_text(table(labels, docs, all_scores, summaries, decisions, memories)
+    header = (f"Scoring {identity['id'][:16]} (rule v{RULE_VERSION}; scorer {identity['scorer'][:12]}, "
+              f"documents {identity['documents'][:12]}, thresholds {identity['thresholds'][:12]}; "
+              f"margins: lost {margin_lost}, actions {margin_actions}"
+              f"{', gain required' if require_gain else ''}"
+              f"{' from the noise pair' if measured else ''})\n\n")
+    (out / "compare.md").write_text(header + table(labels, docs, all_scores, summaries, decisions, memories, holdouts)
                                     + "".join(f"\nNOTE: {n}\n" for n in notes), encoding="utf-8")
     return summaries, decisions
 
@@ -534,8 +868,15 @@ def main(argv=None):
     sc.add_argument("--run", action="append", required=True)
     sc.add_argument("--out", required=True)
     sc.add_argument("--review")
+    sc.add_argument("--noise", action="append", help="an A/A pair (twice) that sets both margins")
+    sc.add_argument("--margin-lost", type=int, default=0)
+    sc.add_argument("--margin-actions", type=int, default=0)
+    sc.add_argument("--require-gain", action="store_true",
+                    help="an experiment aimed at patient actions: more than the baseline + margin")
     rep = sub.add_parser("repeat")
     rep.add_argument("--run", action="append", required=True)
+    noi = sub.add_parser("noise")
+    noi.add_argument("--run", action="append", required=True)
     args = parser.parse_args(argv)
     if args.command == "repeat":
         if len(args.run) != 2:
@@ -545,13 +886,17 @@ def main(argv=None):
         return 0 if compared and not different and not problems else 1
     docs = load_documents(args.documents, args.fixtures)
     if args.command == "check":
-        problems = {doc_id: check_document(doc) for doc_id, doc in docs.items()}
+        fixture_ids = {d for d, doc in docs.items() if doc.get("source") == "PR 295 fixtures"}
+        problems = {doc_id: check_document(doc, fixture=doc_id in fixture_ids) for doc_id, doc in docs.items()}
         bad = {doc_id: p for doc_id, p in problems.items() if p}
         for doc_id, p in bad.items():
             print(f"{doc_id}: " + "; ".join(p))
+        frozen = freeze_problems(args.documents) if Path(args.documents).resolve() == DOCUMENTS else []
+        for problem in frozen:
+            print(f"freeze: {problem}")
         print(f"{len(docs)} documents, {sum(len(d.get('facts', [])) for d in docs.values())} facts, "
-              f"{len(bad)} with problems")
-        return 1 if bad else 0
+              f"{len(bad)} with problems, {len(frozen)} freeze problems")
+        return 1 if bad or frozen else 0
     if args.command == "prepare":
         if args.only:
             unknown = set(args.only) - set(docs)
@@ -560,7 +905,15 @@ def main(argv=None):
             docs = {k: v for k, v in docs.items() if k in args.only}
         print(f"{prepare(args.out, docs)} documents written to {args.out}")
         return 0
-    summaries, decisions = score(args.run, args.out, docs, args.review)
+    if args.command == "noise":
+        if len(args.run) != 2:
+            raise SystemExit("noise compares exactly two runs")
+        print(json.dumps(noise(*args.run, docs)))
+        return 0
+    if args.noise and len(args.noise) != 2:
+        raise SystemExit("--noise takes exactly two runs")
+    summaries, decisions = score(args.run, args.out, docs, args.review, args.margin_lost, args.margin_actions,
+                                 args.require_gain, tuple(args.noise) if args.noise else None)
     for summary, decision in zip(summaries, decisions):
         print(json.dumps(dict(summary=summary, verdict=decision["verdict"] if decision else "baseline")))
     return 0

@@ -29,9 +29,23 @@
     [
      "8,1",
      "8.1"
+    ],
+    [
+     "hba1c",
+     "a1c",
+     "glicada",
+     "glycated",
+     "hemoglobin",
+     "haemoglobin",
+     "sugar",
+     "glucose",
+     "glicose"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Diabetes tipo 2 com controle abaixo do desejado (HbA1c 8,1%)."
+   ]
   },
   {
    "id": "kidney_normal",
@@ -89,7 +103,11 @@
      "retin"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Fundoscopia (12/09/2026): sem sinais de retinopatia diabética",
+    "Pés: sensibilidade preservada, pulsos presentes, sem feridas."
+   ]
   },
   {
    "id": "metformin_unchanged",
@@ -107,6 +125,18 @@
    "match": [
     [
      "metformin"
+    ],
+    [
+     "unchanged",
+     "same",
+     "continu",
+     "keep",
+     "manter",
+     "mantenha",
+     "sem altera",
+     "no change",
+     "not change",
+     "850"
     ]
    ],
    "expected_attributes": {}
@@ -127,6 +157,18 @@
    "match": [
     [
      "empagliflozin"
+    ],
+    [
+     "start",
+     "begin",
+     "new",
+     "added",
+     "add",
+     "iniciar",
+     "inicie",
+     "comec",
+     "10 mg",
+     "10mg"
     ]
    ],
    "expected_attributes": {}
@@ -245,6 +287,28 @@
   "saying there is kidney damage or retinopathy",
   "wrong HbA1c values",
   "inventing insulin"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying metformin changed",
+   "pattern": "^(?!.*\\b(unchanged|same|continu\\w*|no change|not change\\w*|manter|mantenha|sem alteracao|keep)\\b)(?=.*\\bmetformin\\w*)(?=.*\\b(chang\\w*|increas\\w*|decreas\\w*|stop\\w*|adjust\\w*|reduc\\w*|rais\\w*|alter\\w*|aument\\w*|diminu\\w*)\\b)",
+   "example": "Metformin was increased."
+  },
+  {
+   "trap": "saying there is kidney damage or retinopathy",
+   "pattern": "(?<!\\bno )(?<!\\bwithout )(?<!\\bsem )\\b(kidney damage|kidney disease|nephropath\\w*|retinopat\\w*|renal (damage|disease|failure))",
+   "example": "There is diabetic retinopathy."
+  },
+  {
+   "trap": "wrong HbA1c values",
+   "pattern": "\\b(hba1c|a1c|glycated|glicada|hemoglobin)\\b.{0,40}?(?<![\\w.,])(?!(8[.,]1|7[.,]2|7)\\s?%)\\d+(?:[.,]\\d+)?\\s?%",
+   "example": "Her HbA1c was 9.1%."
+  },
+  {
+   "trap": "inventing insulin",
+   "pattern": "\\binsulin\\w*",
+   "example": "She will start insulin."
+  }
  ],
  "notes": ""
 }

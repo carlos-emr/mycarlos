@@ -26,6 +26,14 @@
    "match": [
     [
      "potassium"
+    ],
+    [
+     "high",
+     "elevat",
+     "raised",
+     "5.4",
+     "above",
+     "increas"
     ]
    ],
    "expected_attributes": {},
@@ -33,7 +41,10 @@
     "pattern": "potassium\\D{0,30}(\\d+(?:[.,]\\d+)?)\\s*(mmol/L)",
     "value": "5.4",
     "unit": "mmol/L"
-   }
+   },
+   "evidence_spans": [
+    "Comment: Potassium mildly raised."
+   ]
   },
   {
    "id": "others_normal",
@@ -60,7 +71,11 @@
      "normal"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Creatinine 88 umol/L 45-90",
+    "TSH 2.1 mU/L 0.32-4.0"
+   ]
   },
   {
    "id": "repeat_2_weeks",
@@ -102,6 +117,25 @@
   "calling any other value abnormal",
   "diet or medication advice for potassium",
   "wrong numbers"
+ ],
+ "trap_checks": [
+  {
+   "trap": "calling any other value abnormal",
+   "pattern": "^(?!.*\\bpotassium\\b)(?=.*\\b(abnormal|high|low|elevated|raised|decreased|out of range)\\b)",
+   "example": "Your creatinine is high."
+  },
+  {
+   "trap": "diet or medication advice for potassium",
+   "pattern": "\\b(avoid\\w*|diet|food\\w*|banana\\w*|eat\\w*|reduce\\w*|limit\\w*|medication\\w*|medicine\\w*|tablet\\w*|supplement\\w*|stop taking)\\b",
+   "example": "Avoid bananas and other foods high in potassium."
+  },
+  {
+   "trap": "wrong numbers",
+   "screens": [
+    "NUMBER_NOT_IN_QUOTE",
+    "QUANTITY_MISMATCH"
+   ]
+  }
  ],
  "notes": ""
 }

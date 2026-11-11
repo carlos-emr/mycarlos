@@ -83,14 +83,40 @@
    "match": [
     [
      "normal"
+    ],
+    [
+     "study",
+     "ultrasound",
+     "scan",
+     "exam",
+     "imaging",
+     "test",
+     "result",
+     "abdomen",
+     "liver"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Findings: Normal liver echotexture. No gallstones."
+   ]
   }
  ],
  "traps": [
   "any abnormal finding",
   "any follow-up or treatment not in the document"
+ ],
+ "trap_checks": [
+  {
+   "trap": "any abnormal finding",
+   "pattern": "\\b(abnormal\\w*|mass\\w*|lesion\\w*|tumou?r\\w*|cyst\\w*|enlarg\\w*|fatty|cirrho\\w*|inflam\\w*)\\b|(?<!\\bno )\\bgallstones?\\b",
+   "example": "The ultrasound found gallstones."
+  },
+  {
+   "trap": "any follow-up or treatment not in the document",
+   "pattern": "\\b(follow-?up|repeat\\w*|recheck\\w*|refer\\w*|appointment|treat\\w*|medication\\w*|medicine\\w*|surgery|come back|see your|see a)\\b",
+   "example": "A follow-up ultrasound is needed."
+  }
  ],
  "notes": ""
 }

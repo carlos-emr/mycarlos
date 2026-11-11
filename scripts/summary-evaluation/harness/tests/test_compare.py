@@ -15,13 +15,17 @@ TEXT = ("FAKE letter. They have lost 4 kg. I have asked them to keep eating glut
 
 def fake_doc():
     return dict(id="fake-letter", title="FAKE letter", lang="en", synthetic=True, source="test",
-                pages=[dict(index=0, text=TEXT)], traps=["advising a gluten-free diet"], facts=[
+                pages=[dict(index=0, text=TEXT)], traps=["advising a gluten-free diet"],
+                trap_checks=[dict(trap="advising a gluten-free diet",
+                                  pattern=r"^(?!.*(\bnot\b|n't|\bkeep\b)).*\bgluten[- ]free",
+                                  example="Start a gluten-free diet.")], facts=[
         dict(id="weight", category="finding", required=True, critical=False,
              source_evidence="They have lost 4 kg.", approved_statements=["They lost 4 kg."],
              anchors=["4 kg"], match=[["4 kg"]], expected_attributes={}),
         dict(id="gluten", category="instruction", required=True, critical=True,
              source_evidence="I have asked them to keep eating gluten for now.",
-             approved_statements=["Keep eating gluten for now."], anchors=["gluten"], match=[["gluten"]],
+             approved_statements=["Keep eating gluten for now."], anchors=["gluten"],
+             match=[["gluten"], ["keep", "continu"]],
              expected_attributes={}),
         dict(id="timing", category="timing", required=True, critical=True,
              source_evidence="I would be grateful if they could be seen within the next 4 to 6 weeks.",
@@ -144,7 +148,9 @@ class DocumentTest(unittest.TestCase):
         docs = compare.load_documents()
         self.assertGreaterEqual(len(docs), 26)
         for doc_id, doc in docs.items():
-            self.assertEqual(compare.check_document(doc), [], doc_id)
+            fixture = doc.get("source") == "PR 295 fixtures"
+            self.assertEqual(compare.check_document(doc, fixture=fixture), [], doc_id)
+        self.assertEqual(compare.freeze_problems(), [])
 
     def test_prepare_writes_only_what_the_run_reads(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -184,9 +190,10 @@ class RunTest(unittest.TestCase):
     def test_a_better_variant_waits_for_the_hand_review(self):
         (summaries, decisions), out = self.score(run_lines("E1", BETTER))
         self.assertEqual(summaries[0]["action_found"], 0)
-        self.assertEqual(summaries[1]["action_found"], 2)
+        # "You should be seen…" is flagged (should): its fact is held until the review.
+        self.assertEqual((summaries[1]["action_found"], summaries[1]["action_held"]), (1, 1))
         self.assertEqual(decisions[1]["verdict"], "PENDING")
-        self.assertTrue((out / "compare.md").read_text(encoding="utf-8").startswith("| Document | B0 | E1 |"))
+        self.assertIn("\n| Document | B0 | E1 |", (out / "compare.md").read_text(encoding="utf-8"))
         with (out / "review.csv").open(encoding="utf-8") as sheet:
             rows = list(csv.DictReader(sheet))
         self.assertTrue(all(row["verdict"] == "" for row in rows))
@@ -263,6 +270,253 @@ class RunTest(unittest.TestCase):
         sheet.write_text("run,doc,sentence,verdict\nE1,fake-letter,0,correct\n", encoding="utf-8")
         compare.score([out.parent / "B0.jsonl", out.parent / "E1.jsonl"], out, self.docs)
         self.assertIn("correct", sheet.read_text(encoding="utf-8"))
+
+
+
+REPO = compare.load_documents()
+
+
+def evidence_of(doc_id, fact_id):
+    return next(f for f in REPO[doc_id]["facts"] if f["id"] == fact_id)
+
+
+def score_sentences(doc_id, sentences, verdicts=None):
+    entry = dict(kind="document", id=doc_id, wallMs=1, result=dict(
+        sentences=sentences, lastPage=max(p["index"] for p in REPO[doc_id]["pages"]), lastPageCut=False))
+    scored = compare.score_document(REPO[doc_id], entry, "en", verdicts)
+    return {f["id"]: f for f in scored["facts"]}, scored
+
+
+class CounterExampleTest(unittest.TestCase):
+    """The review's own counter-examples, on the repository's FAKE celiac lab report."""
+
+    def test_a_trap_sentence_is_not_credited_and_is_flagged(self):
+        fact = evidence_of("demo-celiac-lab", "ttg_high_suggests_celiac")
+        wrong = sentence("Celiac disease is confirmed.", fact["source_evidence"])
+        facts, scored = score_sentences("demo-celiac-lab", [wrong])
+        self.assertIsNone(facts["ttg_high_suggests_celiac"]["standing"])
+        flags = scored["flags"][0]["flags"]
+        self.assertIn("CERTAINTY_ADDED:confirmed", flags)
+        self.assertTrue(any(flag.startswith("TRAP:") for flag in flags))
+
+    def test_the_opposite_of_a_fact_is_not_credited(self):
+        fact = evidence_of("demo-celiac-lab", "iron_deficiency_anemia")
+        facts, scored = score_sentences("demo-celiac-lab", [sentence("Your iron is fine.", fact["source_evidence"])])
+        self.assertIsNone(facts["iron_deficiency_anemia"]["standing"])
+        self.assertIn("ADVICE_OR_JUDGEMENT:fine", scored["flags"][0]["flags"])
+
+    def test_a_table_row_quote_earns_the_credit(self):
+        row = "25-hydroxy vitamin D\t41\tL\t75–250\tnmol/L"
+        facts, scored = score_sentences("demo-celiac-lab", [sentence("Your vitamin D was low.", row)])
+        self.assertEqual(scored["flags"][0]["flags"], [])
+        self.assertEqual((facts["vitamin_d_low"]["standing"], facts["vitamin_d_low"]["found"]), ("credited", "matched"))
+
+    def test_a_correct_statement_of_the_trap_fact_is_credited(self):
+        fact = evidence_of("demo-celiac-lab", "ttg_high_suggests_celiac")
+        right = sentence("The celiac antibody test is 92 U/mL, more than six times the upper limit.",
+                         fact["source_evidence"])
+        facts, scored = score_sentences("demo-celiac-lab", [right])
+        self.assertEqual(scored["flags"][0]["flags"], [])
+        self.assertEqual(facts["ttg_high_suggests_celiac"]["standing"], "credited")
+
+
+class MatchingTest(unittest.TestCase):
+    def test_options_start_at_a_word_and_short_ones_are_whole_words(self):
+        self.assertFalse(compare.names("the environment", "iron"))
+        self.assertTrue(compare.names("very low iron stores", "iron"))
+        self.assertFalse(compare.names("health and salt", "alt"))
+        self.assertFalse(compare.names("although", "alt"))
+        self.assertTrue(compare.names("alt/ast are high", "alt"))
+        self.assertTrue(compare.names("seen within 6 weeks", "week"))
+        self.assertTrue(compare.names("the prediabetes range", "prediabet"))
+
+    def test_numbers_are_whole_numbers(self):
+        self.assertTrue(compare.names("in 2 to 3 weeks", "2"))
+        self.assertFalse(compare.names("12 weeks", "2"))
+        self.assertFalse(compare.names("2.5 mg", "2"))
+        self.assertFalse(compare.names("0.2 mg", "2"))
+        self.assertTrue(compare.names("lvef 40%", "40"))
+        self.assertTrue(compare.names("hba1c 8,1%", "8,1"))
+
+    def test_a_quote_from_another_place_does_not_cover_the_evidence(self):
+        doc = REPO["fake02-cardiac-discharge"]
+        atorvastatin = evidence_of("fake02-cardiac-discharge", "atorvastatin_80")
+        folded = compare.fold(compare.joined_text(doc))
+        ramipril_row = "Ramipril  2.5 mg daily  CHANGED (was 5 mg)"
+        # The rows share "mg daily changed (was": the old rule credited it, the place-based one does not.
+        self.assertTrue(compare.quote_overlaps(ramipril_row, atorvastatin["source_evidence"]))
+        self.assertFalse(compare.quote_on_evidence(ramipril_row, compare.evidence_spans(atorvastatin), folded))
+        self.assertTrue(compare.quote_on_evidence(atorvastatin["source_evidence"],
+                                                  compare.evidence_spans(atorvastatin), folded))
+
+
+class CreditTest(unittest.TestCase):
+    def setUp(self):
+        self.doc = fake_doc()
+        self.timing = sentence("You should be seen within 4 to 6 weeks.",
+                               "I would be grateful if they could be seen within the next 4 to 6 weeks.")
+
+    def standing(self, sentences, verdicts=None):
+        entry = run_lines("E1", sentences)[1]
+        facts = compare.score_document(self.doc, entry, "en", verdicts)["facts"]
+        return {f["id"]: f["standing"] for f in facts}
+
+    def test_a_flagged_sentence_holds_its_fact_until_the_review(self):
+        self.assertEqual(self.standing([self.timing])["timing"], "held")
+        self.assertEqual(self.standing([self.timing], {0: "correct"})["timing"], "credited")
+        for verdict in ("wrong", "unsupported", "vague"):
+            self.assertEqual(self.standing([self.timing], {0: verdict})["timing"], "rejected")
+
+    def test_an_unflagged_sentence_carrying_the_same_fact_credits_it(self):
+        plain = sentence("They will be seen within 4 to 6 weeks.",
+                         "I would be grateful if they could be seen within the next 4 to 6 weeks.")
+        self.assertEqual(self.standing([self.timing, plain])["timing"], "credited")
+
+    def test_a_review_against_an_unflagged_sentence_takes_its_credit(self):
+        weight = sentence("You have lost 4 kg.", "They have lost 4 kg.")
+        self.assertEqual(self.standing([weight], {0: "wrong"})["weight"], "rejected")
+
+
+class NewScreenTest(unittest.TestCase):
+    def flags(self, text, quote, doc=None):
+        return compare.screen(sentence(text, quote), "en", [], doc)
+
+    def test_flags_a_hedge_the_sentence_dropped(self):
+        quote = "a duodenal biopsy is usually needed to confirm it; this strongly suggests celiac disease"
+        self.assertIn("HEDGE_DROPPED", self.flags("You have celiac disease.", quote))
+        self.assertNotIn("HEDGE_DROPPED", self.flags("This suggests celiac disease.", quote))
+        self.assertNotIn("HEDGE_DROPPED", self.flags("The visit is in May.", "Seen in May 2026."))
+
+    def test_flags_certainty_the_quote_does_not_have(self):
+        self.assertIn("CERTAINTY_ADDED:confirmed", self.flags("Celiac disease is confirmed.", "tTG IgA 92 U/mL"))
+        self.assertEqual(self.flags("A biopsy is needed to confirm it.", "A biopsy is needed to confirm it."), [])
+
+    def test_flags_a_statement_about_someone_else(self):
+        self.assertIn("EXPERIENCER", self.flags("You have hypothyroidism.", "Mother has hypothyroidism."))
+        self.assertNotIn("EXPERIENCER", self.flags("Your mother has hypothyroidism.", "Mother has hypothyroidism."))
+        self.assertNotIn("EXPERIENCER", self.flags("See your doctor in 10 days.",
+                                                   "Family physician, within 10 days."))
+
+    def test_the_fuller_negation_list(self):
+        self.assertIn("NEGATION_MISMATCH", self.flags("Celiac disease is likely.", "Celiac disease was ruled out."))
+        self.assertIn("NEGATION_MISMATCH", self.flags("The scan showed a problem.", "The scan was unremarkable."))
+
+    def test_a_listed_trap_is_machine_checked(self):
+        doc = fake_doc()
+        self.assertIn("TRAP:0", self.flags("Start a gluten-free diet now.", "keep eating gluten", doc))
+        self.assertNotIn("TRAP:0", " ".join(self.flags("Do not start a gluten-free diet.", "keep eating gluten", doc)))
+
+    def test_every_trap_needs_a_check_that_its_example_trips_and_no_approved_statement_does(self):
+        doc = fake_doc()
+        doc["trap_checks"][0]["example"] = "Keep eating gluten."
+        self.assertTrue(any("example does not fall into it" in p for p in compare.check_document(doc)))
+        doc = fake_doc()
+        doc["trap_checks"][0]["pattern"] = r"\bgluten\b"
+        doc["trap_checks"][0]["example"] = "gluten"
+        self.assertTrue(any("approved statement falls into it" in p for p in compare.check_document(doc)))
+        doc = fake_doc()
+        del doc["trap_checks"]
+        self.assertIn("trap_checks must list every trap, in order", compare.check_document(doc))
+
+    def test_a_critical_fact_needs_a_qualifier_or_a_reason(self):
+        doc = fake_doc()
+        doc["facts"][1]["match"] = [["gluten"]]
+        self.assertTrue(any("needs a qualifier group" in p for p in compare.check_document(doc)))
+        doc["facts"][1]["no_qualifier"] = "the word carries the fact"
+        self.assertEqual(compare.check_document(doc), [])
+
+
+class DecisionV2Test(RunTest):
+    def test_a_speed_variant_passes_when_not_worse(self):
+        rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")]
+        (_, decisions), _ = self.score(run_lines("E1", BASE, wall_ms=50_000), rows)
+        self.assertEqual(decisions[1]["verdict"], "PASS")
+
+    def test_an_experiment_aimed_at_actions_can_require_a_gain(self):
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        same = write_run(self.folder.name, "E1", run_lines("E1", BASE))
+        review = Path(self.folder.name) / "filled.csv"
+        review.write_text("run,doc,sentence,verdict\nE1,fake-letter,0,correct\n", encoding="utf-8")
+        _, decisions = compare.score([base, same], Path(self.folder.name) / "gain", self.docs, review,
+                                     require_gain=True)
+        self.assertEqual(decisions[1]["verdict"], "FAIL")
+
+    def test_a_margin_allows_that_many_lost_must_haves(self):
+        rows = [dict(run="E1", doc="fake-letter", sentence=0, verdict="correct")]
+        base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
+        variant = write_run(self.folder.name, "E1", run_lines("E1", BETTER[1:2]))
+        review = Path(self.folder.name) / "filled.csv"
+        with review.open("w", newline="", encoding="utf-8") as target:
+            writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "verdict"])
+            writer.writeheader()
+            writer.writerows(rows)
+        _, decisions = compare.score([base, variant], Path(self.folder.name) / "m", self.docs, review, margin_lost=1)
+        self.assertEqual(decisions[1]["verdict"], "PASS")
+
+    def test_a_held_fact_makes_a_lost_must_have_pending_not_failed(self):
+        timing_only = [sentence("You should be seen within 4 to 6 weeks.",
+                                "I would be grateful if they could be seen within the next 4 to 6 weeks.")]
+        base_plain = [sentence("They will be seen within 4 to 6 weeks.",
+                               "I would be grateful if they could be seen within the next 4 to 6 weeks.")]
+        base = write_run(self.folder.name, "B0", run_lines("B0", base_plain))
+        variant = write_run(self.folder.name, "E1", run_lines("E1", timing_only))
+        _, decisions = compare.score([base, variant], Path(self.folder.name) / "p", self.docs)
+        check = next(ok for name, ok in decisions[1]["checks"] if name.startswith("must-haves lost"))
+        self.assertIsNone(check)
+
+    def test_holdout_cases_are_reported_but_not_decided_on(self):
+        holdout = dict(fake_doc(), id="hold-letter", split="holdout")
+        self.docs["hold-letter"] = holdout
+        good = run_lines("B0", BASE)
+        base_lines = good[:2] + [dict(good[1], id="hold-letter")] + good[2:]
+        variant_lines = run_lines("E1", BASE)
+        variant_lines.insert(2, dict(kind="document", id="hold-letter", wallMs=1, error="Failed"))
+        base = write_run(self.folder.name, "B0", base_lines)
+        variant = write_run(self.folder.name, "E1", variant_lines)
+        review = Path(self.folder.name) / "filled.csv"
+        review.write_text("run,doc,sentence,verdict\nE1,fake-letter,0,correct\n", encoding="utf-8")
+        out = Path(self.folder.name) / "h"
+        summaries, decisions = compare.score([base, variant], out, self.docs, review)
+        self.assertEqual(decisions[1]["verdict"], "PASS")
+        self.assertEqual(summaries[1]["documents"], 1)
+        self.assertIn("hold-letter (holdout)", (out / "compare.md").read_text(encoding="utf-8"))
+
+    def test_an_a_a_pair_measures_the_flips_that_set_the_margins(self):
+        first = write_run(self.folder.name, "B0", run_lines("B0", BETTER))
+        again = write_run(self.folder.name, "B0R", run_lines("B0R", BETTER))
+        measured = compare.noise(first, again, self.docs)
+        self.assertEqual((measured["margin_lost"], measured["margin_actions"], measured["same_answers"]), (0, 0, 1))
+        moved = run_lines("B0X", BETTER[:2])
+        moved[1]["result"]["stats"]["answerHash"] = 7
+        measured = compare.noise(first, write_run(self.folder.name, "B0X", moved), self.docs)
+        self.assertEqual((measured["margin_lost"], measured["margin_actions"]), (0, 0))
+        dropped = run_lines("B0Y", BASE)
+        measured = compare.noise(first, write_run(self.folder.name, "B0Y", dropped), self.docs)
+        self.assertEqual((measured["flipped"], measured["margin_actions"]), (["fake-letter/gluten"], 1))
+
+    def test_every_output_names_what_scored_it(self):
+        (_, _), out = self.score(run_lines("E1", BETTER))
+        scores = json.loads((out / "scores.json").read_text(encoding="utf-8"))
+        identity = scores["scoring"]
+        self.assertEqual(len(identity["id"]), 64)
+        self.assertEqual(identity["thresholds_values"]["rule_version"], compare.RULE_VERSION)
+        self.assertTrue((out / "compare.md").read_text(encoding="utf-8").startswith(f"Scoring {identity['id'][:16]}"))
+        changed = dict(self.docs)
+        changed["fake-letter"] = fake_doc()
+        changed["fake-letter"]["facts"][0]["match"] = [["4 kg"], ["lost"]]
+        self.assertNotEqual(compare.scoring_identity(changed, {})["documents"],
+                            compare.scoring_identity(self.docs, {})["documents"])
+
+
+class FreezeTest(unittest.TestCase):
+    def test_a_changed_document_is_caught(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for path in compare.DOCUMENTS.glob("*.json"):
+                (Path(folder) / path.name).write_bytes(path.read_bytes())
+            self.assertEqual(compare.freeze_problems(folder), [])
+            first = sorted(Path(folder).glob("*.json"))[0]
+            first.write_text(first.read_text(encoding="utf-8").replace("FAKE", "FAKE ", 1), encoding="utf-8")
+            self.assertEqual(compare.freeze_problems(folder), [f"{first.stem}: changed since the freeze"])
 
 
 if __name__ == "__main__":

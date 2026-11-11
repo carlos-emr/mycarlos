@@ -30,6 +30,15 @@
      "anemi",
      "anaemi",
      "iron"
+    ],
+    [
+     "low",
+     "deficien",
+     "small",
+     "microcyt",
+     "deplet",
+     "anemi",
+     "anaemi"
     ]
    ],
    "expected_attributes": {}
@@ -57,6 +66,21 @@
      "92",
      "transglutaminase",
      "ttg"
+    ],
+    [
+     "suggest",
+     "likely",
+     "probabl",
+     "possibl",
+     "point",
+     "consistent",
+     "high",
+     "raised",
+     "elevat",
+     "above",
+     "six times",
+     "6 times",
+     "92"
     ]
    ],
    "expected_attributes": {},
@@ -64,7 +88,10 @@
     "pattern": "(?:transglutaminase|tTG)[^0-9]{0,40}(\\d+(?:[.,]\\d+)?)\\s*(U/mL)",
     "value": "92",
     "unit": "U/mL"
-   }
+   },
+   "evidence_spans": [
+    "Tissue transglutaminase IgA 92 H <15 U/mL"
+   ]
   },
   {
    "id": "biopsy_to_confirm",
@@ -81,6 +108,14 @@
    "match": [
     [
      "biops"
+    ],
+    [
+     "confirm",
+     "needed",
+     "need",
+     "required",
+     "usually",
+     "diagnos"
     ]
    ],
    "expected_attributes": {}
@@ -102,7 +137,10 @@
      "vitamin d"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "25-hydroxy vitamin D 41 L 75–250 nmol/L"
+   ]
   },
   {
    "id": "alt_high_repeat",
@@ -123,7 +161,10 @@
      "liver"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "ALT 52 H <50 U/L"
+   ]
   },
   {
    "id": "others_normal",
@@ -152,13 +193,35 @@
      "creatinine"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Folate 9.8 >7.0 nmol/L",
+    "Creatinine 68 45–110 µmol/L",
+    "TSH 2.3 0.4–4.0 mU/L"
+   ]
   }
  ],
  "traps": [
   "calling B12, folate, creatinine or TSH abnormal",
   "saying celiac disease is confirmed",
   "treatment advice not in the report"
+ ],
+ "trap_checks": [
+  {
+   "trap": "calling B12, folate, creatinine or TSH abnormal",
+   "pattern": "(?=.*\\b(b12|folate|creatinine|tsh|thyroid|kidney)\\b)(?=.*\\b(abnormal|high|low|elevated|raised|decreased|deficien\\w*)\\b)",
+   "example": "Your B12 is low."
+  },
+  {
+   "trap": "saying celiac disease is confirmed",
+   "pattern": "^(?!.*\\b(to confirm|confirm it|needed|needs|need|biops\\w*|whether|likely|suggest\\w*|probabl\\w*|possibl\\w*|may|might|could)\\b)(?=.*\\b(celiac|coeliac)\\b)(?=.*\\b(confirmed|definite\\w*|diagnosed|you have|they have|has|have)\\b)",
+   "example": "Celiac disease is confirmed."
+  },
+  {
+   "trap": "treatment advice not in the report",
+   "pattern": "\\b(gluten-free|gluten free|supplement\\w*|iron (pills|tablets|infusion)|vitamin d (pills|tablets)|you should (start|take)|start taking|take (iron|vitamin))\\b",
+   "example": "Start a gluten-free diet."
+  }
  ],
  "notes": ""
 }

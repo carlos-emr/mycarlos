@@ -72,6 +72,15 @@
    "match": [
     [
      "iron"
+    ],
+    [
+     "back",
+     "return",
+     "recur",
+     "again",
+     "despite",
+     "deficien",
+     "low"
     ]
    ],
    "expected_attributes": {}
@@ -99,6 +108,15 @@
      "transglutaminase",
      "ttg",
      "86"
+    ],
+    [
+     "positive",
+     "high",
+     "raised",
+     "elevat",
+     "above",
+     "86",
+     "abnormal"
     ]
    ],
    "expected_attributes": {},
@@ -196,6 +214,15 @@
    "match": [
     [
      "gluten"
+    ],
+    [
+     "keep",
+     "continu",
+     "not start",
+     "don't start",
+     "do not start",
+     "until",
+     "for now"
     ]
    ],
    "expected_attributes": {}
@@ -240,6 +267,25 @@
   "saying celiac disease is confirmed (the letter asks whether a biopsy is needed)",
   "advising a gluten-free diet now (the letter says to keep eating gluten)",
   "wrong numbers"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying celiac disease is confirmed (the letter asks whether a biopsy is needed)",
+   "pattern": "^(?!.*\\b(to confirm|confirm it|needed|needs|need|biops\\w*|whether|likely|suggest\\w*|probabl\\w*|possibl\\w*|may|might|could)\\b)(?=.*\\b(celiac|coeliac)\\b)(?=.*\\b(confirmed|definite\\w*|diagnosed|you have|they have|has|have)\\b)",
+   "example": "They have celiac disease."
+  },
+  {
+   "trap": "advising a gluten-free diet now (the letter says to keep eating gluten)",
+   "pattern": "^(?!.*(\\bnot\\b|n't|\\bnever\\b|\\bkeep eating\\b|\\bcontinu\\w*|\\buntil\\b|\\bbefore\\b|\\bavoid\\w*))(?=.*\\bgluten[- ]?free\\b)",
+   "example": "They should go on a gluten-free diet now."
+  },
+  {
+   "trap": "wrong numbers",
+   "screens": [
+    "NUMBER_NOT_IN_QUOTE",
+    "QUANTITY_MISMATCH"
+   ]
+  }
  ],
  "notes": ""
 }

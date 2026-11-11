@@ -36,9 +36,21 @@
      "neutrophil",
      "infection",
      "inflammation"
+    ],
+    [
+     "raised",
+     "high",
+     "elevat",
+     "increas",
+     "up"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "White blood cells (WBC) 6.8 7.1 11.9 H x10^9/L 4.0-11.0",
+    "Neutrophils 4.1 4.3 9.2 H x10^9/L 2.0-7.5",
+    "C-reactive protein (CRP) 2 3 38 H mg/L <10"
+   ]
   },
   {
    "id": "repeat_cbc_crp",
@@ -90,9 +102,17 @@
     [
      "prediabet",
      "6.2"
+    ],
+    [
+     "prediabet",
+     "pre-diabet",
+     "borderline"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "HbA1c 5.8 6.0 6.2 H % <6.0"
+   ]
   },
   {
    "id": "liver_enzymes_rising",
@@ -117,7 +137,12 @@
      "ggt"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "ALT 38 52 H 71 H U/L <40",
+    "AST 29 35 44 H U/L <35",
+    "GGT 41 58 H 66 H U/L <55"
+   ]
   },
   {
    "id": "lipids",
@@ -151,6 +176,33 @@
   "calling kidney or thyroid results abnormal",
   "wrong direction of a trend",
   "medication advice such as starting a statin"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying the patient has diabetes (it is prediabetes range)",
+   "pattern": "(?<!pre-)(?<!pre )\\bdiabet",
+   "example": "Your HbA1c shows diabetes."
+  },
+  {
+   "trap": "diagnosing liver disease or a specific infection",
+   "pattern": "\\b(hepatitis|cirrhosis|fatty liver|liver disease|liver damage|pneumonia|urinary tract infection|uti|covid|influenza|flu|sepsis|strep\\w*|tonsillitis|bacterial infection|viral infection|mononucleosis)\\b",
+   "example": "This looks like hepatitis."
+  },
+  {
+   "trap": "calling kidney or thyroid results abnormal",
+   "pattern": "(?=.*\\b(kidney|kidneys|renal|creatinine|egfr|thyroid|tsh)\\b)(?=.*\\b(abnormal|high|low|elevated|raised|decreased|impaired|disease|damage|problem)\\b)",
+   "example": "Your kidney function is low."
+  },
+  {
+   "trap": "wrong direction of a trend",
+   "pattern": "\\b(alt|ast|ggt|liver enzymes?|hba1c|a1c|glucose|sugar|crp|white (blood )?cells|wbc|neutrophils|ldl|triglycerides)\\b.{0,60}\\b(fell|fall\\w*|dropp\\w*|decreas\\w*|declin\\w*|improv\\w*|lower\\w*|better|down)\\b|\\b(hemoglobin|haemoglobin|hdl)\\b.{0,60}\\b(rose|ris\\w*|increas\\w*|climb\\w*|higher|up)\\b",
+   "example": "Your liver enzymes have improved since April."
+  },
+  {
+   "trap": "medication advice such as starting a statin",
+   "pattern": "\\b(statin\\w*|atorvastatin|rosuvastatin|metformin|insulin|antibiotic\\w*|medication\\w*|medicine\\w*|tablet\\w*|pill\\w*|supplement\\w*)\\b",
+   "example": "You should start a statin."
+  }
  ],
  "notes": ""
 }

@@ -26,6 +26,14 @@
    "match": [
     [
      "potassium"
+    ],
+    [
+     "high",
+     "elevat",
+     "raised",
+     "5.3",
+     "above",
+     "increas"
     ]
    ],
    "expected_attributes": {},
@@ -33,7 +41,10 @@
     "pattern": "potassium\\D{0,30}(\\d+(?:[.,]\\d+)?)\\s*(mmol/L)",
     "value": "5.3",
     "unit": "mmol/L"
-   }
+   },
+   "evidence_spans": [
+    "Potassium 5.3 H 3.5–5.0 mmol/L"
+   ]
   },
   {
    "id": "repeat_potassium_1_week",
@@ -85,7 +96,10 @@
      "8.1"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Hemoglobin A1c 8.1 H <6.0 (target for diabetes ≤7.0) %"
+   ]
   },
   {
    "id": "ldl_above_target",
@@ -106,7 +120,10 @@
      "cholesterol"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "LDL cholesterol 2.2 H <1.8 after a heart attack mmol/L"
+   ]
   },
   {
    "id": "ntprobnp_high",
@@ -127,7 +144,10 @@
      "bnp"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "NT-proBNP 1,180 H <300 ng/L"
+   ]
   },
   {
    "id": "kidney_ok",
@@ -157,6 +177,25 @@
   "calling creatinine or eGFR abnormal",
   "diet or medicine advice beyond the comment",
   "wrong numbers"
+ ],
+ "trap_checks": [
+  {
+   "trap": "calling creatinine or eGFR abnormal",
+   "pattern": "(?=.*\\b(creatinine|egfr|kidney|kidneys|renal)\\b)(?=.*\\b(abnormal|high|low|elevated|raised|decreased|impaired|reduced|disease|damage)\\b)",
+   "example": "Your kidney function is impaired."
+  },
+  {
+   "trap": "diet or medicine advice beyond the comment",
+   "pattern": "\\b(stop\\w*|avoid\\w*|cut|limit\\w*|banana\\w*|binder\\w*|supplement\\w*|lower the dose|reduc\\w*|decreas\\w*)\\b",
+   "example": "Stop ramipril and avoid bananas."
+  },
+  {
+   "trap": "wrong numbers",
+   "screens": [
+    "NUMBER_NOT_IN_QUOTE",
+    "QUANTITY_MISMATCH"
+   ]
+  }
  ],
  "notes": ""
 }

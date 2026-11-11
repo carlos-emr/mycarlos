@@ -34,7 +34,8 @@
      "stent"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "no_qualifier": "the diagnosis word carries the fact; a negated or hedged sentence is caught by the NEGATION_MISMATCH, HEDGE_DROPPED and CERTAINTY_ADDED screens, which hold the credit"
   },
   {
    "id": "heart_failure_lvef_40",
@@ -55,9 +56,18 @@
      "heart failure",
      "40%",
      "ejection"
+    ],
+    [
+     "40",
+     "reduced",
+     "weak",
+     "new"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "The echocardiogram showed anterior hypokinesis with LVEF 40% and no significant valve disease."
+   ]
   },
   {
    "id": "kidney_injury_recovered",
@@ -78,7 +88,10 @@
      "creatinine"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Creatinine rose after contrast and recovered with IV fluids."
+   ]
   },
   {
    "id": "ticagrelor_new",
@@ -95,6 +108,14 @@
    "match": [
     [
      "ticagrelor"
+    ],
+    [
+     "new",
+     "start",
+     "90",
+     "12 months",
+     "twelve months",
+     "twice"
     ]
    ],
    "expected_attributes": {},
@@ -150,7 +171,10 @@
     "pattern": "ramipril\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mg)",
     "value": "2.5",
     "unit": "mg"
-   }
+   },
+   "evidence_spans": [
+    "Ramipril was held for 48 hours and restarted at 2.5 mg."
+   ]
   },
   {
    "id": "empagliflozin_new",
@@ -169,7 +193,10 @@
      "empagliflozin"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "empagliflozin was started for both diabetes and heart failure."
+   ]
   },
   {
    "id": "metoprolol_new",
@@ -212,7 +239,10 @@
     "pattern": "metformin\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mg)",
     "value": "500",
     "unit": "mg"
-   }
+   },
+   "evidence_spans": [
+    "Metformin was held from 13 to 17 October and restarted at a lower dose."
+   ]
   },
   {
    "id": "glyburide_stopped",
@@ -231,7 +261,10 @@
      "glyburide"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Glyburide was stopped because of hypoglycemia risk"
+   ]
   },
   {
    "id": "blood_tests_1_week",
@@ -362,6 +395,12 @@
      "acetylsalicylic",
      "aspirin",
      "blood thinner"
+    ],
+    [
+     "not",
+     "don't",
+     "never",
+     "without"
     ]
    ],
    "expected_attributes": {}
@@ -427,6 +466,14 @@
     [
      "911",
      "emergency"
+    ],
+    [
+     "5 minutes",
+     "five minutes",
+     "spray",
+     "nitro",
+     "not gone",
+     "still"
     ]
    ],
    "expected_attributes": {}
@@ -436,6 +483,25 @@
   "calling a continued medicine new or a new medicine continued",
   "wrong doses",
   "saying to stop ticagrelor or aspirin"
+ ],
+ "trap_checks": [
+  {
+   "trap": "calling a continued medicine new or a new medicine continued",
+   "pattern": "\\b(ticagrelor|metoprolol|empagliflozin)\\b.{0,60}\\b(continu\\w*|same|unchanged|as before|already)\\b|\\b(acetylsalicylic acid|aspirin|asa|nitroglycerin|nitro spray)\\b.{0,60}\\bnew\\b|\\bnew\\b.{0,30}\\b(acetylsalicylic acid|aspirin|asa|nitroglycerin)\\b",
+   "example": "He continues ticagrelor as before."
+  },
+  {
+   "trap": "wrong doses",
+   "screens": [
+    "NUMBER_NOT_IN_QUOTE",
+    "QUANTITY_MISMATCH"
+   ]
+  },
+  {
+   "trap": "saying to stop ticagrelor or aspirin",
+   "pattern": "^(?!.*(\\bnot\\b|n't|\\bnever\\b|\\bwithout\\b|\\bunless\\b|\\bpas\\b|\\bnie\\b|\\bnao\\b))(?=.*\\bstop\\w*)(?=.*\\b(ticagrelor|aspirin|acetylsalicylic|antiplatelet\\w*|blood thinners?)\\b)",
+   "example": "He can stop aspirin after a month."
+  }
  ],
  "notes": ""
 }

@@ -31,6 +31,19 @@
      "rein",
      "renal",
      "kidney"
+    ],
+    [
+     "insuffisance",
+     "injury",
+     "worse",
+     "moins bien",
+     "failure",
+     "aigu",
+     "acute",
+     "damage",
+     "function",
+     "fonctionn",
+     "ibuprof"
     ]
    ],
    "expected_attributes": {}
@@ -107,6 +120,17 @@
      "ibuprof",
      "anti-inflammatoire",
      "anti-inflammator"
+    ],
+    [
+     "stop",
+     "arret",
+     "avoid",
+     "do not",
+     "don't",
+     "no more",
+     "not take",
+     "cesser",
+     "never"
     ]
    ],
    "expected_attributes": {}
@@ -151,6 +175,15 @@
    "match": [
     [
      "metformin"
+    ],
+    [
+     "500",
+     "decreas",
+     "reduc",
+     "lower",
+     "dimin",
+     "baisse",
+     "halv"
     ]
    ],
    "expected_attributes": {},
@@ -236,9 +269,21 @@
      "semana",
      "novembre",
      "november"
+    ],
+    [
+     "blood",
+     "sang",
+     "test",
+     "lab",
+     "analys",
+     "creatinin",
+     "potassium"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Refaire la créatinine et le potassium dans 2 semaines."
+   ]
   },
   {
    "id": "call_if",
@@ -303,6 +348,23 @@
   "saying ramipril is stopped",
   "saying there is a blockage",
   "advising naproxen"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying ramipril is stopped",
+   "pattern": "^(?!.*(\\bnot\\b|n't|\\bpas\\b|\\bcontinu\\w*|\\bkeep\\b|\\bgarder\\b|\\bsame\\b|\\bmeme\\b|\\bmaintain\\w*))(?=.*\\bramipril\\b)(?=.*\\b(stop\\w*|arret\\w*|discontinu\\w*|cesser|cess\\w*|held|hold)\\b)",
+   "example": "Ramipril is stopped."
+  },
+  {
+   "trap": "saying there is a blockage",
+   "pattern": "(?<!\\bno )(?<!\\bpas d')(?<!\\bsans )(?<!\\bpas de )\\b(blockage\\w*|obstruct\\w*|obstruction|blocked)\\b",
+   "example": "There is a blockage of the kidneys."
+  },
+  {
+   "trap": "advising naproxen",
+   "pattern": "^(?!.*(\\bnot\\b|n't|\\bnever\\b|\\bwithout\\b|\\bunless\\b|\\bpas\\b|\\bnie\\b|\\bnao\\b))(?!.*\\b(avoid\\w*|stop\\w*|arret\\w*|ni de|plus)\\b).*\\bnaproxen\\w*",
+   "example": "She can take naproxen for the pain."
+  }
  ],
  "notes": ""
 }

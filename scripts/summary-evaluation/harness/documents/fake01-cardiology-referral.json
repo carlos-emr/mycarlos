@@ -26,6 +26,17 @@
    "match": [
     [
      "chest"
+    ],
+    [
+     "uphill",
+     "walking",
+     "exert",
+     "effort",
+     "activity",
+     "groceries",
+     "carrying",
+     "six weeks",
+     "6 weeks"
     ]
    ],
    "expected_attributes": {}
@@ -139,6 +150,12 @@
     [
      "911",
      "emergency"
+    ],
+    [
+     "10 minutes",
+     "ten minutes",
+     "rest",
+     "last"
     ]
    ],
    "expected_attributes": {}
@@ -202,6 +219,25 @@
   "saying he had a heart attack",
   "advising medicine changes (the letter asks questions)",
   "wrong numbers"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying he had a heart attack",
+   "pattern": "^(?!.*(\\bno\\b|\\bnot\\b|n't|\\bnever\\b|\\bwithout\\b|\\bruled out\\b|\\bexclud\\w*)).*\\b(heart attack|myocardial infarct\\w*|infarct\\w*|mi|nstemi|stemi)\\b",
+   "example": "He had a heart attack."
+  },
+  {
+   "trap": "advising medicine changes (the letter asks questions)",
+   "pattern": "\\b(start\\w*|stop\\w*|increas\\w*|decreas\\w*|chang\\w*|switch\\w*|add\\w*|double\\w*)\\b.{0,40}\\b(medication\\w*|medicine\\w*|aspirin|statin\\w*|atorvastatin|rosuvastatin|metformin|beta|metoprolol|dose)\\b|\\b(medication\\w*|medicine\\w*|aspirin|statin\\w*|atorvastatin|rosuvastatin|metformin|metoprolol|dose)\\b.{0,40}\\b(start\\w*|stopp\\w*|increas\\w*|decreas\\w*|chang\\w*|switch\\w*|added|doubled)\\b",
+   "example": "His statin dose was increased."
+  },
+  {
+   "trap": "wrong numbers",
+   "screens": [
+    "NUMBER_NOT_IN_QUOTE",
+    "QUANTITY_MISMATCH"
+   ]
+  }
  ],
  "notes": ""
 }

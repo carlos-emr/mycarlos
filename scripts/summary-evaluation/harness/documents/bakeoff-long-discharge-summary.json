@@ -28,7 +28,11 @@
      "heart failure"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "no_qualifier": "the diagnosis word carries the fact; a negated or hedged sentence is caught by the NEGATION_MISMATCH, HEDGE_DROPPED and CERTAINTY_ADDED screens, which hold the credit",
+   "evidence_spans": [
+    "Acute decompensated heart failure with reduced ejection fraction (EF 35%)"
+   ]
   },
   {
    "id": "ibuprofen_trigger",
@@ -49,9 +53,21 @@
      "ibuprofen",
      "anti-inflammatory",
      "nsaid"
+    ],
+    [
+     "trigger",
+     "cause",
+     "led",
+     "brought",
+     "because",
+     "due",
+     "likely"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "triggered by non-steroidal anti-inflammatory drug (NSAID) use."
+   ]
   },
   {
    "id": "no_heart_attack",
@@ -158,6 +174,13 @@
    "match": [
     [
      "furosemide"
+    ],
+    [
+     "40",
+     "increas",
+     "doubl",
+     "raised",
+     "higher"
     ]
    ],
    "expected_attributes": {},
@@ -188,6 +211,15 @@
      "anti-inflammatory",
      "nsaid",
      "naproxen"
+    ],
+    [
+     "stop",
+     "do not",
+     "don't",
+     "avoid",
+     "no more",
+     "not take",
+     "never"
     ]
    ],
    "expected_attributes": {}
@@ -257,7 +289,10 @@
      "nodule"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Incidental 4 mm left lower lobe lung nodule, no follow-up required."
+   ]
   },
   {
    "id": "daily_weight",
@@ -395,6 +430,33 @@
   "saying metoprolol/ramipril/apixaban/metformin changed",
   "wrong furosemide dose or direction",
   "advising the patient to take ibuprofen"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying he had a heart attack",
+   "pattern": "^(?!.*(\\bno\\b|\\bnot\\b|n't|\\bnever\\b|\\bwithout\\b|\\bruled out\\b|\\bexclud\\w*)).*\\b(heart attack|myocardial infarct\\w*|infarct\\w*|mi|nstemi|stemi)\\b",
+   "example": "He had a heart attack."
+  },
+  {
+   "trap": "saying the nodule may be cancer or needs follow-up",
+   "pattern": "(?=.*\\bnodule\\b)(?=.*\\b(cancer\\w*|malignan\\w*|follow-?up scan|repeat\\w*|monitor\\w*|recheck\\w*)\\b)(?!.*\\bno (evidence of )?(malignancy|follow-?up)\\b)",
+   "example": "The lung nodule needs a repeat scan."
+  },
+  {
+   "trap": "saying metoprolol/ramipril/apixaban/metformin changed",
+   "pattern": "^(?!.*\\b(unchanged|same|continu\\w*|no change|not changed|as before)\\b)(?=.*\\b(metoprolol|ramipril|apixaban|metformin)\\b)(?=.*\\b(chang\\w*|increas\\w*|decreas\\w*|stop\\w*|start\\w*|adjust\\w*|reduc\\w*|rais\\w*|new)\\b)",
+   "example": "Ramipril was increased."
+  },
+  {
+   "trap": "wrong furosemide dose or direction",
+   "pattern": "\\bfurosemide\\b.{0,80}\\b(decreas\\w*|reduc\\w*|lower\\w*|stopp\\w*|halv\\w*)\\b|\\bfurosemide\\b.{0,40}(?<![\\w.,])(?!(20|40) ?mg)\\d+ ?mg\\b",
+   "example": "Furosemide was reduced to 20 mg."
+  },
+  {
+   "trap": "advising the patient to take ibuprofen",
+   "pattern": "^(?!.*(\\bnot\\b|n't|\\bnever\\b|\\bwithout\\b|\\bunless\\b|\\bpas\\b|\\bnie\\b|\\bnao\\b))(?!.*\\b(stop\\w*|avoid\\w*)\\b).*\\b(take|use|continue|resume|restart)\\w* (your |the )?(regular )?(ibuprofen|nsaids?|anti-inflammator\\w*)",
+   "example": "Take ibuprofen for the knee pain."
+  }
  ],
  "notes": ""
 }

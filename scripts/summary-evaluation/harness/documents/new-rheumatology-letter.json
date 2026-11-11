@@ -30,7 +30,8 @@
      "arthritis"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "no_qualifier": "the diagnosis word carries the fact; a negated or hedged sentence is caught by the NEGATION_MISMATCH, HEDGE_DROPPED and CERTAINTY_ADDED screens, which hold the credit"
   },
   {
    "id": "joint_symptoms",
@@ -95,6 +96,12 @@
    "match": [
     [
      "methotrexate"
+    ],
+    [
+     "15",
+     "once a week",
+     "weekly",
+     "week"
     ]
    ],
    "expected_attributes": {},
@@ -182,6 +189,14 @@
     [
      "alcohol",
      "pregnan"
+    ],
+    [
+     "no",
+     "not",
+     "avoid",
+     "don't",
+     "never",
+     "must not"
     ]
    ],
    "expected_attributes": {}
@@ -234,6 +249,14 @@
      "cough",
      "mouth sore",
      "breath"
+    ],
+    [
+     "call",
+     "contact",
+     "clinic",
+     "at once",
+     "right away",
+     "immediately"
     ]
    ],
    "expected_attributes": {}
@@ -257,6 +280,16 @@
      "6 weeks",
      "six weeks",
      "december"
+    ],
+    [
+     "seen",
+     "see",
+     "appointment",
+     "visit",
+     "follow",
+     "back",
+     "again",
+     "review"
     ]
    ],
    "expected_attributes": {}
@@ -266,6 +299,25 @@
   "saying methotrexate is taken daily",
   "saying to stop naproxen now (it may continue for now)",
   "wrong doses"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying methotrexate is taken daily",
+   "pattern": "(?=.*\\bmethotrexate\\b)(?=.*\\b(daily|every day|each day|once a day|twice a day)\\b)(?!.*\\b(never daily|not daily|not every day)\\b)",
+   "example": "Take methotrexate 15 mg daily."
+  },
+  {
+   "trap": "saying to stop naproxen now (it may continue for now)",
+   "pattern": "^(?!.*(\\bnot\\b|n't|\\bmay continue\\b|\\bcontinu\\w*|\\bfor now\\b|\\bkeep\\b|\\bonce\\b|\\blater\\b))(?=.*\\bnaproxen\\b)(?=.*\\b(stop\\w*|discontinu\\w*|quit)\\b)",
+   "example": "Stop naproxen now."
+  },
+  {
+   "trap": "wrong doses",
+   "screens": [
+    "NUMBER_NOT_IN_QUOTE",
+    "QUANTITY_MISMATCH"
+   ]
+  }
  ],
  "notes": ""
 }

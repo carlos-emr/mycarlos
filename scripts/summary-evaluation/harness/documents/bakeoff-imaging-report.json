@@ -55,7 +55,10 @@
      "nodule"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "Impression: Stable 6 mm nodule."
+   ]
   },
   {
    "id": "stable",
@@ -74,9 +77,19 @@
     [
      "stable",
      "unchanged"
+    ],
+    [
+     "nodule",
+     "6 mm",
+     "6mm",
+     "spot",
+     "lesion"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "evidence_spans": [
+    "A 6 mm nodule in the right upper lobe, unchanged since March 3, 2025."
+   ]
   },
   {
    "id": "no_new_findings",
@@ -118,6 +131,14 @@
      "12 months",
      "twelve months",
      "2027"
+    ],
+    [
+     "ct",
+     "scan",
+     "follow-up",
+     "follow up",
+     "repeat",
+     "imaging"
     ]
    ],
    "expected_attributes": {}
@@ -127,6 +148,23 @@
   "saying the nodule grew, is new, or is cancer",
   "saying it is certainly benign (report says stable, not benign)",
   "wrong size or lobe"
+ ],
+ "trap_checks": [
+  {
+   "trap": "saying the nodule grew, is new, or is cancer",
+   "pattern": "\\b(grew|grow\\w*|larger|bigger|enlarg\\w*|new nodule|cancer\\w*|malignan\\w*|tumou?r\\w*)\\b",
+   "example": "The nodule has grown."
+  },
+  {
+   "trap": "saying it is certainly benign (report says stable, not benign)",
+   "pattern": "\\b(benign|harmless|not (a )?cancer\\w*|non-?cancer\\w*|nothing to worry)\\b",
+   "example": "The nodule is benign."
+  },
+  {
+   "trap": "wrong size or lobe",
+   "pattern": "(?<![\\w.,])(?!6 ?mm\\b)\\d+(?:[.,]\\d+)? ?(mm|cm|millimet\\w*)\\b|\\b(left|lower|middle) (upper |lower )?lobe\\b",
+   "example": "There is an 8 mm nodule in the left lower lobe."
+  }
  ],
  "notes": ""
 }

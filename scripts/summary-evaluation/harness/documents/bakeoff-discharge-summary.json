@@ -28,7 +28,8 @@
      "pneumonia"
     ]
    ],
-   "expected_attributes": {}
+   "expected_attributes": {},
+   "no_qualifier": "the diagnosis word carries the fact; a negated or hedged sentence is caught by the NEGATION_MISMATCH, HEDGE_DROPPED and CERTAINTY_ADDED screens, which hold the credit"
   },
   {
    "id": "antibiotics",
@@ -49,6 +50,14 @@
      "ceftriaxone",
      "amoxicillin",
      "antibiotic"
+    ],
+    [
+     "1 g",
+     "1g",
+     "5 days",
+     "five days",
+     "three times",
+     "daily"
     ]
    ],
    "expected_attributes": {}
@@ -133,6 +142,23 @@
   "any statement that the antibiotics changed or should be changed",
   "a dose other than 1 g",
   "a diagnosis other than pneumonia"
+ ],
+ "trap_checks": [
+  {
+   "trap": "any statement that the antibiotics changed or should be changed",
+   "pattern": "\\b(antibiotic\\w*|ceftriaxone|amoxicillin)\\b.{0,80}\\b(chang\\w*|switch\\w*|extend\\w*|replac\\w*|increas\\w*|decreas\\w*)\\b|\\b(chang\\w*|switch\\w*|replac\\w*)\\b.{0,80}\\b(antibiotic\\w*|ceftriaxone|amoxicillin)\\b",
+   "example": "Her antibiotics should be changed to a stronger one."
+  },
+  {
+   "trap": "a dose other than 1 g",
+   "pattern": "(?<![\\w.,])(?!1 ?g\\b|1 ?gram)\\d+(?:[.,]\\d+)? ?(g|mg|grams?)\\b",
+   "example": "She took amoxicillin 500 mg."
+  },
+  {
+   "trap": "a diagnosis other than pneumonia",
+   "pattern": "\\b(bronchitis|covid\\w*|influenza|flu|sepsis|asthma|copd|heart failure|cancer|tuberculosis|uti|urinary tract infection)\\b",
+   "example": "She was admitted with bronchitis."
+  }
  ],
  "notes": ""
 }
