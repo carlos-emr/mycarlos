@@ -474,13 +474,16 @@ const SUMMARY_WHOLE_RULES: &str =
      limit the document gives for it; if they do not all fit in one sentence, leave that \
      sentence out.";
 
-/// E6: a warning keeps every reason to get help, or says that the document lists them (E5 cut an
-/// emergency return rule to 1 of its 7 reasons). E5's part (c), "the number with its unit", is
-/// gone: it pushed numbers the patient cannot use.
+/// K2 (round-4 candidate on E6, board "Try"): a warning about when to get help is written in the
+/// document's own words, word for word, not reworded. Reworded warnings lost reasons and
+/// conditions in round 2 (the weight call without "or if your breathing or ankle swelling gets
+/// worse", 911 without "or comes at rest"). As in E6, every reason is kept, or the summary says
+/// that the document lists them. Numbers in the warning (911, the clinic's line) stay as written.
 const SUMMARY_WARNING: &str =
-    "For a warning about when to get help or call, give every reason the document lists, in \
-     one sentence or in two sentences next to each other; if they do not fit, say that the \
-     document lists when to get help.";
+    "For a warning about when to get help or call, write it in the document's own words, word \
+     for word (translated only when the document is in another language), with every reason it \
+     lists, in one sentence or in two sentences next to each other; if they do not fit, say that \
+     the document lists when to get help.";
 
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
@@ -1134,10 +1137,10 @@ mod tests {
     }
 
     #[test]
-    fn e6_asks_plain_words_found_and_meaning_first_then_every_instruction() {
-        // E6 = E5's system text, cap and language lines, with the round-3 request word for word as
-        // the design note gives it: E5's "key results, each with its number and unit" and its
-        // part (c) are gone, and the whole-rules sentence is kept.
+    fn k2_is_e6_with_warnings_in_the_documents_own_words() {
+        // K2 = E6 word for word (E5's system text, cap and language lines, the round-3 request),
+        // except the warning sentence, which now asks for the document's own words. The text is
+        // the screening overlay's (board K2) exactly.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1159,9 +1162,10 @@ mod tests {
              a group of medicines, keep every condition, every medicine or group, and every \
              number or limit the document gives for it; if they do not all fit in one \
              sentence, leave that sentence out. For a warning about when to get help or call, \
-             give every reason the document lists, in one sentence or in two sentences next to \
-             each other; if they do not fit, say that the document lists when to get help. For \
-             each sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 \
+             write it in the document's own words, word for word (translated only when the \
+             document is in another language), with every reason it lists, in one sentence or \
+             in two sentences next to each other; if they do not fit, say that the document \
+             lists when to get help. For each sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 \
              words, exactly as written (same spelling, numbers, accents and punctuation, no \
              '...' and no joined pieces), in the document's own language (only the quote is \
              copied; the sentence itself is written in English). If you cannot find such a \
@@ -1171,6 +1175,9 @@ mod tests {
         );
         assert!(!prompt.contains("number and unit"));
         assert!(!prompt.contains("Say which, how much and when"));
+        assert!(!prompt.contains("give every reason the document lists"));
+        // Ben's plain-language goal stays for everything else: a term keeps its plain words.
+        assert!(prompt.contains(SUMMARY_PLAIN) && prompt.contains(SUMMARY_WHOLE_RULES));
         assert_eq!(
             after,
             "\n>>>\n\nWrite every \"text\" in English, even though the document may be in \
