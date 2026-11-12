@@ -20,6 +20,7 @@ file or opens a connection. Modes, by argument:
   --quote-unread    adds a sentence quoting a page it did not read
   --read-fd         explains with the first bytes of descriptor 3
   --greet-after S   waits that long before greeting (for the lock-during-start test)
+  --check           adds a check pass report (K14) to a summary, its "ms" the limitMs sent
 """
 import json
 import sys
@@ -87,6 +88,9 @@ for line in sys.stdin:
                  "lastPageCut": "--cut-first" in args}
         if tail is not None:
             reply["tailPage"] = tail
+        if "--check" in args:
+            reply["check"] = {"outcome": "unchanged", "changed": 0, "dropped": 0,
+                              "ms": request.get("limitMs", -1)}
         print(json.dumps(reply), flush=True)
     elif request.get("tool") == "explain":
         if "--read-fd" in args:

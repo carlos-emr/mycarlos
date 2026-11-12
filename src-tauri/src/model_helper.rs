@@ -37,6 +37,7 @@
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::io::{BufRead, Read, Write};
+use std::time::{Duration, Instant};
 
 #[cfg(any(target_os = "linux", windows))]
 mod confine;
@@ -297,6 +298,9 @@ enum Request {
         /// The threads to write the answer on (see `Engine::use_threads`); none keeps them.
         #[serde(default)]
         threads: Option<u32>,
+        /// The runner's time limit for this answer, so that the check pass (K14) ends in time.
+        #[serde(default)]
+        limit_ms: Option<u64>,
     },
     #[serde(rename_all = "camelCase")]
     Explain {
@@ -331,6 +335,9 @@ struct SummaryAnswer {
     tail_page: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stats: Option<Stats>,
+    /// What the check pass did (K14).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    check: Option<SummaryCheck>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -560,6 +567,376 @@ pub(crate) fn explain_prompt(language: &str) -> String {
          in general, not what it means for this patient's health or what to do about it. If you \
          are not sure, say so. Do not translate the sentence.\n\nSentence: \"{SLOT}\""
     )
+}
+
+// --- The check pass (K14) -------------------------------------------------------------------
+
+/// K14: the longest a check pass may take, reading its prompt included. When it runs out, the
+/// summary stands as first written. The check also ends [`CHECK_MARGIN`] before the runner's limit
+/// for the answer ([`request_until`]), so a slow check never costs the summary.
+pub(crate) const CHECK_SECONDS: u64 = 300;
+
+/// The most a check pass may write: its list of fixes. A list that reaches it is not used.
+pub(crate) const CHECK_TOKENS: usize = 600;
+
+/// The failure a pass gives when its deadline passes (see `Engine::generate`).
+pub(crate) const TIMED_OUT: &str = "time";
+
+/// How long before the runner's limit a check must end: a batch of the prompt read past the
+/// deadline (about 35 s at the slowest measured), and the answer's way back.
+pub(crate) const CHECK_MARGIN: Duration = Duration::from_secs(60);
+
+/// When a summary request received at `received` must be done with its check, from the
+/// runner's limit for it: [`CHECK_MARGIN`] before. No limit sent, no such end.
+pub(crate) fn request_until(received: Instant, limit_ms: Option<u64>) -> Option<Instant> {
+    limit_ms.map(|ms| received + Duration::from_millis(ms).saturating_sub(CHECK_MARGIN))
+}
+
+/// When a check started at `started` stops: [`CHECK_SECONDS`] later, or at `until`, the
+/// request's own end, if that is sooner.
+pub(crate) fn check_deadline(started: Instant, until: Option<Instant>) -> Instant {
+    let own = started + Duration::from_secs(CHECK_SECONDS);
+    until.map_or(own, |until| own.min(until))
+}
+
+/// What the check prompt marks lines of the document it leaves out with (see [`quote_excerpts`]).
+pub(crate) const LEFT_OUT: &str = "[…]";
+
+/// K14 (round-4 candidate on K12b): after the summary is written, a second request reads it
+/// against the same pages and lists the sentences that make one of the five kinds of mistake the
+/// reviewed sheets showed, each fixed or left out; in general words, none of a test letter's own. Only the fixes are written, so a right
+/// summary costs a few tokens and its sentences are never written again. The numbered summary
+/// and the document are parts ([`SLOT`]), as the summary request's document is; the system
+/// text with its contact and number rules (D222) is the same.
+pub(crate) fn check_prompt(language: &str) -> String {
+    format!(
+        "Below is a summary of a document, written for the patient in {language}, with its \
+         sentences numbered, and the document itself. Check each sentence against the document, \
+         and list only the sentences that need a fix: each with its number, the kind of \
+         mistake, and either its fixed words and quote, or \"drop\": true to leave it out. A \
+         sentence needs a fix when it makes one of these mistakes:\n\
+         - \"contact\": it gives the patient a phone number, address or other contact that the \
+         document gives to another doctor or for someone else;\n\
+         - \"question\": it writes a question or request the document makes to another doctor \
+         as the patient's own question or task;\n\
+         - \"schedule\": it cuts a rule or a schedule short, leaving out a later step, a \
+         medicine's name or an end date the document gives;\n\
+         - \"hedge\": it says something more surely than the document does, leaving out the \
+         document's own words that say it is only likely or possible, or writing \"must\" \
+         where the document says \"may\";\n\
+         - \"warning\": it keeps only some of the signs in a warning, or of the steps to take, \
+         when the next sentence does not give the rest; or it says \"not\" or \"never\" where \
+         the document does not.\n\
+         Leave every other sentence out of the list: an empty list means the summary is right. \
+         A fixed sentence says nothing the document does not say, and keeps every number, dose, \
+         unit, date and name exactly as written; its \"quote\" is one continuous piece of the \
+         document, 3 to 25 words, copied exactly. Drop a sentence you cannot fix. Lines of the \
+         document not shown here are marked {LEFT_OUT}.\n\n\
+         Reply only with JSON in this shape: \
+         {{\"fixes\": [{{\"n\": 2, \"why\": \"schedule\", \"text\": \"...\", \"quote\": \"...\"}}, \
+         {{\"n\": 5, \"why\": \"contact\", \"drop\": true}}]}}\n\n\
+         Summary:\n<<<\n{SLOT}\n>>>\n\nDocument:\n<<<\n{SLOT}\n>>>\n\nWrite every \"text\" in \
+         {language}, even though the document may be in another language. Only \"quote\" stays \
+         in the document's own language, copied exactly."
+    )
+}
+
+/// The summary as the check reads it: each sentence numbered from 1, with its quote below it.
+pub(crate) fn numbered_summary(sentences: &[Sentence]) -> String {
+    sentences
+        .iter()
+        .enumerate()
+        .map(|(at, sentence)| {
+            format!(
+                "{}. {}\n   Quote: \"{}\"",
+                at + 1,
+                sentence.text,
+                sentence.quote
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The grammar a check is sampled under: compact JSON, a list of at most one fix per sentence,
+/// each naming a sentence that is there (1 to `count`) and one of the five kinds.
+pub(crate) fn check_grammar(count: usize) -> String {
+    let count = count.clamp(1, MAX_SENTENCES);
+    let more = count - 1;
+    let numbers = (1..=count)
+        .rev()
+        .map(|n| format!("\"{n}\""))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    format!(
+        r#"root ::= "{{\"fixes\":[" (fix ("," fix){{0,{more}}})? "]}}"
+fix ::= "{{\"n\":" n ",\"why\":\"" why "\"," body "}}"
+n ::= {numbers}
+why ::= "contact" | "question" | "schedule" | "hedge" | "warning"
+body ::= "\"drop\":true" | "\"text\":\"" char{{1,{MAX_TEXT_CHARS}}} "\",\"quote\":\"" char{{1,{MAX_QUOTE_CHARS}}} "\""
+char ::= [^"\\\x00-\x1F\x7F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{{4}})
+"#
+    )
+}
+
+/// The kinds of mistake the check looks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Fault {
+    Contact,
+    Question,
+    Schedule,
+    Hedge,
+    Warning,
+}
+
+/// One fix as the check writes it: a sentence's number from 1, the kind of mistake, and new
+/// words with their quote, or `drop`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub(crate) struct Fix {
+    pub(crate) n: usize,
+    pub(crate) why: Fault,
+    #[serde(default)]
+    pub(crate) drop: bool,
+    #[serde(default)]
+    pub(crate) text: Option<String>,
+    #[serde(default)]
+    pub(crate) quote: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Fixes {
+    fixes: Vec<Fix>,
+}
+
+/// The fixes a check wrote. `None` when it stopped at its cap, cannot be read, or a fix carries
+/// the model's thinking: a check that is not whole is not used.
+pub(crate) fn read_fixes(written: &str, capped: bool) -> Option<Vec<Fix>> {
+    if capped {
+        return None;
+    }
+    let fixes = serde_json::from_str::<Fixes>(written).ok()?.fixes;
+    let thinking = fixes.iter().any(|fix| {
+        fix.text.as_deref().is_some_and(thinks) || fix.quote.as_deref().is_some_and(thinks)
+    });
+    (!thinking).then_some(fixes)
+}
+
+/// What the check pass did to one summary (K14), for the evaluation's run log. The summary as
+/// first written is kept only when the check changed it, so the change can be read. The
+/// answer's own stats stay the first pass's; the check's are here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SummaryCheck {
+    pub(crate) outcome: CheckOutcome,
+    /// What the check read the document as: the pages, or the lines around the quotes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) view: Option<CheckView>,
+    /// Sentences fixed (new words or quote) and left out.
+    #[serde(default)]
+    pub(crate) changed: u32,
+    #[serde(default)]
+    pub(crate) dropped: u32,
+    /// Each fix the check listed, in its order: which sentence, why, and what came of it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) fixes: Vec<FixNote>,
+    /// The summary as first written, when the check changed it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) before: Vec<Sentence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) stats: Option<Stats>,
+    /// The check's whole time, reading its prompt included.
+    #[serde(default)]
+    pub(crate) ms: u64,
+}
+
+impl SummaryCheck {
+    /// A check that gave nothing to use: the first summary stands.
+    pub(crate) fn of(outcome: CheckOutcome) -> Self {
+        Self {
+            outcome,
+            view: None,
+            changed: 0,
+            dropped: 0,
+            fixes: Vec::new(),
+            before: Vec::new(),
+            stats: None,
+            ms: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum CheckOutcome {
+    /// The check listed no fix that changes a sentence.
+    Unchanged,
+    /// The check fixed or left out sentences, and its summary is the one given.
+    Changed,
+    /// The summary and even the lines around its quotes did not fit the check's prompt.
+    NoRoom,
+    /// The check ran out of time: the first summary stands.
+    TimedOut,
+    /// The check's answer could not be read, or stopped at its cap: the first stands.
+    Failed,
+    /// The check left out more than half the summary: the first stands.
+    Rejected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum CheckView {
+    /// The pages the summary read.
+    Pages,
+    /// The lines around each quote, and the document's first lines ([`quote_excerpts`]).
+    Excerpts,
+}
+
+/// One fix, for the run log: no words, which are in the summaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FixNote {
+    pub(crate) n: u32,
+    pub(crate) why: Fault,
+    pub(crate) done: FixDone,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum FixDone {
+    Changed,
+    Dropped,
+    /// New words and quote the same as the sentence's: nothing to change.
+    Same,
+    /// A fix with neither words nor `drop`, or a second fix of the same sentence: not used.
+    Ignored,
+}
+
+/// The summary to give after a check pass (K14), with what the check did. Each fix replaces or
+/// leaves out the sentence it names; a second fix of a sentence is not used. A check that leaves
+/// out more than half the summary is more likely wrong than right, and is not used.
+pub(crate) fn apply_check(
+    first: &[Sentence],
+    fixes: Option<Vec<Fix>>,
+) -> (Vec<Sentence>, SummaryCheck) {
+    let Some(fixes) = fixes else {
+        return (first.to_vec(), SummaryCheck::of(CheckOutcome::Failed));
+    };
+    let mut result: Vec<Option<Sentence>> = first.iter().cloned().map(Some).collect();
+    let mut touched = vec![false; first.len()];
+    let mut notes = Vec::with_capacity(fixes.len());
+    let (mut changed, mut dropped) = (0u32, 0u32);
+    for fix in fixes {
+        let at = fix.n.checked_sub(1).filter(|&at| at < first.len());
+        let done = match at {
+            Some(at) if !touched[at] => {
+                let new = match (fix.drop, fix.text, fix.quote) {
+                    (true, _, _) => Some(None),
+                    (false, Some(text), Some(quote)) => Some(Some(Sentence { text, quote })),
+                    _ => None,
+                };
+                match new {
+                    None => FixDone::Ignored,
+                    Some(None) => {
+                        touched[at] = true;
+                        result[at] = None;
+                        dropped += 1;
+                        FixDone::Dropped
+                    }
+                    Some(Some(sentence)) if sentence == first[at] => FixDone::Same,
+                    Some(Some(sentence)) => {
+                        touched[at] = true;
+                        result[at] = Some(sentence);
+                        changed += 1;
+                        FixDone::Changed
+                    }
+                }
+            }
+            _ => FixDone::Ignored,
+        };
+        notes.push(FixNote {
+            n: fix.n as u32,
+            why: fix.why,
+            done,
+        });
+    }
+    let report = SummaryCheck {
+        changed,
+        dropped,
+        fixes: notes,
+        ..SummaryCheck::of(CheckOutcome::Changed)
+    };
+    if dropped as usize * 2 > first.len() {
+        return (
+            first.to_vec(),
+            SummaryCheck {
+                outcome: CheckOutcome::Rejected,
+                ..report
+            },
+        );
+    }
+    if changed + dropped == 0 {
+        return (
+            first.to_vec(),
+            SummaryCheck {
+                outcome: CheckOutcome::Unchanged,
+                ..report
+            },
+        );
+    }
+    (
+        result.into_iter().flatten().collect(),
+        SummaryCheck {
+            before: first.to_vec(),
+            ..report
+        },
+    )
+}
+
+/// Whether a check prompt of `prompt_tokens` leaves room for its answer.
+pub(crate) fn check_fits(prompt_tokens: usize) -> bool {
+    prompt_tokens + CHECK_TOKENS + PROMPT_MARGIN <= CONTEXT_TOKENS as usize
+}
+
+/// How many lines either side of a quote's lines [`quote_excerpts`] keeps, and how many of the
+/// document's first lines (who wrote it, to whom).
+const EXCERPT_LINES_AROUND: usize = 2;
+const EXCERPT_FIRST_LINES: usize = 3;
+
+/// The document as the check reads it when the pages and the summary do not fit together: its
+/// first lines, and the lines each quote is in with two lines either side, in the document's
+/// order. Each run of lines left out is one [`LEFT_OUT`] line. A quote not found word for word
+/// adds nothing.
+pub(crate) fn quote_excerpts(text: &str, quotes: &[&str]) -> String {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut keep = vec![false; lines.len()];
+    for kept in keep.iter_mut().take(EXCERPT_FIRST_LINES) {
+        *kept = true;
+    }
+    for quote in quotes.iter().filter(|quote| !quote.is_empty()) {
+        let Some(at) = text.find(quote) else {
+            continue;
+        };
+        let first = text[..at].matches('\n').count();
+        let last = first + quote.matches('\n').count();
+        let from = first.saturating_sub(EXCERPT_LINES_AROUND);
+        let to = (last + EXCERPT_LINES_AROUND).min(lines.len() - 1);
+        for kept in &mut keep[from..=to] {
+            *kept = true;
+        }
+    }
+    let mut out: Vec<&str> = Vec::new();
+    let mut gap = false;
+    for (line, kept) in lines.iter().zip(&keep) {
+        if *kept {
+            out.push(line);
+            gap = false;
+        } else if !gap {
+            out.push(LEFT_OUT);
+            gap = true;
+        }
+    }
+    out.join("\n")
 }
 
 /// Untrusted words never contain the slot character: it is taken out first.
@@ -824,6 +1201,7 @@ fn serve_model(settings: &Settings) -> i32 {
         let Some(line) = next_line(&mut input) else {
             return exit::INPUT;
         };
+        let received = Instant::now();
         let answer = match serde_json::from_str::<Request>(&line) {
             Ok(Request::Summary {
                 id,
@@ -831,17 +1209,23 @@ fn serve_model(settings: &Settings) -> i32 {
                 pages,
                 max_sentences,
                 threads,
-            }) => match engine
-                .use_threads(threads)
-                .and_then(|()| engine.summarize(&lang, &pages, max_sentences))
-            {
-                Ok((sentences, fit)) => serde_json::to_string(&SummaryAnswer {
+                limit_ms,
+            }) => match engine.use_threads(threads).and_then(|()| {
+                engine.summarize(
+                    &lang,
+                    &pages,
+                    max_sentences,
+                    request_until(received, limit_ms),
+                )
+            }) {
+                Ok((sentences, fit, check)) => serde_json::to_string(&SummaryAnswer {
                     id,
                     sentences,
                     last_page: fit.last_page,
                     last_page_cut: fit.cut,
                     tail_page: fit.tail_page,
                     stats: Some(engine.stats()),
+                    check: Some(check),
                 }),
                 Err(error) => serde_json::to_string(&ErrorAnswer { id, error }),
             },
@@ -927,6 +1311,7 @@ mod stub {
                         last_page_cut: false,
                         tail_page: None,
                         stats: None,
+                        check: None,
                     })
                 }
                 Request::Explain { id, term, .. } => serde_json::to_string(&TextAnswer {
@@ -1439,5 +1824,424 @@ mod tests {
         assert_eq!(next_line(&mut long.as_slice()), None);
         assert_eq!(next_line(&mut &b"{}\nnext"[..]).as_deref(), Some("{}"));
         assert_eq!(next_line(&mut &b""[..]), None);
+    }
+
+    // --- K14: the check pass ----------------------------------------------------------------
+
+    fn sentence(text: &str, quote: &str) -> Sentence {
+        Sentence {
+            text: text.to_owned(),
+            quote: quote.to_owned(),
+        }
+    }
+
+    fn summary(count: usize) -> Vec<Sentence> {
+        (1..=count)
+            .map(|n| sentence(&format!("Sentence {n}."), &format!("quote {n} here")))
+            .collect()
+    }
+
+    fn fix(n: usize, why: Fault, text: Option<&str>, quote: Option<&str>) -> Fix {
+        Fix {
+            n,
+            why,
+            drop: false,
+            text: text.map(str::to_owned),
+            quote: quote.map(str::to_owned),
+        }
+    }
+
+    fn drop_fix(n: usize, why: Fault) -> Fix {
+        Fix {
+            drop: true,
+            ..fix(n, why, None, None)
+        }
+    }
+
+    #[test]
+    fn the_check_prompt_names_the_five_mistakes_and_reads_the_summary_then_the_document() {
+        let prompt = check_prompt("English");
+        let parts: Vec<&str> = prompt.split(SLOT).collect();
+        assert_eq!(
+            parts.len(),
+            3,
+            "one slot for the summary, one for the document"
+        );
+        assert_eq!(
+            parts[0],
+            "Below is a summary of a document, written for the patient in English, with its \
+             sentences numbered, and the document itself. Check each sentence against the \
+             document, and list only the sentences that need a fix: each with its number, the \
+             kind of mistake, and either its fixed words and quote, or \"drop\": true to leave \
+             it out. A sentence needs a fix when it makes one of these mistakes:\n\
+             - \"contact\": it gives the patient a phone number, address or other contact that \
+             the document gives to another doctor or for someone else;\n\
+             - \"question\": it writes a question or request the document makes to another \
+             doctor as the patient's own question or task;\n\
+             - \"schedule\": it cuts a rule or a schedule short, leaving out a later step, a \
+             medicine's name or an end date the document gives;\n\
+             - \"hedge\": it says something more surely than the document does, leaving out \
+             the document's own words that say it is only likely or possible, or writing \
+             \"must\" where the document says \"may\";\n\
+             - \"warning\": it keeps only some of the signs in a warning, or of the steps to \
+             take, when the next sentence does not give the rest; or it says \"not\" or \
+             \"never\" where the document does not.\n\
+             Leave every other sentence out of the list: an empty list means the summary is \
+             right. A fixed sentence says nothing the document does not say, and keeps every \
+             number, dose, unit, date and name exactly as written; its \"quote\" is one \
+             continuous piece of the document, 3 to 25 words, copied exactly. Drop a sentence \
+             you cannot fix. Lines of the document not shown here are marked [\u{2026}].\n\n\
+             Reply only with JSON in this shape: {\"fixes\": [{\"n\": 2, \"why\": \
+             \"schedule\", \"text\": \"...\", \"quote\": \"...\"}, {\"n\": 5, \"why\": \
+             \"contact\", \"drop\": true}]}\n\nSummary:\n<<<\n"
+        );
+        assert_eq!(parts[1], "\n>>>\n\nDocument:\n<<<\n");
+        assert_eq!(
+            parts[2],
+            "\n>>>\n\nWrite every \"text\" in English, even though the document may be in \
+             another language. Only \"quote\" stays in the document's own language, copied \
+             exactly."
+        );
+        // The grammar's five kinds are the prompt's five, each named once as a kind.
+        for kind in ["contact", "question", "schedule", "hedge", "warning"] {
+            assert_eq!(
+                prompt.matches(&format!("- \"{kind}\":")).count(),
+                1,
+                "{kind}"
+            );
+            assert!(check_grammar(3).contains(&format!("\"{kind}\"")), "{kind}");
+        }
+        assert!(check_prompt("French").contains("for the patient in French"));
+        assert!(check_prompt("French").contains("Write every \"text\" in French"));
+        assert!(prompt.contains(LEFT_OUT));
+        // No test letter's own words: a win on the hard 10 is not learned from its answers.
+        for words in [
+            "then monthly",
+            "most likely",
+            "once",
+            "fever",
+            "911",
+            "gluten",
+        ] {
+            assert!(!prompt.contains(words), "{words}");
+        }
+    }
+
+    #[test]
+    fn the_summary_is_numbered_from_one_with_each_quote_below_its_sentence() {
+        let listing = numbered_summary(&[
+            sentence("Take it daily.", "take one daily"),
+            sentence("Call if worse.", "call us if worse"),
+        ]);
+        assert_eq!(
+            listing,
+            "1. Take it daily.\n   Quote: \"take one daily\"\n2. Call if worse.\n   Quote: \
+             \"call us if worse\""
+        );
+        assert_eq!(numbered_summary(&[]), "");
+    }
+
+    #[test]
+    fn the_check_grammar_names_only_sentences_that_are_there_once_each_and_allows_none() {
+        let grammar = check_grammar(3);
+        assert!(grammar.contains(r#"root ::= "{\"fixes\":[" (fix ("," fix){0,2})? "]}""#));
+        assert!(grammar.contains(r#"n ::= "3" | "2" | "1""#));
+        assert!(!grammar.contains(r#""4""#));
+        assert!(grammar.contains(r#"body ::= "\"drop\":true" | "\"text\":\"" char{1,300}"#));
+        assert!(grammar.contains("char{1,240}"));
+        assert!(check_grammar(MAX_SENTENCES).contains(r#"n ::= "10" | "9""#));
+        assert!(check_grammar(40).contains("{0,9}"));
+        assert!(check_grammar(0).contains(
+            r#"n ::= "1"
+"#
+        ));
+    }
+
+    #[test]
+    fn a_whole_list_of_fixes_is_read_and_a_capped_or_thinking_one_is_not() {
+        let written = r#"{"fixes":[{"n":2,"why":"schedule","text":"Then monthly.","quote":"then monthly"},{"n":1,"why":"contact","drop":true}]}"#;
+        assert_eq!(
+            read_fixes(written, false),
+            Some(vec![
+                fix(
+                    2,
+                    Fault::Schedule,
+                    Some("Then monthly."),
+                    Some("then monthly")
+                ),
+                drop_fix(1, Fault::Contact),
+            ])
+        );
+        assert_eq!(read_fixes(r#"{"fixes":[]}"#, false), Some(Vec::new()));
+        // A list cut at the cap is not used, even where its finished fixes could be read.
+        assert_eq!(read_fixes(written, true), None);
+        assert_eq!(read_fixes(r#"{"fixes":[{"n":2,"why":"sched"#, false), None);
+        assert_eq!(
+            read_fixes(r#"{"fixes":[{"n":1,"why":"other","drop":true}]}"#, false),
+            None
+        );
+        let thinking =
+            r#"{"fixes":[{"n":1,"why":"hedge","text":"<think>x</think>","quote":"a b c"}]}"#;
+        assert_eq!(read_fixes(thinking, false), None);
+    }
+
+    #[test]
+    fn a_check_that_gives_nothing_to_use_leaves_the_first_summary() {
+        let first = summary(4);
+        let (kept, report) = apply_check(&first, None);
+        assert_eq!(kept, first);
+        assert_eq!(report, SummaryCheck::of(CheckOutcome::Failed));
+        let (kept, report) = apply_check(&first, Some(Vec::new()));
+        assert_eq!(kept, first);
+        assert_eq!(report.outcome, CheckOutcome::Unchanged);
+        assert!(report.before.is_empty() && report.fixes.is_empty());
+    }
+
+    #[test]
+    fn fixes_replace_or_leave_out_the_sentences_they_name_in_order_and_keep_the_first() {
+        let first = summary(4);
+        let fixes = vec![
+            fix(
+                3,
+                Fault::Schedule,
+                Some("Blood tests every 2 weeks, then monthly."),
+                Some("then monthly"),
+            ),
+            drop_fix(1, Fault::Contact),
+        ];
+        let (checked, report) = apply_check(&first, Some(fixes));
+        assert_eq!(
+            checked,
+            vec![
+                first[1].clone(),
+                sentence("Blood tests every 2 weeks, then monthly.", "then monthly"),
+                first[3].clone(),
+            ]
+        );
+        assert_eq!(report.outcome, CheckOutcome::Changed);
+        assert_eq!((report.changed, report.dropped), (1, 1));
+        assert_eq!(report.before, first);
+        assert_eq!(
+            report.fixes,
+            vec![
+                FixNote {
+                    n: 3,
+                    why: Fault::Schedule,
+                    done: FixDone::Changed
+                },
+                FixNote {
+                    n: 1,
+                    why: Fault::Contact,
+                    done: FixDone::Dropped
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_fix_that_changes_nothing_names_no_sentence_or_repeats_one_is_not_used() {
+        let first = summary(3);
+        let fixes = vec![
+            // The same words and quote: nothing to change.
+            fix(1, Fault::Hedge, Some("Sentence 1."), Some("quote 1 here")),
+            // No sentence 0 or 4.
+            drop_fix(0, Fault::Contact),
+            drop_fix(4, Fault::Contact),
+            // Words without a quote.
+            fix(2, Fault::Question, Some("New words."), None),
+            // A second fix of sentence 3: the first one counts.
+            fix(
+                3,
+                Fault::Warning,
+                Some("Call 911 if it lasts or comes at rest."),
+                Some("q"),
+            ),
+            drop_fix(3, Fault::Warning),
+        ];
+        let (checked, report) = apply_check(&first, Some(fixes));
+        assert_eq!(checked[..2], first[..2]);
+        assert_eq!(
+            checked[2],
+            sentence("Call 911 if it lasts or comes at rest.", "q")
+        );
+        assert_eq!((report.changed, report.dropped), (1, 0));
+        let done: Vec<FixDone> = report.fixes.iter().map(|note| note.done).collect();
+        assert_eq!(
+            done,
+            vec![
+                FixDone::Same,
+                FixDone::Ignored,
+                FixDone::Ignored,
+                FixDone::Ignored,
+                FixDone::Changed,
+                FixDone::Ignored,
+            ]
+        );
+        // Only fixes that change nothing: unchanged.
+        let (checked, report) = apply_check(
+            &first,
+            Some(vec![fix(
+                1,
+                Fault::Hedge,
+                Some("Sentence 1."),
+                Some("quote 1 here"),
+            )]),
+        );
+        assert_eq!(checked, first);
+        assert_eq!(report.outcome, CheckOutcome::Unchanged);
+        assert!(report.before.is_empty());
+    }
+
+    #[test]
+    fn a_check_may_leave_out_half_the_summary_but_not_more() {
+        let first = summary(4);
+        let half = vec![drop_fix(1, Fault::Contact), drop_fix(2, Fault::Question)];
+        let (checked, report) = apply_check(&first, Some(half));
+        assert_eq!(checked, first[2..].to_vec());
+        assert_eq!(report.outcome, CheckOutcome::Changed);
+        let more = vec![
+            drop_fix(1, Fault::Contact),
+            drop_fix(2, Fault::Question),
+            fix(3, Fault::Hedge, Some("Maybe."), Some("may")),
+            drop_fix(4, Fault::Warning),
+        ];
+        let (checked, report) = apply_check(&first, Some(more));
+        assert_eq!(checked, first);
+        assert_eq!(report.outcome, CheckOutcome::Rejected);
+        assert_eq!((report.changed, report.dropped), (1, 3));
+        assert!(report.before.is_empty());
+        assert_eq!(report.fixes.len(), 4);
+        // A one-sentence summary is never left with nothing.
+        let (checked, report) = apply_check(&summary(1), Some(vec![drop_fix(1, Fault::Hedge)]));
+        assert_eq!(checked, summary(1));
+        assert_eq!(report.outcome, CheckOutcome::Rejected);
+    }
+
+    #[test]
+    fn the_check_report_is_written_for_the_run_log_and_read_back_by_the_runner() {
+        let first = summary(2);
+        let (_, report) = apply_check(&first, Some(vec![drop_fix(2, Fault::Question)]));
+        let report = SummaryCheck {
+            view: Some(CheckView::Excerpts),
+            ms: 1_234,
+            ..report
+        };
+        let json = serde_json::to_value(&report).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "outcome": "changed",
+                "view": "excerpts",
+                "changed": 0,
+                "dropped": 1,
+                "fixes": [{"n": 2, "why": "question", "done": "dropped"}],
+                "before": [
+                    {"text": "Sentence 1.", "quote": "quote 1 here"},
+                    {"text": "Sentence 2.", "quote": "quote 2 here"}
+                ],
+                "ms": 1234
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<SummaryCheck>(json).unwrap(),
+            report
+        );
+        // A check that gave nothing writes its outcome and counts only.
+        assert_eq!(
+            serde_json::to_value(SummaryCheck::of(CheckOutcome::TimedOut)).unwrap(),
+            serde_json::json!({"outcome": "timedOut", "changed": 0, "dropped": 0, "ms": 0})
+        );
+        let answer = SummaryAnswer {
+            id: 7,
+            sentences: first,
+            last_page: 1,
+            last_page_cut: false,
+            tail_page: None,
+            stats: None,
+            check: Some(SummaryCheck::of(CheckOutcome::NoRoom)),
+        };
+        let line = serde_json::to_value(&answer).unwrap();
+        assert_eq!(line["check"]["outcome"], "noRoom");
+    }
+
+    #[test]
+    fn the_check_needs_room_for_its_answer() {
+        let most = CONTEXT_TOKENS as usize - CHECK_TOKENS - PROMPT_MARGIN;
+        assert!(check_fits(most));
+        assert!(!check_fits(most + 1));
+        assert!(check_fits(0));
+    }
+
+    #[test]
+    fn excerpts_keep_the_first_lines_and_each_quote_with_two_lines_either_side() {
+        let text = (1..=20)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        // Line 10 alone, and a quote over lines 15 and 16.
+        let excerpts = quote_excerpts(&text, &["line 10", "line 15\nline 16"]);
+        assert_eq!(
+            excerpts,
+            "line 1\nline 2\nline 3\n[\u{2026}]\nline 8\nline 9\nline 10\nline 11\nline 12\n\
+             line 13\nline 14\nline 15\nline 16\nline 17\nline 18\n[\u{2026}]"
+        );
+        // A quote not found word for word adds nothing; an empty one neither.
+        assert_eq!(
+            quote_excerpts(&text, &["not there", ""]),
+            "line 1\nline 2\nline 3\n[\u{2026}]"
+        );
+        // A short document is read whole, with no mark.
+        assert_eq!(quote_excerpts("a\nb\nc\nd", &["d"]), "a\nb\nc\nd");
+        // Near the end: no line past the last.
+        assert_eq!(
+            quote_excerpts(&text, &["line 20"]),
+            "line 1\nline 2\nline 3\n[\u{2026}]\nline 18\nline 19\nline 20"
+        );
+    }
+
+    #[test]
+    fn the_check_ends_by_its_own_cap_or_a_minute_before_the_runners_limit() {
+        let received = Instant::now();
+        assert_eq!(request_until(received, None), None);
+        assert_eq!(
+            request_until(received, Some(600_000)),
+            Some(received + Duration::from_secs(540))
+        );
+        // A limit under the margin: the check's time is already up.
+        assert_eq!(request_until(received, Some(1_000)), Some(received));
+        let started = received + Duration::from_secs(100);
+        assert_eq!(
+            check_deadline(started, None),
+            started + Duration::from_secs(CHECK_SECONDS)
+        );
+        assert_eq!(
+            check_deadline(started, Some(received + Duration::from_secs(1_200))),
+            started + Duration::from_secs(CHECK_SECONDS)
+        );
+        assert_eq!(
+            check_deadline(started, Some(received + Duration::from_secs(200))),
+            received + Duration::from_secs(200)
+        );
+    }
+
+    #[test]
+    fn a_summary_request_may_carry_the_runners_limit() {
+        let with =
+            r#"{"tool":"summary","id":1,"lang":"en","pages":[],"maxSentences":3,"limitMs":600000}"#;
+        assert!(matches!(
+            serde_json::from_str::<Request>(with),
+            Ok(Request::Summary {
+                limit_ms: Some(600_000),
+                ..
+            })
+        ));
+        let without = r#"{"tool":"summary","id":1,"lang":"en","pages":[],"maxSentences":3}"#;
+        assert!(matches!(
+            serde_json::from_str::<Request>(without),
+            Ok(Request::Summary { limit_ms: None, .. })
+        ));
+        let explain =
+            r#"{"tool":"explain","id":2,"term":"a","context":"b","lang":"en","limitMs":1}"#;
+        assert!(serde_json::from_str::<Request>(explain).is_err());
     }
 }

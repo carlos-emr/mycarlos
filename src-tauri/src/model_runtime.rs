@@ -1335,6 +1335,10 @@ pub mod engine_testing {
         pub stats: Option<serde_json::Value>,
         /// The time limit the runner gave this answer.
         pub answer_limit_ms: u64,
+        /// What the check pass did (K14), as the helper reports it: its outcome, which
+        /// sentences it fixed or left out and why, the summary as first written when it
+        /// changed, and the check's own stats.
+        pub check: Option<serde_json::Value>,
     }
 
     /// One summary sentence: its words, the quote the model wrote, and whether that quote was
@@ -1348,22 +1352,34 @@ pub mod engine_testing {
     }
 
     /// What a summary is made under in this build, for telling measurements apart: the system
-    /// text, the summary request and grammar for `lang`, the caps, and a SHA-256 over all of them.
+    /// text, the summary request and grammar for `lang`, the check pass's request and grammar
+    /// (K14, its grammar for a full summary), the caps, and a SHA-256 over all of them.
     pub fn summary_build(lang: &str) -> Result<serde_json::Value, String> {
         let language =
             model_helper::language_name(lang).ok_or_else(|| format!("unknown language {lang}"))?;
         let prompt = model_helper::summary_prompt(language, model_helper::MAX_SENTENCES);
         let grammar = model_helper::summary_grammar(model_helper::MAX_SENTENCES);
+        let check_prompt = model_helper::check_prompt(language);
+        let check_grammar = model_helper::check_grammar(model_helper::MAX_SENTENCES);
         let caps = serde_json::json!({
             "maxSentences": model_helper::MAX_SENTENCES,
             "summaryTokens": model_helper::SUMMARY_TOKENS,
             "contextTokens": model_helper::CONTEXT_TOKENS,
             "maxTextChars": model_helper::MAX_TEXT_CHARS,
             "maxQuoteChars": model_helper::MAX_QUOTE_CHARS,
+            "checkTokens": model_helper::CHECK_TOKENS,
+            "checkSeconds": model_helper::CHECK_SECONDS,
         });
         let caps_text = caps.to_string();
         let mut hash = Sha256::new();
-        for part in [model_helper::SYSTEM_PROMPT, &prompt, &grammar, &caps_text] {
+        for part in [
+            model_helper::SYSTEM_PROMPT,
+            &prompt,
+            &grammar,
+            &caps_text,
+            &check_prompt,
+            &check_grammar,
+        ] {
             hash.update((part.len() as u64).to_le_bytes());
             hash.update(part.as_bytes());
         }
@@ -1372,6 +1388,8 @@ pub mod engine_testing {
             "systemPrompt": model_helper::SYSTEM_PROMPT,
             "summaryPrompt": prompt,
             "grammar": grammar,
+            "checkPrompt": check_prompt,
+            "checkGrammar": check_grammar,
             "caps": caps,
         }))
     }
@@ -1487,6 +1505,10 @@ pub mod engine_testing {
                     .last_stats()
                     .and_then(|stats| serde_json::to_value(stats).ok()),
                 answer_limit_ms,
+                check: self
+                    .runner
+                    .last_check()
+                    .and_then(|check| serde_json::to_value(check).ok()),
             })
         }
 

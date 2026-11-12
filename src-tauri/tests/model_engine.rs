@@ -479,11 +479,33 @@ fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
     let stats = measured.stats.as_ref().expect("stats");
     assert!(stats["promptTokens"].as_u64().unwrap() > 0, "{stats}");
     assert!(stats["answerTokens"].as_u64().unwrap() > 0, "{stats}");
-    // The runner's own limit: 30 s + 150 ms for each of 750 + 48 bytes / 3 prompt tokens,
-    // + 600 ms for each of the 600 answer tokens allowed.
+    // The runner's own limit: 30 s + 150 ms for each of 750 + 48 bytes / 3 prompt tokens and,
+    // for the check pass (K14), 1,300 + 48 / 3 more, + 600 ms for each of the 600 + 200 answer
+    // tokens allowed.
     assert_eq!(
         measured.answer_limit_ms,
-        30_000 + 150 * (750 + 16) + 600 * 600
+        30_000 + 150 * ((750 + 16) + (1_300 + 16)) + 600 * (600 + 200)
+    );
+    // The check pass ran on the same pages, and its report is in the run log: the tiny model
+    // lists no fix, so the summary is the first pass's and no copy of it is kept. The answer's
+    // stats stay the first pass's; the check's are its own.
+    let check = measured.check.as_ref().expect("check");
+    assert_eq!(check["outcome"], "unchanged", "{check}");
+    assert_eq!(check["view"], "pages", "{check}");
+    assert_eq!(
+        (&check["changed"], &check["dropped"]),
+        (&0.into(), &0.into())
+    );
+    assert!(
+        check.get("before").is_none() && check.get("fixes").is_none(),
+        "{check}"
+    );
+    let check_stats = &check["stats"];
+    assert!(check_stats["promptTokens"].as_u64().unwrap() > 0, "{check}");
+    assert!(check_stats["answerTokens"].as_u64().unwrap() > 0, "{check}");
+    assert_ne!(
+        stats["answerTokens"], check_stats["answerTokens"],
+        "{check}"
     );
     let (sha256, size) = runner.model_file();
     assert_eq!(size, bytes.len() as u64);

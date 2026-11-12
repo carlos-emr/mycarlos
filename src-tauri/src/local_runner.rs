@@ -127,12 +127,21 @@ const EXPLAIN_PROMPT_TOKENS: u32 = 400;
 /// stops it anyway, keeping the sentences it finished.
 const SUMMARY_ANSWER_TOKENS: u32 = 600;
 
+/// K14: the check pass's own words around the pages, with the numbered summary (about 550 and
+/// at most about 600 today), in tokens with room to spare; and the fixes it is allowed for
+/// (most checks list none or one or two, its cap stops it at `CHECK_TOKENS`).
+const CHECK_PROMPT_TOKENS: u32 = 1_300;
+const CHECK_ANSWER_TOKENS: u32 = 200;
+
 /// The size a summary's limit is reckoned from, for `text_bytes` of pages: its prompt's
-/// estimated tokens and the answer tokens it allows (`AnswerLimit::for_request`).
+/// estimated tokens and the answer tokens it allows (`AnswerLimit::for_request`), its check
+/// pass's (K14) included: the check reads the pages again, with the summary. Still within the
+/// limit's ceiling: the helper ends the check before the limit (`model_helper::request_until`).
 pub(crate) fn summary_request_size(text_bytes: usize) -> (u32, u32) {
     (
-        prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
-        SUMMARY_ANSWER_TOKENS,
+        prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes)
+            .saturating_add(prompt_tokens(CHECK_PROMPT_TOKENS, text_bytes)),
+        SUMMARY_ANSWER_TOKENS + CHECK_ANSWER_TOKENS,
     )
 }
 
@@ -549,6 +558,8 @@ pub(crate) struct Runner {
     generation: AtomicU64,
     /// How the last answer was made, when the model said.
     last_stats: Mutex<Option<crate::model_helper::Stats>>,
+    /// What the last summary's check pass did (K14), when the model said.
+    last_check: Mutex<Option<crate::model_helper::SummaryCheck>>,
     /// Told the time limit of the answer asked under its ticket, as it is asked.
     answer_watch: Mutex<Option<(Ticket, AnswerWatch)>>,
     /// Threads to write answers on whatever the load (measuring by hand: `engine_testing`).
@@ -585,6 +596,9 @@ struct Answer {
     /// How the helper made it (counts and times), for measuring.
     #[serde(default)]
     stats: Option<crate::model_helper::Stats>,
+    /// What a summary's check pass did (K14), for measuring.
+    #[serde(default)]
+    check: Option<crate::model_helper::SummaryCheck>,
 }
 
 const HELLO: &str = crate::model_helper::CONTRACT;
@@ -601,6 +615,7 @@ impl Runner {
             status: Mutex::new(RunnerStatus::NotInstalled),
             generation: AtomicU64::new(0),
             last_stats: Mutex::new(None),
+            last_check: Mutex::new(None),
             answer_watch: Mutex::new(None),
             threads_override: Mutex::new(None),
         }
@@ -798,6 +813,15 @@ impl Runner {
         *self.last_stats.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// What the last summary's check pass did (K14), when the model said.
+    #[allow(dead_code)] // For measuring: the real-model test writes it to the run log.
+    pub(crate) fn last_check(&self) -> Option<crate::model_helper::SummaryCheck> {
+        self.last_check
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
     /// Stops the model process now if nothing holds it; otherwise as soon as its
     /// holder lets go (a start or a request, which a cancel has ended by then), on
     /// a thread of its own. A lock calls this, and must never wait for a model.
@@ -990,14 +1014,23 @@ impl Runner {
         }
         // A failed answer leaves none: never the stats of the one before.
         *self.last_stats.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.last_check.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let Some(running) = slot.as_mut() else {
             return Err(RunnerError::NotRunning);
         };
         let id = running.next_id;
         running.next_id += 1;
+        let answer_timeout = running.answer_limit.for_request(size.0, size.1);
         if let Some(object) = request.as_object_mut() {
             object.insert("id".to_owned(), serde_json::json!(id));
             object.insert("tool".to_owned(), serde_json::json!(tool));
+            // K14: the summary's check pass ends before this answer's limit.
+            if tool == "summary" {
+                object.insert(
+                    "limitMs".to_owned(),
+                    serde_json::json!(answer_timeout.as_millis() as u64),
+                );
+            }
             // The threads to write this answer on, from the computer's load now.
             if let (Some(most), "summary" | "explain") = (running.generation_threads, tool) {
                 let threads = forced.unwrap_or_else(|| {
@@ -1011,7 +1044,6 @@ impl Runner {
         self.set_status(RunnerStatus::Working {
             model: model.clone(),
         });
-        let answer_timeout = running.answer_limit.for_request(size.0, size.1);
         // Only this ticket's watch: a newer request's waits for its own answer.
         let watch = {
             let mut slot = self.answer_watch.lock().unwrap_or_else(|e| e.into_inner());
@@ -1040,6 +1072,7 @@ impl Runner {
         }
         if let Ok(answer) = &outcome {
             *self.last_stats.lock().unwrap_or_else(|e| e.into_inner()) = answer.stats;
+            *self.last_check.lock().unwrap_or_else(|e| e.into_inner()) = answer.check.clone();
         }
         match &outcome {
             Ok(_) => self.set_status(RunnerStatus::Ready {
@@ -1653,12 +1686,32 @@ mod tests {
     fn a_new_request_forgets_the_last_answers_stats() {
         let runner = Runner::new(idle_config());
         *runner.last_stats.lock().unwrap() = Some(crate::model_helper::Stats::default());
-        // Not running: the request fails, and leaves no stats from the one before.
+        *runner.last_check.lock().unwrap() = Some(crate::model_helper::SummaryCheck::of(
+            crate::model_helper::CheckOutcome::Changed,
+        ));
+        // Not running: the request fails, and leaves no stats or check from the one before.
         assert!(matches!(
             runner.explain(runner.ticket(), "FAKE", "FAKE context", "en"),
             Err(RunnerError::NotRunning)
         ));
         assert_eq!(runner.last_stats(), None);
+        assert_eq!(runner.last_check(), None);
+    }
+
+    #[test]
+    fn a_summarys_limit_has_room_for_its_check_pass() {
+        // K14: the check reads the pages again, with the summary, and writes its fixes.
+        assert_eq!(
+            summary_request_size(3_563),
+            (750 + 1_188 + 1_300 + 1_188, 600 + 200)
+        );
+        assert_eq!(
+            summary_request_size(0),
+            (SUMMARY_PROMPT_TOKENS + CHECK_PROMPT_TOKENS, 800)
+        );
+        // Each part at most the context; the limit's ceiling still caps the whole.
+        let context = crate::model_helper::CONTEXT_TOKENS;
+        assert_eq!(summary_request_size(usize::MAX), (2 * context, 800));
     }
 
     #[test]
@@ -1815,6 +1868,36 @@ mod tests {
                 ],
                 max_sentences: 5,
             }
+        }
+
+        #[test]
+        fn a_summary_is_sent_its_limit_and_its_check_report_is_kept() {
+            let runner = Runner::new(config(&["--check"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            runner.summarize(runner.ticket(), &request()).unwrap();
+            // The fake model writes back, as the check's time, the limit it was sent: the
+            // runner's own for this answer.
+            assert_eq!(
+                runner.last_check(),
+                Some(crate::model_helper::SummaryCheck {
+                    ms: 10_000,
+                    ..crate::model_helper::SummaryCheck::of(
+                        crate::model_helper::CheckOutcome::Unchanged
+                    )
+                })
+            );
+            // An explanation is sent no limit and has no check.
+            runner
+                .explain(runner.ticket(), "FAKE", "FAKE context", "en")
+                .unwrap();
+            assert_eq!(runner.last_check(), None);
+            runner.stop();
+            // A helper that reports no check leaves none.
+            let runner = Runner::new(config(&[], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(runner.last_check(), None);
+            runner.stop();
         }
 
         #[test]
@@ -2082,10 +2165,8 @@ mod tests {
             });
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
             let text_bytes = request().pages.iter().map(|page| page.text.len()).sum();
-            let own = limit.for_request(
-                prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
-                SUMMARY_ANSWER_TOKENS,
-            );
+            let (prompt, answer) = summary_request_size(text_bytes);
+            let own = limit.for_request(prompt, answer);
             let (told, heard) = mpsc::channel();
             let ticket = runner.ticket();
             runner.watch_answer(ticket, Box::new(move |limit| told.send(limit).unwrap()));

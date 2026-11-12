@@ -2,10 +2,13 @@
 //! one thing at a time, each from a fresh cache. Only the helper process runs this.
 
 use super::{
-    answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
-    read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
-    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    answer_hash, apply_check, check_deadline, check_fits, check_grammar, check_prompt,
+    document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
+    numbered_summary, quote_excerpts, read_explanation, read_fixes, read_summary, summary_grammar,
+    summary_prompt, thinking_off, without_slot, ChatFormat, CheckOutcome, CheckView, Fit,
+    ModelFile, Page, Sentence, Settings, Stats, SummaryCheck, ANSWER_HASH_START, BATCH_TOKENS,
+    CHECK_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
+    SYSTEM_PROMPT, TIMED_OUT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -19,6 +22,7 @@ use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_2::{LlamaStateSeqFlags, SeqState};
 use std::num::NonZeroU32;
+use std::time::Instant;
 
 /// Whether the weights are mapped from the file rather than read into the helper's memory.
 /// Linux: read, so that the sealed copy (shared memory) can be closed once loaded and is not
@@ -283,13 +287,16 @@ impl Engine {
 
     /// Reads `tokens`, then writes at most `max` tokens, under `grammar` if given. Returns what
     /// it wrote and whether it stopped at `max`. The first `prefix_len` tokens are the
-    /// instruction prefix: read once, then put back (see [`Prefix`]).
+    /// instruction prefix: read once, then put back (see [`Prefix`]). Past `deadline`, if
+    /// given, it stops with [`TIMED_OUT`]: looked at before each batch it reads and each token
+    /// it writes, so it can run one batch over.
     fn generate(
         &mut self,
         tokens: &[LlamaToken],
         prefix_len: usize,
         max: usize,
         grammar: Option<&str>,
+        deadline: Option<Instant>,
     ) -> Result<(String, bool), Failure> {
         if tokens.is_empty() || tokens.len() + max > CONTEXT_TOKENS as usize {
             return Err(failed("too long"));
@@ -304,7 +311,7 @@ impl Engine {
         // Every answer starts from a cleared cache: the buffers are zeroed too
         // (llama_memory_clear with data), so nothing of the last document is left in it.
         self.ctx_mut().clear_kv_cache();
-        let started = std::time::Instant::now();
+        let started = Instant::now();
         self.stats = Stats {
             prompt_tokens: tokens.len() as u32,
             prefix_len: prefix_len as u32,
@@ -328,16 +335,25 @@ impl Engine {
                 self.stats.cache_hit = true;
             } else {
                 // Read on its own, as when it is put back, so both ways do the same sums.
-                self.read(&mut batch, &tokens[..prefix_len], 0, last)?;
+                self.read(&mut batch, &tokens[..prefix_len], 0, last, deadline)?;
                 self.keep_prefix(&tokens[..prefix_len]);
             }
         }
-        self.read(&mut batch, &tokens[prefix_len..], prefix_len, last)?;
-        let read = std::time::Instant::now();
+        self.read(
+            &mut batch,
+            &tokens[prefix_len..],
+            prefix_len,
+            last,
+            deadline,
+        )?;
+        let read = Instant::now();
         self.stats.prompt_ms = (read - started).as_millis() as u64;
         let vocab = self.model.vocab();
         let mut written = Vec::new();
         for position in (tokens.len()..).take(max) {
+            if past(deadline) {
+                return Err(failed(TIMED_OUT));
+            }
             let (token, scanned) = self.pick(batch.n_tokens() - 1, grammar.as_mut());
             self.stats.grammar_scans += u32::from(scanned);
             if vocab.is_eog(token) {
@@ -370,9 +386,13 @@ impl Engine {
         tokens: &[LlamaToken],
         start: usize,
         last: usize,
+        deadline: Option<Instant>,
     ) -> Result<(), Failure> {
         let batch_size = BATCH_TOKENS as usize;
         for (chunk_index, chunk) in tokens.chunks(batch_size).enumerate() {
+            if past(deadline) {
+                return Err(failed(TIMED_OUT));
+            }
             batch.clear();
             for (offset, token) in chunk.iter().enumerate() {
                 let position = start + chunk_index * batch_size + offset;
@@ -466,13 +486,16 @@ impl Engine {
         )
     }
 
-    /// A summary of the pages that fit, in `lang`, with the fit it read.
+    /// A summary of the pages that fit, in `lang`, with the fit it read, after its check pass
+    /// (K14), with what the check did. The check ends by `until`, the request's own end, if
+    /// given. The stats are the first pass's; the check's are in its report.
     pub(super) fn summarize(
         &mut self,
         lang: &str,
         pages: &[Page],
         max_sentences: usize,
-    ) -> Result<(Vec<Sentence>, Fit), Failure> {
+        until: Option<Instant>,
+    ) -> Result<(Vec<Sentence>, Fit, SummaryCheck), Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
         let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
         let user = summary_prompt(language, max_sentences);
@@ -495,9 +518,66 @@ impl Engine {
         let (tokens, prefix_len) = self.prompt_tokens(&user, &[&fit.text])?;
         let grammar = summary_grammar(max_sentences);
         let (written, capped) =
-            self.generate(&tokens, prefix_len, SUMMARY_TOKENS, Some(&grammar))?;
+            self.generate(&tokens, prefix_len, SUMMARY_TOKENS, Some(&grammar), None)?;
         let sentences = read_summary(&written, capped).ok_or_else(|| failed("unreadable"))?;
-        Ok((sentences, fit))
+        let first_stats = self.stats;
+        let (sentences, check) = self.check(language, &fit.text, sentences, until);
+        self.stats = first_stats;
+        Ok((sentences, fit, check))
+    }
+
+    /// The check pass (K14): `first` read again against `document`, the text the summary read,
+    /// within [`CHECK_SECONDS`] and by `until`. Whatever goes wrong, `first` stands. When the
+    /// pages do not fit beside the summary, the check reads the lines around its quotes
+    /// ([`quote_excerpts`]).
+    fn check(
+        &mut self,
+        language: &str,
+        document: &str,
+        first: Vec<Sentence>,
+        until: Option<Instant>,
+    ) -> (Vec<Sentence>, SummaryCheck) {
+        let started = Instant::now();
+        let deadline = check_deadline(started, until);
+        let user = check_prompt(language);
+        let listing = without_slot(&numbered_summary(&first));
+        let prompt = |engine: &Self, text: &str| {
+            engine
+                .prompt_tokens(&user, &[&listing, text])
+                .ok()
+                .filter(|(tokens, _)| check_fits(tokens.len()))
+        };
+        let quotes: Vec<&str> = first
+            .iter()
+            .map(|sentence| sentence.quote.as_str())
+            .collect();
+        let fitted = match prompt(self, document) {
+            Some(fitted) => Some((CheckView::Pages, fitted)),
+            None => prompt(self, &quote_excerpts(document, &quotes))
+                .map(|fitted| (CheckView::Excerpts, fitted)),
+        };
+        let Some((view, (tokens, prefix_len))) = fitted else {
+            let mut report = SummaryCheck::of(CheckOutcome::NoRoom);
+            report.ms = started.elapsed().as_millis() as u64;
+            return (first, report);
+        };
+        let grammar = check_grammar(first.len());
+        let written = self.generate(
+            &tokens,
+            prefix_len,
+            CHECK_TOKENS,
+            Some(&grammar),
+            Some(deadline),
+        );
+        let (sentences, mut report) = match written {
+            Ok((written, capped)) => apply_check(&first, read_fixes(&written, capped)),
+            Err(error) if error == TIMED_OUT => (first, SummaryCheck::of(CheckOutcome::TimedOut)),
+            Err(_) => (first, SummaryCheck::of(CheckOutcome::Failed)),
+        };
+        report.view = Some(view);
+        report.stats = Some(self.stats);
+        report.ms = started.elapsed().as_millis() as u64;
+        (sentences, report)
     }
 
     /// What `term` means in `context`, in `lang`.
@@ -511,9 +591,14 @@ impl Engine {
         let user = explain_prompt(language);
         let (term, context) = (without_slot(term), without_slot(context));
         let (tokens, prefix_len) = self.prompt_tokens(&user, &[&term, &context])?;
-        let (written, capped) = self.generate(&tokens, prefix_len, EXPLAIN_TOKENS, None)?;
+        let (written, capped) = self.generate(&tokens, prefix_len, EXPLAIN_TOKENS, None, None)?;
         read_explanation(&written, capped).ok_or_else(|| failed("empty"))
     }
+}
+
+/// Whether `deadline`, if any, has passed.
+fn past(deadline: Option<Instant>) -> bool {
+    deadline.is_some_and(|deadline| Instant::now() >= deadline)
 }
 
 /// The first token with the highest score.
