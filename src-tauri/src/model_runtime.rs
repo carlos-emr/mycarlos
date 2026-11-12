@@ -1341,6 +1341,19 @@ pub mod engine_testing {
         /// K19: the glossary's name, and every sentence it explained (before and after).
         pub glossary: &'static str,
         pub explained: Vec<MeasuredExplained>,
+        /// K20: the safety checks' name, and every fallback (before: none when a quote was added).
+        pub safety: &'static str,
+        pub fallbacks: Vec<MeasuredFallback>,
+    }
+
+    /// K20: one fallback of the safety checks (`safety`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredFallback {
+        pub check: &'static str,
+        pub index: usize,
+        pub before: Option<String>,
+        pub after: String,
     }
 
     /// K19: one sentence the glossary step explained (`glossary`).
@@ -1484,6 +1497,16 @@ pub mod engine_testing {
                 .runner
                 .summarize(self.runner.ticket(), &request)
                 .map_err(|error| format!("{error:?}"))?;
+            let fallbacks = summary
+                .fallbacks
+                .into_iter()
+                .map(|f| MeasuredFallback {
+                    check: f.check,
+                    index: f.index,
+                    before: f.before,
+                    after: f.after,
+                })
+                .collect();
             let explained = summary
                 .explained
                 .into_iter()
@@ -1538,6 +1561,8 @@ pub mod engine_testing {
                 rewrites,
                 glossary: crate::glossary::NAME,
                 explained,
+                safety: crate::safety::NAME,
+                fallbacks,
             })
         }
 

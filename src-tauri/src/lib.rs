@@ -30,8 +30,10 @@ mod addressee;
 // K19 (evaluation only): the glossary post-step (pure std; tested on its own).
 mod glossary;
 mod local_runner;
+// K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
 #[cfg(windows)]
 mod model_acl;
+mod safety;
 // The model download runs on computers only (no AI helper on a phone).
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;

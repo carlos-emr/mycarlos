@@ -1,0 +1,100 @@
+The safety checks' shared cases (K20): synthetic letters only. Read by the Rust tests in safety.rs and by the
+evaluation's Python port. Blocks separated by "===". "pages:" up to "summary:"; one summary sentence per line as
+"<text> || <quote>" (no quote: not found); "expect:" the sentences after the checks.
+===
+name: a_rule_with_a_trigger_left_out
+pages:
+Going home
+Weigh yourself every morning. Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.
+summary:
+You must weigh yourself every morning. || Weigh yourself every morning
+Call the clinic if your weight goes up by more than 2 kg in 3 days. || Call the clinic if your weight goes up by more than 2 kg in 3 days
+expect:
+You must weigh yourself every morning.
+The document says: “Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.”
+===
+name: a_rule_missing_from_the_summary
+pages:
+Going home
+Take one tablet each morning. If the rash spreads, call the clinic.
+summary:
+Take one tablet each morning. || Take one tablet each morning
+expect:
+Take one tablet each morning.
+The document says: “If the rash spreads, call the clinic.”
+===
+name: a_condition_before_its_action
+pages:
+Going home
+For a nosebleed, pinch your nose. If the bleeding has not stopped after 20 minutes, call 911.
+summary:
+Pinch your nose for a nosebleed. || For a nosebleed, pinch your nose
+Call 911 if the bleeding has not stopped after 20 minutes. || If the bleeding has not stopped after 20 minutes
+expect:
+Pinch your nose for a nosebleed.
+Call 911 if the bleeding has not stopped after 20 minutes.
+===
+name: a_rule_carried_whole
+pages:
+Going home
+Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.
+summary:
+Call the clinic if your weight goes up by more than 2 kg in 3 days or your legs swell. || Call the clinic if your weight goes up
+expect:
+Call the clinic if your weight goes up by more than 2 kg in 3 days or your legs swell.
+===
+name: trigger_words_without_the_action
+pages:
+Going home
+Your legs did not swell in hospital. Call the clinic if your weight goes up or if your legs swell.
+summary:
+Your legs did not swell and your weight was stable. || Your legs did not swell in hospital
+expect:
+Your legs did not swell and your weight was stable.
+The document says: “Call the clinic if your weight goes up or if your legs swell.”
+===
+name: a_number_not_in_the_document
+pages:
+Results
+The potassium was 4.8 mmol/L, in the usual range.
+summary:
+The potassium was 8.4 mmol/L. || The potassium was 4.8 mmol/L
+expect:
+The document says: “The potassium was 4.8 mmol/L, in the usual range.”
+===
+name: a_number_written_as_a_word
+pages:
+Going home
+Take the tablets twice a day for two weeks.
+summary:
+Take the tablets 2 times a day for 2 weeks. || Take the tablets twice a day for two weeks
+expect:
+Take the tablets 2 times a day for 2 weeks.
+===
+name: a_wrong_number_with_no_quote
+pages:
+Results
+The potassium was 4.8 mmol/L.
+summary:
+The potassium was 8.4 mmol/L. ||
+expect:
+The potassium was 8.4 mmol/L.
+===
+name: the_writers_line_is_no_rule
+pages:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill. Please call me if you need anything else.
+summary:
+The doctor thanks the receiving doctor for seeing the patient. || Thank you for seeing Sam Quill
+expect:
+The doctor thanks the receiving doctor for seeing the patient.
+===
+name: a_french_rule_is_not_checked
+pages:
+Consignes
+Si la fièvre revient, appelez la clinique.
+summary:
+Take your medicine. || Consignes
+expect:
+Take your medicine.

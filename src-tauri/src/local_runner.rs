@@ -439,6 +439,9 @@ pub(crate) struct Summary {
     /// K19: the sentences the glossary step explained (`glossary`), for measuring; never shown.
     #[allow(dead_code)]
     pub(crate) explained: Vec<crate::glossary::Explained>,
+    /// K20: the safety checks' fallbacks (`safety`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) fallbacks: Vec<crate::safety::Fallback>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -922,11 +925,38 @@ impl Runner {
                 }
             }
         }
+        // K20 (evaluation only): the safety checks after the addressee step: a number not in the
+        // pages, or a get-help rule not carried whole, falls back to the document's own sentence,
+        // quoted (`safety`); the words go in `fallbacks` for measuring, never into a log.
+        let mut fallbacks = Vec::new();
+        if request.lang == "en" {
+            let mut lines: Vec<crate::safety::Line> = sentences
+                .iter()
+                .map(|s| crate::safety::Line {
+                    text: s.text.clone(),
+                    quote: s.quote.clone(),
+                })
+                .collect();
+            fallbacks = crate::safety::check(&text, &mut lines);
+            if !fallbacks.is_empty() {
+                sentences = lines
+                    .into_iter()
+                    .map(|line| Sentence {
+                        text: line.text,
+                        quote: line.quote,
+                    })
+                    .collect();
+            }
+        }
         // K19 (evaluation only): after the addressee step, a short plain explanation beside the
         // first use of each medical word, germ, test or unit (`glossary`); it only inserts, and
-        // the words go in `explained` for measuring, never into a log.
+        // the words go in `explained` for measuring, never into a log. A fallback quote is the
+        // document's own words and stays as it is.
         let mut explained = Vec::new();
         for (index, sentence) in sentences.iter_mut().enumerate() {
+            if sentence.text.starts_with(crate::safety::QUOTE_MARK) {
+                continue;
+            }
             if let Some((after, terms)) = crate::glossary::explain(&sentence.text, &request.lang) {
                 let before = std::mem::replace(&mut sentence.text, after.clone());
                 explained.push(crate::glossary::Explained {
@@ -947,6 +977,7 @@ impl Runner {
             unlocated_quotes,
             rewrites,
             explained,
+            fallbacks,
         })
     }
 

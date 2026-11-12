@@ -146,7 +146,7 @@ fn is_doctor_greeting(line: &str) -> bool {
 
 /// The byte range of `quote` in `pages`, matched as the runner matches quotes (`quote_in`):
 /// whitespace runs as one, case ignored, quote marks and `.,;:` trimmed at the quote's ends.
-fn find_folded(pages: &str, quote: &str) -> Option<(usize, usize)> {
+pub(crate) fn find_folded(pages: &str, quote: &str) -> Option<(usize, usize)> {
     const QUOTE_ENDS: &[char] = &[
         '"', '\'', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '.', ',', ';', ':',
     ];
@@ -191,7 +191,7 @@ const ABBREVIATIONS: &[&str] = &[
 
 /// Whether the `.`, `!` or `?` at `at` ends a sentence: whitespace (or the end) follows, and it
 /// is not an abbreviation's dot.
-fn ends_sentence(pages: &str, at: usize) -> bool {
+pub(crate) fn ends_sentence(pages: &str, at: usize) -> bool {
     let c = pages[at..].chars().next();
     if !matches!(c, Some('.' | '!' | '?')) {
         return false;
@@ -218,14 +218,14 @@ fn ends_sentence(pages: &str, at: usize) -> bool {
 
 /// Whether a line of running text goes on to the next line: long, and not ended by a sentence
 /// end or a colon (a letterhead, an address or a heading line does not).
-fn wraps(line: &str) -> bool {
+pub(crate) fn wraps(line: &str) -> bool {
     let line = line.trim_end();
     line.chars().count() >= 50 && !line.ends_with(['.', '!', '?', ':'])
 }
 
 /// The letter's sentence around a quote at `start..end`: back to the last sentence end, blank
 /// line or line that does not wrap; on to the next sentence end or line that does not wrap.
-fn source_sentence(pages: &str, start: usize, end: usize) -> &str {
+pub(crate) fn source_sentence(pages: &str, start: usize, end: usize) -> &str {
     let mut from = 0;
     for (at, c) in pages[..start].char_indices().rev() {
         if matches!(c, '.' | '!' | '?') && ends_sentence(pages, at) {
@@ -397,7 +397,7 @@ fn digits_of(text: &str) -> String {
 }
 
 /// The writer offering their own line: "call me", "me joindre", "my direct line", …
-const CONTACT_OFFERS: &[&str] = &[
+pub(crate) const CONTACT_OFFERS: &[&str] = &[
     "call me",
     "phone me",
     "contact me",
