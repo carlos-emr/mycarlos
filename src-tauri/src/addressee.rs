@@ -8,8 +8,10 @@
 //! greeting:
 //! - **The writer's own line.** The quote's sentence in the letter offers the writer's phone
 //!   ("please call me …", "me joindre …") and the summary sentence gives that number as one for
-//!   the patient to call: it becomes "Your care team can be reached at <the number, as
-//!   written>."
+//!   the patient to call: it becomes "The letter gives the writing doctor's phone line for your
+//!   doctor: <the number, as written>." (with "Dr. <name>" for "the writing doctor" when the
+//!   sentence names the doctor who signed the letter), so the number is kept and is plainly the
+//!   other doctor's, never one for the patient to call.
 //! - **The letter's "you".** The quote's sentence speaks to the doctor it is written to ("would
 //!   you …", "pourriez-vous …") and the summary sentence keeps that "you" as the one asked ("asks
 //!   if you would …", "asks you to …"): only that "you" becomes "the receiving doctor".
@@ -67,7 +69,7 @@ pub(crate) fn rewrite(pages: &str, sentence: &str, quote: &str) -> Option<(Kind,
         return None;
     }
     let source = source_sentence(pages, start, end);
-    if let Some(after) = contact_rewrite(source, sentence) {
+    if let Some(after) = contact_rewrite(pages, source, sentence) {
         return Some((Kind::WriterContact, after));
     }
     you_rewrite(source, sentence).map(|after| (Kind::AddresseeYou, after))
@@ -450,7 +452,70 @@ fn worded_as_patients_call(sentence: &str) -> bool {
     })
 }
 
-fn contact_rewrite(source: &str, sentence: &str) -> Option<String> {
+const CLOSINGS: &[&str] = &[
+    "sincerely",
+    "yours sincerely",
+    "sincerely yours",
+    "yours",
+    "yours truly",
+    "yours faithfully",
+    "regards",
+    "best regards",
+    "kind regards",
+    "warm regards",
+    "best wishes",
+    "with thanks",
+    "many thanks",
+    "cordialement",
+    "bien cordialement",
+    "bien à vous",
+    "salutations distinguées",
+    "atenciosamente",
+    "cordialmente",
+    "saludos",
+    "saludos cordiales",
+    "z poważaniem",
+];
+const SIGNER_TITLES: &[&str] = &[
+    "Dr.", "Dre.", "Dra.", "Dr", "Dre", "Dra", "Docteure", "Docteur", "Doctor",
+];
+
+/// The name the letter is signed with, as written: the first line with words after a closing
+/// ("Sincerely,"), without its title and anything after a comma or bracket ("Dr. Iris Oakfield,
+/// MD" → "Iris Oakfield").
+fn signer(pages: &str) -> Option<String> {
+    let lines: Vec<&str> = pages.lines().collect();
+    for (at, line) in lines.iter().enumerate() {
+        let closing = line.trim().trim_end_matches([',', '.']).to_lowercase();
+        if !CLOSINGS.contains(&closing.as_str()) {
+            continue;
+        }
+        let Some(next) = lines[at + 1..]
+            .iter()
+            .take(3)
+            .map(|l| l.trim())
+            .find(|l| !l.is_empty())
+        else {
+            continue;
+        };
+        let mut name = next;
+        for title in SIGNER_TITLES {
+            if let Some(rest) = name.strip_prefix(title) {
+                if rest.starts_with(' ') {
+                    name = rest.trim_start();
+                    break;
+                }
+            }
+        }
+        let name = name.split([',', '(']).next().unwrap_or("").trim();
+        if name.chars().any(char::is_alphabetic) {
+            return Some(name.to_owned());
+        }
+    }
+    None
+}
+
+fn contact_rewrite(pages: &str, source: &str, sentence: &str) -> Option<String> {
     let lower = format!(" {}", source.to_lowercase().replace('\u{2019}', "'"));
     let offers = CONTACT_OFFERS.iter().any(|offer| {
         lower.match_indices(offer).any(|(at, _)| {
@@ -485,11 +550,27 @@ fn contact_rewrite(source: &str, sentence: &str) -> Option<String> {
     if outside.chars().any(|c| c.is_ascii_digit()) {
         return None;
     }
-    let numbers: Vec<&str> = spans.iter().map(|&(a, _, b)| &sentence[a..b]).collect();
-    Some(format!(
-        "Your care team can be reached at {}.",
-        numbers.join(" or ")
-    ))
+    let numbers = spans
+        .iter()
+        .map(|&(a, _, b)| &sentence[a..b])
+        .collect::<Vec<_>>()
+        .join(" or ");
+    // The writer by name only when the sentence names the doctor who signed the letter (a
+    // summary often names the other doctor instead).
+    let sentence_words = words(sentence);
+    let named = signer(pages).filter(|name| {
+        let surname = name.split_whitespace().last().unwrap_or("");
+        let surname_words = words(surname);
+        !surname_words.is_empty() && surname_words.iter().all(|w| sentence_words.contains(w))
+    });
+    Some(match named {
+        Some(name) => {
+            format!("The letter gives Dr. {name}'s phone line for your doctor: {numbers}.")
+        }
+        None => {
+            format!("The letter gives the writing doctor's phone line for your doctor: {numbers}.")
+        }
+    })
 }
 
 /// The letter speaking to the doctor it is written to.
@@ -663,15 +744,21 @@ mod tests {
     }
 
     #[test]
-    fn given_a_letter_to_a_doctor_when_the_summary_copies_the_writers_call_me_line_then_it_reads_your_care_team_can_be_reached_at_the_same_number(
+    fn given_a_letter_to_a_doctor_when_the_summary_copies_the_writers_call_me_line_then_it_says_the_letter_gives_the_writing_doctors_line_for_your_doctor(
     ) {
         check("a_copied_call_me_line");
     }
 
     #[test]
-    fn given_a_letter_to_a_doctor_when_the_summary_makes_the_writers_line_a_patient_task_then_it_reads_your_care_team_can_be_reached_at_the_same_number(
+    fn given_a_letter_to_a_doctor_when_the_summary_makes_the_writers_line_a_patient_task_then_it_says_the_letter_gives_the_writing_doctors_line_for_your_doctor(
     ) {
         check("the_writers_line_as_a_patient_task");
+    }
+
+    #[test]
+    fn given_a_summary_that_names_the_doctor_who_signed_the_letter_when_it_gives_her_line_to_call_then_it_says_the_letter_gives_dr_names_line_for_your_doctor(
+    ) {
+        check("the_writer_named_in_the_sentence");
     }
 
     #[test]
