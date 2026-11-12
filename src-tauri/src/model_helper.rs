@@ -495,10 +495,14 @@ const SUMMARY_OTHER_DOCTOR: &str =
 /// K11 wrote "you must take" a pain medicine the letter says may be used, and wrote a referral's
 /// question to the specialist (whether to keep eating gluten) as an open question for the
 /// patient, while the same letter tells the patient to keep eating gluten.
+///
+/// K12b (on K12): the screen found K12's KNOW 5 below K11's. K12's "never yours to answer or do
+/// ... say that instead" could read as "leave the other doctor's part out", and a referral is
+/// mostly written to another doctor. K12b says only how to report such a question: as that
+/// doctor's question, never as something you must do. Nothing in it leaves content out.
 const SUMMARY_STRENGTH: &str =
-    "Keep the document's own strength: \"may\" is not \"must\". A question the document asks \
-     another doctor is never yours to answer or do; where the document also tells you what to \
-     do about it, say that instead.";
+    "Keep the document's own strength: \"may\" is not \"must\"; a question the document asks \
+     another doctor is reported as that doctor's question, never as something you must do.";
 
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
@@ -1181,13 +1185,13 @@ mod tests {
     }
 
     #[test]
-    fn k12_is_k11_with_do_first_whole_schedules_and_the_documents_own_strength() {
-        // K12 = K11 word for word (K2's warnings in the document's own words, K11's meanings only
-        // from the document, E6's system text and contact rule), with four sentences added: a
-        // document with no findings starts with what to do; E5's which, how much and when, with
-        // every step of a schedule to its end; the document's own strength, and a question to
-        // another doctor never the patient's; and every rule about when to get help or call in a
-        // sentence of its own, right before K2's warning sentence.
+    fn k12b_is_k12_with_another_doctors_question_reported_as_theirs() {
+        // K12b = K12 word for word (K11 with four sentences added: a document with no findings
+        // starts with what to do; E5's which, how much and when, with every step of a schedule to
+        // its end; the document's own strength; every rule about when to get help or call in a
+        // sentence of its own), except the strength sentence: a question the document asks
+        // another doctor is reported as that doctor's question, never as something you must do.
+        // Nothing in it leaves a finding or other content out.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1212,24 +1216,24 @@ mod tests {
              date or time, and every step of a schedule to its end. A question or suggestion \
              the document writes to another doctor is not your task: say it as the doctor's, \
              or leave it out; an instruction the document says you were given is yours. Keep \
-             the document's own strength: \"may\" is not \"must\". A question the document \
-             asks another doctor is never yours to answer or do; where the document also tells \
-             you what to do about it, say that instead. When a sentence gives a rule with a \
-             condition (if, when, unless) or names a medicine or a group of medicines, keep \
-             every condition, every medicine or group, and every number or limit the document \
-             gives for it; if they do not all fit in one sentence, leave that sentence out. \
-             Every rule about when to get help or call (a rule that says if or when to contact \
-             someone) gets its own sentence, never joined to another instruction and never \
-             left out, however short the document. For a warning about when to get help or \
-             call, write it in the document's own words, word for word (translated only when \
-             the document is in another language), with every reason it lists, in one sentence \
-             or in two sentences next to each other; if they do not fit, say that the document \
-             lists when to get help. For each sentence, copy into \"quote\" one continuous \
-             piece of the document, 3 to 25 words, exactly as written (same spelling, numbers, \
-             accents and punctuation, no '...' and no joined pieces), in the document's own \
-             language (only the quote is copied; the sentence itself is written in English). \
-             If you cannot find such a piece for a sentence, leave that sentence out.\n\nReply \
-             only with JSON in this shape: {\"sentences\": [{\"text\": \"...\", \"quote\": \
+             the document's own strength: \"may\" is not \"must\"; a question the document \
+             asks another doctor is reported as that doctor's question, never as something you \
+             must do. When a sentence gives a rule with a condition (if, when, unless) or \
+             names a medicine or a group of medicines, keep every condition, every medicine or \
+             group, and every number or limit the document gives for it; if they do not all \
+             fit in one sentence, leave that sentence out. Every rule about when to get help \
+             or call (a rule that says if or when to contact someone) gets its own sentence, \
+             never joined to another instruction and never left out, however short the \
+             document. For a warning about when to get help or call, write it in the \
+             document's own words, word for word (translated only when the document is in \
+             another language), with every reason it lists, in one sentence or in two \
+             sentences next to each other; if they do not fit, say that the document lists \
+             when to get help. For each sentence, copy into \"quote\" one continuous piece of \
+             the document, 3 to 25 words, exactly as written (same spelling, numbers, accents \
+             and punctuation, no '...' and no joined pieces), in the document's own language \
+             (only the quote is copied; the sentence itself is written in English). If you \
+             cannot find such a piece for a sentence, leave that sentence out.\n\nReply only \
+             with JSON in this shape: {\"sentences\": [{\"text\": \"...\", \"quote\": \
              \"...\"}]}\n\nDocument:\n<<<\n"
         );
         // K11's found-first and meaning sentence and K2's warning sentence are kept whole, and
@@ -1243,6 +1247,9 @@ mod tests {
         ] {
             assert!(prompt.contains(&kept_in_order), "{kept_in_order}");
         }
+        // K12's "never yours to answer or do ... say that instead" is gone.
+        assert!(!prompt.contains("never yours to answer or do"));
+        assert!(!prompt.contains("say that instead"));
         // E5's which, how much and when is back (E6 dropped it); E5's "each with its number and
         // unit" for findings is not.
         assert!(prompt.contains("Say which, how much and when in the same sentence"));
