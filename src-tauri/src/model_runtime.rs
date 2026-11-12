@@ -1393,9 +1393,14 @@ pub mod engine_testing {
         let language =
             model_helper::language_name(lang).ok_or_else(|| format!("unknown language {lang}"))?;
         let prompt = model_helper::summary_prompt(language, model_helper::MAX_SENTENCES);
-        // K18: the request for a document with a going-home part (K15b's), chosen in code.
-        let going_home_prompt =
-            model_helper::summary_prompt_going_home(language, model_helper::MAX_SENTENCES);
+        // K22: the request for each kind of document, chosen in code (an unknown one gets E5's).
+        let kind_prompt = |kind| {
+            model_helper::summary_prompt_for(kind, language, model_helper::MAX_SENTENCES)
+        };
+        let going_home_prompt = kind_prompt(model_helper::doc_type::DocType::GoingHome);
+        let letter_prompt = kind_prompt(model_helper::doc_type::DocType::Letter);
+        let lab_prompt = kind_prompt(model_helper::doc_type::DocType::Lab);
+        let imaging_prompt = kind_prompt(model_helper::doc_type::DocType::Imaging);
         let grammar = model_helper::summary_grammar(model_helper::MAX_SENTENCES);
         let caps = serde_json::json!({
             "maxSentences": model_helper::MAX_SENTENCES,
@@ -1410,6 +1415,9 @@ pub mod engine_testing {
             model_helper::SYSTEM_PROMPT,
             &prompt,
             &going_home_prompt,
+            &letter_prompt,
+            &lab_prompt,
+            &imaging_prompt,
             &grammar,
             &caps_text,
         ] {
@@ -1421,7 +1429,10 @@ pub mod engine_testing {
             "systemPrompt": model_helper::SYSTEM_PROMPT,
             "summaryPrompt": prompt,
             "summaryPromptGoingHome": going_home_prompt,
-            "promptGate": "going-home-1",
+            "summaryPromptLetter": letter_prompt,
+            "summaryPromptLab": lab_prompt,
+            "summaryPromptImaging": imaging_prompt,
+            "promptGate": "doc-type-1",
             "grammar": grammar,
             "caps": caps,
         }))

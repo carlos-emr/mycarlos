@@ -1,0 +1,15 @@
+# The document-type cases (K22): synthetic text only. Read by the Rust tests in doc_type.rs and by the evaluation's
+# Python port. Each line: "<kind>: <name>: " then the document, its lines separated by " / ".
+going-home: a_discharge_summary: Test General Hospital / Discharge Summary / Patient: Sample Person / Take your tablets.
+going-home: going_home_before_letter: Dear Dr. Sample, / Thank you for seeing her. / Discharge medications / Ramipril 5 mg daily.
+lab: a_lab_report: Community Test Laboratories (FAKE) / Patient: Sample Person / Potassium 5.4 mmol/L H
+lab: a_faxed_lab_report: 10/26/2026 15:51 FAX P.01/01 / C0MMUNITY TEST LAB0RATORIES / Potassium 5.4 mmol/L H
+imaging: an_imaging_report: Test General Hospital / DIAGNOSTIC IMAGING REPORT / Findings: Normal liver. / Impression: Normal study.
+imaging: a_french_imaging_report: Hôpital Fictif / Service d'imagerie médicale / Conclusion : examen normal.
+letter: a_letter: Test Clinic / October 2, 2026 / Dear Dr. Sample, / Thank you for seeing Sam Quill.
+letter: a_french_letter: Clinique Test / Le 5 novembre 2026 / Cher collègue, / Je vous adresse Mme Test.
+letter: a_docteure_letter: Clinique Test / Docteure Tremblay, / Je vous adresse Mme Test.
+letter: a_letter_with_an_x_ray_sentence: Test Rheumatology Clinic / Dear Dr. Sample, / Hand X-rays show early erosions.
+unknown: a_short_note: The rash is improving. / Review the rash on 2026-11-16.
+unknown: two_kinds_at_once: Community Test Laboratories / Dear Dr. Sample, / Your results are attached.
+unknown: laboratory_in_a_sentence: Clinic note / The laboratory results were sent to the family doctor.
