@@ -458,6 +458,18 @@ const SUMMARY_DISCHARGE_PART: &str =
      that part; orders written during the stay are not instructions for the patient. This is \
      only about instructions: in every document, still say what the document found, as above.";
 
+/// K23 (step 3, version B, on K21): extract, then write, in one call. Each sentence first names
+/// its group, then copies its quote, then is written from that quote only, so the model copies
+/// before it writes (the grammar keeps that order). The group is a scaffold for the model and is
+/// not kept: the reader takes only "text" and "quote".
+const SUMMARY_QUOTE_FIRST: &str =
+    "For each sentence, first put its kind in \"group\": \"found\" (the problem or a result), \
+     \"do\" (something the patient must do), \"warning\" (when to call or get help) or \
+     \"medicine\" (a medicine started, stopped, changed or held). Then copy into \"quote\" one \
+     continuous piece of the document, 3 to 25 words, exactly as written (same spelling, \
+     numbers, accents and punctuation, no '...' and no joined pieces), in the document's own \
+     language.";
+
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
 const SUMMARY_WHOLE_RULES: &str =
@@ -476,34 +488,29 @@ pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
          sentences (fewer if the document is short). {SUMMARY_ORDER} Put one fact in each \
-         sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each sentence, copy into \
-         \"quote\" one continuous piece of the document, 3 to 25 words, exactly as written (same \
-         spelling, numbers, accents and punctuation, no '...' and no joined pieces), in the \
-         document's own language (only the quote is copied; the sentence itself is written in \
-         {language}). If you cannot find such a piece for a sentence, leave that sentence out.\n\n\
+         sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} {SUMMARY_QUOTE_FIRST} Then write \
+         \"text\" from that quote only, in {language} (only the quote is copied). If you cannot \
+         find such a piece for a sentence, leave that sentence out.\n\n\
          Reply only with JSON in this shape: \
-         {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
+         {{\"sentences\": [{{\"group\": \"...\", \"quote\": \"...\", \"text\": \"...\"}}]}}\n\n\
          Document:\n<<<\n{SLOT}\n>>>\n\nWrite every \"text\" in {language}, even though the \
          document may be in another language. Only \"quote\" stays in the document's own \
          language, copied exactly."
     )
 }
 
-/// K18: the summary request for a document with a going-home part (`going_home`): K15b's,
-/// copied byte for byte (E5's with the going-home rule right after part (a)).
+/// K18: the summary request for a document with a going-home part (`going_home`): K15b's rule
+/// right after part (a) (since K23 with the quote-first wording, as E5's request).
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 pub(crate) fn summary_prompt_going_home(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
-         sentences (fewer if the document is short). {SUMMARY_ORDER} {SUMMARY_DISCHARGE_PART} \
-         Put one fact in each sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each \
-         sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 words, \
-         exactly as written (same spelling, numbers, accents and punctuation, no '...' and no \
-         joined pieces), in the document's own language (only the quote is copied; the sentence \
-         itself is written in {language}). If you cannot find such a piece for a sentence, leave \
-         that sentence out.\n\n\
+         sentences (fewer if the document is short). {SUMMARY_ORDER} {SUMMARY_DISCHARGE_PART} Put one fact in each \
+         sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} {SUMMARY_QUOTE_FIRST} Then write \
+         \"text\" from that quote only, in {language} (only the quote is copied). If you cannot \
+         find such a piece for a sentence, leave that sentence out.\n\n\
          Reply only with JSON in this shape: \
-         {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
+         {{\"sentences\": [{{\"group\": \"...\", \"quote\": \"...\", \"text\": \"...\"}}]}}\n\n\
          Document:\n<<<\n{SLOT}\n>>>\n\nWrite every \"text\" in {language}, even though the \
          document may be in another language. Only \"quote\" stays in the document's own \
          language, copied exactly."
@@ -627,12 +634,14 @@ pub(crate) fn document_budget(prompt_tokens: usize, answer_tokens: usize) -> usi
 // --- The summary's grammar and its reading back ---------------------------------------------
 
 /// The GBNF grammar a summary is sampled under: compact JSON, 1 to `max_sentences` sentences,
-/// each part 1 to its cap of characters, no raw control characters.
+/// each part 1 to its cap of characters, no raw control characters. K23: each sentence is its
+/// group, then its quote, then its text, in that order.
 pub(crate) fn summary_grammar(max_sentences: usize) -> String {
     let more = max_sentences.clamp(1, MAX_SENTENCES) - 1;
     format!(
         r#"root ::= "{{\"sentences\":[" sentence ("," sentence){{0,{more}}} "]}}"
-sentence ::= "{{\"text\":\"" char{{1,{MAX_TEXT_CHARS}}} "\",\"quote\":\"" char{{1,{MAX_QUOTE_CHARS}}} "\"}}"
+sentence ::= "{{\"group\":\"" group "\",\"quote\":\"" char{{1,{MAX_QUOTE_CHARS}}} "\",\"text\":\"" char{{1,{MAX_TEXT_CHARS}}} "\"}}"
+group ::= "found" | "do" | "warning" | "medicine"
 char ::= [^"\\\x00-\x1F\x7F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{{4}})
 "#
     )
@@ -1152,29 +1161,29 @@ mod tests {
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
             before,
-            "Summarize this document for the patient in English, in at most 10 short sentences \
-             (fewer if the document is short). First say what the document found: the main \
-             problem or diagnosis and the key results, each with its number and unit. Then say \
-             what the patient must do and when, only where the document tells the patient to do \
-             it: a doctor's name or signature, a printed, collected or reported date, or a \
-             medicine already given is not an instruction. If the document is a hospital \
-             record with a going-home part (a discharge summary, discharge medicines or \
-             follow-up), take the patient's instructions and any medicine change only from that \
-             part; orders written during the stay are not instructions for the patient. This is \
-             only about instructions: in every document, still say what the document found, as \
-             above. Put one fact in each sentence. When \
-             a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
-             a group of medicines, keep every condition, every medicine or group, and every \
-             number or limit the document gives for it; if they do not all fit in one sentence, \
-             leave that sentence out. Say which, how much and when in the same sentence: the \
-             test or \
-             medicine by name, the number with its unit, the date or time. For each sentence, \
-             copy into \"quote\" one continuous piece of the document, 3 to 25 words, exactly \
-             as written (same spelling, numbers, accents and punctuation, no '...' and no \
-             joined pieces), in the document's own language (only the quote is copied; the \
-             sentence itself is written in English). If you cannot find such a piece for a \
-             sentence, leave that sentence out.\n\nReply only with JSON in this shape: \
-             {\"sentences\": [{\"text\": \"...\", \"quote\": \"...\"}]}\n\nDocument:\n<<<\n"
+            "Summarize this document for the patient in English, in at most 10 short sentences (fewer if \
+             the document is short). First say what the document found: the main problem or diagnosis \
+             and the key results, each with its number and unit. Then say what the patient must do and \
+             when, only where the document tells the patient to do it: a doctor's name or signature, a \
+             printed, collected or reported date, or a medicine already given is not an instruction. If \
+             the document is a hospital record with a going-home part (a discharge summary, discharge \
+             medicines or follow-up), take the patient's instructions and any medicine change only from \
+             that part; orders written during the stay are not instructions for the patient. This is \
+             only about instructions: in every document, still say what the document found, as above. \
+             Put one fact in each sentence. When a sentence gives a rule with a condition (if, when, \
+             unless) or names a medicine or a group of medicines, keep every condition, every medicine \
+             or group, and every number or limit the document gives for it; if they do not all fit in \
+             one sentence, leave that sentence out. Say which, how much and when in the same sentence: \
+             the test or medicine by name, the number with its unit, the date or time. For each \
+             sentence, first put its kind in \"group\": \"found\" (the problem or a result), \"do\" \
+             (something the patient must do), \"warning\" (when to call or get help) or \"medicine\" (a \
+             medicine started, stopped, changed or held). Then copy into \"quote\" one continuous piece \
+             of the document, 3 to 25 words, exactly as written (same spelling, numbers, accents and \
+             punctuation, no '...' and no joined pieces), in the document's own language. Then write \
+             \"text\" from that quote only, in English (only the quote is copied). If you cannot find \
+             such a piece for a sentence, leave that sentence out.\n\nReply only with JSON in this \
+             shape: {\"sentences\": [{\"group\": \"...\", \"quote\": \"...\", \"text\": \
+             \"...\"}]}\n\nDocument:\n<<<\n"
         );
         assert_eq!(
             after,
@@ -1204,24 +1213,25 @@ mod tests {
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
             before,
-            "Summarize this document for the patient in English, in at most 10 short sentences \
-             (fewer if the document is short). First say what the document found: the main \
-             problem or diagnosis and the key results, each with its number and unit. Then say \
-             what the patient must do and when, only where the document tells the patient to do \
-             it: a doctor's name or signature, a printed, collected or reported date, or a \
-             medicine already given is not an instruction. Put one fact in each sentence. When \
-             a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
-             a group of medicines, keep every condition, every medicine or group, and every \
-             number or limit the document gives for it; if they do not all fit in one sentence, \
-             leave that sentence out. Say which, how much and when in the same sentence: the \
-             test or \
-             medicine by name, the number with its unit, the date or time. For each sentence, \
-             copy into \"quote\" one continuous piece of the document, 3 to 25 words, exactly \
-             as written (same spelling, numbers, accents and punctuation, no '...' and no \
-             joined pieces), in the document's own language (only the quote is copied; the \
-             sentence itself is written in English). If you cannot find such a piece for a \
-             sentence, leave that sentence out.\n\nReply only with JSON in this shape: \
-             {\"sentences\": [{\"text\": \"...\", \"quote\": \"...\"}]}\n\nDocument:\n<<<\n"
+            "Summarize this document for the patient in English, in at most 10 short sentences (fewer if \
+             the document is short). First say what the document found: the main problem or diagnosis \
+             and the key results, each with its number and unit. Then say what the patient must do and \
+             when, only where the document tells the patient to do it: a doctor's name or signature, a \
+             printed, collected or reported date, or a medicine already given is not an instruction. Put \
+             one fact in each sentence. When a sentence gives a rule with a condition (if, when, unless) \
+             or names a medicine or a group of medicines, keep every condition, every medicine or group, \
+             and every number or limit the document gives for it; if they do not all fit in one \
+             sentence, leave that sentence out. Say which, how much and when in the same sentence: the \
+             test or medicine by name, the number with its unit, the date or time. For each sentence, \
+             first put its kind in \"group\": \"found\" (the problem or a result), \"do\" (something the \
+             patient must do), \"warning\" (when to call or get help) or \"medicine\" (a medicine \
+             started, stopped, changed or held). Then copy into \"quote\" one continuous piece of the \
+             document, 3 to 25 words, exactly as written (same spelling, numbers, accents and \
+             punctuation, no '...' and no joined pieces), in the document's own language. Then write \
+             \"text\" from that quote only, in English (only the quote is copied). If you cannot find \
+             such a piece for a sentence, leave that sentence out.\n\nReply only with JSON in this \
+             shape: {\"sentences\": [{\"group\": \"...\", \"quote\": \"...\", \"text\": \
+             \"...\"}]}\n\nDocument:\n<<<\n"
         );
         assert_eq!(
             after,
@@ -1384,6 +1394,31 @@ mod tests {
         ));
         let unknown = r#"{"tool":"explain","id":2,"term":"a","context":"b","lang":"en","x":1}"#;
         assert!(serde_json::from_str::<Request>(unknown).is_err());
+    }
+
+    #[test]
+    fn k23_grammar_writes_the_group_then_the_quote_then_the_text() {
+        let grammar = summary_grammar(MAX_SENTENCES);
+        assert!(grammar.contains(
+            r#"sentence ::= "{\"group\":\"" group "\",\"quote\":\"" char{1,240} "\",\"text\":\"" char{1,300} "\"}""#
+        ));
+        assert!(grammar.contains(r#"group ::= "found" | "do" | "warning" | "medicine""#));
+    }
+
+    #[test]
+    fn k23_reads_a_quote_first_summary_and_keeps_only_text_and_quote() {
+        let whole = r#"{"sentences":[{"group":"found","quote":"a b","text":"One."},{"group":"do","quote":"c","text":"Two."}]}"#;
+        let one = Sentence {
+            text: "One.".into(),
+            quote: "a b".into(),
+        };
+        let two = Sentence {
+            text: "Two.".into(),
+            quote: "c".into(),
+        };
+        assert_eq!(read_summary(whole, false), Some(vec![one.clone(), two]));
+        let capped = r#"{"sentences":[{"group":"found","quote":"a b","text":"One."},{"group":"do","quote":"c","te"#;
+        assert_eq!(read_summary(capped, true), Some(vec![one]));
     }
 
     #[test]
