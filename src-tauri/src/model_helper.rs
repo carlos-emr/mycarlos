@@ -445,17 +445,16 @@ const SUMMARY_ORDER: &str =
      document tells the patient to do it: a doctor's name or signature, a printed, collected or \
      reported date, or a medicine already given is not an instruction.";
 
-/// K15 (round-4 candidate on E5): in a hospital record, the patient's instructions and medicine
-/// changes come only from the going-home part. On a messy long hospital record, E5 turned orders
-/// written during the stay into instructions for the patient (stop a medicine that restarts at
-/// discharge, take one that was only given in hospital). The rule names no medicine, test or
-/// letter: it describes the parts of a hospital record in general words, and says what to do
-/// when a record has no going-home part.
+/// K15b (round-4 candidate on E5, after K15's screen): the going-home rule applies only to a
+/// hospital record that has a going-home part, and findings are reported as before. K15's
+/// "if the record has no going-home part, say nothing about orders written during the stay" also
+/// made the model leave out findings in documents that are not hospital records (reports, lab
+/// results, referrals). The rule names no medicine, test or letter.
 const SUMMARY_DISCHARGE_PART: &str =
-    "In a hospital record, take the patient's instructions and any medicine change only from the \
-     going-home part (the discharge summary, the discharge medicines and the follow-up); orders \
-     written during the stay are not instructions for the patient. If the record has no \
-     going-home part, say nothing about orders written during the stay.";
+    "If the document is a hospital record with a going-home part (a discharge summary, discharge \
+     medicines or follow-up), take the patient's instructions and any medicine change only from \
+     that part; orders written during the stay are not instructions for the patient. This is \
+     only about instructions: in every document, still say what the document found, as above.";
 
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
@@ -1122,10 +1121,10 @@ mod tests {
     }
 
     #[test]
-    fn k15_is_e5_with_instructions_only_from_the_going_home_part() {
-        // K15 = E5 word for word (E2 + parts (a), (b) and (c) + L1 and L2), with one sentence pair
-        // after part (a): instructions and medicine changes come only from a hospital record's
-        // going-home part, and stay orders are left out when there is none.
+    fn k15b_is_e5_with_instructions_only_from_a_records_going_home_part() {
+        // K15b = E5 word for word (E2 + parts (a), (b) and (c) + L1 and L2), with one sentence pair
+        // after part (a): for a hospital record with a going-home part, instructions and medicine
+        // changes come only from that part, and findings are reported as before.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1135,12 +1134,12 @@ mod tests {
              problem or diagnosis and the key results, each with its number and unit. Then say \
              what the patient must do and when, only where the document tells the patient to do \
              it: a doctor's name or signature, a printed, collected or reported date, or a \
-             medicine already given is not an instruction. In a hospital record, take the \
-             patient's instructions and any medicine change only from the going-home part (the \
-             discharge summary, the discharge medicines and the follow-up); orders written \
-             during the stay are not instructions for the patient. If the record has no \
-             going-home part, say nothing about orders written during the stay. Put one fact in \
-             each sentence. When \
+             medicine already given is not an instruction. If the document is a hospital \
+             record with a going-home part (a discharge summary, discharge medicines or \
+             follow-up), take the patient's instructions and any medicine change only from that \
+             part; orders written during the stay are not instructions for the patient. This is \
+             only about instructions: in every document, still say what the document found, as \
+             above. Put one fact in each sentence. When \
              a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
              a group of medicines, keep every condition, every medicine or group, and every \
              number or limit the document gives for it; if they do not all fit in one sentence, \
@@ -1163,6 +1162,7 @@ mod tests {
         // The rule is general: no number, and no medicine, test or section heading from a test
         // letter; the system text is E5's, unchanged.
         assert!(!SUMMARY_DISCHARGE_PART.contains(|c: char| c.is_ascii_digit()));
+        assert!(!SUMMARY_DISCHARGE_PART.contains("say nothing"));
         for letter_word in ["emergency", "sliding", "IV", "hold", "Hold", "tomorrow"] {
             assert!(
                 !SUMMARY_DISCHARGE_PART.contains(letter_word),
