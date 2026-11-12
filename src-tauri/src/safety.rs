@@ -451,7 +451,10 @@ fn step_words(pages: &str, start: usize, at: usize, rule: &str, trigs: &[Vec<Str
         .min()
         .unwrap_or(0);
     let head: String = rule.chars().take(first).collect();
-    let lead = format!("{} {head}", &pages[start..at]);
+    // A rule whose sentence starts at its bullet marker has no lead-in span: rule_start returns
+    // the step's body, just past the marker, so `start` can lie past `at`. Slicing would panic.
+    let lead_in = if start <= at { &pages[start..at] } else { "" };
+    let lead = format!("{lead_in} {head}");
     let lead_words: Vec<String> = tokens(&lead).into_iter().map(|t| t.0).collect();
     let after: Vec<&String> = condition.map_or(Vec::new(), |(_, end)| {
         toks.iter().filter(|t| t.1 >= end).map(|t| &t.0).collect()
@@ -865,5 +868,46 @@ mod tests {
     #[test]
     fn given_a_french_rule_when_checked_then_it_is_not_checked() {
         check_case("a_french_rule_is_not_checked");
+    }
+
+    /// The FAKE long hospital record's going-home list, as the runner read it: the last step's
+    /// sentence starts at its "- " marker, while its quote starts after the marker. The real
+    /// hard-10 and messy runs panicked here ("byte range starts at 21344 but ends at 21342").
+    const BULLETED_RULES: &str = "- Do not take loperamide (Imodium) for the diarrhea.\n\
+        - Do not restart perindopril until your family physician tells you to.\n\
+        - Drink about 6 to 8 glasses of fluid a day unless told otherwise.\n\
+        - Check your blood sugar once a day before breakfast and write it down; bring the list \
+        to your family physician.\n\
+        - Come back to the emergency department if you have a fever over 38 °C, shivers, new \
+        confusion, pain in your side, if you pass very little urine, or if you have more than 6 \
+        loose stools a day or blood in the stool.";
+
+    #[test]
+    fn given_a_rule_whose_sentence_starts_at_its_bullet_when_checked_then_it_is_quoted_without_a_panic() {
+        let mut lines = vec![Line {
+            text: "Drink 6 to 8 glasses of fluid a day.".to_owned(),
+            quote: "Drink about 6 to 8 glasses of fluid a day".to_owned(),
+        }];
+        let log = check(BULLETED_RULES, &mut lines);
+        let rule = "Come back to the emergency department if you have a fever over 38 °C, shivers, new \
+            confusion, pain in your side, if you pass very little urine, or if you have more than 6 \
+            loose stools a day or blood in the stool.";
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].check, "get-help");
+        assert_eq!(log[0].after, quoted(rule));
+        assert_eq!(lines.last().map(|l| l.text.as_str()), Some(quoted(rule).as_str()));
+    }
+
+    #[test]
+    fn given_a_bulleted_rule_carried_whole_when_checked_then_nothing_is_added() {
+        let mut lines = vec![Line {
+            text: "Come back to the emergency department if you have a fever over 38 °C, shivers, \
+                new confusion, pain in your side, if you pass very little urine, or if you have more \
+                than 6 loose stools a day or blood in the stool."
+                .to_owned(),
+            quote: "Come back to the emergency department".to_owned(),
+        }];
+        assert!(check(BULLETED_RULES, &mut lines).is_empty());
+        assert_eq!(lines.len(), 1);
     }
 }
