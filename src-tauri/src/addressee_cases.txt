@@ -20,7 +20,7 @@ Yours,
 Dr. Iris Oakfield
 sentence: Please phone me on 555-0137 ext. 4 if anything is unclear.
 quote: Please phone me on 555-0137 ext. 4
-expect: The letter gives the writing doctor's phone line for your doctor: 555-0137 ext. 4.
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
 kind: writer-contact
 ===
 name: the_writers_line_as_a_patient_task
@@ -31,7 +31,7 @@ Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
 Please phone me on 555-0137 ext. 4 if anything is unclear, Theo.
 sentence: You must call Dr. Marlow at 555-0137 ext. 4 if anything is unclear.
 quote: phone me on 555-0137 ext. 4 if anything is unclear
-expect: The letter gives the writing doctor's phone line for your doctor: 555-0137 ext. 4.
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
 kind: writer-contact
 ===
 name: the_writer_named_in_the_sentence
@@ -47,7 +47,7 @@ Dr. Iris Oakfield, MD
 Testville Family Practice
 sentence: Call Dr. Iris Oakfield at 555-0137 ext. 4 if anything is unclear.
 quote: Please phone me on 555-0137 ext. 4
-expect: The letter gives Dr. Iris Oakfield's phone line for your doctor: 555-0137 ext. 4.
+expect: The letter gives Dr. Iris Oakfield's phone line for the receiving doctor.
 kind: writer-contact
 ===
 name: the_writers_line_said_as_hers

@@ -8,16 +8,19 @@
 //! greeting:
 //! - **The writer's own line.** The quote's sentence in the letter offers the writer's phone
 //!   ("please call me …", "me joindre …") and the summary sentence gives that number as one for
-//!   the patient to call: it becomes "The letter gives the writing doctor's phone line for your
-//!   doctor: <the number, as written>." (with "Dr. <name>" for "the writing doctor" when the
-//!   sentence names the doctor who signed the letter), so the number is kept and is plainly the
-//!   other doctor's, never one for the patient to call.
+//!   the patient to call: it becomes "The letter gives the writing doctor's phone line for the
+//!   receiving doctor." ("Dr. <name>'s phone line" when the sentence names the doctor who signed
+//!   the letter). The number is left out: **Ben's decision (12 Nov) overrides the rule below for
+//!   this one case only**, the writer's own line rewritten as a clinician's line, so the
+//!   sentence can never read as a number for the patient to call.
 //! - **The letter's "you".** The quote's sentence speaks to the doctor it is written to ("would
 //!   you …", "pourriez-vous …") and the summary sentence keeps that "you" as the one asked ("asks
 //!   if you would …", "asks you to …"): only that "you" becomes "the receiving doctor".
 //!
-//! Never: a sentence dropped, a number, dose, phone number or medicine name changed or left out,
-//! a sentence with an emergency number or word touched, or any other sentence changed. A summary
+//! Never (but for the writer's own phone line above): a sentence dropped, a number, dose, phone
+//! number or medicine name changed or left out, a sentence with an emergency number or word
+//! touched, or any other sentence changed. A writer's-line sentence with any other number in it
+//! (a dose, a date) is left as it is, so only the writer's phone number is ever left out. A summary
 //! in another language than English is left as it is (the wording is English).
 //!
 //! Pure std, so its tests run on their own: `rustc --edition 2021 --test src/addressee.rs`.
@@ -542,7 +545,8 @@ fn contact_rewrite(pages: &str, source: &str, sentence: &str) -> Option<String> 
     if spans.is_empty() || !spans.iter().all(from_source) || !worded_as_patients_call(sentence) {
         return None;
     }
-    // Every number of the sentence must be in one of its phone numbers: nothing else is dropped.
+    // Every number of the sentence must be in one of its phone numbers: only the writer's phone
+    // number is left out (Ben, 12 Nov), never anything else.
     let mut outside = sentence.to_owned();
     for &(a, _, b) in spans.iter().rev() {
         outside.replace_range(a..b, " ");
@@ -550,11 +554,6 @@ fn contact_rewrite(pages: &str, source: &str, sentence: &str) -> Option<String> 
     if outside.chars().any(|c| c.is_ascii_digit()) {
         return None;
     }
-    let numbers = spans
-        .iter()
-        .map(|&(a, _, b)| &sentence[a..b])
-        .collect::<Vec<_>>()
-        .join(" or ");
     // The writer by name only when the sentence names the doctor who signed the letter (a
     // summary often names the other doctor instead).
     let sentence_words = words(sentence);
@@ -564,11 +563,9 @@ fn contact_rewrite(pages: &str, source: &str, sentence: &str) -> Option<String> 
         !surname_words.is_empty() && surname_words.iter().all(|w| sentence_words.contains(w))
     });
     Some(match named {
-        Some(name) => {
-            format!("The letter gives Dr. {name}'s phone line for your doctor: {numbers}.")
-        }
+        Some(name) => format!("The letter gives Dr. {name}'s phone line for the receiving doctor."),
         None => {
-            format!("The letter gives the writing doctor's phone line for your doctor: {numbers}.")
+            "The letter gives the writing doctor's phone line for the receiving doctor.".to_owned()
         }
     })
 }
@@ -744,19 +741,19 @@ mod tests {
     }
 
     #[test]
-    fn given_a_letter_to_a_doctor_when_the_summary_copies_the_writers_call_me_line_then_it_says_the_letter_gives_the_writing_doctors_line_for_your_doctor(
+    fn given_a_letter_to_a_doctor_when_the_summary_copies_the_writers_call_me_line_then_it_says_the_letter_gives_the_writing_doctors_line_for_the_receiving_doctor(
     ) {
         check("a_copied_call_me_line");
     }
 
     #[test]
-    fn given_a_letter_to_a_doctor_when_the_summary_makes_the_writers_line_a_patient_task_then_it_says_the_letter_gives_the_writing_doctors_line_for_your_doctor(
+    fn given_a_letter_to_a_doctor_when_the_summary_makes_the_writers_line_a_patient_task_then_it_says_the_letter_gives_the_writing_doctors_line_for_the_receiving_doctor(
     ) {
         check("the_writers_line_as_a_patient_task");
     }
 
     #[test]
-    fn given_a_summary_that_names_the_doctor_who_signed_the_letter_when_it_gives_her_line_to_call_then_it_says_the_letter_gives_dr_names_line_for_your_doctor(
+    fn given_a_summary_that_names_the_doctor_who_signed_the_letter_when_it_gives_her_line_to_call_then_it_says_the_letter_gives_dr_names_line_for_the_receiving_doctor(
     ) {
         check("the_writer_named_in_the_sentence");
     }
