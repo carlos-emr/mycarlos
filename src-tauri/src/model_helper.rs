@@ -471,13 +471,19 @@ const SUMMARY_DISCHARGE_PART: &str =
 /// patient's ("asks if you would recommend ..."), or an open question while the letter tells the
 /// patient what to do, and a lab's note to the ordering doctor became "you must review ...". Such a
 /// line may appear, said as that doctor's. Nothing in it leaves a finding or a line out.
+///
+/// K16b (on K16): the screen found K16 turning a lab's comments into "You should review your
+/// medicine ..." where E5 wrote "The report suggests ...", and writing "you" in 20 sentences (K15c
+/// 4 to 9, E5 1): K16's sentence says "you" seven times. K16b says the same in the third person, as
+/// part (a) does ("the patient"), and names a report's comment to the doctor who ordered the test.
 const SUMMARY_TO_A_DOCTOR: &str =
-    "Some lines are written to a doctor, not to you: a question, request or suggestion to \
-     another doctor or to the doctor who ordered a test, and a phone number the writer gives \
-     that doctor (\"you\" and \"me\" in such a line are the doctors). Say such a line as that \
-     doctor's, naming who asks or suggests it, never as something you must or should do, never \
-     as a question to you, and never as a number for you to call; where the document tells you \
-     what to do about the same thing, say that too.";
+    "Some lines are written to a doctor, not to the patient: a question, request or suggestion \
+     to another doctor, a report's comment to the doctor who ordered the test, and a phone number \
+     the writer gives a doctor (\"you\" and \"me\" in such a line mean the doctors). Say such a \
+     line as theirs, naming who asks or suggests it, as in \"the report suggests\" or \"the \
+     writer asks the other doctor whether\", never as something the patient must or should do, \
+     a question to the patient, or a number for the patient to call; where the document tells \
+     the patient what to do about the same thing, say that too.";
 
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
@@ -1145,11 +1151,12 @@ mod tests {
     }
 
     #[test]
-    fn k16_is_k15c_with_lines_written_to_a_doctor_said_as_theirs() {
-        // K16 = K15c word for word (K15b with K12b's no-findings sentence right after part (a)),
-        // with one sentence after the going-home pair: a question, request or suggestion written
-        // to a doctor, and a phone number the writer gives that doctor, are said as that
-        // doctor's, never as the patient's task, question or number to call.
+    fn k16b_is_k15c_with_lines_written_to_a_doctor_said_as_theirs_in_the_third_person() {
+        // K16b = K15c word for word (K15b with K12b's no-findings sentence right after part (a)),
+        // with one sentence after the going-home pair, in the third person as part (a): a
+        // question, request or suggestion written to a doctor, a report's comment to the doctor
+        // who ordered the test, and a phone number the writer gives a doctor, are said as theirs,
+        // never as the patient's task, question or number to call.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1166,13 +1173,14 @@ mod tests {
              follow-up), take the patient's instructions and any medicine change only from that \
              part; orders written during the stay are not instructions for the patient. This is \
              only about instructions: in every document, still say what the document found, as \
-             above. Some lines are written to a doctor, not to you: a question, request or \
-             suggestion to another doctor or to the doctor who ordered a test, and a phone \
-             number the writer gives that doctor (\"you\" and \"me\" in such a line are the \
-             doctors). Say such a line as that doctor's, naming who asks or suggests it, never \
-             as something you must or should do, never as a question to you, and never as a \
-             number for you to call; where the document tells you what to do about the same \
-             thing, say that too. Put one fact in each sentence. When \
+             above. Some lines are written to a doctor, not to the patient: a question, \
+             request or suggestion to another doctor, a report's comment to the doctor who \
+             ordered the test, and a phone number the writer gives a doctor (\"you\" and \"me\" \
+             in such a line mean the doctors). Say such a line as theirs, naming who asks or \
+             suggests it, as in \"the report suggests\" or \"the writer asks the other doctor \
+             whether\", never as something the patient must or should do, a question to the \
+             patient, or a number for the patient to call; where the document tells the patient \
+             what to do about the same thing, say that too. Put one fact in each sentence. When \
              a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
              a group of medicines, keep every condition, every medicine or group, and every \
              number or limit the document gives for it; if they do not all fit in one sentence, \
@@ -1205,6 +1213,9 @@ mod tests {
         ] {
             assert!(!SUMMARY_TO_A_DOCTOR.contains(letter_word), "{letter_word}");
         }
+        assert!(
+            !SUMMARY_TO_A_DOCTOR.contains("to you") && !SUMMARY_TO_A_DOCTOR.contains("you must")
+        );
         for letter_word in ["emergency", "sliding", "IV", "hold", "Hold", "tomorrow"] {
             assert!(
                 !SUMMARY_DISCHARGE_PART.contains(letter_word),
