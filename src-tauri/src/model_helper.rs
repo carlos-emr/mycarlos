@@ -445,6 +445,14 @@ const SUMMARY_ORDER: &str =
      document tells the patient to do it: a doctor's name or signature, a printed, collected or \
      reported date, or a medicine already given is not an instruction.";
 
+/// K15c (on K15b): a document with no findings starts with what to do; K12b's sentence word for
+/// word, as K13c has it (on the short French instructions-only letter, K15b wrote instructions
+/// as findings and lost the fever rule, as K11 did; K13c's local run kept all five). E5's part (a)
+/// is one constant, so it stands right after part (a), before the going-home sentence.
+const SUMMARY_NO_FINDINGS: &str =
+    "If the document reports no findings (an instruction is not a finding), write no sentence \
+     about findings and start with what you must do.";
+
 /// K15b (round-4 candidate on E5, after K15's screen): the going-home rule applies only to a
 /// hospital record that has a going-home part, and findings are reported as before. K15's
 /// "if the record has no going-home part, say nothing about orders written during the stay" also
@@ -473,7 +481,8 @@ const SUMMARY_SAME_SENTENCE: &str =
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
-         sentences (fewer if the document is short). {SUMMARY_ORDER} {SUMMARY_DISCHARGE_PART} \
+         sentences (fewer if the document is short). {SUMMARY_ORDER} {SUMMARY_NO_FINDINGS} \
+         {SUMMARY_DISCHARGE_PART} \
          Put one fact in each sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each \
          sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 words, \
          exactly as written (same spelling, numbers, accents and punctuation, no '...' and no \
@@ -1121,10 +1130,10 @@ mod tests {
     }
 
     #[test]
-    fn k15b_is_e5_with_instructions_only_from_a_records_going_home_part() {
-        // K15b = E5 word for word (E2 + parts (a), (b) and (c) + L1 and L2), with one sentence pair
-        // after part (a): for a hospital record with a going-home part, instructions and medicine
-        // changes come only from that part, and findings are reported as before.
+    fn k15c_is_k15b_with_no_findings_first() {
+        // K15c = K15b word for word (E5 with, after part (a), the going-home sentence pair), with
+        // K12b's no-findings sentence (as K13c has it) right after part (a): a document that
+        // reports no findings starts with what to do.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1134,7 +1143,9 @@ mod tests {
              problem or diagnosis and the key results, each with its number and unit. Then say \
              what the patient must do and when, only where the document tells the patient to do \
              it: a doctor's name or signature, a printed, collected or reported date, or a \
-             medicine already given is not an instruction. If the document is a hospital \
+             medicine already given is not an instruction. If the document reports no findings \
+             (an instruction is not a finding), write no sentence about findings and start with \
+             what you must do. If the document is a hospital \
              record with a going-home part (a discharge summary, discharge medicines or \
              follow-up), take the patient's instructions and any medicine change only from that \
              part; orders written during the stay are not instructions for the patient. This is \
@@ -1163,6 +1174,7 @@ mod tests {
         // letter; the system text is E5's, unchanged.
         assert!(!SUMMARY_DISCHARGE_PART.contains(|c: char| c.is_ascii_digit()));
         assert!(!SUMMARY_DISCHARGE_PART.contains("say nothing"));
+        assert!(summary_prompt("English", MAX_SENTENCES).contains(SUMMARY_NO_FINDINGS));
         for letter_word in ["emergency", "sliding", "IV", "hold", "Hold", "tomorrow"] {
             assert!(
                 !SUMMARY_DISCHARGE_PART.contains(letter_word),
