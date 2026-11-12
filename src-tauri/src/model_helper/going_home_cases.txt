@@ -1,0 +1,11 @@
+# K18's gate, shared cases (synthetic text only): "<name>: on|off <document>", lines separated by " / ", pages by " // ".
+discharge_summary_title: on Testville General Hospital - Discharge Summary / Patient: Sam Quill / Admitted with a chest infection and treated with antibiotics.
+discharge_medications_on_a_later_page: on Admission note / She was admitted on Monday. // Medications at discharge / - Amoxicillin by mouth twice a day
+polish_wypis_heading: on Szpital Testowy / Leki przy wypisie / - Amoksycylina
+french_retour_a_domicile: on Consignes pour le retour à domicile / Buvez beaucoup d'eau.
+french_instruction_list: off Continuer le médicament une fois par jour. / Arrêter l'anti-inflammatoire. / Si la fièvre revient, contacter la clinique.
+referral_letter: off Dear Dr. Marlow, / Thank you for seeing Sam Quill for loud snoring. / Questions / Would you advise a sleep study? / Sincerely, / Dr. Iris Oakfield
+discharge_date_line: off Clinic letter / Admitted: 2026-10-01     Discharged: 2026-10-05 / Thank you for seeing her.
+discharge_in_a_sentence: off Clinic letter / She will be ready for discharge when her fever settles.
+discharge_in_a_long_line: off Clinic letter / Plan for her care at home after the hospital discharge next week with the community nurse
+discharge_inside_a_word: off Clinic letter / Undischargeable notes / Thank you for seeing her.

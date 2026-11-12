@@ -42,6 +42,9 @@ use std::io::{BufRead, Read, Write};
 mod confine;
 #[cfg(any(target_os = "linux", windows))]
 mod engine;
+// K18 (evaluation only): whether a document has a going-home part (pure std; tested on its own).
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+pub(crate) mod going_home;
 
 /// The first argument that starts this executable as the model helper.
 pub const HELPER_ARG: &str = "--mycarlos-model-helper";
@@ -445,6 +448,16 @@ const SUMMARY_ORDER: &str =
      document tells the patient to do it: a doctor's name or signature, a printed, collected or \
      reported date, or a medicine already given is not an instruction.";
 
+/// K15b's going-home rule, word for word. K18 puts it in the prompt only for a document with a
+/// going-home part (`going_home`, decided in code), so every other document gets E5's request
+/// byte for byte: in every prompt (K15b) it cost a fever rule on a short French instruction list
+/// and added wrong sentences on letters it was never for.
+const SUMMARY_DISCHARGE_PART: &str =
+    "If the document is a hospital record with a going-home part (a discharge summary, discharge \
+     medicines or follow-up), take the patient's instructions and any medicine change only from \
+     that part; orders written during the stay are not instructions for the patient. This is \
+     only about instructions: in every document, still say what the document found, as above.";
+
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
 const SUMMARY_WHOLE_RULES: &str =
@@ -468,6 +481,27 @@ pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
          spelling, numbers, accents and punctuation, no '...' and no joined pieces), in the \
          document's own language (only the quote is copied; the sentence itself is written in \
          {language}). If you cannot find such a piece for a sentence, leave that sentence out.\n\n\
+         Reply only with JSON in this shape: \
+         {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
+         Document:\n<<<\n{SLOT}\n>>>\n\nWrite every \"text\" in {language}, even though the \
+         document may be in another language. Only \"quote\" stays in the document's own \
+         language, copied exactly."
+    )
+}
+
+/// K18: the summary request for a document with a going-home part (`going_home`): K15b's,
+/// copied byte for byte (E5's with the going-home rule right after part (a)).
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+pub(crate) fn summary_prompt_going_home(language: &str, max_sentences: usize) -> String {
+    format!(
+        "Summarize this document for the patient in {language}, in at most {max_sentences} short \
+         sentences (fewer if the document is short). {SUMMARY_ORDER} {SUMMARY_DISCHARGE_PART} \
+         Put one fact in each sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each \
+         sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 words, \
+         exactly as written (same spelling, numbers, accents and punctuation, no '...' and no \
+         joined pieces), in the document's own language (only the quote is copied; the sentence \
+         itself is written in {language}). If you cannot find such a piece for a sentence, leave \
+         that sentence out.\n\n\
          Reply only with JSON in this shape: \
          {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
          Document:\n<<<\n{SLOT}\n>>>\n\nWrite every \"text\" in {language}, even though the \
@@ -1106,6 +1140,61 @@ mod tests {
             CONTEXT_TOKENS as usize - 300 - SUMMARY_TOKENS - PROMPT_MARGIN
         );
         assert_eq!(document_budget(9_000, SUMMARY_TOKENS), 0);
+    }
+
+    #[test]
+    fn k18_asks_k15bs_request_for_a_going_home_part_and_e5s_otherwise() {
+        // K18: a document with a going-home part gets K15b's request word for word (E5 with the
+        // going-home pair after part (a)); every other document gets E5's, unchanged (the E5 test
+        // below still pins it), and E5's request never has the pair.
+        assert!(!summary_prompt("English", MAX_SENTENCES).contains(SUMMARY_DISCHARGE_PART));
+        let prompt = summary_prompt_going_home("English", MAX_SENTENCES);
+        let (before, after) = prompt.split_once(SLOT).unwrap();
+        assert_eq!(
+            before,
+            "Summarize this document for the patient in English, in at most 10 short sentences \
+             (fewer if the document is short). First say what the document found: the main \
+             problem or diagnosis and the key results, each with its number and unit. Then say \
+             what the patient must do and when, only where the document tells the patient to do \
+             it: a doctor's name or signature, a printed, collected or reported date, or a \
+             medicine already given is not an instruction. If the document is a hospital \
+             record with a going-home part (a discharge summary, discharge medicines or \
+             follow-up), take the patient's instructions and any medicine change only from that \
+             part; orders written during the stay are not instructions for the patient. This is \
+             only about instructions: in every document, still say what the document found, as \
+             above. Put one fact in each sentence. When \
+             a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
+             a group of medicines, keep every condition, every medicine or group, and every \
+             number or limit the document gives for it; if they do not all fit in one sentence, \
+             leave that sentence out. Say which, how much and when in the same sentence: the \
+             test or \
+             medicine by name, the number with its unit, the date or time. For each sentence, \
+             copy into \"quote\" one continuous piece of the document, 3 to 25 words, exactly \
+             as written (same spelling, numbers, accents and punctuation, no '...' and no \
+             joined pieces), in the document's own language (only the quote is copied; the \
+             sentence itself is written in English). If you cannot find such a piece for a \
+             sentence, leave that sentence out.\n\nReply only with JSON in this shape: \
+             {\"sentences\": [{\"text\": \"...\", \"quote\": \"...\"}]}\n\nDocument:\n<<<\n"
+        );
+        assert_eq!(
+            after,
+            "\n>>>\n\nWrite every \"text\" in English, even though the document may be in \
+             another language. Only \"quote\" stays in the document's own language, copied \
+             exactly."
+        );
+        // The rule is general: no number, and no medicine, test or section heading from a test
+        // letter; the system text is E5's, unchanged.
+        assert!(!SUMMARY_DISCHARGE_PART.contains(|c: char| c.is_ascii_digit()));
+        assert!(!SUMMARY_DISCHARGE_PART.contains("say nothing"));
+        for letter_word in ["emergency", "sliding", "IV", "hold", "Hold", "tomorrow"] {
+            assert!(
+                !SUMMARY_DISCHARGE_PART.contains(letter_word),
+                "{letter_word}"
+            );
+        }
+        assert!(
+            SYSTEM_PROMPT.starts_with("You help patients understand their own medical documents.")
+        );
     }
 
     #[test]

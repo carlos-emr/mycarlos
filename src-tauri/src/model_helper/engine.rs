@@ -3,9 +3,10 @@
 
 use super::{
     answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
-    read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
-    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    read_explanation, read_summary, summary_grammar, summary_prompt, summary_prompt_going_home,
+    thinking_off, without_slot, ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats,
+    ANSWER_HASH_START, BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT,
+    SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -475,7 +476,15 @@ impl Engine {
     ) -> Result<(Vec<Sentence>, Fit), Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
         let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
-        let user = summary_prompt(language, max_sentences);
+        // K18: K15b's going-home rule only for a document with a going-home part, decided in code on
+        // all the pages sent, before they are fitted; E5's request otherwise.
+        let going_home =
+            super::going_home::has_going_home_part(pages.iter().map(|page| page.text.as_str()));
+        let user = if going_home {
+            summary_prompt_going_home(language, max_sentences)
+        } else {
+            summary_prompt(language, max_sentences)
+        };
         let around = self.prompt_tokens(&user, &[""])?.0.len();
         let budget = document_budget(around, SUMMARY_TOKENS);
         let pages: Vec<Page> = pages
