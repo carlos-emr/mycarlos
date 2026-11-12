@@ -459,6 +459,14 @@ const SUMMARY_FOUND: &str =
      explain a medical term are not one), and if the document gives none, write no sentence \
      about what it means.";
 
+/// K13 (round-4 candidate on K11): a document with no findings starts with what to do, K12b's
+/// sentence word for word. On the short French instructions-only letter K11 wrote instructions as
+/// findings and lost the fever rule; K12b, with this sentence, kept all five. K12b's schedule,
+/// strength and other-doctor sentences are not taken.
+const SUMMARY_NO_FINDINGS: &str =
+    "If the document reports no findings (an instruction is not a finding), write no sentence \
+     about findings and start with what you must do.";
+
 /// E6: then every instruction, one in each sentence, with E5's list of what is not an
 /// instruction kept word for word.
 const SUMMARY_TO_DO: &str =
@@ -483,6 +491,14 @@ const SUMMARY_WHOLE_RULES: &str =
      limit the document gives for it; if they do not all fit in one sentence, leave that \
      sentence out.";
 
+/// K13: every rule about when to get help or call has a sentence of its own, K12b's sentence word
+/// for word. K11 lost "if the fever returns, contact the clinic" on the short French letter.
+/// K2's warning sentence, right after it and unchanged, still says how to write it.
+const SUMMARY_CALL_RULES: &str =
+    "Every rule about when to get help or call (a rule that says if or when to contact someone) \
+     gets its own sentence, never joined to another instruction and never left out, however \
+     short the document.";
+
 /// K2 (round-4 candidate on E6, board "Try"): a warning about when to get help is written in the
 /// document's own words, word for word, not reworded. Reworded warnings lost reasons and
 /// conditions in round 2 (the weight call without "or if your breathing or ankle swelling gets
@@ -499,7 +515,8 @@ pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
          sentences (fewer if the document is short). {SUMMARY_PLAIN} {SUMMARY_FOUND} \
-         {SUMMARY_TO_DO} {SUMMARY_OTHER_DOCTOR} {SUMMARY_WHOLE_RULES} {SUMMARY_WARNING} For each \
+         {SUMMARY_NO_FINDINGS} {SUMMARY_TO_DO} {SUMMARY_OTHER_DOCTOR} {SUMMARY_WHOLE_RULES} \
+         {SUMMARY_CALL_RULES} {SUMMARY_WARNING} For each \
          sentence, copy into \
          \"quote\" one continuous piece of the document, 3 to 25 words, exactly as written (same \
          spelling, numbers, accents and punctuation, no '...' and no joined pieces), in the \
@@ -1146,11 +1163,11 @@ mod tests {
     }
 
     #[test]
-    fn k11_is_k2_with_meanings_only_from_the_document() {
-        // K11 = K2 word for word (E6 with warnings in the document's own words), except the
-        // found-first sentence: what a finding means for you only where the document gives it, no
-        // cause, diagnosis, judgement or reassurance of the model's own, and no meaning sentence
-        // when the document gives none. A term's plain explanation stays.
+    fn k13_is_k11_with_no_findings_first_and_get_help_rules_on_their_own() {
+        // K13 = K11 word for word (K2 with meanings only from the document), with two of K12b's
+        // sentences added in K12b's places: a document with no findings starts with what to do,
+        // and every rule about when to get help or call has a sentence of its own. K12b's
+        // schedule, strength and other-doctor sentences are not in it.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1164,7 +1181,8 @@ mod tests {
              where the document itself gives that meaning or reason: add no cause, diagnosis, \
              judgement or reassurance of your own (a few plain words that explain a medical term \
              are not one), and if the document gives none, write no sentence about what it \
-             means. Then say what \
+             means. If the document reports no findings (an instruction is not a finding), \
+             write no sentence about findings and start with what you must do. Then say what \
              you must do and when, only where the document tells you to, one instruction in \
              each sentence: every medicine that is new, changed, stopped or on hold (say \
              stopped or on hold), every test or visit with its date, and every rule to follow. \
@@ -1175,7 +1193,10 @@ mod tests {
              sentence gives a rule with a condition (if, when, unless) or names a medicine or \
              a group of medicines, keep every condition, every medicine or group, and every \
              number or limit the document gives for it; if they do not all fit in one \
-             sentence, leave that sentence out. For a warning about when to get help or call, \
+             sentence, leave that sentence out. Every rule about when to get help or call (a \
+             rule that says if or when to contact someone) gets its own sentence, never joined \
+             to another instruction and never left out, however short the document. For a \
+             warning about when to get help or call, \
              write it in the document's own words, word for word (translated only when the \
              document is in another language), with every reason it lists, in one sentence or \
              in two sentences next to each other; if they do not fit, say that the document \
@@ -1191,6 +1212,8 @@ mod tests {
         assert!(!prompt.contains("Say which, how much and when"));
         assert!(!prompt.contains("give every reason the document lists"));
         assert!(!prompt.contains("found and what it means for you"));
+        assert!(prompt.contains(SUMMARY_NO_FINDINGS) && prompt.contains(SUMMARY_CALL_RULES));
+        assert!(!prompt.contains("every step of a schedule") && !prompt.contains("own strength"));
         // Ben's plain-language goal stays for everything else: a term keeps its plain words.
         assert!(prompt.contains(SUMMARY_PLAIN) && prompt.contains(SUMMARY_WHOLE_RULES));
         assert_eq!(
