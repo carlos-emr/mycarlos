@@ -459,6 +459,14 @@ const SUMMARY_FOUND: &str =
      explain a medical term are not one), and if the document gives none, write no sentence \
      about what it means.";
 
+/// K13c (round-4 candidate on K11): a document with no findings starts with what to do, K12b's
+/// sentence word for word, and nothing else added. On the short French instructions-only letter
+/// K11 wrote instructions as findings and lost the fever rule. K13b (K12b's get-help sentence
+/// alone) lost findings on the screen; this tests the other sentence alone.
+const SUMMARY_NO_FINDINGS: &str =
+    "If the document reports no findings (an instruction is not a finding), write no sentence \
+     about findings and start with what you must do.";
+
 /// E6: then every instruction, one in each sentence, with E5's list of what is not an
 /// instruction kept word for word.
 const SUMMARY_TO_DO: &str =
@@ -499,7 +507,8 @@ pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
          sentences (fewer if the document is short). {SUMMARY_PLAIN} {SUMMARY_FOUND} \
-         {SUMMARY_TO_DO} {SUMMARY_OTHER_DOCTOR} {SUMMARY_WHOLE_RULES} {SUMMARY_WARNING} For each \
+         {SUMMARY_NO_FINDINGS} {SUMMARY_TO_DO} {SUMMARY_OTHER_DOCTOR} {SUMMARY_WHOLE_RULES} \
+         {SUMMARY_WARNING} For each \
          sentence, copy into \
          \"quote\" one continuous piece of the document, 3 to 25 words, exactly as written (same \
          spelling, numbers, accents and punctuation, no '...' and no joined pieces), in the \
@@ -1146,11 +1155,10 @@ mod tests {
     }
 
     #[test]
-    fn k11_is_k2_with_meanings_only_from_the_document() {
-        // K11 = K2 word for word (E6 with warnings in the document's own words), except the
-        // found-first sentence: what a finding means for you only where the document gives it, no
-        // cause, diagnosis, judgement or reassurance of the model's own, and no meaning sentence
-        // when the document gives none. A term's plain explanation stays.
+    fn k13c_is_k11_with_no_findings_first() {
+        // K13c = K11 word for word (K2 with meanings only from the document), with one of K12b's
+        // sentences added in K12b's place: a document with no findings starts with what to do.
+        // K12b's get-help, schedule, strength and other-doctor sentences are not in it.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1164,7 +1172,8 @@ mod tests {
              where the document itself gives that meaning or reason: add no cause, diagnosis, \
              judgement or reassurance of your own (a few plain words that explain a medical term \
              are not one), and if the document gives none, write no sentence about what it \
-             means. Then say what \
+             means. If the document reports no findings (an instruction is not a finding), \
+             write no sentence about findings and start with what you must do. Then say what \
              you must do and when, only where the document tells you to, one instruction in \
              each sentence: every medicine that is new, changed, stopped or on hold (say \
              stopped or on hold), every test or visit with its date, and every rule to follow. \
@@ -1191,6 +1200,8 @@ mod tests {
         assert!(!prompt.contains("Say which, how much and when"));
         assert!(!prompt.contains("give every reason the document lists"));
         assert!(!prompt.contains("found and what it means for you"));
+        assert!(prompt.contains(SUMMARY_NO_FINDINGS) && !prompt.contains("gets its own sentence"));
+        assert!(!prompt.contains("every step of a schedule") && !prompt.contains("own strength"));
         // Ben's plain-language goal stays for everything else: a term keeps its plain words.
         assert!(prompt.contains(SUMMARY_PLAIN) && prompt.contains(SUMMARY_WHOLE_RULES));
         assert_eq!(
