@@ -1367,6 +1367,9 @@ pub mod engine_testing {
         let language =
             model_helper::language_name(lang).ok_or_else(|| format!("unknown language {lang}"))?;
         let prompt = model_helper::summary_prompt(language, model_helper::MAX_SENTENCES);
+        // K18: the request for a document with a going-home part (K15b's), chosen in code.
+        let going_home_prompt =
+            model_helper::summary_prompt_going_home(language, model_helper::MAX_SENTENCES);
         let grammar = model_helper::summary_grammar(model_helper::MAX_SENTENCES);
         let caps = serde_json::json!({
             "maxSentences": model_helper::MAX_SENTENCES,
@@ -1377,7 +1380,13 @@ pub mod engine_testing {
         });
         let caps_text = caps.to_string();
         let mut hash = Sha256::new();
-        for part in [model_helper::SYSTEM_PROMPT, &prompt, &grammar, &caps_text] {
+        for part in [
+            model_helper::SYSTEM_PROMPT,
+            &prompt,
+            &going_home_prompt,
+            &grammar,
+            &caps_text,
+        ] {
             hash.update((part.len() as u64).to_le_bytes());
             hash.update(part.as_bytes());
         }
@@ -1385,6 +1394,8 @@ pub mod engine_testing {
             "fingerprint": format!("{:x}", hash.finalize()),
             "systemPrompt": model_helper::SYSTEM_PROMPT,
             "summaryPrompt": prompt,
+            "summaryPromptGoingHome": going_home_prompt,
+            "promptGate": "going-home-1",
             "grammar": grammar,
             "caps": caps,
         }))
