@@ -140,3 +140,62 @@ summary:
 Call your doctor if your weight goes up by more than 2 kg in 3 days. || Call your doctor if your weight goes up
 expect:
 The document says: “Weigh yourself every morning. Call your doctor if your weight goes up by more than 2 kg in 3 days, or if your legs swell.”
+===
+name: a_first_step_left_out
+pages:
+Going home
+- For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Call 911 if chest pain lasts more than 5 minutes. || For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+expect:
+The document says: “For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.”
+===
+name: a_first_step_carried
+pages:
+Going home
+- For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Use the spray once for chest pain and call 911 if the pain is not gone after 5 minutes. || For chest pain, use the spray once
+expect:
+Use the spray once for chest pain and call 911 if the pain is not gone after 5 minutes.
+===
+name: a_first_step_in_the_sentence_before
+pages:
+Going home
+- For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+For chest pain, use your spray one time. || For chest pain, use the spray once
+Call 911 if the pain is not gone after 5 minutes. || If the pain is not gone after 5 minutes, call 911
+expect:
+For chest pain, use your spray one time.
+Call 911 if the pain is not gone after 5 minutes.
+===
+name: a_first_step_in_the_same_sentence
+pages:
+Going home
+For chest pain, use the spray once; if the pain is not gone after 5 minutes, call 911.
+summary:
+Call 911 if chest pain is not gone after 5 minutes. || if the pain is not gone after 5 minutes, call 911
+expect:
+The document says: “For chest pain, use the spray once; if the pain is not gone after 5 minutes, call 911.”
+===
+name: the_writers_narrative_verbs_are_no_step
+pages:
+Plan
+I have given him a spray and asked him to call 911 if the pain lasts more than 10 minutes.
+summary:
+Use the spray and call 911 if the pain lasts more than 10 minutes. || I have given him a spray
+expect:
+Use the spray and call 911 if the pain lasts more than 10 minutes.
+===
+name: a_separate_instruction_is_no_step
+pages:
+Plan
+They should have blood tests (CBC, ALT) every 2 weeks, and call the clinic at once if they get a fever or mouth sores.
+summary:
+You must have blood tests every 2 weeks. || They should have blood tests (CBC, ALT) every 2 weeks
+Call the clinic at once if you get a fever or mouth sores. || call the clinic at once if they get a fever or mouth sores
+expect:
+You must have blood tests every 2 weeks.
+Call the clinic at once if you get a fever or mouth sores.
+

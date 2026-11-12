@@ -22,6 +22,15 @@
 //!   paragraph and ends as a sentence. The sentence replaced is the one whose quote lies in the
 //!   rule itself, else one with an action word and a trigger; a sentence that gives only the
 //!   lead-in stays, and the whole rule is added after.
+//! - **The rule's lead-in step (safety-3).** When the rule's condition points back to a step
+//!   before it ("the pain", "your weight": "the", "your", "this" or "that", then a noun whose
+//!   first five letters are in the step), in its span or before the action in its own sentence
+//!   ("For chest pain, use the spray once." before "If the pain is not gone after 5 minutes, call
+//!   911."), that step is required too: its content words (not the writer's "given"/"asked", not
+//!   the trigger's own words; "once" also as "1" or "one") must all be in the sentence that
+//!   carries the rule or in the summary sentence just before it. Otherwise the rule counts as not
+//!   carried and gets its whole-span quote, as above. A separate instruction before the rule
+//!   ("have blood tests …, and call the clinic if they get a fever") is no step.
 //! - Nothing is translated, nothing is dropped: a quote replaces a sentence or is added.
 //!
 //! Pure std (with `addressee`), tested on its own: see the tests' note.
@@ -30,7 +39,7 @@ use crate::addressee::{ends_sentence, find_folded, source_sentence, wraps, CONTA
 
 /// The checks' name in a measurement.
 #[allow(dead_code)]
-pub(crate) const NAME: &str = "safety-2";
+pub(crate) const NAME: &str = "safety-3";
 
 /// How a fallback sentence starts; later steps leave such a sentence as it is.
 pub(crate) const QUOTE_MARK: &str = "The document says: ";
@@ -422,6 +431,72 @@ fn carries(sentence: &str, trigger: &[String]) -> bool {
     })
 }
 
+/// Words of a lead-in step that need not be carried: the writer's narrative verbs and filler.
+const STEP_STOP: &[&str] = &[
+    "yourself", "yourselves", "every", "each", "use", "using", "take", "taking", "keep", "given",
+    "gave", "give", "asked", "ask", "told", "tell", "advised", "advise", "instructed", "first",
+    "then", "please",
+];
+
+/// The content words of the rule's lead-in step: its span before the rule (`start..at`), and the
+/// rule's own words before its first action or condition word; none when the rule's condition
+/// does not point back to them.
+fn step_words(pages: &str, start: usize, at: usize, rule: &str, trigs: &[Vec<String>]) -> Vec<String> {
+    let toks = tokens(rule);
+    let condition = find_phrase(&toks, CONDITIONS, 0);
+    let first = [find_phrase(&toks, ACTIONS, 0), condition]
+        .into_iter()
+        .flatten()
+        .map(|(s, _)| s)
+        .min()
+        .unwrap_or(0);
+    let head: String = rule.chars().take(first).collect();
+    let lead = format!("{} {head}", &pages[start..at]);
+    let lead_words: Vec<String> = tokens(&lead).into_iter().map(|t| t.0).collect();
+    let after: Vec<&String> = condition.map_or(Vec::new(), |(_, end)| {
+        toks.iter().filter(|t| t.1 >= end).map(|t| &t.0).collect()
+    });
+    let points_back = matches!(
+        after.first().map(|w| w.as_str()),
+        Some("the" | "your" | "this" | "that")
+    ) && after.get(1).is_some_and(|noun| {
+        let head: String = noun.chars().take(5).collect();
+        noun.chars().count() >= 3 && lead_words.iter().any(|w| w.contains(head.as_str()))
+    });
+    if !points_back {
+        return Vec::new();
+    }
+    let mut out: Vec<String> = Vec::new();
+    for word in lead_words {
+        let digits = word.chars().all(|c| c.is_ascii_digit());
+        if STOP.contains(&word.as_str())
+            || STEP_STOP.contains(&word.as_str())
+            || !(word.chars().count() >= 3 || digits)
+            || trigs.iter().flatten().any(|t| *t == word)
+            || out.contains(&word)
+        {
+            continue;
+        }
+        out.push(word);
+    }
+    out
+}
+
+/// Whether a sentence has every lead-in word: as written, as its number ("once" as "1" or
+/// "one"), or with an ending ("spray" in "sprays").
+fn carries_step(sentence: &str, step: &[String]) -> bool {
+    let words: Vec<String> = tokens(sentence).into_iter().map(|t| t.0).collect();
+    let digit = |w: &str| NUMBER_WORDS.iter().find(|(n, _)| *n == w).map(|(_, d)| *d);
+    step.iter().all(|w| {
+        words.iter().any(|x| {
+            x == w
+                || digit(w).is_some_and(|d| x == d || digit(x) == Some(d))
+                || x.strip_prefix(w.as_str())
+                    .is_some_and(|rest| matches!(rest, "s" | "es" | "d" | "ed" | "ing"))
+        })
+    })
+}
+
 fn has_action(text: &str) -> bool {
     find_phrase(&tokens(text), ACTIONS, 0).is_some()
 }
@@ -562,10 +637,19 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
             continue;
         }
         let trigs = triggers(&rule);
-        if trigs.is_empty() || lines.iter().any(|l| carries_rule(&l.text, &trigs)) {
+        if trigs.is_empty() {
             continue;
         }
         let start = rule_start(pages, at, k.checked_sub(1).map(|p| spans[p]), &rule);
+        let step = step_words(pages, start, at, &rule, &trigs);
+        let carried = lines.iter().enumerate().any(|(i, l)| {
+            carries_rule(&l.text, &trigs)
+                && (carries_step(&l.text, &step)
+                    || i.checked_sub(1).is_some_and(|p| carries_step(&lines[p].text, &step)))
+        });
+        if carried {
+            continue;
+        }
         let span = flat(&pages[start..to])
             .trim_start_matches(['-', '*', '\u{2022}', '\u{2013}', ' '])
             .trim()
@@ -746,6 +830,36 @@ mod tests {
     #[test]
     fn given_a_rule_wrapped_over_two_lines_of_a_step_when_quoted_then_the_whole_step_is_quoted() {
         check_case("a_rule_wrapped_in_a_bulleted_step");
+    }
+
+    #[test]
+    fn given_a_rule_whose_first_step_is_left_out_when_checked_then_the_sentence_becomes_the_whole_step_quoted() {
+        check_case("a_first_step_left_out");
+    }
+
+    #[test]
+    fn given_a_rule_carried_with_its_first_step_when_checked_then_nothing_changes() {
+        check_case("a_first_step_carried");
+    }
+
+    #[test]
+    fn given_a_first_step_in_the_summary_sentence_just_before_when_checked_then_nothing_changes() {
+        check_case("a_first_step_in_the_sentence_before");
+    }
+
+    #[test]
+    fn given_a_first_step_in_the_rules_own_sentence_when_left_out_then_the_sentence_is_quoted() {
+        check_case("a_first_step_in_the_same_sentence");
+    }
+
+    #[test]
+    fn given_the_writers_narrative_verbs_before_a_rule_when_checked_then_only_its_objects_are_required() {
+        check_case("the_writers_narrative_verbs_are_no_step");
+    }
+
+    #[test]
+    fn given_a_separate_instruction_before_a_rule_when_checked_then_it_is_no_step() {
+        check_case("a_separate_instruction_is_no_step");
     }
 
     #[test]
