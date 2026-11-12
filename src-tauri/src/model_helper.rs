@@ -464,6 +464,21 @@ const SUMMARY_DISCHARGE_PART: &str =
      that part; orders written during the stay are not instructions for the patient. This is \
      only about instructions: in every document, still say what the document found, as above.";
 
+/// K16 (on K15c; Ben, 12 Nov: "if the patient has the file it was meant to be shared with them;
+/// just make sure the wording doesn't imply they should call if meant for the doctor"). Every
+/// version so far turned lines a letter writes to a doctor into the patient's: the writer's own
+/// line to the specialist became "you must call ...", a question to the specialist became the
+/// patient's ("asks if you would recommend ..."), or an open question while the letter tells the
+/// patient what to do, and a lab's note to the ordering doctor became "you must review ...". Such a
+/// line may appear, said as that doctor's. Nothing in it leaves a finding or a line out.
+const SUMMARY_TO_A_DOCTOR: &str =
+    "Some lines are written to a doctor, not to you: a question, request or suggestion to \
+     another doctor or to the doctor who ordered a test, and a phone number the writer gives \
+     that doctor (\"you\" and \"me\" in such a line are the doctors). Say such a line as that \
+     doctor's, naming who asks or suggests it, never as something you must or should do, never \
+     as a question to you, and never as a number for you to call; where the document tells you \
+     what to do about the same thing, say that too.";
+
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
 const SUMMARY_WHOLE_RULES: &str =
@@ -482,7 +497,7 @@ pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
          sentences (fewer if the document is short). {SUMMARY_ORDER} {SUMMARY_NO_FINDINGS} \
-         {SUMMARY_DISCHARGE_PART} \
+         {SUMMARY_DISCHARGE_PART} {SUMMARY_TO_A_DOCTOR} \
          Put one fact in each sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each \
          sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 words, \
          exactly as written (same spelling, numbers, accents and punctuation, no '...' and no \
@@ -1130,10 +1145,11 @@ mod tests {
     }
 
     #[test]
-    fn k15c_is_k15b_with_no_findings_first() {
-        // K15c = K15b word for word (E5 with, after part (a), the going-home sentence pair), with
-        // K12b's no-findings sentence (as K13c has it) right after part (a): a document that
-        // reports no findings starts with what to do.
+    fn k16_is_k15c_with_lines_written_to_a_doctor_said_as_theirs() {
+        // K16 = K15c word for word (K15b with K12b's no-findings sentence right after part (a)),
+        // with one sentence after the going-home pair: a question, request or suggestion written
+        // to a doctor, and a phone number the writer gives that doctor, are said as that
+        // doctor's, never as the patient's task, question or number to call.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1150,7 +1166,13 @@ mod tests {
              follow-up), take the patient's instructions and any medicine change only from that \
              part; orders written during the stay are not instructions for the patient. This is \
              only about instructions: in every document, still say what the document found, as \
-             above. Put one fact in each sentence. When \
+             above. Some lines are written to a doctor, not to you: a question, request or \
+             suggestion to another doctor or to the doctor who ordered a test, and a phone \
+             number the writer gives that doctor (\"you\" and \"me\" in such a line are the \
+             doctors). Say such a line as that doctor's, naming who asks or suggests it, never \
+             as something you must or should do, never as a question to you, and never as a \
+             number for you to call; where the document tells you what to do about the same \
+             thing, say that too. Put one fact in each sentence. When \
              a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
              a group of medicines, keep every condition, every medicine or group, and every \
              number or limit the document gives for it; if they do not all fit in one sentence, \
@@ -1175,6 +1197,14 @@ mod tests {
         assert!(!SUMMARY_DISCHARGE_PART.contains(|c: char| c.is_ascii_digit()));
         assert!(!SUMMARY_DISCHARGE_PART.contains("say nothing"));
         assert!(summary_prompt("English", MAX_SENTENCES).contains(SUMMARY_NO_FINDINGS));
+        // K16's sentence is general too, and says how to report a line, never to leave it out.
+        assert!(!SUMMARY_TO_A_DOCTOR.contains(|c: char| c.is_ascii_digit()));
+        for letter_word in [
+            "gluten", "iron", "biopsy", "IV", "Dr.", "ext", "ramipril", "diet", "review",
+            "compare", "leave",
+        ] {
+            assert!(!SUMMARY_TO_A_DOCTOR.contains(letter_word), "{letter_word}");
+        }
         for letter_word in ["emergency", "sliding", "IV", "hold", "Hold", "tomorrow"] {
             assert!(
                 !SUMMARY_DISCHARGE_PART.contains(letter_word),
