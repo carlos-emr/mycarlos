@@ -1,26 +1,35 @@
-//! K19 (evaluation only): a reviewed, versioned glossary ("glossary-2.txt") puts a short plain
+//! K19 (evaluation only): a reviewed, versioned glossary ("glossary-2.1.txt") puts a short plain
 //! explanation beside the first use of a medical word, germ, test or unit in a summary sentence:
 //! "creatinine (a waste product in the blood that shows how well the kidneys work)". Ben (12 Nov)
 //! kept the plain-language rule as written: a sentence with an unexplained medical term counts
 //! as technical. glossary-2 follows the medical review of glossary-1 (12 Nov): its rewordings, its
-//! blocked clash phrases, and its code findings M1–M3, S1–S4 and C3–C5.
+//! blocked clash phrases, and its code findings M1–M3, S1–S4 and C3–C5. glossary-2.1 follows the
+//! blind review of glossary-2's output: each different unit gets its own explanation, a line can
+//! name words that stop it (an insulin strength in U/mL is no lab result), and a unit matches
+//! only as written ("G/L", a French cell count, is not "g/l").
 //!
 //! An explanation is the word's general meaning only: never anything about the patient, no cause
 //! of the patient's illness, no claim, no digit, and no listed term (so a second run changes
 //! nothing). The step only inserts; it never drops or changes a word, number or sentence. Rules:
 //! - each glossary line's first use in a sentence gets " (<explanation>)" right after it, or
-//!   ", <explanation>," inside brackets (", <explanation>" before the closing bracket);
+//!   ", <explanation>," inside brackets (", <explanation>" before a closing bracket, a comma or
+//!   a semicolon);
+//! - a unit's first use counts per spelling ("µmol/L" and then "mmol/L" each get one), a
+//!   word's per glossary line ("eGFR" and then "GFR": only the first);
+//! - a line with a "block:" column is skipped when one of its words is in the sentence (whole
+//!   words, any case);
 //! - longer terms first, never overlapping; a "plain" phrase ("LDL-C", "Ringer's lactate",
 //!   "pulmonary hypertension") keeps a shorter term inside it unexplained;
-//! - a term with an upper-case letter matches only as written ("EGFR" is not "eGFR"); an
-//!   all-lower-case term matches in any case;
+//! - a unit, or a term with an upper-case letter, matches only as written ("EGFR" is not
+//!   "eGFR"); any other all-lower-case term matches in any case;
 //! - a term needs a non-letter, non-digit on both sides (a unit may follow a digit), and a hyphen
 //!   or slash joining it to a letter or digit is no break ("LDL-C", "albumin/creatinine");
 //! - nothing is inserted when the term is already explained: a bracket right after it; ", a",
 //!   ", an", ", the", ", which", "called", "known as" (English) or ", un", ", une", ", qui",
 //!   "c'est-à-dire", "appelé(e)(s)", "connu(e) sous le nom de" (French) right after it; "called",
 //!   "known as", "appelé(e)(s)", "connu(e) sous le nom de", "c'est-à-dire" as whole words right
-//!   before it; or its explanation already in the sentence;
+//!   before it; its explanation right after it (", <explanation>"); or, for a word that is not a
+//!   unit, its explanation anywhere in the sentence;
 //! - English and French summaries ("en", "fr", "en-CA", "fr-CA", …); accents are recomposed
 //!   first (an "é" written as "e" + a combining accent still matches);
 //! - a sentence its explanations would make longer than the runner's limit is left as it is.
@@ -32,9 +41,9 @@ use std::sync::OnceLock;
 
 /// The glossary's name in a measurement.
 #[allow(dead_code)]
-pub(crate) const NAME: &str = "glossary-2";
+pub(crate) const NAME: &str = "glossary-2.1";
 
-const GLOSSARY: &str = include_str!("glossary-2.txt");
+const GLOSSARY: &str = include_str!("glossary-2.1.txt");
 
 /// The runner's longest sentence (`local_runner::MAX_SENTENCE_CHARS`).
 const MAX_CHARS: usize = 2_000;
@@ -54,6 +63,8 @@ struct Entry {
     terms: Vec<Vec<char>>,
     en: String,
     fr: String,
+    /// Lower-case words that stop this line's explanation anywhere in the sentence.
+    block: Vec<String>,
 }
 
 fn entries() -> &'static [Entry] {
@@ -64,7 +75,16 @@ fn entries() -> &'static [Entry] {
             .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
             .map(|line| {
                 let parts: Vec<&str> = line.split(" | ").map(str::trim).collect();
-                assert_eq!(parts.len(), 4, "glossary line: {line}");
+                assert!(parts.len() == 4 || parts.len() == 5, "glossary line: {line}");
+                let block = parts.get(4).map_or(Vec::new(), |column| {
+                    column
+                        .strip_prefix("block:")
+                        .unwrap_or_else(|| panic!("glossary line: {line}"))
+                        .split(';')
+                        .map(|w| nfc(w.trim()).to_lowercase())
+                        .filter(|w| !w.is_empty())
+                        .collect()
+                });
                 Entry {
                     unit: parts[0] == "unit",
                     terms: parts[1]
@@ -75,6 +95,7 @@ fn entries() -> &'static [Entry] {
                         .collect(),
                     en: parts[2].to_owned(),
                     fr: parts[3].to_owned(),
+                    block,
                 }
             })
             .collect()
@@ -172,18 +193,26 @@ pub(crate) fn explain(sentence: &str, lang: &str) -> Option<(String, Vec<(String
     let n = chars.len();
     let mut claimed = vec![false; n];
     let glossary = entries();
-    let mut variants: Vec<(&Vec<char>, usize)> = glossary
+    let mut variants: Vec<(&Vec<char>, usize, usize)> = glossary
         .iter()
         .enumerate()
-        .flat_map(|(index, entry)| entry.terms.iter().map(move |term| (term, index)))
+        .flat_map(|(index, entry)| {
+            entry
+                .terms
+                .iter()
+                .enumerate()
+                .map(move |(spelling, term)| (term, index, spelling))
+        })
         .collect();
-    variants.sort_by_key(|(term, _)| std::cmp::Reverse(term.len()));
+    variants.sort_by_key(|(term, ..)| std::cmp::Reverse(term.len()));
     let joined = |k: usize| matches!(chars.get(k), Some('-' | '/'));
-    // Each glossary line's first use: (line, start, end), in the order first found.
-    let mut first: Vec<(usize, usize, usize)> = Vec::new();
-    for (term, index) in variants {
-        let cased = term.iter().any(|c| c.is_uppercase());
+    // Each first use: (line, spelling for a unit or usize::MAX, start, end), in the order first
+    // found.
+    let mut first: Vec<(usize, usize, usize, usize)> = Vec::new();
+    for (term, index, spelling) in variants {
         let unit = glossary[index].unit;
+        let cased = unit || term.iter().any(|c| c.is_uppercase());
+        let key = if unit { spelling } else { usize::MAX };
         let m = term.len();
         if m > n {
             continue;
@@ -210,18 +239,28 @@ pub(crate) fn explain(sentence: &str, lang: &str) -> Option<(String, Vec<(String
                 continue;
             }
             claimed[i..j].iter_mut().for_each(|c| *c = true);
-            match first.iter_mut().find(|(line, ..)| *line == index) {
-                Some(found) if i < found.1 => *found = (index, i, j),
+            match first
+                .iter_mut()
+                .find(|(line, k, ..)| *line == index && *k == key)
+            {
+                Some(found) if i < found.2 => *found = (index, key, i, j),
                 Some(_) => {}
-                None => first.push((index, i, j)),
+                None => first.push((index, key, i, j)),
             }
         }
     }
     let text = |i: usize, j: usize| chars[i..j].iter().collect::<String>();
     let lower_sentence = composed.to_lowercase();
+    let words: Vec<&str> = lower_sentence
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
     let mut inserts: Vec<(usize, String, String, String)> = Vec::new();
-    for (index, i, j) in first {
+    for (index, _, i, j) in first {
         let entry = &glossary[index];
+        if entry.block.iter().any(|b| words.contains(&b.as_str())) {
+            continue;
+        }
         let explanation = if primary == "fr" {
             &entry.fr
         } else {
@@ -233,17 +272,19 @@ pub(crate) fn explain(sentence: &str, lang: &str) -> Option<(String, Vec<(String
         let rest = text(j, n);
         let rest_lower = rest.to_lowercase();
         let before = text(0, i).trim_end().to_lowercase();
+        let explanation_lower = explanation.to_lowercase();
         let explained = rest.trim_start().starts_with('(')
             || AFTER.iter().any(|p| rest_lower.starts_with(p))
             || BEFORE.iter().any(|p| ends_with_words(&before, p))
-            || lower_sentence.contains(&explanation.to_lowercase());
+            || rest_lower.starts_with(&format!(", {explanation_lower}"))
+            || (!entry.unit && lower_sentence.contains(&explanation_lower));
         if explained {
             continue;
         }
         let head = text(0, i);
         let inside = head.matches('(').count() > head.matches(')').count();
         let insert = if inside {
-            if matches!(rest.trim_start().chars().next(), None | Some(')')) {
+            if matches!(rest.trim_start().chars().next(), None | Some(')' | ',' | ';')) {
                 format!(", {explanation}")
             } else {
                 format!(", {explanation},")
@@ -543,6 +584,71 @@ mod tests {
     #[test]
     fn given_a_list_with_the_after_a_term_when_explained_then_it_is_left_unexplained_safely() {
         check("a_list_after_a_term");
+    }
+
+    #[test]
+    fn given_a_lab_value_in_units_per_millilitre_when_explained_then_the_unit_is_explained() {
+        check("a_lab_value_in_units_per_millilitre");
+    }
+
+    #[test]
+    fn given_an_insulin_brand_strength_when_explained_then_its_unit_is_left_as_it_is() {
+        check("an_insulin_brand_strength");
+    }
+
+    #[test]
+    fn given_two_different_units_of_one_line_when_explained_then_each_gets_its_own() {
+        check("two_different_units_of_one_line");
+    }
+
+    #[test]
+    fn given_one_unit_used_twice_when_explained_then_only_its_first_use_is_explained() {
+        check("one_unit_twice");
+    }
+
+    #[test]
+    fn given_a_unit_with_a_lower_case_l_when_explained_then_it_is_explained() {
+        check("a_unit_with_a_lower_case_l");
+    }
+
+    #[test]
+    fn given_a_french_cell_count_in_capitals_when_explained_then_it_is_not_taken_for_grams() {
+        check("a_french_cell_count_is_not_grams");
+    }
+
+    #[test]
+    fn given_the_polish_count_unit_when_explained_then_it_is_explained() {
+        check("the_polish_count_unit");
+    }
+
+    #[test]
+    fn given_oxygen_saturation_when_explained_then_it_gets_the_oxygen_meaning() {
+        check("oxygen_saturation");
+    }
+
+    #[test]
+    fn given_transferrin_saturation_when_explained_then_it_is_left_as_it_is() {
+        check("transferrin_saturation_is_an_iron_test");
+    }
+
+    #[test]
+    fn given_a_unit_per_millilitre_inside_brackets_when_explained_twice_then_the_second_run_changes_nothing() {
+        check("a_unit_per_millilitre_inside_brackets");
+    }
+
+    #[test]
+    fn given_a_term_in_a_list_inside_brackets_when_explained_then_no_comma_is_doubled() {
+        check("a_list_inside_brackets");
+    }
+
+    #[test]
+    fn given_the_glossary_when_read_then_every_block_word_is_one_lower_case_word() {
+        for entry in entries() {
+            for word in &entry.block {
+                assert!(word.chars().all(char::is_alphanumeric), "{word}");
+                assert_eq!(word, &word.to_lowercase(), "{word}");
+            }
+        }
     }
 
     #[test]

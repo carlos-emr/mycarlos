@@ -1,9 +1,13 @@
-# glossary-2 (K19, evaluation only): plain explanations of medical words, by general meaning only. An explanation
+# glossary-2.1 (K19, evaluation only): plain explanations of medical words, by general meaning only. An explanation
 # never says anything about a patient, never gives a cause of the patient's illness or a claim, has no digit, and
 # contains no listed term (so running the step twice changes nothing). glossary-1 + the medical review of 12 Nov
-# (review-k19-glossary-20261112.md): its 24 rewordings, ACR, U/mL and IU/mL taken out, its clash phrases blocked.
-# Each line: kind | terms (";"-separated) | English | French
-# Matching: a term with an upper-case letter matches only as written; an all-lower-case term matches in any case.
+# (review-k19-glossary-20261112.md): its 24 rewordings, ACR taken out, its clash phrases blocked. 2.1 (the blind review
+# of glossary-2): U/mL and IU/mL back, but never in a sentence about insulin or another medicine's strength; units
+# with a lower-case l; the Polish count unit; saturation (not the iron test's).
+# Each line: kind | terms (";"-separated) | English | French [| block: words (";"-separated) that, anywhere in the
+# sentence as whole words in any case, stop this line's explanation]
+# Matching: a unit, or a term with an upper-case letter, matches only as written; an all-lower-case term that is not
+# a unit matches in any case.
 # kind: test, unit, diagnosis, germ, term, or plain ("-": a phrase reviewers count as plain, or a phrase whose words
 # mean something else there, which keeps a shorter term inside it from being explained).
 plain | LDL cholesterol; HDL cholesterol; non-HDL cholesterol; non-HDL; LDL-C; HDL-C; cholestérol LDL; cholestérol HDL; cholestérol non-HDL; heart failure; heart attack; liver enzymes; insuffisance cardiaque; crise cardiaque; enzymes hépatiques; enzymes du foie | - | -
@@ -11,6 +15,7 @@ plain | Ringer's lactate; lactated Ringer's; Ringer lactate; lactate de Ringer; 
 plain | urea breath test; urea cream; test respiratoire à l'urée; crème à l'urée | - | -
 plain | pulmonary hypertension; portal hypertension; intracranial hypertension; ocular hypertension; hypertension pulmonaire; hypertension portale; hypertension intracrânienne; hypertension oculaire | - | -
 plain | EGFR mutation; ACR/EULAR; CKD-EPI | - | -
+plain | transferrin saturation; iron saturation; saturation de la transferrine; coefficient de saturation | - | -
 test | creatinine; créatinine | a waste product in the blood that shows how well the kidneys work | un déchet du sang qui montre si les reins fonctionnent bien
 test | urine creatinine; créatinine urinaire | a waste product in the urine that shows how well the kidneys work | un déchet de l'urine qui montre si les reins fonctionnent bien
 test | estimated glomerular filtration rate; glomerular filtration rate; débit de filtration glomérulaire estimé; débit de filtration glomérulaire; eGFR; GFR; DFGe; DFG; TFGe; TFG | an estimate of how well the kidneys filter the blood | une estimation de la capacité des reins à filtrer le sang
@@ -69,9 +74,12 @@ term | PO | by mouth | par la bouche
 term | organism | germ | microbe
 term | echotexture | how a tissue looks on ultrasound | l'aspect d'un tissu à l'échographie
 unit | mL/min/1.73 m²; mL/min/1.73m²; mL/min/1.73 m2; mL/min/1.73m2; mL/min/1,73 m²; mL/min/1,73m²; mL/min | how much blood the kidneys filter each minute, a unit of kidney filtering | la quantité de sang filtrée par les reins chaque minute, une unité de filtration des reins
-unit | mmol/L; µmol/L; μmol/L; umol/L; nmol/L; pmol/L | the amount of a substance in a litre, a unit for lab test results | la quantité d'une substance dans un litre, une unité des analyses de laboratoire
-unit | mg/dL; mg/L; g/L; µg/L; μg/L; ug/L; ng/L | the weight of a substance in an amount of fluid, a unit for lab test results | le poids d'une substance dans une quantité de liquide, une unité des analyses de laboratoire
-unit | mU/L; U/L | a measure of activity in a litre, a unit for lab test results | une mesure d'activité dans un litre, une unité des analyses de laboratoire
+unit | mmol/L; µmol/L; μmol/L; umol/L; nmol/L; pmol/L; mmol/l; µmol/l; μmol/l; umol/l; nmol/l; pmol/l | the amount of a substance in a litre, a unit for lab test results | la quantité d'une substance dans un litre, une unité des analyses de laboratoire
+unit | mg/dL; mg/L; g/L; µg/L; μg/L; ug/L; ng/L; mg/dl; mg/l; g/l; µg/l; μg/l; ug/l; ng/l | the weight of a substance in an amount of fluid, a unit for lab test results | le poids d'une substance dans une quantité de liquide, une unité des analyses de laboratoire
+unit | mU/L; U/L; mU/l; U/l | a measure of activity in a litre, a unit for lab test results | une mesure d'activité dans un litre, une unité des analyses de laboratoire
 unit | ×10⁹/L; x10⁹/L; x10^9/L; ×10^9/L | the number of cells in a litre, a unit for blood counts | le nombre de cellules dans un litre, une unité des formules sanguines
 unit | fL | a tiny unit of volume, used for the size of blood cells | une toute petite unité de volume, pour la taille des globules
 unit | mg/mmol | the ratio of two substances in urine, a unit for urine tests | le rapport entre deux substances dans l'urine, une unité des analyses d'urine
+unit | U/mL; IU/mL; UI/mL; U/ml; IU/ml | units of a substance in a millilitre, a unit for lab test results | des unités d'une substance dans un millilitre, une unité des analyses de laboratoire | block: insulin; insuline; glargine; lispro; aspart; detemir; degludec; NPH; Lantus; Toujeo; Humalog; NovoRapid; Levemir; Tresiba; Basaglar; Fiasp; Humulin; Novolin; Admelog; Apidra; Semglee; heparin; héparine; epoetin; époétine; vitamin; vitamine; injection; inject; injecter; injectez; syringe; seringue; pen; stylo; vial; fiole
+unit | tys./µl; tys./μl; tys/µl; tys./ul; tys./µL; tys/µL | the number of cells, in thousands, in a microlitre, a unit for blood counts | le nombre de cellules, en milliers, dans un microlitre, une unité des formules sanguines
+term | oxygen saturation; saturation en oxygène; saturation; saturacja | how much oxygen the blood is carrying | la quantité d'oxygène que transporte le sang

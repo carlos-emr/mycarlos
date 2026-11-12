@@ -1,4 +1,4 @@
-The glossary post-step's shared cases (K19, glossary-2): synthetic sentences only. Read by the Rust tests in
+The glossary post-step's shared cases (K19, glossary-2.1): synthetic sentences only. Read by the Rust tests in
 glossary.rs and by the evaluation's Python port. One case per block, blocks separated by a line "===". Every case is
 also run twice: a second run must change nothing.
 ===
@@ -211,3 +211,58 @@ name: a_list_after_a_term
 lang: en
 sentence: The CRP, the white count and the lactate were high.
 expect: The CRP, the white count and the lactate (a blood substance that can go up in serious illness) were high.
+===
+name: a_lab_value_in_units_per_millilitre
+lang: en
+sentence: The tTG-IgA was 86 U/mL.
+expect: The tTG-IgA (a blood test for celiac disease) was 86 U/mL (units of a substance in a millilitre, a unit for lab test results).
+===
+name: an_insulin_brand_strength
+lang: en
+sentence: Toujeo 300 U/mL, 20 units at bedtime.
+expect: Toujeo 300 U/mL, 20 units at bedtime.
+===
+name: two_different_units_of_one_line
+lang: en
+sentence: His creatinine was 98 µmol/L and LDL cholesterol 3.1 mmol/L.
+expect: His creatinine (a waste product in the blood that shows how well the kidneys work) was 98 µmol/L (the amount of a substance in a litre, a unit for lab test results) and LDL cholesterol 3.1 mmol/L (the amount of a substance in a litre, a unit for lab test results).
+===
+name: one_unit_twice
+lang: en
+sentence: The potassium was 5.3 mmol/L and the sugar 8.4 mmol/L.
+expect: The potassium was 5.3 mmol/L (the amount of a substance in a litre, a unit for lab test results) and the sugar 8.4 mmol/L.
+===
+name: a_unit_with_a_lower_case_l
+lang: en
+sentence: The CRP was 22 mg/l.
+expect: The CRP (a blood test for inflammation) was 22 mg/l (the weight of a substance in an amount of fluid, a unit for lab test results).
+===
+name: a_french_cell_count_is_not_grams
+lang: fr
+sentence: Les leucocytes sont à 12 G/L.
+expect: Les leucocytes sont à 12 G/L.
+===
+name: the_polish_count_unit
+lang: en
+sentence: White blood cells were 15,2 tys./µl.
+expect: White blood cells were 15,2 tys./µl (the number of cells, in thousands, in a microlitre, a unit for blood counts).
+===
+name: oxygen_saturation
+lang: en
+sentence: The oxygen saturation was 94% without oxygen.
+expect: The oxygen saturation (how much oxygen the blood is carrying) was 94% without oxygen.
+===
+name: transferrin_saturation_is_an_iron_test
+lang: en
+sentence: The transferrin saturation was 8%.
+expect: The transferrin saturation was 8%.
+===
+name: a_unit_per_millilitre_inside_brackets
+lang: en
+sentence: The celiac test was high (86 U/mL).
+expect: The celiac test was high (86 U/mL, units of a substance in a millilitre, a unit for lab test results).
+===
+name: a_list_inside_brackets
+lang: en
+sentence: Have a blood test (creatinine, potassium) in 1 week.
+expect: Have a blood test (creatinine, a waste product in the blood that shows how well the kidneys work, potassium) in 1 week.
