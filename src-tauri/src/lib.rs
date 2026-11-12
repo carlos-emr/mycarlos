@@ -27,6 +27,8 @@ mod idle;
 mod local_model;
 // K17 (evaluation only): the post-step on summary sentences (pure std; tested on its own).
 mod addressee;
+// K19 (evaluation only): the glossary post-step (pure std; tested on its own).
+mod glossary;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;

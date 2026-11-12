@@ -1338,6 +1338,19 @@ pub mod engine_testing {
         /// K17: the post-step's name, and every sentence it rewrote (before and after).
         pub post_step: &'static str,
         pub rewrites: Vec<MeasuredRewrite>,
+        /// K19: the glossary's name, and every sentence it explained (before and after).
+        pub glossary: &'static str,
+        pub explained: Vec<MeasuredExplained>,
+    }
+
+    /// K19: one sentence the glossary step explained (`glossary`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredExplained {
+        pub index: usize,
+        pub before: String,
+        pub after: String,
+        pub terms: Vec<String>,
     }
 
     /// K17: one sentence the post-step rewrote (`addressee`): its place, the rewrite's kind, and
@@ -1471,6 +1484,16 @@ pub mod engine_testing {
                 .runner
                 .summarize(self.runner.ticket(), &request)
                 .map_err(|error| format!("{error:?}"))?;
+            let explained = summary
+                .explained
+                .into_iter()
+                .map(|e| MeasuredExplained {
+                    index: e.index,
+                    before: e.before,
+                    after: e.after,
+                    terms: e.terms,
+                })
+                .collect();
             let rewrites = summary
                 .rewrites
                 .into_iter()
@@ -1513,6 +1536,8 @@ pub mod engine_testing {
                 answer_limit_ms,
                 post_step: crate::addressee::NAME,
                 rewrites,
+                glossary: crate::glossary::NAME,
+                explained,
             })
         }
 

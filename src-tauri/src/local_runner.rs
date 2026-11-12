@@ -436,6 +436,9 @@ pub(crate) struct Summary {
     /// K17: the sentences the post-step rewrote (`addressee`), for measuring; never shown.
     #[allow(dead_code)]
     pub(crate) rewrites: Vec<crate::addressee::Rewrite>,
+    /// K19: the sentences the glossary step explained (`glossary`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) explained: Vec<crate::glossary::Explained>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -919,6 +922,21 @@ impl Runner {
                 }
             }
         }
+        // K19 (evaluation only): after the addressee step, a short plain explanation beside the
+        // first use of each medical word, germ, test or unit (`glossary`); it only inserts, and
+        // the words go in `explained` for measuring, never into a log.
+        let mut explained = Vec::new();
+        for (index, sentence) in sentences.iter_mut().enumerate() {
+            if let Some((after, terms)) = crate::glossary::explain(&sentence.text, &request.lang) {
+                let before = std::mem::replace(&mut sentence.text, after.clone());
+                explained.push(crate::glossary::Explained {
+                    index,
+                    before,
+                    after,
+                    terms: terms.into_iter().map(|(term, _)| term).collect(),
+                });
+            }
+        }
         Ok(Summary {
             sentences,
             model,
@@ -928,6 +946,7 @@ impl Runner {
             unlocated: unlocated_quotes.len(),
             unlocated_quotes,
             rewrites,
+            explained,
         })
     }
 
