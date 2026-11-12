@@ -459,19 +459,11 @@ const SUMMARY_DISCHARGE_PART: &str =
      that part; orders written during the stay are not instructions for the patient. This is \
      only about instructions: in every document, still say what the document found, as above.";
 
-/// K22 (step 4, on K21): one sentence for each kind of document (`doc_type`, decided in code),
-/// from E5's graded problems on that kind. A hospital record with a going-home part: K15b's rule
-/// and this one (admission values were given as "key results" with no time).
-const SUMMARY_ARRIVAL_PART: &str =
-    "When the record gives a result on arrival and again at going home, say which is which.";
-
-/// K22: a lab report (E5 gave values without the report's flag, and once called a low result
-/// high).
-const SUMMARY_LAB_PART: &str =
-    "If the document is a lab report, say a result is high or low only where the report flags \
-     it (H, L, high, low, or outside the range it prints), and say it with that result; give an \
-     unflagged result without a judgement.";
-
+/// K22d (step 4, on K21): one sentence for a letter and one for an imaging report (`doc_type`,
+/// decided in code), from E5's graded problems on those kinds. K22's sentences for a going-home
+/// record and a lab report lost instructions on the remote screen, so those kinds get K21's
+/// request unchanged (K15b's and E5's).
+///
 /// K22: a letter (E5 gave values without the range or earlier value the letter gives, and left
 /// out the likely cause the letter names).
 const SUMMARY_LETTER_PART: &str =
@@ -537,8 +529,9 @@ pub(crate) fn summary_prompt_going_home(language: &str, max_sentences: usize) ->
     )
 }
 
-/// K22: the summary request for a kind of document: E5's, byte for byte, for an unknown one;
-/// otherwise E5's with that kind's sentences right after part (a), where K15b's rule goes.
+/// K22d: the summary request for a kind of document: E5's, byte for byte, for an unknown
+/// document and a lab report; K15b's for a going-home record (as K18/K21); otherwise E5's with
+/// that kind's sentence right after part (a), where K15b's rule goes.
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 pub(crate) fn summary_prompt_for(
     kind: doc_type::DocType,
@@ -546,9 +539,10 @@ pub(crate) fn summary_prompt_for(
     max_sentences: usize,
 ) -> String {
     let part = match kind {
-        doc_type::DocType::Unknown => return summary_prompt(language, max_sentences),
-        doc_type::DocType::GoingHome => format!("{SUMMARY_DISCHARGE_PART} {SUMMARY_ARRIVAL_PART}"),
-        doc_type::DocType::Lab => SUMMARY_LAB_PART.to_owned(),
+        doc_type::DocType::Unknown | doc_type::DocType::Lab => {
+            return summary_prompt(language, max_sentences)
+        }
+        doc_type::DocType::GoingHome => SUMMARY_DISCHARGE_PART.to_owned(),
         doc_type::DocType::Letter => SUMMARY_LETTER_PART.to_owned(),
         doc_type::DocType::Imaging => SUMMARY_IMAGING_PART.to_owned(),
     };
@@ -1223,21 +1217,27 @@ mod tests {
     }
 
     #[test]
+    fn k22d_asks_e5s_request_for_a_lab_report_and_k15bs_for_a_going_home_record() {
+        use doc_type::DocType::{GoingHome, Lab};
+        assert_eq!(
+            summary_prompt_for(Lab, "English", MAX_SENTENCES),
+            summary_prompt("English", MAX_SENTENCES)
+        );
+        assert_eq!(
+            summary_prompt_for(GoingHome, "English", MAX_SENTENCES),
+            summary_prompt_going_home("English", MAX_SENTENCES)
+        );
+    }
+
+    #[test]
     fn k22_adds_only_its_own_kinds_sentences_after_part_a() {
-        use doc_type::DocType::{GoingHome, Imaging, Lab, Letter};
+        use doc_type::DocType::{Imaging, Letter};
         let k15b = summary_prompt_going_home("English", MAX_SENTENCES);
         let cases = [
-            (GoingHome, format!("{SUMMARY_DISCHARGE_PART} {SUMMARY_ARRIVAL_PART}")),
-            (Lab, SUMMARY_LAB_PART.to_owned()),
             (Letter, SUMMARY_LETTER_PART.to_owned()),
             (Imaging, SUMMARY_IMAGING_PART.to_owned()),
         ];
-        let parts = [
-            SUMMARY_ARRIVAL_PART,
-            SUMMARY_LAB_PART,
-            SUMMARY_LETTER_PART,
-            SUMMARY_IMAGING_PART,
-        ];
+        let parts = [SUMMARY_LETTER_PART, SUMMARY_IMAGING_PART];
         for (kind, part) in cases {
             let prompt = summary_prompt_for(kind, "English", MAX_SENTENCES);
             assert_eq!(prompt, k15b.replacen(SUMMARY_DISCHARGE_PART, &part, 1), "{kind:?}");
