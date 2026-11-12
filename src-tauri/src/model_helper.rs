@@ -577,7 +577,8 @@ pub(crate) fn explain_prompt(language: &str) -> String {
 pub(crate) const CHECK_SECONDS: u64 = 300;
 
 /// The most a check pass may write: its list of fixes. A list that reaches it is not used.
-pub(crate) const CHECK_TOKENS: usize = 600;
+/// K14b: 900 (K14's 600 was reached on the two long letters of the screen).
+pub(crate) const CHECK_TOKENS: usize = 900;
 
 /// The failure a pass gives when its deadline passes (see `Engine::generate`).
 pub(crate) const TIMED_OUT: &str = "time";
@@ -602,6 +603,11 @@ pub(crate) fn check_deadline(started: Instant, until: Option<Instant>) -> Instan
 /// What the check prompt marks lines of the document it leaves out with (see [`quote_excerpts`]).
 pub(crate) const LEFT_OUT: &str = "[…]";
 
+/// K14b (on K14): a fix may never drop or weaken a rule about when to get help or call, a
+/// contact fix leaves out only the number or name, and a hedge is only the quote's own; the
+/// screen found K14's check dropping get-help rules as contacts and turning instructions into
+/// "may". General words only, as K14's.
+///
 /// K14 (round-4 candidate on K12b): after the summary is written, a second request reads it
 /// against the same pages and lists the sentences that make one of the five kinds of mistake the
 /// reviewed sheets showed, each fixed or left out; in general words, none of a test letter's own. Only the fixes are written, so a right
@@ -616,22 +622,28 @@ pub(crate) fn check_prompt(language: &str) -> String {
          mistake, and either its fixed words and quote, or \"drop\": true to leave it out. A \
          sentence needs a fix when it makes one of these mistakes:\n\
          - \"contact\": it gives the patient a phone number, address or other contact that the \
-         document gives to another doctor or for someone else;\n\
+         document gives to another doctor or for someone else; its fix leaves out only that \
+         number, address or name and keeps the rest of the sentence;\n\
          - \"question\": it writes a question or request the document makes to another doctor \
          as the patient's own question or task;\n\
          - \"schedule\": it cuts a rule or a schedule short, leaving out a later step, a \
          medicine's name or an end date the document gives;\n\
-         - \"hedge\": it says something more surely than the document does, leaving out the \
-         document's own words that say it is only likely or possible, or writing \"must\" \
-         where the document says \"may\";\n\
+         - \"hedge\": its quote says that something is only likely or possible, or says \
+         \"may\", and the sentence leaves those words out or writes \"must\"; its fix puts the \
+         quote's own words back. A sentence whose quote has no such words is never a \"hedge\" \
+         mistake;\n\
          - \"warning\": it keeps only some of the signs in a warning, or of the steps to take, \
          when the next sentence does not give the rest; or it says \"not\" or \"never\" where \
          the document does not.\n\
+         Never drop a rule about when to get help or call, and never make it weaker: such a \
+         rule is fixed only by adding what the document says. Never turn something the \
+         document tells the patient to do into something they may do.\n\
          Leave every other sentence out of the list: an empty list means the summary is right. \
          A fixed sentence says nothing the document does not say, and keeps every number, dose, \
          unit, date and name exactly as written; its \"quote\" is one continuous piece of the \
-         document, 3 to 25 words, copied exactly. Drop a sentence you cannot fix. Lines of the \
-         document not shown here are marked {LEFT_OUT}.\n\n\
+         document, 3 to 25 words, copied exactly. Drop a sentence you cannot fix, unless it is a rule \
+         about when to get help or call. Lines of the document not shown here are marked \
+         {LEFT_OUT}.\n\n\
          Reply only with JSON in this shape: \
          {{\"fixes\": [{{\"n\": 2, \"why\": \"schedule\", \"text\": \"...\", \"quote\": \"...\"}}, \
          {{\"n\": 5, \"why\": \"contact\", \"drop\": true}}]}}\n\n\
@@ -1875,22 +1887,28 @@ mod tests {
              kind of mistake, and either its fixed words and quote, or \"drop\": true to leave \
              it out. A sentence needs a fix when it makes one of these mistakes:\n\
              - \"contact\": it gives the patient a phone number, address or other contact that \
-             the document gives to another doctor or for someone else;\n\
+             the document gives to another doctor or for someone else; its fix leaves out only \
+             that number, address or name and keeps the rest of the sentence;\n\
              - \"question\": it writes a question or request the document makes to another \
              doctor as the patient's own question or task;\n\
              - \"schedule\": it cuts a rule or a schedule short, leaving out a later step, a \
              medicine's name or an end date the document gives;\n\
-             - \"hedge\": it says something more surely than the document does, leaving out \
-             the document's own words that say it is only likely or possible, or writing \
-             \"must\" where the document says \"may\";\n\
+             - \"hedge\": its quote says that something is only likely or possible, or says \
+             \"may\", and the sentence leaves those words out or writes \"must\"; its fix puts \
+             the quote's own words back. A sentence whose quote has no such words is never a \
+             \"hedge\" mistake;\n\
              - \"warning\": it keeps only some of the signs in a warning, or of the steps to \
              take, when the next sentence does not give the rest; or it says \"not\" or \
              \"never\" where the document does not.\n\
+             Never drop a rule about when to get help or call, and never make it weaker: such \
+             a rule is fixed only by adding what the document says. Never turn something the \
+             document tells the patient to do into something they may do.\n\
              Leave every other sentence out of the list: an empty list means the summary is \
              right. A fixed sentence says nothing the document does not say, and keeps every \
              number, dose, unit, date and name exactly as written; its \"quote\" is one \
              continuous piece of the document, 3 to 25 words, copied exactly. Drop a sentence \
-             you cannot fix. Lines of the document not shown here are marked [\u{2026}].\n\n\
+             you cannot fix, unless it is a rule about when to get help or call. Lines of the \
+             document not shown here are marked [\u{2026}].\n\n\
              Reply only with JSON in this shape: {\"fixes\": [{\"n\": 2, \"why\": \
              \"schedule\", \"text\": \"...\", \"quote\": \"...\"}, {\"n\": 5, \"why\": \
              \"contact\", \"drop\": true}]}\n\nSummary:\n<<<\n"
@@ -1914,6 +1932,9 @@ mod tests {
         assert!(check_prompt("French").contains("for the patient in French"));
         assert!(check_prompt("French").contains("Write every \"text\" in French"));
         assert!(prompt.contains(LEFT_OUT));
+        // K14b: get-help rules are never dropped or weakened; a contact fix keeps the rule.
+        assert!(prompt.contains("Never drop a rule about when to get help or call"));
+        assert!(prompt.contains("leaves out only that number, address or name"));
         // No test letter's own words: a win on the hard 10 is not learned from its answers.
         for words in [
             "then monthly",
