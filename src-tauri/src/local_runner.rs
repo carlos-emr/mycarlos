@@ -433,6 +433,9 @@ pub(crate) struct Summary {
     /// What those quotes said, for measuring a model's quoting (tests print them); never shown.
     #[allow(dead_code)]
     pub(crate) unlocated_quotes: Vec<String>,
+    /// K17: the sentences the post-step rewrote (`addressee`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) rewrites: Vec<crate::addressee::Rewrite>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -883,7 +886,7 @@ impl Runner {
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
         let mut unlocated_quotes = Vec::new();
-        let sentences = sentences
+        let mut sentences: Vec<Sentence> = sentences
             .into_iter()
             .take(request.max_sentences)
             .map(|mut sentence| {
@@ -893,6 +896,29 @@ impl Runner {
                 sentence
             })
             .collect();
+        // K17 (evaluation only): a sentence that words a line the letter writes to another doctor
+        // as the patient's own says who the line is for (`addressee`). English summaries only,
+        // sentences with a found quote only; nothing is dropped, and the words of each rewrite go
+        // in `rewrites` for measuring, never into a log.
+        let mut rewrites = Vec::new();
+        if request.lang == "en" {
+            for (index, sentence) in sentences.iter_mut().enumerate() {
+                if sentence.quote.is_empty() {
+                    continue;
+                }
+                if let Some((kind, after)) =
+                    crate::addressee::rewrite(&text, &sentence.text, &sentence.quote)
+                {
+                    let before = std::mem::replace(&mut sentence.text, after.clone());
+                    rewrites.push(crate::addressee::Rewrite {
+                        index,
+                        kind,
+                        before,
+                        after,
+                    });
+                }
+            }
+        }
         Ok(Summary {
             sentences,
             model,
@@ -901,6 +927,7 @@ impl Runner {
             tail_page: answer.tail_page,
             unlocated: unlocated_quotes.len(),
             unlocated_quotes,
+            rewrites,
         })
     }
 

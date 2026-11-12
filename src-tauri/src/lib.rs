@@ -25,6 +25,8 @@ mod idle;
 // some platforms.
 #[allow(dead_code)]
 mod local_model;
+// K17 (evaluation only): the post-step on summary sentences (pure std; tested on its own).
+mod addressee;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;

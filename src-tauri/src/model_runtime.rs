@@ -1335,6 +1335,20 @@ pub mod engine_testing {
         pub stats: Option<serde_json::Value>,
         /// The time limit the runner gave this answer.
         pub answer_limit_ms: u64,
+        /// K17: the post-step's name, and every sentence it rewrote (before and after).
+        pub post_step: &'static str,
+        pub rewrites: Vec<MeasuredRewrite>,
+    }
+
+    /// K17: one sentence the post-step rewrote (`addressee`): its place, the rewrite's kind, and
+    /// the words before and after.
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredRewrite {
+        pub index: usize,
+        pub kind: &'static str,
+        pub before: String,
+        pub after: String,
     }
 
     /// One summary sentence: its words, the quote the model wrote, and whether that quote was
@@ -1457,6 +1471,16 @@ pub mod engine_testing {
                 .runner
                 .summarize(self.runner.ticket(), &request)
                 .map_err(|error| format!("{error:?}"))?;
+            let rewrites = summary
+                .rewrites
+                .into_iter()
+                .map(|rewrite| MeasuredRewrite {
+                    index: rewrite.index,
+                    kind: rewrite.kind.name(),
+                    before: rewrite.before,
+                    after: rewrite.after,
+                })
+                .collect();
             // The runner empties a quote it cannot find, in sentence order, and keeps what it
             // said in `unlocated_quotes`; the grammar never lets the model write an empty one.
             let mut missing = summary.unlocated_quotes.into_iter();
@@ -1487,6 +1511,8 @@ pub mod engine_testing {
                     .last_stats()
                     .and_then(|stats| serde_json::to_value(stats).ok()),
                 answer_limit_ms,
+                post_step: crate::addressee::NAME,
+                rewrites,
             })
         }
 
