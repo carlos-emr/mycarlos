@@ -1,10 +1,10 @@
 {
- "version": "9",
- "status": "RULE 9 (Ben, 11 Nov evening: what the patient must DO and KNOW, in plain words; baseline E5). Frozen before any E6 or E6a output existed. Rule 8's scorings (round 2) stay with freeze version 8 (scorer 1675080205bf).",
- "frozen_utc": "2026-11-11T19:11:50+00:00",
+ "version": "9.1",
+ "status": "RULE 9, freeze 9.1 (12 Nov): as 9, with a second evidence span for new-long-hospital-record/no_loperamide (Ben's D267). Scorings under 9 and 9.1 are not compared; the 9 scorings were re-scored under 9.1.",
+ "frozen_utc": "2026-11-12T02:44:21+00:00",
  "rule_version": 9,
  "scorer_sha256": "bc3b898f3869465d15344b93bb566aa1267d250d4c8d16d08d7e8de9f04798fc",
- "scoring_documents_sha256": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
+ "scoring_documents_sha256": "0738e819ad4ab4fd52c40dc65dec06ea6d56450d91e738bb4a8f61687e71c374",
  "synthetic_only": true,
  "documents_count": 18,
  "facts": 147,
@@ -73,6 +73,13 @@
    "version": "9",
    "frozen_utc": "2026-11-11T19:11:50+00:00",
    "reason": "rule 9 (Ben 18:53Z and 18:58Z, 11 Nov; design v2 approved): FACT-TAGS.json tags every fact DO, KNOW or DETAIL (an automatic first pass and a hand pass, from the documents only); a fact counts only if required and tagged DO or KNOW; for each, every sentence whose quote lies on its evidence goes on the sheet to check, and a verdict never credits a fact its row did not list; a new `technical` column (yes/no, blank waits); checks against the first run (E5): 1a and 1b as rule 8, no key fact lost (any tag), DO and KNOW credited each at least the baseline's, the share of plain sentences at least the baseline's, quotes within 2 points, time as rule 6. A jargon screen is reported, not gating. Without tags the scorer applies rule 8 (tests). Documents unchanged; written before any E6 or E6a output existed."
+  },
+  {
+   "version": "9.1",
+   "frozen_utc": "2026-11-12T02:44:21+00:00",
+   "reason": "Ben's D267 (12 Nov): new-long-hospital-record/no_loperamide gets a second evidence span, \"Avoid loperamide.\" (the progress note on page index 9), beside the patient instruction. A sentence that states the rule correctly and quotes the note was counted as losing the key fact. Only the fact's evidence changes: no fact, match, tag, trap or page text. Rule, scorer and tags unchanged.",
+   "documents_sha256_before": "4b6c5fe9308705a3c66a0a934f6206168d37facfcfabf5b8775201bf7b75a59b",
+   "documents_sha256": "0738e819ad4ab4fd52c40dc65dec06ea6d56450d91e738bb4a8f61687e71c374"
   }
  ],
  "documents": {
@@ -182,7 +189,7 @@
    "outputs_seen_before_facts": "no record"
   },
   "new-long-hospital-record": {
-   "sha256": "ae8e3dc3526a3bd4a493b99675ccc97cb9e53336a79229b7ddb0bc2c0cc1c7be",
+   "sha256": "f51fb9cc60ea0cf32580d0b062892463ad19b1352f13ef96dc72633077337fd4",
    "facts": 14,
    "critical": 9,
    "traps": 3,

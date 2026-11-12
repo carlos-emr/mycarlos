@@ -393,6 +393,12 @@ Called without tags (the tests' API default), the scorer applies rule 8 and name
 output. Runs scored under rule 8 and rule 9 are not compared: the baseline is rescored under rule 9
 from the same review, with the `technical` answers added.
 
+**Freeze 9.1** (12 Nov, Ben's D267): new-long-hospital-record/no_loperamide has a second evidence span, "Avoid
+loperamide." (the progress note), beside the patient instruction. A sentence that stated the rule correctly and quoted
+the note was counted as losing the key fact. Only that fact's evidence changes (no fact, match, tag, trap or page
+text); rule, scorer and tags are unchanged. Every rule-9 scoring was re-scored under 9.1 and no summary or verdict
+changed.
+
 ### Margins and the noise floor
 Greedy decoding repeats exactly, so two runs of one build and thread count (B0 and B0R) answer
 token for token. `repeat` checks that, and such a pair measures only run-to-run noise: zero facts

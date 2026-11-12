@@ -368,6 +368,9 @@
    "required": true,
    "critical": false,
    "source_evidence": "Do not take loperamide (Imodium) for the diarrhea.",
+   "evidence_spans": [
+    "Avoid loperamide."
+   ],
    "approved_statements": [
     "Do not take loperamide (Imodium)."
    ],
