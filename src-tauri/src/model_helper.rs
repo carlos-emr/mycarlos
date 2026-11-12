@@ -458,6 +458,23 @@ const SUMMARY_DISCHARGE_PART: &str =
      that part; orders written during the stay are not instructions for the patient. This is \
      only about instructions: in every document, still say what the document found, as above.";
 
+/// K18x (on K18; the gated, going-home prompt only): every medical word in a finding gets a short
+/// plain explanation beside it, from its general meaning only (Ben, 12 Nov: the plain-language
+/// rule stays as written, so K18's long-record findings must be plain). No cause, no claim about
+/// the patient, no number: K11's lesson. The examples name no evaluation letter's words.
+const SUMMARY_PLAIN_FINDINGS: &str =
+    "In each sentence about what the document found, give every medical word, germ or test a \
+     short plain explanation right beside it, from its general meaning only, as in \"gout \
+     (painful swelling in a joint)\" or \"lipase (a blood test for the pancreas)\"; the \
+     explanation never says anything about this patient, a cause, or a number.";
+
+/// K18x (the gated prompt only): a rule about when to call or get help keeps all its reasons
+/// together in one sentence. E5's own going-home weight rule has always dropped its second
+/// reason (breathing or ankle swelling), with no sentence next to it giving it.
+const SUMMARY_WHOLE_GET_HELP: &str =
+    "A rule about when to call or get help keeps every reason the document gives for it, all \
+     in one sentence, in the document's meaning, never shortened.";
+
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
 const SUMMARY_WHOLE_RULES: &str =
@@ -489,14 +506,15 @@ pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     )
 }
 
-/// K18: the summary request for a document with a going-home part (`going_home`): K15b's,
-/// copied byte for byte (E5's with the going-home rule right after part (a)).
+/// K18x: the summary request for a document with a going-home part (`going_home`): K15b's
+/// (E5's with the going-home rule right after part (a)), then K18x's plain-explanation and
+/// whole get-help sentences. Every other document still gets E5's, byte for byte.
 #[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 pub(crate) fn summary_prompt_going_home(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
          sentences (fewer if the document is short). {SUMMARY_ORDER} {SUMMARY_DISCHARGE_PART} \
-         Put one fact in each sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each \
+         {SUMMARY_PLAIN_FINDINGS} {SUMMARY_WHOLE_GET_HELP} Put one fact in each sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each \
          sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 words, \
          exactly as written (same spelling, numbers, accents and punctuation, no '...' and no \
          joined pieces), in the document's own language (only the quote is copied; the sentence \
@@ -1143,11 +1161,19 @@ mod tests {
     }
 
     #[test]
-    fn k18_asks_k15bs_request_for_a_going_home_part_and_e5s_otherwise() {
-        // K18: a document with a going-home part gets K15b's request word for word (E5 with the
-        // going-home pair after part (a)); every other document gets E5's, unchanged (the E5 test
-        // below still pins it), and E5's request never has the pair.
-        assert!(!summary_prompt("English", MAX_SENTENCES).contains(SUMMARY_DISCHARGE_PART));
+    fn k18x_asks_k15bs_request_with_plain_findings_and_whole_get_help_rules_for_a_going_home_part()
+    {
+        // K18x: a document with a going-home part gets K15b's request (E5 with the going-home pair
+        // after part (a)) with the plain-explanation and whole get-help sentences after it; every
+        // other document gets E5's, unchanged (the E5 test below still pins it), and E5's request
+        // has none of the three.
+        for gated in [
+            SUMMARY_DISCHARGE_PART,
+            SUMMARY_PLAIN_FINDINGS,
+            SUMMARY_WHOLE_GET_HELP,
+        ] {
+            assert!(!summary_prompt("English", MAX_SENTENCES).contains(gated));
+        }
         let prompt = summary_prompt_going_home("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1162,7 +1188,13 @@ mod tests {
              follow-up), take the patient's instructions and any medicine change only from that \
              part; orders written during the stay are not instructions for the patient. This is \
              only about instructions: in every document, still say what the document found, as \
-             above. Put one fact in each sentence. When \
+             above. In each sentence about what the document found, give every medical word, \
+             germ or test a short plain explanation right beside it, from its general meaning \
+             only, as in \"gout (painful swelling in a joint)\" or \"lipase (a blood test for the \
+             pancreas)\"; the explanation never says anything about this patient, a cause, or a \
+             number. A rule about when to call or get help keeps every reason the document gives \
+             for it, all in one sentence, in the document's meaning, never shortened. Put one \
+             fact in each sentence. When \
              a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
              a group of medicines, keep every condition, every medicine or group, and every \
              number or limit the document gives for it; if they do not all fit in one sentence, \
@@ -1191,6 +1223,26 @@ mod tests {
                 !SUMMARY_DISCHARGE_PART.contains(letter_word),
                 "{letter_word}"
             );
+        }
+        // K18x's two sentences are general: no number, and no word of an evaluation letter.
+        for line in [SUMMARY_PLAIN_FINDINGS, SUMMARY_WHOLE_GET_HELP] {
+            assert!(!line.contains(|c: char| c.is_ascii_digit()));
+            for letter_word in [
+                "sepsis",
+                "creatinine",
+                "coli",
+                "difficile",
+                "kidney",
+                "fever",
+                "weight",
+                "breathing",
+                "ankle",
+                "emergency",
+                "911",
+                "clinic",
+            ] {
+                assert!(!line.contains(letter_word), "{letter_word}");
+            }
         }
         assert!(
             SYSTEM_PROMPT.starts_with("You help patients understand their own medical documents.")
