@@ -445,6 +445,18 @@ const SUMMARY_ORDER: &str =
      document tells the patient to do it: a doctor's name or signature, a printed, collected or \
      reported date, or a medicine already given is not an instruction.";
 
+/// K15 (round-4 candidate on E5): in a hospital record, the patient's instructions and medicine
+/// changes come only from the going-home part. On a messy long hospital record, E5 turned orders
+/// written during the stay into instructions for the patient (stop a medicine that restarts at
+/// discharge, take one that was only given in hospital). The rule names no medicine, test or
+/// letter: it describes the parts of a hospital record in general words, and says what to do
+/// when a record has no going-home part.
+const SUMMARY_DISCHARGE_PART: &str =
+    "In a hospital record, take the patient's instructions and any medicine change only from the \
+     going-home part (the discharge summary, the discharge medicines and the follow-up); orders \
+     written during the stay are not instructions for the patient. If the record has no \
+     going-home part, say nothing about orders written during the stay.";
+
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
 const SUMMARY_WHOLE_RULES: &str =
@@ -462,12 +474,13 @@ const SUMMARY_SAME_SENTENCE: &str =
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
-         sentences (fewer if the document is short). {SUMMARY_ORDER} Put one fact in each \
-         sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each sentence, copy into \
-         \"quote\" one continuous piece of the document, 3 to 25 words, exactly as written (same \
-         spelling, numbers, accents and punctuation, no '...' and no joined pieces), in the \
-         document's own language (only the quote is copied; the sentence itself is written in \
-         {language}). If you cannot find such a piece for a sentence, leave that sentence out.\n\n\
+         sentences (fewer if the document is short). {SUMMARY_ORDER} {SUMMARY_DISCHARGE_PART} \
+         Put one fact in each sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each \
+         sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 words, \
+         exactly as written (same spelling, numbers, accents and punctuation, no '...' and no \
+         joined pieces), in the document's own language (only the quote is copied; the sentence \
+         itself is written in {language}). If you cannot find such a piece for a sentence, leave \
+         that sentence out.\n\n\
          Reply only with JSON in this shape: \
          {{\"sentences\": [{{\"text\": \"...\", \"quote\": \"...\"}}]}}\n\n\
          Document:\n<<<\n{SLOT}\n>>>\n\nWrite every \"text\" in {language}, even though the \
@@ -1109,8 +1122,10 @@ mod tests {
     }
 
     #[test]
-    fn e5_asks_found_first_whole_rules_one_clause_and_the_language_twice() {
-        // E5 = E2 + parts (a), (b) and (c) + L1 and L2, word for word as the design note gives it.
+    fn k15_is_e5_with_instructions_only_from_the_going_home_part() {
+        // K15 = E5 word for word (E2 + parts (a), (b) and (c) + L1 and L2), with one sentence pair
+        // after part (a): instructions and medicine changes come only from a hospital record's
+        // going-home part, and stay orders are left out when there is none.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1120,7 +1135,12 @@ mod tests {
              problem or diagnosis and the key results, each with its number and unit. Then say \
              what the patient must do and when, only where the document tells the patient to do \
              it: a doctor's name or signature, a printed, collected or reported date, or a \
-             medicine already given is not an instruction. Put one fact in each sentence. When \
+             medicine already given is not an instruction. In a hospital record, take the \
+             patient's instructions and any medicine change only from the going-home part (the \
+             discharge summary, the discharge medicines and the follow-up); orders written \
+             during the stay are not instructions for the patient. If the record has no \
+             going-home part, say nothing about orders written during the stay. Put one fact in \
+             each sentence. When \
              a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
              a group of medicines, keep every condition, every medicine or group, and every \
              number or limit the document gives for it; if they do not all fit in one sentence, \
@@ -1139,6 +1159,18 @@ mod tests {
             "\n>>>\n\nWrite every \"text\" in English, even though the document may be in \
              another language. Only \"quote\" stays in the document's own language, copied \
              exactly."
+        );
+        // The rule is general: no number, and no medicine, test or section heading from a test
+        // letter; the system text is E5's, unchanged.
+        assert!(!SUMMARY_DISCHARGE_PART.contains(|c: char| c.is_ascii_digit()));
+        for letter_word in ["emergency", "sliding", "IV", "hold", "Hold", "tomorrow"] {
+            assert!(
+                !SUMMARY_DISCHARGE_PART.contains(letter_word),
+                "{letter_word}"
+            );
+        }
+        assert!(
+            SYSTEM_PROMPT.starts_with("You help patients understand their own medical documents.")
         );
     }
 
