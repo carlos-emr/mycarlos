@@ -456,6 +456,23 @@ const SUMMARY_DISCHARGE_PART: &str =
      that part; orders written during the stay are not instructions for the patient. This is \
      only about instructions: in every document, still say what the document found, as above.";
 
+/// K18x (on K18; the gated, going-home prompt only): every medical word in a finding gets a short
+/// plain explanation beside it, from its general meaning only (Ben, 12 Nov: the plain-language
+/// rule stays as written, so K18's long-record findings must be plain). No cause, no claim about
+/// the patient, no number: K11's lesson. The examples name no evaluation letter's words.
+const SUMMARY_PLAIN_FINDINGS: &str =
+    "In each sentence about what the document found, give every medical word, germ or test a \
+     short plain explanation right beside it, from its general meaning only, as in \"gout \
+     (painful swelling in a joint)\" or \"lipase (a blood test for the pancreas)\"; the \
+     explanation never says anything about this patient, a cause, or a number.";
+
+/// K18x (the gated prompt only): a rule about when to call or get help keeps all its reasons
+/// together in one sentence. E5's own going-home weight rule has always dropped its second
+/// reason (breathing or ankle swelling), with no sentence next to it giving it.
+const SUMMARY_WHOLE_GET_HELP: &str =
+    "A rule about when to call or get help keeps every reason the document gives for it, all \
+     in one sentence, in the document's meaning, never shortened.";
+
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
 const SUMMARY_WHOLE_RULES: &str =
@@ -474,7 +491,7 @@ pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \
          sentences (fewer if the document is short). {SUMMARY_ORDER} {SUMMARY_DISCHARGE_PART} \
-         Put one fact in each sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each \
+         {SUMMARY_PLAIN_FINDINGS} {SUMMARY_WHOLE_GET_HELP} Put one fact in each sentence. {SUMMARY_WHOLE_RULES} {SUMMARY_SAME_SENTENCE} For each \
          sentence, copy into \"quote\" one continuous piece of the document, 3 to 25 words, \
          exactly as written (same spelling, numbers, accents and punctuation, no '...' and no \
          joined pieces), in the document's own language (only the quote is copied; the sentence \
