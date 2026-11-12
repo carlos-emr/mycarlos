@@ -24,7 +24,9 @@ use std::num::NonZeroU32;
 /// Whether the weights are mapped from the file rather than read into the helper's memory.
 /// Linux: read, so that the sealed copy (shared memory) can be closed once loaded and is not
 /// held twice. Windows: mapped from the file, which the system can page out and back in.
-const MAP_FILE: bool = cfg!(windows);
+// EVAL ONLY (12 Nov, the 9B memory test): mapped on Linux too, so the helper maps its own sealed memfd
+// instead of reading a second copy of the weights. Never on a product branch.
+const MAP_FILE: bool = true;
 
 /// The loaded model and its one context. Both live as long as the helper: leaked on purpose,
 /// since the process ends when it is done.
