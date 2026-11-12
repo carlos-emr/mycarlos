@@ -476,14 +476,18 @@ const SUMMARY_DISCHARGE_PART: &str =
 /// medicine ..." where E5 wrote "The report suggests ...", and writing "you" in 20 sentences (K15c
 /// 4 to 9, E5 1): K16's sentence says "you" seven times. K16b says the same in the third person, as
 /// part (a) does ("the patient"), and names a report's comment to the doctor who ordered the test.
+///
+/// K16c (on K16b): on the 8 messy copies, all three K16b screen runs opened with four or five
+/// results and lost two get-help rules under the 10-sentence cap (K15c and K16 kept both). K16c
+/// drops K16b's two quoted examples ("the report suggests", "the writer asks the other doctor
+/// whether"), the most steering words it added, and keeps the rest word for word.
 const SUMMARY_TO_A_DOCTOR: &str =
     "Some lines are written to a doctor, not to the patient: a question, request or suggestion \
      to another doctor, a report's comment to the doctor who ordered the test, and a phone number \
      the writer gives a doctor (\"you\" and \"me\" in such a line mean the doctors). Say such a \
-     line as theirs, naming who asks or suggests it, as in \"the report suggests\" or \"the \
-     writer asks the other doctor whether\", never as something the patient must or should do, \
-     a question to the patient, or a number for the patient to call; where the document tells \
-     the patient what to do about the same thing, say that too.";
+     line as theirs, naming who asks or suggests it, never as something the patient must or \
+     should do, a question to the patient, or a number for the patient to call; where the \
+     document tells the patient what to do about the same thing, say that too.";
 
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
@@ -1151,8 +1155,8 @@ mod tests {
     }
 
     #[test]
-    fn k16b_is_k15c_with_lines_written_to_a_doctor_said_as_theirs_in_the_third_person() {
-        // K16b = K15c word for word (K15b with K12b's no-findings sentence right after part (a)),
+    fn k16c_is_k16b_without_its_two_examples() {
+        // K16c = K16b without the two quoted examples. K16b = K15c word for word (K15b with K12b's no-findings sentence right after part (a)),
         // with one sentence after the going-home pair, in the third person as part (a): a
         // question, request or suggestion written to a doctor, a report's comment to the doctor
         // who ordered the test, and a phone number the writer gives a doctor, are said as theirs,
@@ -1177,8 +1181,7 @@ mod tests {
              request or suggestion to another doctor, a report's comment to the doctor who \
              ordered the test, and a phone number the writer gives a doctor (\"you\" and \"me\" \
              in such a line mean the doctors). Say such a line as theirs, naming who asks or \
-             suggests it, as in \"the report suggests\" or \"the writer asks the other doctor \
-             whether\", never as something the patient must or should do, a question to the \
+             suggests it, never as something the patient must or should do, a question to the \
              patient, or a number for the patient to call; where the document tells the patient \
              what to do about the same thing, say that too. Put one fact in each sentence. When \
              a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
