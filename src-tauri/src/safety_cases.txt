@@ -98,3 +98,45 @@ summary:
 Take your medicine. || Consignes
 expect:
 Take your medicine.
+===
+name: a_rule_that_refers_back
+pages:
+Going home
+For a nosebleed, pinch your nose. If the bleeding has not stopped after 20 minutes, call 911.
+summary:
+Pinch your nose for a nosebleed. || For a nosebleed, pinch your nose
+expect:
+Pinch your nose for a nosebleed.
+The document says: “For a nosebleed, pinch your nose. If the bleeding has not stopped after 20 minutes, call 911.”
+===
+name: a_rule_that_refers_back_with_it
+pages:
+Going home
+Keep the cast dry. If it gets wet or feels tight, call the clinic.
+summary:
+Keep your cast dry. || Keep the cast dry
+expect:
+Keep your cast dry.
+The document says: “Keep the cast dry. If it gets wet or feels tight, call the clinic.”
+===
+name: a_rule_in_a_bulleted_step
+pages:
+Going home
+- Weigh yourself every morning. Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.
+- Take your tablets with food.
+summary:
+You must weigh yourself every morning. || Weigh yourself every morning
+Call the clinic if your weight goes up by more than 2 kg in 3 days. || Call the clinic if your weight goes up by more than 2 kg in 3 days
+expect:
+You must weigh yourself every morning.
+The document says: “Weigh yourself every morning. Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.”
+===
+name: a_rule_wrapped_in_a_bulleted_step
+pages:
+Going home
+- Weigh yourself every morning. Call your doctor if your weight goes up by more than
+  2 kg in 3 days, or if your legs swell.
+summary:
+Call your doctor if your weight goes up by more than 2 kg in 3 days. || Call your doctor if your weight goes up
+expect:
+The document says: “Weigh yourself every morning. Call your doctor if your weight goes up by more than 2 kg in 3 days, or if your legs swell.”

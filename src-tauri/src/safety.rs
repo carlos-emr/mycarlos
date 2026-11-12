@@ -14,6 +14,14 @@
 //!   rule's content words) becomes the rule, quoted; with none, the rule is added, quoted, at the
 //!   end. Only English rules are checked (the summary is English); the writer's own line to
 //!   another doctor ("please call me …") is no rule for the patient (K17 handles it).
+//! - **The rule's whole span (safety-2).** The quote is the rule with what it needs: in a
+//!   bulleted or numbered step, the whole step up to the rule ("Weigh yourself every morning.
+//!   Call if …"); otherwise, for a rule that refers back ("it", "this", "they", "these", "that",
+//!   or "the pain" when a word of the sentence before has the noun's first five letters, as in
+//!   "nosebleed" for "the bleeding"), the sentence before it too, when it is in the same
+//!   paragraph and ends as a sentence. The sentence replaced is the one whose quote lies in the
+//!   rule itself, else one with an action word and a trigger; a sentence that gives only the
+//!   lead-in stays, and the whole rule is added after.
 //! - Nothing is translated, nothing is dropped: a quote replaces a sentence or is added.
 //!
 //! Pure std (with `addressee`), tested on its own: see the tests' note.
@@ -22,7 +30,7 @@ use crate::addressee::{ends_sentence, find_folded, source_sentence, wraps, CONTA
 
 /// The checks' name in a measurement.
 #[allow(dead_code)]
-pub(crate) const NAME: &str = "safety-1";
+pub(crate) const NAME: &str = "safety-2";
 
 /// How a fallback sentence starts; later steps leave such a sentence as it is.
 pub(crate) const QUOTE_MARK: &str = "The document says: ";
@@ -435,6 +443,73 @@ fn flat(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn is_bullet(line: &str) -> bool {
+    let t = line.trim_start();
+    if t.starts_with(['-', '*', '\u{2022}', '\u{2013}']) {
+        return true;
+    }
+    let digits = t.chars().take_while(char::is_ascii_digit).count();
+    digits > 0 && t[digits..].starts_with(['.', ')']) && t[digits + 1..].starts_with(' ')
+}
+
+/// Where the quote of a rule at `at` starts: the start of its bulleted step, or of the sentence
+/// before it when the rule refers back to it (see the module notes), or the rule itself.
+fn rule_start(pages: &str, at: usize, previous: Option<(usize, usize)>, rule: &str) -> usize {
+    // A bulleted or numbered step: back over its continuation lines to its marker.
+    let mut line_start = pages[..at].rfind('\n').map_or(0, |i| i + 1);
+    loop {
+        let line_end = pages[line_start..]
+            .find('\n')
+            .map_or(pages.len(), |i| line_start + i);
+        let line = &pages[line_start..line_end];
+        if is_bullet(line) {
+            let marker = line.trim_start();
+            let skip = line.len() - marker.len();
+            let body = marker.trim_start_matches(|c: char| {
+                c.is_ascii_digit() || matches!(c, '-' | '*' | '\u{2022}' | '\u{2013}' | '.' | ')')
+            });
+            return line_start
+                + skip
+                + (marker.len() - body.len())
+                + (body.len() - body.trim_start().len());
+        }
+        if line_start == 0 {
+            break;
+        }
+        let prev_start = pages[..line_start - 1].rfind('\n').map_or(0, |i| i + 1);
+        let prev = &pages[prev_start..line_start - 1];
+        let continued = line.starts_with([' ', '\t']) || wraps(prev);
+        if prev.trim().is_empty() || !continued {
+            break;
+        }
+        line_start = prev_start;
+    }
+    // A rule that refers back to the sentence before it.
+    let Some((p_at, p_to)) = previous else {
+        return at;
+    };
+    let before = pages[p_at..p_to].trim();
+    if pages[p_to..at].contains("\n\n") || !before.ends_with(['.', '!', '?']) {
+        return at;
+    }
+    let words: Vec<String> = tokens(rule).into_iter().map(|t| t.0).collect();
+    let w = |k: usize| words.get(k).map(String::as_str);
+    let start = if w(0) == Some("if") { 1 } else { 0 };
+    let refers = match w(start) {
+        Some("it" | "this" | "these" | "they" | "that" | "so" | "not") => true,
+        Some("the") => w(start + 1).is_some_and(|noun| {
+            let head: String = noun.chars().take(5).collect();
+            noun.chars().count() >= 3 && tokens(before).iter().any(|t| t.0.contains(head.as_str()))
+        }),
+        _ => false,
+    };
+    if refers {
+        p_at
+    } else {
+        at
+    }
+}
+
 fn is_contact_offer(rule: &str) -> bool {
     let lower = format!(" {}", rule.to_lowercase().replace('\u{2019}', "'"));
     CONTACT_OFFERS.iter().any(|offer| {
@@ -471,7 +546,8 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
             });
         }
     }
-    for (at, to) in sentences_of(pages) {
+    let spans = sentences_of(pages);
+    for (k, &(at, to)) in spans.iter().enumerate() {
         let rule = flat(&pages[at..to]);
         let rule = rule
             .trim_start_matches(['-', '*', '\u{2022}', '\u{2013}', ' '])
@@ -489,24 +565,36 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
         if trigs.is_empty() || lines.iter().any(|l| carries_rule(&l.text, &trigs)) {
             continue;
         }
-        let after = quoted(&rule);
+        let start = rule_start(pages, at, k.checked_sub(1).map(|p| spans[p]), &rule);
+        let span = flat(&pages[start..to])
+            .trim_start_matches(['-', '*', '\u{2022}', '\u{2013}', ' '])
+            .trim()
+            .to_owned();
+        let after = quoted(&span);
         if lines.iter().any(|l| l.text == after) {
             continue;
         }
-        let partial = lines.iter().position(|l| {
-            if l.text.starts_with(QUOTE_MARK) {
-                return false;
-            }
-            let inside = !l.quote.is_empty()
-                && find_folded(pages, &l.quote).is_some_and(|(s, e)| s >= at && e <= to);
-            let some_word = trigs
-                .iter()
-                .flatten()
-                .filter(|w| w.chars().count() >= 4)
-                .any(|w| l.text.to_lowercase().contains(w.as_str()));
-            inside
-                || (has_action(&l.text) && trigs.iter().any(|t| carries(&l.text, t)) && some_word)
-        });
+        let quote_in = |l: &Line, from: usize| {
+            !l.quote.is_empty()
+                && find_folded(pages, &l.quote).is_some_and(|(s, e)| s >= from && e <= to)
+        };
+        let open = |l: &&Line| !l.text.starts_with(QUOTE_MARK);
+        let partial = lines
+            .iter()
+            .position(|l| open(&l) && quote_in(l, at))
+            .or_else(|| {
+                lines.iter().position(|l| {
+                    let some_word = trigs
+                        .iter()
+                        .flatten()
+                        .filter(|w| w.chars().count() >= 4)
+                        .any(|w| l.text.to_lowercase().contains(w.as_str()));
+                    open(&l)
+                        && has_action(&l.text)
+                        && trigs.iter().any(|t| carries(&l.text, t))
+                        && some_word
+                })
+            });
         match partial {
             Some(index) => {
                 let before = std::mem::replace(&mut lines[index].text, after.clone());
@@ -518,7 +606,7 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
                 });
             }
             None => {
-                let quote: String = rule.chars().take(240).collect();
+                let quote: String = span.chars().take(240).collect();
                 log.push(Fallback {
                     check: "get-help",
                     index: lines.len(),
@@ -637,6 +725,27 @@ mod tests {
     #[test]
     fn given_the_writers_own_line_to_another_doctor_when_checked_then_it_is_no_rule() {
         check_case("the_writers_line_is_no_rule");
+    }
+
+    #[test]
+    fn given_a_rule_that_refers_back_to_the_sentence_before_when_quoted_then_that_sentence_comes_with_it(
+    ) {
+        check_case("a_rule_that_refers_back");
+    }
+
+    #[test]
+    fn given_a_rule_that_starts_with_if_it_when_quoted_then_the_sentence_before_comes_with_it() {
+        check_case("a_rule_that_refers_back_with_it");
+    }
+
+    #[test]
+    fn given_a_rule_in_a_bulleted_step_when_quoted_then_the_whole_step_is_quoted() {
+        check_case("a_rule_in_a_bulleted_step");
+    }
+
+    #[test]
+    fn given_a_rule_wrapped_over_two_lines_of_a_step_when_quoted_then_the_whole_step_is_quoted() {
+        check_case("a_rule_wrapped_in_a_bulleted_step");
     }
 
     #[test]
