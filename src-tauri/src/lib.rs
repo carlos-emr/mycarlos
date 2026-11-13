@@ -8795,3 +8795,6 @@ mod audit_history_ipc_tests {
         assert_eq!(locked["code"], "locked");
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod extraction_acceptance_tests;
