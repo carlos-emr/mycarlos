@@ -1,0 +1,201 @@
+The safety checks' shared cases (K20): synthetic letters only. Read by the Rust tests in safety.rs and by the
+evaluation's Python port. Blocks separated by "===". "pages:" up to "summary:"; one summary sentence per line as
+"<text> || <quote>" (no quote: not found); "expect:" the sentences after the checks.
+===
+name: a_rule_with_a_trigger_left_out
+pages:
+Going home
+Weigh yourself every morning. Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.
+summary:
+You must weigh yourself every morning. || Weigh yourself every morning
+Call the clinic if your weight goes up by more than 2 kg in 3 days. || Call the clinic if your weight goes up by more than 2 kg in 3 days
+expect:
+You must weigh yourself every morning.
+The document says: “Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.”
+===
+name: a_rule_missing_from_the_summary
+pages:
+Going home
+Take one tablet each morning. If the rash spreads, call the clinic.
+summary:
+Take one tablet each morning. || Take one tablet each morning
+expect:
+Take one tablet each morning.
+The document says: “If the rash spreads, call the clinic.”
+===
+name: a_condition_before_its_action
+pages:
+Going home
+For a nosebleed, pinch your nose. If the bleeding has not stopped after 20 minutes, call 911.
+summary:
+Pinch your nose for a nosebleed. || For a nosebleed, pinch your nose
+Call 911 if the bleeding has not stopped after 20 minutes. || If the bleeding has not stopped after 20 minutes
+expect:
+Pinch your nose for a nosebleed.
+Call 911 if the bleeding has not stopped after 20 minutes.
+===
+name: a_rule_carried_whole
+pages:
+Going home
+Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.
+summary:
+Call the clinic if your weight goes up by more than 2 kg in 3 days or your legs swell. || Call the clinic if your weight goes up
+expect:
+Call the clinic if your weight goes up by more than 2 kg in 3 days or your legs swell.
+===
+name: trigger_words_without_the_action
+pages:
+Going home
+Your legs did not swell in hospital. Call the clinic if your weight goes up or if your legs swell.
+summary:
+Your legs did not swell and your weight was stable. || Your legs did not swell in hospital
+expect:
+Your legs did not swell and your weight was stable.
+The document says: “Call the clinic if your weight goes up or if your legs swell.”
+===
+name: a_number_not_in_the_document
+pages:
+Results
+The potassium was 4.8 mmol/L, in the usual range.
+summary:
+The potassium was 8.4 mmol/L. || The potassium was 4.8 mmol/L
+expect:
+The document says: “The potassium was 4.8 mmol/L, in the usual range.”
+===
+name: a_number_written_as_a_word
+pages:
+Going home
+Take the tablets twice a day for two weeks.
+summary:
+Take the tablets 2 times a day for 2 weeks. || Take the tablets twice a day for two weeks
+expect:
+Take the tablets 2 times a day for 2 weeks.
+===
+name: a_wrong_number_with_no_quote
+pages:
+Results
+The potassium was 4.8 mmol/L.
+summary:
+The potassium was 8.4 mmol/L. ||
+expect:
+The potassium was 8.4 mmol/L.
+===
+name: the_writers_line_is_no_rule
+pages:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill. Please call me if you need anything else.
+summary:
+The doctor thanks the receiving doctor for seeing the patient. || Thank you for seeing Sam Quill
+expect:
+The doctor thanks the receiving doctor for seeing the patient.
+===
+name: a_french_rule_is_not_checked
+pages:
+Consignes
+Si la fièvre revient, appelez la clinique.
+summary:
+Take your medicine. || Consignes
+expect:
+Take your medicine.
+===
+name: a_rule_that_refers_back
+pages:
+Going home
+For a nosebleed, pinch your nose. If the bleeding has not stopped after 20 minutes, call 911.
+summary:
+Pinch your nose for a nosebleed. || For a nosebleed, pinch your nose
+expect:
+Pinch your nose for a nosebleed.
+The document says: “For a nosebleed, pinch your nose. If the bleeding has not stopped after 20 minutes, call 911.”
+===
+name: a_rule_that_refers_back_with_it
+pages:
+Going home
+Keep the cast dry. If it gets wet or feels tight, call the clinic.
+summary:
+Keep your cast dry. || Keep the cast dry
+expect:
+Keep your cast dry.
+The document says: “Keep the cast dry. If it gets wet or feels tight, call the clinic.”
+===
+name: a_rule_in_a_bulleted_step
+pages:
+Going home
+- Weigh yourself every morning. Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.
+- Take your tablets with food.
+summary:
+You must weigh yourself every morning. || Weigh yourself every morning
+Call the clinic if your weight goes up by more than 2 kg in 3 days. || Call the clinic if your weight goes up by more than 2 kg in 3 days
+expect:
+You must weigh yourself every morning.
+The document says: “Weigh yourself every morning. Call the clinic if your weight goes up by more than 2 kg in 3 days, or if your legs swell.”
+===
+name: a_rule_wrapped_in_a_bulleted_step
+pages:
+Going home
+- Weigh yourself every morning. Call your doctor if your weight goes up by more than
+  2 kg in 3 days, or if your legs swell.
+summary:
+Call your doctor if your weight goes up by more than 2 kg in 3 days. || Call your doctor if your weight goes up
+expect:
+The document says: “Weigh yourself every morning. Call your doctor if your weight goes up by more than 2 kg in 3 days, or if your legs swell.”
+===
+name: a_first_step_left_out
+pages:
+Going home
+- For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Call 911 if chest pain lasts more than 5 minutes. || For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+expect:
+The document says: “For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.”
+===
+name: a_first_step_carried
+pages:
+Going home
+- For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Use the spray once for chest pain and call 911 if the pain is not gone after 5 minutes. || For chest pain, use the spray once
+expect:
+Use the spray once for chest pain and call 911 if the pain is not gone after 5 minutes.
+===
+name: a_first_step_in_the_sentence_before
+pages:
+Going home
+- For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+For chest pain, use your spray one time. || For chest pain, use the spray once
+Call 911 if the pain is not gone after 5 minutes. || If the pain is not gone after 5 minutes, call 911
+expect:
+For chest pain, use your spray one time.
+Call 911 if the pain is not gone after 5 minutes.
+===
+name: a_first_step_in_the_same_sentence
+pages:
+Going home
+For chest pain, use the spray once; if the pain is not gone after 5 minutes, call 911.
+summary:
+Call 911 if chest pain is not gone after 5 minutes. || if the pain is not gone after 5 minutes, call 911
+expect:
+The document says: “For chest pain, use the spray once; if the pain is not gone after 5 minutes, call 911.”
+===
+name: the_writers_narrative_verbs_are_no_step
+pages:
+Plan
+I have given him a spray and asked him to call 911 if the pain lasts more than 10 minutes.
+summary:
+Use the spray and call 911 if the pain lasts more than 10 minutes. || I have given him a spray
+expect:
+Use the spray and call 911 if the pain lasts more than 10 minutes.
+===
+name: a_separate_instruction_is_no_step
+pages:
+Plan
+They should have blood tests (CBC, ALT) every 2 weeks, and call the clinic at once if they get a fever or mouth sores.
+summary:
+You must have blood tests every 2 weeks. || They should have blood tests (CBC, ALT) every 2 weeks
+Call the clinic at once if you get a fever or mouth sores. || call the clinic at once if they get a fever or mouth sores
+expect:
+You must have blood tests every 2 weeks.
+Call the clinic at once if you get a fever or mouth sores.
+

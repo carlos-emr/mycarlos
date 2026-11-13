@@ -25,9 +25,16 @@ mod idle;
 // some platforms.
 #[allow(dead_code)]
 mod local_model;
+// K17 (evaluation only): the post-step on summary sentences (pure std; tested on its own).
+mod addressee;
+// K19 (evaluation only): the glossary post-step (pure std; tested on its own).
+mod glossary;
 mod local_runner;
+mod quote_provenance;
 #[cfg(windows)]
 mod model_acl;
+// K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
+mod safety;
 // The model download runs on computers only (no AI helper on a phone).
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
@@ -1286,6 +1293,9 @@ struct TextTicket {
     pages_missing: bool,
     /// The index (from 0) of the last page the text holds.
     last_index: Option<u32>,
+    /// The document's page count, as the text read found it: a summary's last page read after a
+    /// gap is the document's own last page only if it is the last of these (E4b).
+    page_count: u32,
     /// What the pages said (`pages_digest`): a summary kept for this document must be of them.
     pages_digest: [u8; 32],
 }
@@ -2113,7 +2123,7 @@ async fn ai_summarize(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: model_runtime::SummarizeRequest,
+    mut request: model_runtime::SummarizeRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
     // Capture the actual unlocked session before validation can yield.
@@ -2134,6 +2144,8 @@ async fn ai_summarize(
             if sent != text.pages_digest {
                 return Err(ai_error(model_runtime::AiError::Failed));
             }
+            // The text read's own page count, not the renderer's (E4b).
+            request.page_count = Some(text.page_count);
             Some((record_id, text))
         }
         (None, None) => None,
@@ -4449,6 +4461,7 @@ async fn vault_document_text(
                 && text.cut_pages.is_empty()
                 && text.failed_pages.is_empty()),
             last_index: text.pages.last().map(|page| page.index),
+            page_count: text.page_count,
             pages_digest: pages_digest(
                 text.pages
                     .iter()
@@ -6002,6 +6015,7 @@ mod tests {
             truncated,
             pages_missing: false,
             last_index,
+            page_count: 4,
             pages_digest: [0; 32],
         };
         assert!(!ticket(false, Some(3)).partial(3, false));
@@ -7384,6 +7398,7 @@ mod historical_identifier_export_tests {
                 truncated: false,
                 pages_missing: false,
                 last_index: Some(0),
+                page_count: 1,
                 pages_digest: pages_digest([(0, "Zorvana")]),
             },
         );

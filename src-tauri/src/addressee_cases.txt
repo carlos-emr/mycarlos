@@ -1,0 +1,213 @@
+The post-step's shared cases (K17): synthetic letters only, none of the evaluation letters' words. Read by the Rust
+tests in addressee.rs and by the evaluation's Python port, so both say the same thing. One case per block, blocks
+separated by a line "===". Fields: name, letter (the lines up to "sentence:"), sentence, quote, expect (the rewritten
+sentence, or "(none)" when it is left as it is), kind.
+===
+name: a_copied_call_me_line
+letter:
+Oakfield Test Clinic
+Tel 555-0131
+
+Dr. Theo Marlow
+Testville Sleep Clinic
+
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+Please phone me on 555-0137 ext. 4 if anything is unclear, Theo.
+
+Yours,
+Dr. Iris Oakfield
+sentence: Please phone me on 555-0137 ext. 4 if anything is unclear.
+quote: Please phone me on 555-0137 ext. 4
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: the_writers_line_as_a_patient_task
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+Please phone me on 555-0137 ext. 4 if anything is unclear, Theo.
+sentence: You must call Dr. Marlow at 555-0137 ext. 4 if anything is unclear.
+quote: phone me on 555-0137 ext. 4 if anything is unclear
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: the_writer_named_in_the_sentence
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+Please phone me on 555-0137 ext. 4 if anything is unclear.
+
+Yours sincerely,
+
+Dr. Iris Oakfield, MD
+Testville Family Practice
+sentence: Call Dr. Iris Oakfield at 555-0137 ext. 4 if anything is unclear.
+quote: Please phone me on 555-0137 ext. 4
+expect: The letter gives Dr. Iris Oakfield's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: the_writers_line_said_as_hers
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+Please phone me on 555-0137 ext. 4 if anything is unclear, Theo.
+sentence: Dr. Oakfield asks Dr. Marlow to phone her at 555-0137 ext. 4 if anything is unclear.
+quote: Please phone me on 555-0137 ext. 4
+expect: (none)
+kind: (none)
+===
+name: a_question_to_the_doctor_with_its_you_kept
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+
+Questions
+Would you advise a sleep study before her knee surgery?
+Is her blood pressure treatment enough?
+sentence: The doctor asks if you would advise a sleep study before her knee surgery.
+quote: Would you advise a sleep study before her knee surgery?
+expect: The doctor asks if the receiving doctor would advise a sleep study before her knee surgery.
+kind: addressee-you
+===
+name: a_request_to_the_doctor_with_its_you_kept
+letter:
+Dear colleague,
+
+Sam Quill has had loud snoring for a year. I would be grateful if you could see her within 3 weeks.
+sentence: The doctor asks you to see the patient within 3 weeks.
+quote: I would be grateful if you could see her within 3 weeks
+expect: The doctor asks the receiving doctor to see the patient within 3 weeks.
+kind: addressee-you
+===
+name: a_request_naming_the_patient_with_no_you_in_the_letter
+letter:
+Dear Dr. Marlow,
+
+Sam Quill has had loud snoring for a year. I would be grateful if she could be seen within 3 weeks.
+sentence: The doctor asks you to see the patient within 3 weeks.
+quote: I would be grateful if she could be seen within 3 weeks
+expect: The doctor asks the receiving doctor to see the patient within 3 weeks.
+kind: addressee-you
+===
+name: your_doctor_asks_about_the_patient
+letter:
+Dear Dr. Marlow,
+
+Questions
+Would you recommend a sleep study, since her snoring is worse?
+sentence: Your doctor wants to know if you need a sleep study.
+quote: Would you recommend a sleep study
+expect: (none)
+kind: (none)
+===
+name: the_doctor_asks_if_you_need_it
+letter:
+Dear Dr. Marlow,
+
+Questions
+Would you recommend a sleep study, since her snoring is worse?
+sentence: The doctor wants to know if you need a sleep study.
+quote: Would you recommend a sleep study
+expect: (none)
+kind: (none)
+===
+name: a_question_about_the_patient_with_no_you_in_the_letter
+letter:
+Dear Dr. Marlow,
+
+Questions
+Does Ms. Quill need a sleep study before her knee surgery?
+sentence: The doctor asks if you need a sleep study before your knee surgery.
+quote: Does Ms. Quill need a sleep study before her knee surgery?
+expect: (none)
+kind: (none)
+===
+name: a_letter_written_to_the_patient
+letter:
+Dear Sam,
+
+Your knee wound looks clean. Call me at 555-0149 if the wound opens or weeps.
+sentence: Call your surgeon at 555-0149 if the wound opens or weeps.
+quote: Call me at 555-0149 if the wound opens or weeps
+expect: (none)
+kind: (none)
+===
+name: an_emergency_rule_in_a_letter_to_a_doctor
+letter:
+Dear Dr. Marlow,
+
+I have given her a spray and asked her to call 911 if the pain lasts more than 10 minutes. Would you see her soon?
+sentence: You must call 911 if the pain lasts more than 10 minutes.
+quote: asked her to call 911 if the pain lasts more than 10 minutes
+expect: (none)
+kind: (none)
+===
+name: a_contact_line_with_another_number_in_the_sentence
+letter:
+Dear Dr. Marlow,
+
+Please call me at 555-0137 about the 20 mg dose, Theo.
+sentence: Please call me at 555-0137 about the 20 mg dose.
+quote: Please call me at 555-0137 about the 20 mg dose
+expect: (none)
+kind: (none)
+===
+name: a_french_letter_to_a_colleague
+letter:
+Chère collègue,
+
+Je vous adresse Mme Sam Quill pour des ronflements.
+Pourriez-vous voir Mme Quill d'ici trois semaines ?
+sentence: The doctor asks if you could see Ms. Quill within three weeks.
+quote: Pourriez-vous voir Mme Quill d'ici trois semaines
+expect: The doctor asks if the receiving doctor could see Ms. Quill within three weeks.
+kind: addressee-you
+===
+name: an_address_line_is_not_a_greeting
+letter:
+Docteur Paul Marlow
+Clinique Test du Sommeil
+
+Pourriez-vous voir Mme Quill d'ici trois semaines ?
+sentence: The doctor asks if you could see Ms. Quill within three weeks.
+quote: Pourriez-vous voir Mme Quill d'ici trois semaines
+expect: (none)
+kind: (none)
+===
+name: a_quote_above_the_greeting
+letter:
+Oakfield Test Clinic · Tel 555-0131 · please call me with questions
+
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring.
+sentence: Please call me at 555-0131 with questions.
+quote: Tel 555-0131 · please call me with questions
+expect: (none)
+kind: (none)
+===
+name: a_quote_not_in_the_letter
+letter:
+Dear Dr. Marlow,
+
+Please phone me on 555-0137 if anything is unclear.
+sentence: Please phone me on 555-0137 if anything is unclear.
+quote: Please ring me on 555-0137
+expect: (none)
+kind: (none)
+===
+name: the_doctors_number_with_no_contact_offer
+letter:
+Dear Dr. Marlow,
+
+Her husband can be reached at 555-0188.
+sentence: You can call her husband at 555-0188.
+quote: Her husband can be reached at 555-0188
+expect: (none)
+kind: (none)
