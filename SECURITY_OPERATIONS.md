@@ -182,8 +182,8 @@ A yes shows one generic notice, in the last-used language, with no clinic, docum
 once until the next unlock. Clicking it opens the unlock screen; after unlock the normal document
 check takes over.
 
-**Revoking and wiping.** A waiting key is revoked at the portal, and wiped on the device (its slot in
-`notice-keys.v1`; the OS item too when no key is left):
+**Revoking and wiping.** The local waiting key is wiped (its slot in `notice-keys.v1`; the OS item
+too when no key is left), and portal revocation is requested. It may remain pending while offline:
 
 - when the patient turns tray notices or the tray off, or unlinks the clinic while unlocked:
   the device revokes it with the link's device key
@@ -192,7 +192,8 @@ check takes over.
   waiting-key deletions; format 9's existing 64-entry push-destination queue does not yet define
   their encoding. This is an open integration requirement, not a currently implemented retry;
 - when tray notices are turned off while locked, or the vault is reset, erased or set aside, or
-  another vault is opened: the device keys may be gone, so the waiting key gives itself up (`DELETE /api/mycarlos/availability/waiting`, signed by
+  another vault is opened: the device keys are unavailable while locked or may be gone after
+  reset, so the waiting key gives itself up (`DELETE /api/mycarlos/availability/waiting`, signed by
   the waiting key);
 - when the portal answers `404`: the key was revoked there, the device was removed, or the portal
   refused it for another reason it doesn't give. The device stops asking with that key. Open
