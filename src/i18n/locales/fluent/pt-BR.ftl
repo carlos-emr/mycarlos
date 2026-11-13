@@ -1857,6 +1857,24 @@ ai-summary-showInDocument = Ver no documento
 
 ai-summary-partial = Este resumo cobre apenas o início do documento: páginas 1 a { $last }.
 
+ai-summary-tooLong =
+    { $last ->
+    [one] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente a página 1 de { $total }.
+   *[other] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente as páginas 1 a { $last } de { $total }.
+    }
+
+ai-summary-tooLongStart = Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler apenas aproximadamente o início da página 1.
+
+ai-summary-tooLongAfter = O resumo dirá quais páginas foram lidas.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Resumir a página 1
+   *[other] Resumir as páginas 1 a { $last }
+    }
+
+ai-summary-readStart = Resumir o início da página 1
+
 ai-summary-noText = O myCarlos não conseguiu ler nenhum texto neste documento, então não pode resumi-lo. Ele pode ser uma digitalização.
 
 ai-explain-box = Palavra ou expressão
@@ -1876,6 +1894,13 @@ ai-settings-subtitle = Como o assistente de IA funciona neste computador
 ai-model-add = Adicionar um arquivo de modelo…
 
 ai-model-accepted = { $name }, { $size } MB. Licença: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Lê cerca de { $pages } página por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
+    [many] Lê cerca de { $pages } de páginas por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
+   *[other] Lê cerca de { $pages } páginas por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
+    }
 
 ai-model-where = Onde obter o arquivo
 

@@ -516,7 +516,7 @@ pub(crate) fn fit_pages(
 }
 
 /// The room left for the document: the context, less the answer and the prompt around it.
-pub(crate) fn document_budget(prompt_tokens: usize, answer_tokens: usize) -> usize {
+pub(crate) const fn document_budget(prompt_tokens: usize, answer_tokens: usize) -> usize {
     (CONTEXT_TOKENS as usize).saturating_sub(prompt_tokens + answer_tokens + PROMPT_MARGIN)
 }
 

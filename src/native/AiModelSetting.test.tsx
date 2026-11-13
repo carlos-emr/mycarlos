@@ -192,6 +192,41 @@ describe("Add a model file", () => {
     vi.unstubAllGlobals();
   });
 
+  it("says how much of a document each model reads at a time, pages first (#301)", async () => {
+    answer({
+      ai_model_catalog: [
+        { ...fake, capacity: { contextTokens: 8192, documentTokens: 6510 } },
+      ],
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    const reads = humanText(
+      "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages.",
+    );
+    const line = await screen.findByText(reads);
+    expect(line).toBeVisible();
+    // Choosing a model hears it too: after the name, size and licence, before
+    // the row's state.
+    const describedBy = screen
+      .getByRole("radio", { name: humanText("FAKE model") })
+      .getAttribute("aria-describedby")
+      ?.split(" ");
+    expect(describedBy).toHaveLength(3);
+    expect(describedBy?.[1]).toBe(line.id);
+  });
+
+  it("says nothing of a model's reading capacity the native side did not give", async () => {
+    answer({ ai_model_catalog: [fake] });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await screen.findByText(
+      humanText("FAKE model, 2,500 MB. Licence: Apache-2.0."),
+    );
+    expect(screen.queryByText(/Reads about/)).toBeNull();
+  });
+
   it("adds a file, reports the new status and says so", async () => {
     answer({
       ai_model_catalog: [fake],

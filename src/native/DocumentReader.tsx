@@ -230,6 +230,7 @@ function ReadingDocument({
   const [textOpen, setTextOpen] = useState(false);
   const [highlight, setHighlight] = useState<SourceSpan | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
+  const summaryButtonRef = useRef<HTMLButtonElement | null>(null);
   const markRef = useRef<HTMLElement | null>(null);
   const selected = useRef("");
   const offersAi = Boolean(ai);
@@ -635,6 +636,7 @@ function ReadingDocument({
                   <button
                     className="button"
                     type="button"
+                    ref={summaryButtonRef}
                     aria-expanded={aiTool === "summary"}
                     aria-controls={
                       aiTool === "summary" ? "reader-ai-panel" : undefined
@@ -794,6 +796,13 @@ function ReadingDocument({
                 initialTerm={aiTool === "explain" ? selected.current : ""}
                 contextFor={(term) => sentenceAround(pageText, term)}
                 onShowSource={showSource}
+                // Not summarizing a document too long to read at once
+                // closes the panel, back on the button that opened it.
+                onCancel={() => {
+                  setAiTool(null);
+                  summaryButtonRef.current?.focus();
+                }}
+                onReturnFocus={() => summaryButtonRef.current?.focus()}
               />
             )}
             {/* D144: the page bar, kept in view at the reader's foot, after

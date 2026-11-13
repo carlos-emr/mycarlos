@@ -25,6 +25,35 @@ use sha2::{Digest, Sha256};
 
 use crate::local_runner::{MemoryProbe, ModelInfo};
 
+/// How much of a document one summary reads (#301), in the model's tokens: the context the
+/// helper runs the model with, and what is left of it for the document's text once the prompt
+/// around the pages, the answer and the margin between them are set aside
+/// ([`crate::model_helper::document_budget`]). The renderer turns the room into "about" pages
+/// and characters; only the model's tokenizer knows the exact count, so the helper's own fit
+/// (`lastPage`, `lastPageCut`) stays what an answer reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Capacity {
+    pub(crate) context_tokens: u32,
+    pub(crate) document_tokens: u32,
+}
+
+impl Capacity {
+    /// A model the helper runs at its own context ([`crate::model_helper::CONTEXT_TOKENS`]).
+    /// Every catalogue model is made for a longer context than that, so the helper's is the
+    /// limit. The prompt is reserved as [`crate::local_runner::SUMMARY_PROMPT_TOKENS`] (about
+    /// 450 to 600 are used, by language and chat format), so this room is 150 to 300 tokens
+    /// smaller than the helper's own. How many tokens a text takes is the renderer's estimate
+    /// (`capacity.ts`), a separate matter.
+    pub(crate) const HELPER: Capacity = Capacity {
+        context_tokens: crate::model_helper::CONTEXT_TOKENS,
+        document_tokens: crate::model_helper::document_budget(
+            crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
+            crate::model_helper::SUMMARY_TOKENS,
+        ) as u32,
+    };
+}
+
 /// One accepted model. Swapping the model is a change to [`CATALOG`] only.
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +70,10 @@ pub(crate) struct Accepted {
     pub(crate) source_url: &'static str,
     /// How the helper puts a conversation to this model.
     pub(crate) chat_format: crate::model_helper::ChatFormat,
+    /// How much of a document it reads at a time. Per entry, so that a model whose own
+    /// context is shorter than the helper's can say so; a model added from any file would take
+    /// it from the file's header (not yet: catalogue models only).
+    pub(crate) capacity: Capacity,
     /// Whether Preferences lists it (name, address, Copy). An entry that is
     /// not listed is still accepted by "Add a model file…": its size and hash
     /// are on the list.
@@ -62,6 +95,7 @@ pub(crate) const CATALOG: &[Accepted] = &[
         notices: &[],
         source_url: "https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
         chat_format: crate::model_helper::ChatFormat::Builtin,
+        capacity: Capacity::HELPER,
         listed: true,
     },
     // Listed since #276 (several models, one in use). The default is the first
@@ -76,6 +110,7 @@ pub(crate) const CATALOG: &[Accepted] = &[
         notices: &[],
         source_url: "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf",
         chat_format: crate::model_helper::ChatFormat::Gemma4,
+        capacity: Capacity::HELPER,
         listed: true,
     },
 ];
@@ -138,6 +173,9 @@ pub(crate) enum ModelStatus {
     NotInstalled,
     Installed {
         model: ModelInfo,
+        /// How much of a document it reads at a time, when known (the reader warns before a
+        /// summary that will not read it all). `None` leaves the reader as before.
+        capacity: Option<Capacity>,
     },
     /// This computer cannot run the helper: the row explains, no Add button.
     Unsupported {
@@ -699,7 +737,10 @@ impl Store {
         match self.in_use() {
             None => ModelStatus::NotInstalled,
             Some((_, model)) if self.present(model) == Some(true) && !self.damaged() => {
-                ModelStatus::Installed { model: info(model) }
+                ModelStatus::Installed {
+                    model: info(model),
+                    capacity: Some(model.capacity),
+                }
             }
             Some(_) => ModelStatus::Damaged,
         }
@@ -1415,6 +1456,7 @@ mod tests {
             notices: &[],
             source_url: "https://example.invalid/fake",
             chat_format: crate::model_helper::ChatFormat::Builtin,
+            capacity: Capacity::HELPER,
             listed: true,
         }];
         (bytes, Box::leak(list.into_boxed_slice()))
@@ -1643,7 +1685,10 @@ mod tests {
         assert_eq!(row(&store, 1), (RowState::Installed, true, true));
         assert_eq!(
             store.status(&good()),
-            ModelStatus::Installed { model: b_info }
+            ModelStatus::Installed {
+                model: b_info,
+                capacity: Some(Capacity::HELPER)
+            }
         );
         let mut names = folder_names(&store);
         names.sort();
@@ -1672,7 +1717,10 @@ mod tests {
         assert_eq!(ended.load(Ordering::SeqCst), 1);
         assert_eq!(
             store.status(&good()),
-            ModelStatus::Installed { model: b_info }
+            ModelStatus::Installed {
+                model: b_info,
+                capacity: Some(Capacity::HELPER)
+            }
         );
         // Remembered beside the models folder, not in it; a new store reads it.
         assert!(temp.path().join(CHOICE_FILE).is_file());
@@ -1794,7 +1842,10 @@ mod tests {
         assert_eq!(last, (1 << 20, 1 << 20));
         assert_eq!(
             store.status(&good()),
-            ModelStatus::Installed { model: info }
+            ModelStatus::Installed {
+                model: info,
+                capacity: Some(Capacity::HELPER)
+            }
         );
         assert_eq!(folder_names(&store), ["fake.gguf"]);
         let mut verified = store.verified_model().unwrap();
@@ -2101,7 +2152,8 @@ mod tests {
                 model: ModelInfo {
                     name: "FAKE model".into(),
                     sha256: store.catalog()[0].sha256.into()
-                }
+                },
+                capacity: Some(Capacity::HELPER)
             }
         );
         store.verified_model_with(&Free(Some(4 << 30))).unwrap();
@@ -2252,7 +2304,10 @@ mod tests {
         assert_eq!(last, (3 << 20, 3 << 20));
         assert_eq!(
             store.status(&good()),
-            ModelStatus::Installed { model: info }
+            ModelStatus::Installed {
+                model: info,
+                capacity: Some(Capacity::HELPER)
+            }
         );
         assert_eq!(folder_names(&store), ["fake.gguf"]);
         store.verified_model_with(&Free(Some(100 << 30))).unwrap();
@@ -2616,5 +2671,70 @@ mod tests {
             serde_json::to_value(ModelStatus::Damaged).unwrap(),
             serde_json::json!({ "state": "damaged" })
         );
+        // #301: the model in use says how much of a document it reads, or null when unknown.
+        let model = ModelInfo {
+            name: "FAKE model".into(),
+            sha256: "ab".repeat(32),
+        };
+        assert_eq!(
+            serde_json::to_value(ModelStatus::Installed {
+                model: model.clone(),
+                capacity: Some(Capacity::HELPER),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "state": "installed",
+                "model": { "name": "FAKE model", "sha256": "ab".repeat(32) },
+                "capacity": { "contextTokens": 8192, "documentTokens": 6510 }
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(ModelStatus::Installed {
+                model,
+                capacity: None
+            })
+            .unwrap()["capacity"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn a_model_reads_the_helpers_context_less_the_prompt_the_answer_and_the_margin() {
+        use crate::model_helper::{document_budget, CONTEXT_TOKENS, SUMMARY_TOKENS};
+        // #301: 8,192 less the summary prompt's reserve (750), the longest summary (900) and
+        // the margin (32), as the helper fits the pages (document_budget).
+        assert_eq!(
+            Capacity::HELPER,
+            Capacity {
+                context_tokens: 8_192,
+                document_tokens: 6_510,
+            }
+        );
+        assert_eq!(Capacity::HELPER.context_tokens, CONTEXT_TOKENS);
+        assert_eq!(
+            Capacity::HELPER.document_tokens as usize,
+            document_budget(
+                crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
+                SUMMARY_TOKENS
+            )
+        );
+        // The reserve covers the prompt the helper writes around the pages: its words at a
+        // cautious 3 bytes a token, in every language the reader asks in.
+        for (_, language) in crate::model_helper::LANGUAGES {
+            let words = crate::model_helper::SYSTEM_PROMPT.len()
+                + crate::model_helper::summary_prompt(language, 6).len();
+            assert!(
+                words.div_ceil(3) < crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
+                "{language}: {words}"
+            );
+        }
+        // Every catalogue model says it, in the rows and the catalogue the renderer reads.
+        for model in CATALOG {
+            assert_eq!(model.capacity, Capacity::HELPER, "{}", model.name);
+            assert_eq!(
+                serde_json::to_value(model).unwrap()["capacity"],
+                serde_json::json!({ "contextTokens": 8192, "documentTokens": 6510 })
+            );
+        }
     }
 }

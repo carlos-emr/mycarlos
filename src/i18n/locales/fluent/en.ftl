@@ -1821,6 +1821,24 @@ ai-summary-showInDocument = Show in document
 
 ai-summary-partial = This summary covers only the start of the document: pages 1 to { $last }.
 
+ai-summary-tooLong =
+    { $last ->
+    [one] This document is probably too long for the AI helper to read at once. It can read about page 1 of { $total }.
+   *[other] This document is probably too long for the AI helper to read at once. It can read about pages 1 to { $last } of { $total }.
+    }
+
+ai-summary-tooLongStart = This document is probably too long for the AI helper to read at once. It can read only about the start of page 1.
+
+ai-summary-tooLongAfter = The summary will say which pages it read.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Summarize page 1
+   *[other] Summarize pages 1 to { $last }
+    }
+
+ai-summary-readStart = Summarize the start of page 1
+
 ai-summary-noText = myCarlos could not read any text in this document, so it can't summarize it. It may be a scan.
 
 ai-explain-box = Word or phrase
@@ -1840,6 +1858,12 @@ ai-settings-subtitle = How the AI helper works on this computer
 ai-model-add = Add a model file…
 
 ai-model-accepted = { $name }, { $size } MB. Licence: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Reads about { $pages } page at a time (about { $characters } characters of English text). Less for tables and some languages.
+   *[other] Reads about { $pages } pages at a time (about { $characters } characters of English text). Less for tables and some languages.
+    }
 
 ai-model-where = Where to get the file
 

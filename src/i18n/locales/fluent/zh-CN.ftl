@@ -1673,6 +1673,24 @@ ai-summary-showInDocument = 在文档中显示
 
 ai-summary-partial = 此摘要仅涵盖文档开头部分：第 1 页至第 { $last } 页。
 
+ai-summary-tooLong =
+    { $last ->
+    [1] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页（共 { $total } 页）。
+   *[other] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页至第 { $last } 页（共 { $total } 页）。
+    }
+
+ai-summary-tooLongStart = 这份文档可能太长，AI 助手无法一次读完。它大约只能读第 1 页的开头部分。
+
+ai-summary-tooLongAfter = 摘要会说明读了哪些页。
+
+ai-summary-readPages =
+    { $last ->
+    [1] 为第 1 页生成摘要
+   *[other] 为第 1 页至第 { $last } 页生成摘要
+    }
+
+ai-summary-readStart = 为第 1 页的开头部分生成摘要
+
 ai-summary-noText = myCarlos 无法读取此文档中的任何文本，因此无法生成摘要。这可能是扫描件。
 
 ai-explain-box = 字词或短语
@@ -1692,6 +1710,8 @@ ai-settings-subtitle = AI 助手在此电脑上的运行方式
 ai-model-add = 添加模型文件…
 
 ai-model-accepted = { $name }，{ $size } MB。许可证：{ $licence }。
+
+ai-model-reads = 每次约可读 { $pages } 页（约 { $characters } 个英文字符）。表格和某些语言会更少。
 
 ai-model-where = 在哪里获取文件
 

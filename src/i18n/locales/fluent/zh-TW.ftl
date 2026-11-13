@@ -1673,6 +1673,24 @@ ai-summary-showInDocument = 在文件中顯示
 
 ai-summary-partial = 此摘要僅涵蓋文件開頭部分：第 1 頁至第 { $last } 頁。
 
+ai-summary-tooLong =
+    { $last ->
+    [1] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁（共 { $total } 頁）。
+   *[other] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁至第 { $last } 頁（共 { $total } 頁）。
+    }
+
+ai-summary-tooLongStart = 這份文件可能太長，AI 助理無法一次讀完。它大約只能讀第 1 頁的開頭部分。
+
+ai-summary-tooLongAfter = 摘要會說明讀了哪些頁。
+
+ai-summary-readPages =
+    { $last ->
+    [1] 為第 1 頁產生摘要
+   *[other] 為第 1 頁至第 { $last } 頁產生摘要
+    }
+
+ai-summary-readStart = 為第 1 頁的開頭部分產生摘要
+
 ai-summary-noText = myCarlos 無法讀取此文件中的任何文字，因此無法產生摘要。這可能是掃描檔。
 
 ai-explain-box = 字詞或片語
@@ -1692,6 +1710,8 @@ ai-settings-subtitle = AI 助理在此電腦上的運作方式
 ai-model-add = 新增模型檔案…
 
 ai-model-accepted = { $name }，{ $size } MB。授權：{ $licence }。
+
+ai-model-reads = 每次約可讀 { $pages } 頁（約 { $characters } 個英文字元）。表格和某些語言會更少。
 
 ai-model-where = 在哪裡取得檔案
 
