@@ -1972,4 +1972,815 @@ impl MessageId {
             Self::UnlockWaitingOne => "unlock-waiting-one",
         }
     }
+
+    pub fn from_legacy_key(key: &str) -> Option<Self> {
+        match key {
+            "appearance.dark" => Some(Self::AppearanceDark),
+            "appearance.error.notRemembered" => Some(Self::AppearanceErrorNotRemembered),
+            "appearance.error.unreadable" => Some(Self::AppearanceErrorUnreadable),
+            "appearance.error.window" => Some(Self::AppearanceErrorWindow),
+            "appearance.help" => Some(Self::AppearanceHelp),
+            "appearance.highContrast" => Some(Self::AppearanceHighContrast),
+            "appearance.light" => Some(Self::AppearanceLight),
+            "appearance.system" => Some(Self::AppearanceSystem),
+            "appearance.title" => Some(Self::AppearanceTitle),
+            "auth.kicker" => Some(Self::AuthKicker),
+            "box.currentPassphrase" => Some(Self::BoxCurrentPassphrase),
+            "box.folderName" => Some(Self::BoxFolderName),
+            "box.name" => Some(Self::BoxName),
+            "box.newPassphrase" => Some(Self::BoxNewPassphrase),
+            "box.passphrase" => Some(Self::BoxPassphrase),
+            "box.profileName" => Some(Self::BoxProfileName),
+            "box.recoveryKey" => Some(Self::BoxRecoveryKey),
+            "box.typedWords" => Some(Self::BoxTypedWords),
+            "checklist.allMet" => Some(Self::ChecklistAllMet),
+            "checklist.done" => Some(Self::ChecklistDone),
+            "checklist.hardToGuess" => Some(Self::ChecklistHardToGuess),
+            "checklist.heading" => Some(Self::ChecklistHeading),
+            "checklist.length" => Some(Self::ChecklistLength),
+            "checklist.notAName" => Some(Self::ChecklistNotAName),
+            "checklist.notYet" => Some(Self::ChecklistNotYet),
+            "checklist.spaces" => Some(Self::ChecklistSpaces),
+            "comfort.autoLock.body" => Some(Self::ComfortAutoLockBody),
+            "comfort.continue" => Some(Self::ComfortContinue),
+            "comfort.intro" => Some(Self::ComfortIntro),
+            "comfort.later" => Some(Self::ComfortLater),
+            "comfort.sample" => Some(Self::ComfortSample),
+            "comfort.title" => Some(Self::ComfortTitle),
+            "comfort.usual" => Some(Self::ComfortUsual),
+            "common.cancel" => Some(Self::CommonCancel),
+            "create.intro" => Some(Self::CreateIntro),
+            "create.profile.label" => Some(Self::CreateProfileLabel),
+            "create.profile.sharedTaken" => Some(Self::CreateProfileSharedTaken),
+            "create.profile.tooLong" => Some(Self::CreateProfileTooLong),
+            "create.stays" => Some(Self::CreateStays),
+            "create.submit" => Some(Self::CreateSubmit),
+            "create.title" => Some(Self::CreateTitle),
+            "error.checkBoxes" => Some(Self::ErrorCheckBoxes),
+            "error.damaged" => Some(Self::ErrorDamaged),
+            "error.damaged.where" => Some(Self::ErrorDamagedWhere),
+            "error.damaged.whereFor" => Some(Self::ErrorDamagedWhereFor),
+            "error.fallback" => Some(Self::ErrorFallback),
+            "error.retryIn" => Some(Self::ErrorRetryIn),
+            "frame.banner.body" => Some(Self::FrameBannerBody),
+            "frame.banner.title" => Some(Self::FrameBannerTitle),
+            "frame.state.locked" => Some(Self::FrameStateLocked),
+            "frame.state.locking" => Some(Self::FrameStateLocking),
+            "frame.state.notLocked" => Some(Self::FrameStateNotLocked),
+            "frame.state.opening" => Some(Self::FrameStateOpening),
+            "frame.state.settingUp" => Some(Self::FrameStateSettingUp),
+            "frame.window.label" => Some(Self::FrameWindowLabel),
+            "interface.CameraDialog.cameraReady" => Some(Self::InterfaceCameraDialogCameraReady),
+            "interface.CameraDialog.cameraView" => Some(Self::InterfaceCameraDialogCameraView),
+            "interface.CameraDialog.myCarlosUsesTheCameraToSavePhotos" => {
+                Some(Self::InterfaceCameraDialogMyCarlosUsesTheCameraToSavePhotos)
+            }
+            "interface.CameraDialog.photoTakenRetakeOrUseThePhoto" => {
+                Some(Self::InterfaceCameraDialogPhotoTakenRetakeOrUseThePhoto)
+            }
+            "interface.CameraDialog.retake" => Some(Self::InterfaceCameraDialogRetake),
+            "interface.CameraDialog.startingTheCamera" => {
+                Some(Self::InterfaceCameraDialogStartingTheCamera)
+            }
+            "interface.CameraDialog.takeAPhoto" => Some(Self::InterfaceCameraDialogTakeAPhoto),
+            "interface.CameraDialog.takePhoto" => Some(Self::InterfaceCameraDialogTakePhoto),
+            "interface.CameraDialog.theCameraIsOnOnlyWhileYou" => {
+                Some(Self::InterfaceCameraDialogTheCameraIsOnOnlyWhileYou)
+            }
+            "interface.CameraDialog.thePhotoCouldNotBePreparedChoose" => {
+                Some(Self::InterfaceCameraDialogThePhotoCouldNotBePreparedChoose)
+            }
+            "interface.CameraDialog.thePhotoYouTook" => {
+                Some(Self::InterfaceCameraDialogThePhotoYouTook)
+            }
+            "interface.CameraDialog.tryAgain" => Some(Self::InterfaceCameraDialogTryAgain),
+            "interface.CameraDialog.usePhoto" => Some(Self::InterfaceCameraDialogUsePhoto),
+            "interface.CameraDialog.useTheCamera" => Some(Self::InterfaceCameraDialogUseTheCamera),
+            "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay" => {
+                Some(Self::InterfaceCameraDialogYourPhoneAsksOnceWhetherMyCarlosMay)
+            }
+            "interface.DocumentReader.documentPassword" => {
+                Some(Self::InterfaceDocumentReaderDocumentPassword)
+            }
+            "interface.DocumentReader.fitWidth" => Some(Self::InterfaceDocumentReaderFitWidth),
+            "interface.DocumentReader.larger" => Some(Self::InterfaceDocumentReaderLarger),
+            "interface.DocumentReader.nextPage" => Some(Self::InterfaceDocumentReaderNextPage),
+            "interface.DocumentReader.noTextCouldBeReadOnThis" => {
+                Some(Self::InterfaceDocumentReaderNoTextCouldBeReadOnThis)
+            }
+            "interface.DocumentReader.open" => Some(Self::InterfaceDocumentReaderOpen),
+            "interface.DocumentReader.previousPage" => {
+                Some(Self::InterfaceDocumentReaderPreviousPage)
+            }
+            "interface.DocumentReader.smaller" => Some(Self::InterfaceDocumentReaderSmaller),
+            "interface.DocumentReader.textOnThisPage" => {
+                Some(Self::InterfaceDocumentReaderTextOnThisPage)
+            }
+            "interface.DocumentReader.thatPasswordDidNotOpenTheDocument" => {
+                Some(Self::InterfaceDocumentReaderThatPasswordDidNotOpenTheDocument)
+            }
+            "interface.DocumentReader.thisDocumentIsLockedWithItsOwn" => {
+                Some(Self::InterfaceDocumentReaderThisDocumentIsLockedWithItsOwn)
+            }
+            "interface.HiddenDocuments.documentsYouHideAreListedHere" => {
+                Some(Self::InterfaceHiddenDocumentsDocumentsYouHideAreListedHere)
+            }
+            "interface.HiddenDocuments.hidden" => Some(Self::InterfaceHiddenDocumentsHidden),
+            "interface.HiddenDocuments.hiddenDocumentsStayInYourEncryptedVault" => {
+                Some(Self::InterfaceHiddenDocumentsHiddenDocumentsStayInYourEncryptedVault)
+            }
+            "interface.HiddenDocuments.nothingIsHidden" => {
+                Some(Self::InterfaceHiddenDocumentsNothingIsHidden)
+            }
+            "interface.HiddenDocuments.restore" => Some(Self::InterfaceHiddenDocumentsRestore),
+            "interface.HiddenDocuments.wasIn" => Some(Self::InterfaceHiddenDocumentsWasIn),
+            "interface.LibraryItems.in" => Some(Self::InterfaceLibraryItemsIn),
+            "interface.LibrarySidebar.sharedWithMe" => {
+                Some(Self::InterfaceLibrarySidebarSharedWithMe)
+            }
+            "interface.RecordDetails.closeDocumentDetails" => {
+                Some(Self::InterfaceRecordDetailsCloseDocumentDetails)
+            }
+            "interface.RecordDetails.encryptedDocument" => {
+                Some(Self::InterfaceRecordDetailsEncryptedDocument)
+            }
+            "interface.RecordDetails.encryptedDocumentDetails" => {
+                Some(Self::InterfaceRecordDetailsEncryptedDocumentDetails)
+            }
+            "interface.RecordDetails.file" => Some(Self::InterfaceRecordDetailsFile),
+            "interface.RecordDetails.folder" => Some(Self::InterfaceRecordDetailsFolder),
+            "interface.RecordDetails.hide" => Some(Self::InterfaceRecordDetailsHide),
+            "interface.RecordDetails.itsEncryptedFileIsMissingFromThis" => {
+                Some(Self::InterfaceRecordDetailsItsEncryptedFileIsMissingFromThis)
+            }
+            "interface.RecordDetails.itsEncryptedFileIsMissingOrCould" => {
+                Some(Self::InterfaceRecordDetailsItsEncryptedFileIsMissingOrCould)
+            }
+            "interface.RecordDetails.kind" => Some(Self::InterfaceRecordDetailsKind),
+            "interface.RecordDetails.lockedWithAPasswordMyCarlosCannotOpen" => {
+                Some(Self::InterfaceRecordDetailsLockedWithAPasswordMyCarlosCannotOpen)
+            }
+            "interface.RecordDetails.lockedWithAPasswordUnlockAddsA" => {
+                Some(Self::InterfaceRecordDetailsLockedWithAPasswordUnlockAddsA)
+            }
+            "interface.RecordDetails.move" => Some(Self::InterfaceRecordDetailsMove),
+            "interface.RecordDetails.moveTo" => Some(Self::InterfaceRecordDetailsMoveTo),
+            "interface.RecordDetails.read" => Some(Self::InterfaceRecordDetailsRead),
+            "interface.RecordDetails.saveACopyToThisComputer" => {
+                Some(Self::InterfaceRecordDetailsSaveACopyToThisComputer)
+            }
+            "interface.RecordDetails.theFileStaysEncryptedInTheVault" => {
+                Some(Self::InterfaceRecordDetailsTheFileStaysEncryptedInTheVault)
+            }
+            "interface.RecordDetails.thisDocumentIsDamaged" => {
+                Some(Self::InterfaceRecordDetailsThisDocumentIsDamaged)
+            }
+            "interface.RecordDetails.thisDocumentIsUnavailable" => {
+                Some(Self::InterfaceRecordDetailsThisDocumentIsUnavailable)
+            }
+            "interface.RecordDetails.unlock" => Some(Self::InterfaceRecordDetailsUnlock),
+            "interface.RecordDetails.viewPhoto" => Some(Self::InterfaceRecordDetailsViewPhoto),
+            "interface.SecuritySettings.evaluationBuild" => {
+                Some(Self::InterfaceSecuritySettingsEvaluationBuild)
+            }
+            "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe" => {
+                Some(Self::InterfaceSecuritySettingsMyCarlosAlsoKeepsAHistoryWhenThe)
+            }
+            "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne" => {
+                Some(Self::InterfaceSecuritySettingsMyCarlosNeverDeletesADocumentHidingOne)
+            }
+            "interface.SecuritySettings.releaseBuild" => {
+                Some(Self::InterfaceSecuritySettingsReleaseBuild)
+            }
+            "interface.SecuritySettings.startingAgainOrRestoringABackupOver" => {
+                Some(Self::InterfaceSecuritySettingsStartingAgainOrRestoringABackupOver)
+            }
+            "interface.SecuritySettings.whatMyCarlosKeeps" => {
+                Some(Self::InterfaceSecuritySettingsWhatMyCarlosKeeps)
+            }
+            "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword" => {
+                Some(Self::InterfaceUnlockPdfDialogThisDocumentIsLockedWithAPassword)
+            }
+            "interface.UnlockPdfDialog.unlocking" => Some(Self::InterfaceUnlockPdfDialogUnlocking),
+            "interface.VaultApp.chooseFilesToImport" => {
+                Some(Self::InterfaceVaultAppChooseFilesToImport)
+            }
+            "interface.VaultApp.finishingTheTransfer" => {
+                Some(Self::InterfaceVaultAppFinishingTheTransfer)
+            }
+            "interface.VaultApp.lockNowAndCancelTheTransfer" => {
+                Some(Self::InterfaceVaultAppLockNowAndCancelTheTransfer)
+            }
+            "interface.VaultApp.myCarlosCouldNotLockTheVaultIts" => {
+                Some(Self::InterfaceVaultAppMyCarlosCouldNotLockTheVaultIts)
+            }
+            "interface.VaultApp.openingMyCarlos" => Some(Self::InterfaceVaultAppOpeningMyCarlos),
+            "interface.VaultApp.tryLockingAgain" => Some(Self::InterfaceVaultAppTryLockingAgain),
+            "interface.VaultApp.vaultContentIsHiddenMyCarlosWillLock" => {
+                Some(Self::InterfaceVaultAppVaultContentIsHiddenMyCarlosWillLock)
+            }
+            "interface.VaultApp.vaultContentIsHiddenWhileMyCarlosFinishes" => {
+                Some(Self::InterfaceVaultAppVaultContentIsHiddenWhileMyCarlosFinishes)
+            }
+            "interface.VaultLibrary.anotherVaultOperationIsStillRunningTry" => {
+                Some(Self::InterfaceVaultLibraryAnotherVaultOperationIsStillRunningTry)
+            }
+            "interface.VaultLibrary.changesArePaused" => {
+                Some(Self::InterfaceVaultLibraryChangesArePaused)
+            }
+            "interface.VaultLibrary.chooseAFolder" => {
+                Some(Self::InterfaceVaultLibraryChooseAFolder)
+            }
+            "interface.VaultLibrary.chooseRecordView" => {
+                Some(Self::InterfaceVaultLibraryChooseRecordView)
+            }
+            "interface.VaultLibrary.clear" => Some(Self::InterfaceVaultLibraryClear),
+            "interface.VaultLibrary.create" => Some(Self::InterfaceVaultLibraryCreate),
+            "interface.VaultLibrary.damagedFileMissing" => {
+                Some(Self::InterfaceVaultLibraryDamagedFileMissing)
+            }
+            "interface.VaultLibrary.destination" => Some(Self::InterfaceVaultLibraryDestination),
+            "interface.VaultLibrary.documentMoved" => {
+                Some(Self::InterfaceVaultLibraryDocumentMoved)
+            }
+            "interface.VaultLibrary.documentsToHide" => {
+                Some(Self::InterfaceVaultLibraryDocumentsToHide)
+            }
+            "interface.VaultLibrary.encryptedBackupSavedKeepItSomewhereOther" => {
+                Some(Self::InterfaceVaultLibraryEncryptedBackupSavedKeepItSomewhereOther)
+            }
+            "interface.VaultLibrary.encryptedBackupSavedThisIsYourNew" => {
+                Some(Self::InterfaceVaultLibraryEncryptedBackupSavedThisIsYourNew)
+            }
+            "interface.VaultLibrary.everyFileIsBackOnThisDevice" => {
+                Some(Self::InterfaceVaultLibraryEveryFileIsBackOnThisDevice)
+            }
+            "interface.VaultLibrary.fileUnavailable" => {
+                Some(Self::InterfaceVaultLibraryFileUnavailable)
+            }
+            "interface.VaultLibrary.filesAndRecordDetailsAreEncryptedAnd" => {
+                Some(Self::InterfaceVaultLibraryFilesAndRecordDetailsAreEncryptedAnd)
+            }
+            "interface.VaultLibrary.filesYouOpenWithMyCarlosArriveHere" => {
+                Some(Self::InterfaceVaultLibraryFilesYouOpenWithMyCarlosArriveHere)
+            }
+            "interface.VaultLibrary.filesYouShareToMyCarlosFromAnother" => {
+                Some(Self::InterfaceVaultLibraryFilesYouShareToMyCarlosFromAnother)
+            }
+            "interface.VaultLibrary.firstCheckThatTheFilesAreNot" => {
+                Some(Self::InterfaceVaultLibraryFirstCheckThatTheFilesAreNot)
+            }
+            "interface.VaultLibrary.foldersStayWithTheirPersonMoveIndividual" => {
+                Some(Self::InterfaceVaultLibraryFoldersStayWithTheirPersonMoveIndividual)
+            }
+            "interface.VaultLibrary.grid" => Some(Self::InterfaceVaultLibraryGrid),
+            "interface.VaultLibrary.gridView" => Some(Self::InterfaceVaultLibraryGridView),
+            "interface.VaultLibrary.hideDamagedDocuments" => {
+                Some(Self::InterfaceVaultLibraryHideDamagedDocuments)
+            }
+            "interface.VaultLibrary.holdAndDragADocumentOrFolder" => {
+                Some(Self::InterfaceVaultLibraryHoldAndDragADocumentOrFolder)
+            }
+            "interface.VaultLibrary.ifYouForgetYourPassphraseWithoutOne" => {
+                Some(Self::InterfaceVaultLibraryIfYouForgetYourPassphraseWithoutOne)
+            }
+            "interface.VaultLibrary.insideFolder" => Some(Self::InterfaceVaultLibraryInsideFolder),
+            "interface.VaultLibrary.list" => Some(Self::InterfaceVaultLibraryList),
+            "interface.VaultLibrary.listView" => Some(Self::InterfaceVaultLibraryListView),
+            "interface.VaultLibrary.moveAFolderWithTheKeyboard" => {
+                Some(Self::InterfaceVaultLibraryMoveAFolderWithTheKeyboard)
+            }
+            "interface.VaultLibrary.moveFolder" => Some(Self::InterfaceVaultLibraryMoveFolder),
+            "interface.VaultLibrary.moveSelectedTo" => {
+                Some(Self::InterfaceVaultLibraryMoveSelectedTo)
+            }
+            "interface.VaultLibrary.moveTheSelectedDocuments" => {
+                Some(Self::InterfaceVaultLibraryMoveTheSelectedDocuments)
+            }
+            "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou" => {
+                Some(Self::InterfaceVaultLibraryMoveThemIntoYourFoldersWheneverYou)
+            }
+            "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo" => {
+                Some(Self::InterfaceVaultLibraryMyCarlosCouldNotSaveAChangeTo)
+            }
+            "interface.VaultLibrary.myCarlosEncryptedRecordLibrary" => {
+                Some(Self::InterfaceVaultLibraryMyCarlosEncryptedRecordLibrary)
+            }
+            "interface.VaultLibrary.nameAZ" => Some(Self::InterfaceVaultLibraryNameAZ),
+            "interface.VaultLibrary.new" => Some(Self::InterfaceVaultLibraryNew),
+            "interface.VaultLibrary.newFolder" => Some(Self::InterfaceVaultLibraryNewFolder),
+            "interface.VaultLibrary.newestFirst" => Some(Self::InterfaceVaultLibraryNewestFirst),
+            "interface.VaultLibrary.noFilesSelectedNothingChanged" => {
+                Some(Self::InterfaceVaultLibraryNoFilesSelectedNothingChanged)
+            }
+            "interface.VaultLibrary.noLocationChosenNothingChanged" => {
+                Some(Self::InterfaceVaultLibraryNoLocationChosenNothingChanged)
+            }
+            "interface.VaultLibrary.noRecoveryKeyYet" => {
+                Some(Self::InterfaceVaultLibraryNoRecoveryKeyYet)
+            }
+            "interface.VaultLibrary.passphraseChanged" => {
+                Some(Self::InterfaceVaultLibraryPassphraseChanged)
+            }
+            "interface.VaultLibrary.privateVault" => Some(Self::InterfaceVaultLibraryPrivateVault),
+            "interface.VaultLibrary.records" => Some(Self::InterfaceVaultLibraryRecords),
+            "interface.VaultLibrary.recoveryKeySavedKeepYourKitSomewhere" => {
+                Some(Self::InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere)
+            }
+            "interface.VaultLibrary.recoveryKeySetupWasNotFinishedThe" => {
+                Some(Self::InterfaceVaultLibraryRecoveryKeySetupWasNotFinishedThe)
+            }
+            "interface.VaultLibrary.recoveryKeySetupWasNotFinishedTheAlternative" => {
+                Some(Self::InterfaceVaultLibraryRecoveryKeySetupWasNotFinishedTheAlternative)
+            }
+            "interface.VaultLibrary.saveACopy" => Some(Self::InterfaceVaultLibrarySaveACopy),
+            "interface.VaultLibrary.saveAReadableCopy" => {
+                Some(Self::InterfaceVaultLibrarySaveAReadableCopy)
+            }
+            "interface.VaultLibrary.saveCancelledNothingChanged" => {
+                Some(Self::InterfaceVaultLibrarySaveCancelledNothingChanged)
+            }
+            "interface.VaultLibrary.savingCreatesAReadableFileOutsideThe" => {
+                Some(Self::InterfaceVaultLibrarySavingCreatesAReadableFileOutsideThe)
+            }
+            "interface.VaultLibrary.searchSharedWithMe" => {
+                Some(Self::InterfaceVaultLibrarySearchSharedWithMe)
+            }
+            "interface.VaultLibrary.searchThisFolderAndItsSubfolders" => {
+                Some(Self::InterfaceVaultLibrarySearchThisFolderAndItsSubfolders)
+            }
+            "interface.VaultLibrary.section" => Some(Self::InterfaceVaultLibrarySection),
+            "interface.VaultLibrary.someEncryptedFilesAreMissingFromThis" => {
+                Some(Self::InterfaceVaultLibrarySomeEncryptedFilesAreMissingFromThis)
+            }
+            "interface.VaultLibrary.someOfTheVaultsFilesCouldNot" => {
+                Some(Self::InterfaceVaultLibrarySomeOfTheVaultsFilesCouldNot)
+            }
+            "interface.VaultLibrary.sortBy" => Some(Self::InterfaceVaultLibrarySortBy),
+            "interface.VaultLibrary.thatFolderIsNoLongerAvailable" => {
+                Some(Self::InterfaceVaultLibraryThatFolderIsNoLongerAvailable)
+            }
+            "interface.VaultLibrary.theVaultIsReadonlySoTheName" => {
+                Some(Self::InterfaceVaultLibraryTheVaultIsReadonlySoTheName)
+            }
+            "interface.VaultLibrary.theirEncryptedFilesAreMissingFromThis" => {
+                Some(Self::InterfaceVaultLibraryTheirEncryptedFilesAreMissingFromThis)
+            }
+            "interface.VaultLibrary.theyAreInNoOnesRecordsUntil" => {
+                Some(Self::InterfaceVaultLibraryTheyAreInNoOnesRecordsUntil)
+            }
+            "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault" => {
+                Some(Self::InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault)
+            }
+            "interface.VaultLibrary.topLevel" => Some(Self::InterfaceVaultLibraryTopLevel),
+            "interface.VaultLibrary.unlockedLockNow" => {
+                Some(Self::InterfaceVaultLibraryUnlockedLockNow)
+            }
+            "interface.VaultLibrary.working" => Some(Self::InterfaceVaultLibraryWorking),
+            "interface.camera.denied" => Some(Self::InterfaceCameraDenied),
+            "interface.count.documents" => Some(Self::InterfaceCountDocuments),
+            "interface.count.folders" => Some(Self::InterfaceCountFolders),
+            "interface.count.found" => Some(Self::InterfaceCountFound),
+            "interface.count.foundInLocation" => Some(Self::InterfaceCountFoundInLocation),
+            "interface.count.hidden" => Some(Self::InterfaceCountHidden),
+            "interface.count.inLocation" => Some(Self::InterfaceCountInLocation),
+            "interface.count.new" => Some(Self::InterfaceCountNew),
+            "interface.count.selected" => Some(Self::InterfaceCountSelected),
+            "interface.hidden.fileBack" => Some(Self::InterfaceHiddenFileBack),
+            "interface.hidden.fileMissing" => Some(Self::InterfaceHiddenFileMissing),
+            "interface.hidden.record" => Some(Self::InterfaceHiddenRecord),
+            "interface.hidden.restore" => Some(Self::InterfaceHiddenRestore),
+            "interface.hideDamaged.title" => Some(Self::InterfaceHideDamagedTitle),
+            "interface.inLocation" => Some(Self::InterfaceInLocation),
+            "interface.notice.alreadyFiled" => Some(Self::InterfaceNoticeAlreadyFiled),
+            "interface.notice.alreadyShared" => Some(Self::InterfaceNoticeAlreadyShared),
+            "interface.notice.changesResumed" => Some(Self::InterfaceNoticeChangesResumed),
+            "interface.notice.copySaved" => Some(Self::InterfaceNoticeCopySaved),
+            "interface.notice.damagedHidden" => Some(Self::InterfaceNoticeDamagedHidden),
+            "interface.notice.duplicates" => Some(Self::InterfaceNoticeDuplicates),
+            "interface.notice.folderCreated" => Some(Self::InterfaceNoticeFolderCreated),
+            "interface.notice.folderCycle" => Some(Self::InterfaceNoticeFolderCycle),
+            "interface.notice.folderMoved" => Some(Self::InterfaceNoticeFolderMoved),
+            "interface.notice.folderMovedNamed" => Some(Self::InterfaceNoticeFolderMovedNamed),
+            "interface.notice.hidden" => Some(Self::InterfaceNoticeHidden),
+            "interface.notice.imported" => Some(Self::InterfaceNoticeImported),
+            "interface.notice.moved" => Some(Self::InterfaceNoticeMoved),
+            "interface.notice.movedMany" => Some(Self::InterfaceNoticeMovedMany),
+            "interface.notice.movedNamed" => Some(Self::InterfaceNoticeMovedNamed),
+            "interface.notice.notPdf" => Some(Self::InterfaceNoticeNotPdf),
+            "interface.notice.pdfUnlocked" => Some(Self::InterfaceNoticePdfUnlocked),
+            "interface.notice.personAdded" => Some(Self::InterfaceNoticePersonAdded),
+            "interface.notice.photoSaved" => Some(Self::InterfaceNoticePhotoSaved),
+            "interface.notice.renamedDocument" => Some(Self::InterfaceNoticeRenamedDocument),
+            "interface.notice.renamedFolder" => Some(Self::InterfaceNoticeRenamedFolder),
+            "interface.notice.restored" => Some(Self::InterfaceNoticeRestored),
+            "interface.notice.sharedAdded" => Some(Self::InterfaceNoticeSharedAdded),
+            "interface.notice.whereFolder" => Some(Self::InterfaceNoticeWhereFolder),
+            "interface.oldBackups.eachBackupYouSavedBeforeNowStill" => {
+                Some(Self::InterfaceOldBackupsEachBackupYouSavedBeforeNowStill)
+            }
+            "interface.oldBackups.yourOldKitCouldStillOpenBackups" => {
+                Some(Self::InterfaceOldBackupsYourOldKitCouldStillOpenBackups)
+            }
+            "interface.oldBackups.yourOldKitCouldStillOpenBackupsAlternative" => {
+                Some(Self::InterfaceOldBackupsYourOldKitCouldStillOpenBackupsAlternative)
+            }
+            "interface.person.records" => Some(Self::InterfacePersonRecords),
+            "interface.photo.checkYourComputersCameraPrivacySettingsAnd" => {
+                Some(Self::InterfacePhotoCheckYourComputersCameraPrivacySettingsAnd)
+            }
+            "interface.photo.inSystemSettingsOpenPrivacySecurityThen" => {
+                Some(Self::InterfacePhotoInSystemSettingsOpenPrivacySecurityThen)
+            }
+            "interface.photo.inWindowsSettingsOpenPrivacySecurityThen" => {
+                Some(Self::InterfacePhotoInWindowsSettingsOpenPrivacySecurityThen)
+            }
+            "interface.photo.name" => Some(Self::InterfacePhotoName),
+            "interface.photo.noCameraWasFoundConnectACamera" => {
+                Some(Self::InterfacePhotoNoCameraWasFoundConnectACamera)
+            }
+            "interface.photo.openYourPhonesSettingsThenAppsThen" => {
+                Some(Self::InterfacePhotoOpenYourPhonesSettingsThenAppsThen)
+            }
+            "interface.photo.openYourPhonesSettingsThenMyCarlosAnd" => {
+                Some(Self::InterfacePhotoOpenYourPhonesSettingsThenMyCarlosAnd)
+            }
+            "interface.photo.theCameraCouldNotBeStartedChoose" => {
+                Some(Self::InterfacePhotoTheCameraCouldNotBeStartedChoose)
+            }
+            "interface.photo.theCameraIsInUseByAnother" => {
+                Some(Self::InterfacePhotoTheCameraIsInUseByAnother)
+            }
+            "interface.photo.theCameraStoppedCheckThatItIs" => {
+                Some(Self::InterfacePhotoTheCameraStoppedCheckThatItIs)
+            }
+            "interface.photo.theCameraStoppedChooseTryAgain" => {
+                Some(Self::InterfacePhotoTheCameraStoppedChooseTryAgain)
+            }
+            "interface.photo.thisPhonesCameraCouldNotBeFound" => {
+                Some(Self::InterfacePhotoThisPhonesCameraCouldNotBeFound)
+            }
+            "interface.reader.opening" => Some(Self::InterfaceReaderOpening),
+            "interface.reader.page" => Some(Self::InterfaceReaderPage),
+            "interface.reader.textFollows" => Some(Self::InterfaceReaderTextFollows),
+            "interface.reader.where" => Some(Self::InterfaceReaderWhere),
+            "interface.reader.zoom" => Some(Self::InterfaceReaderZoom),
+            "interface.receive.dropped" => Some(Self::InterfaceReceiveDropped),
+            "interface.receive.refused" => Some(Self::InterfaceReceiveRefused),
+            "interface.recordPresentation.imaging" => {
+                Some(Self::InterfaceRecordPresentationImaging)
+            }
+            "interface.recordPresentation.prescription" => {
+                Some(Self::InterfaceRecordPresentationPrescription)
+            }
+            "interface.recordPresentation.testResult" => {
+                Some(Self::InterfaceRecordPresentationTestResult)
+            }
+            "interface.recovery.earlierStopped" => Some(Self::InterfaceRecoveryEarlierStopped),
+            "interface.recovery.replaced" => Some(Self::InterfaceRecoveryReplaced),
+            "interface.recovery.savedBeforeLock" => Some(Self::InterfaceRecoverySavedBeforeLock),
+            "interface.search.all" => Some(Self::InterfaceSearchAll),
+            "interface.sidebar.sharedNew" => Some(Self::InterfaceSidebarSharedNew),
+            "interface.size.bytes" => Some(Self::InterfaceSizeBytes),
+            "interface.speed.median" => Some(Self::InterfaceSpeedMedian),
+            "interface.speed.parameters" => Some(Self::InterfaceSpeedParameters),
+            "interface.speed.platform" => Some(Self::InterfaceSpeedPlatform),
+            "interface.speed.runs" => Some(Self::InterfaceSpeedRuns),
+            "interface.speed.simulator" => Some(Self::InterfaceSpeedSimulator),
+            "interface.tab.withNew" => Some(Self::InterfaceTabWithNew),
+            "interface.unfinishedRecoveryKey.recoveryKeySetupEndedWhenTheVault" => {
+                Some(Self::InterfaceUnfinishedRecoveryKeyRecoveryKeySetupEndedWhenTheVault)
+            }
+            "interface.unfinishedRecoveryKey.yourRecoveryKeyWasNotReplacedSetup" => {
+                Some(Self::InterfaceUnfinishedRecoveryKeyYourRecoveryKeyWasNotReplacedSetup)
+            }
+            "kit.keep" => Some(Self::KitKeep),
+            "kit.labelNote" => Some(Self::KitLabelNote),
+            "kit.labelPrinted" => Some(Self::KitLabelPrinted),
+            "kit.printed" => Some(Self::KitPrinted),
+            "kit.title" => Some(Self::KitTitle),
+            "kit.use" => Some(Self::KitUse),
+            "language.error.notRemembered" => Some(Self::LanguageErrorNotRemembered),
+            "language.error.unreadable" => Some(Self::LanguageErrorUnreadable),
+            "language.help" => Some(Self::LanguageHelp),
+            "language.system" => Some(Self::LanguageSystem),
+            "language.title" => Some(Self::LanguageTitle),
+            "library.column.added" => Some(Self::LibraryColumnAdded),
+            "library.column.name" => Some(Self::LibraryColumnName),
+            "library.column.source" => Some(Self::LibraryColumnSource),
+            "library.details" => Some(Self::LibraryDetails),
+            "library.document.details" => Some(Self::LibraryDocumentDetails),
+            "library.document.label" => Some(Self::LibraryDocumentLabel),
+            "library.empty.help" => Some(Self::LibraryEmptyHelp),
+            "library.empty.title" => Some(Self::LibraryEmptyTitle),
+            "library.folder.items" => Some(Self::LibraryFolderItems),
+            "library.folder.label" => Some(Self::LibraryFolderLabel),
+            "library.folder.open" => Some(Self::LibraryFolderOpen),
+            "library.folder.rename" => Some(Self::LibraryFolderRename),
+            "library.items" => Some(Self::LibraryItems),
+            "library.noMatch.help" => Some(Self::LibraryNoMatchHelp),
+            "library.noMatch.title" => Some(Self::LibraryNoMatchTitle),
+            "library.rename" => Some(Self::LibraryRename),
+            "library.search.cleared" => Some(Self::LibrarySearchCleared),
+            "library.search.results" => Some(Self::LibrarySearchResults),
+            "library.select" => Some(Self::LibrarySelect),
+            "lockWarning.help" => Some(Self::LockWarningHelp),
+            "lockWarning.keepOpen" => Some(Self::LockWarningKeepOpen),
+            "lockWarning.left" => Some(Self::LockWarningLeft),
+            "lockWarning.title" => Some(Self::LockWarningTitle),
+            "native.backup.noteEmptied" => Some(Self::NativeBackupNoteEmptied),
+            "native.backup.noteUntouched" => Some(Self::NativeBackupNoteUntouched),
+            "native.cancel" => Some(Self::NativeCancel),
+            "native.error.01" => Some(Self::NativeError01),
+            "native.error.02" => Some(Self::NativeError02),
+            "native.error.03" => Some(Self::NativeError03),
+            "native.error.04" => Some(Self::NativeError04),
+            "native.error.05" => Some(Self::NativeError05),
+            "native.error.06" => Some(Self::NativeError06),
+            "native.error.07" => Some(Self::NativeError07),
+            "native.error.08" => Some(Self::NativeError08),
+            "native.error.09" => Some(Self::NativeError09),
+            "native.error.10" => Some(Self::NativeError10),
+            "native.error.11" => Some(Self::NativeError11),
+            "native.error.12" => Some(Self::NativeError12),
+            "native.error.13" => Some(Self::NativeError13),
+            "native.error.14" => Some(Self::NativeError14),
+            "native.error.15" => Some(Self::NativeError15),
+            "native.error.16" => Some(Self::NativeError16),
+            "native.error.17" => Some(Self::NativeError17),
+            "native.error.18" => Some(Self::NativeError18),
+            "native.error.19" => Some(Self::NativeError19),
+            "native.error.20" => Some(Self::NativeError20),
+            "native.error.21" => Some(Self::NativeError21),
+            "native.error.22" => Some(Self::NativeError22),
+            "native.error.23" => Some(Self::NativeError23),
+            "native.error.24" => Some(Self::NativeError24),
+            "native.error.25" => Some(Self::NativeError25),
+            "native.error.26" => Some(Self::NativeError26),
+            "native.error.27" => Some(Self::NativeError27),
+            "native.error.28" => Some(Self::NativeError28),
+            "native.error.29" => Some(Self::NativeError29),
+            "native.error.30" => Some(Self::NativeError30),
+            "native.error.31" => Some(Self::NativeError31),
+            "native.error.32" => Some(Self::NativeError32),
+            "native.error.33" => Some(Self::NativeError33),
+            "native.error.34" => Some(Self::NativeError34),
+            "native.error.35" => Some(Self::NativeError35),
+            "native.error.36" => Some(Self::NativeError36),
+            "native.error.37" => Some(Self::NativeError37),
+            "native.error.38" => Some(Self::NativeError38),
+            "native.error.39" => Some(Self::NativeError39),
+            "native.error.40" => Some(Self::NativeError40),
+            "native.error.41" => Some(Self::NativeError41),
+            "native.error.42" => Some(Self::NativeError42),
+            "native.error.43" => Some(Self::NativeError43),
+            "native.error.44" => Some(Self::NativeError44),
+            "native.error.45" => Some(Self::NativeError45),
+            "native.error.46" => Some(Self::NativeError46),
+            "native.error.47" => Some(Self::NativeError47),
+            "native.error.48" => Some(Self::NativeError48),
+            "native.error.speedTest" => Some(Self::NativeErrorSpeedTest),
+            "native.filter.backups" => Some(Self::NativeFilterBackups),
+            "native.filter.pdf" => Some(Self::NativeFilterPdf),
+            "native.kit.text" => Some(Self::NativeKitText),
+            "native.recovery.keep" => Some(Self::NativeRecoveryKeep),
+            "native.recovery.replace" => Some(Self::NativeRecoveryReplace),
+            "native.recovery.title" => Some(Self::NativeRecoveryTitle),
+            "native.recovery.warning" => Some(Self::NativeRecoveryWarning),
+            "native.reset.phrase" => Some(Self::NativeResetPhrase),
+            "native.restore.changed" => Some(Self::NativeRestoreChanged),
+            "native.restore.other" => Some(Self::NativeRestoreOther),
+            "native.restore.replace" => Some(Self::NativeRestoreReplace),
+            "native.restore.same" => Some(Self::NativeRestoreSame),
+            "native.restore.title" => Some(Self::NativeRestoreTitle),
+            "native.restore.unreadable" => Some(Self::NativeRestoreUnreadable),
+            "native.setAside.confirm" => Some(Self::NativeSetAsideConfirm),
+            "native.setAside.desktop" => Some(Self::NativeSetAsideDesktop),
+            "native.setAside.kept" => Some(Self::NativeSetAsideKept),
+            "native.setAside.mobile" => Some(Self::NativeSetAsideMobile),
+            "native.setAside.title" => Some(Self::NativeSetAsideTitle),
+            "native.setAside.warning" => Some(Self::NativeSetAsideWarning),
+            "native.vault.keep" => Some(Self::NativeVaultKeep),
+            "notice.autoLockSet" => Some(Self::NoticeAutoLockSet),
+            "notice.backupCutOff" => Some(Self::NoticeBackupCutOff),
+            "notice.created" => Some(Self::NoticeCreated),
+            "notice.createdThenLocked" => Some(Self::NoticeCreatedThenLocked),
+            "notice.dropRefused" => Some(Self::NoticeDropRefused),
+            "notice.eraseCancelled" => Some(Self::NoticeEraseCancelled),
+            "notice.iosKeepOpen" => Some(Self::NoticeIosKeepOpen),
+            "notice.locked" => Some(Self::NoticeLocked),
+            "notice.lockedHidden" => Some(Self::NoticeLockedHidden),
+            "notice.lockedIdle" => Some(Self::NoticeLockedIdle),
+            "notice.recovered" => Some(Self::NoticeRecovered),
+            "notice.recoveredReadOnly" => Some(Self::NoticeRecoveredReadOnly),
+            "notice.restored" => Some(Self::NoticeRestored),
+            "notice.transferUnfinished" => Some(Self::NoticeTransferUnfinished),
+            "notice.unlocked" => Some(Self::NoticeUnlocked),
+            "notice.unlockedRecovery" => Some(Self::NoticeUnlockedRecovery),
+            "passphrase.confirm.label" => Some(Self::PassphraseConfirmLabel),
+            "passphrase.confirmNew.label" => Some(Self::PassphraseConfirmNewLabel),
+            "passphrase.label" => Some(Self::PassphraseLabel),
+            "passphrase.longerThanAny" => Some(Self::PassphraseLongerThanAny),
+            "passphrase.mismatch" => Some(Self::PassphraseMismatch),
+            "passphrase.new.label" => Some(Self::PassphraseNewLabel),
+            "passphrase.rules" => Some(Self::PassphraseRules),
+            "passphrase.show" => Some(Self::PassphraseShow),
+            "passphrase.show.inConfirm" => Some(Self::PassphraseShowInConfirm),
+            "passphrase.tooLong" => Some(Self::PassphraseTooLong),
+            "passphrase.tooShort" => Some(Self::PassphraseTooShort),
+            "photo.alt" => Some(Self::PhotoAlt),
+            "photo.area" => Some(Self::PhotoArea),
+            "photo.close" => Some(Self::PhotoClose),
+            "photo.eyebrow" => Some(Self::PhotoEyebrow),
+            "photo.fitted" => Some(Self::PhotoFitted),
+            "photo.zoomIn" => Some(Self::PhotoZoomIn),
+            "photo.zoomOut" => Some(Self::PhotoZoomOut),
+            "photo.zoomed" => Some(Self::PhotoZoomed),
+            "preferences.subtitle" => Some(Self::PreferencesSubtitle),
+            "record.kind.document" => Some(Self::RecordKindDocument),
+            "record.source.manual" => Some(Self::RecordSourceManual),
+            "recover.intro" => Some(Self::RecoverIntro),
+            "recover.key.format" => Some(Self::RecoverKeyFormat),
+            "recover.key.label" => Some(Self::RecoverKeyLabel),
+            "recover.key.show" => Some(Self::RecoverKeyShow),
+            "recover.submit" => Some(Self::RecoverSubmit),
+            "recoveryKey.about.offered" => Some(Self::RecoveryKeyAboutOffered),
+            "recoveryKey.about.replacing" => Some(Self::RecoveryKeyAboutReplacing),
+            "recoveryKey.about.type" => Some(Self::RecoveryKeyAboutType),
+            "recoveryKey.about.typeAgain" => Some(Self::RecoveryKeyAboutTypeAgain),
+            "recoveryKey.about.typeAgainNew" => Some(Self::RecoveryKeyAboutTypeAgainNew),
+            "recoveryKey.about.typeNew" => Some(Self::RecoveryKeyAboutTypeNew),
+            "recoveryKey.about.what" => Some(Self::RecoveryKeyAboutWhat),
+            "recoveryKey.back" => Some(Self::RecoveryKeyBack),
+            "recoveryKey.check.hint" => Some(Self::RecoveryKeyCheckHint),
+            "recoveryKey.check.label" => Some(Self::RecoveryKeyCheckLabel),
+            "recoveryKey.checkAndSave" => Some(Self::RecoveryKeyCheckAndSave),
+            "recoveryKey.chooseReason" => Some(Self::RecoveryKeyChooseReason),
+            "recoveryKey.continue" => Some(Self::RecoveryKeyContinue),
+            "recoveryKey.discard.body" => Some(Self::RecoveryKeyDiscardBody),
+            "recoveryKey.discard.confirm" => Some(Self::RecoveryKeyDiscardConfirm),
+            "recoveryKey.discard.title" => Some(Self::RecoveryKeyDiscardTitle),
+            "recoveryKey.group" => Some(Self::RecoveryKeyGroup),
+            "recoveryKey.hiddenWhileSaving" => Some(Self::RecoveryKeyHiddenWhileSaving),
+            "recoveryKey.instructions" => Some(Self::RecoveryKeyInstructions),
+            "recoveryKey.keyboardHint" => Some(Self::RecoveryKeyKeyboardHint),
+            "recoveryKey.kitSaved" => Some(Self::RecoveryKeyKitSaved),
+            "recoveryKey.label" => Some(Self::RecoveryKeyLabel),
+            "recoveryKey.leave.offered" => Some(Self::RecoveryKeyLeaveOffered),
+            "recoveryKey.leave.required" => Some(Self::RecoveryKeyLeaveRequired),
+            "recoveryKey.next" => Some(Self::RecoveryKeyNext),
+            "recoveryKey.notChanged" => Some(Self::RecoveryKeyNotChanged),
+            "recoveryKey.printKit" => Some(Self::RecoveryKeyPrintKit),
+            "recoveryKey.printUnavailable" => Some(Self::RecoveryKeyPrintUnavailable),
+            "recoveryKey.reason.exposed" => Some(Self::RecoveryKeyReasonExposed),
+            "recoveryKey.reason.hint" => Some(Self::RecoveryKeyReasonHint),
+            "recoveryKey.reason.legend" => Some(Self::RecoveryKeyReasonLegend),
+            "recoveryKey.reason.routine" => Some(Self::RecoveryKeyReasonRoutine),
+            "recoveryKey.saveKit" => Some(Self::RecoveryKeySaveKit),
+            "recoveryKey.threeMisses" => Some(Self::RecoveryKeyThreeMisses),
+            "recoveryKey.title.check" => Some(Self::RecoveryKeyTitleCheck),
+            "recoveryKey.title.key" => Some(Self::RecoveryKeyTitleKey),
+            "recoveryKey.title.replace" => Some(Self::RecoveryKeyTitleReplace),
+            "recoveryKey.title.setUp" => Some(Self::RecoveryKeyTitleSetUp),
+            "recoveryKey.typedCount" => Some(Self::RecoveryKeyTypedCount),
+            "rename.gainsExtension" => Some(Self::RenameGainsExtension),
+            "rename.help.document" => Some(Self::RenameHelpDocument),
+            "rename.help.documentExtension" => Some(Self::RenameHelpDocumentExtension),
+            "rename.help.folder" => Some(Self::RenameHelpFolder),
+            "rename.label.document" => Some(Self::RenameLabelDocument),
+            "rename.label.folder" => Some(Self::RenameLabelFolder),
+            "rename.reserved" => Some(Self::RenameReserved),
+            "rename.save" => Some(Self::RenameSave),
+            "rename.saving" => Some(Self::RenameSaving),
+            "rename.stemMissing" => Some(Self::RenameStemMissing),
+            "rename.title.document" => Some(Self::RenameTitleDocument),
+            "rename.title.folder" => Some(Self::RenameTitleFolder),
+            "rename.tooLong" => Some(Self::RenameTooLong),
+            "rename.unsafe" => Some(Self::RenameUnsafe),
+            "reset.plainly" => Some(Self::ResetPlainly),
+            "reset.submit" => Some(Self::ResetSubmit),
+            "reset.type" => Some(Self::ResetType),
+            "restore.agree.erase" => Some(Self::RestoreAgreeErase),
+            "restore.agree.replace" => Some(Self::RestoreAgreeReplace),
+            "restore.cancelled" => Some(Self::RestoreCancelled),
+            "restore.check" => Some(Self::RestoreCheck),
+            "restore.checked" => Some(Self::RestoreChecked),
+            "restore.checking" => Some(Self::RestoreChecking),
+            "restore.choose" => Some(Self::RestoreChoose),
+            "restore.chooseOther" => Some(Self::RestoreChooseOther),
+            "restore.chosen" => Some(Self::RestoreChosen),
+            "restore.consequence.differs" => Some(Self::RestoreConsequenceDiffers),
+            "restore.consequence.nothing" => Some(Self::RestoreConsequenceNothing),
+            "restore.consequence.otherVault" => Some(Self::RestoreConsequenceOtherVault),
+            "restore.consequence.same" => Some(Self::RestoreConsequenceSame),
+            "restore.consequence.unreadable" => Some(Self::RestoreConsequenceUnreadable),
+            "restore.intro" => Some(Self::RestoreIntro),
+            "restore.method.passphrase" => Some(Self::RestoreMethodPassphrase),
+            "restore.method.recoveryKey" => Some(Self::RestoreMethodRecoveryKey),
+            "restore.openWith" => Some(Self::RestoreOpenWith),
+            "restore.passphrase.label" => Some(Self::RestorePassphraseLabel),
+            "restore.passphrase.show" => Some(Self::RestorePassphraseShow),
+            "restore.restoring" => Some(Self::RestoreRestoring),
+            "restore.submit" => Some(Self::RestoreSubmit),
+            "restore.summary" => Some(Self::RestoreSummary),
+            "restore.tooLong" => Some(Self::RestoreTooLong),
+            "secret.count.password" => Some(Self::SecretCountPassword),
+            "secret.count.recoveryKey" => Some(Self::SecretCountRecoveryKey),
+            "secret.count.shown" => Some(Self::SecretCountShown),
+            "security.autoLock.body" => Some(Self::SecurityAutoLockBody),
+            "security.autoLock.label" => Some(Self::SecurityAutoLockLabel),
+            "security.autoLock.longer" => Some(Self::SecurityAutoLockLonger),
+            "security.autoLock.minutes" => Some(Self::SecurityAutoLockMinutes),
+            "security.autoLock.shorter" => Some(Self::SecurityAutoLockShorter),
+            "security.autoLock.title" => Some(Self::SecurityAutoLockTitle),
+            "security.backup.body" => Some(Self::SecurityBackupBody),
+            "security.backup.save" => Some(Self::SecurityBackupSave),
+            "security.backup.title" => Some(Self::SecurityBackupTitle),
+            "security.copies.body" => Some(Self::SecurityCopiesBody),
+            "security.copies.title" => Some(Self::SecurityCopiesTitle),
+            "security.devBuild.body" => Some(Self::SecurityDevBuildBody),
+            "security.devBuild.title" => Some(Self::SecurityDevBuildTitle),
+            "security.encryption.body" => Some(Self::SecurityEncryptionBody),
+            "security.encryption.state" => Some(Self::SecurityEncryptionState),
+            "security.encryption.title" => Some(Self::SecurityEncryptionTitle),
+            "security.erase.body" => Some(Self::SecurityEraseBody),
+            "security.erase.show" => Some(Self::SecurityEraseShow),
+            "security.erase.submit" => Some(Self::SecurityEraseSubmit),
+            "security.erase.title" => Some(Self::SecurityEraseTitle),
+            "security.lockNow" => Some(Self::SecurityLockNow),
+            "security.oldBackups.deleteOlder" => Some(Self::SecurityOldBackupsDeleteOlder),
+            "security.oldBackups.done" => Some(Self::SecurityOldBackupsDone),
+            "security.oldBackups.inPlace" => Some(Self::SecurityOldBackupsInPlace),
+            "security.oldBackups.intro" => Some(Self::SecurityOldBackupsIntro),
+            "security.oldBackups.justSaved" => Some(Self::SecurityOldBackupsJustSaved),
+            "security.oldBackups.justSavedWithSize" => {
+                Some(Self::SecurityOldBackupsJustSavedWithSize)
+            }
+            "security.oldBackups.keepCopy" => Some(Self::SecurityOldBackupsKeepCopy),
+            "security.oldBackups.named" => Some(Self::SecurityOldBackupsNamed),
+            "security.oldBackups.namedWithSize" => Some(Self::SecurityOldBackupsNamedWithSize),
+            "security.oldBackups.none" => Some(Self::SecurityOldBackupsNone),
+            "security.oldBackups.saveNow" => Some(Self::SecurityOldBackupsSaveNow),
+            "security.oldBackups.saveWhenWritable" => {
+                Some(Self::SecurityOldBackupsSaveWhenWritable)
+            }
+            "security.oldBackups.thenDelete" => Some(Self::SecurityOldBackupsThenDelete),
+            "security.oldBackups.title" => Some(Self::SecurityOldBackupsTitle),
+            "security.passphrase.copies" => Some(Self::SecurityPassphraseCopies),
+            "security.passphrase.current" => Some(Self::SecurityPassphraseCurrent),
+            "security.passphrase.currentTooLong" => Some(Self::SecurityPassphraseCurrentTooLong),
+            "security.passphrase.mismatch" => Some(Self::SecurityPassphraseMismatch),
+            "security.passphrase.newTooLong" => Some(Self::SecurityPassphraseNewTooLong),
+            "security.passphrase.newTooShort" => Some(Self::SecurityPassphraseNewTooShort),
+            "security.passphrase.rules" => Some(Self::SecurityPassphraseRules),
+            "security.passphrase.submit" => Some(Self::SecurityPassphraseSubmit),
+            "security.passphrase.title" => Some(Self::SecurityPassphraseTitle),
+            "security.profiles.add" => Some(Self::SecurityProfilesAdd),
+            "security.profiles.body" => Some(Self::SecurityProfilesBody),
+            "security.profiles.label" => Some(Self::SecurityProfilesLabel),
+            "security.profiles.title" => Some(Self::SecurityProfilesTitle),
+            "security.recoveryKey.body" => Some(Self::SecurityRecoveryKeyBody),
+            "security.recoveryKey.current" => Some(Self::SecurityRecoveryKeyCurrent),
+            "security.recoveryKey.notSetUp" => Some(Self::SecurityRecoveryKeyNotSetUp),
+            "security.recoveryKey.replace" => Some(Self::SecurityRecoveryKeyReplace),
+            "security.recoveryKey.setUp" => Some(Self::SecurityRecoveryKeySetUp),
+            "security.recoveryKey.setUpOn" => Some(Self::SecurityRecoveryKeySetUpOn),
+            "security.recoveryKey.title" => Some(Self::SecurityRecoveryKeyTitle),
+            "security.speed.body" => Some(Self::SecuritySpeedBody),
+            "security.speed.measuring" => Some(Self::SecuritySpeedMeasuring),
+            "security.speed.run" => Some(Self::SecuritySpeedRun),
+            "security.speed.title" => Some(Self::SecuritySpeedTitle),
+            "security.subtitle" => Some(Self::SecuritySubtitle),
+            "security.title" => Some(Self::SecurityTitle),
+            "sidebar.documents" => Some(Self::SidebarDocuments),
+            "sidebar.folderCount" => Some(Self::SidebarFolderCount),
+            "sidebar.label" => Some(Self::SidebarLabel),
+            "sidebar.myRecords" => Some(Self::SidebarMyRecords),
+            "sidebar.preferences" => Some(Self::SidebarPreferences),
+            "sidebar.settings" => Some(Self::SidebarSettings),
+            "sidebar.storage" => Some(Self::SidebarStorage),
+            "textSize.announce" => Some(Self::TextSizeAnnounce),
+            "textSize.between" => Some(Self::TextSizeBetween),
+            "textSize.box" => Some(Self::TextSizeBox),
+            "textSize.followsDevice" => Some(Self::TextSizeFollowsDevice),
+            "textSize.help" => Some(Self::TextSizeHelp),
+            "textSize.key.command" => Some(Self::TextSizeKeyCommand),
+            "textSize.larger" => Some(Self::TextSizeLarger),
+            "textSize.largest" => Some(Self::TextSizeLargest),
+            "textSize.notNumber" => Some(Self::TextSizeNotNumber),
+            "textSize.reset" => Some(Self::TextSizeReset),
+            "textSize.smaller" => Some(Self::TextSizeSmaller),
+            "textSize.smallest" => Some(Self::TextSizeSmallest),
+            "textSize.title" => Some(Self::TextSizeTitle),
+            "unlock.autoLock" => Some(Self::UnlockAutoLock),
+            "unlock.forgot.summary" => Some(Self::UnlockForgotSummary),
+            "unlock.noKey.body" => Some(Self::UnlockNoKeyBody),
+            "unlock.noKey.heading" => Some(Self::UnlockNoKeyHeading),
+            "unlock.submit" => Some(Self::UnlockSubmit),
+            "unlock.title" => Some(Self::UnlockTitle),
+            "unlock.waiting" => Some(Self::UnlockWaiting),
+            "unlock.waiting.one" => Some(Self::UnlockWaitingOne),
+            _ => None,
+        }
+    }
 }

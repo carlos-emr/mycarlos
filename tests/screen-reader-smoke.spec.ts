@@ -160,7 +160,11 @@ test("Settings are named and ordered for a screen reader", async ({ page }) => {
 // #92: announce settled search results without moving focus or reading every
 // keystroke. This browser check observes live-region changes, not real speech.
 test("a search's result is read out (#92)", async ({ page }) => {
-  await page.clock.install();
+  // Load normally before the captured pause target. This two-minute head start
+  // exceeds the 90-second test budget and stays below the five-minute idle lock,
+  // so controller/browser scheduling cannot make pauseAt move backwards.
+  const pauseTarget = Date.now();
+  await page.clock.install({ time: pauseTarget - 120_000 });
   await fakeVault(page, "unlocked");
   await recordAnnouncements(page);
   await page.goto("/");
@@ -169,7 +173,7 @@ test("a search's result is read out (#92)", async ({ page }) => {
   });
   const status = page.locator("[data-search-status]");
   await expect(search).toBeVisible();
-  await page.clock.pauseAt(new Date());
+  await page.clock.pauseAt(pauseTarget);
   await page.clock.runFor(600);
   await expect(status).toBeEmpty();
   await expect(status).toHaveAttribute("aria-live", "polite");
@@ -217,7 +221,11 @@ test("a search's result is read out (#92)", async ({ page }) => {
 test("pending search announcements stop when leaving the location (#92)", async ({
   page,
 }) => {
-  await page.clock.install();
+  // Load normally before the captured pause target. This two-minute head start
+  // exceeds the 90-second test budget and stays below the five-minute idle lock,
+  // so controller/browser scheduling cannot make pauseAt move backwards.
+  const pauseTarget = Date.now();
+  await page.clock.install({ time: pauseTarget - 120_000 });
   await fakeVault(page, "unlocked");
   await recordAnnouncements(page);
   await page.goto("/");
@@ -225,7 +233,7 @@ test("pending search announcements stop when leaving the location (#92)", async 
     name: "Search everything in My records",
   });
   await expect(search).toBeVisible();
-  await page.clock.pauseAt(new Date());
+  await page.clock.pauseAt(pauseTarget);
   await search.fill("Results");
   await page.getByRole("button", { name: "Open FAKE Results" }).click();
   await page.clock.runFor(600);

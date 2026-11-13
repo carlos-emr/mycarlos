@@ -1,11 +1,6 @@
-import { CATALOGUES, type MessageKey } from "./locales";
-import {
-  DEFAULT_LOCALE,
-  LOCALES,
-  type Locale,
-  type Message,
-  type PluralForms,
-} from "./types";
+import { fluentBundle } from "./catalogues";
+import { type MessageKey, fluentId } from "./locales/fluent/keys";
+import { DEFAULT_LOCALE, LOCALES, type Locale } from "./types";
 
 export type Params = Record<string, string | number>;
 
@@ -18,6 +13,12 @@ export function matchLocale(tag: string): Locale | null {
   const exact = LOCALES.find((locale) => locale.toLowerCase() === wanted);
   if (exact) return exact;
   const primary = wanted.split("-")[0];
+  if (primary === "zh") {
+    const subtags = wanted.split("-");
+    return subtags.includes("hant") || ["tw", "hk", "mo"].includes(subtags[1])
+      ? "zh-TW"
+      : "zh-CN";
+  }
   return (
     LOCALES.find((locale) => locale.toLowerCase().split("-")[0] === primary) ??
     null
@@ -135,29 +136,6 @@ export function initLocale(): Locale {
 
 // --- translating ----------------------------------------------------------
 
-function pluralForm(message: PluralForms, locale: Locale, count: number) {
-  const category = new Intl.PluralRules(locale).select(count);
-  return message[category] ?? message.other;
-}
-
-/** Fills {name} placeholders in a single pass, so a value that itself contains
- * braces is never read as another placeholder. The result is plain text for a
- * React text node: nothing here builds HTML. A placeholder with no value is
- * left as written. */
-export function interpolate(
-  template: string,
-  params: Params,
-  locale: Locale,
-): string {
-  return template.replace(/\{(\w+)\}/g, (whole, name: string) => {
-    if (!Object.prototype.hasOwnProperty.call(params, name)) return whole;
-    const value = params[name];
-    return typeof value === "number"
-      ? formatNumber(value, locale)
-      : String(value);
-  });
-}
-
 /** The text for a key in a language. A missing key or form falls back to
  * English, and a key unknown even there shows the key itself, so a gap is
  * visible rather than blank. A message with plural forms needs `count`. */
@@ -166,16 +144,20 @@ export function translate(
   key: MessageKey,
   params: Params = {},
 ): string {
-  const message: Message | undefined =
-    CATALOGUES[locale]?.[key] ?? CATALOGUES[DEFAULT_LOCALE][key];
-  if (message === undefined) return key;
-  if (typeof message === "string") return interpolate(message, params, locale);
-  const count = params.count;
-  const form =
-    typeof count === "number"
-      ? pluralForm(message, locale, count)
-      : message.other;
-  return interpolate(form, params, locale);
+  const local = fluentBundle(locale);
+  const id = fluentId(key);
+  const localMessage = local.getMessage(id);
+  const bundle = localMessage ? local : fluentBundle(DEFAULT_LOCALE);
+  const message = localMessage ?? bundle.getMessage(id);
+  if (!message?.value) return key;
+  const errors: Error[] = [];
+  const formatted = bundle.formatPattern(message.value, params, errors);
+  // Fluent isolates placeables for bidirectional text. Preserve those marks
+  // for user supplied values; remove them from unresolved placeholders so
+  // React helpers can replace the placeholder token safely.
+  return errors.length
+    ? formatted.replace(/\u2068(\{\$\w+\})\u2069/g, "$1")
+    : formatted;
 }
 
 /** Text in the language now in use. */

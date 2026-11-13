@@ -7,91 +7,48 @@ import {
   within,
 } from "@testing-library/react";
 import {
-  CATALOGUES,
+  MESSAGE_KEYS,
   LOCALES,
   formatDate,
   formatNumber,
+  hasMessageKey,
   getLocale,
-  interpolate,
   matchLocale,
   resolveLocale,
   setLocaleOverride,
   t,
   translate,
   type Locale,
-  type Message,
 } from "./index";
-import { en } from "./locales/en";
+import { parse } from "@fluent/syntax";
+import { CATALOGUE_SOURCES } from "./catalogues";
 import { CreateVault, VaultAuthFrame, UnlockVault } from "../native/VaultAuth";
 import { MIN_PASSPHRASE_CHARS } from "../native/PassphraseChecklist";
 import { SHARED_FOLDER_NAME } from "../native/recordPresentation";
 
-const placeholders = (text: string) =>
-  [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
-const forms = (message: Message): [string, string][] =>
-  typeof message === "string"
-    ? [["", message]]
-    : Object.entries(message).map(([k, v]) => [k, v as string]);
+const visibleText = (text: string) => text.replace(/[\u2068\u2069]/g, "");
 
 afterEach(() => setLocaleOverride(null));
 
 describe("catalogue", () => {
-  const keys = Object.keys(en);
-  for (const locale of LOCALES) {
-    describe(locale, () => {
-      const catalogue = CATALOGUES[locale] as Record<string, Message>;
-      it("has every key and no extras", () => {
-        expect(Object.keys(catalogue).sort()).toEqual([...keys].sort());
-      });
-      it("has real text for every key, not empty or the key itself", () => {
-        for (const key of keys) {
-          for (const [, text] of forms(catalogue[key])) {
-            expect(text.trim(), key).not.toBe("");
-            expect(text, key).not.toBe(key);
-          }
-        }
-      });
-      it("uses the same placeholders as English", () => {
-        for (const key of keys) {
-          const source: Message = en[key as keyof typeof en];
-          const message = catalogue[key];
-          // A lexical singular can say “A file” while its plural shows
-          // {count}. Compare the corresponding English form; categories
-          // English lacks (few/many) inherit its other-form contract.
-          expect(typeof message === "string", key).toBe(
-            typeof source === "string",
-          );
-          for (const [form, text] of forms(message)) {
-            const sourceText =
-              typeof source === "string"
-                ? source
-                : (source[form as keyof typeof source] ?? source.other);
-            expect(placeholders(text), `${key} ${form}`).toEqual(
-              placeholders(sourceText),
-            );
-          }
-        }
-      });
-      it("covers every plural category of the language", () => {
-        const needed = new Intl.PluralRules(locale).resolvedOptions()
-          .pluralCategories;
-        for (const key of keys) {
-          const message = catalogue[key];
-          if (typeof message === "string") continue;
-          for (const category of needed) {
-            expect(message[category], `${key} ${category}`).toBeTruthy();
-          }
-        }
-      });
-      it("does not carry markup", () => {
-        for (const key of keys) {
-          for (const [, text] of forms(catalogue[key])) {
-            expect(text, key).not.toMatch(/[<>]/);
-          }
-        }
-      });
-    });
-  }
+  it("parses every Fluent resource and keeps generated keys mapped", () => {
+    for (const locale of LOCALES) {
+      const resource = parse(CATALOGUE_SOURCES[locale]);
+      expect(
+        resource.body.some((entry) => entry.type === "Junk"),
+        locale,
+      ).toBe(false);
+      const ids = resource.body
+        .filter((entry) => entry.type === "Message")
+        .map((entry) => entry.id.name);
+      expect(ids).toHaveLength(MESSAGE_KEYS.length);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(translate(locale, "create.submit").trim()).not.toBe("");
+      expect(translate(locale, "create.submit")).not.toBe("create-submit");
+    }
+    expect(hasMessageKey("create.submit")).toBe(true);
+    expect(hasMessageKey("missing.message")).toBe(false);
+  });
 });
 
 describe("choosing the language", () => {
@@ -102,6 +59,12 @@ describe("choosing the language", () => {
     expect(resolveLocale(["pt-BR"])).toBe("pt-BR");
     expect(resolveLocale(["pt-PT"])).toBe("pt-BR");
     expect(resolveLocale(["PT_br"])).toBe("pt-BR");
+    expect(resolveLocale(["zh-CN"])).toBe("zh-CN");
+    expect(resolveLocale(["zh-Hans"])).toBe("zh-CN");
+    expect(resolveLocale(["zh-SG"])).toBe("zh-CN");
+    expect(resolveLocale(["zh-TW"])).toBe("zh-TW");
+    expect(resolveLocale(["zh-Hant"])).toBe("zh-TW");
+    expect(resolveLocale(["zh-Hant-HK"])).toBe("zh-TW");
     expect(resolveLocale(["de-DE", "ja"])).toBe("en");
     expect(resolveLocale(["de-DE", "fr"])).toBe("fr");
     expect(resolveLocale([])).toBe("en");
@@ -125,35 +88,28 @@ describe("choosing the language", () => {
 });
 
 describe("translating", () => {
-  it("falls back to English for a missing key and shows an unknown key", () => {
-    const original = CATALOGUES.fr["create.submit"];
-    delete (CATALOGUES.fr as Record<string, Message>)["create.submit"];
-    try {
-      expect(translate("fr", "create.submit")).toBe("Create vault");
-    } finally {
-      (CATALOGUES.fr as Record<string, Message>)["create.submit"] = original;
-    }
+  it("shows an unknown key visibly rather than an empty message", () => {
     expect(translate("fr", "nope" as never)).toBe("nope");
   });
-  it("fills placeholders once and never reads values as placeholders", () => {
-    expect(interpolate("Hi {name} {x}", { name: "{x}" }, "en")).toBe(
-      "Hi {x} {x}",
-    );
-    expect(interpolate("Hi {gone}", {}, "en")).toBe("Hi {gone}");
-    expect(interpolate("{a}", { a: "<b>x</b>" }, "en")).toBe("<b>x</b>");
-    expect(interpolate("{a}", { a: "$&" }, "en")).toBe("$&");
+  it("treats arguments as plain text and never reads their braces as Fluent syntax", () => {
+    const result = translate("en", "create.profile.sharedTaken", {
+      folder: "{count} <b>$&</b>",
+    });
+    expect(visibleText(result)).toContain("{count} <b>$&</b>");
   });
   it("chooses English plural forms", () => {
-    expect(translate("en", "unlock.autoLock", { count: 1 })).toContain(
-      "1 minute of",
-    );
-    expect(translate("en", "unlock.autoLock", { count: 5 })).toContain(
-      "5 minutes of",
-    );
+    expect(
+      visibleText(translate("en", "unlock.autoLock", { count: 1 })),
+    ).toContain("1 minute of");
+    expect(
+      visibleText(translate("en", "unlock.autoLock", { count: 5 })),
+    ).toContain("5 minutes of");
   });
   it("chooses Polish plural forms: one, few, many, fractions", () => {
     const p = (count: number) =>
-      translate("pl", "restore.checked", { count, consequence: "." });
+      visibleText(
+        translate("pl", "restore.checked", { count, consequence: "." }),
+      );
     expect(p(1)).toContain("1 dokument.");
     expect(p(2)).toContain("2 dokumenty");
     expect(p(4)).toContain("4 dokumenty");
@@ -163,21 +119,22 @@ describe("translating", () => {
     expect(p(25)).toContain("25 dokumentów");
     expect(p(0)).toContain("0 dokumentów");
     expect(p(1.5)).toContain("dokumentu");
-    const m = (count: number) => translate("pl", "unlock.autoLock", { count });
+    const m = (count: number) =>
+      visibleText(translate("pl", "unlock.autoLock", { count }));
     expect(m(1)).toContain("po 1 minucie");
     expect(m(3)).toContain("po 3 minutach");
     expect(m(15)).toContain("po 15 minutach");
   });
   it("chooses French plural forms (0 and 1 are singular)", () => {
-    expect(translate("fr", "unlock.autoLock", { count: 1 })).toContain(
-      "1 minute d’",
-    );
-    expect(translate("fr", "unlock.autoLock", { count: 0 })).toContain(
-      "0 minute d’",
-    );
-    expect(translate("fr", "unlock.autoLock", { count: 15 })).toContain(
-      "15 minutes d’",
-    );
+    expect(
+      visibleText(translate("fr", "unlock.autoLock", { count: 1 })),
+    ).toContain("1 minute d’");
+    expect(
+      visibleText(translate("fr", "unlock.autoLock", { count: 0 })),
+    ).toContain("0 minute d’");
+    expect(
+      visibleText(translate("fr", "unlock.autoLock", { count: 15 })),
+    ).toContain("15 minutes d’");
   });
   it("formats numbers and dates with Intl for the language", () => {
     expect(formatNumber(1234.5, "en")).toBe("1,234.5");
@@ -196,13 +153,15 @@ describe("translating", () => {
   });
   it("formats a big count in the language's own grouping", () => {
     expect(
-      translate("en", "restore.checked", { count: 1234, consequence: "" }),
+      visibleText(
+        translate("en", "restore.checked", { count: 1234, consequence: "" }),
+      ),
     ).toContain("1,234 documents");
   });
 });
 
 describe("a rendered screen in each language", () => {
-  const expected: Record<Locale, { heading: string; button: string }> = {
+  const expected: Partial<Record<Locale, { heading: string; button: string }>> = {
     en: { heading: "Unlock your vault", button: "Unlock" },
     fr: { heading: "Déverrouiller votre coffre-fort", button: "Déverrouiller" },
     es: { heading: "Desbloquee su bóveda", button: "Desbloquear" },
@@ -212,6 +171,10 @@ describe("a rendered screen in each language", () => {
   for (const locale of LOCALES) {
     it(`shows the unlock screen in ${locale}`, () => {
       setLocaleOverride(locale);
+      const copy = expected[locale] ?? {
+        heading: translate(locale, "unlock.title"),
+        button: translate(locale, "unlock.submit"),
+      };
       const { container } = render(
         <UnlockVault
           busy={false}
@@ -228,11 +191,11 @@ describe("a rendered screen in each language", () => {
       expect(
         screen.getByRole("heading", {
           level: 1,
-          name: expected[locale].heading,
+          name: copy.heading,
         }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: expected[locale].button }),
+        screen.getByRole("button", { name: copy.button }),
       ).toBeInTheDocument();
       // The Passphrase field's accessible name and its hidden-text count are
       // in the same language (screen-reader text).

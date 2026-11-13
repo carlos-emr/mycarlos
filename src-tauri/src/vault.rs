@@ -1,5 +1,6 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
 use crate::idle::IdleDeadline;
+use crate::ui_text_ids::MessageId;
 use argon2::{Algorithm, Argon2, Params, Version};
 use atomicwrites::{AllowOverwrite, AtomicFile, Error as AtomicWriteError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -2228,7 +2229,7 @@ impl VaultStore {
             .as_ref()
             .ok_or(VaultError::Invalid)?;
         Ok(Zeroizing::new(locale.render(
-            "native.kit.text",
+            MessageId::NativeKitText,
             &[
                 ("key", &encode_recovery_key(&pending.key)),
                 ("label", &recovery_key_label(pending.key_id)),
@@ -10228,6 +10229,8 @@ mod tests {
             crate::ui_text::UiLocale::Es,
             crate::ui_text::UiLocale::Pl,
             crate::ui_text::UiLocale::PtBr,
+            crate::ui_text::UiLocale::ZhCn,
+            crate::ui_text::UiLocale::ZhTw,
         ] {
             let localized = store.recovery_kit_in(1_790_553_600_000, locale).unwrap();
             assert!(

@@ -75,6 +75,16 @@ matrices, signing, and release controls remain. The chosen scope still defers se
 viewing and deletion propagation to backups or synchronized devices. Cloud synchronization and
 CARLOS integration follow only after the local vault lifecycle passes review.
 
+## Localization catalogs
+
+Use Project Fluent (`.ftl`) as the single translation source for the React interface and native
+Rust messages. The frontend and Rust renderer consume the same locale resources; Rust embeds them
+in the application. Generated TypeScript keys and Rust message IDs stay tied to the English source,
+while `npm run i18n:check` checks syntax, locale key parity, and variable parity before builds.
+Supported Chinese locales are Simplified Chinese (`zh-CN`) and Traditional Chinese (`zh-TW`);
+system-language negotiation maps Hans/Simplified regions to `zh-CN` and Hant/Traditional regions
+to `zh-TW`.
+
 ## Approved patient-pilot direction
 
 The subsequent product decisions are recorded in

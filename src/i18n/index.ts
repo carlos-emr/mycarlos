@@ -12,7 +12,6 @@ export {
   subscribeLocale,
   LANGUAGE_STORAGE_KEY,
   initLocale,
-  interpolate,
   matchLocale,
   resolveLocale,
   setLocaleOverride,
@@ -21,10 +20,15 @@ export {
 } from "./core";
 export type { Params } from "./core";
 export { withElements } from "./elements";
-export { CATALOGUES } from "./locales";
-export type { MessageKey } from "./locales";
+export { MESSAGE_KEYS, hasMessageKey } from "./locales";
+export type {
+  FluentArgument,
+  FluentTranslate,
+  MessageArgs,
+  MessageKey,
+} from "./locales";
 export { DEFAULT_LOCALE, LOCALES } from "./types";
-export type { Locale, Message, PluralForms } from "./types";
+export type { Locale } from "./types";
 
 /** For components: the language in use and a `t` that re-renders the
  * component when the language changes. */

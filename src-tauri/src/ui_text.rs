@@ -1,10 +1,13 @@
-//! App-owned native copy comes from the same catalogues as the renderer.
-//! The renderer chooses only one validated locale, never confirmation text.
+//! Native UI copy is formatted from the same Fluent resources as the renderer.
+//! The renderer may choose only a validated locale; it never supplies message text.
+use crate::ui_text_ids::MessageId;
+use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
 use serde::Deserialize;
-use serde_json::Value;
-use std::sync::OnceLock;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use unicode_normalization::UnicodeNormalization;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq)]
 pub(crate) enum UiLocale {
     #[default]
     #[serde(rename = "en")]
@@ -17,136 +20,151 @@ pub(crate) enum UiLocale {
     Pl,
     #[serde(rename = "pt-BR")]
     PtBr,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+    #[serde(rename = "zh-TW")]
+    ZhTw,
 }
 
 impl UiLocale {
-    fn catalogue(self) -> &'static Value {
-        static EN: OnceLock<Value> = OnceLock::new();
-        static FR: OnceLock<Value> = OnceLock::new();
-        static ES: OnceLock<Value> = OnceLock::new();
-        static PL: OnceLock<Value> = OnceLock::new();
-        static PT: OnceLock<Value> = OnceLock::new();
-        let (slot, text) = match self {
-            Self::En => (
-                &EN,
-                include_str!("../../src/i18n/locales/interface-en.json"),
-            ),
-            Self::Fr => (
-                &FR,
-                include_str!("../../src/i18n/locales/interface-fr.json"),
-            ),
-            Self::Es => (
-                &ES,
-                include_str!("../../src/i18n/locales/interface-es.json"),
-            ),
-            Self::Pl => (
-                &PL,
-                include_str!("../../src/i18n/locales/interface-pl.json"),
-            ),
-            Self::PtBr => (
-                &PT,
-                include_str!("../../src/i18n/locales/interface-pt-BR.json"),
-            ),
-        };
-        slot.get_or_init(|| serde_json::from_str(text).expect("bundled interface catalogue"))
-    }
+    const ALL: [Self; 7] = [
+        Self::En,
+        Self::Fr,
+        Self::Es,
+        Self::Pl,
+        Self::PtBr,
+        Self::ZhCn,
+        Self::ZhTw,
+    ];
 
-    pub(crate) fn text(self, key: &str) -> &'static str {
-        self.catalogue()[key]
-            .as_str()
-            .expect("bundled native text key")
-    }
-
-    /// Replace only the template's own placeholders in one pass. A path or
-    /// label containing braces must never introduce another substitution.
-    pub(crate) fn render(self, key: &str, values: &[(&str, &str)]) -> String {
-        interpolate(self.text(key), values)
-    }
-
-    /// Nonnegative native counts follow the same grouping convention as Intl
-    /// for the five shipped locales, without accepting renderer-supplied counts.
-    fn number(self, count: usize) -> String {
-        let digits = count.to_string();
-        if matches!(self, Self::Es | Self::Pl) && digits.len() <= 4 {
-            return digits;
+    fn tag(self) -> &'static str {
+        match self {
+            Self::En => "en",
+            Self::Fr => "fr",
+            Self::Es => "es",
+            Self::Pl => "pl",
+            Self::PtBr => "pt-BR",
+            Self::ZhCn => "zh-CN",
+            Self::ZhTw => "zh-TW",
         }
-        let separator = match self {
-            Self::En => ",",
-            Self::Fr => "\u{202f}",
-            Self::Pl => "\u{a0}",
-            Self::Es | Self::PtBr => ".",
-        };
-        let mut result = String::new();
-        for (index, digit) in digits.chars().enumerate() {
-            if index > 0 && (digits.len() - index).is_multiple_of(3) {
-                result.push_str(separator);
+    }
+
+    fn source(self) -> &'static str {
+        match self {
+            Self::En => include_str!("../../src/i18n/locales/fluent/en.ftl"),
+            Self::Fr => include_str!("../../src/i18n/locales/fluent/fr.ftl"),
+            Self::Es => include_str!("../../src/i18n/locales/fluent/es.ftl"),
+            Self::Pl => include_str!("../../src/i18n/locales/fluent/pl.ftl"),
+            Self::PtBr => include_str!("../../src/i18n/locales/fluent/pt-BR.ftl"),
+            Self::ZhCn => include_str!("../../src/i18n/locales/fluent/zh-CN.ftl"),
+            Self::ZhTw => include_str!("../../src/i18n/locales/fluent/zh-TW.ftl"),
+        }
+    }
+
+    fn with_bundle<T>(self, operation: impl FnOnce(&mut Bundle) -> T) -> T {
+        BUNDLES.with(|bundles| {
+            let mut bundles = bundles.borrow_mut();
+            let bundle = bundles.entry(self).or_insert_with(|| {
+                let locale = self.tag().parse().expect("a shipped locale tag is valid");
+                let mut bundle = Bundle::new(vec![locale]);
+                let resource = FluentResource::try_new(self.source().to_owned()).unwrap_or_else(
+                    |(_, errors)| panic!("invalid {} Fluent resource: {errors:?}", self.tag()),
+                );
+                bundle.add_resource(resource).unwrap_or_else(|error| {
+                    panic!("duplicate {} Fluent message: {error:?}", self.tag())
+                });
+                bundle
+            });
+            operation(bundle)
+        })
+    }
+
+    pub(crate) fn text(self, id: MessageId) -> String {
+        self.render(id, &[])
+    }
+
+    /// Formats a key produced by the native error bridge. The key is still
+    /// checked against the generated enum before it reaches the catalog.
+    pub(crate) fn text_key(self, key: &str) -> String {
+        let id = MessageId::from_legacy_key(key)
+            .expect("native error message key is present in generated bindings");
+        self.text(id)
+    }
+
+    /// User supplied values enter Fluent only as arguments, never as message
+    /// syntax. This keeps braces in names and paths as ordinary text.
+    pub(crate) fn render(self, id: MessageId, values: &[(&str, &str)]) -> String {
+        self.with_bundle(|bundle| {
+            let message = bundle
+                .get_message(id.as_str())
+                .expect("generated message id exists in every validated catalogue");
+            let pattern = message
+                .value()
+                .expect("native Fluent messages have a value");
+            let mut args = FluentArgs::new();
+            for (name, value) in values {
+                args.set(*name, *value);
             }
-            result.push(digit);
-        }
-        result
+            let mut errors = Vec::new();
+            bundle
+                .format_pattern(pattern, Some(&args), &mut errors)
+                .into_owned()
+        })
     }
 
-    /// The typed guard is native-owned too. Only canonical NFC/NFD
-    /// equivalence is accepted: no case folding, compatibility normalization
-    /// or whitespace relaxation. Bound work before normalization.
-    pub(crate) fn reset_phrase_matches(self, typed: &str) -> bool {
-        use unicode_normalization::UnicodeNormalization;
-        let phrase = self.text("native.reset.phrase");
-        let max_bytes: usize = phrase.nfd().map(char::len_utf8).sum();
-        typed.len() <= max_bytes && typed.nfc().eq(phrase.nfc())
+    fn render_count(self, id: MessageId, count: usize) -> String {
+        self.with_bundle(|bundle| {
+            let message = bundle
+                .get_message(id.as_str())
+                .expect("generated message id exists in every validated catalogue");
+            let pattern = message
+                .value()
+                .expect("native Fluent messages have a value");
+            let mut args = FluentArgs::new();
+            args.set("count", count as f64);
+            let mut errors = Vec::new();
+            bundle
+                .format_pattern(pattern, Some(&args), &mut errors)
+                .into_owned()
+        })
     }
 
     pub(crate) fn documents(self, count: usize) -> String {
-        let category = match self {
-            Self::Pl if count == 1 => "one",
-            Self::Pl if (2..=4).contains(&(count % 10)) && !(12..=14).contains(&(count % 100)) => {
-                "few"
-            }
-            Self::Pl => "many",
-            Self::Fr | Self::PtBr if count <= 1 => "one",
-            Self::Fr | Self::Es | Self::PtBr if count > 0 && count.is_multiple_of(1_000_000) => {
-                "many"
-            }
-            _ if count == 1 => "one",
-            _ => "other",
-        };
-        let forms = &self.catalogue()["interface.count.documents"];
-        let template = forms
-            .get(category)
-            .or_else(|| forms.get("other"))
-            .and_then(Value::as_str)
-            .expect("bundled document plural");
-        interpolate(template, &[("count", &self.number(count))])
+        self.render_count(MessageId::InterfaceCountDocuments, count)
+    }
+
+    /// The reset guard accepts only this locale's exact phrase, with canonical
+    /// NFC/NFD equivalence. It performs no case, compatibility, or space folding.
+    pub(crate) fn reset_phrase_matches(self, typed: &str) -> bool {
+        let phrase = self.text(MessageId::NativeResetPhrase);
+        let max_bytes: usize = phrase.nfd().map(char::len_utf8).sum();
+        typed.len() <= max_bytes && typed.nfc().eq(phrase.nfc())
     }
 }
 
-fn interpolate(template: &str, values: &[(&str, &str)]) -> String {
-    let mut result = String::with_capacity(template.len());
-    let mut rest = template;
-    while let Some(open) = rest.find('{') {
-        result.push_str(&rest[..open]);
-        let tail = &rest[open + 1..];
-        let Some(close) = tail.find('}') else {
-            result.push_str(&rest[open..]);
-            return result;
-        };
-        match values.iter().find(|(name, _)| *name == &tail[..close]) {
-            Some((_, value)) => result.push_str(value),
-            None => result.push_str(&rest[open..open + close + 2]),
-        }
-        rest = &tail[close + 1..];
-    }
-    result.push_str(rest);
-    result
+type Bundle = FluentBundle<FluentResource>;
+
+thread_local! {
+    static BUNDLES: RefCell<HashMap<UiLocale, Bundle>> = RefCell::new(HashMap::new());
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
+
     #[test]
-    fn native_localization_locale_is_validated_and_user_values_are_never_reparsed() {
-        for tag in ["en", "fr", "es", "pl", "pt-BR"] {
-            assert!(serde_json::from_value::<UiLocale>(Value::String(tag.to_owned())).is_ok());
+    fn native_locales_are_validated_and_the_same_resources_format_native_copy() {
+        for locale in UiLocale::ALL {
+            assert!(
+                serde_json::from_value::<UiLocale>(Value::String(locale.tag().to_owned())).is_ok()
+            );
+            let text = locale.render(
+                MessageId::NativeSetAsideDesktop,
+                &[("folder", "/FAKE/{kept}/é")],
+            );
+            assert!(text.contains("/FAKE/{kept}/é"));
+            assert!(!text.contains("{folder}"));
         }
         for value in [
             Value::String("de".to_owned()),
@@ -156,67 +174,33 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<UiLocale>(value).is_err());
         }
-        let path = "/FAKE/{kept}/é";
-        for locale in [
-            UiLocale::En,
-            UiLocale::Fr,
-            UiLocale::Es,
-            UiLocale::Pl,
-            UiLocale::PtBr,
-        ] {
-            let text = locale.render("native.setAside.desktop", &[("folder", path)]);
-            assert!(text.contains(path));
-            assert!(!text.contains("{folder}"));
-            let kit = locale.render(
-                "native.kit.text",
-                &[
-                    ("key", "FAKE-KEY"),
-                    ("label", "FAKE"),
-                    ("date", "2026-10-23"),
-                ],
-            );
-            assert!(kit.contains("FAKE-KEY") && kit.contains("2026-10-23") && kit.ends_with('\n'));
-            assert!(!kit.contains("{key}") && !kit.contains("{label}") && !kit.contains("{date}"));
-        }
     }
+
     #[test]
-    fn native_localization_restoration_counts_use_polish_plurals_and_locale_grouping() {
+    fn native_plural_formatting_uses_fluent_locale_rules_and_number_formatting() {
         assert_eq!(UiLocale::Pl.documents(1), "1 dokument");
         assert_eq!(UiLocale::Pl.documents(2), "2 dokumenty");
         assert_eq!(UiLocale::Pl.documents(5), "5 dokumentów");
         assert_eq!(UiLocale::Pl.documents(12), "12 dokumentów");
         assert_eq!(UiLocale::Pl.documents(22), "22 dokumenty");
-        assert_eq!(UiLocale::En.number(12345), "12,345");
-        assert_eq!(UiLocale::Fr.number(12345), "12\u{202f}345");
-        assert_eq!(UiLocale::Pl.number(12345), "12\u{a0}345");
-        assert_eq!(UiLocale::Es.number(12345), "12.345");
-        assert_eq!(UiLocale::PtBr.number(12345), "12.345");
+        assert_eq!(UiLocale::En.documents(12345), "12,345 documents");
+        assert_eq!(UiLocale::Fr.documents(12345), "12\u{202f}345 documents");
+        assert_eq!(UiLocale::Pl.documents(12345), "12\u{a0}345 dokumentów");
     }
-}
 
-#[cfg(test)]
-mod reset_tests {
-    use super::*;
-    use unicode_normalization::UnicodeNormalization;
     #[test]
-    fn native_localization_reset_guard_accepts_only_its_own_language_and_canonical_accents() {
-        let locales = [
-            UiLocale::En,
-            UiLocale::Fr,
-            UiLocale::Es,
-            UiLocale::Pl,
-            UiLocale::PtBr,
-        ];
-        for (index, locale) in locales.iter().copied().enumerate() {
-            let phrase = locale.text("native.reset.phrase");
-            assert!(locale.reset_phrase_matches(phrase));
+    fn reset_guard_accepts_only_the_locale_phrase_and_canonical_accents() {
+        for (index, locale) in UiLocale::ALL.iter().copied().enumerate() {
+            let phrase = locale.text(MessageId::NativeResetPhrase);
+            assert!(locale.reset_phrase_matches(&phrase));
             assert!(locale.reset_phrase_matches(&phrase.nfd().collect::<String>()));
             assert!(!locale.reset_phrase_matches(&phrase.to_lowercase()));
             assert!(!locale.reset_phrase_matches(&format!(" {phrase}")));
             assert!(!locale.reset_phrase_matches(&format!("{phrase} ")));
             assert!(!locale.reset_phrase_matches("FAKE"));
             assert!(!locale.reset_phrase_matches(
-                locales[(index + 1) % locales.len()].text("native.reset.phrase")
+                &UiLocale::ALL[(index + 1) % UiLocale::ALL.len()]
+                    .text(MessageId::NativeResetPhrase)
             ));
         }
         assert!(UiLocale::default().reset_phrase_matches("RESET MYCARLOS VAULT"));

@@ -7,14 +7,8 @@ import { parse } from "@fluent/syntax";
 const root = path.resolve(import.meta.dirname, "..");
 const catalogueDirectory = path.join(root, "src/i18n/locales/fluent");
 const legacyKeysFile = path.join(catalogueDirectory, "message-keys.json");
-const generatedTypeScript = path.join(
-  catalogueDirectory,
-  "keys.ts",
-);
-const generatedRust = path.join(
-  root,
-  "src-tauri/src/ui_text_ids.rs",
-);
+const generatedTypeScript = path.join(catalogueDirectory, "keys.ts");
+const generatedRust = path.join(root, "src-tauri/src/ui_text_ids.rs");
 const locales = ["en", "es", "fr", "pl", "pt-BR"];
 const checkOnly = process.argv.slice(2).includes("--check");
 const unexpectedArguments = process.argv
@@ -114,7 +108,9 @@ function compareCatalogues(source, translated, locale) {
   if (wrongVariables.length)
     failures.push(`variable mismatch: ${wrongVariables.join("; ")}`);
   if (failures.length)
-    throw new Error(`${locale}.ftl does not match en.ftl: ${failures.join(" | ")}`);
+    throw new Error(
+      `${locale}.ftl does not match en.ftl: ${failures.join(" | ")}`,
+    );
 }
 
 function rustVariant(id) {
@@ -129,9 +125,13 @@ function rustVariant(id) {
 }
 
 function renderTypeScript(messageKeys, idByKey) {
-  const tuple = messageKeys.map((key) => `  ${JSON.stringify(key)},`).join("\n");
+  const tuple = messageKeys
+    .map((key) => `  ${JSON.stringify(key)},`)
+    .join("\n");
   const mappings = messageKeys
-    .map((key) => `  ${JSON.stringify(key)}: ${JSON.stringify(idByKey.get(key))},`)
+    .map(
+      (key) => `  ${JSON.stringify(key)}: ${JSON.stringify(idByKey.get(key))},`,
+    )
     .join("\n");
   const argumentEntries = messageKeys
     .map((key) => {
@@ -179,15 +179,25 @@ export type FluentTranslate = <K extends MessageKey>(
 `;
 }
 
-function renderRust(messageIds) {
+function renderRust(messageIds, idByKey) {
   const variants = messageIds.map((id) => `    ${rustVariant(id)},`).join("\n");
-  const all = messageIds.map((id) => `        Self::${rustVariant(id)},`).join("\n");
+  const all = messageIds
+    .map((id) => `        Self::${rustVariant(id)},`)
+    .join("\n");
   const arms = messageIds
     .map((id) => {
       const arm = `            Self::${rustVariant(id)} => ${JSON.stringify(id)},`;
       return arm.length <= 100
         ? arm
         : `            Self::${rustVariant(id)} => {\n                ${JSON.stringify(id)}\n            }`;
+    })
+    .join("\n");
+  const fromLegacyKeyArms = [...idByKey]
+    .map(([key, id]) => {
+      const arm = `            ${JSON.stringify(key)} => Some(Self::${rustVariant(id)}),`;
+      return arm.length <= 100
+        ? arm
+        : `            ${JSON.stringify(key)} => {\n                Some(Self::${rustVariant(id)})\n            }`;
     })
     .join("\n");
 
@@ -207,13 +217,23 @@ ${all}
 ${arms}
         }
     }
+
+    pub fn from_legacy_key(key: &str) -> Option<Self> {
+        match key {
+${fromLegacyKeyArms}
+            _ => None,
+        }
+    }
 }
 `;
 }
 
 function writeOrCheck(filename, generated) {
   if (checkOnly) {
-    if (!fs.existsSync(filename) || fs.readFileSync(filename, "utf8") !== generated) {
+    if (
+      !fs.existsSync(filename) ||
+      fs.readFileSync(filename, "utf8") !== generated
+    ) {
       throw new Error(
         `${path.relative(root, filename)} is stale; run npm run i18n:generate`,
       );
@@ -234,7 +254,9 @@ for (const id of messageIds) {
   const variant = rustVariant(id);
   const previous = variantOwners.get(variant);
   if (previous)
-    throw new Error(`Rust enum variant collision: "${previous}" and "${id}" -> ${variant}`);
+    throw new Error(
+      `Rust enum variant collision: "${previous}" and "${id}" -> ${variant}`,
+    );
   variantOwners.set(variant, id);
 }
 
@@ -249,7 +271,9 @@ if (
 const idByKey = new Map(
   messageKeys.map((key) => [key, key.replaceAll(".", "-")]),
 );
-const unmapped = messageKeys.filter((key) => !source.messages.has(idByKey.get(key)));
+const unmapped = messageKeys.filter(
+  (key) => !source.messages.has(idByKey.get(key)),
+);
 const unkeyed = messageIds.filter(
   (id) => !messageKeys.some((key) => idByKey.get(key) === id),
 );
@@ -260,7 +284,11 @@ if (unmapped.length || unkeyed.length) {
 }
 
 writeOrCheck(generatedTypeScript, renderTypeScript(messageKeys, idByKey));
-writeOrCheck(generatedRust, renderRust(messageIds));
+writeOrCheck(generatedRust, renderRust(messageIds, idByKey));
 
-if (checkOnly) console.log("Fluent catalogue parity and generated bindings are current.");
-else console.log(`Generated typed bindings for ${messageIds.length} Fluent message IDs.`);
+if (checkOnly)
+  console.log("Fluent catalogue parity and generated bindings are current.");
+else
+  console.log(
+    `Generated typed bindings for ${messageIds.length} Fluent message IDs.`,
+  );

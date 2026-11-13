@@ -11,7 +11,7 @@ export function withElements(
   text: string,
   elements: Record<string, ReactNode>,
 ): ReactNode {
-  return text.split(/\{(\w+)\}/).map((part, index) => {
+  return text.split(/\{\$?(\w+)\}/).map((part, index) => {
     // split() with a group puts each placeholder's name at an odd index.
     if (index % 2 === 0) return part;
     return (
