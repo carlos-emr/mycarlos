@@ -30,6 +30,7 @@ mod addressee;
 // K19 (evaluation only): the glossary post-step (pure std; tested on its own).
 mod glossary;
 mod local_runner;
+mod quote_provenance;
 // K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
 #[cfg(windows)]
 mod model_acl;

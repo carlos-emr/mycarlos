@@ -428,11 +428,13 @@ pub(crate) struct Summary {
     /// The document's last page, when the model read it after a gap: the pages it read are the
     /// first ones up to `last_page`, then this one.
     pub(crate) tail_page: Option<u32>,
-    /// How many quotes were not in the pages read, and were emptied.
+    /// How many original model quotes were rejected before post-steps. This is a
+    /// model-quoting diagnostic; a repaired final source may now be located.
     pub(crate) unlocated: usize,
-    /// What those quotes said, for measuring a model's quoting (tests print them); never shown.
+    /// Original rejected model quotes, keyed by sentence index even after a source
+    /// repair. Measurements use each final source's located flag; never shown.
     #[allow(dead_code)]
-    pub(crate) unlocated_quotes: Vec<String>,
+    pub(crate) unlocated_quotes: crate::quote_provenance::UnlocatedQuotes,
     /// K17: the sentences the post-step rewrote (`addressee`), for measuring; never shown.
     #[allow(dead_code)]
     pub(crate) rewrites: Vec<crate::addressee::Rewrite>,
@@ -891,13 +893,14 @@ impl Runner {
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
-        let mut unlocated_quotes = Vec::new();
+        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
         let mut sentences: Vec<Sentence> = sentences
             .into_iter()
             .take(request.max_sentences)
-            .map(|mut sentence| {
+            .enumerate()
+            .map(|(index, mut sentence)| {
                 if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
-                    unlocated_quotes.push(std::mem::take(&mut sentence.quote));
+                    unlocated_quotes.record(index, std::mem::take(&mut sentence.quote));
                 }
                 sentence
             })

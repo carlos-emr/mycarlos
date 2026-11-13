@@ -661,6 +661,9 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
         if lines.iter().any(|l| l.text == after) {
             continue;
         }
+        // The fallback's source is this same span, not the model's old quote.
+        // Keep source whitespace verbatim and cap characters, never UTF-8 bytes.
+        let quote: String = pages[start..to].trim().chars().take(240).collect();
         let quote_in = |l: &Line, from: usize| {
             !l.quote.is_empty()
                 && find_folded(pages, &l.quote).is_some_and(|(s, e)| s >= from && e <= to)
@@ -685,6 +688,7 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
         match partial {
             Some(index) => {
                 let before = std::mem::replace(&mut lines[index].text, after.clone());
+                lines[index].quote = quote;
                 log.push(Fallback {
                     check: "get-help",
                     index,
@@ -693,7 +697,6 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
                 });
             }
             None => {
-                let quote: String = span.chars().take(240).collect();
                 log.push(Fallback {
                     check: "get-help",
                     index: lines.len(),
@@ -714,6 +717,56 @@ mod tests {
     use super::*;
 
     const CASES: &str = include_str!("safety_cases.txt");
+
+    #[test]
+    fn a_partial_rule_replaces_an_unrelated_located_quote_with_its_own_source() {
+        let unrelated = "The clinic reviews chest pain at the next appointment.";
+        let rule = "If chest pain returns or you have trouble breathing, call 911 now.";
+        let pages = format!("FAKE document.\n{unrelated}\n{rule}");
+        let mut lines = vec![Line {
+            text: "Call the clinic if chest pain returns.".to_owned(),
+            quote: unrelated.to_owned(),
+        }];
+        let log = check(&pages, &mut lines);
+        assert_eq!(log.len(), 1);
+        assert_eq!(lines[0].text, quoted(rule));
+        assert_eq!(lines[0].quote, rule);
+        assert!(pages.contains(&lines[0].quote));
+    }
+
+    #[test]
+    fn an_appended_rule_uses_the_same_verbatim_source_span() {
+        let rule = "If chest pain returns or you have trouble breathing during the night,\n  call 911 now.";
+        let pages = format!("FAKE document.\n{rule}");
+        let mut lines = Vec::new();
+        let log = check(&pages, &mut lines);
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].before, None);
+        assert_eq!(lines[0].text, quoted(&flat(rule)));
+        assert_eq!(lines[0].quote, rule);
+        assert!(pages.contains(&lines[0].quote));
+    }
+
+    #[test]
+    fn a_long_unicode_rule_caps_its_quote_by_characters_without_changing_the_rule() {
+        let rule = format!(
+            "If chest pain returns or {}, call 911 now.",
+            "new café-related symptoms and ".repeat(12)
+        );
+        let pages = format!("FAKE document.\n{rule}");
+        for original in [Vec::new(), vec![Line {
+            text: "Call the clinic if chest pain returns.".to_owned(),
+            quote: "FAKE document.".to_owned(),
+        }]] {
+            let mut lines = original;
+            assert_eq!(check(&pages, &mut lines).len(), 1);
+            assert_eq!(lines[0].text, quoted(&rule));
+            assert_eq!(lines[0].quote.chars().count(), 240);
+            assert!(lines[0].quote.len() > 240);
+            assert!(rule.starts_with(&lines[0].quote));
+            assert!(pages.contains(&lines[0].quote));
+        }
+    }
 
     fn check_case(name: &str) {
         for block in CASES.split("\n===\n").skip(1) {
