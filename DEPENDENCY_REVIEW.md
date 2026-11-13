@@ -288,14 +288,22 @@ pending review and device validation; fixing one defect does not approve release
 
 ### Provenance, audit, and maintenance
 
+This experimental branch additionally carries a pinned llama-cpp-2 0.1.160
+binding patch for a context-owned CPU worker pool. Its sys crate and native
+library remain upstream. The patch is integrated for source reproducibility,
+but compilation, confinement, cleanup, platform support and performance remain
+unverified; it is not adopted. Its provenance and retirement conditions are in
+the native patch notes below.
+
 [Native patch notes](src-tauri/vendor/README.md) contain the exact deltas, pinned
 archive checksums/source revisions, development tradeoff, and retirement criteria.
-CI reconstructs the complete glib source snapshot from its checksum-verified release
-plus patch, then checks that Cargo selects the glib backport and upstream Tauri. Licenses are preserved;
+CI reconstructs both glib and llama-cpp-2 source snapshots from checksum-verified
+releases plus their patches, then checks that Cargo selects those local sources
+and upstream Tauri. Licenses are preserved;
 package versions are not changed to impersonate upstream fixed releases.
 
 Local source patches can disappear from registry-only advisory scanning. Our
-audit helper restores the glib upstream identity in a temporary audit lockfile,
+audit helper restores both patched packages' upstream identities in a temporary audit lockfile,
 retaining the original glib warning and future advisories. It does not change the
 real lockfile or ignore an advisory. The source verification and optimized tests
 are the evidence for this specific backport, independent of scanner status.

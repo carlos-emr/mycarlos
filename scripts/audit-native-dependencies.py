@@ -15,8 +15,8 @@ def main():
     entries = json.loads((ROOT / "src-tauri/vendor/upstream.json").read_text())
     lock = (ROOT / "src-tauri/Cargo.lock").read_text()
     packages = tomllib.loads(lock)["package"]
-    if len(entries) != 1 or entries[0]["name"] != "glib":
-        raise ValueError("The reviewed glib dependency must be present exactly once")
+    if sorted(entry["name"] for entry in entries) != ["glib", "llama-cpp-2"]:
+        raise ValueError("The reviewed glib and llama-cpp-2 dependencies must each be present exactly once")
     for entry in entries:
         name, version = entry["name"], entry["version"]
         candidates = [p for p in packages if p["name"] == name]

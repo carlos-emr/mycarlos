@@ -55,7 +55,7 @@ jobs:
         run: cargo install cargo-audit --version 0.22.2 --locked
       - name: Verify native dependency sources and reviewed patches
         run: python3 scripts/verify-native-vendor.py
-      - name: Verify upstream Tauri and the glib backport are selected
+      - name: Verify upstream Tauri and reviewed local dependency patches are selected
         run: python3 scripts/check-native-dependency-graph.py
       - name: Reject known Rust vulnerabilities, including upstream patch identities
         run: python3 scripts/audit-native-dependencies.py

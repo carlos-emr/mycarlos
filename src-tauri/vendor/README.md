@@ -1,8 +1,9 @@
 # Reviewed native dependency patches
 
-This directory contains the complete, pinned glib crates.io source snapshot. Its
-license and source revision record are preserved. `upstream.json` records the
-original archive checksum; `glib.patch` contains the complete local change.
+This directory contains pinned glib and llama-cpp-2 crates.io source snapshots.
+Their license declarations and source revision records are preserved.
+`upstream.json` records each original archive checksum and any excluded development
+lockfile; the matching `.patch` file contains the complete local change.
 
 Run `python3 scripts/verify-native-vendor.py` from the repository root. It downloads
 the checksum-pinned archive, applies the patch, and compares every file against
@@ -34,16 +35,35 @@ proxy uses reqwest/hyper/hyper-util again. This is an intentional development
 tradeoff, not a false-positive classification of Socket's package warning.
 See [the dependency review](../../../DEPENDENCY_REVIEW.md).
 
+## Experimental llama-cpp-2 0.1.160
+
+`llama-cpp-2.patch` adds an optional context-owned CPU worker pool using public
+native APIs. The application creates it lazily after answer confinement. The
+binding synchronizes work and destroys the context/backend before freeing the
+pool and joining its workers. Its sys crate and native library remain upstream
+0.1.160. This is an unbuilt, unevaluated experiment; no speed improvement or
+cross-platform qualification is claimed. Persistent idle polling may offset the
+saved worker setup cost.
+
+The snapshot retains the upstream MIT OR Apache-2.0 license declaration and all
+published files except its development `Cargo.lock`, as recorded in
+`upstream.json`. The 627,549-byte GGUF file is the unchanged upstream vocabulary
+test fixture with zero tensors; it contains no inference model weights or runtime
+data. The application lockfile selects this local binding explicitly.
+
 ## Audit and retirement
 
-`check-native-dependency-graph.py` ensures Cargo selects the glib backport
-and upstream Tauri. `audit-native-dependencies.py` audits a temporary lockfile that
-restores glib's original registry identity, so future upstream advisories remain
-visible. The original glib warning
+`check-native-dependency-graph.py` ensures Cargo selects the glib backport,
+the experimental llama-cpp-2 binding and upstream Tauri.
+`audit-native-dependencies.py` audits a temporary lockfile that restores both
+patched packages' original registry identities, so future upstream advisories
+remain visible. The original glib warning
 is still reported; source verification and optimized tests establish this specific
 backport. No advisory is ignored and the real lockfile is not rewritten by audit.
 
-The glib source patch adds maintenance work. Prefer a compatible stable upstream
+Both source patches add maintenance work. Retire the experimental llama-cpp-2
+patch if it does not produce a verified benefit, or replace it with an appropriate
+upstream API after qualification. For glib, prefer a compatible stable upstream
 release incorporating the fix, then remove the patch and rerun all platform builds
 and tests. Tauri 3 alpha was considered but is not adopted as a production-safety shortcut.
 

@@ -24,8 +24,8 @@ def file_contents(directory):
 
 def verify():
     entries = json.loads((VENDOR / "upstream.json").read_text())
-    if len(entries) != 1 or entries[0]["name"] != "glib":
-        raise ValueError("The reviewed glib dependency must be present exactly once")
+    if sorted(entry["name"] for entry in entries) != ["glib", "llama-cpp-2"]:
+        raise ValueError("The reviewed glib and llama-cpp-2 dependencies must each be present exactly once")
     # Anything else under vendor/ would be unreviewed source that no check covers.
     allowed = {"README.md", "upstream.json"} | {
         item for entry in entries for item in (entry["name"], f"{entry['name']}.patch")
@@ -36,7 +36,7 @@ def verify():
         raise ValueError(f"Unexpected entries in vendor/: {', '.join(unexpected)}")
     for entry in entries:
         name, version = entry["name"], entry["version"]
-        if name != "glib":
+        if name not in ("glib", "llama-cpp-2"):
             raise ValueError(f"Unexpected local dependency: {name}")
         with tempfile.TemporaryDirectory(prefix="mycarlos-vendor-") as temporary:
             temporary = Path(temporary)

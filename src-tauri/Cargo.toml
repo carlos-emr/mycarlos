@@ -187,6 +187,7 @@ opt-level = 1
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
+llama-cpp-2 = { path = "vendor/llama-cpp-2" }
 
 [[test]]
 name = "model_helper"
