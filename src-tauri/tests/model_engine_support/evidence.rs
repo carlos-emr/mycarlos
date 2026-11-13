@@ -320,7 +320,7 @@ mod tests {
             let mut changed = original.clone();
             changed[key] = json!("different");
             assert!(
-                resume(&output(&[original.clone()]), &changed).is_err(),
+                resume(&output(std::slice::from_ref(&original)), &changed).is_err(),
                 "{key}"
             );
         }
@@ -328,7 +328,7 @@ mod tests {
             let mut changed = original.clone();
             changed["model"][key] = json!("different");
             assert!(
-                resume(&output(&[original.clone()]), &changed).is_err(),
+                resume(&output(std::slice::from_ref(&original)), &changed).is_err(),
                 "{key}"
             );
         }
@@ -337,7 +337,7 @@ mod tests {
     #[test]
     fn partial_tail_or_malformed_json_is_refused_without_discarding_evidence() {
         let original = run();
-        let mut bytes = output(&[original.clone()]);
+        let mut bytes = output(std::slice::from_ref(&original));
         bytes.extend_from_slice(b"{\"kind\":");
         let snapshot = bytes.clone();
         assert!(resume(&bytes, &original).is_err());
