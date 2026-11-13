@@ -2,8 +2,9 @@
 
 This is an experimental source backup. It has not been built or evaluated, and no
 speedup or adoption is claimed. The helper calls `enable_cpu_threadpool`, which is
-absent from the published dependency. This branch does **not** compile against its
-unchanged registry dependency until the binding patch below is integrated.
+absent from the published dependency. The branch now integrates that binding under
+`src-tauri/vendor/llama-cpp-2`, with an explicit Cargo patch and lockfile entry.
+Compilation and runtime qualification are still pending.
 
 The prototype creates a context-owned CPU worker pool on the first generation
 after answer confinement. Rebuilt contexts receive their own pool. The binding
@@ -28,11 +29,13 @@ verify its checksum, and extract it into a separate working directory. Apply
 `patch -p1 --fuzz=0` from that extracted crate directory using the accompanying
 patch, then verify the patched file checksum. Do not patch Cargo's shared registry.
 
-Before any build, integrate the recovered crate using a local
-`patch.crates-io.llama-cpp-2.path` override or a reviewed repository dependency
-change. Resolve and inspect the lockfile change in this experimental checkout.
-Dependency provenance, licensing, audit and packaging checks need to cover that
-integration. This backup intentionally leaves the manifest and lockfile unchanged.
+The checked-in binding is reconstructed by `scripts/verify-native-vendor.py`.
+Its provenance is recorded in `src-tauri/vendor/upstream.json`, and the repository's
+dependency graph and advisory checks cover its local selection and original
+registry identity. Its only upstream code change is the patch above; the upstream
+development lockfile is excluded. See `src-tauri/vendor/README.md` for the source
+inventory and unchanged vocabulary test fixture. No shared Cargo registry changes
+or machine-specific path override are needed for this checkout.
 
 Source review, Rust formatting and exact patch reconstruction passed. Compilation,
 the existing sandbox and context-reconstruction tests, actual worker lifetime and
