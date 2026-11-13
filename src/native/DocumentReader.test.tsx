@@ -1172,6 +1172,96 @@ describe("the document reader", () => {
   });
 });
 
+// #311: Close is the header's last control and ends at the header's end edge
+// (the right, or the left in a right-to-left language) at every width, with the
+// reading-aid button just before it; a long document name wraps instead of
+// pushing Close away or being cut short.
+describe("the reader's Close button (#311)", () => {
+  const LONG_NAME =
+    "FAKE Discharge summary from the FAKE Regional Health Centre, cardiology follow-up visit, with FAKE laboratory results and a FAKE imaging report attached.pdf";
+  const readingAid: VaultRecord["readingAid"] = {
+    deliveryId: "FAKE-close-aid",
+    language: "en",
+    reviewedAtMs: 1,
+    notice: {
+      version: "FAKE-v1",
+      heading: "FAKE notice",
+      body: "FAKE notice body",
+    },
+    overview: "FAKE reading aid",
+    points: [],
+  };
+
+  for (const width of [1100, 360] as const)
+    for (const direction of ["ltr", "rtl"] as const)
+      it(`is the header's last control, at its end edge, at ${width}px (${direction})`, async () => {
+        const original = {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        };
+        const root = document.documentElement;
+        const originalDir = root.getAttribute("dir");
+        try {
+          await browserPage.viewport(width, 900);
+          root.dir = direction;
+          for (const displayName of [record.displayName, LONG_NAME])
+            for (const aid of [undefined, readingAid]) {
+              const shown: VaultRecord = {
+                ...record,
+                displayName,
+                ...(aid ? { readingAid: aid } : {}),
+              };
+              const { viewPage, unmount } = renderReader(undefined, shown);
+              await waitFor(() => expect(viewPage).toHaveBeenCalled());
+              const head = document.querySelector<HTMLElement>(
+                ".native-reader-head",
+              )!;
+              const close = within(head).getByRole("button", {
+                name: humanText("Close"),
+              });
+              expect(within(head).getAllByRole("button").at(-1)).toBe(close);
+
+              const style = getComputedStyle(head);
+              const box = head.getBoundingClientRect();
+              const shut = close.getBoundingClientRect();
+              const fromEnd =
+                direction === "rtl"
+                  ? shut.left - (box.left + parseFloat(style.paddingLeft))
+                  : box.right - parseFloat(style.paddingRight) - shut.right;
+              expect(Math.abs(fromEnd)).toBeLessThanOrEqual(1);
+              expect(shut.left).toBeGreaterThanOrEqual(0);
+              expect(shut.right).toBeLessThanOrEqual(window.innerWidth);
+
+              if (aid) {
+                const opened = within(head)
+                  .getByRole("button", {
+                    name: humanText("Read the reading aid"),
+                  })
+                  .getBoundingClientRect();
+                expect(Math.abs(opened.top - shut.top)).toBeLessThanOrEqual(1);
+                if (direction === "rtl")
+                  expect(opened.left).toBeGreaterThanOrEqual(shut.right);
+                else expect(opened.right).toBeLessThanOrEqual(shut.left);
+              }
+
+              const title = head.querySelector("h2")!;
+              expect(title.scrollWidth).toBeLessThanOrEqual(
+                title.clientWidth + 1,
+              );
+              if (displayName === LONG_NAME)
+                expect(title.getBoundingClientRect().height).toBeGreaterThan(
+                  parseFloat(getComputedStyle(title).lineHeight) * 1.5,
+                );
+              unmount();
+            }
+        } finally {
+          if (originalDir === null) root.removeAttribute("dir");
+          else root.setAttribute("dir", originalDir);
+          await browserPage.viewport(original.width, original.height);
+        }
+      });
+});
+
 /** A FAKE document of `count` pages. */
 const pagesOf = (count: number) =>
   vi.fn(async (index: number, _width: number, _password?: string) => ({
