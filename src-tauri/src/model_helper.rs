@@ -373,11 +373,13 @@ pub(crate) struct Stats {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AnswerTiming {
-    /// Greedy token choice, including the single-token grammar check and any full scan.
+    /// Greedy token choice, including grammar checks and the final EOG choice when present.
     pub(crate) pick_us: u64,
+    pub(crate) pick_calls: u32,
     /// Accepting the token in the grammar, writing its bytes and preparing the next batch.
     pub(crate) emit_us: u64,
-    /// One-token model decode calls, including native scheduling and worker setup.
+    /// Actual one-token decode calls, including the existing final decode on a capped answer.
+    /// These include native scheduling and worker setup, not just useful next-token work.
     pub(crate) decode_us: u64,
     pub(crate) decode_calls: u32,
 }

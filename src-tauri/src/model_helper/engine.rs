@@ -343,6 +343,7 @@ impl Engine {
             let picking = std::time::Instant::now();
             let (token, scanned) = self.pick(batch.n_tokens() - 1, grammar.as_mut());
             timing.pick_us += picking.elapsed().as_micros() as u64;
+            timing.pick_calls += 1;
             self.stats.grammar_scans += u32::from(scanned);
             if vocab.is_eog(token) {
                 self.stats.answer_timing = Some(timing);
@@ -361,6 +362,8 @@ impl Engine {
                 .add(token, position as i32, &[0], true)
                 .map_err(|_| failed("batch"))?;
             timing.emit_us += emitting.elapsed().as_micros() as u64;
+            // Preserve and measure the actual path: even the final capped token is decoded.
+            // EOG instead returns above, after picking but before emission or decoding.
             let decoding = std::time::Instant::now();
             self.ctx_mut()
                 .decode(&mut batch)
