@@ -3,8 +3,8 @@
 A run is the JSON lines file written by the ignored test `a_real_model_evaluation_run`
 (src-tauri/tests/model_engine.rs): a first line naming the build and model, then one line per
 document. This tool never runs a model. Its checks are bounded: a fact counts as found when a
-sentence matches one of its approved statements, or names it (its `match` groups) with a quote
-that covers its source evidence; anything else is left to the hand review sheet. The screens for
+sentence matches an approved statement with located, current source evidence, or a reviewer
+explicitly confirms a grounded candidate fact. Topic matches alone never earn credit. The screens for
 wrong statements only flag sentences for that review; they never decide on their own.
 
   compare.py check                         validate the document set
@@ -21,9 +21,11 @@ import csv
 import difflib
 import hashlib
 import json
+import math
 import random
 import re
 import statistics
+import struct
 import sys
 import unicodedata
 from pathlib import Path
@@ -179,15 +181,48 @@ def prepare(out, docs):
 # --- Runs ---------------------------------------------------------------------------------------
 
 def read_run(path):
-    """A run's first line and its documents by id (the first answer for an id counts)."""
+    """Read a complete run without silently collapsing duplicate attempts."""
     lines = [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
-    if not lines or lines[0].get("kind") != "run":
+    if not lines or any(not isinstance(line, dict) for line in lines) or lines[0].get("kind") != "run":
         raise ValueError(f"{path}: the first line must name the run")
     entries = {}
+    if sum(line.get("kind") == "run" for line in lines) != 1:
+        raise ValueError(f"{path}: expected one run header")
+    if sum(line.get("kind") == "end" for line in lines) != 1 or lines[-1].get("kind") != "end":
+        raise ValueError(f"{path}: expected one terminal completion record")
     for line in lines[1:]:
         if line.get("kind") == "document":
-            entries.setdefault(line["id"], line)
+            if not isinstance(line.get("id"), str) or not line["id"]:
+                raise ValueError(f"{path}: invalid document ID")
+            if line["id"] in entries:
+                raise ValueError(f"{path}: duplicate document {line['id']}")
+            entries[line["id"]] = line
+        elif line.get("kind") != "end":
+            raise ValueError(f"{path}: unknown record kind")
+    if "answered" in lines[-1] and lines[-1]["answered"] != len(entries):
+        raise ValueError(f"{path}: completion count differs from document records")
     return lines[0], entries
+
+
+def pages_sha256(pages):
+    """The Rust writer's u32 index / u64 UTF-8 byte length / page bytes hash."""
+    digest = hashlib.sha256()
+    for page in pages:
+        text = page["text"].encode("utf-8")
+        digest.update(struct.pack("<IQ", page["index"], len(text)))
+        digest.update(text)
+    return digest.hexdigest()
+
+
+def validate_sources(entries, docs, meta=None):
+    for doc_id, entry in entries.items():
+        if doc_id in docs and entry.get("pagesSha256") != pages_sha256(docs[doc_id]["pages"]):
+            raise ValueError(f"{doc_id}: pagesSha256 differs from the current input")
+        if doc_id in docs and meta is not None and "documents" in meta:
+            declared = meta["documents"].get(doc_id) if isinstance(meta["documents"], dict) else None
+            expected = dict(pagesSha256=pages_sha256(docs[doc_id]["pages"]), docLang=docs[doc_id]["lang"])
+            if declared != expected:
+                raise ValueError(f"{doc_id}: run input manifest differs from the current input")
 
 
 def run_label(meta, path):
@@ -199,20 +234,32 @@ def run_label(meta, path):
 def fact_groups(fact):
     if fact.get("match"):
         return fact["match"]
-    return [fact.get("anchors", [])]
+    return [[anchor] for anchor in fact.get("anchors", [])]
 
 
-def find_fact(fact, sentences):
-    """(how, sentence index) for the first sentence that carries `fact`, else (None, None)."""
+def evidence_covers(fact, sentence, pages=None):
+    quote = normalized(sentence.get("quote", "")).rstrip(".!?")
+    evidence = normalized(fact["source_evidence"]).rstrip(".!?")
+    if sentence.get("located") is not True or not quote or not evidence or evidence not in quote:
+        return False
+    return pages is None or quote in normalized(" ".join(p["text"] for p in pages))
+
+
+def find_fact(fact, sentences, pages=None):
+    """Verified approved wording or a review-only topic candidate with current evidence.
+
+    Topic overlap cannot establish polarity, direction, frequency or other attributes.
+    Even approved wording needs a located quote covering this fact, not another topic.
+    """
     approved = {normalized(text) for text in fact.get("approved_statements", [])}
     for index, sentence in enumerate(sentences):
-        if normalized(sentence["text"]) in approved:
+        if normalized(sentence["text"]) in approved and evidence_covers(fact, sentence, pages):
             return "approved", index
     for index, sentence in enumerate(sentences):
         text = fold(sentence["text"])
         named = all(any(fold(option) in text for option in group) for group in fact_groups(fact))
-        if named and quote_overlaps(sentence.get("quote", ""), fact["source_evidence"]):
-            return "matched", index
+        if named and evidence_covers(fact, sentence, pages):
+            return "candidate", index
     return None, None
 
 
@@ -242,29 +289,55 @@ def screen(sentence, run_lang, facts):
             continue
         for found in re.finditer(check["pattern"], normalized(text), re.IGNORECASE):
             value, unit = found.groups()
-            if value.replace(",", ".") != check["value"] or fold(unit) != fold(check["unit"]):
+            # PR 295 allows the authored /l versus source /L alias, but not scale-prefix m/M folding.
+            unit_key = lambda value: normalized(value).replace("/L", "/l")
+            if value.replace(",", ".") != check["value"] or unit_key(unit) != unit_key(check["unit"]):
                 flags.append(f"QUANTITY_MISMATCH:{fact['id']}")
     return flags
 
 
-def score_document(doc, entry, run_lang):
+def score_document(doc, entry, run_lang, reviewed=None):
     """One document's scores in one run."""
     result = dict(id=doc["id"], present=entry is not None)
     if entry is None:
         return result
     answer = entry.get("result")
-    error = entry.get("error")
+    raw_error = entry.get("error")
+    error = raw_error if isinstance(raw_error, str) and raw_error else "MalformedError" if raw_error is not None else None
+    if error:
+        answer = None
+    if not error and (not isinstance(answer, dict) or not isinstance(answer.get("sentences"), list)
+                      or any(not isinstance(s, dict) or not isinstance(s.get("text"), str)
+                             or not isinstance(s.get("quote"), str) or type(s.get("located")) is not bool
+                             for s in answer.get("sentences", []))):
+        error, answer = "MalformedResult", None
+    wall = entry.get("wallMs")
+    if type(wall) not in (int, float) or not math.isfinite(wall) or wall < 0:
+        error, answer = "MalformedWallTime", None
     result.update(wall_ms=entry.get("wallMs"), error=error,
                   timed_out=bool(error and re.search(r"time", error, re.IGNORECASE)))
     sentences = answer["sentences"] if answer else []
     facts = []
     for fact in doc.get("facts", []):
-        how, index = find_fact(fact, sentences)
+        how, index = find_fact(fact, sentences, doc["pages"])
+        review_row = (reviewed or {}).get(index, {})
+        verdict = review_row.get("verdict")
+        confirmed = review_row.get("confirmed_facts", "").strip()
+        candidate = index if how == "candidate" else None
+        if verdict in WRONG_VERDICTS or verdict == "vague":
+            how = None
+        elif how == "candidate":
+            how = "reviewed" if verdict == "correct" and fact["id"] in confirmed.split() else None
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
-                          critical=fact.get("critical", False), found=how, sentence=index))
+                          critical=fact.get("critical", False), found=how, sentence=index,
+                          candidate=candidate, pending=candidate is not None
+                          and (not verdict or (verdict == "correct" and not confirmed))))
     required = [f for f in facts if f["required"]]
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
     flagged = [dict(index=i, flags=screen(s, run_lang, doc.get("facts", []))) for i, s in enumerate(sentences)]
+    for fact in facts:
+        if fact["candidate"] is not None:
+            flagged[fact["candidate"]]["flags"].append("FACT_REVIEW:" + fact["id"])
     stats = (answer or {}).get("stats") or {}
     last_index = max(p["index"] for p in doc["pages"])
     result.update(
@@ -275,6 +348,8 @@ def score_document(doc, entry, run_lang):
         required_total=len(required),
         action_found=sum(1 for f in actions if f["found"]),
         action_total=len(actions),
+        pending_facts=sum(1 for f in facts if f["pending"]),
+        pending_actions=sum(1 for f in actions if f["pending"]),
         flags=flagged,
         flag_count=sum(len(f["flags"]) for f in flagged),
         prompt_tokens=stats.get("promptTokens"),
@@ -296,7 +371,7 @@ def score_document(doc, entry, run_lang):
     return result
 
 
-def review_rows(label, meta, docs, entries, scores, seed_text):
+def review_rows(label, meta, docs, entries, scores, seed_text, required_only=True):
     """Every flagged sentence, and a seeded fifth of the others."""
     rows = []
     for doc_id, score in scores.items():
@@ -305,26 +380,80 @@ def review_rows(label, meta, docs, entries, scores, seed_text):
             continue
         rng = random.Random(hashlib.sha256(f"{seed_text}:{doc_id}".encode()).hexdigest())
         for flagged, sentence in zip(score["flags"], entry["result"]["sentences"]):
-            if not flagged["flags"] and rng.random() >= REVIEW_SAMPLE:
+            if not flagged["flags"] and rng.random() >= REVIEW_SAMPLE and required_only:
                 continue
             candidates = [f["id"] for f in score["facts"] if f["sentence"] == flagged["index"]]
             rows.append(dict(run=label, doc=doc_id, sentence=flagged["index"], text=sentence["text"],
                              quote=sentence.get("quote", ""), located=sentence.get("located"),
                              flags=" ".join(flagged["flags"]), facts=" ".join(candidates),
-                             traps=" | ".join(docs[doc_id].get("traps", [])), verdict="", note=""))
+                             traps=" | ".join(docs[doc_id].get("traps", [])),
+                             confirmed_facts="", verdict="", note=""))
+            binding = dict(meta=meta, document=docs[doc_id], row=rows[-1])
+            rows[-1]["review_id"] = hashlib.sha256(
+                json.dumps(binding, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     return rows
 
 
 def read_review(path):
-    """Filled review sheets: (run, doc, sentence) -> verdict."""
+    """Read rows without treating file existence, blank verdicts or duplicates as review."""
     verdicts = {}
     with open(path, newline="", encoding="utf-8") as source:
-        for row in csv.DictReader(source):
+        reader = csv.DictReader(source)
+        if reader.fieldnames and len(set(reader.fieldnames)) != len(reader.fieldnames):
+            raise ValueError("duplicate review columns")
+        for row in reader:
+            if None in row:
+                raise ValueError("review row has extra columns")
             verdict = (row.get("verdict") or "").strip().lower()
             if verdict not in VERDICTS:
                 raise ValueError(f"unknown verdict {verdict!r} in {path}")
-            verdicts[(row["run"], row["doc"], int(row["sentence"]))] = verdict
+            key = (row["run"], row["doc"], int(row["sentence"]))
+            if key in verdicts:
+                raise ValueError(f"duplicate review row {key}")
+            verdicts[key] = dict(row, verdict=verdict)
     return verdicts
+
+
+def row_key(row):
+    return row["run"], row["doc"], int(row["sentence"])
+
+
+def validate_review(verdicts, current):
+    for key, row in verdicts.items():
+        if key not in current:
+            raise ValueError(f"unknown review row {key}")
+        for field in ("review_id", "text", "quote", "located", "flags", "facts", "traps"):
+            expected = current[key][field]
+            if row.get(field) != ("" if expected is None else str(expected)):
+                raise ValueError(f"stale or unbound review row {key}: {field}")
+        confirmed = (row.get("confirmed_facts") or "").strip()
+        if confirmed and confirmed != "-" and not set(confirmed.split()) <= set(current[key]["facts"].split()):
+            raise ValueError(f"unknown confirmed fact in review row {key}")
+
+
+def export_review(out, rows):
+    """Preserve completed work, but never leave a stale sheet as the only current export."""
+    identities = [row["review_id"] for row in rows]
+    digest = hashlib.sha256(json.dumps(identities).encode()).hexdigest()
+    sheet = out / "review.csv"
+    if sheet.exists():
+        with sheet.open(newline="", encoding="utf-8") as source:
+            same = [row.get("review_id") for row in csv.DictReader(source)] == identities
+        if same:
+            return sheet
+        sheet = out / f"review-{digest[:16]}.csv"
+    if not sheet.exists():
+        with sheet.open("w", newline="", encoding="utf-8") as target:
+            fields = ["run", "doc", "sentence", "text", "quote", "located", "flags", "facts", "traps",
+                      "review_id", "confirmed_facts", "verdict", "note"]
+            writer = csv.DictWriter(target, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+    else:
+        with sheet.open(newline="", encoding="utf-8") as source:
+            if [row.get("review_id") for row in csv.DictReader(source)] != identities:
+                raise ValueError(f"{sheet}: changed review export; refusing to overwrite")
+    return sheet
 
 
 def summarize_run(scores, wrong):
@@ -340,6 +469,8 @@ def summarize_run(scores, wrong):
         required_total=sum(s["required_total"] for s in present),
         action_found=sum(s["action_found"] for s in present),
         action_total=sum(s["action_total"] for s in present),
+        pending_facts=sum(s["pending_facts"] for s in present),
+        pending_actions=sum(s["pending_actions"] for s in present),
         located_pct=round(100 * sum(s["located"] for s in present) / sentences, 1) if sentences else None,
         sentences=sentences, flags=sum(s["flag_count"] for s in present),
         capped=sum(1 for s in present if s.get("capped")), cut=sum(1 for s in present if s.get("cut")),
@@ -398,26 +529,35 @@ def decide(base_scores, base_summary, scores, summary):
     """The written-down rule (HARNESS.md): PASS only if every check holds; PENDING while the
     hand review has not been filled in."""
     checks = []
-    if summary["reviewed_wrong"] is None:
+    if summary["reviewed_wrong"]:
+        checks.append(("no reviewed wrong statement", False))
+    elif summary["reviewed_wrong"] is None or base_summary["reviewed_wrong"] is None:
         checks.append(("no reviewed wrong statement", None))
     else:
         checks.append(("no reviewed wrong statement", summary["reviewed_wrong"] == 0))
-    lost = []
+    lost, pending_lost = [], []
     for doc_id, base in base_scores.items():
         if not base.get("present") or base.get("error"):
             continue
         mine = scores.get(doc_id, {})
         kept = {f["id"] for f in mine.get("facts", []) if f["found"]}
-        lost += [f"{doc_id}/{f['id']}" for f in base["facts"] if f["required"] and f["found"] and f["id"] not in kept]
-    checks.append((f"no must-have lost ({len(lost)} lost)", not lost))
-    checks.append(("instructions/timing found on more", summary["action_found"] > base_summary["action_found"]))
+        for fact in base["facts"]:
+            if fact["required"] and fact["found"] and fact["id"] not in kept:
+                pending = any(f["id"] == fact["id"] and f.get("pending") for f in mine.get("facts", []))
+                (pending_lost if pending else lost).append(f"{doc_id}/{fact['id']}")
+    checks.append((f"no must-have lost ({len(lost)} lost)", False if lost else None if pending_lost else True))
+    gains = summary["action_found"] > base_summary["action_found"]
+    if summary.get("pending_actions") or base_summary.get("pending_actions"):
+        gains = None
+    checks.append(("instructions/timing found on more", gains))
     if summary["located_pct"] is None or base_summary["located_pct"] is None:
         checks.append(("quotes found within 2 points", False))
     else:
         checks.append(("quotes found within 2 points", summary["located_pct"] >= base_summary["located_pct"] - 2))
     slower = (summary["median_wall_ms"] is None or base_summary["median_wall_ms"] is None
               or summary["median_wall_ms"] > 1.3 * base_summary["median_wall_ms"])
-    new_failures = [d for d, s in scores.items() if s.get("error") and not base_scores.get(d, {}).get("error")]
+    new_failures = [d for d, base in base_scores.items() if base.get("present") and not base.get("error")
+                    and (not scores.get(d, {}).get("present") or scores.get(d, {}).get("error"))]
     checks.append(("median time within 30%, no new failure", not slower and not new_failures))
     verdict = "FAIL" if any(ok is False for _, ok in checks) else "PENDING" if any(ok is None for _, ok in checks) else "PASS"
     return dict(verdict=verdict, checks=checks, lost=lost, new_failures=new_failures)
@@ -467,57 +607,94 @@ def table(labels, docs, all_scores, summaries, decisions, memories=()):
 
 def score(run_paths, out, docs, review=None):
     out = Path(out)
-    out.mkdir(parents=True, exist_ok=True)
-    verdicts = read_review(review) if review else None
-    labels, all_scores, summaries, metas, sheets, memories = [], [], [], [], [], []
+    verdicts = read_review(review) if review else {}
+    labels, all_scores, summaries, metas, sheets, memories, runs = [], [], [], [], [], [], []
+    current = {}
     for path in run_paths:
         meta, entries = read_run(path)
+        validate_sources(entries, docs, meta)
         label = run_label(meta, path)
         if label in labels:
             raise ValueError(f"two runs are called {label}")
         labels.append(label)
         metas.append(meta)
+        runs.append(entries)
         lang = meta.get("lang", "en")
         scores = {doc_id: score_document(doc, entries.get(doc_id), lang) for doc_id, doc in docs.items()}
-        all_scores.append(scores)
-        wrong = None
-        if verdicts is not None:
-            wrong = sum(1 for (run, _, _), verdict in verdicts.items() if run == label and verdict in WRONG_VERDICTS)
-        summaries.append(summarize_run(scores, wrong))
-        memories.append(memory(meta, entries))
         seed = meta.get("build", {}).get("fingerprint", "") + label
         sheets += review_rows(label, meta, docs, entries, scores, seed)
+        for row in review_rows(label, meta, docs, entries, scores, seed, required_only=False):
+            current[row_key(row)] = row
+    if runs and set(docs) - runs[0].keys():
+        raise ValueError("baseline does not cover the selected document set; declare a shared --only subset")
+    validate_review(verdicts, current)
+    for label, meta, entries in zip(labels, metas, runs):
+        lang = meta.get("lang", "en")
+        scores = {doc_id: score_document(doc, entries.get(doc_id), lang,
+                  {index: row for (run, doc_name, index), row in verdicts.items()
+                   if run == label and doc_name == doc_id}) for doc_id, doc in docs.items()}
+        all_scores.append(scores)
+        required = {row_key(row) for row in sheets if row["run"] == label}
+        filled = {key for key, row in verdicts.items() if row["verdict"] and key[0] == label}
+        wrong = sum(row["verdict"] in WRONG_VERDICTS for key, row in verdicts.items() if key[0] == label)
+        pending_facts = any(score.get("pending_facts") for score in scores.values())
+        reviewed_wrong = wrong if wrong else 0 if review and required <= filled and not pending_facts else None
+        summaries.append(summarize_run(scores, reviewed_wrong))
+        memories.append(memory(meta, entries))
     base_model = metas[0].get("model", {}).get("sha256")
     notes = [f"{label}: another model file" for label, meta in zip(labels, metas)
              if meta.get("model", {}).get("sha256") != base_model]
     decisions = [None] + [decide(all_scores[0], summaries[0], s, m) for s, m in zip(all_scores[1:], summaries[1:])]
+    out.mkdir(parents=True, exist_ok=True)
+    sheet = export_review(out, sheets)
     (out / "scores.json").write_text(json.dumps(dict(
+        selected_documents=sorted(docs), review_sheet=str(sheet),
         runs=[dict(label=l, meta=m, summary=s, decision=d, memory=mem, documents=sc)
               for l, m, s, d, mem, sc in zip(labels, metas, summaries, decisions, memories, all_scores)],
         notes=notes), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    sheet = out / "review.csv"
-    if not sheet.exists():
-        with sheet.open("w", newline="", encoding="utf-8") as target:
-            writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "text", "quote", "located",
-                                                        "flags", "facts", "traps", "verdict", "note"])
-            writer.writeheader()
-            writer.writerows(sheets)
     (out / "compare.md").write_text(table(labels, docs, all_scores, summaries, decisions, memories)
+                                    + f"\nCurrent review sheet: {sheet.name}\n"
                                     + "".join(f"\nNOTE: {n}\n" for n in notes), encoding="utf-8")
     return summaries, decisions
 
 
-def repeat(first, second):
+def repeat(first, second, docs=None, only=None):
     """Whether two runs of one build and model gave the same answers, token for token, on the
     documents both answered: (same, different, compared, problems)."""
     (meta_a, entries_a), (meta_b, entries_b) = read_run(first), read_run(second)
+    docs = load_documents() if docs is None else docs
+    if only is not None:
+        if set(only) - docs.keys():
+            raise ValueError("repeat --only names unknown inputs")
+        docs = {name: docs[name] for name in only}
+        entries_a = {name: entry for name, entry in entries_a.items() if name in docs}
+        entries_b = {name: entry for name, entry in entries_b.items() if name in docs}
+    for meta, entries in ((meta_a, entries_a), (meta_b, entries_b)):
+        if set(entries) - docs.keys():
+            raise ValueError("repeat contains document IDs outside the selected input set")
+        validate_sources(entries, docs, meta)
     problems = [key for key in ("build", "lang", "threads") if meta_a.get(key) != meta_b.get(key)]
     if meta_a.get("model", {}).get("sha256") != meta_b.get("model", {}).get("sha256"):
         problems.append("model")
+    format_a = meta_a.get("model", {}).get("chatFormat")
+    format_b = meta_b.get("model", {}).get("chatFormat")
+    if not format_a or format_a != format_b:
+        problems.append("model.chatFormat")
+    for key in ("commit", "runnerSha256", "harnessSha256"):
+        if meta_a.get(key) != meta_b.get(key):
+            problems.append(key)
+    if entries_a.keys() != entries_b.keys():
+        problems.append("coverage: first-only=" + ",".join(sorted(entries_a.keys() - entries_b.keys()))
+                        + "; second-only=" + ",".join(sorted(entries_b.keys() - entries_a.keys())))
+    if entries_a.keys() != docs.keys() or entries_b.keys() != docs.keys():
+        problems.append(f"coverage: selected={len(docs)}, first={len(entries_a)}, second={len(entries_b)}")
     same, different = [], []
     for doc_id in sorted(set(entries_a) & set(entries_b)):
         hashes = [((e.get("result") or {}).get("stats") or {}).get("answerHash") for e in (entries_a[doc_id], entries_b[doc_id])]
-        (same if hashes[0] is not None and hashes[0] == hashes[1] else different).append(doc_id)
+        valid = all(not entry.get("error") and isinstance((entry.get("result") or {}).get("sentences"), list)
+                    for entry in (entries_a[doc_id], entries_b[doc_id]))
+        valid = valid and entries_a[doc_id]["result"]["sentences"] == entries_b[doc_id]["result"]["sentences"]
+        (same if valid and hashes[0] is not None and hashes[0] == hashes[1] else different).append(doc_id)
     return same, different, len(same) + len(different), problems
 
 
@@ -534,16 +711,24 @@ def main(argv=None):
     sc.add_argument("--run", action="append", required=True)
     sc.add_argument("--out", required=True)
     sc.add_argument("--review")
+    sc.add_argument("--only", action="append", help="explicit shared document subset")
     rep = sub.add_parser("repeat")
     rep.add_argument("--run", action="append", required=True)
+    rep.add_argument("--only", action="append", help="explicit shared repeat subset")
     args = parser.parse_args(argv)
     if args.command == "repeat":
         if len(args.run) != 2:
             raise SystemExit("repeat compares exactly two runs")
-        same, different, compared, problems = repeat(*args.run)
+        same, different, compared, problems = repeat(*args.run, docs=load_documents(args.documents, args.fixtures),
+                                                     only=args.only)
         print(json.dumps(dict(compared=compared, same=same, different=different, not_comparable=problems)))
         return 0 if compared and not different and not problems else 1
     docs = load_documents(args.documents, args.fixtures)
+    if getattr(args, "only", None):
+        unknown = set(args.only) - set(docs)
+        if unknown:
+            raise SystemExit(f"unknown ids: {', '.join(sorted(unknown))}")
+        docs = {k: v for k, v in docs.items() if k in args.only}
     if args.command == "check":
         problems = {doc_id: check_document(doc) for doc_id, doc in docs.items()}
         bad = {doc_id: p for doc_id, p in problems.items() if p}
@@ -553,11 +738,6 @@ def main(argv=None):
               f"{len(bad)} with problems")
         return 1 if bad else 0
     if args.command == "prepare":
-        if args.only:
-            unknown = set(args.only) - set(docs)
-            if unknown:
-                raise SystemExit(f"unknown ids: {', '.join(sorted(unknown))}")
-            docs = {k: v for k, v in docs.items() if k in args.only}
         print(f"{prepare(args.out, docs)} documents written to {args.out}")
         return 0
     summaries, decisions = score(args.run, args.out, docs, args.review)

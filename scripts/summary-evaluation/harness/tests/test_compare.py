@@ -36,8 +36,9 @@ def sentence(text, quote, located=True):
 
 def run_lines(variant, sentences, wall_ms=100_000, error=None, doc_id="fake-letter"):
     meta = dict(kind="run", variant=variant, build=dict(fingerprint="f" * 64), lang="en",
-                model=dict(sha256="a" * 64))
-    entry = dict(kind="document", id=doc_id, wallMs=wall_ms)
+                model=dict(sha256="a" * 64, chatFormat="builtin"))
+    entry = dict(kind="document", id=doc_id, wallMs=wall_ms,
+                 pagesSha256=compare.pages_sha256(fake_doc()["pages"]))
     if error:
         entry["error"] = error
     else:
@@ -81,12 +82,12 @@ class FactTest(unittest.TestCase):
         self.facts = {f["id"]: f for f in fake_doc()["facts"]}
 
     def test_finds_an_approved_statement(self):
-        how, index = compare.find_fact(self.facts["weight"], [sentence("They lost 4 kg.", "x")])
+        how, index = compare.find_fact(self.facts["weight"], [sentence("They lost 4 kg.", "They have lost 4 kg.")])
         self.assertEqual((how, index), ("approved", 0))
 
     def test_finds_a_named_fact_whose_quote_covers_its_evidence(self):
         how, index = compare.find_fact(self.facts["timing"], BETTER)
-        self.assertEqual((how, index), ("matched", 2))
+        self.assertEqual((how, index), ("candidate", 2))
 
     def test_does_not_count_a_name_with_a_quote_from_elsewhere(self):
         wrong_quote = [sentence("Keep eating gluten.", "They have lost 4 kg.")]
@@ -159,14 +160,14 @@ class RunTest(unittest.TestCase):
         self.addCleanup(self.folder.cleanup)
         self.docs = {"fake-letter": fake_doc()}
 
-    def test_a_run_must_start_with_its_name_and_keeps_the_first_answer(self):
+    def test_a_run_must_start_with_its_name_and_refuses_duplicate_answers(self):
         lines = run_lines("B0", BASE)
         bad = write_run(self.folder.name, "bad", lines[1:])
         with self.assertRaises(ValueError):
             compare.read_run(bad)
         again = dict(lines[1], wallMs=1)
-        meta, entries = compare.read_run(write_run(self.folder.name, "twice", lines + [again]))
-        self.assertEqual(entries["fake-letter"]["wallMs"], 100_000)
+        with self.assertRaises(ValueError):
+            compare.read_run(write_run(self.folder.name, "twice", lines + [again]))
 
     def score(self, variant_lines, review_rows=None):
         base = write_run(self.folder.name, "B0", run_lines("B0", BASE))
@@ -174,17 +175,35 @@ class RunTest(unittest.TestCase):
         out = Path(self.folder.name) / "out"
         review = None
         if review_rows is not None:
+            current = {}
+            for path in [base, variant]:
+                meta, entries = compare.read_run(path)
+                label = compare.run_label(meta, path)
+                scores = {name: compare.score_document(doc, entries.get(name), meta["lang"])
+                          for name, doc in self.docs.items()}
+                seed = meta["build"]["fingerprint"] + label
+                for row in compare.review_rows(label, meta, self.docs, entries, scores, seed, required_only=False):
+                    current[compare.row_key(row)] = row
+            bound = [dict(row, verdict="correct", confirmed_facts=row["facts"] or "-")
+                     for key, row in current.items() if key[0] == "B0"]
+            for row in review_rows:
+                key = row["run"], row["doc"], row["sentence"]
+                bound.append(dict(current[key], verdict=row["verdict"],
+                                  confirmed_facts=current[key]["facts"] or "-"))
             review = Path(self.folder.name) / "filled.csv"
             with review.open("w", newline="", encoding="utf-8") as target:
-                writer = csv.DictWriter(target, fieldnames=["run", "doc", "sentence", "verdict"])
+                fields = ["run", "doc", "sentence", "text", "quote", "located", "flags", "facts", "traps",
+                          "review_id", "confirmed_facts", "verdict", "note"]
+                writer = csv.DictWriter(target, fieldnames=fields)
                 writer.writeheader()
-                writer.writerows(review_rows)
+                writer.writerows(bound)
         return compare.score([base, variant], out, self.docs, review), out
 
     def test_a_better_variant_waits_for_the_hand_review(self):
         (summaries, decisions), out = self.score(run_lines("E1", BETTER))
         self.assertEqual(summaries[0]["action_found"], 0)
-        self.assertEqual(summaries[1]["action_found"], 2)
+        self.assertEqual(summaries[1]["action_found"], 0)
+        self.assertEqual(summaries[1]["pending_actions"], 2)
         self.assertEqual(decisions[1]["verdict"], "PENDING")
         self.assertTrue((out / "compare.md").read_text(encoding="utf-8").startswith("| Document | B0 | E1 |"))
         with (out / "review.csv").open(encoding="utf-8") as sheet:
@@ -229,11 +248,11 @@ class RunTest(unittest.TestCase):
     def test_a_repeat_of_the_same_build_matches_token_for_token(self):
         first = write_run(self.folder.name, "B0", run_lines("B0", BASE))
         again = write_run(self.folder.name, "B0R", run_lines("B0R", BASE))
-        self.assertEqual(compare.repeat(first, again), (["fake-letter"], [], 1, []))
+        self.assertEqual(compare.repeat(first, again, self.docs), (["fake-letter"], [], 1, []))
         changed = run_lines("B0R", BASE)
         changed[1]["result"]["stats"]["answerHash"] = 2
         changed[0]["build"] = dict(fingerprint="0" * 64)
-        same, different, compared, problems = compare.repeat(first, write_run(self.folder.name, "B0X", changed))
+        same, different, compared, problems = compare.repeat(first, write_run(self.folder.name, "B0X", changed), self.docs)
         self.assertEqual((same, different, problems), ([], ["fake-letter"], ["build"]))
 
     def test_reports_the_helper_s_memory_per_document_against_the_allowance(self):
