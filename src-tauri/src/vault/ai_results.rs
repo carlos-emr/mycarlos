@@ -740,6 +740,78 @@ mod tests {
     }
 
     #[test]
+    fn a_parent_valid_exact_budget_legacy_answer_still_reads_unlocks_and_restores() {
+        let (temp, store, id) = fixture();
+        // Parent validator allowed 20 entries, text<=300 and quote<=240 scalars.
+        // Escaped control characters exercise encoded bytes without clinical data.
+        let mut legacy = kept_summary();
+        legacy["createdAt"] = 1_700_000_000_000_u64.into();
+        legacy["partial"] = false.into();
+        legacy["lastPage"] = 2.into();
+        legacy["sentences"] = serde_json::Value::Array(
+            (0..20)
+                .map(|_| {
+                    serde_json::json!({"text": "\u{0001}".repeat(300),
+                "quote": "\u{0001}".repeat(240), "source": null})
+                })
+                .collect(),
+        );
+        legacy["sentences"][19]["text"] =
+            format!("{}{}", "a".repeat(46), "\u{0001}".repeat(254)).into();
+        let content = legacy.to_string();
+        assert_eq!(content.len(), MAX_AI_RESULT_BYTES as usize);
+        let decoded: crate::summary_contract::StoredSummary =
+            serde_json::from_str(&content).unwrap();
+        assert_eq!(decoded.tool, "summary");
+        assert_eq!(decoded.lang, "en");
+        assert_eq!(decoded.model.name, ANSWERED.0);
+        assert_eq!(decoded.model.sha256, ANSWERED.1);
+        assert_eq!(decoded.sentences.len(), 20);
+        assert!(decoded.last_page <= crate::model_runtime::MAX_PAGES as u32);
+        assert!(decoded
+            .sentences
+            .iter()
+            .all(|line| !line.text.trim().is_empty()
+                && line.text.chars().count() <= 300
+                && line.quote.chars().count() <= 240
+                && line.source.is_none()));
+        // New admission reserves future citations; existing reads/restore do not.
+        assert!(matches!(
+            check_answer(&summary("en"), content.as_bytes(), Some(ANSWERED)),
+            Err(VaultError::AiSummaryTooLarge)
+        ));
+        let info = store
+            .save_ai_result(id, summary("en"), content.as_bytes(), 10)
+            .unwrap();
+        assert_eq!(
+            store.read_ai_result(id, info.id).unwrap(),
+            content.as_bytes()
+        );
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.read_ai_result(id, info.id).unwrap(),
+            content.as_bytes()
+        );
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 12).unwrap();
+        let restored = VaultStore::new(temp.path().join("restored"));
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        assert_eq!(restored.ai_results(id).unwrap(), vec![info.clone()]);
+        assert_eq!(
+            restored.read_ai_result(id, info.id).unwrap(),
+            content.as_bytes()
+        );
+    }
+
+    #[test]
     fn an_oversize_replacement_does_not_publish_objects_or_hide_the_previous_answer() {
         let (_temp, store, id) = fixture();
         let previous = store
