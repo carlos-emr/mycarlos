@@ -4,8 +4,9 @@
 use super::{
     answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
     read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
-    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    AnswerTiming, ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START,
+    BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
+    SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -337,13 +338,18 @@ impl Engine {
         self.stats.prompt_ms = (read - started).as_millis() as u64;
         let vocab = self.model.vocab();
         let mut written = Vec::new();
+        let mut timing = AnswerTiming::default();
         for position in (tokens.len()..).take(max) {
+            let picking = std::time::Instant::now();
             let (token, scanned) = self.pick(batch.n_tokens() - 1, grammar.as_mut());
+            timing.pick_us += picking.elapsed().as_micros() as u64;
             self.stats.grammar_scans += u32::from(scanned);
             if vocab.is_eog(token) {
+                self.stats.answer_timing = Some(timing);
                 self.stats.answer_ms = read.elapsed().as_millis() as u64;
                 return Ok((String::from_utf8_lossy(&written).into_owned(), false));
             }
+            let emitting = std::time::Instant::now();
             self.stats.answer_tokens += 1;
             self.stats.answer_hash = answer_hash(self.stats.answer_hash, token.0);
             if let Some(grammar) = grammar.as_mut() {
@@ -354,10 +360,15 @@ impl Engine {
             batch
                 .add(token, position as i32, &[0], true)
                 .map_err(|_| failed("batch"))?;
+            timing.emit_us += emitting.elapsed().as_micros() as u64;
+            let decoding = std::time::Instant::now();
             self.ctx_mut()
                 .decode(&mut batch)
                 .map_err(|_| failed("decode"))?;
+            timing.decode_us += decoding.elapsed().as_micros() as u64;
+            timing.decode_calls += 1;
         }
+        self.stats.answer_timing = Some(timing);
         self.stats.answer_ms = read.elapsed().as_millis() as u64;
         self.stats.capped = true;
         Ok((String::from_utf8_lossy(&written).into_owned(), true))

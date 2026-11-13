@@ -351,6 +351,10 @@ pub(crate) struct Stats {
     pub(crate) answer_tokens: u32,
     pub(crate) prompt_ms: u64,
     pub(crate) answer_ms: u64,
+    /// Disjoint answer-loop measurements. Absent in older helpers, rather than reported as
+    /// zero. Microseconds retain short per-token costs; these are wall times, not CPU times.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) answer_timing: Option<AnswerTiming>,
     pub(crate) capped: bool,
     pub(crate) grammar_scans: u32,
     /// The prompt's instruction prefix, in tokens (in `prompt_tokens`), whether its state was
@@ -364,6 +368,18 @@ pub(crate) struct Stats {
     /// The threads the answer was written on, and the prompt read on.
     pub(crate) threads: u32,
     pub(crate) batch_threads: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AnswerTiming {
+    /// Greedy token choice, including the single-token grammar check and any full scan.
+    pub(crate) pick_us: u64,
+    /// Accepting the token in the grammar, writing its bytes and preparing the next batch.
+    pub(crate) emit_us: u64,
+    /// One-token model decode calls, including native scheduling and worker setup.
+    pub(crate) decode_us: u64,
+    pub(crate) decode_calls: u32,
 }
 
 /// FNV-1a's starting value and step (64-bit).
