@@ -204,11 +204,19 @@ impl KeptAnswer {
     /// them), with `sources` for a summary's sentences. None when the sources do not fit the
     /// answer: a summary needs one per sentence (a place or none), each on a page the model
     /// read; an explanation takes none.
+    #[cfg(test)]
     pub(crate) fn content(
         &self,
         sources: Option<&[Option<SourceSpan>]>,
     ) -> Option<(AiResultInput, String)> {
-        let (input, value) = match self {
+        self.checked_content(sources).ok().flatten()
+    }
+
+    pub(crate) fn checked_content(
+        &self,
+        sources: Option<&[Option<SourceSpan>]>,
+    ) -> Result<Option<(AiResultInput, String)>, crate::summary_contract::Error> {
+        match self {
             KeptAnswer::Summary {
                 sentences,
                 last_page,
@@ -219,27 +227,30 @@ impl KeptAnswer {
                 lang,
                 created_at,
             } => {
-                let sources = sources?;
+                let Some(sources) = sources else {
+                    return Ok(None);
+                };
                 if sources.len() != sentences.len()
-                    || sources
-                        .iter()
-                        .flatten()
-                        .any(|span| !read_pages.contains(&span.page))
-                {
-                    return None;
-                }
-                let sentences: Vec<_> = sentences
-                    .iter()
-                    .zip(sources)
-                    .map(|(sentence, source)| {
-                        serde_json::json!({
-                            "text": sentence.text,
-                            "quote": sentence.quote,
-                            "source": source,
-                        })
+                    || sources.iter().flatten().any(|span| {
+                        !read_pages.contains(&span.page)
+                            || !crate::summary_contract::source_valid(span)
                     })
-                    .collect();
-                (
+                {
+                    return Ok(None);
+                }
+                let content = crate::summary_contract::serialize_summary(
+                    sentences,
+                    model,
+                    lang,
+                    crate::summary_contract::Metadata {
+                        created_at: *created_at,
+                        partial: *partial,
+                        last_page: *last_page,
+                        pages_missing: *pages_missing,
+                    },
+                    sources,
+                )?;
+                Ok(Some((
                     AiResultInput {
                         tool: AiTool::Summary,
                         lang: lang.clone(),
@@ -247,17 +258,8 @@ impl KeptAnswer {
                         model_name: model.name.clone(),
                         model_sha256: model.sha256.clone(),
                     },
-                    serde_json::json!({
-                        "tool": "summary",
-                        "sentences": sentences,
-                        "model": model,
-                        "lang": lang,
-                        "createdAt": created_at,
-                        "partial": partial,
-                        "lastPage": last_page,
-                        "pagesMissing": pages_missing,
-                    }),
-                )
+                    content,
+                )))
             }
             KeptAnswer::Explain {
                 term,
@@ -268,9 +270,12 @@ impl KeptAnswer {
                 created_at,
             } => {
                 if sources.is_some() {
-                    return None;
+                    return Ok(None);
                 }
-                (
+                let value = serde_json::json!({ "tool": "explain", "term": term, "context": context,
+                    "text": text, "model": model, "lang": lang, "createdAt": created_at });
+                let content = value.to_string();
+                Ok(Some((
                     AiResultInput {
                         tool: AiTool::Explain,
                         lang: lang.clone(),
@@ -278,19 +283,10 @@ impl KeptAnswer {
                         model_name: model.name.clone(),
                         model_sha256: model.sha256.clone(),
                     },
-                    serde_json::json!({
-                        "tool": "explain",
-                        "term": term,
-                        "context": context,
-                        "text": text,
-                        "model": model,
-                        "lang": lang,
-                        "createdAt": created_at,
-                    }),
-                )
+                    content,
+                )))
             }
-        };
-        Some((input, value.to_string()))
+        }
     }
 }
 
@@ -334,6 +330,8 @@ pub(crate) enum AiError {
     Busy,
     /// The model's file could not be read from this computer's disk.
     Storage,
+    /// The complete postprocessed summary cannot fit its saved-answer budget.
+    SummaryTooLarge,
     /// The vault locked, or the reader left: nothing to show.
     Cancelled,
     /// Anything else: the helper could not start, answer, or answer in time, or the request
@@ -349,6 +347,7 @@ impl AiError {
             Self::Memory => "aiMemory",
             Self::Busy => "aiBusy",
             Self::Storage => "aiStorage",
+            Self::SummaryTooLarge => "aiSummaryTooLarge",
             Self::Cancelled => "aiCancelled",
             Self::Failed => "aiFailed",
         }
@@ -579,6 +578,7 @@ fn from_runner(error: &RunnerError) -> AiError {
     match error {
         RunnerError::Budget { .. } => AiError::Memory,
         RunnerError::Cancelled => AiError::Cancelled,
+        RunnerError::SummaryTooLarge => AiError::SummaryTooLarge,
         RunnerError::Start(_)
         | RunnerError::NotRunning
         | RunnerError::Timeout
@@ -714,6 +714,23 @@ mod tests {
             ticket: None,
             page_count: None,
         }
+    }
+
+    #[test]
+    fn summary_size_error_survives_runner_and_owned_save_boundaries() {
+        assert_eq!(
+            from_runner(&RunnerError::SummaryTooLarge),
+            AiError::SummaryTooLarge
+        );
+        assert_eq!(AiError::SummaryTooLarge.code(), "aiSummaryTooLarge");
+        let mut answer = kept_summary();
+        if let KeptAnswer::Summary { sentences, .. } = &mut answer {
+            sentences[0].text = "x".repeat(crate::summary_contract::MAX_BYTES);
+        }
+        assert!(matches!(
+            answer.checked_content(Some(&[None, None])),
+            Err(crate::summary_contract::Error::TooLarge)
+        ));
     }
 
     #[test]

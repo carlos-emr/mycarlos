@@ -52,6 +52,7 @@ const OWN_WORDS = {
   aiStorage: "ai.error.storage",
   aiMemory: "ai.error.memory",
   aiBusy: "ai.error.busy",
+  aiSummaryTooLarge: "ai.summaryTooLarge",
 } as const satisfies Record<string, MessageKey>;
 
 /** The AI helper's panel in the reader: a plain-words summary of the
@@ -93,7 +94,7 @@ export function ReaderAiPanel({
   const [fromKept, setFromKept] = useState(false);
   // Why the answer on screen was not kept, if it was not.
   const [keepFailed, setKeepFailed] = useState<
-    "ai.keepFailed" | "ai.keepFull" | null
+    "ai.keepFailed" | "ai.keepFull" | "ai.summaryTooLarge" | null
   >(null);
   const [again, setAgain] = useState(0);
   // Whole minutes the answer has been working for, shown from the first
@@ -177,13 +178,14 @@ export function ReaderAiPanel({
       if (!result.keptId) throw new Error("not kept natively");
       await kept.save(result.keptId, keptSources(result));
     } catch (failure) {
-      // A document full of kept answers (32, hidden ones included: nothing
-      // is deleted, D3) says so; any other failure is the general one.
+      // Size and history-capacity refusals have fixed messages; the answer stays shown.
       if (live.current)
         setKeepFailed(
-          hasVaultErrorCode(failure, "ai_results_full")
-            ? "ai.keepFull"
-            : "ai.keepFailed",
+          hasVaultErrorCode(failure, "aiSummaryTooLarge")
+            ? "ai.summaryTooLarge"
+            : hasVaultErrorCode(failure, "ai_results_full")
+              ? "ai.keepFull"
+              : "ai.keepFailed",
         );
     }
   };

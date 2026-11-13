@@ -452,6 +452,20 @@ describe("the reader's AI helper", () => {
     expect(screen.getByText(AI_LABEL)).toBeVisible();
   });
 
+  it("names a defensive summary size refusal without hiding the answer or claiming it saved", async () => {
+    const { kept } = fakeKept();
+    (kept.save as ReturnType<typeof vi.fn>).mockRejectedValue({
+      code: "aiSummaryTooLarge",
+    });
+    renderReader(fakeLocalModel(), { kept });
+    await firstPage();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The complete summary is too large. No new summary was saved.",
+    );
+    expect(screen.getByText(AI_LABEL)).toBeVisible();
+  });
+
   it("says when the document already keeps the most answers it can, and keeps showing the new one", async () => {
     const { kept } = fakeKept();
     (kept.save as ReturnType<typeof vi.fn>).mockRejectedValue({
@@ -1002,6 +1016,15 @@ describe("the reader's AI helper", () => {
       "The AI helper's model is being added or removed. Try again when that is done.",
     ],
   ] as const;
+
+  it("names a complete-summary size refusal at generation without relying on server prose", async () => {
+    renderReader(refusingModel("aiSummaryTooLarge", "ai.failed"));
+    await firstPage();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Summary" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The complete summary is too large. No new summary was saved.",
+    );
+  });
 
   it.each(OWN_WORDS)(
     "says what stopped a summary refused with %s, in its own words",

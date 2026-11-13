@@ -605,17 +605,33 @@ fn is_contact_offer(rule: &str) -> bool {
 }
 
 /// Runs both checks on an English summary's sentences, in place: replaces or adds quotes.
+#[cfg(test)]
 pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
+    check_guarded(pages, lines, |_, _, _, _| {
+        Ok::<(), std::convert::Infallible>(())
+    })
+    .unwrap_or_else(|never| match never {})
+}
+
+/// Checks a complete proposed edit before cloning its log or changing the candidate.
+/// Error discards the caller's entire temporary candidate, never a subset of rules.
+pub(crate) fn check_guarded<E>(
+    pages: &str,
+    lines: &mut Vec<Line>,
+    mut guard: impl FnMut(&[Line], Option<usize>, &str, &str) -> Result<(), E>,
+) -> Result<Vec<Fallback>, E> {
     let mut log = Vec::new();
     let have = page_numbers(pages);
-    for (index, line) in lines.iter_mut().enumerate() {
+    for index in 0..lines.len() {
+        let line = &lines[index];
         let missing = numbers(&line.text).iter().any(|(_, d)| !have.contains(d));
         if !missing || line.quote.is_empty() {
             continue;
         }
         if let Some((start, end)) = find_folded(pages, &line.quote) {
             let after = quoted(&flat(source_sentence(pages, start, end)));
-            let before = std::mem::replace(&mut line.text, after.clone());
+            guard(lines, Some(index), &after, &line.quote)?;
+            let before = std::mem::replace(&mut lines[index].text, after.clone());
             log.push(Fallback {
                 check: "numbers",
                 index,
@@ -648,7 +664,8 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
         let carried = lines.iter().enumerate().any(|(i, l)| {
             carries_rule(&l.text, &trigs)
                 && (carries_step(&l.text, &step)
-                    || i.checked_sub(1).is_some_and(|p| carries_step(&lines[p].text, &step)))
+                    || i.checked_sub(1)
+                        .is_some_and(|p| carries_step(&lines[p].text, &step)))
         });
         if carried {
             continue;
@@ -685,6 +702,7 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
                         && some_word
                 })
             });
+        guard(lines, partial, &after, &quote)?;
         match partial {
             Some(index) => {
                 let before = std::mem::replace(&mut lines[index].text, after.clone());
@@ -707,7 +725,7 @@ pub(crate) fn check(pages: &str, lines: &mut Vec<Line>) -> Vec<Fallback> {
             }
         }
     }
-    log
+    Ok(log)
 }
 
 #[cfg(test)]

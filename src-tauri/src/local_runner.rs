@@ -386,6 +386,8 @@ pub(crate) enum RunnerError {
     Timeout,
     /// The model answered, but not as the contract says.
     Protocol(String),
+    /// The complete postprocessed answer cannot fit the shared save budget.
+    SummaryTooLarge,
     /// The model said it could not answer: its own words, cut short, to be
     /// shown on their own and never beside the document's text.
     Model(String),
@@ -909,16 +911,44 @@ impl Runner {
         // as the patient's own says who the line is for (`addressee`). English summaries only,
         // sentences with a found quote only; nothing is dropped, and the words of each rewrite go
         // in `rewrites` for measuring, never into a log.
+        let contract_error = |error| match error {
+            crate::summary_contract::Error::TooLarge => RunnerError::SummaryTooLarge,
+            crate::summary_contract::Error::Invalid => {
+                RunnerError::Protocol("invalid final summary".to_owned())
+            }
+        };
+        crate::summary_contract::reserve(
+            sentences
+                .iter()
+                .map(|s| (s.text.as_str(), s.quote.as_str())),
+            &model.name,
+            &model.sha256,
+            &request.lang,
+        )
+        .map_err(contract_error)?;
         let mut rewrites = Vec::new();
         if request.lang == "en" {
-            for (index, sentence) in sentences.iter_mut().enumerate() {
+            for index in 0..sentences.len() {
+                let sentence = &sentences[index];
                 if sentence.quote.is_empty() {
                     continue;
                 }
                 if let Some((kind, after)) =
                     crate::addressee::rewrite(&text, &sentence.text, &sentence.quote)
                 {
-                    let before = std::mem::replace(&mut sentence.text, after.clone());
+                    crate::summary_contract::reserve_edit(
+                        sentences
+                            .iter()
+                            .map(|s| (s.text.as_str(), s.quote.as_str())),
+                        Some(index),
+                        &after,
+                        &sentence.quote,
+                        &model.name,
+                        &model.sha256,
+                        &request.lang,
+                    )
+                    .map_err(contract_error)?;
+                    let before = std::mem::replace(&mut sentences[index].text, after.clone());
                     rewrites.push(crate::addressee::Rewrite {
                         index,
                         kind,
@@ -940,7 +970,19 @@ impl Runner {
                     quote: s.quote.clone(),
                 })
                 .collect();
-            fallbacks = crate::safety::check(&text, &mut lines);
+            fallbacks =
+                crate::safety::check_guarded(&text, &mut lines, |lines, replace, after, quote| {
+                    crate::summary_contract::reserve_edit(
+                        lines.iter().map(|s| (s.text.as_str(), s.quote.as_str())),
+                        replace,
+                        after,
+                        quote,
+                        &model.name,
+                        &model.sha256,
+                        &request.lang,
+                    )
+                })
+                .map_err(contract_error)?;
             if !fallbacks.is_empty() {
                 sentences = lines
                     .into_iter()
@@ -956,12 +998,25 @@ impl Runner {
         // the words go in `explained` for measuring, never into a log. A fallback quote is the
         // document's own words and stays as it is.
         let mut explained = Vec::new();
-        for (index, sentence) in sentences.iter_mut().enumerate() {
+        for index in 0..sentences.len() {
+            let sentence = &sentences[index];
             if sentence.text.starts_with(crate::safety::QUOTE_MARK) {
                 continue;
             }
             if let Some((after, terms)) = crate::glossary::explain(&sentence.text, &request.lang) {
-                let before = std::mem::replace(&mut sentence.text, after.clone());
+                crate::summary_contract::reserve_edit(
+                    sentences
+                        .iter()
+                        .map(|s| (s.text.as_str(), s.quote.as_str())),
+                    Some(index),
+                    &after,
+                    &sentence.quote,
+                    &model.name,
+                    &model.sha256,
+                    &request.lang,
+                )
+                .map_err(contract_error)?;
+                let before = std::mem::replace(&mut sentences[index].text, after.clone());
                 explained.push(crate::glossary::Explained {
                     index,
                     before,
@@ -970,6 +1025,15 @@ impl Runner {
                 });
             }
         }
+        crate::summary_contract::reserve(
+            sentences
+                .iter()
+                .map(|s| (s.text.as_str(), s.quote.as_str())),
+            &model.name,
+            &model.sha256,
+            &request.lang,
+        )
+        .map_err(contract_error)?;
         Ok(Summary {
             sentences,
             model,

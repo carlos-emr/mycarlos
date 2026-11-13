@@ -77,6 +77,7 @@ pub enum MessageId {
     AiSummaryReady,
     AiSummaryShowInDocument,
     AiSummaryTitle,
+    AiSummaryTooLarge,
     AiWorking,
     AiWorkingFor,
     AiWorkingLong,
@@ -1091,6 +1092,7 @@ impl MessageId {
         Self::AiSummaryReady,
         Self::AiSummaryShowInDocument,
         Self::AiSummaryTitle,
+        Self::AiSummaryTooLarge,
         Self::AiWorking,
         Self::AiWorkingFor,
         Self::AiWorkingLong,
@@ -2105,6 +2107,7 @@ impl MessageId {
             Self::AiSummaryReady => "ai-summary-ready",
             Self::AiSummaryShowInDocument => "ai-summary-showInDocument",
             Self::AiSummaryTitle => "ai-summary-title",
+            Self::AiSummaryTooLarge => "ai-summaryTooLarge",
             Self::AiWorking => "ai-working",
             Self::AiWorkingFor => "ai-workingFor",
             Self::AiWorkingLong => "ai-workingLong",
@@ -4706,6 +4709,7 @@ impl MessageId {
             "personDetails.reminder" => Some(Self::PersonDetailsReminder),
             "personDetails.notNow" => Some(Self::PersonDetailsNotNow),
             "personDetails.notSaved" => Some(Self::PersonDetailsNotSaved),
+            "ai.summaryTooLarge" => Some(Self::AiSummaryTooLarge),
             _ => None,
         }
     }

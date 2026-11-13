@@ -2169,3 +2169,5 @@ ai-models-starting = Starting the download…
 ai-models-picking = Choose a model file to add.
 
 ai-models-changed = Model in use changed
+
+ai-summaryTooLarge = The complete summary is too large. No new summary was saved.

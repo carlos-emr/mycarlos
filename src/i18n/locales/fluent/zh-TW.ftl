@@ -2014,3 +2014,5 @@ ai-models-starting = 正在開始下載…
 ai-models-picking = 請選擇要新增的模型檔案。
 
 ai-models-changed = 已變更正在使用的模型
+
+ai-summaryTooLarge = 完整摘要過大。未儲存新的摘要。

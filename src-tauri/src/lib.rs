@@ -35,6 +35,7 @@ mod quote_provenance;
 mod model_acl;
 // K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
 mod safety;
+mod summary_contract;
 // The model download runs on computers only (no AI helper on a phone).
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
@@ -458,6 +459,10 @@ impl From<VaultError> for PublicText {
             VaultError::Invalid => Self {
                 code: "invalid",
                 message_key: "native.error.19",
+            },
+            VaultError::AiSummaryTooLarge => Self {
+                code: "aiSummaryTooLarge",
+                message_key: "ai.summaryTooLarge",
             },
             // The reader says it on this code: the answer is shown, not kept.
             VaultError::AiResultsFull => Self {
@@ -1653,7 +1658,7 @@ struct RecordIdRequest {
 struct SaveAiResultRequest {
     record_id: Uuid,
     kept_id: Uuid,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "summary_contract::deserialize_sources")]
     sources: Option<Vec<Option<model_runtime::SourceSpan>>>,
 }
 
@@ -2163,6 +2168,16 @@ async fn ai_summarize(
     let read_pages =
         model_runtime::summary_read_pages(&sent_page_indices, result.last_page, result.tail_page)
             .ok_or_else(|| ai_error(model_runtime::AiError::Failed))?;
+    summary_contract::reserve(
+        result
+            .sentences
+            .iter()
+            .map(|s| (s.text.as_str(), s.quote.as_str())),
+        &result.model.name,
+        &result.model.sha256,
+        &lang,
+    )
+    .map_err(summary_error)?;
     let kept_id = kept_for.map(|(record_id, text)| {
         picks.keep_ai_answer(
             session,
@@ -2357,6 +2372,13 @@ async fn held_for_answer<T: Send + 'static>(
     result
 }
 
+fn summary_error(error: summary_contract::Error) -> PublicError {
+    ai_error(match error {
+        summary_contract::Error::TooLarge => model_runtime::AiError::SummaryTooLarge,
+        summary_contract::Error::Invalid => model_runtime::AiError::Failed,
+    })
+}
+
 /// An AI run's failure for the renderer: its code says which; the words are the panel's.
 fn ai_error(error: model_runtime::AiError) -> PublicError {
     use model_runtime::AiError;
@@ -2365,6 +2387,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         AiError::Memory => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
         AiError::Storage => "ai.error.storage",
+        AiError::SummaryTooLarge => "ai.summaryTooLarge",
         AiError::Cancelled | AiError::Failed => "ai.failed",
     };
     PublicError {
@@ -4858,7 +4881,8 @@ async fn vault_ai_result_save(
         .kept_ai_answer(request.kept_id, request.record_id)
         .ok_or(vault::VaultError::Invalid)?;
     let (input, content) = answer
-        .content(request.sources.as_deref())
+        .checked_content(request.sources.as_deref())
+        .map_err(summary_error)?
         .ok_or(vault::VaultError::Invalid)?;
     // Still checked as the reader's answers are: the caps, and the model that
     // last answered here.
@@ -6042,6 +6066,11 @@ mod tests {
             (AiError::Memory, "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
             (AiError::Storage, "aiStorage", "could not be read"),
+            (
+                AiError::SummaryTooLarge,
+                "aiSummaryTooLarge",
+                "complete summary is too large",
+            ),
             (AiError::Cancelled, "aiCancelled", "could not finish"),
             (AiError::Failed, "aiFailed", "could not finish"),
         ] {
@@ -8435,6 +8464,7 @@ mod native_localization_tests {
             VaultError::NotFound,
             VaultError::Invalid,
             VaultError::AiResultsFull,
+            VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,
