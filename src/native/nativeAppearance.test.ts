@@ -1,11 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { APPEARANCE_STORAGE_KEY, startAppearance } from "../appearance";
 import { startNativeAppearance } from "./nativeAppearance";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: vi.fn() }));
+const runtimeInfo = vi.fn<() => Promise<{ platform: string }>>();
+const ipc = vi.fn<Parameters<typeof mockIPC>[0]>();
 const setTheme = vi.fn<(theme: "light" | "dark" | null) => Promise<void>>();
 const cleanups: (() => void)[] = [];
 const tick = () => vi.advanceTimersByTimeAsync(0);
@@ -14,17 +13,31 @@ describe("native appearance", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.stubGlobal("__TAURI_INTERNALS__", {});
+    vi.stubGlobal("__TAURI_EVENT_PLUGIN_INTERNALS__", {});
     window.localStorage.removeItem(APPEARANCE_STORAGE_KEY);
-    vi.mocked(invoke).mockReset().mockResolvedValue({ platform: "windows" });
+    runtimeInfo.mockReset().mockResolvedValue({ platform: "windows" });
     setTheme.mockReset().mockResolvedValue(undefined);
-    vi.mocked(getCurrentWindow)
-      .mockReset()
-      .mockReturnValue({ setTheme } as unknown as ReturnType<
-        typeof getCurrentWindow
-      >);
+    ipc.mockReset().mockImplementation((command, args) => {
+      if (command === "runtime_info") return runtimeInfo();
+      if (command === "plugin:window|set_theme") {
+        const payload = args as {
+          label: string;
+          value: "light" | "dark" | null;
+        };
+        if (payload.label !== "main")
+          throw new Error("Unexpected window label");
+        return setTheme(payload.value);
+      }
+      throw new Error(`Unexpected Tauri command: ${command}`);
+    });
+    // Exercise the installed Window/core implementation through its supported
+    // transport mock, rather than requiring ESM exports to be Vitest spies.
+    mockWindows("main");
+    mockIPC(ipc);
   });
   afterEach(() => {
     cleanups.splice(0).forEach((stop) => stop());
+    clearMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     window.localStorage.removeItem(APPEARANCE_STORAGE_KEY);
@@ -34,7 +47,7 @@ describe("native appearance", () => {
   it.each(["windows", "macos", "linux"])(
     "sets desktop %s to System, Light, Dark and high contrast",
     async (platform) => {
-      vi.mocked(invoke).mockResolvedValue({ platform });
+      runtimeInfo.mockResolvedValue({ platform });
       const appearance = startAppearance();
       cleanups.push(startNativeAppearance(appearance));
       await tick();
@@ -53,14 +66,17 @@ describe("native appearance", () => {
   );
 
   it.each(["ios", "android"])(
-    "does not call the unsupported window API on %s",
+    "sends no native window-theme command on %s",
     async (platform) => {
-      vi.mocked(invoke).mockResolvedValue({ platform });
+      runtimeInfo.mockResolvedValue({ platform });
       const appearance = startAppearance();
       cleanups.push(startNativeAppearance(appearance));
       appearance.set("dark");
       await tick();
-      expect(getCurrentWindow).not.toHaveBeenCalled();
+      expect(setTheme).not.toHaveBeenCalled();
+      expect(ipc.mock.calls.map(([command]) => command)).toEqual([
+        "runtime_info",
+      ]);
       expect(appearance.snapshot().nativeError).toBe("");
       expect(vi.getTimerCount()).toBe(0);
     },
@@ -69,12 +85,12 @@ describe("native appearance", () => {
   it("does no native work in the browser", () => {
     vi.unstubAllGlobals();
     cleanups.push(startNativeAppearance(startAppearance()));
-    expect(invoke).not.toHaveBeenCalled();
+    expect(ipc).not.toHaveBeenCalled();
   });
 
   it("keeps the latest choice when platform detection answers after its deadline", async () => {
     let finish!: (value: { platform: string }) => void;
-    vi.mocked(invoke).mockReturnValue(
+    runtimeInfo.mockReturnValue(
       new Promise((resolve) => {
         finish = resolve;
       }),
@@ -139,7 +155,7 @@ describe("native appearance", () => {
 
   it("ignores platform detection after cleanup and clears its deadline", async () => {
     let finish!: (value: { platform: string }) => void;
-    vi.mocked(invoke).mockReturnValue(
+    runtimeInfo.mockReturnValue(
       new Promise((resolve) => {
         finish = resolve;
       }),
