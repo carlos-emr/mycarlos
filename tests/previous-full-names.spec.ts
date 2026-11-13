@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fakeVaultWith, myRecords, fakeCalls } from "./support/vaultFake";
+import { fakeVaultWith, fakeCalls } from "./support/vaultFake";
 import { translate } from "./support/fluent";
 import { expectOnlyFakedCommands } from "./support/a11y";
 
@@ -15,7 +15,9 @@ test("previous full-name suggestion is removable with keyboard at narrow large t
     ],
   });
   await page.goto("/");
-  await expect(myRecords(page)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "FAKE Patient", level: 1, exact: true }),
+  ).toBeVisible();
   await page.addStyleTag({ content: ":root{font-size:200% !important}" });
   await page
     .getByRole("button", { name: "Security", exact: true })
