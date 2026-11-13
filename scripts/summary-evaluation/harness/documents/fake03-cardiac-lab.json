@@ -1,0 +1,162 @@
+{
+ "id": "fake03-cardiac-lab",
+ "title": "FAKE-03 lab report (potassium, lipids, NT-proBNP)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "myCarlos FAKE demo texts, 5 Nov 2026 (FAKE-03)",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE DEMONSTRATION ONLY\n\nCommunity Test Laboratories (FAKE)\n\n300 Specimen Street, Testville ON · Tel 555-0199\n\nAccession: FAKE-LAB-0042\n\n  Patient  Rowan Testwood  DOB  21 June 1958  Sex  M\n\n  Collected  26 October 2026, 08:10  Reported  26 October 2026, 15:42\n\n  Ordered by  Dr. Ian Sampleton (copy to Dr. Henrietta Fakeham)\n\nResults\n\n  Test  Result  Flag  Reference range  Units\n\n  Hemoglobin  131  130–170  g/L\n\n  White cells  7.2  4.0–11.0  ×10⁹/L\n\n  Platelets  248  150–400  ×10⁹/L\n\n  Sodium  139  135–145  mmol/L\n\n  Potassium  5.3  H  3.5–5.0  mmol/L\n\n  Creatinine  109  60–110  µmol/L\n\n  eGFR  60  >60  mL/min/1.73 m²\n\n  Glucose, fasting  8.4  H  3.6–6.0  mmol/L\n\n  Hemoglobin A1c  8.1  H  <6.0 (target for diabetes ≤7.0)  %\n\n  LDL cholesterol  2.2  H  <1.8 after a heart attack  mmol/L\n\n  HDL cholesterol  0.9  L  >1.0  mmol/L\n\n  Triglycerides  2.1  H  <1.7  mmol/L\n\n  NT-proBNP  1,180  H  <300  ng/L\n\n  ALT  28  <50  U/L\n\nComments\n\nPotassium is mildly high (5.3 mmol/L). The sample was not hemolyzed. Suggest repeating it within 1 week and reviewing ramipril and diet.\n\nThe A1c of 8.1% is above the usual target. The LDL of 2.2 mmol/L is above the target after a heart attack.\n\nThe NT-proBNP is high, which fits the heart failure diagnosed in October 2026. Compare it with future results.\n\nVerified by: Dr. Quentin Labwell, Medical Biochemist (FAKE) · This report is synthetic and was generated for software testing.\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "potassium_high",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Potassium is mildly high (5.3 mmol/L).",
+   "approved_statements": [
+    "Potassium is mildly high at 5.3 mmol/L."
+   ],
+   "anchors": [
+    "potassium"
+   ],
+   "match": [
+    [
+     "potassium"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "potassium\\D{0,30}(\\d+(?:[.,]\\d+)?)\\s*(mmol/L)",
+    "value": "5.3",
+    "unit": "mmol/L"
+   }
+  },
+  {
+   "id": "repeat_potassium_1_week",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Suggest repeating it within 1 week and reviewing ramipril and diet.",
+   "approved_statements": [
+    "Repeat the potassium within 1 week and review ramipril and diet."
+   ],
+   "anchors": [
+    "1 week",
+    "again",
+    "one week",
+    "recheck",
+    "repeat",
+    "week"
+   ],
+   "match": [
+    [
+     "repeat",
+     "again",
+     "recheck"
+    ],
+    [
+     "1 week",
+     "one week",
+     "week"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "a1c_above_target",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "The A1c of 8.1% is above the usual target.",
+   "approved_statements": [
+    "The A1c of 8.1% is above the usual target."
+   ],
+   "anchors": [
+    "8.1",
+    "a1c"
+   ],
+   "match": [
+    [
+     "a1c",
+     "8.1"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ldl_above_target",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "The LDL of 2.2 mmol/L is above the target after a heart attack.",
+   "approved_statements": [
+    "The LDL of 2.2 mmol/L is above the target after a heart attack."
+   ],
+   "anchors": [
+    "cholesterol",
+    "ldl"
+   ],
+   "match": [
+    [
+     "ldl",
+     "cholesterol"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ntprobnp_high",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "The NT-proBNP is high, which fits the heart failure diagnosed in October 2026.",
+   "approved_statements": [
+    "The NT-proBNP is high, which fits his heart failure."
+   ],
+   "anchors": [
+    "bnp",
+    "probnp"
+   ],
+   "match": [
+    [
+     "probnp",
+     "bnp"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "kidney_ok",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Creatinine  109  60–110  µmol/L",
+   "approved_statements": [
+    "Creatinine is within the reference range."
+   ],
+   "anchors": [
+    "creatinine",
+    "egfr",
+    "kidney"
+   ],
+   "match": [
+    [
+     "creatinine",
+     "kidney",
+     "egfr"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "calling creatinine or eGFR abnormal",
+  "diet or medicine advice beyond the comment",
+  "wrong numbers"
+ ],
+ "notes": ""
+}

@@ -562,6 +562,8 @@ pub(crate) fn view_in_helper(
         let Ok(executable) = std::env::current_exe() else {
             return Outcome::Failed;
         };
+        #[cfg(all(test, target_os = "linux"))]
+        let executable = extraction_testing::helper_for(ticket).unwrap_or(executable);
         let command = pdf_unlock::helper_command(&executable);
         let mut request = Zeroizing::new(Vec::with_capacity(pdf.len() + password.len() + 28));
         if write_view_request(&mut *request, pdf, password, index, width).is_err() {
@@ -589,6 +591,81 @@ pub(crate) fn view_in_helper(
     {
         let _ = (pdf, password, index, width, ticket);
         Outcome::Unavailable
+    }
+}
+
+/// A manual acceptance test may select a real helper for its own text-read ID only.
+/// Other reads, page views and every non-test build retain current_exe unchanged.
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) mod extraction_testing {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::Arc;
+
+    struct Selection {
+        path: PathBuf,
+        calls: Arc<AtomicUsize>,
+    }
+
+    static HELPERS: Mutex<BTreeMap<Uuid, Selection>> = Mutex::new(BTreeMap::new());
+
+    pub(crate) struct Guard {
+        reader: Uuid,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl Guard {
+        pub(crate) fn selections(&self) -> usize {
+            self.calls.load(Ordering::Relaxed)
+        }
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            HELPERS
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&self.reader);
+        }
+    }
+
+    pub(crate) fn bind(reader: Uuid, path: PathBuf) -> Guard {
+        let mut helpers = HELPERS.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(
+            !helpers.contains_key(&reader),
+            "duplicate acceptance read ID"
+        );
+        let calls = Arc::new(AtomicUsize::new(0));
+        helpers.insert(
+            reader,
+            Selection {
+                path,
+                calls: Arc::clone(&calls),
+            },
+        );
+        Guard { reader, calls }
+    }
+
+    pub(super) fn helper_for(ticket: &ViewTicket) -> Option<PathBuf> {
+        if ticket.1 != TicketKind::Text {
+            return None;
+        }
+        let reader = {
+            let current = TEXT_READS
+                .current
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            match *current {
+                Some((reader, generation)) if generation == ticket.0 => reader,
+                _ => return None,
+            }
+        };
+        let helpers = HELPERS.lock().unwrap_or_else(PoisonError::into_inner);
+        let selected = helpers.get(&reader)?;
+        selected.calls.fetch_add(1, Ordering::Relaxed);
+        Some(selected.path.clone())
     }
 }
 

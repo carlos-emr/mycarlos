@@ -1,0 +1,400 @@
+{
+ "id": "bakeoff-long-discharge-summary",
+ "title": "Bake-off: long discharge summary (heart failure)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "29 Oct 2026 model bake-off FAKE set",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nSampletown General Hospital - Department of Medicine\nDISCHARGE SUMMARY\n\nPatient: TESTPERSON, Robin (FAKE)        MRN: H00071234\nDate of birth: 1949-11-03                Health card: 0000-000-000-ZZ\nAdmitted: 2026-10-14                     Discharged: 2026-10-20\nAttending physician: Dr. Quinn Notreal (FAKE), General Internal Medicine\nFamily physician: Dr. Casey Placeholder (FAKE), Maplewood Test Family Health Team\n\nReason for admission\nMr. Testperson, a 76-year-old man, came to the emergency department with three days of\nincreasing shortness of breath, swelling of both ankles, and needing three pillows to sleep.\nHe gained about 4 kg in the week before admission. He had no chest pain and no fever.\n\nBackground\n- Heart failure with reduced ejection fraction, diagnosed in 2023.\n- High blood pressure for about 20 years.\n- Type 2 diabetes, managed with metformin.\n- Atrial fibrillation, on apixaban.\n- Osteoarthritis of both knees. He had been taking ibuprofen 400 mg up to three times a day\n  for knee pain for the past month, bought without a prescription.\n\nMedications before admission\n- Furosemide 20 mg by mouth once daily\n- Metoprolol 25 mg by mouth twice daily\n- Ramipril 5 mg by mouth once daily\n- Apixaban 5 mg by mouth twice daily\n- Metformin 500 mg by mouth twice daily\n- Ibuprofen 400 mg by mouth up to three times daily (over the counter)\n\nFindings on admission\nBlood pressure 156/92, heart rate 98 and irregular, oxygen saturation 89% on room air.\nCrackles at both lung bases. Swelling of both legs up to the knees.\nChest X-ray: fluid in both lungs and small fluid collections around both lungs (bilateral\npleural effusions). Heart size enlarged, similar to the X-ray of 2025.\nECG: atrial fibrillation, rate 96. No new changes compared with the ECG of 2025.\nTroponin: normal on two tests six hours apart. There was no heart attack.\nNT-proBNP: 4,850 ng/L (on his last visit in May 2026 it was 1,210 ng/L).\nCreatinine 138 umol/L on admission (his usual is about 105 umol/L); eGFR 43 mL/min/1.73m2.\nPotassium 4.9 mmol/L. Sodium 134 mmol/L. Hemoglobin 128 g/L.\n\nHospital course\n1. Heart failure flare. He was treated with furosemide 40 mg IV twice daily for three days.\n   His breathing improved and he lost 5.2 kg of fluid. Oxygen was stopped on day 3.\n   An echocardiogram on 2026-10-16 showed an ejection fraction of 35%, unchanged from 2024.\n   The valves looked normal apart from mild leaking of the mitral valve.\n   The most likely trigger was the regular ibuprofen use, which can make the body hold on to\n   salt and water and can strain the kidneys.\n2. Kidney function. Creatinine rose to a high of 151 umol/L on day 2, then improved to\n   112 umol/L at discharge (eGFR 54). Metformin was held while in hospital and restarted at\n   discharge at the same dose.\n3. Atrial fibrillation. Heart rate was well controlled on metoprolol once the fluid came off.\n   Apixaban was continued with no change.\n4. Incidental finding. A CT scan of the chest on 2026-10-17, done to look at the fluid,\n   showed a 4 mm nodule in the left lower lobe. The radiologist reported no evidence of\n   malignancy and said no follow-up scan is needed for a nodule of this size in his situation.\n5. Diabetes. Blood sugars ranged from 6.8 to 11.2 mmol/L. HbA1c was 7.4%.\n\nChanges to medications at discharge\n- Furosemide INCREASED from 20 mg to 40 mg by mouth once daily.\n- Ibuprofen STOPPED. Do not take ibuprofen, naproxen or other anti-inflammatory pain\n  medicines. Acetaminophen up to 1 g three times daily may be used for knee pain instead.\n- Continue metoprolol 25 mg twice daily, ramipril 5 mg once daily, apixaban 5 mg twice\n  daily and metformin 500 mg twice daily with no change.\n\nDischarge weight: 81.4 kg.\n\nInstructions for the patient\n- Weigh yourself every morning. Call your family doctor if your weight goes up by more than\n  2 kg in 3 days, or if your breathing or ankle swelling gets worse.\n- Limit salt to less than 2 g of sodium a day. Limit fluids to about 1.5 to 2 litres a day.\n- Blood test (creatinine, potassium) in 1 week, ordered at discharge.\n\nFollow-up\n- Family doctor, Dr. Placeholder, within 1 week.\n- Heart Function Clinic, Sampletown General Hospital, in 2 weeks (2026-11-03 at 10:30).\n- Cardiology will consider adding a newer heart failure medicine at the clinic visit.\n\nDiagnoses at discharge\n1. Acute decompensated heart failure with reduced ejection fraction (EF 35%), most likely\n   triggered by non-steroidal anti-inflammatory drug (NSAID) use.\n2. Acute kidney injury on chronic kidney disease, improving.\n3. Atrial fibrillation, rate controlled.\n4. Incidental 4 mm left lower lobe lung nodule, no follow-up required.\n\nElectronically signed by Dr. Quinn Notreal (FAKE), MD, 2026-10-20 14:05\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "hf_flare",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Heart failure flare.",
+   "approved_statements": [
+    "He was admitted with a heart failure flare."
+   ],
+   "anchors": [
+    "heart failure"
+   ],
+   "match": [
+    [
+     "heart failure"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ibuprofen_trigger",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "The most likely trigger was the regular ibuprofen use",
+   "approved_statements": [
+    "The most likely trigger was regular ibuprofen use."
+   ],
+   "anchors": [
+    "anti-inflammatory",
+    "ibuprofen",
+    "nsaid"
+   ],
+   "match": [
+    [
+     "ibuprofen",
+     "anti-inflammatory",
+     "nsaid"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "no_heart_attack",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "There was no heart attack.",
+   "approved_statements": [
+    "There was no heart attack."
+   ],
+   "anchors": [
+    "heart attack",
+    "troponin"
+   ],
+   "match": [
+    [
+     "heart attack",
+     "troponin"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "iv_furosemide_fluid",
+   "category": "finding",
+   "required": false,
+   "critical": false,
+   "source_evidence": "His breathing improved and he lost 5.2 kg of fluid.",
+   "approved_statements": [
+    "He was given IV furosemide and lost 5.2 kg of fluid."
+   ],
+   "anchors": [
+    "5.2",
+    "fluid"
+   ],
+   "match": [
+    [
+     "fluid",
+     "5.2"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ef_35_unchanged",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "An echocardiogram on 2026-10-16 showed an ejection fraction of 35%, unchanged from 2024.",
+   "approved_statements": [
+    "The ejection fraction was 35%, unchanged from 2024."
+   ],
+   "anchors": [
+    "35",
+    "ef",
+    "ejection",
+    "pump"
+   ],
+   "match": [
+    [
+     "35"
+    ],
+    [
+     "ejection",
+     "ef",
+     "pump"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "kidney_improving",
+   "category": "finding",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Creatinine rose to a high of 151 umol/L on day 2, then improved to\n   112 umol/L at discharge (eGFR 54).",
+   "approved_statements": [
+    "Kidney function worsened, then improved by discharge."
+   ],
+   "anchors": [
+    "creatinine",
+    "kidney"
+   ],
+   "match": [
+    [
+     "kidney",
+     "creatinine"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "furosemide_40",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Furosemide INCREASED from 20 mg to 40 mg by mouth once daily.",
+   "approved_statements": [
+    "Furosemide was increased from 20 mg to 40 mg once daily."
+   ],
+   "anchors": [
+    "furosemide"
+   ],
+   "match": [
+    [
+     "furosemide"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "to\\s+(\\d+(?:[.,]\\d+)?)\\s*(mg)\\s+by mouth once daily",
+    "value": "40",
+    "unit": "mg"
+   }
+  },
+  {
+   "id": "ibuprofen_stopped",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Ibuprofen STOPPED. Do not take ibuprofen, naproxen or other anti-inflammatory pain\n  medicines.",
+   "approved_statements": [
+    "Ibuprofen is stopped; do not take ibuprofen, naproxen or other anti-inflammatory pain medicines."
+   ],
+   "anchors": [
+    "anti-inflammatory",
+    "ibuprofen",
+    "naproxen",
+    "nsaid"
+   ],
+   "match": [
+    [
+     "ibuprofen",
+     "anti-inflammatory",
+     "nsaid",
+     "naproxen"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "acetaminophen_allowed",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Acetaminophen up to 1 g three times daily may be used for knee pain instead.",
+   "approved_statements": [
+    "Acetaminophen up to 1 g three times daily may be used for knee pain."
+   ],
+   "anchors": [
+    "acetaminophen",
+    "paracetamol",
+    "tylenol"
+   ],
+   "match": [
+    [
+     "acetaminophen",
+     "paracetamol",
+     "tylenol"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "others_unchanged",
+   "category": "medication",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Continue metoprolol 25 mg twice daily, ramipril 5 mg once daily, apixaban 5 mg twice\n  daily and metformin 500 mg twice daily with no change.",
+   "approved_statements": [
+    "Metoprolol, ramipril, apixaban and metformin continue with no change."
+   ],
+   "anchors": [
+    "apixaban",
+    "metformin",
+    "metoprolol",
+    "ramipril"
+   ],
+   "match": [
+    [
+     "metoprolol",
+     "ramipril",
+     "apixaban",
+     "metformin"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "nodule_no_follow_up",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "The radiologist reported no evidence of\n   malignancy and said no follow-up scan is needed for a nodule of this size in his situation.",
+   "approved_statements": [
+    "A 4 mm lung nodule showed no sign of cancer and needs no follow-up scan."
+   ],
+   "anchors": [
+    "nodule"
+   ],
+   "match": [
+    [
+     "nodule"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "daily_weight",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Weigh yourself every morning. Call your family doctor if your weight goes up by more than\n  2 kg in 3 days",
+   "approved_statements": [
+    "Weigh yourself every morning and call your family doctor if your weight goes up more than 2 kg in 3 days."
+   ],
+   "anchors": [
+    "2 kg",
+    "weigh",
+    "weight"
+   ],
+   "match": [
+    [
+     "weigh",
+     "weight"
+    ],
+    [
+     "2 kg"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "salt_fluid_limits",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Limit salt to less than 2 g of sodium a day. Limit fluids to about 1.5 to 2 litres a day.",
+   "approved_statements": [
+    "Limit salt to under 2 g of sodium a day and fluids to about 1.5 to 2 litres a day."
+   ],
+   "anchors": [
+    "fluid",
+    "salt",
+    "sodium"
+   ],
+   "match": [
+    [
+     "salt",
+     "sodium",
+     "fluid"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "blood_test_1_week",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Blood test (creatinine, potassium) in 1 week, ordered at discharge.",
+   "approved_statements": [
+    "Have a blood test in 1 week."
+   ],
+   "anchors": [
+    "1 week",
+    "blood",
+    "one week"
+   ],
+   "match": [
+    [
+     "blood"
+    ],
+    [
+     "1 week",
+     "one week"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "family_doctor_1_week",
+   "category": "follow_up",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Family doctor, Dr. Placeholder, within 1 week.",
+   "approved_statements": [
+    "See the family doctor within 1 week."
+   ],
+   "anchors": [
+    "1 week",
+    "family doctor",
+    "one week"
+   ],
+   "match": [
+    [
+     "family doctor"
+    ],
+    [
+     "1 week",
+     "one week"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "heart_function_clinic",
+   "category": "follow_up",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Heart Function Clinic, Sampletown General Hospital, in 2 weeks (2026-11-03 at 10:30).",
+   "approved_statements": [
+    "Go to the Heart Function Clinic in 2 weeks, on 3 November 2026 at 10:30."
+   ],
+   "anchors": [
+    "2 weeks",
+    "2026-11-03",
+    "3 november",
+    "clinic",
+    "heart function",
+    "november 3"
+   ],
+   "match": [
+    [
+     "heart function",
+     "clinic"
+    ],
+    [
+     "2 weeks",
+     "2026-11-03",
+     "3 november",
+     "november 3"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying he had a heart attack",
+  "saying the nodule may be cancer or needs follow-up",
+  "saying metoprolol/ramipril/apixaban/metformin changed",
+  "wrong furosemide dose or direction",
+  "advising the patient to take ibuprofen"
+ ],
+ "notes": ""
+}

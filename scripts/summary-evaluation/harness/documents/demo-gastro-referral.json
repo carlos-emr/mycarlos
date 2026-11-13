@@ -1,0 +1,245 @@
+{
+ "id": "demo-gastro-referral",
+ "title": "FAKE referral letter (gastroenterology)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "myCarlos demo documents, 6 Nov 2026 (FAKE-6002-01)",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE DEMONSTRATION ONLY\nFAKE-send-delete Family Practice (FAKE)\n100 Example Road, Suite 1, Testville ON  Z9Z 9Z9 · Tel 555-0100 · Fax 555-0101\nOctober 16, 2026\n\nDr. Ian Sampleton\nGastroenterology Clinic, Lakeview Test General Hospital (FAKE)\n\nRe: FAKE-NewWindows FAKE-WINDOWS-FIRST-DEVICE · DOB: 1 January 1990 · Health card: 9999996003 (FAKE)\n\nDear Dr. Sampleton,\n\nThank you for seeing FAKE-NewWindows, a 36-year-old software tester, for assessment of iron deficiency anemia with a positive celiac screen. Over the past four months they have had tiredness, bloating after meals and loose stools two to three times a day. They have lost 4 kg without trying. They have had no blood in the stool, no black stools, no vomiting and no night sweats.\n\nBackground\nIron deficiency first found in 2024, treated with oral iron; it has come back\nMigraine without aura, about two a month\nMild asthma in childhood, no attacks as an adult\nNo operations\nMother has hypothyroidism; a cousin has celiac disease\nCurrent medications\nFerrous fumarate 300 mg every other day, since August 2026\nSumatriptan 50 mg as needed for migraine\nSalbutamol inhaler as needed (rarely used)\n\nAllergies: none known.\n\nExamination and investigations\n\nBP 112/70, heart rate 84 and regular. Weight 58 kg, down from 62 kg in June 2026; BMI 20.1. Pale conjunctivae. Abdomen soft and mildly bloated, not tender, no masses.\n\nBloods (9 October 2026): hemoglobin 104 g/L with an MCV of 74 fL, ferritin 6 µg/L, tissue transglutaminase IgA 86 U/mL (normal below 15) with a normal total IgA, TSH 2.1 mU/L, vitamin B12 210 pmol/L (low normal).\n\nQuestions\nDoes FAKE-NewWindows need a gastroscopy with duodenal biopsies to confirm celiac disease?\nShould they keep eating gluten until the biopsy, and for how long?\nWould you recommend intravenous iron, since oral iron has not corrected the anemia?\n\nI have asked them to keep eating gluten for now and not to start a gluten-free diet before your assessment. I would be grateful if they could be seen within the next 4 to 6 weeks.\n\nSincerely,\n\nDr. Henrietta Fakeham, MD (FAKE)\nFamily Physician, FAKE-send-delete Family Practice\n\ncc: FAKE-NewWindows FAKE-WINDOWS-FIRST-DEVICE (patient copy)\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "symptoms",
+   "category": "finding",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Over the past four months they have had tiredness, bloating after meals and loose stools two to three times a day.",
+   "approved_statements": [
+    "For four months they have had tiredness, bloating after meals and loose stools."
+   ],
+   "anchors": [
+    "bloat",
+    "diarrh",
+    "stool",
+    "tired"
+   ],
+   "match": [
+    [
+     "tired",
+     "bloat",
+     "stool",
+     "diarrh"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "weight_loss",
+   "category": "finding",
+   "required": true,
+   "critical": false,
+   "source_evidence": "They have lost 4 kg without trying.",
+   "approved_statements": [
+    "They lost 4 kg without trying."
+   ],
+   "anchors": [
+    "4 kg",
+    "4kg"
+   ],
+   "match": [
+    [
+     "4 kg",
+     "4kg"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "iron_deficiency_returned",
+   "category": "history",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Iron deficiency first found in 2024, treated with oral iron; it has come back",
+   "approved_statements": [
+    "Iron deficiency came back despite oral iron."
+   ],
+   "anchors": [
+    "iron"
+   ],
+   "match": [
+    [
+     "iron"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "celiac_screen_positive",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "tissue transglutaminase IgA 86 U/mL (normal below 15) with a normal total IgA",
+   "approved_statements": [
+    "The celiac blood test (tissue transglutaminase IgA) was 86 U/mL, high, with a normal total IgA."
+   ],
+   "anchors": [
+    "86",
+    "celiac",
+    "coeliac",
+    "transglutaminase",
+    "ttg"
+   ],
+   "match": [
+    [
+     "celiac",
+     "coeliac",
+     "transglutaminase",
+     "ttg",
+     "86"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "(?:transglutaminase|tTG)[^0-9]{0,40}(\\d+(?:[.,]\\d+)?)\\s*(U/mL)",
+    "value": "86",
+    "unit": "U/mL"
+   }
+  },
+  {
+   "id": "anemia_values",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "hemoglobin 104 g/L with an MCV of 74 fL, ferritin 6 µg/L",
+   "approved_statements": [
+    "Hemoglobin was 104 g/L and ferritin 6 µg/L."
+   ],
+   "anchors": [
+    "104",
+    "ferritin",
+    "haemoglobin",
+    "hemoglobin"
+   ],
+   "match": [
+    [
+     "104",
+     "ferritin",
+     "hemoglobin",
+     "haemoglobin"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "question_gastroscopy",
+   "category": "question",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Does FAKE-NewWindows need a gastroscopy with duodenal biopsies to confirm celiac disease?",
+   "approved_statements": [
+    "The doctor asks whether a gastroscopy with biopsies is needed to confirm celiac disease."
+   ],
+   "anchors": [
+    "biops",
+    "endoscop",
+    "gastroscop",
+    "scope"
+   ],
+   "match": [
+    [
+     "gastroscop",
+     "biops",
+     "endoscop",
+     "scope"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "question_iv_iron",
+   "category": "question",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Would you recommend intravenous iron, since oral iron has not corrected the anemia?",
+   "approved_statements": [
+    "The doctor asks about intravenous iron."
+   ],
+   "anchors": [
+    "infusion",
+    "intravenous",
+    "iv iron"
+   ],
+   "match": [
+    [
+     "intravenous",
+     "iv iron",
+     "infusion"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "keep_eating_gluten",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "I have asked them to keep eating gluten for now and not to start a gluten-free diet before your assessment.",
+   "approved_statements": [
+    "Keep eating gluten and do not start a gluten-free diet before the assessment."
+   ],
+   "anchors": [
+    "gluten"
+   ],
+   "match": [
+    [
+     "gluten"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "seen_within_4_to_6_weeks",
+   "category": "timing",
+   "required": true,
+   "critical": true,
+   "source_evidence": "I would be grateful if they could be seen within the next 4 to 6 weeks.",
+   "approved_statements": [
+    "They should be seen within 4 to 6 weeks."
+   ],
+   "anchors": [
+    "4",
+    "6",
+    "semaine",
+    "semana",
+    "tydzie",
+    "tygod",
+    "week"
+   ],
+   "match": [
+    [
+     "4"
+    ],
+    [
+     "6"
+    ],
+    [
+     "week",
+     "semaine",
+     "tydzie",
+     "tygod",
+     "semana"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying celiac disease is confirmed (the letter asks whether a biopsy is needed)",
+  "advising a gluten-free diet now (the letter says to keep eating gluten)",
+  "wrong numbers"
+ ],
+ "notes": ""
+}

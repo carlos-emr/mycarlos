@@ -1,0 +1,207 @@
+{
+ "id": "fake01-cardiology-referral",
+ "title": "FAKE-01 referral letter (cardiology)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "myCarlos FAKE demo texts, 5 Nov 2026 (FAKE-01)",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE DEMONSTRATION ONLY\n\nMaple Test Family Health Team (FAKE)\n\n100 Example Road, Suite 1, Testville ON  Z9Z 9Z9 · Tel 555-0100 · Fax 555-0101\n\nOctober 2, 2026\n\nDr. Ian Sampleton\nCardiology Clinic, Lakeview Test General Hospital (FAKE)\n\nRe: Rowan Testwood · DOB: 21 June 1958 · Health card: TEST-0000-0000 (FAKE)\n\nDear Dr. Sampleton,\n\nThank you for seeing Mr. Testwood, a 68-year-old retired electrician, for assessment of exertional chest pressure. Over the past six weeks he has had central chest tightness when walking uphill or carrying groceries. It lasts 3 to 5 minutes and settles with rest. Twice it came with shortness of breath. He has had no pain at rest, no fainting and no palpitations.\n\nBackground\n\n- Type 2 diabetes for 12 years (last HbA1c 7.9% in June 2026)\n\n- Hypertension, on treatment\n\n- Dyslipidemia\n\n- Former smoker: 30 pack-years, quit in 2015\n\n- Father had a myocardial infarction at 61\n\nCurrent medications\n\n- Metformin 1000 mg twice daily\n\n- Glyburide 5 mg twice daily\n\n- Ramipril 5 mg daily\n\n- Atorvastatin 20 mg daily\n\n- Acetylsalicylic acid 81 mg daily, started on 28 September 2026\n\nAllergies: penicillin (rash).\n\nExamination and investigations\n\nBP 148/88, heart rate 78 and regular, BMI 31. Heart sounds normal, no murmur. Chest clear. No ankle swelling.\n\nResting ECG (30 September 2026): sinus rhythm, 0.5 mm ST depression in V4 to V6. There is no earlier ECG to compare.\n\nBloods (25 September 2026): creatinine 98 µmol/L (eGFR 68), LDL cholesterol 3.1 mmol/L, hemoglobin 138 g/L.\n\nQuestions\n\n1. Is this stable angina, and does he need an exercise test or a coronary angiogram?\n\n2. Should his statin dose be increased, and what LDL target do you suggest?\n\n3. Would you recommend an SGLT2 inhibitor instead of glyburide, given his heart risk?\n\nI have given him a nitroglycerin spray and asked him to call 911 if the pain lasts more than 10 minutes or comes at rest. I would be grateful if he could be seen within the next 2 to 4 weeks.\n\nSincerely,\n\nDr. Henrietta Fakeham, MD (FAKE)\nFamily Physician, Maple Test Family Health Team\n\ncc: Rowan Testwood (patient copy)\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "exertional_chest_tightness",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Over the past six weeks he has had central chest tightness when walking uphill or carrying groceries.",
+   "approved_statements": [
+    "For six weeks he has had chest tightness when walking uphill or carrying groceries."
+   ],
+   "anchors": [
+    "chest"
+   ],
+   "match": [
+    [
+     "chest"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "settles_with_rest",
+   "category": "finding",
+   "required": false,
+   "critical": false,
+   "source_evidence": "It lasts 3 to 5 minutes and settles with rest.",
+   "approved_statements": [
+    "It lasts 3 to 5 minutes and settles with rest."
+   ],
+   "anchors": [
+    "rest"
+   ],
+   "match": [
+    [
+     "rest"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ecg_st_depression",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Resting ECG (30 September 2026): sinus rhythm, 0.5 mm ST depression in V4 to V6.",
+   "approved_statements": [
+    "The resting ECG showed 0.5 mm ST depression in V4 to V6."
+   ],
+   "anchors": [
+    "depression",
+    "ecg",
+    "st"
+   ],
+   "match": [
+    [
+     "ecg"
+    ],
+    [
+     "st",
+     "depression"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "aspirin_started",
+   "category": "medication",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Acetylsalicylic acid 81 mg daily, started on 28 September 2026",
+   "approved_statements": [
+    "He started acetylsalicylic acid 81 mg daily on 28 September 2026."
+   ],
+   "anchors": [
+    "acetylsalicylic",
+    "asa",
+    "aspirin"
+   ],
+   "match": [
+    [
+     "acetylsalicylic",
+     "aspirin",
+     "asa"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "question_tests",
+   "category": "question",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Is this stable angina, and does he need an exercise test or a coronary angiogram?",
+   "approved_statements": [
+    "The doctor asks whether this is stable angina and whether he needs an exercise test or an angiogram."
+   ],
+   "anchors": [
+    "angina",
+    "angiogram",
+    "exercise test",
+    "stress test"
+   ],
+   "match": [
+    [
+     "angina",
+     "exercise test",
+     "angiogram",
+     "stress test"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "call_911",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "I have given him a nitroglycerin spray and asked him to call 911 if the pain lasts more than 10 minutes or comes at rest.",
+   "approved_statements": [
+    "Call 911 if the pain lasts more than 10 minutes or comes at rest."
+   ],
+   "anchors": [
+    "911",
+    "emergency"
+   ],
+   "match": [
+    [
+     "911",
+     "emergency"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "seen_within_2_to_4_weeks",
+   "category": "timing",
+   "required": true,
+   "critical": true,
+   "source_evidence": "I would be grateful if he could be seen within the next 2 to 4 weeks.",
+   "approved_statements": [
+    "He should be seen within 2 to 4 weeks."
+   ],
+   "anchors": [
+    "2",
+    "4",
+    "semaine",
+    "semana",
+    "tydzie",
+    "tygod",
+    "week"
+   ],
+   "match": [
+    [
+     "2"
+    ],
+    [
+     "4"
+    ],
+    [
+     "week",
+     "semaine",
+     "tydzie",
+     "tygod",
+     "semana"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "penicillin_allergy",
+   "category": "history",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Allergies: penicillin (rash).",
+   "approved_statements": [
+    "He is allergic to penicillin (rash)."
+   ],
+   "anchors": [
+    "penicillin"
+   ],
+   "match": [
+    [
+     "penicillin"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying he had a heart attack",
+  "advising medicine changes (the letter asks questions)",
+  "wrong numbers"
+ ],
+ "notes": ""
+}

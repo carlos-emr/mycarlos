@@ -1,0 +1,125 @@
+{
+ "id": "bakeoff-referral-letter",
+ "title": "Bake-off: short referral letter (cardiology)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "29 Oct 2026 model bake-off FAKE set",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\n\nMaplewood Test Family Health Team\n123 Example Street, Unit 4\nSampletown, ON K9Z 9Z9\nTel: (613) 555-0142   Fax: 613-555-0143\nreferrals@example.com\n\nOctober 2, 2026\n\nDr. Blake Sample\nRiverside Test Cardiology Clinic\n45 Fictional Avenue\nTestville, ON X0X 0X0\n\nRe: Avery EXAMPLE\nDOB: 1961-04-17\nHealth card: 1234-567-890-AB\nAddress: 77 Placeholder Crescent, Sampletown, ON K9Z 1A1\nPhone: 613-555-0177\n\nDear Dr. Sample,\n\nThank you for seeing Mrs. Avery Example, a 65-year-old woman with exertional chest pain\nsince September 18, 2026. Her ECG on 2026-09-25 showed sinus rhythm with no acute changes.\nHer LDL was 3.9 mmol/L and her blood pressure 142/88. She takes ramipril 5 mg daily.\n\nPlease call me at 613-555-0142 ext. 21 if you need anything else, Blake. Avery's husband, Jordan\nExample, can be reached at (613) 555-0188.\n\nSincerely,\n\nDr. Casey Placeholder\nMaplewood Test Family Health Team\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "exertional_chest_pain",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "a 65-year-old woman with exertional chest pain\nsince September 18, 2026.",
+   "approved_statements": [
+    "She has had chest pain on exertion since September 18, 2026."
+   ],
+   "anchors": [
+    "chest"
+   ],
+   "match": [
+    [
+     "chest"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ecg_no_acute_changes",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Her ECG on 2026-09-25 showed sinus rhythm with no acute changes.",
+   "approved_statements": [
+    "Her ECG on 25 September 2026 showed sinus rhythm with no acute changes."
+   ],
+   "anchors": [
+    "ecg"
+   ],
+   "match": [
+    [
+     "ecg"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ldl",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Her LDL was 3.9 mmol/L",
+   "approved_statements": [
+    "Her LDL was 3.9 mmol/L."
+   ],
+   "anchors": [
+    "cholesterol",
+    "ldl"
+   ],
+   "match": [
+    [
+     "ldl",
+     "cholesterol"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "ldl\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mmol/L)",
+    "value": "3.9",
+    "unit": "mmol/L"
+   }
+  },
+  {
+   "id": "blood_pressure",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "her blood pressure 142/88",
+   "approved_statements": [
+    "Her blood pressure was 142/88."
+   ],
+   "anchors": [
+    "142/88",
+    "blood pressure"
+   ],
+   "match": [
+    [
+     "142/88",
+     "blood pressure"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ramipril",
+   "category": "medication",
+   "required": false,
+   "critical": false,
+   "source_evidence": "She takes ramipril 5 mg daily.",
+   "approved_statements": [
+    "She takes ramipril 5 mg daily."
+   ],
+   "anchors": [
+    "ramipril"
+   ],
+   "match": [
+    [
+     "ramipril"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying the ECG was abnormal or there was a heart attack",
+  "medication change advice",
+  "wrong numbers"
+ ],
+ "notes": ""
+}

@@ -1,0 +1,107 @@
+{
+ "id": "bakeoff-lab-report",
+ "title": "Bake-off: short lab report (potassium)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "29 Oct 2026 model bake-off FAKE set",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY\nFictional Valley Laboratories - Clinical Chemistry\n\nPatient: EXAMPLE, Avery          PHN: 9123 456 789\nDate of birth: 17-Apr-1961       Sex: F\nMRN: H00012345                   Accession #: LAB-26-0099812\nOrdering provider: Dr. Morgan Testcase\nCollected: 2026-10-08 07:40      Reported: 2026-10-09 15:12\n\nTest                 Result     Units      Reference\nHemoglobin           132        g/L        120-160\nPotassium            5.4        mmol/L     3.5-5.0     H\nCreatinine           88         umol/L     45-90\nTSH                  2.1        mU/L       0.32-4.0\n\nComment: Potassium mildly raised. Repeat in 2 weeks (on or after 2026-10-22).\nQuestions: call the lab at 1-800-555-0100 or email results@lab.example.org.\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "potassium_high",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Potassium            5.4        mmol/L     3.5-5.0     H",
+   "approved_statements": [
+    "Potassium is mildly high at 5.4 mmol/L."
+   ],
+   "anchors": [
+    "potassium"
+   ],
+   "match": [
+    [
+     "potassium"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "potassium\\D{0,30}(\\d+(?:[.,]\\d+)?)\\s*(mmol/L)",
+    "value": "5.4",
+    "unit": "mmol/L"
+   }
+  },
+  {
+   "id": "others_normal",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Hemoglobin           132        g/L        120-160",
+   "approved_statements": [
+    "Hemoglobin, creatinine and TSH are in the normal range."
+   ],
+   "anchors": [
+    "creatinine",
+    "haemoglobin",
+    "hemoglobin",
+    "normal",
+    "tsh"
+   ],
+   "match": [
+    [
+     "hemoglobin",
+     "haemoglobin",
+     "creatinine",
+     "tsh",
+     "normal"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "repeat_2_weeks",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Repeat in 2 weeks (on or after 2026-10-22).",
+   "approved_statements": [
+    "Repeat the potassium in 2 weeks, on or after 22 October 2026."
+   ],
+   "anchors": [
+    "2 weeks",
+    "2026-10-22",
+    "22 october",
+    "again",
+    "october 22",
+    "recheck",
+    "repeat",
+    "two weeks"
+   ],
+   "match": [
+    [
+     "repeat",
+     "again",
+     "recheck"
+    ],
+    [
+     "2 weeks",
+     "two weeks",
+     "2026-10-22",
+     "22 october",
+     "october 22"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "calling any other value abnormal",
+  "diet or medication advice for potassium",
+  "wrong numbers"
+ ],
+ "notes": ""
+}

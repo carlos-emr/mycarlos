@@ -1,0 +1,308 @@
+{
+ "id": "new-french-nephrology",
+ "title": "New: French nephrology consult letter",
+ "lang": "fr",
+ "synthetic": true,
+ "source": "written for the evaluation harness, 10 Nov 2026",
+ "pages": [
+  {
+   "index": 0,
+   "text": "DOCUMENT D'ESSAI SYNTHÉTIQUE — PATIENTE FICTIVE — POUR LES ESSAIS DU LOGICIEL SEULEMENT\nClinique de néphrologie Test-Laurier (FICTIVE)\n250, boulevard Fictif, Testville (Québec)  Z9Z 9Z9 · Tél. : 514 555-0180\n\nLe 5 novembre 2026\n\nDocteur Marc FAKE-Gagnon (FICTIF)\nGroupe de médecine de famille Test-du-Parc (FICTIF)\n\nObjet : Mme Hélène FAKE-Bouchard · Date de naissance : 12 août 1956 · RAMQ : FAKE 5608 1299\n\nCher collègue,\n\nMerci de m'avoir adressé Mme FAKE-Bouchard, 70 ans, pour une baisse de la fonction rénale découverte lors d'un bilan de routine. Je l'ai vue en consultation aujourd'hui.\n\nAntécédents\nHypertension artérielle depuis 15 ans. Diabète de type 2 depuis 2014. Arthrose des genoux, pour laquelle elle prend de l'ibuprofène presque tous les jours depuis l'été. Pas d'insuffisance cardiaque connue.\n\nMédicaments actuels\nRamipril 10 mg une fois par jour, hydrochlorothiazide 25 mg une fois par jour, metformine 1000 mg deux fois par jour, ibuprofène 400 mg jusqu'à trois fois par jour.\n\nExamen\nTension artérielle 152/86 mmHg. Poids 68 kg. Pas d'œdème des jambes.\n\nExamens\nCréatinine 148 µmol/L le 20 octobre 2026 (elle était de 96 µmol/L en mars 2026), DFGe 31 mL/min/1,73 m². Potassium 5,4 mmol/L. Rapport albumine/créatinine urinaire 42 mg/mmol. L'échographie rénale montre deux reins de taille normale, sans obstacle.\n\nImpression\nInsuffisance rénale aiguë sur maladie rénale chronique probable, très probablement aggravée par l'ibuprofène pris avec le ramipril et le diurétique. Il n'y a pas de signe d'obstruction.\n\nConduite à tenir\n1. Arrêter l'ibuprofène et tous les anti-inflammatoires. L'acétaminophène jusqu'à 1 g trois fois par jour peut le remplacer pour les genoux.\n2. Diminuer la metformine à 500 mg deux fois par jour, compte tenu du DFGe.\n3. Cesser l'hydrochlorothiazide. Garder le ramipril à la même dose pour le moment.\n4. Refaire la créatinine et le potassium dans 2 semaines.\n\nJ'ai expliqué à Mme FAKE-Bouchard qu'elle ne doit plus prendre d'ibuprofène ni de naproxène, et qu'elle doit faire sa prise de sang dans 2 semaines, vers le 19 novembre 2026. Elle doit appeler la clinique si elle urine beaucoup moins ou si ses jambes enflent. Je la reverrai dans 3 mois avec de nouveaux résultats.\n\nVeuillez agréer, cher collègue, mes salutations distinguées.\n\nDre Sophie FAKE-Lemieux, néphrologue (FICTIVE)\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "aki_on_ckd",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Insuffisance rénale aiguë sur maladie rénale chronique probable, très probablement aggravée par l'ibuprofène pris avec le ramipril et le diurétique.",
+   "approved_statements": [
+    "Ses reins fonctionnent moins bien, très probablement à cause de l'ibuprofène pris avec le ramipril et le diurétique.",
+    "Her kidney function has dropped, most likely made worse by ibuprofen taken with ramipril and the diuretic."
+   ],
+   "anchors": [
+    "kidney",
+    "rein",
+    "renal"
+   ],
+   "match": [
+    [
+     "rein",
+     "renal",
+     "kidney"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "creatinine",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Créatinine 148 µmol/L le 20 octobre 2026 (elle était de 96 µmol/L en mars 2026), DFGe 31 mL/min/1,73 m².",
+   "approved_statements": [
+    "La créatinine est à 148 µmol/L (96 µmol/L en mars 2026).",
+    "Creatinine is 148 µmol/L (it was 96 µmol/L in March 2026)."
+   ],
+   "anchors": [
+    "148",
+    "creatinine",
+    "dfge",
+    "egfr"
+   ],
+   "match": [
+    [
+     "creatinine",
+     "148",
+     "dfge",
+     "egfr"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "no_obstruction",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "L'échographie rénale montre deux reins de taille normale, sans obstacle.",
+   "approved_statements": [
+    "L'échographie montre des reins de taille normale, sans obstacle.",
+    "The ultrasound shows normal-sized kidneys with no blockage."
+   ],
+   "anchors": [
+    "blockage",
+    "echograph",
+    "obstacle",
+    "ultrasound"
+   ],
+   "match": [
+    [
+     "echograph",
+     "ultrasound",
+     "obstacle",
+     "blockage"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "stop_ibuprofen",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Arrêter l'ibuprofène et tous les anti-inflammatoires.",
+   "approved_statements": [
+    "Arrêtez l'ibuprofène et tous les anti-inflammatoires.",
+    "Stop ibuprofen and all anti-inflammatory medicines."
+   ],
+   "anchors": [
+    "anti-inflammatoire",
+    "anti-inflammator",
+    "ibuprof"
+   ],
+   "match": [
+    [
+     "ibuprof",
+     "anti-inflammatoire",
+     "anti-inflammator"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "acetaminophen",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "L'acétaminophène jusqu'à 1 g trois fois par jour peut le remplacer pour les genoux.",
+   "approved_statements": [
+    "L'acétaminophène jusqu'à 1 g trois fois par jour peut le remplacer.",
+    "Acetaminophen up to 1 g three times a day can replace it."
+   ],
+   "anchors": [
+    "acetaminoph",
+    "paracetamol",
+    "tylenol"
+   ],
+   "match": [
+    [
+     "acetaminoph",
+     "paracetamol",
+     "tylenol"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "metformin_500",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Diminuer la metformine à 500 mg deux fois par jour, compte tenu du DFGe.",
+   "approved_statements": [
+    "La metformine baisse à 500 mg deux fois par jour.",
+    "Metformin is lowered to 500 mg twice a day."
+   ],
+   "anchors": [
+    "metformin"
+   ],
+   "match": [
+    [
+     "metformin"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "metformin\\w*\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mg)",
+    "value": "500",
+    "unit": "mg"
+   }
+  },
+  {
+   "id": "stop_hctz",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Cesser l'hydrochlorothiazide.",
+   "approved_statements": [
+    "L'hydrochlorothiazide est arrêté.",
+    "Hydrochlorothiazide is stopped."
+   ],
+   "anchors": [
+    "diuret",
+    "hydrochlorothiazid"
+   ],
+   "match": [
+    [
+     "hydrochlorothiazid",
+     "diuret"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ramipril_same",
+   "category": "medication",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Garder le ramipril à la même dose pour le moment.",
+   "approved_statements": [
+    "Le ramipril reste à la même dose.",
+    "Ramipril stays at the same dose."
+   ],
+   "anchors": [
+    "ramipril"
+   ],
+   "match": [
+    [
+     "ramipril"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "blood_test_2_weeks",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "elle doit faire sa prise de sang dans 2 semaines, vers le 19 novembre 2026.",
+   "approved_statements": [
+    "Prise de sang dans 2 semaines, vers le 19 novembre 2026.",
+    "A blood test in 2 weeks, around 19 November 2026."
+   ],
+   "anchors": [
+    "19",
+    "2",
+    "november",
+    "novembre",
+    "semaine",
+    "semana",
+    "tydzie",
+    "tygod",
+    "week"
+   ],
+   "match": [
+    [
+     "2",
+     "19"
+    ],
+    [
+     "week",
+     "semaine",
+     "tydzie",
+     "tygod",
+     "semana",
+     "novembre",
+     "november"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "call_if",
+   "category": "instruction",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Elle doit appeler la clinique si elle urine beaucoup moins ou si ses jambes enflent.",
+   "approved_statements": [
+    "Appeler la clinique si elle urine beaucoup moins ou si ses jambes enflent.",
+    "Call the clinic if she passes much less urine or her legs swell."
+   ],
+   "anchors": [
+    "enfl",
+    "jambe",
+    "leg",
+    "swell",
+    "urin"
+   ],
+   "match": [
+    [
+     "urin",
+     "enfl",
+     "swell",
+     "jambe",
+     "leg"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "seen_in_3_months",
+   "category": "timing",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Je la reverrai dans 3 mois avec de nouveaux résultats.",
+   "approved_statements": [
+    "Elle sera revue dans 3 mois.",
+    "She will be seen again in 3 months."
+   ],
+   "anchors": [
+    "3",
+    "mes",
+    "miesi",
+    "mois",
+    "month"
+   ],
+   "match": [
+    [
+     "3"
+    ],
+    [
+     "month",
+     "mois",
+     "miesi",
+     "mes"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying ramipril is stopped",
+  "saying there is a blockage",
+  "advising naproxen"
+ ],
+ "notes": ""
+}

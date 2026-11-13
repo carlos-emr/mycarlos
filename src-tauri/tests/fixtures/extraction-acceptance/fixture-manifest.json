@@ -1,0 +1,18 @@
+{
+  "synthetic": true,
+  "scope": "Separate extraction acceptance; never frozen30 or held-out model input",
+  "files": {
+    "fake-flattened-form.pdf": {
+      "bytes": 741,
+      "sha256": "8f04bdcbcbae1e7e26f4a01479e732f97d44b8298e1c103cc64df463727907c7"
+    },
+    "fake-image-only-scan.pdf": {
+      "bytes": 18543,
+      "sha256": "5296d98feab2f955c2ac1686fba22a0f999dea6376c2837d7d741dd72fb52c19"
+    },
+    "fake-widget-form.pdf": {
+      "bytes": 1811,
+      "sha256": "0782a69e5cae902fc81f44dbf35c32c1120450dc996cd7bf25552ab0cd2944c4"
+    }
+  }
+}
