@@ -453,10 +453,15 @@ const SUMMARY_WHOLE_RULES: &str =
      limit the document gives for it; if they do not all fit in one sentence, leave that \
      sentence out.";
 
-/// Part (c) of the 11 Nov variant design: which, how much and when, in one sentence.
+/// Which, how much and when, with the source's status and comparison kept together.
 const SUMMARY_SAME_SENTENCE: &str =
     "Say which, how much and when in the same sentence: the test or medicine by name, the \
-     number with its unit, the date or time.";
+     number with its unit, the date or time. When you include a medicine, keep its stated \
+     status (new, continued, increased, reduced, held or stopped) with its dose, frequency, \
+     duration and conditions in the same sentence. When the source compares a dose or test \
+     result with an earlier value, keep both values and their stated dates together. Copy a \
+     quote containing that status or comparison. Never infer a status or change that the \
+     source does not state.";
 
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
@@ -1109,8 +1114,8 @@ mod tests {
     }
 
     #[test]
-    fn e5_asks_found_first_whole_rules_one_clause_and_the_language_twice() {
-        // E5 = E2 + parts (a), (b) and (c) + L1 and L2, word for word as the design note gives it.
+    fn summary_asks_found_first_whole_rules_status_and_the_language_twice() {
+        // Preserve the existing request while keeping explicitly sourced status/comparisons.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
         assert_eq!(
@@ -1126,7 +1131,12 @@ mod tests {
              number or limit the document gives for it; if they do not all fit in one sentence, \
              leave that sentence out. Say which, how much and when in the same sentence: the \
              test or \
-             medicine by name, the number with its unit, the date or time. For each sentence, \
+             medicine by name, the number with its unit, the date or time. When you include a \
+             medicine, keep its stated status (new, continued, increased, reduced, held or \
+             stopped) with its dose, frequency, duration and conditions in the same sentence. \
+             When the source compares a dose or test result with an earlier value, keep both \
+             values and their stated dates together. Copy a quote containing that status or \
+             comparison. Never infer a status or change that the source does not state. For each sentence, \
              copy into \"quote\" one continuous piece of the document, 3 to 25 words, exactly \
              as written (same spelling, numbers, accents and punctuation, no '...' and no \
              joined pieces), in the document's own language (only the quote is copied; the \
