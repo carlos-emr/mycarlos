@@ -1,0 +1,17 @@
+{
+  "execution_authority": false,
+  "files": {
+    "guard_support.py": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+    "native_guard.py": "2a858acd75205ae0b0184a7b7f499458966654cb8295b18776732ef965ecf1c6",
+    "ready-probe/frozen_loader.py": "26a896f020b79b4ea216f0c5cbc705d5f3f14209b2670b161f1b60f6cc1e42c6",
+    "ready-probe/gated_exec.py": "85be88d37acc0de26649ed82cb6c731b28fac9b9724d91799440efda20b180c8",
+    "ready-probe/probe.py": "b098787e7b32345e0b1541b1aa39f4d3a5abef2ce680dddc7e929be931fe39b8",
+    "scratch_driver.py": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef",
+    "test_o3_artifacts.py": "58eac4d9f797bd3e674ef94ecd4a300e39aeaaff5278569e48216957e1a1bbd1"
+  },
+  "portable_or_execution_ready": false,
+  "schema": "dev-root-o3-code-backup-v1",
+  "scope": "Exact reviewed source snapshot only. No runtime package manifest, policy, source/cache inventories, bindings, grants, holder proofs, credentials, logs or runtime receipts are distributed.",
+  "source_only": true,
+  "validation": "Seven synthetic artifact parser controls passed with real process primitives blocked. No cache materialization, native build, model run or speed result."
+}

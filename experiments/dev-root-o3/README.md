@@ -15,10 +15,16 @@ checked-in evaluation installer workflow explicitly builds debug artifacts.
 harness JSON profiles, cache exclusions, finite build bound and existing native
 qualification path. It is a reviewable recipe, not a launcher or grant. Never
 reuse the currently qualified executable paths or treat matching summary prompt
-fingerprints as native executable qualification. No cache copy, build, test or
-model execution was performed to prepare this recipe.
+fingerprints as native executable qualification. No cache copy, native build or model execution was performed. Seven
+synthetic parser controls subsequently passed with real process primitives blocked.
 
 Use a fresh target and a separately prepared regular-file registry cache. Do not
 copy incremental symlinks, hardlinked mutable outputs or CMake trees carrying old
 absolute paths. A cold build may exceed the bounded slot; that remains a failure
 to fit, not authority for automatic retries or an extended deadline.
+
+`adapter-source/` now preserves the exact reviewed runner, parser controls and
+READY-probe source, with a hash manifest and restoration notes. Private runtime
+bindings, policies, inventories, grants and evidence are excluded. It is not a
+standalone runnable package or execution grant. The proposed separately admitted
+build ceiling is 1800 seconds, including cleanup and losing to earlier expiry.

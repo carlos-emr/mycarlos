@@ -29,12 +29,13 @@
     "1",
     "--features",
     "ai-helper-stub",
+    "--lib",
     "--test",
     "model_engine",
     "--no-run",
     "--message-format=json"
   ],
-  "build_strategy": "One no-run integration-test compilation must emit both actual application binary and model_engine harness compiler-artifact records. This avoids separately building a helper before the same harness build. Missing artifact or unexpected profile fails admission; do not guess or silently substitute a prior binary.",
+  "build_strategy": "One no-run --lib --test model_engine compilation must emit actual helper, libtest and model_engine executable records. All three must be freshly compiled (fresh:false) with exact O3 profiles; the separate non-test library artifact is not libtest evidence.",
   "expected_cargo_artifact_profiles": {
     "helper": {
       "target_name": "mycarlos-tauri-poc",
@@ -53,6 +54,21 @@
       "target_name": "model_engine",
       "target_kind": [
         "test"
+      ],
+      "profile": {
+        "opt_level": "3",
+        "debug_assertions": true,
+        "overflow_checks": true,
+        "debuginfo": 2,
+        "test": true
+      }
+    },
+    "libtest": {
+      "target_name": "mycarlos_tauri_poc_lib",
+      "target_kind": [
+        "staticlib",
+        "cdylib",
+        "rlib"
       ],
       "profile": {
         "opt_level": "3",
@@ -81,7 +97,7 @@
     "Do not clone a current qualified target to simulate a cheap build. Cold offline compilation may exceed the finite budget; report it and seek a newly bounded owner slot without extending or auto-retrying."
   ],
   "bounded_owner_path": [
-    "Owner serializes a single build slot, initially capped at 600 seconds including cleanup, with fresh memory/disk admission and existing Maven/model holds untouched. This is a maximum, not a prediction that cold compilation fits.",
+    "Owner serializes a single build slot capped at 1800 seconds including cleanup, fresh memory/disk admission and earlier owner expiry. This is a maximum, not a fit prediction. Cache and native runtime qualification require separate admitted stages.",
     "After no-run build, use the existing native qualification framework for exact helper/harness READY, confinement, descriptor, thread, owned pidfd and kernel EXEC hash checks. No model data need be loaded in the build slot.",
     "Only after native qualification and a fresh runtime grant, run the full original H10 in a separate owner-admitted slot, with unchanged strict grading and 180-second target. No automatic next stage."
   ],
@@ -89,5 +105,6 @@
     "App vocabulary scan share is not measured; native decode already O3. No speedup is claimed.",
     "Changing Rust optimization can change code layout, inlining and behavior exposed by undefined behavior. Preserve tie behavior and compare token hashes/output through independent quality grading.",
     "A release build would additionally change panic/LTO/assertions; it is deliberately outside this minimal experiment."
-  ]
+  ],
+  "code_snapshot": "adapter-source/SOURCE-MANIFEST.json"
 }
