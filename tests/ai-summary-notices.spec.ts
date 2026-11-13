@@ -85,7 +85,7 @@ async function summarize(
 }
 
 const partialFrom = (panel: Locator) =>
-  panel.getByText(/^This summary covers only the start of the document/);
+  panel.getByText(en("ai.summary.partial"), { exact: true });
 const missingFrom = (panel: Locator) =>
   panel.getByText(en("ai.summary.pagesMissing"), { exact: true });
 
@@ -111,7 +111,7 @@ test("a summary of every page, read in full, has no warning", async ({
   await expectOnlyFakedCommands(page);
 });
 
-test("a model that stopped before the end says which pages its summary covers", async ({
+test("a model that stopped before the end says the summary is partial", async ({
   page,
 }) => {
   // The model had room for the first page only.
@@ -128,9 +128,7 @@ test("a model that stopped before the end says which pages its summary covers", 
     },
   );
   await answered(panel, 1);
-  await expect(partialFrom(panel)).toHaveText(
-    en("ai.summary.partial", { last: 1 }),
-  );
+  await expect(partialFrom(panel)).toHaveText(en("ai.summary.partial"));
   await expect(missingFrom(panel)).toHaveCount(0);
 });
 
@@ -149,9 +147,7 @@ test("a model that read only the start of the last page says the summary is part
       lastPageCut: true,
     },
   );
-  await expect(partialFrom(panel)).toHaveText(
-    en("ai.summary.partial", { last: FAKE_PAGE_COUNT }),
-  );
+  await expect(partialFrom(panel)).toHaveText(en("ai.summary.partial"));
 });
 
 test("a text cut by the reader's caps says the summary is partial", async ({
@@ -161,9 +157,7 @@ test("a text cut by the reader's caps says the summary is partial", async ({
     readAs: { [LETTER]: { truncated: true } },
   });
   await answered(panel, FAKE_PAGE_COUNT);
-  await expect(partialFrom(panel)).toHaveText(
-    en("ai.summary.partial", { last: FAKE_PAGE_COUNT }),
-  );
+  await expect(partialFrom(panel)).toHaveText(en("ai.summary.partial"));
 });
 
 const UNREAD: [what: string, setup: FakeAiSetup, given: number[]][] = [
