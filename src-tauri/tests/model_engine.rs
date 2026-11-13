@@ -482,6 +482,14 @@ fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
     let stats = measured.stats.as_ref().expect("stats");
     assert!(stats["promptTokens"].as_u64().unwrap() > 0, "{stats}");
     assert!(stats["answerTokens"].as_u64().unwrap() > 0, "{stats}");
+    let timing = &stats["answerTiming"];
+    assert_eq!(timing["decodeCalls"], stats["answerTokens"], "{stats}");
+    let measured_us = ["pickUs", "emitUs", "decodeUs"]
+        .iter()
+        .map(|&name| timing[name].as_u64().expect("answer stage time"))
+        .sum::<u64>();
+    // Disjoint intervals fit within answerMs, allowing its millisecond truncation.
+    assert!(measured_us <= stats["answerMs"].as_u64().unwrap() * 1_000 + 999);
     // The runner's own limit: 30 s + 150 ms for each of 750 + 48 bytes / 3 prompt tokens,
     // + 600 ms for each of the 600 answer tokens allowed.
     assert_eq!(
