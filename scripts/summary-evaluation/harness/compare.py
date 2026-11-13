@@ -211,14 +211,14 @@ def read_run(path):
     if "answered" in lines[-1] and lines[-1]["answered"] != len(entries):
         raise ValueError(f"{path}: completion count differs from document records")
     meta = lines[0]
-    for key in ("build", "model", "helperMemory"):
+    for key in ("build", "model"):
         if key in meta and not isinstance(meta[key], dict):
             raise ValueError(f"{path}: {key} must be an object")
     for name, item in [("run", meta), *entries.items()]:
-        if "helperMemory" in item and not isinstance(item["helperMemory"], dict):
+        if item.get("helperMemory") is not None and not isinstance(item["helperMemory"], dict):
             raise ValueError(f"{name}: helperMemory must be an object")
         for key in ("peakKiB", "availableKiB"):
-            value = item.get("helperMemory", {}).get(key)
+            value = (item.get("helperMemory") or {}).get(key)
             if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or value < 0):
                 raise ValueError(f"{name}: helperMemory.{key} must be a nonnegative number")
     size = meta.get("model", {}).get("bytes", 0)

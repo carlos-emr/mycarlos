@@ -572,7 +572,7 @@ fn a_real_model_evaluation_run() {
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
         .map(|path| {
-            let document: Value = evidence::strict_json(&std::fs::read(&path).unwrap()).unwrap();
+            let document: Value = evaluation_evidence::strict_json(&std::fs::read(&path).unwrap()).unwrap();
             let id = document["id"].as_str().expect("document id").to_owned();
             assert_eq!(
                 path.file_stem().and_then(|s| s.to_str()),

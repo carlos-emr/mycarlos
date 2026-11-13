@@ -322,6 +322,15 @@ class IntegrityTest(unittest.TestCase):
                 self.assertEqual(summaries[1]["failed"], 1)
                 self.assertEqual(decisions[1]["verdict"], "FAIL")
 
+    def test_unavailable_memory_telemetry_is_valid_on_header_and_document(self):
+        for run in (self.base, self.variant):
+            run[0]["helperMemory"] = None
+            run[1]["helperMemory"] = None
+        self.assertEqual(self.score(self.sheet())[1][1]["verdict"], "PASS")
+        meta, entries = compare.read_run(self.write("nullable-memory", self.base))
+        self.assertIsNone(compare.memory(meta, entries))
+        self.assertFalse(compare.repeat(self.write("a", self.base), self.write("b", self.base), self.docs)[3])
+
     def test_malformed_metadata_has_actionable_input_errors(self):
         for target, field, value in [(0,"model",[1]), (0,"build","bad"),
                                      (0,"helperMemory","bad"), (1,"helperMemory","bad"),
