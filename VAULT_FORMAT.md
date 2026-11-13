@@ -791,10 +791,10 @@ It is not a preference and is not in the webview's storage:
 Anyone who runs as the patient's OS account can read which portals this device's vault is linked
 to, and use a waiting key to ask each of those portals whether something is waiting (Ben's
 decision, 5 November 2026). The keys are wiped on unlink, when notices or the tray are turned off,
-on vault reset or set-aside, and when a different vault is opened; each wipe also revokes the key
-at the portal ([SECURITY_OPERATIONS](SECURITY_OPERATIONS.md), "Tray notices"). The file and the
-OS item are not in backups: a restored vault has no waiting key until notices are turned on on
-that device.
+on vault reset or set-aside, and when a different vault is opened. Each wipe also requests portal
+revocation, which may wait while the device is offline ([SECURITY_OPERATIONS](SECURITY_OPERATIONS.md),
+"Tray notices"). The file and the OS item are not in backups: a restored vault has no waiting key
+until notices are turned on on that device.
 
 ## Known limits before release
 

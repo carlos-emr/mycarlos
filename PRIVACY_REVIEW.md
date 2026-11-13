@@ -309,9 +309,10 @@ To work while the vault is locked, the waiting keys and the linked portals' addr
 store of the patient's OS account (Ben accepted this on 5 November 2026). Anyone who can run as
 that OS account can therefore learn which portals the vault is linked to (so which clinics the
 patient uses), and ask whether something is waiting at each. They cannot read or pick up anything.
-The file always has 16 slots, so it doesn't show how many. The keys are wiped, and revoked at the
-portal, on unlink, when the notices or the tray are turned off, and on vault reset; they are not in
-backups. Where the OS has no credential store, there are no tray notices. Details:
+The file always has 16 slots, so it doesn't show how many. The keys are wiped locally on unlink,
+when the notices or the tray are turned off, and on vault reset; they are not in backups. Portal
+revocation may wait while the device is offline, as explained in the operations guide. Where the
+OS has no credential store, there are no tray notices. Details:
 `VAULT_FORMAT.md` ("Settings kept outside the vault"), `SECURITY_OPERATIONS.md` ("Tray notices").
 
 ## 8. How it is protected
