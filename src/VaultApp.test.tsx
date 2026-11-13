@@ -3497,6 +3497,61 @@ describe("durable vault UI", () => {
     },
   );
 
+  it("keeps newer shared intake after a delayed recovery confirmation snapshot", async () => {
+    const { bridge: receivedBridge, vault, arrive } = sharedVault(
+      ["FAKE Patient"],
+      [],
+    );
+    vault.recoveryKeySetAtMs = 5;
+    let finish: (() => void) | undefined;
+    const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
+      snapshot: receivedBridge.snapshot,
+      listReceived: receivedBridge.listReceived,
+      acceptReceived: receivedBridge.acceptReceived,
+      confirmRecoveryKey: vi.fn(() => {
+        // The command returns the snapshot captured when it stored the key.
+        // Only delivery of that captured reply is held here.
+        vault.recoveryKeySetAtMs = 9;
+        const stored = structuredClone(vault);
+        return new Promise<VaultSnapshot>((resolve) => {
+          finish = () => resolve(stored);
+        });
+      }),
+    });
+    try {
+      await typeKeyBack();
+      expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
+      expect(finish).toBeTypeOf("function");
+      arrive("FAKE_After_key.pdf");
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      await waitFor(() => expect(bridge.snapshot).toHaveBeenCalledTimes(2));
+      expect(bridge.acceptReceived).toHaveBeenCalledOnce();
+      expect(vault.records).toHaveLength(1);
+      // Intake announces only after its snapshot refresh has completed.
+      expect(
+        await screen.findByText(
+          humanText("A shared file was added to Shared with me."),
+        ),
+      ).toBeInTheDocument();
+
+      await act(async () => finish!());
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      await user.click(
+        within(
+          screen.getByRole("navigation", { name: humanText("Record library") }),
+        ).getByRole("button", { name: humanText(/^Shared with me/) }),
+      );
+      expect(
+        screen.getByText(humanText("FAKE_After_key.pdf")),
+      ).toBeVisible();
+      expect(bridge.lock).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => finish?.());
+    }
+  });
+
   it("never says a key stored as the vault locked was lost", async () => {
     // Hiding the app while the native confirmation may be open does not lock
     // it; the lock comes as the confirmation ends, and its reply and the
