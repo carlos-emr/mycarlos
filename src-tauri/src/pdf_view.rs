@@ -1019,3 +1019,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "pdf_view_speed_probe.rs"]
+mod speed_probe;

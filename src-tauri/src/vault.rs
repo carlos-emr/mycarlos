@@ -19769,3 +19769,7 @@ mod tests {
 
 #[cfg(test)]
 mod automatic_collection_tests;
+
+#[cfg(test)]
+#[path = "vault_decrypt_probe.rs"]
+mod decrypt_probe;
