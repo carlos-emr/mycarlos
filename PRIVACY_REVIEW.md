@@ -297,12 +297,13 @@ model download (#219), only when the patient clicks it: the download site sees t
 computer's IP address, the time and which public file was fetched, and nothing else is sent
 (`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
 
-**Tray notices (planned, #230 with carlos-portal#87; not built).** With the tray, closing the
-window locks the vault. To still tell the patient that a clinic has sent something, the locked app
-may ask each linked portal "is anything waiting?" with a waiting key: one per link, made by the
-device, that can do nothing else. Each check sends only the key's id, signed; the answer is yes or
-no. The patient sees a generic notice ("A new document is waiting. Unlock myCarlos to see it."),
-with no clinic, document, name or count.
+**Tray notices (myCarlos integration planned in #230; Portal contract merged in carlos-portal#88).**
+With the tray, closing the window locks the vault. While unlocked at clinic-link time, the device
+registers a separate waiting key's id, public key and algorithm with that portal, in a request
+signed by the link's device key. To still tell the patient that a clinic has sent something, the
+locked app may then ask each linked portal "is anything waiting?" with its waiting key. Each check
+sends only the key's id, signed; the answer is yes or no. The patient sees a generic notice
+("A new document is waiting. Unlock myCarlos to see it."), with no clinic, document, name or count.
 
 To work while the vault is locked, the waiting keys and the linked portals' addresses are kept
 **outside the vault**: in a sealed file beside the settings, whose key is in the OS credential
@@ -310,9 +311,10 @@ store of the patient's OS account (Ben accepted this on 5 November 2026). Anyone
 that OS account can therefore learn which portals the vault is linked to (so which clinics the
 patient uses), and ask whether something is waiting at each. They cannot read or pick up anything.
 The file always has 16 slots, so it doesn't show how many. The keys are wiped locally on unlink,
-when the notices or the tray are turned off, and on vault reset; they are not in backups. Portal
-revocation may wait while the device is offline, as explained in the operations guide. Where the
-OS has no credential store, there are no tray notices. Details:
+when the notices or the tray are turned off, and on vault reset; they are not in myCarlos portable
+backups. Portal revocation may wait while the device is offline, as explained in the operations
+guide. Where the app has no supported OS credential-store adapter, there are no tray notices.
+Windows is proposed first; Linux and macOS adapters remain future work. Details:
 `VAULT_FORMAT.md` ("Settings kept outside the vault"), `SECURITY_OPERATIONS.md` ("Tray notices").
 
 ## 8. How it is protected

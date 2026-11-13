@@ -776,7 +776,7 @@ state, described in the recovery-key sections above.
 | Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
 | Appearance (System, Light or Dark) | `mycarlos.appearance.v1` | The chosen appearance; no vault, patient or document |
 
-**Waiting keys for tray notices (planned, #230 with carlos-portal#87; not built).** To let a
+**Waiting keys for tray notices (myCarlos integration planned in #230; Portal contract in carlos-portal#88).** To let a
 locked myCarlos in the tray ask a linked portal "is anything waiting?", each link that has
 notices gets a waiting key, kept outside the vault so that it works while the vault is locked.
 It is not a preference and is not in the webview's storage:
@@ -785,16 +785,18 @@ It is not a preference and is not in the webview's storage:
   XChaCha20-Poly1305, so its size never shows how many links have a key. Each used slot holds the
   portal's address (origin), the link id, the vault id, the key id and the key's private half.
 - The file's 32-byte wrap key is in the OS credential store of the patient's OS account (Windows
-  Credential Manager first; the Linux Secret Service and the macOS Keychain later). Without a
-  store, there are no tray checks; there is no plain-file fallback.
+  Credential Manager adapter proposed in #270; Linux Secret Service and macOS Keychain adapters
+  come later). Tray checks require an implemented myCarlos adapter for the OS store; there is no
+  plain-file fallback.
 
 Anyone who runs as the patient's OS account can read which portals this device's vault is linked
 to, and use a waiting key to ask each of those portals whether something is waiting (Ben's
 decision, 5 November 2026). The keys are wiped on unlink, when notices or the tray are turned off,
 on vault reset or set-aside, and when a different vault is opened. Each wipe also requests portal
 revocation, which may wait while the device is offline ([SECURITY_OPERATIONS](SECURITY_OPERATIONS.md),
-"Tray notices"). The file and the OS item are not in backups: a restored vault has no waiting key
-until notices are turned on on that device.
+"Tray notices"). The file and the OS item are not in myCarlos portable backups. OS/device backup
+behavior is a separate platform property; restoring a myCarlos portable backup restores no
+waiting key. The integration must create and register a new key before tray checks resume.
 
 ## Known limits before release
 

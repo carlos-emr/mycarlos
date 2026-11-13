@@ -185,12 +185,14 @@ check takes over.
 **Revoking and wiping.** A waiting key is revoked at the portal, and wiped on the device (its slot in
 `notice-keys.v1`; the OS item too when no key is left):
 
-- when the patient turns tray notices or the tray off, or unlinks the clinic: the device revokes it
-  with the link's device key (`DELETE /api/mycarlos/availability/waiting-keys/{key_id}`). If that
-  can't be sent, the revocation waits with the vault's other pending revocations (format 9's 64
-  places) and is sent after the next unlock;
-- when the vault is reset, erased or set aside, or another vault is opened: the device keys may be
-  gone, so the waiting key gives itself up (`DELETE /api/mycarlos/availability/waiting`, signed by
+- when the patient turns tray notices or the tray off, or unlinks the clinic while unlocked:
+  the device revokes it with the link's device key
+  (`DELETE /api/mycarlos/availability/waiting-keys/{key_id}`). If that cannot be sent, remote
+  revocation remains pending. The planned integration needs durable retry storage for these
+  waiting-key deletions; format 9's existing 64-entry push-destination queue does not yet define
+  their encoding. This is an open integration requirement, not a currently implemented retry;
+- when tray notices are turned off while locked, or the vault is reset, erased or set aside, or
+  another vault is opened: the device keys may be gone, so the waiting key gives itself up (`DELETE /api/mycarlos/availability/waiting`, signed by
   the waiting key);
 - when the portal answers `404`: the key was revoked there, the device was removed, or the portal
   refused it for another reason it doesn't give. The device stops asking with that key. Open
