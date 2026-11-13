@@ -5206,7 +5206,11 @@ mod tests {
             ),
             (
                 "async fn vault_reset(",
-                "VaultStore::reset).await?; forget_vault(throttle.inner()).await; Ok(true)",
+                concat!(
+                    "VaultStore::reset).await?; ",
+                    "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
+                    "forget_vault(throttle.inner()).await; Ok(true)",
+                ),
             ),
             (
                 "async fn vault_restore(",
