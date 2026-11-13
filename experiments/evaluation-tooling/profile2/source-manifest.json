@@ -1,0 +1,28 @@
+{
+  "candidate_head": "6595b3c25beb32c2cbd44892698c3fd66265ad2f",
+  "candidate_tree": "62c4705b58968c20abc69a5029b0ca6449aa08d7",
+  "files": {
+    "coordinator.py": "1480170b7d3290684565616788e733ca88b800adfd490370bd544df34d535d6b",
+    "entry.py": "cc479de9dc4aea986d62e0e6afaa16c9648020f5f0b2151b01d53219082e6469",
+    "exec_observer.py": "cbe12765340a3d95d2d8901956c28b8f4238992eb836b0644b13148e2e2f5426",
+    "fake_exec_controls.py": "2b57ead6d6274e8fc1c33bfdd95aca243384820050554d251e7118463ca54921",
+    "guard_support.py": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+    "interfaces.py": "bbac05ea7cfa965fde0e78aa431a614b8b76405ce8e34d685fc2943aedde077a",
+    "phase.py": "0134ce9de1f5890fd9ef4cd169a5f6c0f2bc260158923f6016922618e8c194c0",
+    "profile2.py": "5d61cbeab7bd834cde391beca7c6f990526a342f315427a566fcbcd4a272f13d",
+    "safety.py": "66e45af38c02f19d422b1ad9987634e830a68828d48cdad3305062ddd2d06ce2",
+    "test_adopted_peek.py": "b98c9db0e94765691fd2c55bf47882944096f8e083a4eb017776b07581759e88",
+    "test_argv_exit.py": "32ec5533270ec0d52122f8e49a214afe2f53bcba62c20265416d667c60b6a20c",
+    "test_dispatch_controls.py": "93c7ff94394b786a4d6a32cf9ff3357f15b2344e7dc4acc75a2d4aae45385f88",
+    "test_entry_deadlines.py": "fa2a32cd6ea2a4ff09cd088f2fcc2b7c5f0d57a2787632b839beb43830a99110",
+    "test_entry_priority_controls.py": "967696267010c097ce89ba7614194ae084207acd9bff0046f8a7cf0a1aa7b87b",
+    "test_exec_observer.py": "48a5a232df6971cc14be78ce26b7362b73417e8053b5e97384ca16d1b2c92709",
+    "test_exec_ready_controls.py": "e05631294cf0e1a8b8374c7358dd382c9aec74f52c654d140e142a1cb14df894",
+    "test_fake_interfaces.py": "723872c198b7ec2df58a352b56e686eb17f81447a15f35ae07ea30497289c713",
+    "test_owner_window.py": "22705f125942c4b522b4716e7bc1a65eba30957f6f0a94e8bdf46be4c5b5c28d",
+    "test_profile2.py": "9f669c70fd86b2f1fb7916bb62754553e5b3c1ccbfc8f9855799947ccf28ef84",
+    "test_runtime_contracts.py": "ee418d16a3ff6d37b4780c0f929843c4e034103cdd8348aad39c127056671aa8",
+    "test_task_exit.py": "526da91e8d9cf02e9f2a00a0c543cc1660c8658020a9003b75190309e429a3c9"
+  },
+  "schema": "literal6595-coordinator-source-manifest-v1"
+}
