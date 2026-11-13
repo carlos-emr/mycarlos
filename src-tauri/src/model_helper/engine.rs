@@ -295,6 +295,13 @@ impl Engine {
         if tokens.is_empty() || tokens.len() + max > CONTEXT_TOKENS as usize {
             return Err(failed("too long"));
         }
+        // Generate runs only after after_load has entered the answer sandbox. Lazily
+        // create workers here so every worker inherits it; a rebuilt context (including
+        // use_threads' rollback) gets its own pool on the next request. The safe binding
+        // owns the pool until after the context/backend is destroyed.
+        if !self.ctx_mut().enable_cpu_threadpool() {
+            return Err(failed("threads"));
+        }
         // The last token must be read in this answer, so that its scores are this prompt's,
         // never the last answer's: a prefix as long as the prompt is not used.
         let prefix_len = if prefix_len < tokens.len() {
