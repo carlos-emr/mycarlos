@@ -6,9 +6,12 @@ from exec_observer import EXEC
 from guard_support import require
 import profile2
 
-QUALIFICATION_SCHEMA = 'root-profile2-helper-affinity-qualification-v1'
+QUALIFICATION_SCHEMA = 'root-profile2-helper-affinity-function-qualification-v1'
+QUALIFICATION_SCOPE = 'python-fixture-exec-stop-helper-affinity-functions-v1'
+FIXTURE_KIND = 'python-interpreter-elf-owned-fixture'
+LIVE_FUNCTIONS = ['exec_observer.ExecObserver', 'helper_affinity.apply_at_exec', 'phase.observe_tasks']
 QUALIFICATION_CHECKS = {
-    'same_bound_single_leader_at_exec_stop', 'exact_executable_and_argv',
+    'same_bound_single_leader_at_exec_stop', 'exact_fixture_interpreter_elf_and_full_argv',
     'same_affinity_syscall_in_A_and_B', 'actual_A1234_and_B124_readbacks',
     'before_first_instruction_and_detach', 'three_worker_tasks_inherit_selected_mask',
     'harness_tasks_remain1234', 'controller_cpu0_nice19',
