@@ -54,6 +54,23 @@ describe("answers kept with the document", () => {
     expect(parseKeptSummary(JSON.stringify(withoutPages))).toBeNull();
   });
 
+  it("reads a parent-valid 64 KiB legacy summary without applying new admission reserves", () => {
+    const legacy: SummaryResult = {
+      ...summary,
+      lang: "en",
+      sentences: Array.from({ length: 20 }, () => ({
+        text: "\u0001".repeat(300),
+        quote: "\u0001".repeat(240),
+        source: null,
+      })),
+    };
+    legacy.sentences[19].text = "a".repeat(46) + "\u0001".repeat(254);
+    const text = JSON.stringify(legacy);
+    // This fixture's JSON is entirely ASCII, including its escaped controls.
+    expect(text.length).toBe(65536);
+    expect(parseKeptSummary(text)).toEqual(legacy);
+  });
+
   it("keeps a sentence of a kept summary but drops a place that cannot be one", () => {
     const kept = (source: unknown) =>
       JSON.stringify({

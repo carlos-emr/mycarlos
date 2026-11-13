@@ -123,9 +123,9 @@ fn prompt_tokens(fixed: u32, text_bytes: usize) -> u32 {
 const SUMMARY_PROMPT_TOKENS: u32 = 750;
 const EXPLAIN_PROMPT_TOKENS: u32 = 400;
 /// The answer a summary's limit allows for: about 53 tokens a sentence were measured (5 Nov
-/// 2026), so six sentences run to about 320; its cap (`SUMMARY_TOKENS`) stops it anyway,
-/// keeping the sentences it finished.
-const SUMMARY_ANSWER_TOKENS: u32 = 400;
+/// 2026), so ten sentences (`MAX_SENTENCES`) run to about 530; its cap (`SUMMARY_TOKENS`, 900)
+/// stops it anyway, keeping the sentences it finished.
+const SUMMARY_ANSWER_TOKENS: u32 = 600;
 
 /// The size a summary's limit is reckoned from, for `text_bytes` of pages: its prompt's
 /// estimated tokens and the answer tokens it allows (`AnswerLimit::for_request`).
@@ -386,6 +386,8 @@ pub(crate) enum RunnerError {
     Timeout,
     /// The model answered, but not as the contract says.
     Protocol(String),
+    /// The complete postprocessed answer cannot fit the shared save budget.
+    SummaryTooLarge,
     /// The model said it could not answer: its own words, cut short, to be
     /// shown on their own and never beside the document's text.
     Model(String),
@@ -425,11 +427,25 @@ pub(crate) struct Summary {
     pub(crate) last_page: u32,
     /// Only the start of that page fitted.
     pub(crate) last_page_cut: bool,
-    /// How many quotes were not in the pages read, and were emptied.
+    /// The document's last page, when the model read it after a gap: the pages it read are the
+    /// first ones up to `last_page`, then this one.
+    pub(crate) tail_page: Option<u32>,
+    /// How many original model quotes were rejected before post-steps. This is a
+    /// model-quoting diagnostic; a repaired final source may now be located.
     pub(crate) unlocated: usize,
-    /// What those quotes said, for measuring a model's quoting (tests print them); never shown.
+    /// Original rejected model quotes, keyed by sentence index even after a source
+    /// repair. Measurements use each final source's located flag; never shown.
     #[allow(dead_code)]
-    pub(crate) unlocated_quotes: Vec<String>,
+    pub(crate) unlocated_quotes: crate::quote_provenance::UnlocatedQuotes,
+    /// K17: the sentences the post-step rewrote (`addressee`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) rewrites: Vec<crate::addressee::Rewrite>,
+    /// K19: the sentences the glossary step explained (`glossary`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) explained: Vec<crate::glossary::Explained>,
+    /// K20: the safety checks' fallbacks (`safety`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) fallbacks: Vec<crate::safety::Fallback>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -572,6 +588,9 @@ struct Answer {
     last_page: Option<u32>,
     #[serde(default)]
     last_page_cut: bool,
+    /// The document's last page, read after a gap.
+    #[serde(default)]
+    tail_page: Option<u32>,
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
@@ -861,29 +880,171 @@ impl Runner {
         else {
             return Err(RunnerError::Protocol("last page not sent".to_owned()));
         };
-        let text = request.pages[..=read]
+        let mut read_pages: Vec<&Page> = request.pages[..=read].iter().collect();
+        if let Some(tail_page) = answer.tail_page {
+            let Some(tail) = request.pages[read + 1..]
+                .iter()
+                .find(|page| page.index == tail_page)
+            else {
+                return Err(RunnerError::Protocol("tail page not sent".to_owned()));
+            };
+            read_pages.push(tail);
+        }
+        let text = read_pages
             .iter()
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
-        let mut unlocated_quotes = Vec::new();
-        let sentences = sentences
+        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
+        let mut sentences: Vec<Sentence> = sentences
             .into_iter()
             .take(request.max_sentences)
-            .map(|mut sentence| {
+            .enumerate()
+            .map(|(index, mut sentence)| {
                 if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
-                    unlocated_quotes.push(std::mem::take(&mut sentence.quote));
+                    unlocated_quotes.record(index, std::mem::take(&mut sentence.quote));
                 }
                 sentence
             })
             .collect();
+        // K17 (evaluation only): a sentence that words a line the letter writes to another doctor
+        // as the patient's own says who the line is for (`addressee`). English summaries only,
+        // sentences with a found quote only; nothing is dropped, and the words of each rewrite go
+        // in `rewrites` for measuring, never into a log.
+        let contract_error = |error| match error {
+            crate::summary_contract::Error::TooLarge => RunnerError::SummaryTooLarge,
+            crate::summary_contract::Error::Invalid => {
+                RunnerError::Protocol("invalid final summary".to_owned())
+            }
+        };
+        crate::summary_contract::reserve(
+            sentences
+                .iter()
+                .map(|s| (s.text.as_str(), s.quote.as_str())),
+            &model.name,
+            &model.sha256,
+            &request.lang,
+        )
+        .map_err(contract_error)?;
+        let mut rewrites = Vec::new();
+        if request.lang == "en" {
+            for index in 0..sentences.len() {
+                let sentence = &sentences[index];
+                if sentence.quote.is_empty() {
+                    continue;
+                }
+                if let Some((kind, after)) =
+                    crate::addressee::rewrite(&text, &sentence.text, &sentence.quote)
+                {
+                    crate::summary_contract::reserve_edit(
+                        sentences
+                            .iter()
+                            .map(|s| (s.text.as_str(), s.quote.as_str())),
+                        Some(index),
+                        &after,
+                        &sentence.quote,
+                        &model.name,
+                        &model.sha256,
+                        &request.lang,
+                    )
+                    .map_err(contract_error)?;
+                    let before = std::mem::replace(&mut sentences[index].text, after.clone());
+                    rewrites.push(crate::addressee::Rewrite {
+                        index,
+                        kind,
+                        before,
+                        after,
+                    });
+                }
+            }
+        }
+        // K20 (evaluation only): the safety checks after the addressee step: a number not in the
+        // pages, or a get-help rule not carried whole, falls back to the document's own sentence,
+        // quoted (`safety`); the words go in `fallbacks` for measuring, never into a log.
+        let mut fallbacks = Vec::new();
+        if request.lang == "en" {
+            let mut lines: Vec<crate::safety::Line> = sentences
+                .iter()
+                .map(|s| crate::safety::Line {
+                    text: s.text.clone(),
+                    quote: s.quote.clone(),
+                })
+                .collect();
+            fallbacks =
+                crate::safety::check_guarded(&text, &mut lines, |lines, replace, after, quote| {
+                    crate::summary_contract::reserve_edit(
+                        lines.iter().map(|s| (s.text.as_str(), s.quote.as_str())),
+                        replace,
+                        after,
+                        quote,
+                        &model.name,
+                        &model.sha256,
+                        &request.lang,
+                    )
+                })
+                .map_err(contract_error)?;
+            if !fallbacks.is_empty() {
+                sentences = lines
+                    .into_iter()
+                    .map(|line| Sentence {
+                        text: line.text,
+                        quote: line.quote,
+                    })
+                    .collect();
+            }
+        }
+        // K19 (evaluation only): after the addressee step, a short plain explanation beside the
+        // first use of each medical word, germ, test or unit (`glossary`); it only inserts, and
+        // the words go in `explained` for measuring, never into a log. A fallback quote is the
+        // document's own words and stays as it is.
+        let mut explained = Vec::new();
+        for index in 0..sentences.len() {
+            let sentence = &sentences[index];
+            if sentence.text.starts_with(crate::safety::QUOTE_MARK) {
+                continue;
+            }
+            if let Some((after, terms)) = crate::glossary::explain(&sentence.text, &request.lang) {
+                crate::summary_contract::reserve_edit(
+                    sentences
+                        .iter()
+                        .map(|s| (s.text.as_str(), s.quote.as_str())),
+                    Some(index),
+                    &after,
+                    &sentence.quote,
+                    &model.name,
+                    &model.sha256,
+                    &request.lang,
+                )
+                .map_err(contract_error)?;
+                let before = std::mem::replace(&mut sentences[index].text, after.clone());
+                explained.push(crate::glossary::Explained {
+                    index,
+                    before,
+                    after,
+                    terms: terms.into_iter().map(|(term, _)| term).collect(),
+                });
+            }
+        }
+        crate::summary_contract::reserve(
+            sentences
+                .iter()
+                .map(|s| (s.text.as_str(), s.quote.as_str())),
+            &model.name,
+            &model.sha256,
+            &request.lang,
+        )
+        .map_err(contract_error)?;
         Ok(Summary {
             sentences,
             model,
             last_page,
             last_page_cut: answer.last_page_cut,
+            tail_page: answer.tail_page,
             unlocated: unlocated_quotes.len(),
             unlocated_quotes,
+            rewrites,
+            explained,
+            fallbacks,
         })
     }
 
@@ -2275,6 +2436,29 @@ mod tests {
             let summary = runner.summarize(runner.ticket(), &request()).unwrap();
             assert_eq!(summary.last_page, 0);
             assert_eq!(summary.unlocated, 1);
+        }
+
+        #[test]
+        fn a_last_page_read_after_a_gap_comes_back_and_its_quotes_are_located() {
+            let runner = Runner::new(config(&["--head-tail"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!((summary.last_page, summary.tail_page), (0, Some(2)));
+            // The quote from page 3 (index 2) is found in what was read.
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|sentence| sentence.quote.contains("FAKE page three")));
+            assert_eq!(summary.unlocated, 0);
+            for tail in ["1", "0"] {
+                let wrong = Runner::new(config(&["--head-tail", "--tail-page", tail], GIB));
+                wrong.start(&Fixed(Some(8 * GIB))).unwrap();
+                assert_eq!(
+                    wrong.summarize(wrong.ticket(), &request()),
+                    Err(RunnerError::Protocol("tail page not sent".to_owned())),
+                    "tail page {tail}"
+                );
+            }
         }
 
         #[test]

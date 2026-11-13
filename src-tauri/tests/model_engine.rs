@@ -305,7 +305,7 @@ fn the_real_engine_loads_the_model_as_handed_over_and_summarizes_under_the_gramm
         )
         .unwrap();
     assert_eq!(last_page, 1);
-    assert_eq!(sentences.len(), 6, "{sentences:?}");
+    assert_eq!(sentences.len(), 10, "{sentences:?}");
     for (text, quote) in &sentences {
         assert_eq!((text.as_str(), quote.as_str()), ("a", "a"));
     }
@@ -471,7 +471,7 @@ fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
     ];
     let measured = runner.summarize_measured("en", &pages).unwrap();
     assert_eq!((measured.last_page, measured.last_page_cut), (1, false));
-    assert_eq!(measured.sentences.len(), 6, "{measured:?}");
+    assert_eq!(measured.sentences.len(), 10, "{measured:?}");
     for sentence in &measured.sentences {
         assert_eq!(
             (sentence.text.as_str(), sentence.quote.as_str()),
@@ -483,10 +483,10 @@ fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
     assert!(stats["promptTokens"].as_u64().unwrap() > 0, "{stats}");
     assert!(stats["answerTokens"].as_u64().unwrap() > 0, "{stats}");
     // The runner's own limit: 30 s + 150 ms for each of 750 + 48 bytes / 3 prompt tokens,
-    // + 600 ms for each of the 400 answer tokens allowed.
+    // + 600 ms for each of the 600 answer tokens allowed.
     assert_eq!(
         measured.answer_limit_ms,
-        30_000 + 150 * (750 + 16) + 600 * 400
+        30_000 + 150 * (750 + 16) + 600 * 600
     );
     let (sha256, size) = runner.model_file();
     assert_eq!(size, bytes.len() as u64);

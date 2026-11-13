@@ -29,7 +29,7 @@ pub(crate) const MAX_CONTEXT_CHARS: usize = 2_000;
 /// The longest wait for the helper's hello once started: loading 2 to 4 GB.
 pub(crate) const START_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long one answer may take (#72), scaled to its prompt: the prompt read at about 6.7
-/// tokens a second and an answer of up to 400 tokens for a summary (an explanation's 220-token
+/// tokens a second and an answer of up to 600 tokens for a summary (an explanation's 220-token
 /// cap) at about 1.7 a second, after 30 s. Never under 5 minutes, never over 20. Measured on a
 /// 4-core test computer with other builds running (5 Nov 2026), Qwen3.5 4B read 8.5 to 12
 /// prompt tokens a second and wrote 2.1 to 3.0; the prompt estimate also runs long, so the
@@ -111,6 +111,11 @@ pub(crate) struct SummarizeRequest {
     pub(crate) record_id: Option<uuid::Uuid>,
     #[serde(default)]
     pub(crate) ticket: Option<uuid::Uuid>,
+    /// The document's page count, as its text read found it (`vault_document_text`), when the
+    /// renderer gives it: with a last page read after a gap, the result says whether that is the
+    /// document's own last page (E4b). A kept answer's text ticket gives it instead.
+    #[serde(default)]
+    pub(crate) page_count: Option<u32>,
 }
 
 /// An explain request from the renderer.
@@ -135,6 +140,31 @@ pub(crate) struct SourceSpan {
     pub(crate) end: u32,
 }
 
+/// Exact page identities read by a summary: the sent prefix through its head,
+/// plus only the explicitly reported later tail. Missing or unread gap pages stay out.
+pub(crate) fn summary_read_pages(
+    sent: &[u32],
+    last_head: u32,
+    tail: Option<u32>,
+) -> Option<Vec<u32>> {
+    if sent.is_empty()
+        || sent.len() > MAX_PAGES
+        || sent.iter().any(|&page| page as usize >= MAX_PAGES)
+        || !sent.windows(2).all(|pair| pair[0] < pair[1])
+    {
+        return None;
+    }
+    let head_at = sent.iter().position(|&page| page == last_head)?;
+    let mut read = sent[..=head_at].to_vec();
+    if let Some(tail) = tail {
+        if !sent[head_at + 1..].contains(&tail) {
+            return None;
+        }
+        read.push(tail);
+    }
+    Some(read)
+}
+
 /// An answer as the runtime gave it, kept natively for the document's save (#212). The save
 /// names it by document, tool, language and term; page code adds only a summary's source
 /// places, so the words, the model and the flags the vault keeps are the runtime's own.
@@ -144,8 +174,8 @@ pub(crate) enum KeptAnswer {
         sentences: Vec<Sentence>,
         /// The last page read, by its number from 1 (0 when none was), as the reader says it.
         last_page: u32,
-        /// The index (from 0) of the last page the model read: no source lies past it.
-        last_index: u32,
+        /// Exact indexes the model read: its sent head prefix and optional tail, never the gap.
+        read_pages: Vec<u32>,
         /// The summary covers only part of the document: pages were left out of the text,
         /// the model read fewer than were sent, or only the start of the last one.
         partial: bool,
@@ -174,39 +204,53 @@ impl KeptAnswer {
     /// them), with `sources` for a summary's sentences. None when the sources do not fit the
     /// answer: a summary needs one per sentence (a place or none), each on a page the model
     /// read; an explanation takes none.
+    #[cfg(test)]
     pub(crate) fn content(
         &self,
         sources: Option<&[Option<SourceSpan>]>,
     ) -> Option<(AiResultInput, String)> {
-        let (input, value) = match self {
+        self.checked_content(sources).ok().flatten()
+    }
+
+    pub(crate) fn checked_content(
+        &self,
+        sources: Option<&[Option<SourceSpan>]>,
+    ) -> Result<Option<(AiResultInput, String)>, crate::summary_contract::Error> {
+        match self {
             KeptAnswer::Summary {
                 sentences,
                 last_page,
-                last_index,
+                read_pages,
                 partial,
                 pages_missing,
                 model,
                 lang,
                 created_at,
             } => {
-                let sources = sources?;
+                let Some(sources) = sources else {
+                    return Ok(None);
+                };
                 if sources.len() != sentences.len()
-                    || sources.iter().flatten().any(|span| span.page > *last_index)
-                {
-                    return None;
-                }
-                let sentences: Vec<_> = sentences
-                    .iter()
-                    .zip(sources)
-                    .map(|(sentence, source)| {
-                        serde_json::json!({
-                            "text": sentence.text,
-                            "quote": sentence.quote,
-                            "source": source,
-                        })
+                    || sources.iter().flatten().any(|span| {
+                        !read_pages.contains(&span.page)
+                            || !crate::summary_contract::source_valid(span)
                     })
-                    .collect();
-                (
+                {
+                    return Ok(None);
+                }
+                let content = crate::summary_contract::serialize_summary(
+                    sentences,
+                    model,
+                    lang,
+                    crate::summary_contract::Metadata {
+                        created_at: *created_at,
+                        partial: *partial,
+                        last_page: *last_page,
+                        pages_missing: *pages_missing,
+                    },
+                    sources,
+                )?;
+                Ok(Some((
                     AiResultInput {
                         tool: AiTool::Summary,
                         lang: lang.clone(),
@@ -214,17 +258,8 @@ impl KeptAnswer {
                         model_name: model.name.clone(),
                         model_sha256: model.sha256.clone(),
                     },
-                    serde_json::json!({
-                        "tool": "summary",
-                        "sentences": sentences,
-                        "model": model,
-                        "lang": lang,
-                        "createdAt": created_at,
-                        "partial": partial,
-                        "lastPage": last_page,
-                        "pagesMissing": pages_missing,
-                    }),
-                )
+                    content,
+                )))
             }
             KeptAnswer::Explain {
                 term,
@@ -235,9 +270,12 @@ impl KeptAnswer {
                 created_at,
             } => {
                 if sources.is_some() {
-                    return None;
+                    return Ok(None);
                 }
-                (
+                let value = serde_json::json!({ "tool": "explain", "term": term, "context": context,
+                    "text": text, "model": model, "lang": lang, "createdAt": created_at });
+                let content = value.to_string();
+                Ok(Some((
                     AiResultInput {
                         tool: AiTool::Explain,
                         lang: lang.clone(),
@@ -245,19 +283,10 @@ impl KeptAnswer {
                         model_name: model.name.clone(),
                         model_sha256: model.sha256.clone(),
                     },
-                    serde_json::json!({
-                        "tool": "explain",
-                        "term": term,
-                        "context": context,
-                        "text": text,
-                        "model": model,
-                        "lang": lang,
-                        "createdAt": created_at,
-                    }),
-                )
+                    content,
+                )))
             }
-        };
-        Some((input, value.to_string()))
+        }
     }
 }
 
@@ -268,6 +297,20 @@ pub(crate) struct SummaryResult {
     pub(crate) model: ModelInfo,
     pub(crate) last_page: u32,
     pub(crate) last_page_cut: bool,
+    /// The document's last page, read after a gap (left out when there was none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tail_page: Option<u32>,
+    /// With a tail page and the document's page count: whether the tail is the document's own
+    /// last page, or only the last page of the text read (its 50-page or 1 MiB cap, or a last
+    /// page that was blank or refused), so the reader can say "the last page" only when it is.
+    /// Left out when either is unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tail_is_last_page: Option<bool>,
+}
+
+/// Whether `tail_page` is the document's last page, when both are known.
+pub(crate) fn tail_is_last_page(tail_page: Option<u32>, page_count: Option<u32>) -> Option<bool> {
+    Some(tail_page?.checked_add(1)? == page_count?)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -287,6 +330,8 @@ pub(crate) enum AiError {
     Busy,
     /// The model's file could not be read from this computer's disk.
     Storage,
+    /// The complete postprocessed summary cannot fit its saved-answer budget.
+    SummaryTooLarge,
     /// The vault locked, or the reader left: nothing to show.
     Cancelled,
     /// Anything else: the helper could not start, answer, or answer in time, or the request
@@ -302,6 +347,7 @@ impl AiError {
             Self::Memory => "aiMemory",
             Self::Busy => "aiBusy",
             Self::Storage => "aiStorage",
+            Self::SummaryTooLarge => "aiSummaryTooLarge",
             Self::Cancelled => "aiCancelled",
             Self::Failed => "aiFailed",
         }
@@ -344,6 +390,9 @@ pub(crate) fn check_summary(request: &SummarizeRequest) -> Result<(), AiError> {
             .all(|page| (page.index as usize) < MAX_PAGES && page.text.len() <= MAX_PAGE_BYTES)
         && total <= MAX_TEXT_BYTES
         && pages.iter().any(|page| !page.text.trim().is_empty())
+        && request
+            .page_count
+            .is_none_or(|count| pages.last().is_some_and(|last| last.index < count))
         && model_helper::language_name(&request.lang).is_some();
     valid.then_some(()).ok_or(AiError::Failed)
 }
@@ -469,6 +518,7 @@ impl ModelRuntime {
         watch: AnswerWatch,
     ) -> Result<SummaryResult, AiError> {
         check_summary(&request)?;
+        let page_count = request.page_count;
         self.runner.watch_answer(ticket, watch);
         self.start(ticket)?;
         let summary = self
@@ -488,6 +538,8 @@ impl ModelRuntime {
             model: summary.model,
             last_page: summary.last_page,
             last_page_cut: summary.last_page_cut,
+            tail_page: summary.tail_page,
+            tail_is_last_page: tail_is_last_page(summary.tail_page, page_count),
         })
     }
 
@@ -526,6 +578,7 @@ fn from_runner(error: &RunnerError) -> AiError {
     match error {
         RunnerError::Budget { .. } => AiError::Memory,
         RunnerError::Cancelled => AiError::Cancelled,
+        RunnerError::SummaryTooLarge => AiError::SummaryTooLarge,
         RunnerError::Start(_)
         | RunnerError::NotRunning
         | RunnerError::Timeout
@@ -659,7 +712,25 @@ mod tests {
             lang: lang.to_owned(),
             record_id: None,
             ticket: None,
+            page_count: None,
         }
+    }
+
+    #[test]
+    fn summary_size_error_survives_runner_and_owned_save_boundaries() {
+        assert_eq!(
+            from_runner(&RunnerError::SummaryTooLarge),
+            AiError::SummaryTooLarge
+        );
+        assert_eq!(AiError::SummaryTooLarge.code(), "aiSummaryTooLarge");
+        let mut answer = kept_summary();
+        if let KeptAnswer::Summary { sentences, .. } = &mut answer {
+            sentences[0].text = "x".repeat(crate::summary_contract::MAX_BYTES);
+        }
+        assert!(matches!(
+            answer.checked_content(Some(&[None, None])),
+            Err(crate::summary_contract::Error::TooLarge)
+        ));
     }
 
     #[test]
@@ -691,6 +762,37 @@ mod tests {
         for request in refused {
             assert_eq!(check_summary(&request), Err(AiError::Failed));
         }
+        // A page count, when given, is past the last page sent (E4b).
+        let counted = |count| SummarizeRequest {
+            page_count: Some(count),
+            ..summary(vec![page(0, "a"), page(3, "b")], "en")
+        };
+        assert_eq!(check_summary(&counted(4)), Ok(()));
+        assert_eq!(check_summary(&counted(70)), Ok(()));
+        assert_eq!(check_summary(&counted(3)), Err(AiError::Failed));
+        assert_eq!(check_summary(&counted(0)), Err(AiError::Failed));
+        // The renderer may send it.
+        let sent: SummarizeRequest = serde_json::from_value(serde_json::json!({
+            "pages": [{"index": 0, "text": "FAKE text"}],
+            "lang": "en",
+            "pageCount": 12,
+        }))
+        .unwrap();
+        assert_eq!(sent.page_count, Some(12));
+    }
+
+    #[test]
+    fn a_tail_page_is_the_last_page_only_when_the_document_ends_there() {
+        // The document's last page (index 11 of 12) read after a gap.
+        assert_eq!(tail_is_last_page(Some(11), Some(12)), Some(true));
+        // Only the text read's last page: a 70-page document cut at 50 pages, or a last page
+        // that was blank or refused.
+        assert_eq!(tail_is_last_page(Some(49), Some(70)), Some(false));
+        assert_eq!(tail_is_last_page(Some(10), Some(12)), Some(false));
+        // Unknown either way: left out.
+        assert_eq!(tail_is_last_page(None, Some(12)), None);
+        assert_eq!(tail_is_last_page(Some(11), None), None);
+        assert_eq!(tail_is_last_page(Some(u32::MAX), Some(0)), None);
     }
 
     #[test]
@@ -763,7 +865,7 @@ mod tests {
                 },
             ],
             last_page: 2,
-            last_index: 1,
+            read_pages: vec![0, 1],
             partial: true,
             pages_missing: false,
             model: ModelInfo {
@@ -812,6 +914,72 @@ mod tests {
             Some(("FAKE model", &"0".repeat(64)))
         )
         .is_ok());
+    }
+
+    #[test]
+    fn summary_read_pages_preserves_sparse_head_and_only_the_reported_tail() {
+        assert_eq!(summary_read_pages(&[0, 1, 2], 0, Some(2)), Some(vec![0, 2]));
+        assert_eq!(
+            summary_read_pages(&[0, 2, 3, 4], 2, Some(4)),
+            Some(vec![0, 2, 4])
+        );
+        assert_eq!(summary_read_pages(&[0, 2, 4], 2, None), Some(vec![0, 2]));
+        assert_eq!(summary_read_pages(&[0, 2, 4], 4, None), Some(vec![0, 2, 4]));
+        for (sent, head, tail) in [
+            (vec![], 0, None),
+            (vec![0, 2], 1, None),
+            (vec![0, 2], 0, Some(1)),
+            (vec![0, 2], 2, Some(0)),
+            (vec![0, 2], 2, Some(2)),
+            (vec![0, 0], 0, None),
+            (vec![2, 0], 0, None),
+            (vec![MAX_PAGES as u32], MAX_PAGES as u32, None),
+        ] {
+            assert!(summary_read_pages(&sent, head, tail).is_none());
+        }
+    }
+
+    #[test]
+    fn kept_tail_source_passes_the_save_contract_but_an_unread_gap_does_not() {
+        let mut answer = kept_summary();
+        if let KeptAnswer::Summary { read_pages, .. } = &mut answer {
+            *read_pages = summary_read_pages(&[0, 1, 2], 0, Some(2)).unwrap();
+        }
+        let source = |page| SourceSpan {
+            page,
+            start: 0,
+            end: 1,
+        };
+        let (input, content) = answer.content(Some(&[Some(source(2)), None])).unwrap();
+        assert!(crate::vault::check_ai_answer(
+            &input,
+            content.as_bytes(),
+            Some(("FAKE model", &"0".repeat(64)))
+        )
+        .is_ok());
+        assert!(answer.content(Some(&[Some(source(0)), None])).is_some());
+        assert!(answer.content(Some(&[Some(source(1)), None])).is_none());
+        assert!(answer.content(Some(&[Some(source(3)), None])).is_none());
+        assert!(answer.content(Some(&[None, None])).is_some());
+    }
+
+    #[test]
+    fn kept_sources_refuse_absent_pages_inside_the_head_prefix_too() {
+        let mut answer = kept_summary();
+        if let KeptAnswer::Summary { read_pages, .. } = &mut answer {
+            *read_pages = summary_read_pages(&[0, 2, 3, 4], 2, Some(4)).unwrap();
+        }
+        let source = |page| SourceSpan {
+            page,
+            start: 0,
+            end: 1,
+        };
+        for page in [0, 2, 4] {
+            assert!(answer.content(Some(&[Some(source(page)), None])).is_some());
+        }
+        for page in [1, 3, 5] {
+            assert!(answer.content(Some(&[Some(source(page)), None])).is_none());
+        }
     }
 
     #[test]
@@ -890,6 +1058,8 @@ mod tests {
                 model: model.clone(),
                 last_page: 3,
                 last_page_cut: false,
+                tail_page: None,
+                tail_is_last_page: None,
             })
             .unwrap(),
             serde_json::json!({
@@ -897,6 +1067,29 @@ mod tests {
                 "model": {"name": "FAKE model", "sha256": "0".repeat(64)},
                 "lastPage": 3,
                 "lastPageCut": false
+            })
+        );
+        // A last page read after a gap is named; without one the shape is unchanged.
+        assert_eq!(
+            serde_json::to_value(SummaryResult {
+                sentences: vec![Sentence {
+                    text: "t".to_owned(),
+                    quote: String::new()
+                }],
+                model: model.clone(),
+                last_page: 3,
+                last_page_cut: false,
+                tail_page: Some(9),
+                tail_is_last_page: Some(false),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "sentences": [{"text": "t", "quote": ""}],
+                "model": {"name": "FAKE model", "sha256": "0".repeat(64)},
+                "lastPage": 3,
+                "lastPageCut": false,
+                "tailPage": 9,
+                "tailIsLastPage": false
             })
         );
         assert_eq!(
@@ -1232,7 +1425,8 @@ pub mod engine_testing {
 
     pub struct ModelRunner {
         runner: Arc<Runner>,
-        /// The quotes the last summary had that were not in the pages read.
+        /// Original model quotes rejected before post-steps, for diagnostics;
+        /// final measured sentences separately report their current source location.
         unlocated: std::sync::Mutex<Vec<String>>,
         /// The model file's SHA-256 as it was handed over, and its size.
         model_sha256: String,
@@ -1247,10 +1441,52 @@ pub mod engine_testing {
         /// The index of the last page read, and whether only its start fitted.
         pub last_page: u32,
         pub last_page_cut: bool,
+        /// The document's last page, read after a gap.
+        pub tail_page: Option<u32>,
         /// The answer's `Stats` as the helper reports them: counts and times, never words.
         pub stats: Option<serde_json::Value>,
         /// The time limit the runner gave this answer.
         pub answer_limit_ms: u64,
+        /// K17: the post-step's name, and every sentence it rewrote (before and after).
+        pub post_step: &'static str,
+        pub rewrites: Vec<MeasuredRewrite>,
+        /// K19: the glossary's name, and every sentence it explained (before and after).
+        pub glossary: &'static str,
+        pub explained: Vec<MeasuredExplained>,
+        /// K20: the safety checks' name, and every fallback (before: none when a quote was added).
+        pub safety: &'static str,
+        pub fallbacks: Vec<MeasuredFallback>,
+    }
+
+    /// K20: one fallback of the safety checks (`safety`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredFallback {
+        pub check: &'static str,
+        pub index: usize,
+        pub before: Option<String>,
+        pub after: String,
+    }
+
+    /// K19: one sentence the glossary step explained (`glossary`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredExplained {
+        pub index: usize,
+        pub before: String,
+        pub after: String,
+        pub terms: Vec<String>,
+    }
+
+    /// K17: one sentence the post-step rewrote (`addressee`): its place, the rewrite's kind, and
+    /// the words before and after.
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredRewrite {
+        pub index: usize,
+        pub kind: &'static str,
+        pub before: String,
+        pub after: String,
     }
 
     /// One summary sentence: its words, the quote the model wrote, and whether that quote was
@@ -1373,19 +1609,45 @@ pub mod engine_testing {
                 .runner
                 .summarize(self.runner.ticket(), &request)
                 .map_err(|error| format!("{error:?}"))?;
-            // The runner empties a quote it cannot find, in sentence order, and keeps what it
-            // said in `unlocated_quotes`; the grammar never lets the model write an empty one.
-            let mut missing = summary.unlocated_quotes.into_iter();
+            let fallbacks = summary
+                .fallbacks
+                .into_iter()
+                .map(|f| MeasuredFallback {
+                    check: f.check,
+                    index: f.index,
+                    before: f.before,
+                    after: f.after,
+                })
+                .collect();
+            let explained = summary
+                .explained
+                .into_iter()
+                .map(|e| MeasuredExplained {
+                    index: e.index,
+                    before: e.before,
+                    after: e.after,
+                    terms: e.terms,
+                })
+                .collect();
+            let rewrites = summary
+                .rewrites
+                .into_iter()
+                .map(|rewrite| MeasuredRewrite {
+                    index: rewrite.index,
+                    kind: rewrite.kind.name(),
+                    before: rewrite.before,
+                    after: rewrite.after,
+                })
+                .collect();
+            // Post-steps can repair an unfound model quote. Original missing quotes stay
+            // keyed to their sentence, so a repair cannot shift the next sentence's quote.
+            let missing = summary.unlocated_quotes;
             let sentences = summary
                 .sentences
                 .into_iter()
-                .map(|sentence| {
-                    let located = !sentence.quote.is_empty();
-                    let quote = if located {
-                        sentence.quote
-                    } else {
-                        missing.next().unwrap_or_default()
-                    };
+                .enumerate()
+                .map(|(index, sentence)| {
+                    let (quote, located) = missing.for_measurement(index, sentence.quote);
                     MeasuredSentence {
                         text: sentence.text,
                         quote,
@@ -1397,11 +1659,18 @@ pub mod engine_testing {
                 sentences,
                 last_page: summary.last_page,
                 last_page_cut: summary.last_page_cut,
+                tail_page: summary.tail_page,
                 stats: self
                     .runner
                     .last_stats()
                     .and_then(|stats| serde_json::to_value(stats).ok()),
                 answer_limit_ms,
+                post_step: crate::addressee::NAME,
+                rewrites,
+                glossary: crate::glossary::NAME,
+                explained,
+                safety: crate::safety::NAME,
+                fallbacks,
             })
         }
 
@@ -1425,7 +1694,7 @@ pub mod engine_testing {
             self.runner
                 .summarize(self.runner.ticket(), &request)
                 .map(|summary| {
-                    *self.unlocated.lock().unwrap() = summary.unlocated_quotes;
+                    *self.unlocated.lock().unwrap() = summary.unlocated_quotes.into_quotes();
                     (
                         summary
                             .sentences
@@ -1438,7 +1707,7 @@ pub mod engine_testing {
                 .map_err(|error| format!("{error:?}"))
         }
 
-        /// What the last summary's quotes said where they were not in the pages read.
+        /// Original rejected model quotes, including any source later repaired.
         pub fn last_unlocated(&self) -> Vec<String> {
             self.unlocated.lock().unwrap().clone()
         }
