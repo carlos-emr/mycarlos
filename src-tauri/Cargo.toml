@@ -95,6 +95,8 @@ windows = { version = "=0.61.3", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",
+    # Credential Manager, for the notice keys' wrap key (#230).
+    "Win32_Security_Credentials",
     "Win32_Security_Isolation",
     "Win32_System_Com",
     "Win32_Storage_FileSystem",
@@ -163,6 +165,24 @@ debug = false
 
 [profile.dev.package.llama-cpp-2]
 opt-level = 3
+
+# Every other dependency is optimized in debug builds too, since the evaluation installers are
+# debug builds: the PDF reader's rasterizer (hayro), PNG encoding and decoding and lopdf otherwise
+# run unoptimized on every page view and zoom (measured: rendering a page 15-35x faster with this).
+# A named package's own settings above win over "*"; the others, such as `debug = false`, still
+# apply to it. Debug assertions and overflow checks are unchanged (opt-level sets neither).
+[profile.dev.package."*"]
+opt-level = 3
+# No debug info for dependencies: a shorter cold build and smaller artifacts.
+debug = false
+
+# myCarlos's own crate at opt-level 1 in debug builds. Every page view decrypts the whole document,
+# and the vault's XChaCha20-Poly1305 is generic code, which Rust compiles in the crate that uses it:
+# this one, so the dependencies' opt-level does not reach it. Measured on an 11 MiB document: about
+# 2.1 s per page view unoptimized, about 90 ms at opt-level 1. Debug info, debug assertions and
+# overflow checks stay on; a debugger may show some locals as optimized out.
+[profile.dev.package.mycarlos-tauri-poc]
+opt-level = 1
 
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]

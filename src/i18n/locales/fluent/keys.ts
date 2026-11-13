@@ -71,8 +71,10 @@ export const MESSAGE_KEYS = [
   "interface.CameraDialog.useTheCamera",
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword",
+  "interface.DocumentReader.firstPage",
   "interface.DocumentReader.fitWidth",
   "interface.DocumentReader.larger",
+  "interface.DocumentReader.lastPage",
   "interface.DocumentReader.nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis",
   "interface.DocumentReader.open",
@@ -649,6 +651,7 @@ export const MESSAGE_KEYS = [
   "portal.copy",
   "portal.copyFailed",
   "portal.dateNotRecorded",
+  "portal.defaultDeviceName",
   "portal.deviceCode",
   "portal.deviceName",
   "portal.deviceDetailsShow",
@@ -1097,8 +1100,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword":
     "interface-DocumentReader-documentPassword",
+  "interface.DocumentReader.firstPage": "interface-DocumentReader-firstPage",
   "interface.DocumentReader.fitWidth": "interface-DocumentReader-fitWidth",
   "interface.DocumentReader.larger": "interface-DocumentReader-larger",
+  "interface.DocumentReader.lastPage": "interface-DocumentReader-lastPage",
   "interface.DocumentReader.nextPage": "interface-DocumentReader-nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis":
     "interface-DocumentReader-noTextCouldBeReadOnThis",
@@ -1773,6 +1778,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.copy": "portal-copy",
   "portal.copyFailed": "portal-copyFailed",
   "portal.dateNotRecorded": "portal-dateNotRecorded",
+  "portal.defaultDeviceName": "portal-defaultDeviceName",
   "portal.deviceCode": "portal-deviceCode",
   "portal.deviceName": "portal-deviceName",
   "portal.deviceDetailsShow": "portal-deviceDetailsShow",
@@ -2312,8 +2318,10 @@ export interface MessageArgsByKey {
   "interface.CameraDialog.useTheCamera": undefined;
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay": undefined;
   "interface.DocumentReader.documentPassword": undefined;
+  "interface.DocumentReader.firstPage": undefined;
   "interface.DocumentReader.fitWidth": undefined;
   "interface.DocumentReader.larger": undefined;
+  "interface.DocumentReader.lastPage": undefined;
   "interface.DocumentReader.nextPage": undefined;
   "interface.DocumentReader.noTextCouldBeReadOnThis": undefined;
   "interface.DocumentReader.open": undefined;
@@ -2963,6 +2971,7 @@ export interface MessageArgsByKey {
   "portal.copy": undefined;
   "portal.copyFailed": undefined;
   "portal.dateNotRecorded": undefined;
+  "portal.defaultDeviceName": { platform: FluentArgument };
   "portal.deviceCode": undefined;
   "portal.deviceName": undefined;
   "portal.deviceDetailsShow": undefined;

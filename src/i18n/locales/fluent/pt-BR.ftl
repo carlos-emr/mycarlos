@@ -188,9 +188,13 @@ interface-count-selected =
 
 interface-DocumentReader-documentPassword = Senha do documento
 
+interface-DocumentReader-firstPage = Primeira página
+
 interface-DocumentReader-fitWidth = Ajustar à largura
 
 interface-DocumentReader-larger = Aumentar
+
+interface-DocumentReader-lastPage = Última página
 
 interface-DocumentReader-nextPage = Próxima página
 
@@ -1479,6 +1483,8 @@ portal-copy = Copiar código do dispositivo
 portal-copyFailed = Selecione todo o código do dispositivo e copie.
 
 portal-dateNotRecorded = Data não registrada
+
+portal-defaultDeviceName = myCarlos no { $platform }
 
 portal-deviceCode = Código do dispositivo
 

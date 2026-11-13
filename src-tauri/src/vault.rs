@@ -8034,6 +8034,13 @@ pub const SHARED_PROFILE_NAME: &str = "Shared with me";
 /// vault id, so the manifest needs no field of its own for it (VAULT_FORMAT):
 /// a UUID of version 8, RFC 9562's custom version, with the RFC 4122 variant.
 /// Every other profile has a random version 4 id, which can never equal it.
+impl VaultStore {
+    /// The open vault's id, for what is kept outside it (#230's notice keys).
+    pub(crate) fn open_vault_id(&self) -> Option<Uuid> {
+        self.session().as_ref().map(|open| open.manifest.vault_id)
+    }
+}
+
 pub fn shared_profile_id(vault_id: Uuid) -> Uuid {
     use sha2::Digest as _;
     let digest = Sha256::new()

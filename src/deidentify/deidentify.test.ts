@@ -87,7 +87,7 @@ const documents = [
     text: imaging,
     gone: [
       "Avery Example",
-      "EXAA 6104 1799",
+      "EXAA 6164 1799",
       "0045123",
       "R-778812",
       "Hôpital Fictif de Testville",
@@ -129,26 +129,26 @@ const documents = [
     name: "Quebec referral, in French",
     text: quebec,
     gone: [
-      "Clinique médicale Saint-Laurent",
-      "Saint-Laurent",
-      "1234, rue Sherbrooke Est",
-      "Sherbrooke",
+      "Clinique médicale Saint-Fictif",
+      "Saint-Fictif",
+      "1234, rue Imaginaire Est",
+      "Imaginaire",
       "app. 5",
       "Montréal",
-      "H2X 1A1",
+      "H0Z 9Z9",
       "514 555-0123",
       "5145550124",
       "Émilie Tremblay",
       "Tremblay",
       "Centre hospitalier de Fictiveville",
       "Fictiveville",
-      "88, boul. René-Lévesque Ouest",
-      "René-Lévesque",
-      "G1R 9Z9",
+      "88, boul. Émile-Exemple Ouest",
+      "Émile-Exemple",
+      "H0Z 9Z8",
       "Renée",
       "Côté",
       "1958/03/02",
-      "COTR 5803 0299",
+      "COTR 5863 0299",
       "0077123",
       "Jean de la Cruz",
       "de la Cruz",
@@ -304,8 +304,8 @@ describe("the name remover (#72)", () => {
     expect(out("Patient: Renée O'Brien-Lévesque")).toBe("Patient: [NAME 1]");
     // A French street address, street type first.
     expect(
-      out("Address 1234, rue Sherbrooke Est, Montréal, QC H2X 1A1"),
-    ).not.toMatch(/Sherbrooke|1234|Montréal|H2X/);
+      out("Address 1234, rue Imaginaire Est, Montréal, QC H0Z 9Z9"),
+    ).not.toMatch(/Imaginaire|1234|Montréal|H0Z/);
     // Dates of birth in every common form, and other dates in them numbered.
     for (const dob of [
       "Born 1958/03/02.",
@@ -664,13 +664,13 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     const text = result.toSend;
     for (const detail of [
       "Clinique médicale Fictive",
-      "boul. René-Lévesque",
+      "boul. Émile-Exemple",
       "Montréal",
-      "H2X 1A1",
+      "H0Z 9Z9",
       "514-555-0199",
       "514-555-0198",
-      "www.clinique-fictive.example.ca",
-      "clinique-fictive.example.ca/patients",
+      "www.clinique-fictive.example.org",
+      "clinique-fictive.example.org/patients",
       "https://portal.example.org/results?id=4471",
       "Kowalski",
       "Hôpital Fictif de Testville",
@@ -896,6 +896,11 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     expect(
       out("See www.example.com/info and https://x.example.org/a?b=1.").toSend,
     ).toBe("See [WEB ADDRESS 1] and [WEB ADDRESS 2].");
+    // A bare ".ca" address, the ending most clinic letters here carry (a public
+    // body's site, which names no one).
+    expect(out("Details at canada.ca/en/health-canada for more.").toSend).toBe(
+      "Details at [WEB ADDRESS 1] for more.",
+    );
     expect(
       out(
         "A 92-year-old man, aged 95, 101 yo; une femme âgée de 90 ans; 65-year-old.",

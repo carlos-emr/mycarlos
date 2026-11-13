@@ -242,8 +242,10 @@ pub enum MessageId {
     InterfaceCameraDialogUseTheCamera,
     InterfaceCameraDialogYourPhoneAsksOnceWhetherMyCarlosMay,
     InterfaceDocumentReaderDocumentPassword,
+    InterfaceDocumentReaderFirstPage,
     InterfaceDocumentReaderFitWidth,
     InterfaceDocumentReaderLarger,
+    InterfaceDocumentReaderLastPage,
     InterfaceDocumentReaderNextPage,
     InterfaceDocumentReaderNoTextCouldBeReadOnThis,
     InterfaceDocumentReaderOpen,
@@ -776,6 +778,7 @@ pub enum MessageId {
     PortalCopy,
     PortalCopyFailed,
     PortalDateNotRecorded,
+    PortalDefaultDeviceName,
     PortalDeviceCode,
     PortalDeviceDetailsHide,
     PortalDeviceDetailsShow,
@@ -1259,8 +1262,10 @@ impl MessageId {
         Self::InterfaceCameraDialogUseTheCamera,
         Self::InterfaceCameraDialogYourPhoneAsksOnceWhetherMyCarlosMay,
         Self::InterfaceDocumentReaderDocumentPassword,
+        Self::InterfaceDocumentReaderFirstPage,
         Self::InterfaceDocumentReaderFitWidth,
         Self::InterfaceDocumentReaderLarger,
+        Self::InterfaceDocumentReaderLastPage,
         Self::InterfaceDocumentReaderNextPage,
         Self::InterfaceDocumentReaderNoTextCouldBeReadOnThis,
         Self::InterfaceDocumentReaderOpen,
@@ -1793,6 +1798,7 @@ impl MessageId {
         Self::PortalCopy,
         Self::PortalCopyFailed,
         Self::PortalDateNotRecorded,
+        Self::PortalDefaultDeviceName,
         Self::PortalDeviceCode,
         Self::PortalDeviceDetailsHide,
         Self::PortalDeviceDetailsShow,
@@ -2354,8 +2360,10 @@ impl MessageId {
             Self::InterfaceDocumentReaderDocumentPassword => {
                 "interface-DocumentReader-documentPassword"
             }
+            Self::InterfaceDocumentReaderFirstPage => "interface-DocumentReader-firstPage",
             Self::InterfaceDocumentReaderFitWidth => "interface-DocumentReader-fitWidth",
             Self::InterfaceDocumentReaderLarger => "interface-DocumentReader-larger",
+            Self::InterfaceDocumentReaderLastPage => "interface-DocumentReader-lastPage",
             Self::InterfaceDocumentReaderNextPage => "interface-DocumentReader-nextPage",
             Self::InterfaceDocumentReaderNoTextCouldBeReadOnThis => {
                 "interface-DocumentReader-noTextCouldBeReadOnThis"
@@ -3086,6 +3094,7 @@ impl MessageId {
             Self::PortalCopy => "portal-copy",
             Self::PortalCopyFailed => "portal-copyFailed",
             Self::PortalDateNotRecorded => "portal-dateNotRecorded",
+            Self::PortalDefaultDeviceName => "portal-defaultDeviceName",
             Self::PortalDeviceCode => "portal-deviceCode",
             Self::PortalDeviceDetailsHide => "portal-deviceDetailsHide",
             Self::PortalDeviceDetailsShow => "portal-deviceDetailsShow",
@@ -3418,8 +3427,10 @@ impl MessageId {
             "interface.DocumentReader.documentPassword" => {
                 Some(Self::InterfaceDocumentReaderDocumentPassword)
             }
+            "interface.DocumentReader.firstPage" => Some(Self::InterfaceDocumentReaderFirstPage),
             "interface.DocumentReader.fitWidth" => Some(Self::InterfaceDocumentReaderFitWidth),
             "interface.DocumentReader.larger" => Some(Self::InterfaceDocumentReaderLarger),
+            "interface.DocumentReader.lastPage" => Some(Self::InterfaceDocumentReaderLastPage),
             "interface.DocumentReader.nextPage" => Some(Self::InterfaceDocumentReaderNextPage),
             "interface.DocumentReader.noTextCouldBeReadOnThis" => {
                 Some(Self::InterfaceDocumentReaderNoTextCouldBeReadOnThis)
@@ -4192,6 +4203,7 @@ impl MessageId {
             "portal.copy" => Some(Self::PortalCopy),
             "portal.copyFailed" => Some(Self::PortalCopyFailed),
             "portal.dateNotRecorded" => Some(Self::PortalDateNotRecorded),
+            "portal.defaultDeviceName" => Some(Self::PortalDefaultDeviceName),
             "portal.deviceCode" => Some(Self::PortalDeviceCode),
             "portal.deviceName" => Some(Self::PortalDeviceName),
             "portal.deviceDetailsShow" => Some(Self::PortalDeviceDetailsShow),
