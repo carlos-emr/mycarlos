@@ -614,7 +614,7 @@ const CREDENTIAL =
   "(?:MD|M\\.D\\.|NP|RN|RPN|FRCPC|FRCSC|CCFP|PhD|Ph\\.D\\.|PharmD|RPh|MSW|RSW)";
 // Who wrote, signed or sent a document.
 const BY =
-  "(?:(?:[Rr]eferred|[Ss]igned|[Rr]eported|[Dd]ictated|[Tt]ranscribed) by|(?:[Rr]éféré|[Ss]igné|[Dd]icté) par)";
+  "(?:(?:[Rr]eferred|[Ss]igned|[Rr]eported|[Dd]ictated|[Tt]ranscribed) by|(?:[Rr]éféré|[Ss]igné|[Dd]icté)e? par)";
 /** Labels as written, With Capitals and IN CAPITALS, longest first. */
 const anyCase = (labels: string[]) =>
   `(?:${[
@@ -1007,6 +1007,8 @@ interface Rule {
   pattern: RegExp;
   /** The capture group holding the detail; the whole match when absent. */
   group?: number;
+  /** Relational prose can also introduce a disease: flag that conflict. */
+  reviewClinicalConflict?: true;
 }
 
 const HEALTH_CARD_LABEL =
@@ -1060,6 +1062,15 @@ const RULES: Rule[] = [
     kind: "sin",
     pattern:
       /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber| [Nn]o\.?| #)?|[Nn]uméro d'assurance sociale)[ \t]*[:#]?[ \t]*(\d{3}[ -]?\d{3}[ -]?\d{3})\b/gu,
+    group: 1,
+  },
+  // A sensitive field may describe a value as valid, invalid or mistyped.
+  // Its label, not a checksum, identifies the field. Descriptors stay on
+  // this line, contain no digits or sentence punctuation, and are bounded.
+  {
+    kind: "sin",
+    pattern:
+      /\b(?:SIN|NAS|Social [Ii]nsurance(?: [Nn]umber)?|[Nn]uméro d'assurance sociale)[ \t]+[\p{L}][\p{L}'’ -]{0,47}[ \t]*[:#]?[ \t]*(\d{3}[ -]?\d{3}[ -]?\d{3})\b/gu,
     group: 1,
   },
   {
@@ -1180,6 +1191,26 @@ const RULES: Rule[] = [
     ),
     group: 1,
   },
+  // Explicit relationships fill gaps left by a supplied PERSON list.
+  // Require a full name; a disease in this position remains a preview flag.
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:[Cc]opied to|[Cc]opy to|[Ss]poke with|[Mm]et with|[Aa] rencontré|[Aa]ccompanying relative|[Pp]roche accompagnante)[ \\t]+(${SURNAME_FIRST}|${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+    reviewClinicalConflict: true,
+  },
+  {
+    kind: "name",
+    pattern: new RegExp(
+      `(?<![\\p{L}])(?:[Cc]hecked by|[Vv]érifiée? par)[ \\t]+${CAPITALIZED_NAME}[ \\t]+(?:with|avec)[ \\t]+(${NAME_PART}(?:[ \\t]+(?:${PARTICLE}[ \\t]+)*${NAME_PART}){1,3})`,
+      "gu",
+    ),
+    group: 1,
+    reviewClinicalConflict: true,
+  },
   // A name with credentials after it: "Jane Doe, MD" (#80 review). Two
   // words, so a word before the name ("Signed Jane Doe, MD") stays.
   {
@@ -1267,6 +1298,16 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
       // A label's value may run past the detail into trailing punctuation,
       // and a French clinic's name into connecting words.
       let trimmed = detail.replace(/[\s,;.]+$/u, "");
+      // An unqualified Encounter followed by a valid whole date is a date
+      // field. Explicit record labels and invalid date-shaped IDs retain
+      // record-number protection.
+      if (
+        rule.kind === "recordNumber" &&
+        /^Encounter[ \t]*:?[ \t]*$/iu.test(match[0].slice(0, offset)) &&
+        shiftDate(trimmed, 0, options.dayFirst ?? true) !== null &&
+        shiftDate(trimmed, 0, options.dayFirst ?? true) !== "unclear"
+      )
+        continue;
       if (rule.kind === "clinic") {
         trimmed = trimmed.replace(
           /(?:[ \t]+(?:de|du|des|la|le|l['’]|d['’]|of))+$/u,
@@ -1289,7 +1330,33 @@ function find(text: string, options: DeidentifyOptions): Finding[] {
         NOT_NAMES.has(trimmed.split(/[\s,]+/)[0].toLowerCase())
       )
         continue;
-      found.push({ kind: rule.kind, start, end: start + trimmed.length });
+      const end = start + trimmed.length;
+      found.push({
+        kind:
+          rule.reviewClinicalConflict && (
+            clinicalNameOccurrence(text, start, end) ||
+            /\b(?:syndrome|disease|maladie|palsy|paralysis|paralysie|tenosynovitis|tenosynovite|sign|signe)\b/iu.test(trimmed)
+          )
+            ? "possibleName"
+            : rule.kind,
+        start,
+        end,
+      });
+      // Only an immediately linked checksum control inherits a SIN/NAS
+      // field. An unrelated nine-digit measurement never inherits it.
+      if (rule.kind === "sin") {
+        const control = /^[ \t]*;[ \t]*(?:checksum[- ](?:in)?valid[ \t]+control|controle[ \t]+a[ \t]+somme[ \t]+(?:in)?valide)[ \t]*:[ \t]*(\d{3}[ -]?\d{3}[ -]?\d{3})\b/iu.exec(
+          text.slice(end),
+        );
+        if (control) {
+          const controlStart = end + control[0].lastIndexOf(control[1]);
+          found.push({
+            kind: "sin",
+            start: controlStart,
+            end: controlStart + control[1].length,
+          });
+        }
+      }
     }
   }
   // Each known name: whole wherever it stands (even across a line break),
@@ -1385,6 +1452,26 @@ const wordPattern = (word: string) =>
     ? new RegExp(escapeRegExp(word), "gu")
     : new RegExp(`(?<![\\p{L}])${escapeRegExp(word)}(?![\\p{L}])`, "giu");
 
+/** A clinical role belongs to this occurrence, never to a surname globally.
+ * Matching-copy accents have already been folded. Direct identity findings
+ * still win; this prevents their alias sweep from consuming an eponym. */
+function clinicalNameOccurrence(text: string, start: number, end: number): boolean {
+  const before = text.slice(text.lastIndexOf("\n", start - 1) + 1, start);
+  const lineEnd = text.indexOf("\n", end);
+  const after = text.slice(end, lineEnd < 0 ? undefined : lineEnd);
+  const clinicalBefore = [...before.matchAll(
+    /\b(?:syndrome|disease|maladie|paralysis|paralysie|tenosynovitis|tenosynovite)[ \t]+(?:of|de|d['’])[ \t]*/giu,
+  )].some((match) =>
+    /^(?:\p{Lu}[\p{L}'’-]*[ \t]+){0,2}(?:\p{Lu}[\p{L}'’]*-)?$/u.test(
+      before.slice(match.index + match[0].length),
+    ),
+  );
+  return (
+    clinicalBefore ||
+    /^[ \t]*(?:['’]s[ \t]+)?(?:syndrome|disease|maladie|palsy|paralysis|paralysie|tenosynovitis|tenosynovite|sign|signe)\b/iu.test(after)
+  );
+}
+
 /**
  * A name a rule found (after a title, a label, a family word or a closing) is
  * that person wherever else it stands, with or without one (#72 review): the
@@ -1437,18 +1524,22 @@ function otherPlaces(
       groups.push({ words: new Set(lower), key: group });
     }
     finding.group = group;
-    const place = (match: RegExpExecArray | RegExpMatchArray, as: string) =>
+    const place = (match: RegExpExecArray | RegExpMatchArray, as: string) => {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      if (clinicalNameOccurrence(text, start, end)) return;
       places.push({
         kind:
           /\s/u.test(match[0]) || writtenAsName(match[0])
             ? finding.kind
             : "possibleName",
-        start: match.index ?? 0,
-        end: (match.index ?? 0) + match[0].length,
+        start,
+        end,
         group: as,
         whole,
         swept: true,
       });
+    };
     const pattern = whole.trim().split(/\s+/).map(escapeRegExp).join("\\s+");
     for (const match of text.matchAll(
       new RegExp(`(?<![\\p{L}])${pattern}(?![\\p{L}])`, "giu"),
