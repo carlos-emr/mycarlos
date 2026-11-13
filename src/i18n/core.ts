@@ -182,6 +182,20 @@ export function formatPhotoName(
   return value;
 }
 
+/** The name a new clinic link gives this device until the patient changes
+ * it, such as "myCarlos on Windows". It is sent to the clinic's portal, so it
+ * is data: no bidi delimiters, and a formatter fault gives the app's name,
+ * never the fault text. */
+export function formatDeviceName(locale: Locale, platform: string): string {
+  const value = formatMessage(
+    locale,
+    "portal.defaultDeviceName",
+    { platform },
+    false,
+  );
+  return value === formattingFailure(locale) ? "myCarlos" : value;
+}
+
 function formatMessage(
   locale: Locale,
   key: MessageKey,
