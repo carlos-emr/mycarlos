@@ -140,6 +140,31 @@ pub(crate) struct SourceSpan {
     pub(crate) end: u32,
 }
 
+/// Exact page identities read by a summary: the sent prefix through its head,
+/// plus only the explicitly reported later tail. Missing or unread gap pages stay out.
+pub(crate) fn summary_read_pages(
+    sent: &[u32],
+    last_head: u32,
+    tail: Option<u32>,
+) -> Option<Vec<u32>> {
+    if sent.is_empty()
+        || sent.len() > MAX_PAGES
+        || sent.iter().any(|&page| page as usize >= MAX_PAGES)
+        || !sent.windows(2).all(|pair| pair[0] < pair[1])
+    {
+        return None;
+    }
+    let head_at = sent.iter().position(|&page| page == last_head)?;
+    let mut read = sent[..=head_at].to_vec();
+    if let Some(tail) = tail {
+        if !sent[head_at + 1..].contains(&tail) {
+            return None;
+        }
+        read.push(tail);
+    }
+    Some(read)
+}
+
 /// An answer as the runtime gave it, kept natively for the document's save (#212). The save
 /// names it by document, tool, language and term; page code adds only a summary's source
 /// places, so the words, the model and the flags the vault keeps are the runtime's own.
@@ -149,8 +174,8 @@ pub(crate) enum KeptAnswer {
         sentences: Vec<Sentence>,
         /// The last page read, by its number from 1 (0 when none was), as the reader says it.
         last_page: u32,
-        /// The index (from 0) of the last page the model read: no source lies past it.
-        last_index: u32,
+        /// Exact indexes the model read: its sent head prefix and optional tail, never the gap.
+        read_pages: Vec<u32>,
         /// The summary covers only part of the document: pages were left out of the text,
         /// the model read fewer than were sent, or only the start of the last one.
         partial: bool,
@@ -187,7 +212,7 @@ impl KeptAnswer {
             KeptAnswer::Summary {
                 sentences,
                 last_page,
-                last_index,
+                read_pages,
                 partial,
                 pages_missing,
                 model,
@@ -196,7 +221,10 @@ impl KeptAnswer {
             } => {
                 let sources = sources?;
                 if sources.len() != sentences.len()
-                    || sources.iter().flatten().any(|span| span.page > *last_index)
+                    || sources
+                        .iter()
+                        .flatten()
+                        .any(|span| !read_pages.contains(&span.page))
                 {
                     return None;
                 }
@@ -820,7 +848,7 @@ mod tests {
                 },
             ],
             last_page: 2,
-            last_index: 1,
+            read_pages: vec![0, 1],
             partial: true,
             pages_missing: false,
             model: ModelInfo {
@@ -869,6 +897,72 @@ mod tests {
             Some(("FAKE model", &"0".repeat(64)))
         )
         .is_ok());
+    }
+
+    #[test]
+    fn summary_read_pages_preserves_sparse_head_and_only_the_reported_tail() {
+        assert_eq!(summary_read_pages(&[0, 1, 2], 0, Some(2)), Some(vec![0, 2]));
+        assert_eq!(
+            summary_read_pages(&[0, 2, 3, 4], 2, Some(4)),
+            Some(vec![0, 2, 4])
+        );
+        assert_eq!(summary_read_pages(&[0, 2, 4], 2, None), Some(vec![0, 2]));
+        assert_eq!(summary_read_pages(&[0, 2, 4], 4, None), Some(vec![0, 2, 4]));
+        for (sent, head, tail) in [
+            (vec![], 0, None),
+            (vec![0, 2], 1, None),
+            (vec![0, 2], 0, Some(1)),
+            (vec![0, 2], 2, Some(0)),
+            (vec![0, 2], 2, Some(2)),
+            (vec![0, 0], 0, None),
+            (vec![2, 0], 0, None),
+            (vec![MAX_PAGES as u32], MAX_PAGES as u32, None),
+        ] {
+            assert!(summary_read_pages(&sent, head, tail).is_none());
+        }
+    }
+
+    #[test]
+    fn kept_tail_source_passes_the_save_contract_but_an_unread_gap_does_not() {
+        let mut answer = kept_summary();
+        if let KeptAnswer::Summary { read_pages, .. } = &mut answer {
+            *read_pages = summary_read_pages(&[0, 1, 2], 0, Some(2)).unwrap();
+        }
+        let source = |page| SourceSpan {
+            page,
+            start: 0,
+            end: 1,
+        };
+        let (input, content) = answer.content(Some(&[Some(source(2)), None])).unwrap();
+        assert!(crate::vault::check_ai_answer(
+            &input,
+            content.as_bytes(),
+            Some(("FAKE model", &"0".repeat(64)))
+        )
+        .is_ok());
+        assert!(answer.content(Some(&[Some(source(0)), None])).is_some());
+        assert!(answer.content(Some(&[Some(source(1)), None])).is_none());
+        assert!(answer.content(Some(&[Some(source(3)), None])).is_none());
+        assert!(answer.content(Some(&[None, None])).is_some());
+    }
+
+    #[test]
+    fn kept_sources_refuse_absent_pages_inside_the_head_prefix_too() {
+        let mut answer = kept_summary();
+        if let KeptAnswer::Summary { read_pages, .. } = &mut answer {
+            *read_pages = summary_read_pages(&[0, 2, 3, 4], 2, Some(4)).unwrap();
+        }
+        let source = |page| SourceSpan {
+            page,
+            start: 0,
+            end: 1,
+        };
+        for page in [0, 2, 4] {
+            assert!(answer.content(Some(&[Some(source(page)), None])).is_some());
+        }
+        for page in [1, 3, 5] {
+            assert!(answer.content(Some(&[Some(source(page)), None])).is_none());
+        }
     }
 
     #[test]

@@ -2151,6 +2151,7 @@ async fn ai_summarize(
         (None, None) => None,
         _ => return Err(ai_error(model_runtime::AiError::Failed)),
     };
+    let sent_page_indices: Vec<_> = request.pages.iter().map(|page| page.index).collect();
     let lang = request.lang.clone();
     let result = run_ai(
         store.inner(),
@@ -2159,6 +2160,9 @@ async fn ai_summarize(
         move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch),
     )
     .await?;
+    let read_pages =
+        model_runtime::summary_read_pages(&sent_page_indices, result.last_page, result.tail_page)
+            .ok_or_else(|| ai_error(model_runtime::AiError::Failed))?;
     let kept_id = kept_for.map(|(record_id, text)| {
         picks.keep_ai_answer(
             session,
@@ -2171,7 +2175,7 @@ async fn ai_summarize(
                 } else {
                     0
                 },
-                last_index: result.last_page,
+                read_pages,
                 partial: text.partial(result.last_page, result.last_page_cut),
                 pages_missing: text.pages_missing,
                 model: result.model.clone(),
