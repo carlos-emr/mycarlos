@@ -1168,7 +1168,7 @@ damaged. Header and object formats are unchanged.
 
 ## Provisional format 14: previous full names
 
-This branch understands manifest formats 1–11 and 14 only. Reserved 12 and 13 are explicitly unsupported, including recovery/fallback selection: they are never interpreted as known semantics. Format 14 is a Root-reserved working assignment; compatibility review and reservation/current-main reconciliation are required before publication or migration approval. Header, object and backup container formats do not change.
+This branch understands manifest formats 1–11 and 14 only. Unknown slots 12 and 13 are explicitly unsupported, including recovery/fallback selection: they are never interpreted as known semantics. Format 14 is a provisional working value, not a reservation. The constant, documentation and refusal/upgrade tests must be reconciled with the next free format number and the existing landing-order decision before merge or migration approval. Header, object and backup container formats do not change.
 
 A non-Shared encrypted profile may contain `previousFullNames`, a nonempty ordered array of at most 16 distinct trimmed names. Each uses the existing 120-Unicode-scalar name/control validation. Absence is the canonical empty state; null, wrong types, empty stored arrays, duplicates and noncanonical stored names are refused. The field is forbidden in older declared formats and on Shared. Writable legacy unlock uses the existing redundant standalone manifest upgrade; read-only recovery does not migrate. Older builds must refuse format 14 rather than read/drop this field.
 
