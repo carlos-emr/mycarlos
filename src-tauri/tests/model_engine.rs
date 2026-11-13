@@ -314,6 +314,20 @@ fn the_real_engine_loads_the_model_as_handed_over_and_summarizes_under_the_gramm
         .explain("en", "blood test", "FAKE: a blood test was done.")
         .unwrap();
     assert!(!text.is_empty() && text.chars().all(|c| c == '"'), "{text}");
+    // The existing tiny byte-vocabulary fixture reaches the 220-token explanation cap.
+    // Keep the final decode in the measurement even though its logits are never picked.
+    let stats = runner.last_stats_json().expect("capped explanation stats");
+    assert_eq!(stats["capped"], true, "{stats}");
+    assert_eq!(stats["answerTokens"], 220, "{stats}");
+    assert_eq!(text.len(), 220);
+    assert_eq!(
+        stats["answerTiming"]["pickCalls"], stats["answerTokens"],
+        "{stats}"
+    );
+    assert_eq!(
+        stats["answerTiming"]["decodeCalls"], stats["answerTokens"],
+        "{stats}"
+    );
     runner.stop();
 }
 
@@ -482,6 +496,22 @@ fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
     let stats = measured.stats.as_ref().expect("stats");
     assert!(stats["promptTokens"].as_u64().unwrap() > 0, "{stats}");
     assert!(stats["answerTokens"].as_u64().unwrap() > 0, "{stats}");
+    let timing = &stats["answerTiming"];
+    // The grammar closes the tiny model's complete JSON, then EOG is picked once.
+    // EOG contributes a pick, but no answer token, emission or decode call.
+    assert_eq!(stats["capped"], false, "{stats}");
+    assert_eq!(
+        timing["pickCalls"].as_u64().unwrap(),
+        stats["answerTokens"].as_u64().unwrap() + 1,
+        "{stats}"
+    );
+    assert_eq!(timing["decodeCalls"], stats["answerTokens"], "{stats}");
+    let measured_us = ["pickUs", "emitUs", "decodeUs"]
+        .iter()
+        .map(|&name| timing[name].as_u64().expect("answer stage time"))
+        .sum::<u64>();
+    // Disjoint intervals fit within answerMs, allowing its millisecond truncation.
+    assert!(measured_us <= stats["answerMs"].as_u64().unwrap() * 1_000 + 999);
     // The runner's own limit: 30 s + 150 ms for each of 750 + 48 bytes / 3 prompt tokens,
     // + 600 ms for each of the 600 answer tokens allowed.
     assert_eq!(
