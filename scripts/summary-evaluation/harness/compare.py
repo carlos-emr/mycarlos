@@ -295,7 +295,7 @@ def valid_answer(answer):
             and all(isinstance(s, dict) and isinstance(s.get("text"), str) and bool(s["text"].strip())
                     and isinstance(s.get("quote"), str) and type(s.get("located")) is bool
                     for s in answer["sentences"])
-            and ("stats" not in answer or isinstance(answer["stats"], dict)))
+            and (answer.get("stats") is None or isinstance(answer["stats"], dict)))
 
 
 def screen(sentence, run_lang, facts):
@@ -735,7 +735,7 @@ def repeat(first, second, docs=None, only=None):
         entries = (entries_a[doc_id], entries_b[doc_id])
         answers = [e.get("result") for e in entries]
         valid = all(e.get("error") is None and valid_answer(a) for e, a in zip(entries, answers))
-        hashes = [a.get("stats", {}).get("answerHash") for a in answers] if valid else []
+        hashes = [(a.get("stats") or {}).get("answerHash") for a in answers] if valid else []
         valid = valid and all(type(h) is int and 0 <= h < 2**64 for h in hashes)
         valid = valid and answers[0]["sentences"] == answers[1]["sentences"] and hashes[0] == hashes[1]
         (same if valid else different).append(doc_id)

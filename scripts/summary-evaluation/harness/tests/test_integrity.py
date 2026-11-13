@@ -315,7 +315,7 @@ class IntegrityTest(unittest.TestCase):
                 self.assertEqual((same, different), ([], [self.doc["id"]]))
 
     def test_malformed_optional_stats_are_document_failures(self):
-        for stats in ("bad", [1], None):
+        for stats in ("bad", [1]):
             with self.subTest(stats=stats):
                 self.variant[1]["result"]["stats"] = stats
                 summaries, decisions = self.score()
@@ -330,6 +330,13 @@ class IntegrityTest(unittest.TestCase):
         meta, entries = compare.read_run(self.write("nullable-memory", self.base))
         self.assertIsNone(compare.memory(meta, entries))
         self.assertFalse(compare.repeat(self.write("a", self.base), self.write("b", self.base), self.docs)[3])
+
+    def test_unavailable_optional_stats_preserve_sentences_but_cannot_prove_repeat(self):
+        for run in (self.base, self.variant):
+            run[1]["result"]["stats"] = None
+        self.assertEqual(self.score(self.sheet())[1][1]["verdict"], "PASS")
+        same, different, _, _ = compare.repeat(self.write("a", self.base), self.write("b", self.base), self.docs)
+        self.assertEqual((same, different), ([], [self.doc["id"]]))
 
     def test_malformed_metadata_has_actionable_input_errors(self):
         for target, field, value in [(0,"model",[1]), (0,"build","bad"),
