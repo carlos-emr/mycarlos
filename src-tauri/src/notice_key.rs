@@ -16,6 +16,13 @@
 //!
 //! Step 1 of #230: the store, its file and its wipes. The poller and the
 //! Portal's enrollment field use it once the Portal's route (#87) is there.
+//!
+//! New v1 files have 1,280 bytes of padded room per slot (20,532 bytes in
+//! all). The reader also accepts the earlier experimental 512-byte padding
+//! (8,244 bytes). Reading preserves that file; its next successful write
+//! uses the new fixed size. The v1 JSON, magic and authenticated label stay
+//! the same. Earlier readers refuse the larger envelope; this is not a
+//! vault-format change or a downgrade path.
 #![cfg_attr(not(test), allow(dead_code))]
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
@@ -38,13 +45,17 @@ use std::sync::Mutex;
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
+use crate::portal_link::MAX_PORTAL_UTF8_BYTES;
+
 /// One entry per linked Portal, at most: the cap on remote-notice
 /// destinations (format 9, `remote_notices`).
 pub(crate) const SLOTS: usize = 16;
-/// Each slot's plaintext, padded: an origin of up to `MAX_ORIGIN_BYTES`, two
-/// ids, a key id and a seed fit with room to spare.
-const SLOT_BYTES: usize = 512;
-const MAX_ORIGIN_BYTES: usize = 255;
+/// Each slot's plaintext, padded: a normalized Portal base of up to
+/// `MAX_PORTAL_UTF8_BYTES`, two ids, a key id and a seed fit with room to spare.
+const SLOT_BYTES: usize = 1280;
+/// The earlier experimental v1 padding remains readable. Every new write uses
+/// SLOT_BYTES; reading alone does not rewrite an existing file.
+const LEGACY_SLOT_BYTES: usize = 512;
 const MAX_KEY_ID_BYTES: usize = 64;
 const MAGIC: &[u8; 8] = b"MCNKEYS1";
 const AAD: &[u8] = b"mycarlos-notice-keys-v1";
@@ -82,7 +93,8 @@ pub(crate) trait WrapKeyStore: Send + Sync {
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct NoticeKeyEntry {
-    /// The Portal, as the link knows it (scheme, host and port).
+    /// The link's normalized Portal base, including any path. The historical
+    /// field name is retained in the v1 schema; this is not just a URL origin.
     pub(crate) portal_origin: String,
     pub(crate) link_id: Uuid,
     /// The vault the link belongs to: an unlock of another vault wipes it.
@@ -198,7 +210,7 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
         link_id: Uuid,
         portal_origin: &str,
     ) -> Result<NewNoticeKey, NoticeKeyError> {
-        if portal_origin.is_empty() || portal_origin.len() > MAX_ORIGIN_BYTES {
+        if portal_origin.is_empty() || portal_origin.len() > MAX_PORTAL_UTF8_BYTES {
             return Err(NoticeKeyError::Damaged);
         }
         let _guard = self.lock.lock().map_err(|_| NoticeKeyError::Io)?;
@@ -362,6 +374,7 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
 
 /// The file's whole size: magic, nonce, then the padded plaintext and its tag.
 pub(crate) const FILE_BYTES: usize = MAGIC.len() + 24 + 4 + SLOTS * SLOT_BYTES + 16;
+const LEGACY_FILE_BYTES: usize = MAGIC.len() + 24 + 4 + SLOTS * LEGACY_SLOT_BYTES + 16;
 
 fn seal(key: &[u8; 32], slots: &[Option<NoticeKeyEntry>]) -> Result<Vec<u8>, NoticeKeyError> {
     let json = Zeroizing::new(
@@ -400,7 +413,7 @@ fn seal(key: &[u8; 32], slots: &[Option<NoticeKeyEntry>]) -> Result<Vec<u8>, Not
 }
 
 fn open(key: &[u8; 32], data: &[u8]) -> Result<Vec<Option<NoticeKeyEntry>>, NoticeKeyError> {
-    if data.len() != FILE_BYTES || &data[..MAGIC.len()] != MAGIC {
+    if !matches!(data.len(), FILE_BYTES | LEGACY_FILE_BYTES) || &data[..MAGIC.len()] != MAGIC {
         return Err(NoticeKeyError::Damaged);
     }
     let nonce = XNonce::from_slice(&data[MAGIC.len()..MAGIC.len() + 24]);
@@ -426,7 +439,7 @@ fn open(key: &[u8; 32], data: &[u8]) -> Result<Vec<Option<NoticeKeyEntry>>, Noti
         || plain.slots.len() != SLOTS
         || plain.slots.iter().flatten().any(|entry| {
             entry.portal_origin.is_empty()
-                || entry.portal_origin.len() > MAX_ORIGIN_BYTES
+                || entry.portal_origin.len() > MAX_PORTAL_UTF8_BYTES
                 || entry.key_id.is_empty()
                 || entry.key_id.len() > MAX_KEY_ID_BYTES
                 || entry.signing_key().is_none()
@@ -682,13 +695,36 @@ mod tests {
     }
 
     #[test]
-    fn the_seed_is_never_in_a_debug_print() {
-        let (_temp, keys) = keys();
-        keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
-        let entry = keys.entries().unwrap().remove(0);
-        let printed = format!("{entry:?}");
-        assert!(!printed.contains(&entry.seed.0), "{printed}");
-        assert!(!printed.contains("seed"), "{printed}");
+    fn debug_prints_only_the_three_public_identifiers() {
+        let mut entry = NoticeKeyEntry {
+            portal_origin: ORIGIN.to_owned(),
+            link_id: uuid(10),
+            vault_id: uuid(1),
+            key_id: "FAKE-public-id".to_owned(),
+            seed: Seed(B64.encode([17_u8; 32])),
+        };
+        let expected = concat!(
+            "NoticeKeyEntry { link_id: fac00000-0000-4000-8000-00000000000a, ",
+            "vault_id: fac00000-0000-4000-8000-000000000001, ",
+            "key_id: \"FAKE-public-id\", .. }"
+        );
+        let pretty = concat!(
+            "NoticeKeyEntry {\n",
+            "    link_id: fac00000-0000-4000-8000-00000000000a,\n",
+            "    vault_id: fac00000-0000-4000-8000-000000000001,\n",
+            "    key_id: \"FAKE-public-id\",\n",
+            "    ..\n}"
+        );
+        for _ in 0..2 {
+            // Failure diagnostics never print the actual representation.
+            assert!(format!("{entry:?}") == expected, "Debug whitelist changed");
+            assert!(
+                format!("{entry:#?}") == pretty,
+                "pretty Debug whitelist changed"
+            );
+            entry.portal_origin = "https://other.example.invalid/patient".to_owned();
+            entry.seed = Seed(B64.encode([29_u8; 32]));
+        }
     }
 
     #[test]
@@ -718,14 +754,167 @@ mod tests {
     }
 
     #[test]
-    fn an_origin_out_of_bounds_is_refused() {
+    fn a_portal_base_out_of_bounds_is_refused_without_changing_existing_keys() {
         let (_temp, keys) = keys();
-        for origin in ["".to_owned(), "x".repeat(MAX_ORIGIN_BYTES + 1)] {
+        keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
+        let before = keys.entries().unwrap();
+        let file_before = fs::read(&keys.path).unwrap();
+        for origin in ["".to_owned(), "x".repeat(MAX_PORTAL_UTF8_BYTES + 1)] {
             assert_eq!(
                 keys.make_for(uuid(1), uuid(10), &origin).map(|_| ()),
                 Err(NoticeKeyError::Damaged)
             );
         }
+        assert!(keys.entries().unwrap() == before);
+        assert_eq!(fs::read(&keys.path).unwrap(), file_before);
+    }
+
+    fn maximum_portal_base() -> String {
+        let base = "https://fake.example/";
+        let count = (MAX_PORTAL_UTF8_BYTES - base.len()) / 6;
+        let padding = "x".repeat(MAX_PORTAL_UTF8_BYTES - base.len() - count * 6);
+        let input = format!("{base}{}{padding}", "é".repeat(count));
+        let canonical = crate::portal_link::normalize_portal(&input).unwrap();
+        assert_eq!(canonical.len(), MAX_PORTAL_UTF8_BYTES);
+        assert_eq!(
+            canonical,
+            format!("{base}{}{padding}", "%C3%A9".repeat(count))
+        );
+        assert_eq!(
+            crate::portal_link::normalize_portal(&canonical).unwrap(),
+            canonical
+        );
+        assert!(crate::portal_link::normalize_portal(&format!("{input}x")).is_err());
+        canonical
+    }
+
+    #[test]
+    fn sixteen_maximum_normalized_portal_bases_fit_without_truncation() {
+        let (_temp, keys) = keys();
+        let portal = maximum_portal_base();
+        for n in 0..SLOTS {
+            keys.make_for(uuid(1), uuid(10 + n as u128), &portal)
+                .unwrap();
+            assert_eq!(fs::metadata(&keys.path).unwrap().len(), FILE_BYTES as u64);
+        }
+        let before = keys.entries().unwrap();
+        assert_eq!(before.len(), SLOTS);
+        assert!(before.iter().all(|entry| entry.portal_origin == portal));
+        assert!(matches!(
+            keys.make_for(uuid(1), uuid(99), &portal),
+            Err(NoticeKeyError::Full)
+        ));
+        assert!(keys.entries().unwrap() == before);
+        keys.wipe_all().unwrap();
         assert_eq!(keys.entries(), Ok(vec![]));
+        assert_eq!(fs::metadata(&keys.path).unwrap().len(), FILE_BYTES as u64);
+        keys.make_for(uuid(1), uuid(30), &portal).unwrap();
+        assert_eq!(keys.entries().unwrap()[0].portal_origin, portal);
+        assert_eq!(fs::metadata(&keys.path).unwrap().len(), FILE_BYTES as u64);
+    }
+
+    #[test]
+    fn fixed_padding_also_fits_the_maximum_readable_key_id_in_every_slot() {
+        let portal = maximum_portal_base();
+        let slots: Vec<_> = (0..SLOTS)
+            .map(|n| {
+                Some(NoticeKeyEntry {
+                    portal_origin: portal.clone(),
+                    link_id: uuid(10 + n as u128),
+                    vault_id: uuid(1),
+                    key_id: format!("{n:064}"),
+                    seed: Seed(B64.encode([17_u8; 32])),
+                })
+            })
+            .collect();
+        let data = seal(&[7_u8; 32], &slots).unwrap();
+        assert_eq!(data.len(), FILE_BYTES);
+        assert!(open(&[7_u8; 32], &data).unwrap() == slots);
+    }
+
+    // Independent fixture writer for the documented v1 envelope, including
+    // the older padding; it never calls the production writer.
+    fn v1_fixture(
+        key: &[u8; 32],
+        slots: &[Option<NoticeKeyEntry>],
+        room: usize,
+        version: u8,
+    ) -> Vec<u8> {
+        let json = Zeroizing::new(
+            serde_json::to_vec(&Plain {
+                version,
+                slots: slots.to_vec(),
+            })
+            .unwrap(),
+        );
+        assert!(json.len() <= room);
+        let mut plain = Zeroizing::new(Vec::new());
+        plain.extend_from_slice(&(json.len() as u32).to_be_bytes());
+        plain.extend_from_slice(&json);
+        plain.resize(4 + room, 0);
+        let nonce = [19_u8; 24];
+        let sealed = XChaCha20Poly1305::new(key.into())
+            .encrypt(
+                XNonce::from_slice(&nonce),
+                Payload {
+                    msg: &plain,
+                    aad: b"mycarlos-notice-keys-v1",
+                },
+            )
+            .unwrap();
+        let mut data = b"MCNKEYS1".to_vec();
+        data.extend_from_slice(&nonce);
+        data.extend_from_slice(&sealed);
+        data
+    }
+
+    #[test]
+    fn legacy_v1_reads_unchanged_and_its_next_write_uses_the_new_fixed_padding() {
+        let (_temp, keys) = keys();
+        let entry = NoticeKeyEntry {
+            portal_origin: ORIGIN.to_owned(),
+            link_id: uuid(10),
+            vault_id: uuid(1),
+            key_id: "FAKE-public-id".to_owned(),
+            seed: Seed(B64.encode([17_u8; 32])),
+        };
+        let mut slots = vec![None; SLOTS];
+        slots[0] = Some(entry.clone());
+        let wrap = [7_u8; 32];
+        let legacy = v1_fixture(&wrap, &slots, SLOTS * LEGACY_SLOT_BYTES, 1);
+        assert_eq!(legacy.len(), 8244);
+        keys.store.put(&wrap).unwrap();
+        fs::write(&keys.path, &legacy).unwrap();
+        assert!(keys.entries().unwrap() == vec![entry.clone()]);
+        assert_eq!(
+            fs::read(&keys.path).unwrap(),
+            legacy,
+            "read must not rewrite"
+        );
+        keys.make_for(uuid(1), uuid(11), &maximum_portal_base())
+            .unwrap();
+        assert_eq!(fs::metadata(&keys.path).unwrap().len(), 20532);
+        assert!(keys.entries().unwrap()[0] == entry);
+        assert_eq!(keys.entries().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn only_the_two_v1_sizes_and_current_payload_version_are_accepted() {
+        let wrap = [7_u8; 32];
+        let slots = vec![None; SLOTS];
+        for room in [SLOTS * LEGACY_SLOT_BYTES, SLOTS * SLOT_BYTES] {
+            let data = v1_fixture(&wrap, &slots, room, 1);
+            assert!(open(&wrap, &data).unwrap() == slots);
+            assert_eq!(open(&[8_u8; 32], &data), Err(NoticeKeyError::Damaged));
+            assert_eq!(
+                open(&wrap, &v1_fixture(&wrap, &slots, room, 2)),
+                Err(NoticeKeyError::Damaged)
+            );
+            let mut altered = data;
+            altered[0] ^= 1;
+            assert_eq!(open(&wrap, &altered), Err(NoticeKeyError::Damaged));
+        }
+        let unsupported = v1_fixture(&wrap, &slots, SLOTS * LEGACY_SLOT_BYTES + 1, 1);
+        assert_eq!(open(&wrap, &unsupported), Err(NoticeKeyError::Damaged));
     }
 }
