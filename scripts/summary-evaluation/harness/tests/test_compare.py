@@ -35,7 +35,8 @@ def sentence(text, quote, located=True):
 
 
 def run_lines(variant, sentences, wall_ms=100_000, error=None, doc_id="fake-letter"):
-    meta = dict(kind="run", variant=variant, build=dict(fingerprint="f" * 64), lang="en",
+    meta = dict(kind="run", variant=variant, threads=3, commit="invented-revision", build=dict(fingerprint="f" * 64), lang="en",
+                runnerSha256="r" * 64, harnessSha256="h" * 64,
                 model=dict(sha256="a" * 64, chatFormat="builtin"))
     entry = dict(kind="document", id=doc_id, wallMs=wall_ms,
                  pagesSha256=compare.pages_sha256(fake_doc()["pages"]))

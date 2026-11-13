@@ -56,11 +56,13 @@ and kept as their `pages`.
   - `LANGUAGE`: not the summary language;
   - `QUANTITY_MISMATCH`: a value or unit that differs from a fact's own.
 - **The review sheet** (`review.csv`) has every flagged sentence and a seeded fifth of the others,
-  each with its quote, candidate facts and the document's traps. All unfamiliar fact candidates
+  with at least one row per successfully answered document, each with its quote, candidate facts and the document's traps. All unfamiliar fact candidates
   are included, even if no other screen flags them. A reviewer fills `verdict` (`correct`, `wrong`,
   `unsupported`, `vague`) for sentence fidelity, and `confirmed_facts` with the space-separated
   listed fact IDs actually carried, or `-` for none. Blank fact confirmation on a correct candidate
-  remains pending. Sentence correctness alone does not assert every candidate fact.
+  remains pending. Every grounded occurrence is associated with its fact; a later confirmed
+  occurrence can establish credit when an earlier occurrence does not. Each fact counts once.
+  Sentence correctness alone does not assert every candidate fact.
   Each row has a content-bound `review_id`: edited/stale/unknown or duplicate identities are refused.
   Every currently required row must be present with a verdict before PASS; missing/header-only,
   blank or partial sheets do not count as completed review. One `wrong` or `unsupported` still fails
@@ -149,3 +151,9 @@ support module; it does not substitute for the full native integration build or 
 All documents are marked synthetic in metadata. The 18 harness documents also contain textual
 markers; the 12 unchanged PR 295 page texts do not all say synthetic. PR 295 is already closed.
 No source fixtures are rewritten to change that distinction.
+
+Malformed or contradictory evidence is refused: duplicate JSON fields at any depth are invalid in
+run records and source documents, including during Rust resume. Malformed answers are recorded as
+scoring failures and excluded from review export. Repeat comparison requires nonempty recorded
+implementation identities, a nonempty valid sentence list, and an unsigned 64-bit token answer hash.
+Historical outputs missing the executable hashes are not comparable; do not reconstruct metadata.

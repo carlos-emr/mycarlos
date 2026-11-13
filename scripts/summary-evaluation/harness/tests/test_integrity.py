@@ -44,7 +44,8 @@ def records(label, doc, better=False):
         sentences += [sentence("Please keep the blue card.", "Keep the blue card."),
                       sentence("Please keep the green card.", "Keep the green card.")]
     return [dict(kind="run", variant=label, lang="en", threads=3, commit="invented-revision",
-                 build=dict(fingerprint="f" * 64), model=dict(sha256="a" * 64, chatFormat="builtin")),
+                 build=dict(fingerprint="f" * 64), runnerSha256="r" * 64, harnessSha256="h" * 64,
+                model=dict(sha256="a" * 64, chatFormat="builtin")),
             dict(kind="document", id=doc["id"], pagesSha256=page_hash(doc["pages"]), wallMs=1000,
                  result=dict(sentences=sentences, lastPage=0, lastPageCut=False,
                              stats=dict(answerHash=1))), dict(kind="end", answered=1)]
@@ -258,6 +259,99 @@ class IntegrityTest(unittest.TestCase):
             except ValueError:
                 return
         self.assertTrue(problems)
+
+    def test_repeat_refuses_identity_missing_on_both_runs(self):
+        for run in (self.base, self.variant):
+            for key in ("build", "lang", "threads", "commit", "runnerSha256", "harnessSha256"):
+                run[0].pop(key, None)
+        self.assertTrue(compare.repeat(self.write("a", self.base), self.write("b", self.variant), self.docs)[3])
+
+    def test_later_confirmed_paraphrase_is_not_hidden_by_the_first_topic_match(self):
+        self.variant[1]["result"]["sentences"].insert(1,
+            sentence("This text mentions the blue card.", "Keep the blue card."))
+        def select(rows):
+            for row in rows:
+                if row["run"] == "V1" and int(row["sentence"]) == 1:
+                    row["confirmed_facts"] = "-"
+                if row["run"] == "V1" and int(row["sentence"]) == 2:
+                    row["confirmed_facts"] = "1"
+            return rows
+        summaries, decisions = self.score(self.sheet(select))
+        self.assertEqual(summaries[1]["action_found"], 2)
+        self.assertEqual(decisions[1]["verdict"], "PASS")
+
+    def test_malformed_results_do_not_reach_review_export(self):
+        for result in ("bad", ["bad"], {"sentences": "bad"}, {"sentences": ["bad"]}):
+            with self.subTest(result=result):
+                self.variant[1]["result"] = result
+                summaries, decisions = self.score(out="malformed")
+                self.assertEqual(summaries[1]["failed"], 1)
+                self.assertEqual(decisions[1]["verdict"], "FAIL")
+
+    def test_small_subset_always_requires_an_actual_review_row(self):
+        self.base[0]["variant"], self.variant[0]["variant"] = "B4", "V4"
+        self.variant[1]["result"]["sentences"] = [
+            sentence(f["approved_statements"][0], f["source_evidence"]) for f in self.doc["facts"]]
+        self.score(out="small")
+        with (self.root / "small/review.csv").open() as source:
+            rows = list(csv.DictReader(source))
+        self.assertEqual({r["run"] for r in rows}, {"B4", "V4"})
+        self.assertEqual(self.score(self.root / "small/review.csv")[1][1]["verdict"], "PENDING")
+        self.assertEqual(self.score(self.sheet())[1][1]["verdict"], "PASS")
+
+    def test_repeat_rejects_matching_malformed_results_and_hashes(self):
+        bad = ["bad", {"sentences": []}, {"sentences": [42]},
+               {"sentences": [dict(text=3, quote=None, located="true")]},
+               dict(self.base[1]["result"], stats="bad")]
+        for value in ("", None, True, -1, 2**64):
+            answer = copy.deepcopy(self.base[1]["result"])
+            answer["stats"]["answerHash"] = value
+            bad.append(answer)
+        for answer in bad:
+            with self.subTest(answer=answer):
+                runs = copy.deepcopy(self.base)
+                runs[1]["result"] = answer
+                same, different, _, _ = compare.repeat(self.write("a", runs), self.write("b", runs), self.docs)
+                self.assertEqual((same, different), ([], [self.doc["id"]]))
+
+    def test_malformed_optional_stats_are_document_failures(self):
+        for stats in ("bad", [1], None):
+            with self.subTest(stats=stats):
+                self.variant[1]["result"]["stats"] = stats
+                summaries, decisions = self.score()
+                self.assertEqual(summaries[1]["failed"], 1)
+                self.assertEqual(decisions[1]["verdict"], "FAIL")
+
+    def test_malformed_metadata_has_actionable_input_errors(self):
+        for target, field, value in [(0,"model",[1]), (0,"build","bad"),
+                                     (0,"helperMemory","bad"), (1,"helperMemory","bad"),
+                                     (1,"helperMemory",dict(peakKiB="bad"))]:
+            with self.subTest(field=field, target=target):
+                runs = copy.deepcopy(self.base)
+                runs[target][field] = value
+                with self.assertRaisesRegex(ValueError, field):
+                    compare.read_run(self.write("malformed-meta", runs))
+
+    def test_duplicate_json_keys_cannot_erase_failure_or_nested_identity(self):
+        for fragment in ('"error":"Timeout","error":null',
+                         '"model":{"sha256":"a","sha256":"b"}',
+                         '"result":{"sentences":[{"text":"a","text":"b"}]}'):
+            path = self.root / "duplicate"
+            path.write_text(json.dumps(self.base[0]) + '\n{"kind":"document","id":"invented-cards",'
+                            + fragment + '}\n{"kind":"end","answered":1}\n')
+            with self.assertRaisesRegex(ValueError, "duplicate JSON field"):
+                compare.read_run(path)
+            path.write_text("{" + fragment + "}")
+            with self.assertRaisesRegex(ValueError, "duplicate JSON field"):
+                compare.read_json(path)
+
+    def test_later_approved_occurrence_survives_an_earlier_vague_occurrence(self):
+        text = self.doc["facts"][1]["source_evidence"]
+        self.variant[1]["result"]["sentences"] = [sentence(text, text), sentence(text, text)]
+        scored = compare.score_document(self.doc, self.variant[1], "en", {
+            0: dict(verdict="vague"), 1: dict(verdict="correct", confirmed_facts="1")})
+        self.assertEqual(scored["action_found"], 1)
+        self.assertEqual(scored["facts"][1]["sentence"], 1)
 
     def test_repeat_reports_incomplete_coverage_instead_of_only_intersection(self):
         self.variant = copy.deepcopy(self.base)

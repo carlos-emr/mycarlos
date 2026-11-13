@@ -5,6 +5,61 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::Path;
 
+/// Decode recursively without discarding contradictory duplicate fields.
+pub(super) fn strict_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
+    use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
+    struct Unique(Value);
+    impl<'de> Deserialize<'de> for Unique {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct UniqueVisitor;
+            impl<'de> Visitor<'de> for UniqueVisitor {
+                type Value = Unique;
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str("JSON without duplicate object fields")
+                }
+                fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Unique, A::Error> {
+                    let mut object = serde_json::Map::new();
+                    while let Some((key, Unique(value))) = map.next_entry::<String, Unique>()? {
+                        if object.insert(key.clone(), value).is_some() {
+                            return Err(serde::de::Error::custom(format!(
+                                "duplicate JSON field: {key}"
+                            )));
+                        }
+                    }
+                    Ok(Unique(Value::Object(object)))
+                }
+                fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Unique, A::Error> {
+                    let mut values = Vec::new();
+                    while let Some(Unique(value)) = seq.next_element()? {
+                        values.push(value);
+                    }
+                    Ok(Unique(Value::Array(values)))
+                }
+                fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Unique, E> {
+                    Ok(Unique(json!(v)))
+                }
+                fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Unique, E> {
+                    Ok(Unique(json!(v)))
+                }
+                fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Unique, E> {
+                    Ok(Unique(json!(v)))
+                }
+                fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Unique, E> {
+                    Ok(Unique(json!(v)))
+                }
+                fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Unique, E> {
+                    Ok(Unique(json!(v)))
+                }
+                fn visit_unit<E: serde::de::Error>(self) -> Result<Unique, E> {
+                    Ok(Unique(Value::Null))
+                }
+            }
+            deserializer.deserialize_any(UniqueVisitor)
+        }
+    }
+    serde_json::from_slice::<Unique>(bytes).map(|value| value.0)
+}
+
 pub(super) fn executable_sha256(path: &Path) -> std::io::Result<String> {
     let mut file = std::fs::File::open(path)?;
     let mut hash = Sha256::new();
@@ -82,7 +137,7 @@ pub(super) fn resume(bytes: &[u8], expected: &Value) -> Result<Resume, String> {
     let records = text
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .map(serde_json::from_str::<Value>)
+        .map(|line| strict_json(line.as_bytes()))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| "malformed resume JSON; preserve the file and recover a copy")?;
     let first = &records[0];
@@ -222,6 +277,26 @@ mod tests {
             record["result"] = json!({"sentences":[]});
         }
         record
+    }
+
+    #[test]
+    fn duplicate_fields_are_rejected_at_every_depth() {
+        for bytes in [
+            br#"{"error":"Timeout","error":null}"#.as_slice(),
+            br#"{"model":{"sha256":"a","sha256":"b"}}"#.as_slice(),
+            br#"{"sentences":[{"text":"a","text":"b"}]}"#.as_slice(),
+            br#"{"pages":[{"index":0,"text":"a","text":"b"}]}"#.as_slice(),
+        ] {
+            assert!(strict_json(bytes).is_err());
+            let mut output = output(&[run()]);
+            output.extend_from_slice(bytes);
+            output.push(b'\n');
+            assert!(resume(&output, &run()).is_err());
+        }
+        assert_eq!(
+            strict_json(br#"{"a":[1,null,true,"text",1.5]}"#).unwrap(),
+            json!({"a":[1,null,true,"text",1.5]})
+        );
     }
 
     #[test]

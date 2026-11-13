@@ -113,8 +113,17 @@ def guess_language(text):
 
 # --- Documents ----------------------------------------------------------------------------------
 
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON field: {key}")
+        result[key] = value
+    return result
+
+
 def read_json(path):
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return json.loads(Path(path).read_text(encoding="utf-8"), object_pairs_hook=unique_object)
 
 
 def check_document(doc):
@@ -182,7 +191,7 @@ def prepare(out, docs):
 
 def read_run(path):
     """Read a complete run without silently collapsing duplicate attempts."""
-    lines = [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
+    lines = [json.loads(line, object_pairs_hook=unique_object) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
     if not lines or any(not isinstance(line, dict) for line in lines) or lines[0].get("kind") != "run":
         raise ValueError(f"{path}: the first line must name the run")
     entries = {}
@@ -201,7 +210,21 @@ def read_run(path):
             raise ValueError(f"{path}: unknown record kind")
     if "answered" in lines[-1] and lines[-1]["answered"] != len(entries):
         raise ValueError(f"{path}: completion count differs from document records")
-    return lines[0], entries
+    meta = lines[0]
+    for key in ("build", "model", "helperMemory"):
+        if key in meta and not isinstance(meta[key], dict):
+            raise ValueError(f"{path}: {key} must be an object")
+    for name, item in [("run", meta), *entries.items()]:
+        if "helperMemory" in item and not isinstance(item["helperMemory"], dict):
+            raise ValueError(f"{name}: helperMemory must be an object")
+        for key in ("peakKiB", "availableKiB"):
+            value = item.get("helperMemory", {}).get(key)
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or value < 0):
+                raise ValueError(f"{name}: helperMemory.{key} must be a nonnegative number")
+    size = meta.get("model", {}).get("bytes", 0)
+    if type(size) not in (int, float) or not math.isfinite(size) or size < 0:
+        raise ValueError(f"{path}: model.bytes must be a nonnegative number")
+    return meta, entries
 
 
 def pages_sha256(pages):
@@ -245,22 +268,34 @@ def evidence_covers(fact, sentence, pages=None):
     return pages is None or quote in normalized(" ".join(p["text"] for p in pages))
 
 
-def find_fact(fact, sentences, pages=None):
-    """Verified approved wording or a review-only topic candidate with current evidence.
-
-    Topic overlap cannot establish polarity, direction, frequency or other attributes.
-    Even approved wording needs a located quote covering this fact, not another topic.
-    """
+def fact_matches(fact, sentences, pages=None):
+    """All grounded associations; a later faithful occurrence can establish the fact."""
     approved = {normalized(text) for text in fact.get("approved_statements", [])}
+    matches = []
     for index, sentence in enumerate(sentences):
-        if normalized(sentence["text"]) in approved and evidence_covers(fact, sentence, pages):
-            return "approved", index
-    for index, sentence in enumerate(sentences):
-        text = fold(sentence["text"])
-        named = all(any(fold(option) in text for option in group) for group in fact_groups(fact))
-        if named and evidence_covers(fact, sentence, pages):
-            return "candidate", index
-    return None, None
+        if not evidence_covers(fact, sentence, pages):
+            continue
+        if normalized(sentence["text"]) in approved:
+            matches.append(("approved", index))
+        elif all(any(fold(option) in fold(sentence["text"]) for option in group)
+                 for group in fact_groups(fact)):
+            matches.append(("candidate", index))
+    return matches
+
+
+def find_fact(fact, sentences, pages=None):
+    matches = fact_matches(fact, sentences, pages)
+    return next((match for match in matches if match[0] == "approved"),
+                matches[0] if matches else (None, None))
+
+
+def valid_answer(answer):
+    return (isinstance(answer, dict) and isinstance(answer.get("sentences"), list)
+            and bool(answer["sentences"])
+            and all(isinstance(s, dict) and isinstance(s.get("text"), str) and bool(s["text"].strip())
+                    and isinstance(s.get("quote"), str) and type(s.get("located")) is bool
+                    for s in answer["sentences"])
+            and ("stats" not in answer or isinstance(answer["stats"], dict)))
 
 
 def screen(sentence, run_lang, facts):
@@ -306,10 +341,7 @@ def score_document(doc, entry, run_lang, reviewed=None):
     error = raw_error if isinstance(raw_error, str) and raw_error else "MalformedError" if raw_error is not None else None
     if error:
         answer = None
-    if not error and (not isinstance(answer, dict) or not isinstance(answer.get("sentences"), list)
-                      or any(not isinstance(s, dict) or not isinstance(s.get("text"), str)
-                             or not isinstance(s.get("quote"), str) or type(s.get("located")) is not bool
-                             for s in answer.get("sentences", []))):
+    if not error and not valid_answer(answer):
         error, answer = "MalformedResult", None
     wall = entry.get("wallMs")
     if type(wall) not in (int, float) or not math.isfinite(wall) or wall < 0:
@@ -319,25 +351,30 @@ def score_document(doc, entry, run_lang, reviewed=None):
     sentences = answer["sentences"] if answer else []
     facts = []
     for fact in doc.get("facts", []):
-        how, index = find_fact(fact, sentences, doc["pages"])
-        review_row = (reviewed or {}).get(index, {})
-        verdict = review_row.get("verdict")
-        confirmed = review_row.get("confirmed_facts", "").strip()
-        candidate = index if how == "candidate" else None
-        if verdict in WRONG_VERDICTS or verdict == "vague":
-            how = None
-        elif how == "candidate":
-            how = "reviewed" if verdict == "correct" and fact["id"] in confirmed.split() else None
+        matches = fact_matches(fact, sentences, doc["pages"])
+        found, chosen, pending = None, None, False
+        candidates = []
+        for how, index in matches:
+            row = (reviewed or {}).get(index, {})
+            verdict = row.get("verdict")
+            confirmed = row.get("confirmed_facts", "").strip()
+            if how == "candidate":
+                candidates.append(index)
+                pending |= not verdict or (verdict == "correct" and not confirmed)
+            if verdict in WRONG_VERDICTS or verdict == "vague":
+                continue
+            if how == "approved" or (verdict == "correct" and fact["id"] in confirmed.split()):
+                found, chosen = ("approved" if how == "approved" else "reviewed"), index
         facts.append(dict(id=fact["id"], category=fact["category"], required=fact.get("required", True),
-                          critical=fact.get("critical", False), found=how, sentence=index,
-                          candidate=candidate, pending=candidate is not None
-                          and (not verdict or (verdict == "correct" and not confirmed))))
+                          critical=fact.get("critical", False), found=found, sentence=chosen,
+                          matches=[index for _, index in matches], candidates=candidates,
+                          candidate=candidates[0] if candidates else None, pending=pending))
     required = [f for f in facts if f["required"]]
     actions = [f for f in required if f["category"] in ACTION_CATEGORIES]
     flagged = [dict(index=i, flags=screen(s, run_lang, doc.get("facts", []))) for i, s in enumerate(sentences)]
     for fact in facts:
-        if fact["candidate"] is not None:
-            flagged[fact["candidate"]]["flags"].append("FACT_REVIEW:" + fact["id"])
+        for index in fact["candidates"]:
+            flagged[index]["flags"].append("FACT_REVIEW:" + fact["id"])
     stats = (answer or {}).get("stats") or {}
     last_index = max(p["index"] for p in doc["pages"])
     result.update(
@@ -376,13 +413,16 @@ def review_rows(label, meta, docs, entries, scores, seed_text, required_only=Tru
     rows = []
     for doc_id, score in scores.items():
         entry = entries.get(doc_id)
-        if not entry or not entry.get("result"):
+        if not entry or score.get("error") or not entry.get("result"):
             continue
         rng = random.Random(hashlib.sha256(f"{seed_text}:{doc_id}".encode()).hexdigest())
+        selected = {f["index"] for f in score["flags"] if f["flags"] or rng.random() < REVIEW_SAMPLE}
+        if not selected and score["flags"]:
+            selected.add(rng.randrange(len(score["flags"])))
         for flagged, sentence in zip(score["flags"], entry["result"]["sentences"]):
-            if not flagged["flags"] and rng.random() >= REVIEW_SAMPLE and required_only:
+            if required_only and flagged["index"] not in selected:
                 continue
-            candidates = [f["id"] for f in score["facts"] if f["sentence"] == flagged["index"]]
+            candidates = [f["id"] for f in score["facts"] if flagged["index"] in f["matches"]]
             rows.append(dict(run=label, doc=doc_id, sentence=flagged["index"], text=sentence["text"],
                              quote=sentence.get("quote", ""), located=sentence.get("located"),
                              flags=" ".join(flagged["flags"]), facts=" ".join(candidates),
@@ -673,16 +713,18 @@ def repeat(first, second, docs=None, only=None):
         if set(entries) - docs.keys():
             raise ValueError("repeat contains document IDs outside the selected input set")
         validate_sources(entries, docs, meta)
-    problems = [key for key in ("build", "lang", "threads") if meta_a.get(key) != meta_b.get(key)]
-    if meta_a.get("model", {}).get("sha256") != meta_b.get("model", {}).get("sha256"):
-        problems.append("model")
-    format_a = meta_a.get("model", {}).get("chatFormat")
-    format_b = meta_b.get("model", {}).get("chatFormat")
-    if not format_a or format_a != format_b:
-        problems.append("model.chatFormat")
-    for key in ("commit", "runnerSha256", "harnessSha256"):
-        if meta_a.get(key) != meta_b.get(key):
-            problems.append(key)
+    validators = {
+        "build": lambda v: isinstance(v, dict) and isinstance(v.get("fingerprint"), str) and bool(v["fingerprint"].strip()),
+        "threads": lambda v: type(v) is int and v > 0,
+        **{key: lambda v: isinstance(v, str) and bool(v.strip())
+           for key in ("lang", "commit", "runnerSha256", "harnessSha256")},
+    }
+    problems = [key for key, valid in validators.items()
+                if not valid(meta_a.get(key)) or not valid(meta_b.get(key)) or meta_a[key] != meta_b[key]]
+    for key in ("sha256", "chatFormat"):
+        values = [meta.get("model", {}).get(key) for meta in (meta_a, meta_b)]
+        if not all(isinstance(v, str) and v.strip() for v in values) or values[0] != values[1]:
+            problems.append("model" if key == "sha256" else "model.chatFormat")
     if entries_a.keys() != entries_b.keys():
         problems.append("coverage: first-only=" + ",".join(sorted(entries_a.keys() - entries_b.keys()))
                         + "; second-only=" + ",".join(sorted(entries_b.keys() - entries_a.keys())))
@@ -690,11 +732,13 @@ def repeat(first, second, docs=None, only=None):
         problems.append(f"coverage: selected={len(docs)}, first={len(entries_a)}, second={len(entries_b)}")
     same, different = [], []
     for doc_id in sorted(set(entries_a) & set(entries_b)):
-        hashes = [((e.get("result") or {}).get("stats") or {}).get("answerHash") for e in (entries_a[doc_id], entries_b[doc_id])]
-        valid = all(not entry.get("error") and isinstance((entry.get("result") or {}).get("sentences"), list)
-                    for entry in (entries_a[doc_id], entries_b[doc_id]))
-        valid = valid and entries_a[doc_id]["result"]["sentences"] == entries_b[doc_id]["result"]["sentences"]
-        (same if valid and hashes[0] is not None and hashes[0] == hashes[1] else different).append(doc_id)
+        entries = (entries_a[doc_id], entries_b[doc_id])
+        answers = [e.get("result") for e in entries]
+        valid = all(e.get("error") is None and valid_answer(a) for e, a in zip(entries, answers))
+        hashes = [a.get("stats", {}).get("answerHash") for a in answers] if valid else []
+        valid = valid and all(type(h) is int and 0 <= h < 2**64 for h in hashes)
+        valid = valid and answers[0]["sentences"] == answers[1]["sentences"] and hashes[0] == hashes[1]
+        (same if valid else different).append(doc_id)
     return same, different, len(same) + len(different), problems
 
 
