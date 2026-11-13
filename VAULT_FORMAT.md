@@ -783,15 +783,17 @@ It is not a preference and is not in the webview's storage:
 
 - `notice-keys.v1`, beside the settings: 16 slots of the same size, sealed with
   XChaCha20-Poly1305, so its size never shows how many links have a key. Each used slot holds the
-  portal's address (origin), the link id, the vault id, the key id and the key's private half.
+  portal's normalized base URL, including any configured path, the link id, the vault id,
+  the key id and the key's private half.
 - The file's 32-byte wrap key is in the OS credential store of the patient's OS account (Windows
   Credential Manager adapter in #270; Linux Secret Service and macOS Keychain adapters
   come later). Tray checks require an implemented myCarlos adapter for the OS store; there is no
   plain-file fallback.
 
-Anyone who runs as the patient's OS account can read which portals this device's vault is linked
-to, and use a waiting key to ask each of those portals whether something is waiting (Ben's
-decision, 5 November 2026). The keys are wiped on unlink, when notices or the tray are turned off,
+Anyone who runs as the patient's OS account can decrypt the stored portal addresses and count
+the populated waiting-key slots, and use a waiting key to ask each of those portals whether
+something is waiting (Ben's decision, 5 November 2026). The keys are wiped on unlink,
+when notices or the tray are turned off,
 on vault reset or set-aside, and when a different vault is opened. Each wipe also requests portal
 revocation, which may wait while the device is offline ([SECURITY_OPERATIONS](SECURITY_OPERATIONS.md),
 "Tray notices"). The file and the OS item are not in myCarlos portable backups. OS/device backup
@@ -1070,12 +1072,13 @@ which is intended.
 Format 9 adds one optional manifest field, `remoteNotices` (#192): whether the
 patient turned on notices while myCarlos is closed, the push destinations this
 vault holds, and the revocations still to send. It is kept in the manifest, so it
-is encrypted like everything else there. Nothing outside the vault, including the
-plain notice file beside the settings, says how many clinics a vault is linked to.
-Which clinics it is linked to stays inside the vault too, with one planned
-exception: with tray notices on (#230), each such link's portal address is kept
-in the sealed waiting-key file, whose wrap key is in the OS credential store
-("Settings kept outside the vault").
+is encrypted like everything else there. The plain notice file beside the settings
+does not contain clinic addresses or a linked-clinic count. The planned tray-notice
+exception (#230) keeps each participating link's portal address in the sealed waiting-key
+file, whose wrap key is in the OS credential store ("Settings kept outside the vault").
+Fixed padding hides its populated-slot count from ciphertext size; someone who can use
+the OS account to decrypt it can see those stored addresses and count their entries.
+That count is of stored waiting keys, not necessarily every clinic linked inside the vault.
 
 - `optedIn`: the patient's own choice. It is set only by that choice, never at
   startup or by a timer. The OS notification permission is observed in each run
