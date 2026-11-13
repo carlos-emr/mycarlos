@@ -777,8 +777,9 @@ state, described in the recovery-key sections above.
 | Appearance (System, Light or Dark) | `mycarlos.appearance.v1` | The chosen appearance; no vault, patient or document |
 
 **Waiting keys for tray notices (myCarlos integration planned in #230; Portal contract in carlos-portal#88).** To let a
-locked myCarlos in the tray ask a linked portal "is anything waiting?", each link that has
-notices gets a waiting key, kept outside the vault so that it works while the vault is locked.
+locked myCarlos in the tray ask a linked portal "is anything waiting?", the planned integration
+creates each link's waiting key at clinic-link time, independently of later notice opt-in.
+It is kept outside the vault so that it works while the vault is locked.
 It is not a preference and is not in the webview's storage:
 
 - `notice-keys.v1`, beside the settings: 16 slots of the same size, sealed with
@@ -1074,7 +1075,7 @@ patient turned on notices while myCarlos is closed, the push destinations this
 vault holds, and the revocations still to send. It is kept in the manifest, so it
 is encrypted like everything else there. The plain notice file beside the settings
 does not contain clinic addresses or a linked-clinic count. The planned tray-notice
-exception (#230) keeps each participating link's portal address in the sealed waiting-key
+exception (#230) keeps each stored waiting key's portal address in the sealed waiting-key
 file, whose wrap key is in the OS credential store ("Settings kept outside the vault").
 Fixed padding hides its populated-slot count from ciphertext size; someone who can use
 the OS account to decrypt it can see those stored addresses and count their entries.
