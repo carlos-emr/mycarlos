@@ -106,7 +106,11 @@ def require_helper_exec_observer(authority, approval):
 
 
 def require_helper_affinity_qualification(authority):
-    """Old observer/negative-only controls do not qualify the new setter."""
+    """Actual Python-fixture function scope; never full native phase proof.
+
+    Production native helper argv remains strictly enforced at its actual EXEC
+    stop by validate_exec_image. A source hash is not proof that function ran.
+    """
     g, clock = authority.grant, authority.clock
     profile2.validate_helper_scope(g)
     qualified = read_json_ref(g['helper_affinity_qualification'], clock)
@@ -114,6 +118,15 @@ def require_helper_affinity_qualification(authority):
                ('phase.py', 'profile2.py', 'helper_affinity.py', 'exec_observer.py')}
     checks = qualified.get('checks')
     require(qualified.get('schema') == helper_affinity.QUALIFICATION_SCHEMA
+            and qualified.get('qualification_scope') == helper_affinity.QUALIFICATION_SCOPE
+            and qualified.get('fixture_kind') == helper_affinity.FIXTURE_KIND
+            and qualified.get('live_functions') == helper_affinity.LIVE_FUNCTIONS
+            and qualified.get('fixture_full_argv_preserved') is True
+            and qualified.get('production_native_helper_argv_live_qualified') is False
+            and qualified.get('full_production_phase_live_qualified') is False
+            and qualified.get('native_model_live_qualified') is False
+            and qualified.get('model_loaded') is False
+            and qualified.get('native_compilation_performed') is False
             and qualified.get('root_accepted') is True and qualified.get('actual_live_controls') is True
             and qualified.get('coordinator_package') == g['coordinator_package']
             and qualified.get('sources') == sources and qualified.get('affinity_scope') == profile2.SCOPE

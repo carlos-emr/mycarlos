@@ -235,6 +235,11 @@ class QualificationControls(unittest.TestCase):
         self.sources = {name: ref(name) for name in
                         ('phase.py', 'profile2.py', 'helper_affinity.py', 'exec_observer.py')}
         self.qualified = {'schema': affinity.QUALIFICATION_SCHEMA, 'root_accepted': True,
+            'qualification_scope': affinity.QUALIFICATION_SCOPE, 'fixture_kind': affinity.FIXTURE_KIND,
+            'live_functions': list(affinity.LIVE_FUNCTIONS), 'fixture_full_argv_preserved': True,
+            'production_native_helper_argv_live_qualified': False,
+            'full_production_phase_live_qualified': False, 'native_model_live_qualified': False,
+            'model_loaded': False, 'native_compilation_performed': False,
             'actual_live_controls': True, 'coordinator_package': grant['coordinator_package'],
             'sources': self.sources, 'affinity_scope': profile2.SCOPE, 'kernel_no_children': True,
             'no_unbound_children': True, 'actual_exit_code': 0,
@@ -268,6 +273,18 @@ class QualificationControls(unittest.TestCase):
             self.qualified['checks'][name] = True
         self.qualified['checks']['extra'] = True
         with self.assertRaises(phase.Refusal): phase.require_helper_affinity_qualification(self.owner)
+
+    def test_fixture_function_scope_cannot_claim_full_native_phase_or_fabricated_argv(self):
+        for key, value in (('qualification_scope', 'full-native-phase'),
+                ('fixture_kind', 'native6595-helper'), ('live_functions', ['phase.validate_exec_image']),
+                ('fixture_full_argv_preserved', False), ('production_native_helper_argv_live_qualified', True),
+                ('full_production_phase_live_qualified', True), ('native_model_live_qualified', True),
+                ('model_loaded', True), ('native_compilation_performed', True),
+                ('native_model_live_qualified', 0)):
+            original = self.qualified[key]; self.qualified[key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(phase.Refusal):
+                phase.require_helper_affinity_qualification(self.owner)
+            self.qualified[key] = original
 
     def test_artifact_hash_failure_propagates(self):
         self.reader.side_effect = phase.Refusal('artifact changed')
