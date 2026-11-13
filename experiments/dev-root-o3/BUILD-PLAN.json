@@ -1,0 +1,93 @@
+{
+  "schema": "dev-root-o3-build-recipe-v1",
+  "status": "SOURCE_ONLY_UNBUILT_UNEVALUATED",
+  "source_commit": "6595b3c25beb32c2cbd44892698c3fd66265ad2f",
+  "source_tree": "62c4705b58968c20abc69a5029b0ca6449aa08d7",
+  "purpose": "Compare application-crate Rust O1 against O3 without changing assertions, overflow checks, panic strategy, native code, model or prompt. Recipe backup only, not execution authority.",
+  "cwd": "<isolated exact-source worktree>/src-tauri",
+  "toolchain": "1.98.0-x86_64-unknown-linux-gnu",
+  "environment": {
+    "CARGO_TARGET_DIR": "<new dedicated target directory>",
+    "CARGO_HOME": "<new dedicated Cargo home containing verified regular-file registry cache only>",
+    "CARGO_BUILD_JOBS": "1",
+    "CMAKE_BUILD_PARALLEL_LEVEL": "1",
+    "CARGO_NET_OFFLINE": "true",
+    "RUSTC": "<pinned Rust 1.98.0>/bin/rustc",
+    "RUSTDOC": "<pinned Rust 1.98.0>/bin/rustdoc",
+    "TMPDIR": "<new dedicated build temporary directory>",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8"
+  },
+  "build_argv": [
+    "<pinned Rust 1.98.0>/bin/cargo",
+    "--config",
+    "profile.dev.package.mycarlos-tauri-poc.opt-level=3",
+    "test",
+    "--offline",
+    "--locked",
+    "--jobs",
+    "1",
+    "--features",
+    "ai-helper-stub",
+    "--test",
+    "model_engine",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "build_strategy": "One no-run integration-test compilation must emit both actual application binary and model_engine harness compiler-artifact records. This avoids separately building a helper before the same harness build. Missing artifact or unexpected profile fails admission; do not guess or silently substitute a prior binary.",
+  "expected_cargo_artifact_profiles": {
+    "helper": {
+      "target_name": "mycarlos-tauri-poc",
+      "target_kind": [
+        "bin"
+      ],
+      "profile": {
+        "opt_level": "3",
+        "debug_assertions": true,
+        "overflow_checks": true,
+        "debuginfo": 2,
+        "test": false
+      }
+    },
+    "harness": {
+      "target_name": "model_engine",
+      "target_kind": [
+        "test"
+      ],
+      "profile": {
+        "opt_level": "3",
+        "debug_assertions": true,
+        "overflow_checks": true,
+        "debuginfo": 2,
+        "test": true
+      }
+    }
+  },
+  "unchanged": [
+    "Dev/test profile, including debug assertions and overflow checks; no --release, LTO override, panic override or target-cpu/native tuning.",
+    "Registry bindings and sys dependency versions/checksums; native CMake Release -O3 with AVX2/FMA/F16C/BMI2/SSE4.2. Verify actual emitted flags and compare retained native build metadata.",
+    "Original prompt, grammar, caps, input documents, model hash, three threads and runtime limits; no timer, pool, prompt or topology patches."
+  ],
+  "expected_summary_build_fingerprint": "d2ba1ec0c479ca24fc7199884fd2c2fcb4e4e368851f51adae603f3c57541d42",
+  "artifact_admission": [
+    "Require actual compiler-artifact.executable paths for both targets and exact profile maps above. Store entire JSON stream plus source/tree/toolchain/config/env hashes.",
+    "Verify harness CARGO_BIN_EXE helper uses the exact final binary from this build. Hash final executable bytes/stat identity only after the final build; separate canonical harness copy must preserve hash.",
+    "Treat executable hashes as new. Same summary fingerprint covers prompt/grammar/caps only; observe actual header and do not reuse prior native approval as this build proof."
+  ],
+  "cache_safety": [
+    "No copying is authorized by this recipe. Before a separate build grant, inventory a proposed source cache.",
+    "For an approved cache copy, allow only independent regular files from checksum-qualified registry archive/index/source material. Reject symlinks, sockets/devices, hardlinked mutable files, lockfiles and credentials/config. Use new inodes; never cp -al or hardlink outputs.",
+    "Exclude every incremental tree, its relocated symlink targets, target/debug/build CMake trees, build-script output metadata with old absolute paths, and all mutable compiler outputs. Keep a fresh target directory.",
+    "Do not clone a current qualified target to simulate a cheap build. Cold offline compilation may exceed the finite budget; report it and seek a newly bounded owner slot without extending or auto-retrying."
+  ],
+  "bounded_owner_path": [
+    "Owner serializes a single build slot, initially capped at 600 seconds including cleanup, with fresh memory/disk admission and existing Maven/model holds untouched. This is a maximum, not a prediction that cold compilation fits.",
+    "After no-run build, use the existing native qualification framework for exact helper/harness READY, confinement, descriptor, thread, owned pidfd and kernel EXEC hash checks. No model data need be loaded in the build slot.",
+    "Only after native qualification and a fresh runtime grant, run the full original H10 in a separate owner-admitted slot, with unchanged strict grading and 180-second target. No automatic next stage."
+  ],
+  "risks": [
+    "App vocabulary scan share is not measured; native decode already O3. No speedup is claimed.",
+    "Changing Rust optimization can change code layout, inlining and behavior exposed by undefined behavior. Preserve tie behavior and compare token hashes/output through independent quality grading.",
+    "A release build would additionally change panic/LTO/assertions; it is deliberately outside this minimal experiment."
+  ]
+}
