@@ -158,7 +158,7 @@ was not active in the key list it pinned at linking (it does not yet learn of a 
 
 ## Tray notices (#230): the waiting key
 
-The myCarlos poller is planned in #230; its key store is proposed in #270
+The myCarlos poller is planned in #230; its storage implementation is in #270
 ([THREAT_MODEL](THREAT_MODEL.md) NET-04). The Portal contract is implemented in carlos-portal#88
 (for carlos-portal#87). With the tray (#206), closing the window locks the vault, and the device
 keys are inside it. A waiting key lets the locked app ask each linked portal one question:

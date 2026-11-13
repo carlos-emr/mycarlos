@@ -785,7 +785,7 @@ It is not a preference and is not in the webview's storage:
   XChaCha20-Poly1305, so its size never shows how many links have a key. Each used slot holds the
   portal's address (origin), the link id, the vault id, the key id and the key's private half.
 - The file's 32-byte wrap key is in the OS credential store of the patient's OS account (Windows
-  Credential Manager adapter proposed in #270; Linux Secret Service and macOS Keychain adapters
+  Credential Manager adapter in #270; Linux Secret Service and macOS Keychain adapters
   come later). Tray checks require an implemented myCarlos adapter for the OS store; there is no
   plain-file fallback.
 

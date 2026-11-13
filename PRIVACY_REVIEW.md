@@ -314,7 +314,7 @@ The file always has 16 slots, so it doesn't show how many. The keys are wiped lo
 when the notices or the tray are turned off, and on vault reset; they are not in myCarlos portable
 backups. Portal revocation may wait while the device is offline, as explained in the operations
 guide. Where the app has no supported OS credential-store adapter, there are no tray notices.
-Windows is proposed first; Linux and macOS adapters remain future work. Details:
+The Windows adapter is described in #270; Linux and macOS adapters remain future work. Details:
 `VAULT_FORMAT.md` ("Settings kept outside the vault"), `SECURITY_OPERATIONS.md` ("Tray notices").
 
 ## 8. How it is protected
