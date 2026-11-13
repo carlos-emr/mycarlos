@@ -214,6 +214,10 @@ def read_run(path):
     for key in ("build", "model"):
         if key in meta and not isinstance(meta[key], dict):
             raise ValueError(f"{path}: {key} must be an object")
+    for field, value in (("build.fingerprint", meta.get("build", {}).get("fingerprint", "")),
+                         ("variant", meta.get("variant", "")), ("lang", meta.get("lang", "en"))):
+        if not isinstance(value, str):
+            raise ValueError(f"{path}: {field} must be a string")
     for name, item in [("run", meta), *entries.items()]:
         if item.get("helperMemory") is not None and not isinstance(item["helperMemory"], dict):
             raise ValueError(f"{name}: helperMemory must be an object")

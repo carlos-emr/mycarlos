@@ -339,7 +339,8 @@ class IntegrityTest(unittest.TestCase):
         self.assertEqual((same, different), ([], [self.doc["id"]]))
 
     def test_malformed_metadata_has_actionable_input_errors(self):
-        for target, field, value in [(0,"model",[1]), (0,"build","bad"),
+        for target, field, value in [(0,"model",[1]), (0,"build","bad"), (0,"build",dict(fingerprint=1)),
+                                     (0,"variant",["bad"]), (0,"lang",["bad"]),
                                      (0,"helperMemory","bad"), (1,"helperMemory","bad"),
                                      (1,"helperMemory",dict(peakKiB="bad"))]:
             with self.subTest(field=field, target=target):
