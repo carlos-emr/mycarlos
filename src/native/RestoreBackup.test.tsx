@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -25,9 +26,16 @@ async function chooseAndCheck(
   user: ReturnType<typeof userEvent.setup>,
   secret = "river-azimuth-cobalt-sparrow-934",
 ) {
-  await user.click(screen.getByRole("button", { name: "Choose backup file…" }));
-  await user.type(await screen.findByLabelText("Backup passphrase"), secret);
-  await user.click(screen.getByRole("button", { name: "Check backup" }));
+  await user.click(
+    screen.getByRole("button", { name: humanText("Choose backup file…") }),
+  );
+  await user.type(
+    await screen.findByLabelText(humanText("Backup passphrase")),
+    secret,
+  );
+  await user.click(
+    screen.getByRole("button", { name: humanText("Check backup") }),
+  );
 }
 
 describe("RestoreBackup", () => {
@@ -41,10 +49,12 @@ describe("RestoreBackup", () => {
     expect(bridge.inspectRestore).toHaveBeenCalledWith("pick-1", {
       passphrase: "river-azimuth-cobalt-sparrow-934",
     });
-    expect(status).toHaveTextContent(
+    expect(status).toHaveHumanTextContent(
       "The backup holds 2 documents. Restoring puts this vault on this device.",
     );
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Restore backup") }),
+    );
     expect(bridge.restore).toHaveBeenCalledWith(
       "pick-1",
       { passphrase: "river-azimuth-cobalt-sparrow-934" },
@@ -57,11 +67,18 @@ describe("RestoreBackup", () => {
     const user = userEvent.setup();
     const { bridge } = setUp();
     await user.click(
-      screen.getByRole("button", { name: "Choose backup file…" }),
+      screen.getByRole("button", { name: humanText("Choose backup file…") }),
     );
-    await user.click(await screen.findByLabelText("Its recovery key"));
-    await user.type(screen.getByLabelText("Recovery key"), "ABCD-EFGH");
-    await user.click(screen.getByRole("button", { name: "Check backup" }));
+    await user.click(
+      await screen.findByLabelText(humanText("Its recovery key")),
+    );
+    await user.type(
+      screen.getByLabelText(humanText("Recovery key")),
+      "ABCD-EFGH",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Check backup") }),
+    );
     expect(bridge.inspectRestore).toHaveBeenCalledWith("pick-1", {
       recoveryKey: "ABCD-EFGH",
     });
@@ -91,10 +108,12 @@ describe("RestoreBackup", () => {
       const user = userEvent.setup();
       const { bridge } = setUp(preview);
       await chooseAndCheck(user);
-      expect(screen.getByRole("status")).toHaveTextContent(warning);
-      const restore = screen.getByRole("button", { name: "Restore backup" });
+      expect(screen.getByRole("status")).toHaveHumanTextContent(warning);
+      const restore = screen.getByRole("button", {
+        name: humanText("Restore backup"),
+      });
       expect(restore).toBeDisabled();
-      await user.click(screen.getByLabelText(agreement));
+      await user.click(screen.getByLabelText(humanText(agreement)));
       await user.click(restore);
       expect(bridge.restore).toHaveBeenCalledWith(
         "pick-1",
@@ -108,10 +127,12 @@ describe("RestoreBackup", () => {
     const user = userEvent.setup();
     const { bridge } = setUp({ replaces: "sameVault" });
     await chooseAndCheck(user);
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
       "The vault on this device holds the same documents. Restoring sets it aside and puts this backup in its place. The vault set aside stays on this device, encrypted, but myCarlos cannot open it again for you yet.",
     );
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Restore backup") }),
+    );
     expect(bridge.restore).toHaveBeenCalledWith(
       "pick-1",
       expect.anything(),
@@ -126,14 +147,16 @@ describe("RestoreBackup", () => {
       { restore: vi.fn().mockResolvedValue(false) },
     );
     await chooseAndCheck(user);
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Restore backup") }),
+    );
     expect(onRestored).not.toHaveBeenCalled();
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
       "Restore cancelled. Nothing changed.",
     );
     // The backup is still chosen, for another try.
     expect(
-      screen.getByRole("button", { name: "Restore backup" }),
+      screen.getByRole("button", { name: humanText("Restore backup") }),
     ).toBeEnabled();
   });
 
@@ -142,17 +165,19 @@ describe("RestoreBackup", () => {
     setUp();
     await chooseAndCheck(user);
     expect(
-      screen.getByRole("button", { name: "Restore backup" }),
+      screen.getByRole("button", { name: humanText("Restore backup") }),
     ).toBeVisible();
-    const field = screen.getByLabelText("Backup passphrase");
+    const field = screen.getByLabelText(humanText("Backup passphrase"));
     expect(field).toHaveAttribute("type", "password");
-    await user.click(screen.getByRole("button", { name: "Show passphrase" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Show passphrase") }),
+    );
     expect(field).toHaveAttribute("type", "text");
 
     // The preview was for what was typed before.
     await user.type(field, "x");
     expect(
-      screen.queryByRole("button", { name: "Restore backup" }),
+      screen.queryByRole("button", { name: humanText("Restore backup") }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
@@ -161,14 +186,16 @@ describe("RestoreBackup", () => {
     const user = userEvent.setup();
     const { bridge, onRestored } = setUp();
     await chooseAndCheck(user);
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Restore backup") }),
+    );
     expect(onRestored).toHaveBeenCalledOnce();
     expect(bridge.restore).toHaveBeenCalledOnce();
     expect(
-      screen.queryByRole("button", { name: "Restore backup" }),
+      screen.queryByRole("button", { name: humanText("Restore backup") }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByLabelText("Backup passphrase"),
+      screen.queryByLabelText(humanText("Backup passphrase")),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
@@ -185,20 +212,25 @@ describe("RestoreBackup", () => {
       },
     );
     await chooseAndCheck(user);
-    await user.click(screen.getByRole("button", { name: "Show passphrase" }));
-    await user.click(screen.getByRole("button", { name: "Restore backup" }));
-    expect(await screen.findByText("FAKE the backup changed.")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: humanText("Show passphrase") }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Restore backup") }),
+    );
     expect(
-      screen.getByRole("button", { name: "Choose backup file…" }),
+      await screen.findByText(humanText("FAKE the backup changed.")),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: humanText("Choose backup file…") }),
     ).toHaveFocus();
     // The next secret is hidden as typed.
     await user.click(
-      screen.getByRole("button", { name: "Choose backup file…" }),
+      screen.getByRole("button", { name: humanText("Choose backup file…") }),
     );
-    expect(await screen.findByLabelText("Backup passphrase")).toHaveAttribute(
-      "type",
-      "password",
-    );
+    expect(
+      await screen.findByLabelText(humanText("Backup passphrase")),
+    ).toHaveAttribute("type", "password");
   });
 
   it("clears a secret left unattended", async () => {
@@ -207,10 +239,12 @@ describe("RestoreBackup", () => {
       setUp();
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose backup file…" }),
+          screen.getByRole("button", {
+            name: humanText("Choose backup file…"),
+          }),
         );
       });
-      const field = screen.getByLabelText("Backup passphrase");
+      const field = screen.getByLabelText(humanText("Backup passphrase"));
       await act(async () => {
         fireEvent.change(field, { target: { value: "FAKE secret typed" } });
       });
@@ -235,11 +269,11 @@ describe("RestoreBackup", () => {
       },
     );
     await chooseAndCheck(user, "not-the-passphrase");
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       "FAKE wrong passphrase.",
     );
     expect(
-      screen.queryByRole("button", { name: "Restore backup" }),
+      screen.queryByRole("button", { name: humanText("Restore backup") }),
     ).not.toBeInTheDocument();
   });
 
@@ -247,10 +281,10 @@ describe("RestoreBackup", () => {
     const user = userEvent.setup();
     setUp({}, { pickRestoreSource: vi.fn().mockResolvedValue(null) });
     await user.click(
-      screen.getByRole("button", { name: "Choose backup file…" }),
+      screen.getByRole("button", { name: humanText("Choose backup file…") }),
     );
     expect(
-      screen.queryByLabelText("Backup passphrase"),
+      screen.queryByLabelText(humanText("Backup passphrase")),
     ).not.toBeInTheDocument();
   });
 });

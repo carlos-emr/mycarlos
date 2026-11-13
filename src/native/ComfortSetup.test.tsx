@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
@@ -35,38 +36,46 @@ describe("ComfortSetup (#69)", () => {
     const { onAutoLockMinutes, onDone, setZoom } = show(true);
     expect(
       screen.getByRole("heading", {
-        name: "Make myCarlos comfortable for you",
+        name: humanText("Make myCarlos comfortable for you"),
       }),
     ).toBeVisible();
     expect(
-      screen.getByText(/This is how text looks in myCarlos/),
+      screen.getByText(humanText(/This is how text looks in myCarlos/)),
     ).toBeVisible();
     expect(
-      screen.getByText(/You can change these any time in Settings/),
+      screen.getByText(humanText(/You can change these any time in Settings/)),
     ).toBeVisible();
 
     // The same control as Settings: the size changes as it is pressed.
-    await user.click(screen.getByRole("button", { name: "Larger text" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Larger text") }),
+    );
     expect(setZoom).toHaveBeenLastCalledWith(1.1);
 
-    const delay = screen.getByRole("group", { name: "Automatic lock delay" });
+    const delay = screen.getByRole("group", {
+      name: humanText("Automatic lock delay"),
+    });
     await user.click(
-      within(delay).getByRole("button", { name: "Longer delay" }),
+      within(delay).getByRole("button", { name: humanText("Longer delay") }),
     );
     expect(onAutoLockMinutes).toHaveBeenLastCalledWith(6);
 
     // Continue keeps what was chosen.
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Continue") }),
+    );
     expect(onDone).toHaveBeenCalledOnce();
     expect(setZoom).toHaveBeenCalledTimes(1);
   });
 
   it("puts the usual settings back when they are asked for, and goes on", () => {
     const { onAutoLockMinutes, onDone, zoom } = show(true, 9);
-    fireEvent.click(screen.getByRole("button", { name: "Larger text" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Larger text") }),
+    );
     expect(zoom.level()).toBe(1.1);
     fireEvent.click(
-      screen.getByRole("button", { name: "Use the usual settings" }),
+      screen.getByRole("button", { name: humanText("Use the usual settings") }),
     );
     expect(zoom.level()).toBe(1);
     expect(onAutoLockMinutes).toHaveBeenLastCalledWith(5);
@@ -76,15 +85,17 @@ describe("ComfortSetup (#69)", () => {
   it("says where text size comes from where myCarlos does not set it", () => {
     const { onDone } = show(false);
     expect(
-      screen.queryByRole("button", { name: "Larger text" }),
+      screen.queryByRole("button", { name: humanText("Larger text") }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/text size follows your device/)).toBeVisible();
+    expect(
+      screen.getByText(humanText(/text size follows your device/)),
+    ).toBeVisible();
     // The lock delay is still offered, and skipping still works.
     expect(
-      screen.getByRole("group", { name: "Automatic lock delay" }),
+      screen.getByRole("group", { name: humanText("Automatic lock delay") }),
     ).toBeVisible();
     fireEvent.click(
-      screen.getByRole("button", { name: "Use the usual settings" }),
+      screen.getByRole("button", { name: humanText("Use the usual settings") }),
     );
     expect(onDone).toHaveBeenCalledOnce();
   });

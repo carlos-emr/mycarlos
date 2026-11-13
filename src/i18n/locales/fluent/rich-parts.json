@@ -1,0 +1,142 @@
+{
+  "en": {
+    "recoveryKey.label": [
+      "Key label: ",
+      {
+        "slot": "label"
+      },
+      ". Write it next to the key. It is not secret: in Security, myCarlos shows the label of the key that works, so you can tell which kit is current."
+    ],
+    "security.recoveryKey.current": [
+      "Your current key has the label ",
+      {
+        "slot": "label"
+      },
+      ". A kit or note with this label is the one that works; one with another label does not open this vault. Kits and notes made before labels were shown have none: one without a label may still be this key, set up on ",
+      {
+        "slot": "date"
+      },
+      "."
+    ]
+  },
+  "es": {
+    "recoveryKey.label": [
+      "Etiqueta de la clave: ",
+      {
+        "slot": "label"
+      },
+      ". Anótela junto a la clave. No es secreta: en Seguridad, myCarlos muestra la etiqueta de la clave que funciona, para que sepa qué kit es el vigente."
+    ],
+    "security.recoveryKey.current": [
+      "Su clave actual tiene la etiqueta ",
+      {
+        "slot": "label"
+      },
+      ". El kit o la nota con esta etiqueta es el que funciona; uno con otra etiqueta no abre esta bóveda. Los kits y las notas hechos antes de que se mostraran las etiquetas no tienen ninguna: uno sin etiqueta puede seguir siendo esta clave, configurada el ",
+      {
+        "slot": "date"
+      },
+      "."
+    ]
+  },
+  "fr": {
+    "recoveryKey.label": [
+      "Étiquette de la clé : ",
+      {
+        "slot": "label"
+      },
+      ". Notez-la à côté de la clé. Elle n’est pas secrète : dans Sécurité, myCarlos affiche l’étiquette de la clé qui fonctionne, pour que vous sachiez quelle trousse est la bonne."
+    ],
+    "security.recoveryKey.current": [
+      "Votre clé actuelle porte l’étiquette ",
+      {
+        "slot": "label"
+      },
+      ". La trousse ou la note qui porte cette étiquette est celle qui fonctionne; une autre étiquette n’ouvre pas ce coffre-fort. Les trousses et les notes faites avant l’affichage des étiquettes n’en ont pas : une trousse sans étiquette peut tout de même être cette clé, configurée le ",
+      {
+        "slot": "date"
+      },
+      "."
+    ]
+  },
+  "pl": {
+    "recoveryKey.label": [
+      "Etykieta klucza: ",
+      {
+        "slot": "label"
+      },
+      ". Proszę zapisać ją obok klucza. Nie jest tajna: w sekcji Bezpieczeństwo myCarlos pokazuje etykietę działającego klucza, dzięki czemu wiadomo, który zestaw jest aktualny."
+    ],
+    "security.recoveryKey.current": [
+      "Obecny klucz ma etykietę ",
+      {
+        "slot": "label"
+      },
+      ". Działa zestaw lub notatka z tą etykietą; zestaw z inną etykietą nie otworzy tego sejfu. Zestawy i notatki sprzed wprowadzenia etykiet ich nie mają: taki bez etykiety może nadal być tym kluczem, skonfigurowanym ",
+      {
+        "slot": "date"
+      },
+      "."
+    ]
+  },
+  "pt-BR": {
+    "recoveryKey.label": [
+      "Etiqueta da chave: ",
+      {
+        "slot": "label"
+      },
+      ". Anote-a ao lado da chave. Ela não é secreta: em Segurança, o myCarlos mostra a etiqueta da chave que funciona, para você saber qual kit é o atual."
+    ],
+    "security.recoveryKey.current": [
+      "Sua chave atual tem a etiqueta ",
+      {
+        "slot": "label"
+      },
+      ". O kit ou a anotação com esta etiqueta é o que funciona; um com outra etiqueta não abre este cofre. Kits e anotações feitos antes de as etiquetas serem exibidas não têm etiqueta: um sem etiqueta ainda pode ser esta chave, configurada em ",
+      {
+        "slot": "date"
+      },
+      "."
+    ]
+  },
+  "zh-CN": {
+    "recoveryKey.label": [
+      "密钥标签：",
+      {
+        "slot": "label"
+      },
+      "。请将标签写在密钥旁。标签不是秘密；在「安全」中，myCarlos 会显示可用密钥的标签，方便您辨认目前使用的工具包。"
+    ],
+    "security.recoveryKey.current": [
+      "目前密钥的标签是 ",
+      {
+        "slot": "label"
+      },
+      "。标签相符的恢复工具包或笔记才是可用的密钥；其他标签的内容无法打开此保险库。在显示标签功能推出前制作的工具包和笔记没有标签：没有标签的密钥可能仍是此密钥，设置日期为 ",
+      {
+        "slot": "date"
+      },
+      "。"
+    ]
+  },
+  "zh-TW": {
+    "recoveryKey.label": [
+      "金鑰標籤：",
+      {
+        "slot": "label"
+      },
+      "。請將標籤寫在金鑰旁。標籤不是秘密；在「安全性」中，myCarlos 會顯示可用金鑰的標籤，方便您辨認目前使用的套件。"
+    ],
+    "security.recoveryKey.current": [
+      "目前金鑰的標籤是 ",
+      {
+        "slot": "label"
+      },
+      "。標籤相符的復原套件或筆記才是可用的金鑰；其他標籤的內容無法開啟此保險庫。在顯示標籤功能推出前製作的套件和筆記沒有標籤：沒有標籤的金鑰可能仍是此金鑰，設定日期為 ",
+      {
+        "slot": "date"
+      },
+      "。"
+    ]
+  }
+}

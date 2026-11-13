@@ -229,6 +229,8 @@ fn cancelled_io_error() -> io::Error {
 
 #[derive(Debug, Error)]
 pub enum VaultError {
+    #[error("a bundled user message could not be formatted")]
+    Localization,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("the vault has already been created")]
@@ -2228,14 +2230,18 @@ impl VaultStore {
             .pending_recovery_key
             .as_ref()
             .ok_or(VaultError::Invalid)?;
-        Ok(Zeroizing::new(locale.render(
-            MessageId::NativeKitText,
-            &[
-                ("key", &encode_recovery_key(&pending.key)),
-                ("label", &recovery_key_label(pending.key_id)),
-                ("date", &utc_date_text(now_ms)),
-            ],
-        )))
+        Ok(Zeroizing::new(
+            locale
+                .render_raw(
+                    MessageId::NativeKitText,
+                    &[
+                        ("key", &encode_recovery_key(&pending.key)),
+                        ("label", &recovery_key_label(pending.key_id)),
+                        ("date", &utc_date_text(now_ms)),
+                    ],
+                )
+                .map_err(|_| VaultError::Localization)?,
+        ))
     }
 
     /// The short label of the key being set up, which its kits show. Not
@@ -7567,7 +7573,27 @@ mod tests {
         aside.lock();
 
         // The next vault made in this run names where the last one went.
-        store.create(PASSWORD, "New profile", 4).unwrap();
+        let new_password = "orchard-lantern-violet-monsoon-735";
+        store.create(new_password, "New profile", 4).unwrap();
+        let new_key = store.begin_recovery_key(new_password).unwrap().to_string();
+        let new_groups = recovery_key_groups(&new_key);
+        store
+            .confirm_recovery_key(&typed_back(&new_groups), 5)
+            .unwrap();
+        // A newly created vault has different credentials. Neither its
+        // passphrase nor its recovery key opens the encrypted vault kept aside.
+        assert!(matches!(
+            aside.unlock(new_password),
+            Err(VaultError::WrongPassphrase)
+        ));
+        assert!(matches!(
+            aside.recover(&new_key, new_password),
+            Err(VaultError::WrongRecoveryKey)
+        ));
+        // The retained vault's own current passphrase still opens its records.
+        aside.unlock(PASSPHRASE_REPLACEMENT).unwrap();
+        assert_eq!(exported(&aside, "old.pdf"), b"old record");
+        aside.lock();
         let created = history_events(&store).remove(0);
         assert_eq!(created.event, HistoryEvent::Created);
         assert_eq!(
@@ -10239,6 +10265,19 @@ mod tests {
                     && localized.contains("2026-09-28")
             );
             assert!(!localized.contains("Jamie"));
+            assert!(!localized
+                .chars()
+                .any(|c| matches!(c, '\u{2066}'..='\u{2069}')));
+            let line = localized
+                .lines()
+                .find(|line| line.contains(key.as_str()))
+                .unwrap();
+            let start = line.find(key.as_str()).unwrap();
+            let copied = &line[start..start + key.len()];
+            assert_eq!(
+                *decode_recovery_key(copied).unwrap(),
+                *decode_recovery_key(&key).unwrap()
+            );
         }
         let polish_file = temp.path().join("kit-pl.txt");
         store

@@ -1,3 +1,4 @@
+import { humanText } from "../test/humanText";
 import { StrictMode } from "react";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -23,8 +24,10 @@ describe("Appearance in Preferences", () => {
       </AppearanceProvider>,
     );
     // Four radio buttons, all in view, instead of a dropdown (#67).
-    const group = screen.getByRole("group", { name: "Appearance" });
-    expect(screen.queryByRole("combobox", { name: "Appearance" })).toBeNull();
+    const group = screen.getByRole("group", { name: humanText("Appearance") });
+    expect(
+      screen.queryByRole("combobox", { name: humanText("Appearance") }),
+    ).toBeNull();
     const choices = within(group).getAllByRole("radio");
     expect(choices.map((choice) => choice.getAttribute("value"))).toEqual([
       "system",
@@ -37,19 +40,23 @@ describe("Appearance in Preferences", () => {
         (choice) => (choice.closest("label") as HTMLElement).textContent,
       ),
     ).toEqual(["System", "Light", "Dark", "High contrast"]);
-    expect(within(group).getByRole("radio", { name: "System" })).toBeChecked();
     expect(
-      screen.getByText(/Here, text size follows your device/),
+      within(group).getByRole("radio", { name: humanText("System") }),
+    ).toBeChecked();
+    expect(
+      screen.getByText(humanText(/Here, text size follows your device/)),
     ).toBeVisible();
-    const dark = within(group).getByRole("radio", { name: "Dark" });
+    const dark = within(group).getByRole("radio", { name: humanText("Dark") });
     await user.click(dark);
     expect(dark).toBeChecked();
     expect(dark).toHaveFocus();
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe("dark");
-    expect(group).toHaveAccessibleDescription(/System follows your device/);
+    expect(group).toHaveHumanAccessibleDescription(
+      /System follows your device/,
+    );
     const highContrast = within(group).getByRole("radio", {
-      name: "High contrast",
+      name: humanText("High contrast"),
     });
     await user.click(highContrast);
     expect(highContrast).toBeChecked();
@@ -76,14 +83,16 @@ describe("Appearance in Preferences", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("blocked");
     });
-    const group = screen.getByRole("group", { name: "Appearance" });
-    const light = within(group).getByRole("radio", { name: "Light" });
+    const group = screen.getByRole("group", { name: humanText("Appearance") });
+    const light = within(group).getByRole("radio", {
+      name: humanText("Light"),
+    });
     await user.click(light);
     expect(light).toBeChecked();
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
       "could not be remembered",
     );
-    expect(group).toHaveAccessibleDescription(/could not be remembered/);
+    expect(group).toHaveHumanAccessibleDescription(/could not be remembered/);
   });
 
   it("keeps System live on screens without Preferences and cleans up StrictMode mounts", () => {

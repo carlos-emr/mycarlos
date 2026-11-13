@@ -77,13 +77,23 @@ CARLOS integration follow only after the local vault lifecycle passes review.
 
 ## Localization catalogs
 
-Use Project Fluent (`.ftl`) as the single translation source for the React interface and native
-Rust messages. The frontend and Rust renderer consume the same locale resources; Rust embeds them
-in the application. Generated TypeScript keys and Rust message IDs stay tied to the English source,
-while `npm run i18n:check` checks syntax, locale key parity, and variable parity before builds.
-Supported Chinese locales are Simplified Chinese (`zh-CN`) and Traditional Chinese (`zh-TW`);
-system-language negotiation maps Hans/Simplified regions to `zh-CN` and Hant/Traditional regions
-to `zh-TW`.
+Project Fluent (`.ftl`) is the single translation source for the React interface and native
+Rust messages. Both consume the same seven bundled resources. Generated TypeScript keys,
+Rust message IDs, trusted rich-text slots and emergency formatting-error copy come from those
+resources. `npm run i18n:check` rejects syntax, duplicate, reference, locale contract and
+binding drift faults before builds and exercises negative validator cases.
+
+The shipped locales are en, fr, es, pl, pt-BR, zh-CN and zh-TW. Chinese negotiation gives
+explicit Hans/Hant script priority, then chooses Traditional for TW/HK/MO and Simplified for
+other Chinese regions. A saved choice remains stable. Dates and times follow the computer,
+independently of UI language; number formatting follows the UI language.
+
+Formatting faults are visible and recoverable; native consent text resolves before an action
+can proceed. React renders arguments as escaped text, with generated trusted element slots
+kept separate. Human-facing insertions use bidi isolation. Printed recovery key bytes are
+rendered directly; printed metadata and native kit text omit formatter-added isolation so
+copying retains exact values. Machine codes, cryptographic fields and original documents
+are outside translation.
 
 ## Approved patient-pilot direction
 

@@ -22,6 +22,7 @@ import {
   type VaultSnapshot,
 } from "../vault";
 import { KeyLabel, printedDate, spoken } from "./KeyLabel";
+import { translatePrintedKit } from "../i18n/core";
 
 type Step = "passphrase" | "key" | "check";
 
@@ -89,7 +90,7 @@ export function RecoveryKeySetup({
   /** A key is on screen, and may now be written down or saved. */
   onKeyShown?: (how: { exposed: boolean }) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [step, setStep] = useState<Step>(initialKey ? "key" : "passphrase");
   const [key, setKey] = useState(initialKey ?? "");
   const [passphrase, setPassphrase] = useState("");
@@ -573,7 +574,7 @@ export function RecoveryKeySetup({
               )}
               {label && (
                 <p>
-                  {withElements(t("recoveryKey.label"), {
+                  {withElements("recoveryKey.label", {
                     label: <KeyLabel label={label} />,
                   })}
                 </p>
@@ -628,11 +629,13 @@ export function RecoveryKeySetup({
                     <p className="recovery-kit-key">{key}</p>
                     <p>
                       {label
-                        ? t("kit.labelPrinted", {
+                        ? translatePrintedKit(locale, "kit.labelPrinted", {
                             label,
                             date: printedDate(new Date()),
                           })
-                        : t("kit.printed", { date: printedDate(new Date()) })}
+                        : translatePrintedKit(locale, "kit.printed", {
+                            date: printedDate(new Date()),
+                          })}
                     </p>
                     {label && <p>{t("kit.labelNote")}</p>}
                     <p>{t("kit.use")}</p>

@@ -69,22 +69,65 @@ struct RuntimeInfo {
     message: String,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 struct PublicError {
     code: &'static str,
     message_key: &'static str,
     /// The document a failure is about, for the renderer to name: a name is
     /// never put in an error.
-    #[serde(skip_serializing_if = "Option::is_none")]
     record_id: Option<Uuid>,
     /// A sentence the renderer adds after the message, where it depends on
     /// how the failure came about rather than on what it was.
-    #[serde(skip_serializing_if = "Option::is_none")]
     note_key: Option<&'static str>,
     /// How long to wait before the next try, after wrong ones.
-    #[serde(skip_serializing_if = "Option::is_none")]
     retry_after_ms: Option<u64>,
+}
+
+// Keep the established IPC fields and omission rules; only user-facing text is formatted.
+impl Serialize for PublicError {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Wire<'a> {
+            code: &'a str,
+            message: String,
+            message_key: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            record_id: Option<Uuid>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            note: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            note_key: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            retry_after_ms: Option<u64>,
+        }
+        let text = |key| {
+            UiLocale::En
+                .text_key(key)
+                .unwrap_or_else(|_| ui_text_ids::FORMATTING_FAILURE_EN.to_owned())
+        };
+        Wire {
+            code: self.code,
+            message: text(self.message_key),
+            message_key: self.message_key,
+            record_id: self.record_id,
+            note: self.note_key.map(text),
+            note_key: self.note_key,
+            retry_after_ms: self.retry_after_ms,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl From<ui_text::UiTextError> for PublicError {
+    fn from(_: ui_text::UiTextError) -> Self {
+        Self {
+            code: "invalid",
+            message_key: "language.error.formatting",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+        }
+    }
 }
 
 /// What an error says, whatever it is about.
@@ -200,6 +243,10 @@ impl PublicError {
 impl From<VaultError> for PublicText {
     fn from(error: VaultError) -> Self {
         match error {
+            VaultError::Localization => Self {
+                code: "invalid",
+                message_key: "language.error.formatting",
+            },
             VaultError::Busy => Self {
                 code: "busy",
                 message_key: "native.error.11",
@@ -363,14 +410,9 @@ impl From<VaultError> for PublicError {
             VaultError::DamagedDocument(id) => Some(id),
             _ => None,
         };
-        let PublicText {
-            code,
-            message,
-            message_key,
-        } = PublicText::from(error);
+        let PublicText { code, message_key } = PublicText::from(error);
         Self {
             code,
-            message,
             message_key,
             record_id,
             note_key: None,
@@ -1160,6 +1202,7 @@ fn current_runtime_info() -> RuntimeInfo {
         platform: std::env::consts::OS.to_owned(),
         architecture: std::env::consts::ARCH.to_owned(),
         app_version: env!("CARGO_PKG_VERSION").to_owned(),
+        message: "Hello from the Tauri Rust boundary".to_owned(),
     }
 }
 
@@ -1526,18 +1569,17 @@ fn confirmed_natively<R: tauri::Runtime>(
     message: impl Into<String>,
     keep: &str,
     go_ahead: &str,
-    locale: UiLocale,
+    cancel: &str,
 ) -> bool {
-    let cancel = locale.text(MessageId::NativeCancel);
     // The dialog reports these words as answers of its own, not as the
     // button that was given them.
-    if !native_labels_safe(keep, go_ahead, &cancel) {
+    if !native_labels_safe(keep, go_ahead, cancel) {
         return false;
     }
     let message = message.into();
     #[cfg(target_os = "macos")]
     {
-        return native_confirmation_macos::confirm(app, title, &message, keep, go_ahead, &cancel);
+        return native_confirmation_macos::confirm(app, title, &message, keep, go_ahead, cancel);
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -1549,7 +1591,7 @@ fn confirmed_natively<R: tauri::Runtime>(
             .buttons(MessageDialogButtons::YesNoCancelCustom(
                 keep.to_owned(),
                 go_ahead.to_owned(),
-                cancel,
+                cancel.to_owned(),
             ));
         #[cfg(desktop)]
         let dialog = match app.get_webview_window(MAIN_WINDOW) {
@@ -1604,16 +1646,14 @@ async fn vault_recovery_key_confirm(
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<VaultSnapshot>> {
     let locale = locale.unwrap_or_default();
+    let title = locale.text(MessageId::NativeRecoveryTitle)?;
+    let warning = locale.text(MessageId::NativeRecoveryWarning)?;
+    let keep = locale.text(MessageId::NativeRecoveryKeep)?;
+    let replace = locale.text(MessageId::NativeRecoveryReplace)?;
+    let cancel = locale.text(MessageId::NativeCancel)?;
     run_blocking(store.inner(), move |store| {
         confirm_recovery_key_asking(store, &request.groups(), now_ms, || {
-            confirmed_natively(
-                &app,
-                &locale.text(MessageId::NativeRecoveryTitle),
-                locale.text(MessageId::NativeRecoveryWarning),
-                &locale.text(MessageId::NativeRecoveryKeep),
-                &locale.text(MessageId::NativeRecoveryReplace),
-                locale,
-            )
+            confirmed_natively(&app, &title, warning, &keep, &replace, &cancel)
         })
     })
     .await
@@ -1979,15 +2019,13 @@ async fn vault_restore_pick(
         _ => Ok(()),
     })
     .await?;
+    let _backup_filter = locale.text(MessageId::NativeFilterBackups)?;
     let source = tauri::async_runtime::spawn_blocking(move || {
         let picker = app.dialog().file();
         // Phone pickers filter by file type, and a backup has none they know,
         // so a filter there could hide every file.
         #[cfg(desktop)]
-        let picker = picker.add_filter(
-            &locale.text(MessageId::NativeFilterBackups),
-            &["mycarlosbackup"],
-        );
+        let picker = picker.add_filter(&_backup_filter, &["mycarlosbackup"]);
         picker.blocking_pick_file()
     })
     .await
@@ -2050,13 +2088,16 @@ async fn vault_restore_inspect(
 /// from the renderer.
 #[cfg(test)]
 fn restore_warning(preview: &RestorePreview) -> Option<String> {
-    restore_warning_in(preview, UiLocale::En)
+    restore_warning_in(preview, UiLocale::En).unwrap()
 }
 
-fn restore_warning_in(preview: &RestorePreview, locale: UiLocale) -> Option<String> {
-    let documents = locale.documents(preview.document_count);
+fn restore_warning_in(
+    preview: &RestorePreview,
+    locale: UiLocale,
+) -> Result<Option<String>, ui_text::UiTextError> {
+    let documents = locale.documents(preview.document_count)?;
     let key = match preview.replaces {
-        RestoreReplaces::Nothing => return None,
+        RestoreReplaces::Nothing => return Ok(None),
         RestoreReplaces::OtherVault => MessageId::NativeRestoreOther,
         RestoreReplaces::Unreadable => MessageId::NativeRestoreUnreadable,
         RestoreReplaces::SameVault if preview.differs_from_this_device => {
@@ -2064,8 +2105,11 @@ fn restore_warning_in(preview: &RestorePreview, locale: UiLocale) -> Option<Stri
         }
         RestoreReplaces::SameVault => MessageId::NativeRestoreSame,
     };
-    let kept = locale.text(MessageId::NativeSetAsideKept);
-    Some(locale.render(key, &[("documents", &documents), ("kept", &kept)]))
+    let kept = locale.text(MessageId::NativeSetAsideKept)?;
+    Ok(Some(locale.render(
+        key,
+        &[("documents", &documents), ("kept", &kept)],
+    )?))
 }
 
 /// Restores the chosen backup. Replacing a vault sets it aside (#71), so, as
@@ -2101,21 +2145,18 @@ async fn vault_restore(
         .await
         .map_err(PublicError::of_restore)?
     };
-    if let Some(warning) = restore_warning_in(&preview, locale) {
+    if let Some(warning) = restore_warning_in(&preview, locale)? {
         // The renderer must have asked for a replacement too.
         if !request.replace {
             return Err(PublicError::from(VaultError::AlreadyExists));
         }
+        let title = locale.text(MessageId::NativeRestoreTitle)?;
+        let keep = locale.text(MessageId::NativeVaultKeep)?;
+        let replace = locale.text(MessageId::NativeRestoreReplace)?;
+        let cancel = locale.text(MessageId::NativeCancel)?;
         let dialog_app = app.clone();
         let confirmed = tauri::async_runtime::spawn_blocking(move || {
-            confirmed_natively(
-                &dialog_app,
-                &locale.text(MessageId::NativeRestoreTitle),
-                warning,
-                &locale.text(MessageId::NativeVaultKeep),
-                &locale.text(MessageId::NativeRestoreReplace),
-                locale,
-            )
+            confirmed_natively(&dialog_app, &title, warning, &keep, &replace, &cancel)
         })
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -2235,10 +2276,11 @@ async fn vault_import_pick(
     })
     .await?;
     let _open = ActivityHold::new(store.idle());
+    let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter(&locale.text(MessageId::NativeFilterPdf), &["pdf"])
+            .add_filter(&pdf_filter, &["pdf"])
             .blocking_pick_files()
     })
     .await
@@ -2818,22 +2860,25 @@ const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypte
 /// or uninstalling it, which removes every vault.
 #[cfg(test)]
 fn set_aside_vault_warning(folder: &std::path::Path) -> String {
-    set_aside_vault_warning_in(folder, UiLocale::En)
+    set_aside_vault_warning_in(folder, UiLocale::En).unwrap()
 }
 
-fn set_aside_vault_warning_in(folder: &std::path::Path, locale: UiLocale) -> String {
+fn set_aside_vault_warning_in(
+    folder: &std::path::Path,
+    locale: UiLocale,
+) -> Result<String, ui_text::UiTextError> {
     let removal = if cfg!(any(target_os = "android", target_os = "ios")) {
-        locale.text(MessageId::NativeSetAsideMobile)
+        locale.text(MessageId::NativeSetAsideMobile)?
     } else {
         locale.render(
             MessageId::NativeSetAsideDesktop,
             &[("folder", &folder.display().to_string())],
-        )
+        )?
     };
     locale.render(
         MessageId::NativeSetAsideWarning,
         &[
-            ("kept", &locale.text(MessageId::NativeSetAsideKept)),
+            ("kept", &locale.text(MessageId::NativeSetAsideKept)?),
             ("removal", &removal),
         ],
     )
@@ -2849,23 +2894,20 @@ async fn vault_reset(
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
     let locale = locale.unwrap_or_default();
-    if !locale.reset_phrase_matches(&request.confirmation) {
+    if !locale.reset_phrase_matches(&request.confirmation)? {
         return Err(PublicError::from(VaultError::Invalid));
     }
     let warning = set_aside_vault_warning_in(
         &store.set_aside_folder().ok_or(VaultError::Storage)?,
         locale,
-    );
+    )?;
+    let title = locale.text(MessageId::NativeSetAsideTitle)?;
+    let keep = locale.text(MessageId::NativeVaultKeep)?;
+    let confirm = locale.text(MessageId::NativeSetAsideConfirm)?;
+    let cancel = locale.text(MessageId::NativeCancel)?;
     let dialog_app = app.clone();
     let confirmed = tauri::async_runtime::spawn_blocking(move || {
-        confirmed_natively(
-            &dialog_app,
-            &locale.text(MessageId::NativeSetAsideTitle),
-            warning,
-            &locale.text(MessageId::NativeVaultKeep),
-            &locale.text(MessageId::NativeSetAsideConfirm),
-            locale,
-        )
+        confirmed_natively(&dialog_app, &title, warning, &keep, &confirm, &cancel)
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -3122,12 +3164,14 @@ pub fn run() {
 }
 
 #[cfg(test)]
+fn public_error_text(error: &PublicError) -> String {
+    UiLocale::En.text_key(error.message_key).unwrap()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    fn public_error_text(error: &PublicError) -> String {
-        UiLocale::En.text_key(error.message_key)
-    }
     use proptest::prelude::*;
 
     #[test]
@@ -3389,6 +3433,7 @@ mod tests {
                     failed.note_key.is_some_and(|key| {
                         UiLocale::En
                             .text_key(key)
+                            .unwrap()
                             .contains("Keep any backup that is not empty.")
                     }),
                     destination == BackupDestination::ProviderUntouched,
@@ -3399,6 +3444,7 @@ mod tests {
                     failed.note_key.is_some_and(|key| {
                         UiLocale::En
                             .text_key(key)
+                            .unwrap()
                             .contains("Delete that one, not your other backups")
                     }),
                     destination == BackupDestination::ProviderEmptied,
@@ -4576,6 +4622,50 @@ mod photo_command_tests {
     }
 
     #[test]
+    fn native_localization_generated_photo_names_survive_store_reopen_exactly() {
+        for locale in [
+            UiLocale::En,
+            UiLocale::Fr,
+            UiLocale::Es,
+            UiLocale::Pl,
+            UiLocale::PtBr,
+            UiLocale::ZhCn,
+            UiLocale::ZhTw,
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let (store, profile) = unlocked_store(&temp);
+            let name = locale
+                .render_raw(
+                    MessageId::InterfacePhotoName,
+                    &[("date", "Oct 17, 2026"), ("time", "3.05 PM")],
+                )
+                .unwrap();
+            assert!(!name.chars().any(|c| matches!(c, '\u{2066}'..='\u{2069}')));
+            let json = serde_json::to_vec(&serde_json::json!({
+                "profileId": profile, "folderIds": [], "name": name,
+            }))
+            .unwrap();
+            let target = photo_target(&json).unwrap();
+            assert_eq!(target.name.as_bytes(), name.as_bytes());
+            let outcome = save_photo(&store, target, Zeroizing::new(CANVAS.to_vec())).unwrap();
+            assert_eq!(outcome.imported.len(), 1);
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
+            let snapshot = store.snapshot().unwrap();
+            let record = snapshot
+                .records
+                .iter()
+                .find(|r| r.id == outcome.imported[0])
+                .unwrap();
+            assert_eq!(record.display_name.as_bytes(), name.as_bytes());
+            assert_eq!(
+                exported(&store, record.id),
+                *photo::clean_jpeg(CANVAS).unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn a_photo_that_is_not_a_jpeg_or_a_locked_vault_saves_nothing() {
         let temp = tempfile::tempdir().unwrap();
         let (store, profile) = unlocked_store(&temp);
@@ -5221,9 +5311,9 @@ mod native_localization_tests {
                 (MessageId::NativeVaultKeep, MessageId::NativeSetAsideConfirm),
             ] {
                 let (keep, action, cancel) = (
-                    locale.text(keep),
-                    locale.text(action),
-                    locale.text(MessageId::NativeCancel),
+                    locale.text(keep).unwrap(),
+                    locale.text(action).unwrap(),
+                    locale.text(MessageId::NativeCancel).unwrap(),
                 );
                 assert!(native_labels_safe(&keep, &action, &cancel));
                 assert!(agreed_natively(
@@ -5254,6 +5344,38 @@ mod native_localization_tests {
         ] {
             assert!(!native_labels_safe(keep, action, cancel));
         }
+    }
+
+    #[test]
+    fn native_localization_preserves_ipc_fields_and_optional_omission_contract() {
+        let base = serde_json::to_value(PublicError::from(VaultError::Storage)).unwrap();
+        assert_eq!(base["code"], "storage");
+        assert_eq!(base["messageKey"], "native.error.35");
+        assert!(base["message"].as_str().is_some_and(|s| !s.is_empty()));
+        assert_eq!(base.as_object().unwrap().len(), 3);
+        for field in ["note", "noteKey", "recordId", "retryAfterMs"] {
+            assert!(base.get(field).is_none());
+        }
+        let note = serde_json::to_value(
+            PublicError::from(VaultError::Storage).of_backup(BackupDestination::ProviderEmptied),
+        )
+        .unwrap();
+        assert_eq!(note["code"], "storage");
+        assert_eq!(note["messageKey"], "native.error.03");
+        assert_eq!(note["noteKey"], "native.backup.noteEmptied");
+        assert!(note["note"].is_string());
+        let waited = serde_json::to_value(PublicError::wait(0)).unwrap();
+        assert_eq!(waited["code"], "too_many_attempts");
+        assert_eq!(waited["retryAfterMs"], 0);
+        let damaged =
+            serde_json::to_value(PublicError::from(VaultError::DamagedDocument(Uuid::nil())))
+                .unwrap();
+        assert_eq!(damaged["recordId"], Uuid::nil().to_string());
+        let fault =
+            serde_json::to_value(PublicError::from(ui_text::UiTextError::Formatting)).unwrap();
+        assert_eq!(fault["code"], "invalid");
+        assert_eq!(fault["messageKey"], "language.error.formatting");
+        assert_eq!(fault["message"], ui_text_ids::FORMATTING_FAILURE_EN);
     }
 
     #[test]
@@ -5299,7 +5421,7 @@ mod native_localization_tests {
             VaultError::RestoreUnfinished,
         ] {
             let text = PublicText::from(error);
-            assert!(!UiLocale::En.text_key(text.message_key).is_empty());
+            assert!(!UiLocale::En.text_key(text.message_key).unwrap().is_empty());
         }
         for destination in [
             BackupDestination::Path,
@@ -5310,7 +5432,7 @@ mod native_localization_tests {
             assert!(!public_error_text(&error).is_empty());
             assert_eq!(error.message_key, "native.error.03");
             if let Some(note_key) = error.note_key {
-                assert!(!UiLocale::En.text_key(note_key).is_empty());
+                assert!(!UiLocale::En.text_key(note_key).unwrap().is_empty());
             }
             let json = serde_json::to_value(error).unwrap();
             assert_eq!(json["messageKey"], "native.error.03");

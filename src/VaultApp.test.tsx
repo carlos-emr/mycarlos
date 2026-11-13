@@ -1,3 +1,4 @@
+import { humanText } from "./test/humanText";
 import {
   act,
   fireEvent,
@@ -52,7 +53,9 @@ const emptySnapshot: VaultSnapshot = {
 /** A new setup starts on the comfort screen (#69); Continue leads on to the
  * passphrase. */
 async function continuePastComfort() {
-  fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: humanText("Continue") }),
+  );
 }
 
 function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
@@ -159,15 +162,19 @@ const snapshotWithRecord: VaultSnapshot = {
 // Saves FAKE_Results.pdf through its details, for tests on fake timers.
 async function startExport() {
   await act(async () => {
-    fireEvent.click(screen.getByText("FAKE_Results.pdf"));
+    fireEvent.click(screen.getByText(humanText("FAKE_Results.pdf")));
   });
   await act(async () => {
     fireEvent.click(
-      screen.getByRole("button", { name: "Save a copy to this computer" }),
+      screen.getByRole("button", {
+        name: humanText("Save a copy to this computer"),
+      }),
     );
   });
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Save a copy" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Save a copy") }),
+    );
   });
 }
 
@@ -190,33 +197,37 @@ const LOCKED_MESSAGE =
 // The unlock screen says only that the vault locked; a transfer's outcome is
 // shown after the next unlock, where only the owner sees it.
 async function expectOutcomeAfterUnlock(outcome: string) {
-  expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
-  expect(screen.queryByText(outcome, { exact: false })).not.toBeInTheDocument();
+  expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
+  expect(
+    screen.queryByText(humanText(outcome), { exact: false }),
+  ).not.toBeInTheDocument();
   await act(async () => {
-    fireEvent.change(screen.getByLabelText("Passphrase"), {
+    fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
       target: { value: "river-azimuth-cobalt-sparrow-934" },
     });
   });
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    fireEvent.click(screen.getByRole("button", { name: humanText("Unlock") }));
   });
   await passAnnounceDelay();
-  expect(screen.getByText(`Vault unlocked. ${outcome}`)).toBeVisible();
+  expect(
+    screen.getByText(humanText(`Vault unlocked. ${outcome}`)),
+  ).toBeVisible();
 }
 
 // Unlocks and checks that nothing was kept for this unlock to report.
 async function expectNothingKeptAfterUnlock() {
   await act(async () => {
-    fireEvent.change(screen.getByLabelText("Passphrase"), {
+    fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
       target: { value: "river-azimuth-cobalt-sparrow-934" },
     });
   });
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    fireEvent.click(screen.getByRole("button", { name: humanText("Unlock") }));
   });
-  expect(await screen.findByText(/^Vault unlocked/)).toHaveTextContent(
-    /^Vault unlocked\.$/,
-  );
+  expect(
+    await screen.findByText(humanText(/^Vault unlocked/)),
+  ).toHaveHumanTextContent(/^Vault unlocked\.$/);
 }
 
 // Starts an import, backgrounds the app so the lock is held for it, and
@@ -224,7 +235,9 @@ async function expectNothingKeptAfterUnlock() {
 async function holdLockForImport(bridge: VaultBridge, finish: () => void) {
   const user = userEvent.setup();
   await user.click(
-    await screen.findByRole("button", { name: "Choose files to import" }),
+    await screen.findByRole("button", {
+      name: humanText("Choose files to import"),
+    }),
   );
   await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
   const visibility = vi
@@ -234,7 +247,7 @@ async function holdLockForImport(bridge: VaultBridge, finish: () => void) {
   await act(async () => {
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+  expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
   visibility.mockReturnValue("visible");
   await act(async () => finish());
   return user;
@@ -345,11 +358,11 @@ describe("durable vault UI", () => {
     );
     await continuePastComfort();
     await screen.findByRole("heading", {
-      name: "Set up myCarlos on this computer",
+      name: humanText("Set up myCarlos on this computer"),
     });
-    expect(screen.getByText(/stays on this device/)).toHaveTextContent(
-      /another device/,
-    );
+    expect(
+      screen.getByText(humanText(/stays on this device/)),
+    ).toHaveHumanTextContent(/another device/);
   });
 
   it("starts a new setup on the comfort screen, and only a new one (#69)", async () => {
@@ -364,36 +377,44 @@ describe("durable vault UI", () => {
       />,
     );
     await screen.findByRole("heading", {
-      name: "Make myCarlos comfortable for you",
+      name: humanText("Make myCarlos comfortable for you"),
     });
     // A choice applies at once, and is kept as Settings keeps it.
-    const delay = screen.getByRole("group", { name: "Automatic lock delay" });
+    const delay = screen.getByRole("group", {
+      name: humanText("Automatic lock delay"),
+    });
     for (let press = 0; press < 2; press++)
       await user.click(
-        within(delay).getByRole("button", { name: "Longer delay" }),
+        within(delay).getByRole("button", { name: humanText("Longer delay") }),
       );
-    expect(within(delay).getByText("7 minutes")).toBeVisible();
+    expect(within(delay).getByText(humanText("7 minutes"))).toBeVisible();
     expect(window.localStorage.getItem("mycarlos.autoLockMinutes.v1")).toBe(
       "7",
     );
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Continue") }),
+    );
     await screen.findByRole("heading", {
-      name: "Set up myCarlos on this computer",
+      name: humanText("Set up myCarlos on this computer"),
     });
     // The focus goes on to the first box, not nowhere; the choice was
     // said where it was made, not again here.
     expect(
-      screen.getByLabelText("Whose records will you keep here?"),
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
     ).toHaveFocus();
-    expect(screen.queryByText(/Automatic locking set/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(humanText(/Automatic locking set/)),
+    ).not.toBeInTheDocument();
     cleanup();
 
     // A vault that exists never shows it.
     render(<VaultApp bridge={nativeBridge()} />);
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     expect(
       screen.queryByRole("heading", {
-        name: "Make myCarlos comfortable for you",
+        name: humanText("Make myCarlos comfortable for you"),
       }),
     ).not.toBeInTheDocument();
   });
@@ -406,26 +427,30 @@ describe("durable vault UI", () => {
 
     await continuePastComfort();
     await screen.findByRole("heading", {
-      name: "Set up myCarlos on this computer",
+      name: humanText("Set up myCarlos on this computer"),
     });
     fireEvent.change(
-      screen.getByLabelText("Whose records will you keep here?"),
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
       {
         target: { value: "Jamie" },
       },
     );
-    const passwords = screen.getAllByLabelText(/passphrase/i);
+    const passwords = screen.getAllByLabelText(humanText(/passphrase/i));
     fireEvent.change(passwords[0], {
       target: { value: "river-azimuth-cobalt-sparrow-934" },
     });
     fireEvent.change(passwords[1], { target: { value: "different" } });
-    expect(screen.getByRole("button", { name: "Create vault" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    ).toBeDisabled();
     fireEvent.change(passwords[1], {
       target: { value: "river-azimuth-cobalt-sparrow-934" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create vault" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
 
-    await screen.findByRole("heading", { name: "My records" });
+    await screen.findByRole("heading", { name: humanText("My records") });
     expect(bridge.create).toHaveBeenCalledWith(
       "river-azimuth-cobalt-sparrow-934",
       "Jamie",
@@ -440,26 +465,36 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await continuePastComfort();
     fireEvent.change(
-      await screen.findByLabelText("Whose records will you keep here?"),
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
       { target: { value: "Jamie" } },
     );
-    for (const field of screen.getAllByLabelText(/passphrase/i))
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i)))
       fireEvent.change(field, {
         target: { value: "river-azimuth-cobalt-sparrow-934" },
       });
-    fireEvent.click(screen.getByRole("button", { name: "Create vault" }));
-    await screen.findByRole("heading", { name: "My records" });
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
-    await screen.findByRole("heading", { name: "Unlock your vault" });
-    await user.click(screen.getByText("Forgot your passphrase?"));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
+    await screen.findByRole("heading", { name: humanText("My records") });
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    );
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    await user.click(screen.getByText(humanText("Forgot your passphrase?")));
     await user.type(
-      screen.getByLabelText("Type RESET MYCARLOS VAULT"),
+      screen.getByLabelText(humanText("Type RESET MYCARLOS VAULT")),
       "RESET MYCARLOS VAULT",
     );
-    await user.click(screen.getByRole("button", { name: "Set vault aside" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Set vault aside") }),
+    );
     expect(
       await screen.findByRole("heading", {
-        name: "Make myCarlos comfortable for you",
+        name: humanText("Make myCarlos comfortable for you"),
       }),
     ).toBeVisible();
   });
@@ -470,14 +505,16 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await continuePastComfort();
-    const create = await screen.findByRole("button", { name: "Create vault" });
+    const create = await screen.findByRole("button", {
+      name: humanText("Create vault"),
+    });
     // 600 characters need 1800 UTF-8 bytes, over the vault's 1024-byte limit.
     const long = "字".repeat(600);
-    for (const field of screen.getAllByLabelText(/passphrase/i)) {
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i))) {
       fireEvent.change(field, { target: { value: long } });
     }
 
-    expect(screen.getByRole("alert")).toHaveTextContent("too long");
+    expect(screen.getByRole("alert")).toHaveHumanTextContent("too long");
     expect(create).toBeDisabled();
     expect(bridge.create).not.toHaveBeenCalled();
   });
@@ -498,19 +535,19 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
 
     await user.type(
-      await screen.findByLabelText("Passphrase"),
+      await screen.findByLabelText(humanText("Passphrase")),
       "a long synthetic passphrase",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
 
     await continuePastComfort();
     expect(
       await screen.findByRole("heading", {
-        name: "Set up myCarlos on this computer",
+        name: humanText("Set up myCarlos on this computer"),
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("No vault exists on this device."),
+      screen.getByText(humanText("No vault exists on this device.")),
     ).toBeInTheDocument();
   });
 
@@ -540,19 +577,25 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     await user.type(
-      screen.getByLabelText("Passphrase"),
+      screen.getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     await user.click(
-      await screen.findByRole("button", { name: "Choose files to import" }),
+      await screen.findByRole("button", {
+        name: humanText("Choose files to import"),
+      }),
     );
 
-    expect(await screen.findByText("report.pdf")).toBeVisible();
+    expect(await screen.findByText(humanText("report.pdf"))).toBeVisible();
     expect(
-      screen.getByText("1 document encrypted and added. 1 duplicate skipped."),
+      screen.getByText(
+        humanText("1 document encrypted and added. 1 duplicate skipped."),
+      ),
     ).toBeVisible();
     expect(bridge.setAutoLock).toHaveBeenCalledWith(5);
     expect(bridge.pickImportFiles).toHaveBeenCalledWith("profile-1", []);
@@ -703,7 +746,7 @@ describe("durable vault UI", () => {
       return Promise.resolve(captured);
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByText("FAKE_Camera.jpg");
+    await screen.findByText(humanText("FAKE_Camera.jpg"));
     expect(snapshot).toHaveBeenCalledTimes(1);
 
     // Received intake is outside run/busy and is a reachable second source of
@@ -717,14 +760,20 @@ describe("durable vault UI", () => {
       vault.records.find((record) => record.id === "FAKE-photo")?.hidden,
     ).toBeUndefined();
 
-    await user.click(screen.getByText("FAKE_Camera.jpg"));
-    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await user.click(screen.getByText(humanText("FAKE_Camera.jpg")));
+    await user.click(screen.getByRole("button", { name: humanText("Hide") }));
     await screen.findByText(
-      "FAKE_Camera.jpg was hidden. It stays in the vault under Hidden.",
+      humanText(
+        "FAKE_Camera.jpg was hidden. It stays in the vault under Hidden.",
+      ),
     );
-    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^Hidden/) }),
+    );
     expect(
-      screen.getByRole("button", { name: "Restore FAKE_Camera.jpg" }),
+      screen.getByRole("button", {
+        name: humanText("Restore FAKE_Camera.jpg"),
+      }),
     ).toBeVisible();
     await act(async () => releaseOld!());
     expect(
@@ -733,7 +782,9 @@ describe("durable vault UI", () => {
     ).toBe("patient");
     expect
       .soft(
-        screen.queryByRole("button", { name: "Restore FAKE_Camera.jpg" }),
+        screen.queryByRole("button", {
+          name: humanText("Restore FAKE_Camera.jpg"),
+        }),
         "A late background refresh must not remove the hidden photo",
       )
       .toBeVisible();
@@ -742,20 +793,28 @@ describe("durable vault UI", () => {
     // a fresh PDF-hide snapshot reveals the already-committed hidden photo.
     await user.click(
       within(
-        screen.getByRole("navigation", { name: "Record library" }),
-      ).getByRole("button", { name: /^My records/ }),
+        screen.getByRole("navigation", { name: humanText("Record library") }),
+      ).getByRole("button", { name: humanText(/^My records/) }),
     );
-    await user.click(screen.getByText("FAKE_Report.pdf"));
-    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await user.click(screen.getByText(humanText("FAKE_Report.pdf")));
+    await user.click(screen.getByRole("button", { name: humanText("Hide") }));
     await screen.findByText(
-      "FAKE_Report.pdf was hidden. It stays in the vault under Hidden.",
+      humanText(
+        "FAKE_Report.pdf was hidden. It stays in the vault under Hidden.",
+      ),
     );
-    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^Hidden/) }),
+    );
     expect(
-      screen.getByRole("button", { name: "Restore FAKE_Camera.jpg" }),
+      screen.getByRole("button", {
+        name: humanText("Restore FAKE_Camera.jpg"),
+      }),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Restore FAKE_Report.pdf" }),
+      screen.getByRole("button", {
+        name: humanText("Restore FAKE_Report.pdf"),
+      }),
     ).toBeVisible();
     expect(bridge.hideRecord).toHaveBeenCalledTimes(2);
     expect(snapshot).toHaveBeenCalledTimes(4);
@@ -785,18 +844,18 @@ describe("durable vault UI", () => {
       return Promise.resolve(captured);
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByText("FAKE_Camera.jpg");
+    await screen.findByText(humanText("FAKE_Camera.jpg"));
     holdNext = true;
     arrive("FAKE_Incoming.pdf");
     await act(async () => window.dispatchEvent(new Event("focus")));
     await waitFor(() => expect(releaseOld).toBeTypeOf("function"));
-    await user.click(screen.getByText("FAKE_Camera.jpg"));
+    await user.click(screen.getByText(humanText("FAKE_Camera.jpg")));
     rejectNext = true;
-    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await user.click(screen.getByRole("button", { name: humanText("Hide") }));
     await waitFor(() =>
       expect(screen.getByRole("status")).not.toBeEmptyDOMElement(),
     );
-    expect(screen.getByRole("status")).not.toHaveTextContent("was hidden");
+    expect(screen.getByRole("status")).not.toHaveHumanTextContent("was hidden");
     expect(
       vault.records.find((record) => record.id === "FAKE-photo")?.hidden
         ?.reason,
@@ -804,20 +863,24 @@ describe("durable vault UI", () => {
     await act(async () => releaseOld!());
     await user.click(
       within(
-        screen.getByRole("navigation", { name: "Record library" }),
-      ).getByRole("button", { name: /^Shared with me/ }),
+        screen.getByRole("navigation", { name: humanText("Record library") }),
+      ).getByRole("button", { name: humanText(/^Shared with me/) }),
     );
-    expect(await screen.findByText("FAKE_Incoming.pdf")).toBeVisible();
+    expect(
+      await screen.findByText(humanText("FAKE_Incoming.pdf")),
+    ).toBeVisible();
     expect(bridge.acceptReceived).toHaveBeenCalledOnce();
   });
 
   async function unlockWith(user: ReturnType<typeof userEvent.setup>) {
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     await user.type(
-      screen.getByLabelText("Passphrase"),
+      screen.getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
   }
 
   it("keeps shared files waiting while locked, puts them in Shared with me at unlock, and moves one to the person (#61)", async () => {
@@ -831,26 +894,30 @@ describe("durable vault UI", () => {
     // Whoever is looking on has not unlocked: a count, no names.
     expect(
       await screen.findByText(
-        "2 shared files are waiting. Unlock and they go into Shared with me. If myCarlos closes first, they are not kept: share them again.",
+        humanText(
+          "2 shared files are waiting. Unlock and they go into Shared with me. If myCarlos closes first, they are not kept: share them again.",
+        ),
       ),
     ).toBeVisible();
-    expect(screen.queryByText("FAKE_Bloodwork.pdf")).toBeNull();
+    expect(screen.queryByText(humanText("FAKE_Bloodwork.pdf"))).toBeNull();
     expect(bridge.acceptReceived).not.toHaveBeenCalled();
 
     await unlockWith(user);
     // Said once, politely; the folder says how many are new.
     expect(
-      await screen.findByText("2 shared files were added to Shared with me."),
+      await screen.findByText(
+        humanText("2 shared files were added to Shared with me."),
+      ),
     ).toHaveAttribute("aria-live", "polite");
     expect(bridge.acceptReceived).toHaveBeenCalledOnce();
     const folder = screen.getByRole("button", {
-      name: "Shared with me, 2 new",
+      name: humanText("Shared with me, 2 new"),
     });
     // With one person it sits beside My records, at the top level and in no
     // one's records (Ben, 21 Oct).
     const mine = within(
-      screen.getByRole("navigation", { name: "Record library" }),
-    ).getByRole("button", { name: /^My records/ });
+      screen.getByRole("navigation", { name: humanText("Record library") }),
+    ).getByRole("button", { name: humanText(/^My records/) });
     expect(
       mine.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -858,29 +925,35 @@ describe("durable vault UI", () => {
 
     await user.click(folder);
     expect(
-      await screen.findByRole("heading", { name: "Shared with me" }),
+      await screen.findByRole("heading", { name: humanText("Shared with me") }),
     ).toBeVisible();
     expect(
-      screen.getByText(/Move them into your folders whenever you like\./),
+      screen.getByText(
+        humanText(/Move them into your folders whenever you like\./),
+      ),
     ).toBeVisible();
     // Seen: no longer new.
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Shared with me" }),
+        screen.getByRole("button", { name: humanText("Shared with me") }),
       ).toBeVisible(),
     );
     // Nothing is made in it.
     for (const name of ["Choose files to import", "New folder"])
       expect(screen.queryByRole("button", { name })).toBeNull();
-    expect(screen.queryByText("New folder")).toBeNull();
+    expect(screen.queryByText(humanText("New folder"))).toBeNull();
 
     await user.click(
       screen.getByRole("button", {
-        name: "Details for FAKE_Bloodwork.pdf",
+        name: humanText("Details for FAKE_Bloodwork.pdf"),
       }),
     );
-    const details = screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" });
-    const moveTo = within(details).getByRole("combobox", { name: "Move to" });
+    const details = screen.getByRole("dialog", {
+      name: humanText("FAKE_Bloodwork.pdf"),
+    });
+    const moveTo = within(details).getByRole("combobox", {
+      name: humanText("Move to"),
+    });
     expect(
       within(moveTo)
         .getAllByRole("option")
@@ -889,22 +962,30 @@ describe("durable vault UI", () => {
     await user.selectOptions(moveTo, "My records");
     // Choosing only picks where it goes; Move moves it (#91).
     expect(bridge.moveToPerson).not.toHaveBeenCalled();
-    await user.click(within(details).getByRole("button", { name: "Move" }));
+    await user.click(
+      within(details).getByRole("button", { name: humanText("Move") }),
+    );
     expect(bridge.moveToPerson).toHaveBeenCalledWith(
       ["record-shared-1"],
       "profile-1",
       [],
     );
     expect(
-      await screen.findByText("FAKE_Bloodwork.pdf moved to My records."),
+      await screen.findByText(
+        humanText("FAKE_Bloodwork.pdf moved to My records."),
+      ),
     ).toBeVisible();
     await waitFor(() =>
       expect(
-        screen.queryByRole("article", { name: "FAKE_Bloodwork.pdf document" }),
+        screen.queryByRole("article", {
+          name: humanText("FAKE_Bloodwork.pdf document"),
+        }),
       ).toBeNull(),
     );
     expect(
-      screen.getByRole("article", { name: "FAKE_Xray.pdf document" }),
+      screen.getByRole("article", {
+        name: humanText("FAKE_Xray.pdf document"),
+      }),
     ).toBeVisible();
   });
 
@@ -955,77 +1036,104 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await unlockWith(user);
       expect(
-        screen.queryByText("FAKE_Jamie_hidden.pdf"),
+        screen.queryByText(humanText("FAKE_Jamie_hidden.pdf")),
       ).not.toBeInTheDocument();
       const nav = () =>
-        screen.getByRole("navigation", { name: "Record library" });
+        screen.getByRole("navigation", { name: humanText("Record library") });
       await user.click(
-        within(nav()).getByRole("button", { name: /^Shared with me/ }),
+        within(nav()).getByRole("button", {
+          name: humanText(/^Shared with me/),
+        }),
       );
       await user.click(
         await screen.findByRole("button", {
-          name: "Details for FAKE_Shared.pdf",
+          name: humanText("Details for FAKE_Shared.pdf"),
         }),
       );
-      const details = screen.getByRole("dialog", { name: "FAKE_Shared.pdf" });
-      await user.click(within(details).getByRole("button", { name: "Hide" }));
+      const details = screen.getByRole("dialog", {
+        name: humanText("FAKE_Shared.pdf"),
+      });
+      await user.click(
+        within(details).getByRole("button", { name: humanText("Hide") }),
+      );
       await waitFor(() =>
         expect(bridge.hideRecord).toHaveBeenCalledWith("record-shared-1"),
       );
       await waitFor(() =>
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
       );
-      expect(screen.queryByText("FAKE_Shared.pdf")).not.toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: /^Hidden/ }));
-      const row = await screen.findByRole("article", {
-        name: "FAKE_Shared.pdf, hidden",
-      });
-      expect(within(row).getByText("Shared with me")).toBeInTheDocument();
       expect(
-        screen.getByRole("complementary", { hidden: true }),
-      ).toHaveTextContent("1 document · 0 folders");
-      // Reopening the selected Hidden entry must retain Shared as its source.
-      await user.click(screen.getByRole("button", { name: /^Hidden/ }));
-      expect(
-        screen.getByRole("article", { name: "FAKE_Shared.pdf, hidden" }),
-      ).toBeVisible();
-      expect(within(row).getByText("Shared with me")).toBeInTheDocument();
-      expect(
-        screen.getByRole("complementary", { hidden: true }),
-      ).toHaveTextContent("1 document · 0 folders");
-      expect(
-        screen.queryByText("FAKE_Jamie_hidden.pdf"),
+        screen.queryByText(humanText("FAKE_Shared.pdf")),
       ).not.toBeInTheDocument();
       await user.click(
-        within(row).getByRole("button", { name: "Restore FAKE_Shared.pdf" }),
+        screen.getByRole("button", { name: humanText(/^Hidden/) }),
+      );
+      const row = await screen.findByRole("article", {
+        name: humanText("FAKE_Shared.pdf, hidden"),
+      });
+      expect(
+        within(row).getByText(humanText("Shared with me")),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("complementary", { hidden: true }),
+      ).toHaveHumanTextContent("1 document · 0 folders");
+      // Reopening the selected Hidden entry must retain Shared as its source.
+      await user.click(
+        screen.getByRole("button", { name: humanText(/^Hidden/) }),
+      );
+      expect(
+        screen.getByRole("article", {
+          name: humanText("FAKE_Shared.pdf, hidden"),
+        }),
+      ).toBeVisible();
+      expect(
+        within(row).getByText(humanText("Shared with me")),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("complementary", { hidden: true }),
+      ).toHaveHumanTextContent("1 document · 0 folders");
+      expect(
+        screen.queryByText(humanText("FAKE_Jamie_hidden.pdf")),
+      ).not.toBeInTheDocument();
+      await user.click(
+        within(row).getByRole("button", {
+          name: humanText("Restore FAKE_Shared.pdf"),
+        }),
       );
       await waitFor(() =>
         expect(bridge.unhideRecord).toHaveBeenCalledWith("record-shared-1"),
       );
       if (phone) {
         await user.click(
-          within(screen.getByRole("navigation", { name: "Section" })).getByRole(
-            "button",
-            { name: /^Records/ },
-          ),
+          within(
+            screen.getByRole("navigation", { name: humanText("Section") }),
+          ).getByRole("button", { name: humanText(/^Records/) }),
         );
       }
       await user.click(
-        within(nav()).getByRole("button", { name: /^Shared with me/ }),
+        within(nav()).getByRole("button", {
+          name: humanText(/^Shared with me/),
+        }),
       );
       expect(
         await screen.findByRole("article", {
-          name: "FAKE_Shared.pdf document",
+          name: humanText("FAKE_Shared.pdf document"),
         }),
       ).toBeVisible();
-      await user.click(within(nav()).getByRole("button", { name: /^Jamie/ }));
-      await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+      await user.click(
+        within(nav()).getByRole("button", { name: humanText(/^Jamie/) }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText(/^Hidden/) }),
+      );
       expect(
         await screen.findByRole("article", {
-          name: "FAKE_Jamie_hidden.pdf, hidden",
+          name: humanText("FAKE_Jamie_hidden.pdf, hidden"),
         }),
       ).toBeVisible();
-      expect(screen.queryByText("FAKE_Shared.pdf")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(humanText("FAKE_Shared.pdf")),
+      ).not.toBeInTheDocument();
     },
   );
 
@@ -1035,16 +1143,18 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
     const folder = await screen.findByRole("button", {
-      name: "Shared with me, 1 new",
+      name: humanText("Shared with me, 1 new"),
     });
     // Each person is a top-level folder, and Shared with me is one beside
     // them, after both and inside neither (Ben, 21 Oct).
     const sidebar = folder.closest("aside")!;
     const library = within(sidebar).getByRole("navigation", {
-      name: "Record library",
+      name: humanText("Record library"),
     });
     const people = ["Jamie", "Morgan"].map((name) =>
-      within(library).getByRole("button", { name: new RegExp(`^${name}`) }),
+      within(library).getByRole("button", {
+        name: humanText(new RegExp(`^${name}`)),
+      }),
     );
     for (const person of people)
       expect(
@@ -1052,51 +1162,64 @@ describe("durable vault UI", () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     expect(folder.style.paddingLeft).toBe("");
-    expect(screen.queryByRole("group", { name: "Patient" })).toBeNull();
+    expect(
+      screen.queryByRole("group", { name: humanText("Patient") }),
+    ).toBeNull();
 
     await user.click(folder);
     expect(
       await screen.findByText(
-        /They are in no one's records until you move each one to the person it is for\./,
+        humanText(
+          /They are in no one's records until you move each one to the person it is for\./,
+        ),
       ),
     ).toBeVisible();
     // While it is open, no person is chosen.
     for (const person of people)
       expect(person).not.toHaveAttribute("aria-current");
     expect(
-      within(sidebar).queryByText("Jamie", { selector: ".brand small" }),
+      within(sidebar).queryByText(humanText("Jamie"), {
+        selector: ".brand small",
+      }),
     ).toBeNull();
     // No person's path or picker above it.
     expect(
       within(screen.getByRole("main")).queryByRole("group", {
-        name: "Patient",
+        name: humanText("Patient"),
       }),
     ).toBeNull();
     expect(
       within(screen.getByRole("main")).queryByRole("button", {
-        name: "My records",
+        name: humanText("My records"),
       }),
     ).toBeNull();
     await user.click(
-      screen.getByRole("button", { name: "Select FAKE_Xray.pdf" }),
+      screen.getByRole("button", { name: humanText("Select FAKE_Xray.pdf") }),
     );
     const moveSelected = screen.getByRole("combobox", {
-      name: "Move selected to",
+      name: humanText("Move selected to"),
     });
     expect(
       within(moveSelected)
         .getAllByRole("group")
         .map((group) => group.getAttribute("label")),
     ).toEqual(["Jamie", "Morgan"]);
-    await user.selectOptions(moveSelected, "Morgan's records");
-    await user.click(screen.getByRole("button", { name: "Move" }));
+    await user.selectOptions(
+      moveSelected,
+      within(moveSelected).getByRole("option", {
+        name: humanText("Morgan's records"),
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Move") }));
     expect(bridge.moveToPerson).toHaveBeenCalledWith(
       ["record-shared-1"],
       "profile-2",
       [],
     );
     expect(
-      await screen.findByText("FAKE_Xray.pdf moved to Morgan's records."),
+      await screen.findByText(
+        humanText("FAKE_Xray.pdf moved to Morgan's records."),
+      ),
     ).toBeVisible();
   });
 
@@ -1127,11 +1250,11 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
     const shared = await screen.findByRole("button", {
-      name: "Shared with me, 1 new",
+      name: humanText("Shared with me, 1 new"),
     });
     const sidebar = shared.closest("aside")!;
     const library = within(sidebar).getByRole("navigation", {
-      name: "Record library",
+      name: humanText("Record library"),
     });
     const footer = () => sidebar.querySelector(".storage small");
     const names = () =>
@@ -1140,16 +1263,18 @@ describe("durable vault UI", () => {
       );
     // Jamie's folder sits under Jamie; the footer counts Jamie's.
     expect(names()).toEqual(["Jamie", "FAKE Labs", "Morgan", "Shared with me"]);
-    expect(footer()).toHaveTextContent("0 documents · 1 folder");
+    expect(footer()).toHaveHumanTextContent("0 documents · 1 folder");
 
     await user.click(shared);
-    await screen.findByRole("heading", { name: "Shared with me" });
+    await screen.findByRole("heading", { name: humanText("Shared with me") });
     // The tree stays; the footer counts the whole vault, as it is no one's.
     expect(names()).toEqual(["Jamie", "FAKE Labs", "Morgan", "Shared with me"]);
-    expect(footer()).toHaveTextContent("2 documents · 1 folder");
+    expect(footer()).toHaveHumanTextContent("2 documents · 1 folder");
 
-    await user.click(within(library).getByRole("button", { name: /^Morgan/ }));
-    expect(footer()).toHaveTextContent("1 document · 0 folders");
+    await user.click(
+      within(library).getByRole("button", { name: humanText(/^Morgan/) }),
+    );
+    expect(footer()).toHaveHumanTextContent("1 document · 0 folders");
   });
 
   it("with several people, opens a person's records when one is chosen from Shared with me (#61)", async () => {
@@ -1158,16 +1283,25 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
     await user.click(
-      await screen.findByRole("button", { name: "Shared with me, 1 new" }),
+      await screen.findByRole("button", {
+        name: humanText("Shared with me, 1 new"),
+      }),
     );
-    await screen.findByRole("heading", { name: "Shared with me" });
-    const library = screen.getByRole("navigation", { name: "Record library" });
-    await user.click(within(library).getByRole("button", { name: /^Morgan/ }));
+    await screen.findByRole("heading", { name: humanText("Shared with me") });
+    const library = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
+    await user.click(
+      within(library).getByRole("button", { name: humanText(/^Morgan/) }),
+    );
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Morgan" }),
+      await screen.findByRole("heading", {
+        level: 1,
+        name: humanText("Morgan"),
+      }),
     ).toBeVisible();
     expect(
-      within(library).getByRole("button", { name: /^Morgan/ }),
+      within(library).getByRole("button", { name: humanText(/^Morgan/) }),
     ).toHaveAttribute("aria-current", "page");
   });
 
@@ -1205,14 +1339,16 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
     const library = () =>
-      screen.getByRole("navigation", { name: "Record library" });
+      screen.getByRole("navigation", { name: humanText("Record library") });
     // A filed document can move to another person through the same drop path.
     const jamiesFile = await screen.findByRole("article", {
-      name: "FAKE_Jamie.pdf document",
+      name: humanText("FAKE_Jamie.pdf document"),
     });
     const kept = dragTransfer();
     fireDragEvent("dragstart", jamiesFile, { dataTransfer: kept });
-    const morgan = within(library()).getByRole("button", { name: /^Morgan/ });
+    const morgan = within(library()).getByRole("button", {
+      name: humanText(/^Morgan/),
+    });
     fireDragEvent("dragover", morgan, { dataTransfer: kept });
     fireDragEvent("drop", morgan, { dataTransfer: kept });
     await waitFor(() =>
@@ -1230,14 +1366,18 @@ describe("durable vault UI", () => {
     const folderDrag = dragTransfer();
     fireDragEvent(
       "dragstart",
-      within(library()).getByRole("button", { name: /^FAKE Jamie folder/ }),
+      within(library()).getByRole("button", {
+        name: humanText(/^FAKE Jamie folder/),
+      }),
       { dataTransfer: folderDrag },
     );
     fireDragEvent("dragover", morgan, { dataTransfer: folderDrag });
     fireDragEvent("drop", morgan, { dataTransfer: folderDrag });
     expect(
       await screen.findByText(
-        "Folders stay with their person. Move individual documents to another person instead.",
+        humanText(
+          "Folders stay with their person. Move individual documents to another person instead.",
+        ),
       ),
     ).toBeVisible();
     expect(bridge.moveToPerson).toHaveBeenCalledTimes(1);
@@ -1245,15 +1385,17 @@ describe("durable vault UI", () => {
 
     // From Shared with me, dropped on Morgan's folder: it goes to Morgan.
     await user.click(
-      within(library()).getByRole("button", { name: /^Shared with me/ }),
+      within(library()).getByRole("button", {
+        name: humanText(/^Shared with me/),
+      }),
     );
     const file = await screen.findByRole("article", {
-      name: "FAKE_Scan.pdf document",
+      name: humanText("FAKE_Scan.pdf document"),
     });
     const moved = dragTransfer();
     fireDragEvent("dragstart", file, { dataTransfer: moved });
     const forms = within(library()).getByRole("button", {
-      name: /^FAKE School forms/,
+      name: humanText(/^FAKE School forms/),
     });
     fireDragEvent("dragover", forms, { dataTransfer: moved });
     fireDragEvent("drop", forms, { dataTransfer: moved });
@@ -1293,18 +1435,24 @@ describe("durable vault UI", () => {
       await unlockWith(user);
       await user.click(
         await screen.findByRole("button", {
-          name: "Details for FAKE Filed.pdf",
+          name: humanText("Details for FAKE Filed.pdf"),
         }),
       );
-      const details = screen.getByRole("dialog", { name: "FAKE Filed.pdf" });
-      const destination = within(details).getByRole("combobox", {
-        name: "Move to",
+      const details = screen.getByRole("dialog", {
+        name: humanText("FAKE Filed.pdf"),
       });
-      const move = within(details).getByRole("button", { name: "Move" });
+      const destination = within(details).getByRole("combobox", {
+        name: humanText("Move to"),
+      });
+      const move = within(details).getByRole("button", {
+        name: humanText("Move"),
+      });
       expect(destination).toHaveValue("profile-1|");
       expect(move).toBeDisabled();
       expect(
-        within(destination).queryByRole("option", { name: "Shared with me" }),
+        within(destination).queryByRole("option", {
+          name: humanText("Shared with me"),
+        }),
       ).not.toBeInTheDocument();
       await user.selectOptions(destination, `profile-2|${folderId ?? ""}`);
       expect(bridge.moveToPerson).not.toHaveBeenCalled();
@@ -1323,15 +1471,17 @@ describe("durable vault UI", () => {
       expect(vault.records[0].profileId).toBe("profile-2");
       await user.click(
         within(
-          screen.getByRole("navigation", { name: "Record library" }),
-        ).getByRole("button", { name: /^Morgan/ }),
+          screen.getByRole("navigation", { name: humanText("Record library") }),
+        ).getByRole("button", { name: humanText(/^Morgan/) }),
       );
       if (folderId)
         await user.click(
-          screen.getByRole("button", { name: "Open FAKE Results" }),
+          screen.getByRole("button", { name: humanText("Open FAKE Results") }),
         );
       expect(
-        await screen.findByRole("article", { name: "FAKE Filed.pdf document" }),
+        await screen.findByRole("article", {
+          name: humanText("FAKE Filed.pdf document"),
+        }),
       ).toBeVisible();
     },
   );
@@ -1363,14 +1513,20 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
     await user.click(
-      await screen.findByRole("button", { name: "Details for FAKE Filed.pdf" }),
+      await screen.findByRole("button", {
+        name: humanText("Details for FAKE Filed.pdf"),
+      }),
     );
-    const details = screen.getByRole("dialog", { name: "FAKE Filed.pdf" });
+    const details = screen.getByRole("dialog", {
+      name: humanText("FAKE Filed.pdf"),
+    });
     const destination = within(details).getByRole("combobox", {
-      name: "Move to",
+      name: humanText("Move to"),
     });
     await user.selectOptions(destination, "profile-1|folder-1");
-    await user.click(within(details).getByRole("button", { name: "Move" }));
+    await user.click(
+      within(details).getByRole("button", { name: humanText("Move") }),
+    );
     await waitFor(() =>
       expect(bridge.assignFolders).toHaveBeenCalledExactlyOnceWith("filed", [
         "folder-1",
@@ -1381,7 +1537,7 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(destination).toHaveFocus());
     expect(destination).toHaveValue("profile-1|folder-1");
     expect(
-      within(details).getByRole("button", { name: "Move" }),
+      within(details).getByRole("button", { name: humanText("Move") }),
     ).toBeDisabled();
   });
 
@@ -1406,17 +1562,25 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
     await user.click(
-      await screen.findByRole("button", { name: "Details for FAKE Filed.pdf" }),
+      await screen.findByRole("button", {
+        name: humanText("Details for FAKE Filed.pdf"),
+      }),
     );
-    const details = screen.getByRole("dialog", { name: "FAKE Filed.pdf" });
+    const details = screen.getByRole("dialog", {
+      name: humanText("FAKE Filed.pdf"),
+    });
     await user.selectOptions(
-      within(details).getByRole("combobox", { name: "Move to" }),
+      within(details).getByRole("combobox", { name: humanText("Move to") }),
       "profile-2|",
     );
-    await user.click(within(details).getByRole("button", { name: "Move" }));
+    await user.click(
+      within(details).getByRole("button", { name: humanText("Move") }),
+    );
     expect(
       await within(details).findByText(
-        "FAKE Filed.pdf was already in Morgan's records, so it stayed in Jamie's records.",
+        humanText(
+          "FAKE Filed.pdf was already in Morgan's records, so it stayed in Jamie's records.",
+        ),
       ),
     ).toBeVisible();
     expect(vault.records[0].profileId).toBe("profile-1");
@@ -1436,10 +1600,12 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
     await user.click(
-      await screen.findByRole("button", { name: "Shared with me, 1 new" }),
+      await screen.findByRole("button", {
+        name: humanText("Shared with me, 1 new"),
+      }),
     );
     const file = await screen.findByRole("article", {
-      name: "FAKE_Scan.pdf document",
+      name: humanText("FAKE_Scan.pdf document"),
     });
     // Let go where it started: abandoned, as anywhere else.
     const abandoned = dragTransfer();
@@ -1459,8 +1625,8 @@ describe("durable vault UI", () => {
     const moved = dragTransfer();
     fireDragEvent("dragstart", file, { dataTransfer: moved });
     const labs = within(
-      screen.getByRole("navigation", { name: "Record library" }),
-    ).getByRole("button", { name: /FAKE Labs/ });
+      screen.getByRole("navigation", { name: humanText("Record library") }),
+    ).getByRole("button", { name: humanText(/FAKE Labs/) });
     fireDragEvent("dragover", labs, { dataTransfer: moved });
     fireDragEvent("drop", labs, { dataTransfer: moved });
     await waitFor(() =>
@@ -1472,7 +1638,7 @@ describe("durable vault UI", () => {
     );
     expect(
       await screen.findByText(
-        "FAKE_Scan.pdf moved to My records, folder FAKE Labs.",
+        humanText("FAKE_Scan.pdf moved to My records, folder FAKE Labs."),
       ),
     ).toBeVisible();
   });
@@ -1483,15 +1649,19 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
     await user.type(
-      screen.getByLabelText("New profile name"),
+      screen.getByLabelText(humanText("New profile name")),
       " shared WITH me ",
     );
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
       "Shared with me is where shared files go. Choose another name.",
     );
-    expect(screen.getByRole("button", { name: "Add profile" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    ).toBeDisabled();
     expect(bridge.createProfile).not.toHaveBeenCalled();
   });
 
@@ -1500,7 +1670,9 @@ describe("durable vault UI", () => {
     const { bridge, arrive } = sharedVault(["Jamie"], ["FAKE_Letter.pdf"]);
     render(<VaultApp bridge={bridge} />);
     await unlockWith(user);
-    await screen.findByRole("button", { name: "Shared with me, 1 new" });
+    await screen.findByRole("button", {
+      name: humanText("Shared with me, 1 new"),
+    });
 
     // A share arrives, and the window comes back to the front.
     arrive("FAKE_Photo.jpg");
@@ -1510,11 +1682,15 @@ describe("durable vault UI", () => {
     });
     expect(
       await screen.findByText(
-        "FAKE_Photo.jpg is not a PDF document, so myCarlos did not add it. For now only PDF documents can be shared to myCarlos.",
+        humanText(
+          "FAKE_Photo.jpg is not a PDF document, so myCarlos did not add it. For now only PDF documents can be shared to myCarlos.",
+        ),
       ),
     ).toBeVisible();
     expect(
-      await screen.findByRole("button", { name: "Shared with me, 2 new" }),
+      await screen.findByRole("button", {
+        name: humanText("Shared with me, 2 new"),
+      }),
     ).toBeVisible();
     expect(bridge.acceptReceived).toHaveBeenCalledTimes(2);
   });
@@ -1543,17 +1719,20 @@ describe("durable vault UI", () => {
     vault.recovery = "writeFailed";
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Shared with me" }),
-    );
-    expect(await screen.findByText("Changes are paused.")).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: "Details for FAKE_Scan.pdf" }),
+      await screen.findByRole("button", { name: humanText("Shared with me") }),
     );
     expect(
-      within(screen.getByRole("dialog", { name: "FAKE_Scan.pdf" })).getByRole(
-        "combobox",
-        { name: "Move to" },
-      ),
+      await screen.findByText(humanText("Changes are paused.")),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE_Scan.pdf"),
+      }),
+    );
+    expect(
+      within(
+        screen.getByRole("dialog", { name: humanText("FAKE_Scan.pdf") }),
+      ).getByRole("combobox", { name: humanText("Move to") }),
     ).toBeDisabled();
   });
 
@@ -1579,9 +1758,13 @@ describe("durable vault UI", () => {
       viewPhoto: vi.fn().mockResolvedValue("data:image/jpeg;base64,FAKE"),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByText("FAKE_Photo.jpg"));
-    const view = await screen.findByRole("button", { name: "View photo" });
-    expect(screen.queryByRole("button", { name: "Read" })).toBeNull();
+    await user.click(await screen.findByText(humanText("FAKE_Photo.jpg")));
+    const view = await screen.findByRole("button", {
+      name: humanText("View photo"),
+    });
+    expect(
+      screen.queryByRole("button", { name: humanText("Read") }),
+    ).toBeNull();
     await user.click(view);
     expect(bridge.viewPhoto).toHaveBeenCalledWith("photo-1");
     expect(bridge.viewPage).not.toHaveBeenCalled();
@@ -1616,14 +1799,14 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await user.click(await screen.findByText("FAKE_Letter.pdf"));
-    await user.click(screen.getByRole("button", { name: "Read" }));
+    await user.click(await screen.findByText(humanText("FAKE_Letter.pdf")));
+    await user.click(screen.getByRole("button", { name: humanText("Read") }));
     const reader = await screen.findByRole("dialog", {
-      name: "FAKE_Letter.pdf",
+      name: humanText("FAKE_Letter.pdf"),
     });
     expect(
       await within(reader).findByRole("img", {
-        name: "Page 1 of 1. The page's text follows.",
+        name: humanText("Page 1 of 1. The page's text follows."),
       }),
     ).toBeVisible();
     expect(bridge.viewPage).toHaveBeenCalledWith(
@@ -1632,9 +1815,13 @@ describe("durable vault UI", () => {
       expect.any(Number),
       undefined,
     );
-    await user.click(within(reader).getByRole("button", { name: "Close" }));
+    await user.click(
+      within(reader).getByRole("button", { name: humanText("Close") }),
+    );
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: humanText("My records") }),
+    ).toBeVisible();
   });
 
   it("closes the reader, and stops its page, when the vault locks", async () => {
@@ -1660,16 +1847,18 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await user.click(await screen.findByText("FAKE_Letter.pdf"));
-    await user.click(screen.getByRole("button", { name: "Read" }));
+    await user.click(await screen.findByText(humanText("FAKE_Letter.pdf")));
+    await user.click(screen.getByRole("button", { name: humanText("Read") }));
     expect(
-      await screen.findByRole("dialog", { name: "FAKE_Letter.pdf" }),
+      await screen.findByRole("dialog", { name: humanText("FAKE_Letter.pdf") }),
     ).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
     );
     expect(
-      await screen.findByRole("heading", { name: "Unlock your vault" }),
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(bridge.cancelView).toHaveBeenCalled();
@@ -1737,25 +1926,29 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
 
     expect(
-      await screen.findByRole("heading", { name: "My records" }),
+      await screen.findByRole("heading", { name: humanText("My records") }),
     ).toBeVisible();
-    expect(screen.getByText("FAKE_Root_Letter.pdf")).toBeVisible();
-    expect(screen.queryByText("FAKE_Bloodwork.pdf")).not.toBeInTheDocument();
+    expect(screen.getByText(humanText("FAKE_Root_Letter.pdf"))).toBeVisible();
+    expect(
+      screen.queryByText(humanText("FAKE_Bloodwork.pdf")),
+    ).not.toBeInTheDocument();
 
     const recordTransfer = dragTransfer();
     fireDragEvent(
       "dragstart",
-      screen.getByRole("article", { name: "FAKE_Root_Letter.pdf document" }),
+      screen.getByRole("article", {
+        name: humanText("FAKE_Root_Letter.pdf document"),
+      }),
       { dataTransfer: recordTransfer },
     );
     const visibleFolder = screen.getByRole("article", {
-      name: "FAKE Test Results folder",
+      name: humanText("FAKE Test Results folder"),
     });
     const folderNavigation = screen.getByRole("navigation", {
-      name: "Record library",
+      name: humanText("Record library"),
     });
     const sidebarFolder = within(folderNavigation).getByRole("button", {
-      name: /FAKE Test Results/,
+      name: humanText(/FAKE Test Results/),
     });
     fireDragEvent("dragover", visibleFolder, { dataTransfer: recordTransfer });
     expect(visibleFolder).toHaveClass("native-drop-target");
@@ -1771,11 +1964,13 @@ describe("durable vault UI", () => {
     const nestedTransfer = dragTransfer();
     fireDragEvent(
       "dragstart",
-      screen.getByRole("article", { name: "FAKE_Root_Letter.pdf document" }),
+      screen.getByRole("article", {
+        name: humanText("FAKE_Root_Letter.pdf document"),
+      }),
       { dataTransfer: nestedTransfer },
     );
     const nestedSidebarFolder = within(folderNavigation).getByRole("button", {
-      name: /FAKE 2025 Letters/,
+      name: humanText(/FAKE 2025 Letters/),
     });
     fireDragEvent("dragover", nestedSidebarFolder, {
       dataTransfer: nestedTransfer,
@@ -1793,17 +1988,19 @@ describe("durable vault UI", () => {
     const folderTransfer = dragTransfer();
     fireDragEvent(
       "dragstart",
-      screen.getByRole("article", { name: "FAKE Test Results folder" }),
+      screen.getByRole("article", {
+        name: humanText("FAKE Test Results folder"),
+      }),
       { dataTransfer: folderTransfer },
     );
     fireDragEvent(
       "dragover",
-      screen.getByRole("article", { name: "FAKE Letters folder" }),
+      screen.getByRole("article", { name: humanText("FAKE Letters folder") }),
       { dataTransfer: folderTransfer },
     );
     fireDragEvent(
       "drop",
-      screen.getByRole("article", { name: "FAKE Letters folder" }),
+      screen.getByRole("article", { name: humanText("FAKE Letters folder") }),
       { dataTransfer: folderTransfer },
     );
     await waitFor(() =>
@@ -1815,21 +2012,23 @@ describe("durable vault UI", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "Open FAKE Test Results" }),
+      screen.getByRole("button", { name: humanText("Open FAKE Test Results") }),
     );
     expect(
-      screen.getByRole("heading", { name: "FAKE Test Results" }),
+      screen.getByRole("heading", { name: humanText("FAKE Test Results") }),
     ).toBeVisible();
-    expect(screen.getByText("FAKE_Bloodwork.pdf")).toBeVisible();
+    expect(screen.getByText(humanText("FAKE_Bloodwork.pdf"))).toBeVisible();
 
     const rootTransfer = dragTransfer();
     fireDragEvent(
       "dragstart",
-      screen.getByRole("article", { name: "FAKE_Bloodwork.pdf document" }),
+      screen.getByRole("article", {
+        name: humanText("FAKE_Bloodwork.pdf document"),
+      }),
       { dataTransfer: rootTransfer },
     );
     const rootDropTarget = within(folderNavigation).getByRole("button", {
-      name: /My records/,
+      name: humanText(/My records/),
     });
     fireDragEvent("dragover", rootDropTarget, { dataTransfer: rootTransfer });
     fireDragEvent("drop", rootDropTarget, { dataTransfer: rootTransfer });
@@ -1843,10 +2042,15 @@ describe("durable vault UI", () => {
     // The drag above made the same call, so only a call from here counts.
     vi.mocked(bridge.assignFoldersBatch).mockClear();
     await user.click(
-      screen.getByRole("button", { name: "Select FAKE_Bloodwork.pdf" }),
+      screen.getByRole("button", {
+        name: humanText("Select FAKE_Bloodwork.pdf"),
+      }),
     );
-    await user.selectOptions(screen.getByLabelText("Move selected to"), "");
-    await user.click(screen.getByRole("button", { name: "Move" }));
+    await user.selectOptions(
+      screen.getByLabelText(humanText("Move selected to")),
+      "",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Move") }));
     await waitFor(() =>
       expect(bridge.assignFoldersBatch).toHaveBeenCalledWith(
         ["record-folder"],
@@ -1854,26 +2058,34 @@ describe("durable vault UI", () => {
       ),
     );
 
-    await user.click(screen.getByText("FAKE_Bloodwork.pdf"));
+    await user.click(screen.getByText(humanText("FAKE_Bloodwork.pdf")));
     const shim = tauriConfirmShim();
     await user.click(
-      screen.getByRole("button", { name: "Save a copy to this computer" }),
+      screen.getByRole("button", {
+        name: humanText("Save a copy to this computer"),
+      }),
     );
     const warning = screen.getByRole("alertdialog", {
-      name: "Save a readable copy?",
+      name: humanText("Save a readable copy?"),
     });
-    expect(warning).toHaveTextContent("cannot erase that copy");
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(warning).toHaveHumanTextContent("cannot erase that copy");
+    expect(
+      screen.getByRole("button", { name: humanText("Cancel") }),
+    ).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
     expect(bridge.pickExportDestination).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("dialog", { name: "FAKE_Bloodwork.pdf" }),
+      screen.getByRole("dialog", { name: humanText("FAKE_Bloodwork.pdf") }),
     ).toBeVisible();
 
     await user.click(
-      screen.getByRole("button", { name: "Save a copy to this computer" }),
+      screen.getByRole("button", {
+        name: humanText("Save a copy to this computer"),
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "Save a copy" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save a copy") }),
+    );
     await waitFor(() =>
       expect(bridge.pickExportDestination).toHaveBeenCalledWith(
         "record-folder",
@@ -1889,20 +2101,28 @@ describe("durable vault UI", () => {
       const bridge = renameBridge();
       render(<VaultApp bridge={bridge} />);
       await user.click(
-        await screen.findByRole("button", { name: "Open FAKE Parent" }),
+        await screen.findByRole("button", {
+          name: humanText("Open FAKE Parent"),
+        }),
       );
       if (view === "grid")
-        await user.click(screen.getByRole("button", { name: "Grid view" }));
+        await user.click(
+          screen.getByRole("button", { name: humanText("Grid view") }),
+        );
       await user.click(
-        screen.getByRole("button", { name: "Rename folder FAKE Old folder" }),
+        screen.getByRole("button", {
+          name: humanText("Rename folder FAKE Old folder"),
+        }),
       );
-      const dialog = screen.getByRole("dialog", { name: "Rename folder" });
-      const input = within(dialog).getByLabelText("Folder name");
+      const dialog = screen.getByRole("dialog", {
+        name: humanText("Rename folder"),
+      });
+      const input = within(dialog).getByLabelText(humanText("Folder name"));
       expect(input).toHaveFocus();
       await user.clear(input);
       await user.type(input, "   ");
       expect(
-        within(dialog).getByRole("button", { name: "Save name" }),
+        within(dialog).getByRole("button", { name: humanText("Save name") }),
       ).toBeDisabled();
       await user.clear(input);
       await user.type(input, " FAKE Results ");
@@ -1916,12 +2136,14 @@ describe("durable vault UI", () => {
         "FAKE Results",
       );
       expect(
-        screen.getByRole("article", { name: "FAKE Results folder" }),
+        screen.getByRole("article", { name: humanText("FAKE Results folder") }),
       ).toBeVisible();
       expect(
-        screen.getByRole("heading", { name: "FAKE Parent" }),
+        screen.getByRole("heading", { name: humanText("FAKE Parent") }),
       ).toBeVisible();
-      expect(screen.queryByText("FAKE Old folder")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(humanText("FAKE Old folder")),
+      ).not.toBeInTheDocument();
     },
   );
 
@@ -1930,16 +2152,24 @@ describe("durable vault UI", () => {
     const bridge = renameBridge();
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+      await screen.findByRole("button", {
+        name: humanText("Open FAKE Parent"),
+      }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Old.pdf"),
+      }),
     );
-    const details = screen.getByRole("dialog", { name: "FAKE Old.pdf" });
-    const destination = within(details).getByRole("combobox", {
-      name: "Move to",
+    const details = screen.getByRole("dialog", {
+      name: humanText("FAKE Old.pdf"),
     });
-    const move = within(details).getByRole("button", { name: "Move" });
+    const destination = within(details).getByRole("combobox", {
+      name: humanText("Move to"),
+    });
+    const move = within(details).getByRole("button", {
+      name: humanText("Move"),
+    });
     expect(destination).toHaveValue("parent");
     expect(move).toBeDisabled();
     // Real arrow keys: Chromium changes a closed list's value on each press,
@@ -1960,10 +2190,9 @@ describe("durable vault UI", () => {
     );
     await waitFor(() =>
       expect(
-        within(screen.getByRole("dialog", { name: "FAKE Old.pdf" })).getByRole(
-          "combobox",
-          { name: "Move to" },
-        ),
+        within(
+          screen.getByRole("dialog", { name: humanText("FAKE Old.pdf") }),
+        ).getByRole("combobox", { name: humanText("Move to") }),
       ).toHaveFocus(),
     );
   });
@@ -1976,29 +2205,53 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+      await screen.findByRole("button", {
+        name: humanText("Open FAKE Parent"),
+      }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Old.pdf"),
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "Rename document" }));
-    await user.clear(screen.getByLabelText("File name"));
-    await user.type(screen.getByLabelText("File name"), "FAKE Cancelled");
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Rename document") }),
+    );
+    await user.clear(screen.getByLabelText(humanText("File name")));
+    await user.type(
+      screen.getByLabelText(humanText("File name")),
+      "FAKE Cancelled",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
     expect(bridge.renameRecord).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog", { name: "FAKE Old.pdf" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Rename document" }));
-    await user.clear(screen.getByLabelText("File name"));
+    expect(
+      screen.getByRole("dialog", { name: humanText("FAKE Old.pdf") }),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: humanText("Rename document") }),
+    );
+    await user.clear(screen.getByLabelText(humanText("File name")));
     // The field holds the name before ".pdf", which the rename keeps.
-    await user.type(screen.getByLabelText("File name"), "FAKE Results");
-    await user.click(screen.getByRole("button", { name: "Save name" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    await user.type(
+      screen.getByLabelText(humanText("File name")),
+      "FAKE Results",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save name") }),
+    );
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
       "not enough storage",
     );
-    expect(screen.getByLabelText("File name")).toHaveValue("FAKE Results");
-    await user.click(screen.getByRole("button", { name: "Save name" }));
+    expect(screen.getByLabelText(humanText("File name"))).toHaveValue(
+      "FAKE Results",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save name") }),
+    );
     expect(
-      await screen.findByRole("dialog", { name: "FAKE Results.pdf" }),
+      await screen.findByRole("dialog", {
+        name: humanText("FAKE Results.pdf"),
+      }),
     ).toBeVisible();
     expect(bridge.renameRecord).toHaveBeenCalledWith(
       "record",
@@ -2006,10 +2259,12 @@ describe("durable vault UI", () => {
     );
     expect(bridge.assignFolders).not.toHaveBeenCalled();
     await user.click(
-      screen.getByRole("button", { name: "Close document details" }),
+      screen.getByRole("button", { name: humanText("Close document details") }),
     );
     expect(
-      screen.getByRole("article", { name: "FAKE Results.pdf document" }),
+      screen.getByRole("article", {
+        name: humanText("FAKE Results.pdf document"),
+      }),
     ).toBeVisible();
   });
 
@@ -2018,28 +2273,41 @@ describe("durable vault UI", () => {
     const bridge = renameBridge();
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+      await screen.findByRole("button", {
+        name: humanText("Open FAKE Parent"),
+      }),
     );
 
     // The document's details are replaced while it is renamed. Their status
     // line comes back empty, and the result is written into it after.
     await user.click(
-      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Old.pdf"),
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "Rename document" }));
-    await user.clear(screen.getByLabelText("File name"));
-    await user.type(screen.getByLabelText("File name"), "FAKE Results");
+    await user.click(
+      screen.getByRole("button", { name: humanText("Rename document") }),
+    );
+    await user.clear(screen.getByLabelText(humanText("File name")));
+    await user.type(
+      screen.getByLabelText(humanText("File name")),
+      "FAKE Results",
+    );
     // Fake timers from here, so that nothing is written before it is checked.
     vi.useFakeTimers();
     try {
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Save name") }),
+        );
       });
-      const details = screen.getByRole("dialog", { name: "FAKE Results.pdf" });
+      const details = screen.getByRole("dialog", {
+        name: humanText("FAKE Results.pdf"),
+      });
       const detailsStatus = within(details).getByRole("status");
       expect(detailsStatus).toBeEmptyDOMElement();
       await passAnnounceDelay();
-      expect(detailsStatus).toHaveTextContent(
+      expect(detailsStatus).toHaveHumanTextContent(
         "Document renamed to FAKE Results.pdf.",
       );
 
@@ -2047,29 +2315,33 @@ describe("durable vault UI", () => {
       // to once the dialog has closed.
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Close document details" }),
+          screen.getByRole("button", {
+            name: humanText("Close document details"),
+          }),
         );
       });
       const pageStatus = screen.getByRole("status");
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: "Rename folder FAKE Old folder",
+            name: humanText("Rename folder FAKE Old folder"),
           }),
         );
       });
       await act(async () => {
-        fireEvent.change(screen.getByLabelText("Folder name"), {
+        fireEvent.change(screen.getByLabelText(humanText("Folder name")), {
           target: { value: "FAKE Lab results" },
         });
       });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Save name") }),
+        );
       });
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(pageStatus).toBeEmptyDOMElement();
       await passAnnounceDelay();
-      expect(pageStatus).toHaveTextContent(
+      expect(pageStatus).toHaveHumanTextContent(
         "Folder renamed to FAKE Lab results.",
       );
 
@@ -2078,28 +2350,30 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: "Rename folder FAKE Lab results",
+            name: humanText("Rename folder FAKE Lab results"),
           }),
         );
       });
       await act(async () => {
-        fireEvent.change(screen.getByLabelText("Folder name"), {
+        fireEvent.change(screen.getByLabelText(humanText("Folder name")), {
           target: { value: "FAKE Old folder" },
         });
       });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Save name") }),
+        );
       });
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: "Details for FAKE Results.pdf",
+            name: humanText("Details for FAKE Results.pdf"),
           }),
         );
       });
       await passAnnounceDelay();
       const otherDetails = screen.getByRole("dialog", {
-        name: "FAKE Results.pdf",
+        name: humanText("FAKE Results.pdf"),
       });
       expect(within(otherDetails).getByRole("status")).toBeEmptyDOMElement();
     } finally {
@@ -2112,34 +2386,53 @@ describe("durable vault UI", () => {
     const bridge = renameBridge();
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Open FAKE Parent" }),
+      await screen.findByRole("button", {
+        name: humanText("Open FAKE Parent"),
+      }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Old.pdf"),
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "Rename document" }));
-    await user.clear(screen.getByLabelText("File name"));
-    await user.type(screen.getByLabelText("File name"), "FAKE Results");
+    await user.click(
+      screen.getByRole("button", { name: humanText("Rename document") }),
+    );
+    await user.clear(screen.getByLabelText(humanText("File name")));
+    await user.type(
+      screen.getByLabelText(humanText("File name")),
+      "FAKE Results",
+    );
     vi.useFakeTimers();
     try {
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Save name") }),
+        );
       });
       // The confirmation replaces the details before the result is due.
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Save a copy to this computer" }),
+          screen.getByRole("button", {
+            name: humanText("Save a copy to this computer"),
+          }),
         );
       });
       await passAnnounceDelay();
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Cancel") }),
+        );
       });
-      const details = screen.getByRole("dialog", { name: "FAKE Results.pdf" });
+      const details = screen.getByRole("dialog", {
+        name: humanText("FAKE Results.pdf"),
+      });
       const status = within(details).getByRole("status");
       expect(status).toBeEmptyDOMElement();
       await passAnnounceDelay();
-      expect(status).toHaveTextContent("Document renamed to FAKE Results.pdf.");
+      expect(status).toHaveHumanTextContent(
+        "Document renamed to FAKE Results.pdf.",
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -2162,60 +2455,72 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
       await continuePastComfort();
       await user.type(
-        await screen.findByLabelText("Whose records will you keep here?"),
+        await screen.findByLabelText(
+          humanText("Whose records will you keep here?"),
+        ),
         "FAKE Patient",
       );
       await user.type(
-        screen.getByLabelText("Passphrase"),
+        screen.getByLabelText(humanText("Passphrase")),
         "river-azimuth-cobalt-sparrow-934",
       );
       await user.type(
-        screen.getByLabelText("Confirm passphrase"),
+        screen.getByLabelText(humanText("Confirm passphrase")),
         "river-azimuth-cobalt-sparrow-934",
       );
-      const create = screen.getByRole("button", { name: "Create vault" });
+      const create = screen.getByRole("button", {
+        name: humanText("Create vault"),
+      });
       await user.click(create);
       const dialog = await screen.findByRole("dialog", {
-        name: "Your recovery key",
+        name: humanText("Your recovery key"),
       });
       expect((await axe.run(dialog)).violations).toEqual([]);
       if (how === "Escape") await user.keyboard("{Escape}");
       else
         await user.click(
           within(dialog).getByRole("button", {
-            name: "Lock vault and finish later",
+            name: humanText("Lock vault and finish later"),
           }),
         );
       // Leaving the first setup is confirmed before the key is discarded.
       const confirm = await screen.findByRole("alertdialog", {
-        name: "Discard this recovery key?",
+        name: humanText("Discard this recovery key?"),
       });
       expect((await axe.run(dialog)).violations).toEqual([]);
       expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
       await user.click(
-        within(confirm).getByRole("button", { name: "Discard key and lock" }),
+        within(confirm).getByRole("button", {
+          name: humanText("Discard key and lock"),
+        }),
       );
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-      expect(screen.queryByText("ABCD")).toBeNull();
+      expect(screen.queryByText(humanText("ABCD"))).toBeNull();
       expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
       expect(bridge.confirmRecoveryKey).not.toHaveBeenCalled();
       if (how === "lock failure") {
-        expect(await screen.findByRole("alert")).toHaveTextContent(
+        expect(await screen.findByRole("alert")).toHaveHumanTextContent(
           "could not lock the vault",
         );
         await user.click(
-          screen.getByRole("button", { name: "Try locking again" }),
+          screen.getByRole("button", { name: humanText("Try locking again") }),
         );
       }
-      await screen.findByRole("heading", { name: "Unlock your vault" });
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      });
       await user.type(
-        screen.getByLabelText("Passphrase"),
+        screen.getByLabelText(humanText("Passphrase")),
         "river-azimuth-cobalt-sparrow-934",
       );
-      await user.click(screen.getByRole("button", { name: "Unlock" }));
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
       expect(
         await screen.findByText(
-          /Recovery key setup ended.*that key does not open the vault/,
+          humanText(
+            /Recovery key setup ended.*that key does not open the vault/,
+          ),
         ),
       ).toBeVisible();
     },
@@ -2228,11 +2533,15 @@ describe("durable vault UI", () => {
         bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })}
       />,
     );
-    await user.click(await screen.findByRole("button", { name: /Security/ }));
-    const opener = screen.getByRole("button", { name: "Set up recovery key" });
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    const opener = screen.getByRole("button", {
+      name: humanText("Set up recovery key"),
+    });
     await user.click(opener);
     expect(
-      screen.getByRole("heading", { name: "Set up a recovery key" }),
+      screen.getByRole("heading", { name: humanText("Set up a recovery key") }),
     ).toHaveFocus();
     await user.keyboard("{Escape}");
     await waitFor(() => expect(opener).toHaveFocus());
@@ -2250,21 +2559,25 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await continuePastComfort();
     await user.type(
-      await screen.findByLabelText("Whose records will you keep here?"),
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
       "FAKE Test Patient",
     );
     await user.type(
-      screen.getByLabelText("Passphrase"),
+      screen.getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
     await user.type(
-      screen.getByLabelText("Confirm passphrase"),
+      screen.getByLabelText(humanText("Confirm passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Create vault" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Your recovery key",
+      name: humanText("Your recovery key"),
     });
     // The passphrase just typed authorizes the key.
     expect(bridge.beginRecoveryKey).toHaveBeenCalledWith(
@@ -2273,24 +2586,24 @@ describe("durable vault UI", () => {
     // Leaving the first setup offers a lock, not entry to the library.
     expect(
       within(dialog).getByRole("button", {
-        name: "Lock vault and finish later",
+        name: humanText("Lock vault and finish later"),
       }),
     ).toBeEnabled();
     expect(
-      within(dialog).queryByRole("button", { name: "Cancel" }),
+      within(dialog).queryByRole("button", { name: humanText("Cancel") }),
     ).not.toBeInTheDocument();
 
     await user.click(
       within(dialog).getByRole("button", {
-        name: "Next: check your recovery key",
+        name: humanText("Next: check your recovery key"),
       }),
     );
     await user.type(
-      within(dialog).getByLabelText("Your recovery key"),
+      within(dialog).getByLabelText(humanText("Your recovery key")),
       RECOVERY_KEY,
     );
     await user.click(
-      within(dialog).getByRole("button", { name: "Check and save" }),
+      within(dialog).getByRole("button", { name: humanText("Check and save") }),
     );
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
@@ -2298,15 +2611,17 @@ describe("durable vault UI", () => {
     expect(bridge.confirmRecoveryKey).toHaveBeenCalledOnce();
     expect(
       await screen.findByText(
-        "Recovery key saved. Keep your kit somewhere safe.",
+        humanText("Recovery key saved. Keep your kit somewhere safe."),
       ),
     ).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Set up recovery key" }),
+      screen.queryByRole("button", { name: humanText("Set up recovery key") }),
     ).not.toBeInTheDocument();
     // The button that led here is gone: focus is on the page, not on nothing.
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "My records" })).toHaveFocus(),
+      expect(
+        screen.getByRole("heading", { name: humanText("My records") }),
+      ).toHaveFocus(),
     );
   });
 
@@ -2318,19 +2633,25 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Set up recovery key" }),
+      await screen.findByRole("button", {
+        name: humanText("Set up recovery key"),
+      }),
     );
     const dialog = screen.getByRole("dialog");
     await user.type(
-      within(dialog).getByLabelText("Passphrase"),
+      within(dialog).getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
-    await screen.findByRole("dialog", { name: "Your recovery key" });
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Continue") }),
+    );
+    await screen.findByRole("dialog", { name: humanText("Your recovery key") });
     await user.keyboard("{Escape}");
     expect(
       await screen.findByText(
-        /setup was not finished\. The key you were shown does not open the vault\. Destroy/,
+        humanText(
+          /setup was not finished\. The key you were shown does not open the vault\. Destroy/,
+        ),
       ),
     ).toBeVisible();
   });
@@ -2342,13 +2663,13 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={nativeBridge()} />);
       });
       await act(async () => {
-        fireEvent.click(screen.getByText("Forgot your passphrase?"));
+        fireEvent.click(screen.getByText(humanText("Forgot your passphrase?")));
       });
-      const key = screen.getByLabelText("Recovery key");
+      const key = screen.getByLabelText(humanText("Recovery key"));
       await act(async () => {
         fireEvent.change(key, { target: { value: RECOVERY_KEY } });
         fireEvent.click(
-          screen.getByRole("button", { name: "Show recovery key" }),
+          screen.getByRole("button", { name: humanText("Show recovery key") }),
         );
       });
       expect(key).toHaveAttribute("type", "text");
@@ -2370,15 +2691,15 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.type(
-      await screen.findByLabelText("Passphrase"),
+      await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     const dialog = await screen.findByRole("dialog", {
-      name: "Set up a recovery key",
+      name: humanText("Set up a recovery key"),
     });
     // It says why it is there, to a screen reader too.
-    expect(dialog).toHaveAccessibleDescription(
+    expect(dialog).toHaveHumanAccessibleDescription(
       /Your vault is open\. It has no recovery key yet.*Type your passphrase again to make your recovery key.*only when nobody else can see your screen/s,
     );
     // A press meant for Unlock that lands outside the dialog leaves it open.
@@ -2389,18 +2710,20 @@ describe("durable vault UI", () => {
     expect(dialog).toBeInTheDocument();
     // No key was made, and none is on screen.
     expect(bridge.beginRecoveryKey).not.toHaveBeenCalled();
-    expect(screen.queryByText(RECOVERY_KEY.split("-")[0])).toBeNull();
+    expect(
+      screen.queryByText(humanText(RECOVERY_KEY.split("-")[0])),
+    ).toBeNull();
 
     await user.click(
-      within(dialog).getByRole("button", { name: "Set up later" }),
+      within(dialog).getByRole("button", { name: humanText("Set up later") }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // Nothing was shown, so there is nothing to warn about.
-    expect(await screen.findByText("Vault unlocked.")).toBeVisible();
-    expect(screen.queryByText(/setup was not finished/)).toBeNull();
+    expect(await screen.findByText(humanText("Vault unlocked."))).toBeVisible();
+    expect(screen.queryByText(humanText(/setup was not finished/))).toBeNull();
     // The library still offers it.
     expect(
-      screen.getByRole("button", { name: "Set up recovery key" }),
+      screen.getByRole("button", { name: humanText("Set up recovery key") }),
     ).toBeVisible();
   });
 
@@ -2414,13 +2737,15 @@ describe("durable vault UI", () => {
     const user = userEvent.setup();
     render(<VaultApp bridge={nativeBridge()} />);
     await user.type(
-      await screen.findByLabelText("Passphrase"),
+      await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     expect(
       await screen.findByText(
-        /Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key\. If you saved or wrote down the key it showed, destroy it/,
+        humanText(
+          /Recovery key setup ended when the vault locked or myCarlos closed, so the vault still has no recovery key\. If you saved or wrote down the key it showed, destroy it/,
+        ),
       ),
     ).toBeVisible();
     // The offer waits: a dialog would hide what was just said. It is not
@@ -2430,7 +2755,7 @@ describe("durable vault UI", () => {
       window.localStorage.getItem("mycarlos.recoveryOfferHour.v1"),
     ).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Set up recovery key" }),
+      screen.getByRole("button", { name: humanText("Set up recovery key") }),
     ).toBeVisible();
   });
 
@@ -2440,19 +2765,21 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={nativeBridge()} />);
     const unlock = async () => {
       await user.type(
-        await screen.findByLabelText("Passphrase"),
+        await screen.findByLabelText(humanText("Passphrase")),
         "river-azimuth-cobalt-sparrow-934",
       );
-      await user.click(screen.getByRole("button", { name: "Unlock" }));
-      await screen.findByRole("heading", { name: "My records" });
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      await screen.findByRole("heading", { name: humanText("My records") });
     };
     const lock = () =>
-      user.click(screen.getByRole("button", { name: /Lock now/ }));
+      user.click(screen.getByRole("button", { name: humanText(/Lock now/) }));
 
     await unlock();
     await user.click(
       within(await screen.findByRole("dialog")).getByRole("button", {
-        name: "Set up later",
+        name: humanText("Set up later"),
       }),
     );
     await lock();
@@ -2461,7 +2788,7 @@ describe("durable vault UI", () => {
     await unlock();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Set up recovery key" }),
+      screen.getByRole("button", { name: humanText("Set up recovery key") }),
     ).toBeVisible();
     await lock();
 
@@ -2476,7 +2803,9 @@ describe("durable vault UI", () => {
     );
     await unlock();
     expect(
-      await screen.findByRole("dialog", { name: "Set up a recovery key" }),
+      await screen.findByRole("dialog", {
+        name: humanText("Set up a recovery key"),
+      }),
     ).toBeVisible();
   });
 
@@ -2488,31 +2817,33 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.type(
-      await screen.findByLabelText("Passphrase"),
+      await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     const offer = await screen.findByRole("dialog", {
-      name: "Set up a recovery key",
+      name: humanText("Set up a recovery key"),
     });
     await user.type(
-      within(offer).getByLabelText("Passphrase"),
+      within(offer).getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(within(offer).getByRole("button", { name: "Continue" }));
+    await user.click(
+      within(offer).getByRole("button", { name: humanText("Continue") }),
+    );
     const dialog = await screen.findByRole("dialog", {
-      name: "Your recovery key",
+      name: humanText("Your recovery key"),
     });
     expect(bridge.beginRecoveryKey).toHaveBeenCalledExactlyOnceWith(
       "river-azimuth-cobalt-sparrow-934",
     );
     // Leaving now is leaving a key that was shown.
     await user.click(
-      within(dialog).getByRole("button", { name: "Set up later" }),
+      within(dialog).getByRole("button", { name: humanText("Set up later") }),
     );
     expect(
       await screen.findByText(
-        /setup was not finished\. The key you were shown/,
+        humanText(/setup was not finished\. The key you were shown/),
       ),
     ).toBeVisible();
   });
@@ -2529,12 +2860,12 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.type(
-      await screen.findByLabelText("Passphrase"),
+      await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     expect(
-      await screen.findByRole("heading", { name: "My records" }),
+      await screen.findByRole("heading", { name: humanText("My records") }),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -2551,25 +2882,31 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await continuePastComfort();
     await screen.findByRole("heading", {
-      name: "Set up myCarlos on this computer",
+      name: humanText("Set up myCarlos on this computer"),
     });
     fireEvent.change(
-      screen.getByLabelText("Whose records will you keep here?"),
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
       {
         target: { value: "Jamie" },
       },
     );
-    for (const field of screen.getAllByLabelText(/passphrase/i)) {
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i))) {
       fireEvent.change(field, {
         target: { value: "river-azimuth-cobalt-sparrow-934" },
       });
     }
-    await user.click(screen.getByRole("button", { name: "Create vault" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
     expect(
-      await screen.findByRole("heading", { name: "Unlock your vault" }),
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
     ).toBeVisible();
     expect(
-      screen.getByText(/locked before its recovery key could be made/),
+      screen.getByText(
+        humanText(/locked before its recovery key could be made/),
+      ),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -2581,13 +2918,17 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Set up recovery key" }),
+      await screen.findByRole("button", {
+        name: humanText("Set up recovery key"),
+      }),
     );
     const dialog = screen.getByRole("dialog", {
-      name: "Set up a recovery key",
+      name: humanText("Set up a recovery key"),
     });
     expect(within(dialog).getByRole("heading")).toHaveFocus();
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Cancel") }),
+    );
     expect(bridge.cancelRecoveryKey).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -2599,14 +2940,18 @@ describe("durable vault UI", () => {
       pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: /Security/ }));
     await user.click(
-      screen.getByRole("button", { name: "Save encrypted backup…" }),
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7");
     expect(
       await screen.findByText(
-        "Encrypted backup saved. Keep it somewhere other than this device.",
+        humanText(
+          "Encrypted backup saved. Keep it somewhere other than this device.",
+        ),
       ),
     ).toBeVisible();
   });
@@ -2625,13 +2970,17 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: /Security/ }));
     await user.click(
-      screen.getByRole("button", { name: "Save encrypted backup…" }),
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     expect(
       await screen.findByText(
-        /^No backup was saved: the document "FAKE_Results\.pdf" \(added [^)]+\) is damaged and can no longer be read/,
+        humanText(
+          /^No backup was saved: the document "FAKE_Results\.pdf" \(added [^)]+\) is damaged and can no longer be read/,
+        ),
       ),
     ).toBeVisible();
   });
@@ -2649,17 +2998,21 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await continuePastComfort();
-    await user.click(await screen.findByText("Restore from a backup"));
     await user.click(
-      screen.getByRole("button", { name: "Choose backup file…" }),
+      await screen.findByText(humanText("Restore from a backup")),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Choose backup file…") }),
     );
     await user.type(
-      await screen.findByLabelText("Backup passphrase"),
+      await screen.findByLabelText(humanText("Backup passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Check backup" }));
     await user.click(
-      await screen.findByRole("button", { name: "Restore backup" }),
+      screen.getByRole("button", { name: humanText("Check backup") }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Restore backup") }),
     );
     expect(bridge.restore).toHaveBeenCalledWith(
       "pick-3",
@@ -2667,10 +3020,14 @@ describe("durable vault UI", () => {
       false,
     );
     expect(
-      await screen.findByRole("heading", { name: "Unlock your vault" }),
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
     ).toBeVisible();
     // The screen opens on it, so the field that takes focus says it.
-    expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+    expect(
+      screen.getByLabelText(humanText("Passphrase")),
+    ).toHaveHumanAccessibleDescription(
       /^0 character password Backup restored\./,
     );
   });
@@ -2692,21 +3049,27 @@ describe("durable vault UI", () => {
     const guide = "mycarlos.oldBackupsGuide.v1";
     window.localStorage.setItem(guide, JSON.stringify({ step: "save" }));
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByText("Restore from a backup"));
     await user.click(
-      screen.getByRole("button", { name: "Choose backup file…" }),
+      await screen.findByText(humanText("Restore from a backup")),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Choose backup file…") }),
     );
     await user.type(
-      await screen.findByLabelText("Backup passphrase"),
+      await screen.findByLabelText(humanText("Backup passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Check backup" }));
     await user.click(
-      await screen.findByRole("button", { name: "Restore backup" }),
+      screen.getByRole("button", { name: humanText("Check backup") }),
     );
-    expect(await screen.findByText(/^Backup restored\./)).toBeVisible();
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Restore backup") }),
+    );
+    expect(
+      await screen.findByText(humanText(/^Backup restored\./)),
+    ).toBeVisible();
     // The button that was pressed is gone with the form.
-    expect(screen.getByLabelText("Passphrase")).toHaveFocus();
+    expect(screen.getByLabelText(humanText("Passphrase"))).toHaveFocus();
     // Its outcome would be told of the restored vault, wrongly.
     expect(window.localStorage.getItem(unfinished)).toBeNull();
     expect(window.localStorage.getItem(guide)).toBeNull();
@@ -2732,20 +3095,24 @@ describe("durable vault UI", () => {
     const guide = "mycarlos.oldBackupsGuide.v1";
     window.localStorage.setItem(guide, JSON.stringify({ step: "save" }));
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByText("Restore from a backup"));
     await user.click(
-      screen.getByRole("button", { name: "Choose backup file…" }),
+      await screen.findByText(humanText("Restore from a backup")),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Choose backup file…") }),
     );
     await user.type(
-      await screen.findByLabelText("Backup passphrase"),
+      await screen.findByLabelText(humanText("Backup passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Check backup" }));
     await user.click(
-      await screen.findByRole("button", { name: "Restore backup" }),
+      screen.getByRole("button", { name: humanText("Check backup") }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Restore backup") }),
     );
     expect(
-      await screen.findByText(/restoring it has not finished/),
+      await screen.findByText(humanText(/restoring it has not finished/)),
     ).toBeVisible();
     // The vault it was told of is the one the next start replaces.
     expect(window.localStorage.getItem(unfinished)).toBeNull();
@@ -2775,30 +3142,40 @@ describe("durable vault UI", () => {
       .mockImplementation(() => visibilityState);
     onTestFinished(() => visibility.mockRestore());
     const view = render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
     await user.click(
       await screen.findByRole("button", {
-        name: setAtMs ? "Replace recovery key" : "Set up recovery key",
+        name: humanText(
+          setAtMs ? "Replace recovery key" : "Set up recovery key",
+        ),
       }),
     );
     const dialog = screen.getByRole("dialog");
     await user.type(
-      within(dialog).getByLabelText("Passphrase"),
+      within(dialog).getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
     // Replacing asks why: whether the old kit may have been lost or seen.
     if (setAtMs)
       await user.click(
         within(dialog).getByLabelText(
-          exposed
-            ? "Its kit or note may have been lost, or seen by someone else"
-            : "I just want a new key: its kit is safe",
+          humanText(
+            exposed
+              ? "Its kit or note may have been lost, or seen by someone else"
+              : "I just want a new key: its kit is safe",
+          ),
         ),
       );
-    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Continue") }),
+    );
     expect(
-      await screen.findByRole("dialog", { name: "Your recovery key" }),
-    ).toHaveTextContent("leaving or locking cancels this key");
+      await screen.findByRole("dialog", {
+        name: humanText("Your recovery key"),
+      }),
+    ).toHaveHumanTextContent("leaving or locking cancels this key");
     const setVisibility = (state: DocumentVisibilityState) =>
       act(async () => {
         visibilityState = state;
@@ -2810,24 +3187,30 @@ describe("durable vault UI", () => {
     };
     const unlock = async () => {
       await user.type(
-        await screen.findByLabelText("Passphrase"),
+        await screen.findByLabelText(humanText("Passphrase")),
         "river-azimuth-cobalt-sparrow-934",
       );
-      await user.click(screen.getByRole("button", { name: "Unlock" }));
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
     };
     const typeKeyBack = async () => {
-      const keyStep = screen.getByRole("dialog", { name: "Your recovery key" });
+      const keyStep = screen.getByRole("dialog", {
+        name: humanText("Your recovery key"),
+      });
       await user.click(
         within(keyStep).getByRole("button", {
-          name: "Next: check your recovery key",
+          name: humanText("Next: check your recovery key"),
         }),
       );
       await user.type(
-        within(keyStep).getByLabelText("Your recovery key"),
+        within(keyStep).getByLabelText(humanText("Your recovery key")),
         RECOVERY_KEY,
       );
       await user.click(
-        within(keyStep).getByRole("button", { name: "Check and save" }),
+        within(keyStep).getByRole("button", {
+          name: humanText("Check and save"),
+        }),
       );
     };
     return { user, bridge, view, hide, setVisibility, unlock, typeKeyBack };
@@ -2851,7 +3234,7 @@ describe("durable vault UI", () => {
       // The app is hidden, which locks it, with the key on screen.
       await hide();
       await unlock();
-      expect(await screen.findByText(said)).toBeVisible();
+      expect(await screen.findByText(humanText(said))).toBeVisible();
     },
   );
 
@@ -2882,9 +3265,11 @@ describe("durable vault UI", () => {
     await setVisibility("visible");
     vi.mocked(bridge.unlock).mockResolvedValue(saved);
     await unlock();
-    expect(await screen.findByText(/^Vault unlocked\./)).toBeVisible();
-    expect(screen.queryByText(/was not replaced/)).toBeNull();
-    expect(screen.queryByText(/destroy it/)).toBeNull();
+    expect(
+      await screen.findByText(humanText(/^Vault unlocked\./)),
+    ).toBeVisible();
+    expect(screen.queryByText(humanText(/was not replaced/))).toBeNull();
+    expect(screen.queryByText(humanText(/destroy it/))).toBeNull();
   });
 
   it.each([
@@ -2902,8 +3287,10 @@ describe("durable vault UI", () => {
       else
         await user.click(
           within(
-            screen.getByRole("dialog", { name: "Your recovery key" }),
-          ).getByRole("button", { name: "Cancel" }),
+            screen.getByRole("dialog", {
+              name: humanText("Your recovery key"),
+            }),
+          ).getByRole("button", { name: humanText("Cancel") }),
         );
       await waitFor(() =>
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
@@ -2912,13 +3299,17 @@ describe("durable vault UI", () => {
       if (saved)
         expect(
           await screen.findByText(
-            /^Recovery key replaced\. The old one no longer opens this vault\. Your old kit could still open backups saved before now\. In Security, save a new backup, then delete the older ones: Security shows the steps\.$/,
+            humanText(
+              /^Recovery key replaced\. The old one no longer opens this vault\. Your old kit could still open backups saved before now\. In Security, save a new backup, then delete the older ones: Security shows the steps\.$/,
+            ),
           ),
         ).toBeVisible();
       vi.mocked(bridge.unlock).mockResolvedValue(after);
       await hide();
       await unlock();
-      expect(await screen.findByText("Vault unlocked.")).toBeVisible();
+      expect(
+        await screen.findByText(humanText("Vault unlocked.")),
+      ).toBeVisible();
     },
   );
 
@@ -2935,9 +3326,13 @@ describe("durable vault UI", () => {
     });
     await typeKeyBack();
     expect(
-      await screen.findByText(/^Recovery key replaced\. .*keep them for now/),
+      await screen.findByText(
+        humanText(/^Recovery key replaced\. .*keep them for now/),
+      ),
     ).toBeVisible();
-    expect(screen.queryByText(/Security shows the steps/)).toBeNull();
+    expect(
+      screen.queryByText(humanText(/Security shows the steps/)),
+    ).toBeNull();
   });
 
   it("tells a routine replacement to keep the old kit safe, not to delete backups", async () => {
@@ -2948,13 +3343,15 @@ describe("durable vault UI", () => {
       false,
     );
     await typeKeyBack();
-    const told = await screen.findByText(/^Recovery key replaced\./);
-    expect(told).toHaveTextContent(
+    const told = await screen.findByText(humanText(/^Recovery key replaced\./));
+    expect(told).toHaveHumanTextContent(
       "Keep the old key's kit safe. If you destroy it",
     );
-    expect(told).not.toHaveTextContent(/delete/i);
-    await user.click(screen.getByRole("button", { name: /Security/ }));
-    expect(screen.queryByText("Your older backups")).toBeNull();
+    expect(told).not.toHaveHumanTextContent(/delete/i);
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
+    expect(screen.queryByText(humanText("Your older backups"))).toBeNull();
   });
 
   it("walks a replacement for an exposed kit through a new backup, then the old ones", async () => {
@@ -2972,16 +3369,20 @@ describe("durable vault UI", () => {
         .mockResolvedValue({ name: written, bytes: 4096 }),
     });
     await typeKeyBack();
-    await screen.findByText(/^Recovery key replaced\./);
-    await user.click(screen.getByRole("button", { name: /Security/ }));
-    const guide = screen.getByRole("region", { name: "Your older backups" });
+    await screen.findByText(humanText(/^Recovery key replaced\./));
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
+    const guide = screen.getByRole("region", {
+      name: humanText("Your older backups"),
+    });
     // A new backup first: deleting never leaves none.
     const steps = within(guide).getAllByRole("listitem");
-    expect(steps[0]).toHaveTextContent("Save a new backup now");
-    expect(steps[1]).toHaveTextContent("Then delete the older backups");
+    expect(steps[0]).toHaveHumanTextContent("Save a new backup now");
+    expect(steps[1]).toHaveHumanTextContent("Then delete the older backups");
 
     await user.click(
-      screen.getByRole("button", { name: "Save encrypted backup…" }),
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-9");
     // Named by the patient's own date.
@@ -2992,25 +3393,31 @@ describe("durable vault UI", () => {
     );
     expect(
       await screen.findByText(
-        "Encrypted backup saved. This is your new backup: keep it, or a copy of it, somewhere other than this device. Security now shows which older ones to delete.",
+        humanText(
+          "Encrypted backup saved. This is your new backup: keep it, or a copy of it, somewhere other than this device. Security now shows which older ones to delete.",
+        ),
       ),
     ).toBeVisible();
     // The file the native side wrote is the one to keep: whatever it is
     // named, every other backup goes.
     const next = within(
-      screen.getByRole("region", { name: "Your older backups" }),
+      screen.getByRole("region", { name: humanText("Your older backups") }),
     ).getAllByRole("listitem");
-    expect(next[0]).toHaveTextContent(
+    expect(next[0]).toHaveHumanTextContent(
       // The test platform is Windows, whose Explorer counts in 1024s.
       `Your new backup is “${written}” (4 KB, ${(4096).toLocaleString()} bytes). Keep it, or a copy of it, somewhere other than this device`,
     );
-    expect(next[1]).toHaveTextContent("other than the new one and its copies");
-    expect(next[2]).toHaveTextContent("that file is now your new backup");
+    expect(next[1]).toHaveHumanTextContent(
+      "other than the new one and its copies",
+    );
+    expect(next[2]).toHaveHumanTextContent("that file is now your new backup");
 
     await user.click(
-      screen.getByRole("button", { name: "Done with older backups" }),
+      screen.getByRole("button", {
+        name: humanText("Done with older backups"),
+      }),
     );
-    expect(screen.queryByText("Your older backups")).toBeNull();
+    expect(screen.queryByText(humanText("Your older backups"))).toBeNull();
     expect(
       window.localStorage.getItem("mycarlos.oldBackupsGuide.v1"),
     ).toBeNull();
@@ -3032,14 +3439,20 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: /Security/ }));
     await user.click(
-      screen.getByRole("button", { name: "Save encrypted backup…" }),
+      await screen.findByRole("button", { name: humanText(/Security/) }),
     );
-    expect(await screen.findByText(/Keep your older backups\./)).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    expect(
+      await screen.findByText(humanText(/Keep your older backups\./)),
+    ).toBeVisible();
     // No new backup, so nothing may be deleted yet.
-    const guide = screen.getByRole("region", { name: "Your older backups" });
-    expect(within(guide).getAllByRole("listitem")[0]).toHaveTextContent(
+    const guide = screen.getByRole("region", {
+      name: humanText("Your older backups"),
+    });
+    expect(within(guide).getAllByRole("listitem")[0]).toHaveHumanTextContent(
       "Save a new backup now",
     );
     expect(window.localStorage.getItem("mycarlos.oldBackupsGuide.v1")).toBe(
@@ -3064,16 +3477,18 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: /Security/ }));
     await user.click(
-      screen.getByRole("button", { name: "Save encrypted backup…" }),
+      await screen.findByRole("button", { name: humanText(/Security/) }),
     );
-    await screen.findByText(/No backup was saved/);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    await screen.findByText(humanText(/No backup was saved/));
     expect(
       within(
-        screen.getByRole("region", { name: "Your older backups" }),
+        screen.getByRole("region", { name: humanText("Your older backups") }),
       ).getAllByRole("listitem")[0],
-    ).toHaveTextContent("Save a new backup now");
+    ).toHaveHumanTextContent("Save a new backup now");
   });
 
   it("asks for a new backup again, and says once what was left, when Lock now cuts a save off", async () => {
@@ -3101,28 +3516,36 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: /Security/ }));
     await user.click(
-      screen.getByRole("button", { name: "Save encrypted backup…" }),
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
     await user.click(
-      screen.getByRole("button", { name: /Unlocked · Lock now/ }),
+      screen.getByRole("button", { name: humanText(/Unlocked · Lock now/) }),
     );
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
     });
     await expectOutcomeAfterUnlock(
       `The backup stopped because the vault locked. No backup was saved. Keep your older backups. ${note}`,
     );
-    expect(screen.getAllByText(new RegExp("it was emptied"))).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: /Security/ }));
+    expect(
+      screen.getAllByText(humanText(new RegExp("it was emptied"))),
+    ).toHaveLength(1);
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
     expect(
       within(
-        screen.getByRole("region", { name: "Your older backups" }),
+        screen.getByRole("region", { name: humanText("Your older backups") }),
       ).getAllByRole("listitem")[0],
-    ).toHaveTextContent("Save a new backup now");
+    ).toHaveHumanTextContent("Save a new backup now");
   });
 
   it("keeps the backup saved last when another is saved while the steps are open", async () => {
@@ -3143,12 +3566,16 @@ describe("durable vault UI", () => {
         .mockResolvedValue({ name: "second.mycarlosbackup", bytes: 10 }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: /Security/ }));
     await user.click(
-      screen.getByRole("button", { name: "Save encrypted backup…" }),
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     expect(
-      await screen.findByText(/Your new backup is “second\.mycarlosbackup”/),
+      await screen.findByText(
+        humanText(/Your new backup is “second\.mycarlosbackup”/),
+      ),
     ).toBeVisible();
   });
 
@@ -3168,14 +3595,18 @@ describe("durable vault UI", () => {
       />,
     );
     await user.type(
-      await screen.findByLabelText("Passphrase"),
+      await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
-    expect(await screen.findByText(/Security shows the steps\./)).toBeVisible();
-    await user.click(screen.getByRole("button", { name: /Security/ }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     expect(
-      screen.getByRole("region", { name: "Your older backups" }),
+      await screen.findByText(humanText(/Security shows the steps\./)),
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
+    expect(
+      screen.getByRole("region", { name: humanText("Your older backups") }),
     ).toBeVisible();
   });
 
@@ -3191,12 +3622,12 @@ describe("durable vault UI", () => {
       />,
     );
     await user.type(
-      await screen.findByLabelText("Passphrase"),
+      await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     expect(
-      await screen.findByText(/Your recovery key was not replaced/),
+      await screen.findByText(humanText(/Your recovery key was not replaced/)),
     ).toBeVisible();
   });
 
@@ -3219,16 +3650,18 @@ describe("durable vault UI", () => {
       />,
     );
     await user.type(
-      await screen.findByLabelText("Passphrase"),
+      await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     expect(
       await screen.findByText(
-        /was saved just before the vault locked.*keep them for now/,
+        humanText(/was saved just before the vault locked.*keep them for now/),
       ),
     ).toBeVisible();
-    expect(screen.queryByText(/Security shows the steps/)).toBeNull();
+    expect(
+      screen.queryByText(humanText(/Security shows the steps/)),
+    ).toBeNull();
   });
 
   it("says plainly why the next try must wait, after several wrong ones", async () => {
@@ -3246,13 +3679,15 @@ describe("durable vault UI", () => {
       />,
     );
     await user.type(
-      await screen.findByLabelText("Passphrase"),
+      await screen.findByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     expect(
       await screen.findByText(
-        /To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked\. Try again in 30 seconds\./,
+        humanText(
+          /To slow down anyone guessing, myCarlos waits a little before the next one: what you typed was not checked\. Try again in 30 seconds\./,
+        ),
       ),
     ).toBeVisible();
   });
@@ -3261,28 +3696,35 @@ describe("durable vault UI", () => {
     const user = userEvent.setup();
     const bridge = nativeBridge();
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByText("Forgot your passphrase?"));
-    await user.type(screen.getByLabelText("Recovery key"), RECOVERY_KEY);
+    await user.click(
+      await screen.findByText(humanText("Forgot your passphrase?")),
+    );
     await user.type(
-      screen.getByLabelText("New passphrase"),
+      screen.getByLabelText(humanText("Recovery key")),
+      RECOVERY_KEY,
+    );
+    await user.type(
+      screen.getByLabelText(humanText("New passphrase")),
       "lantern-orbit-willow-cascade-572",
     );
     await user.type(
-      screen.getByLabelText("Confirm new passphrase"),
+      screen.getByLabelText(humanText("Confirm new passphrase")),
       "lantern-orbit-willow-cascade-572",
     );
     await user.click(
-      screen.getByRole("button", { name: "Open with recovery key" }),
+      screen.getByRole("button", { name: humanText("Open with recovery key") }),
     );
     expect(bridge.recover).toHaveBeenCalledWith(
       RECOVERY_KEY,
       "lantern-orbit-willow-cascade-572",
     );
     expect(
-      await screen.findByRole("heading", { name: "My records" }),
+      await screen.findByRole("heading", { name: humanText("My records") }),
     ).toBeVisible();
     expect(
-      await screen.findByText(/^Vault opened with your recovery key\./),
+      await screen.findByText(
+        humanText(/^Vault opened with your recovery key\./),
+      ),
     ).toBeVisible();
   });
 
@@ -3308,7 +3750,9 @@ describe("durable vault UI", () => {
     });
     await act(async () => {
       fireEvent.click(
-        screen.getByRole("button", { name: "Choose files to import" }),
+        screen.getByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
     });
     await act(async () => {
@@ -3324,21 +3768,27 @@ describe("durable vault UI", () => {
     });
     expect(
       screen.getByText(
-        "Locked because myCarlos was minimized or sent to the background.",
+        humanText(
+          "Locked because myCarlos was minimized or sent to the background.",
+        ),
       ),
     ).toBeVisible();
   }
 
   async function unlockWithoutWaiting() {
     await act(async () => {
-      fireEvent.change(screen.getByLabelText("Passphrase"), {
+      fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
         target: { value: "river-azimuth-cobalt-sparrow-934" },
       });
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
     });
-    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: humanText("My records") }),
+    ).toBeVisible();
   }
 
   it("keeps a held transfer outcome when the vault locks before it was shown", async () => {
@@ -3352,10 +3802,14 @@ describe("durable vault UI", () => {
       // Locked again inside the delay: only "Vault locked." is on the unlock
       // screen, now and once the delay has passed.
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText(/Lock now/) }),
+        );
       });
       await passAnnounceDelay();
-      expect(screen.queryByText(/Vault unlocked/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(humanText(/Vault unlocked/)),
+      ).not.toBeInTheDocument();
       // The outcome was kept for the next unlock.
       await expectOutcomeAfterUnlock(HELD_OUTCOME);
     } finally {
@@ -3379,7 +3833,9 @@ describe("durable vault UI", () => {
           }),
       );
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText(/Lock now/) }),
+        );
       });
       // Written to the library's line, which the lock is about to replace.
       const transfer = new DataTransfer();
@@ -3390,7 +3846,7 @@ describe("durable vault UI", () => {
         fireDragEvent("drop", window, { dataTransfer: transfer });
       });
       expect(
-        screen.queryByText(HELD_OUTCOME, { exact: false }),
+        screen.queryByText(humanText(HELD_OUTCOME), { exact: false }),
       ).not.toBeInTheDocument();
       await act(async () => finishLock());
       await passAnnounceDelay();
@@ -3434,7 +3890,9 @@ describe("durable vault UI", () => {
       // A picker opened at once, before the result was written.
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       await passAnnounceDelay();
@@ -3442,7 +3900,7 @@ describe("durable vault UI", () => {
       expect(screen.getByRole("status")).toBeEmptyDOMElement();
       await act(async () => choose(null));
       await passAnnounceDelay();
-      expect(screen.getByRole("status")).toHaveTextContent(
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
         `No files selected. Nothing changed. ${HELD_OUTCOME}`,
       );
     } finally {
@@ -3465,11 +3923,13 @@ describe("durable vault UI", () => {
       // An operation started at once reports first.
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       await passAnnounceDelay();
-      expect(screen.getByRole("status")).toHaveTextContent(
+      expect(screen.getByRole("status")).toHaveHumanTextContent(
         `No files selected. Nothing changed. ${HELD_OUTCOME}`,
       );
     } finally {
@@ -3493,17 +3953,23 @@ describe("durable vault UI", () => {
         });
         if (initial === "absent")
           await act(async () => {
-            fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+            fireEvent.click(
+              screen.getByRole("button", { name: humanText("Continue") }),
+            );
           });
         await act(async () => {
           if (initial === "absent")
             fireEvent.change(
-              screen.getByLabelText("Whose records will you keep here?"),
+              screen.getByLabelText(
+                humanText("Whose records will you keep here?"),
+              ),
               {
                 target: { value: "FAKE Test Patient" },
               },
             );
-          for (const field of screen.getAllByLabelText(/passphrase/i))
+          for (const field of screen.getAllByLabelText(
+            humanText(/passphrase/i),
+          ))
             fireEvent.change(field, {
               target: { value: "river-azimuth-cobalt-sparrow-934" },
             });
@@ -3511,17 +3977,17 @@ describe("durable vault UI", () => {
         await act(async () => {
           fireEvent.click(
             screen.getByRole("button", {
-              name: initial === "absent" ? "Create vault" : "Unlock",
+              name: humanText(initial === "absent" ? "Create vault" : "Unlock"),
             }),
           );
         });
         expect(
-          screen.getByRole("heading", { name: "My records" }),
+          screen.getByRole("heading", { name: humanText("My records") }),
         ).toBeVisible();
         const status = screen.getByRole("status");
         expect(status).toBeEmptyDOMElement();
         await passAnnounceDelay();
-        expect(status).toHaveTextContent(message);
+        expect(status).toHaveHumanTextContent(message);
       } finally {
         vi.useRealTimers();
       }
@@ -3551,21 +4017,25 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
 
     await user.click(
-      await screen.findByRole("button", { name: "Select FAKE_Alpha.pdf" }),
+      await screen.findByRole("button", {
+        name: humanText("Select FAKE_Alpha.pdf"),
+      }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Select FAKE_Beta.pdf" }),
+      screen.getByRole("button", { name: humanText("Select FAKE_Beta.pdf") }),
     );
-    expect(screen.getByText("2 selected")).toBeVisible();
+    expect(screen.getByText(humanText("2 selected"))).toBeVisible();
 
     await user.type(
-      screen.getByPlaceholderText("Search everything in My records"),
+      screen.getByPlaceholderText(humanText("Search everything in My records")),
       "Alpha",
     );
-    expect(screen.queryByText("FAKE_Beta.pdf")).not.toBeInTheDocument();
-    expect(screen.queryByText(/selected$/)).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Move" }),
+      screen.queryByText(humanText("FAKE_Beta.pdf")),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(humanText(/selected$/))).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: humanText("Move") }),
     ).not.toBeInTheDocument();
   });
 
@@ -3590,30 +4060,38 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await user.click(await screen.findByText("FAKE_Long.pdf"));
-    await user.click(screen.getByRole("button", { name: "Rename document" }));
+    await user.click(await screen.findByText(humanText("FAKE_Long.pdf")));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Rename document") }),
+    );
     // 100 characters fit the input's 240-unit limit but need 300 UTF-8 bytes.
-    fireEvent.change(screen.getByLabelText("File name"), {
+    fireEvent.change(screen.getByLabelText(humanText("File name")), {
       target: { value: "字".repeat(100) },
     });
 
-    expect(screen.getByRole("alert")).toHaveTextContent("too long");
-    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveHumanTextContent("too long");
+    expect(
+      screen.getByRole("button", { name: humanText("Save name") }),
+    ).toBeDisabled();
     expect(bridge.renameRecord).not.toHaveBeenCalled();
 
     // The kept ".pdf" counts too: 79 characters are 237 bytes, 241 with it.
-    fireEvent.change(screen.getByLabelText("File name"), {
+    fireEvent.change(screen.getByLabelText(humanText("File name")), {
       target: { value: "字".repeat(79) },
     });
-    expect(screen.getByRole("alert")).toHaveTextContent("too long");
-    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveHumanTextContent("too long");
+    expect(
+      screen.getByRole("button", { name: humanText("Save name") }),
+    ).toBeDisabled();
 
     // Exactly the limit: 78 characters and "ab" are 236 bytes, 240 with it.
-    fireEvent.change(screen.getByLabelText("File name"), {
+    fireEvent.change(screen.getByLabelText(humanText("File name")), {
       target: { value: `${"字".repeat(78)}ab` },
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save name" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: humanText("Save name") }),
+    ).toBeEnabled();
   });
 
   it("allows Escape to cancel folder renaming and disables renaming in recovery mode", async () => {
@@ -3621,14 +4099,18 @@ describe("durable vault UI", () => {
     const bridge = renameBridge();
     const { unmount } = render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Rename folder FAKE Parent" }),
+      await screen.findByRole("button", {
+        name: humanText("Rename folder FAKE Parent"),
+      }),
     );
     const results = await axe.run(screen.getByRole("dialog"));
     expect(results.violations).toEqual([]);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Rename folder FAKE Parent" }),
+      screen.getByRole("button", {
+        name: humanText("Rename folder FAKE Parent"),
+      }),
     ).toHaveFocus();
     expect(bridge.updateFolder).not.toHaveBeenCalled();
     unmount();
@@ -3640,17 +4122,23 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     expect(
-      await screen.findByRole("button", { name: "Rename folder FAKE Parent" }),
-    ).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Open FAKE Parent" }));
-    expect(
-      screen.getByRole("button", { name: "Rename folder" }),
+      await screen.findByRole("button", {
+        name: humanText("Rename folder FAKE Parent"),
+      }),
     ).toBeDisabled();
     await user.click(
-      screen.getByRole("button", { name: "Details for FAKE Old.pdf" }),
+      screen.getByRole("button", { name: humanText("Open FAKE Parent") }),
     );
     expect(
-      screen.getByRole("button", { name: "Rename document" }),
+      screen.getByRole("button", { name: humanText("Rename folder") }),
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Old.pdf"),
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: humanText("Rename document") }),
     ).toBeDisabled();
   });
 
@@ -3662,7 +4150,9 @@ describe("durable vault UI", () => {
       });
       const { unmount } = render(<VaultApp bridge={bridge} />);
       const heading = await screen.findByRole("heading", {
-        name: status === "locked" ? "Unlock your vault" : "My records",
+        name: humanText(
+          status === "locked" ? "Unlock your vault" : "My records",
+        ),
       });
       const transfer = new DataTransfer();
       transfer.items.add(
@@ -3678,7 +4168,9 @@ describe("durable vault UI", () => {
       );
       expect(
         await screen.findByText(
-          /To import PDFs, unlock your vault and use Choose files to import/,
+          humanText(
+            /To import PDFs, unlock your vault and use Choose files to import/,
+          ),
         ),
       ).toBeVisible();
       const urlTransfer = new DataTransfer();
@@ -3721,7 +4213,9 @@ describe("durable vault UI", () => {
       render(<VaultApp bridge={bridge} />);
 
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(importPickedFiles).toHaveBeenCalled());
       await act(async () => {
@@ -3731,22 +4225,24 @@ describe("durable vault UI", () => {
       // Locking now would cancel the import, so content is hidden instead.
       expect(bridge.lock).not.toHaveBeenCalled();
       expect(
-        screen.queryByRole("heading", { name: "My records" }),
+        screen.queryByRole("heading", { name: humanText("My records") }),
       ).not.toBeInTheDocument();
-      expect(screen.getByRole("status")).toHaveTextContent(TRANSFER_HOLD);
+      expect(screen.getByRole("status")).toHaveHumanTextContent(TRANSFER_HOLD);
 
       await act(async () => {
         visibilityState = "visible";
         document.dispatchEvent(new Event("visibilitychange"));
       });
       // Coming back does not show the library again: the lock is still owed.
-      expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+      expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
 
       await act(async () =>
         finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
       );
       expect(
-        await screen.findByRole("heading", { name: "Unlock your vault" }),
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        }),
       ).toBeVisible();
       expect(bridge.lock).toHaveBeenCalledOnce();
       // Whoever unlocks next learns how the import went.
@@ -3754,22 +4250,32 @@ describe("durable vault UI", () => {
 
       // The held lock is spent: a transfer in the next session does not lock.
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await act(async () =>
         finishImport({ imported: [], skippedDuplicates: [] }),
       );
-      expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+      expect(
+        screen.getByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
       expect(bridge.lock).toHaveBeenCalledOnce();
 
       // The outcome was shown once; later unlocks do not repeat it.
-      await user.click(screen.getByRole("button", { name: /Lock now/ }));
+      await user.click(
+        screen.getByRole("button", { name: humanText(/Lock now/) }),
+      );
       await user.type(
-        await screen.findByLabelText("Passphrase"),
+        await screen.findByLabelText(humanText("Passphrase")),
         "river-azimuth-cobalt-sparrow-934",
       );
-      await user.click(screen.getByRole("button", { name: "Unlock" }));
-      expect(await screen.findByText("Vault unlocked.")).toBeVisible();
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      expect(
+        await screen.findByText(humanText("Vault unlocked.")),
+      ).toBeVisible();
     } finally {
       visibility.mockRestore();
     }
@@ -3797,25 +4303,31 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Choose files to import" }),
+      await screen.findByRole("button", {
+        name: humanText("Choose files to import"),
+      }),
     );
     expect(
-      await screen.findByText("1 document encrypted and added."),
+      await screen.findByText(humanText("1 document encrypted and added.")),
     ).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: "Choose files to import" }),
+      screen.getByRole("button", { name: humanText("Choose files to import") }),
     );
     await waitFor(() =>
       expect(bridge.importPickedFiles).toHaveBeenCalledTimes(2),
     );
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    );
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     await user.type(
-      screen.getByLabelText("Passphrase"),
+      screen.getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
-    expect(await screen.findByText("Vault unlocked.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    expect(await screen.findByText(humanText("Vault unlocked."))).toBeVisible();
   });
 
   it("forgets a transfer's outcome when the vault is erased", async () => {
@@ -3836,7 +4348,9 @@ describe("durable vault UI", () => {
     try {
       render(<VaultApp bridge={bridge} />);
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
@@ -3847,35 +4361,49 @@ describe("durable vault UI", () => {
       await act(async () =>
         finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
       );
-      await screen.findByRole("heading", { name: "Unlock your vault" });
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      });
 
-      await user.click(screen.getByText("Forgot your passphrase?"));
+      await user.click(screen.getByText(humanText("Forgot your passphrase?")));
       await user.type(
-        screen.getByLabelText("Type RESET MYCARLOS VAULT"),
+        screen.getByLabelText(humanText("Type RESET MYCARLOS VAULT")),
         "RESET MYCARLOS VAULT",
       );
-      await user.click(screen.getByRole("button", { name: "Set vault aside" }));
+      await user.click(
+        screen.getByRole("button", { name: humanText("Set vault aside") }),
+      );
       await continuePastComfort();
       await user.type(
-        await screen.findByLabelText("Whose records will you keep here?"),
+        await screen.findByLabelText(
+          humanText("Whose records will you keep here?"),
+        ),
         "FAKE Tester",
       );
       await user.type(
-        screen.getByLabelText("Passphrase"),
+        screen.getByLabelText(humanText("Passphrase")),
         "river-azimuth-cobalt-sparrow-934",
       );
       await user.type(
-        screen.getByLabelText("Confirm passphrase"),
+        screen.getByLabelText(humanText("Confirm passphrase")),
         "river-azimuth-cobalt-sparrow-934",
       );
-      await user.click(screen.getByRole("button", { name: "Create vault" }));
-      await user.click(await screen.findByRole("button", { name: /Lock now/ }));
+      await user.click(
+        screen.getByRole("button", { name: humanText("Create vault") }),
+      );
+      await user.click(
+        await screen.findByRole("button", { name: humanText(/Lock now/) }),
+      );
       await user.type(
-        await screen.findByLabelText("Passphrase"),
+        await screen.findByLabelText(humanText("Passphrase")),
         "river-azimuth-cobalt-sparrow-934",
       );
-      await user.click(screen.getByRole("button", { name: "Unlock" }));
-      expect(await screen.findByText("Vault unlocked.")).toBeVisible();
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      expect(
+        await screen.findByText(humanText("Vault unlocked.")),
+      ).toBeVisible();
     } finally {
       visibility.mockRestore();
     }
@@ -3891,12 +4419,16 @@ describe("durable vault UI", () => {
     try {
       render(<VaultApp bridge={bridge} />);
       expect(
-        await screen.findByRole("heading", { name: "Unlock your vault" }),
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        }),
       ).toBeVisible();
       expect(bridge.lock).toHaveBeenCalledOnce();
       // Not a change to the status line, which is not read out: the field
       // that takes focus says it.
-      expect(screen.getByLabelText("Passphrase")).toHaveAccessibleDescription(
+      expect(
+        screen.getByLabelText(humanText("Passphrase")),
+      ).toHaveHumanAccessibleDescription(
         "0 character password Locked because myCarlos was minimized or sent to the background.",
       );
     } finally {
@@ -3935,27 +4467,39 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
 
     // Hiding is undone from Hidden, so it asks nothing first (#71).
-    await user.click(await screen.findByText("FAKE_Report.pdf"));
-    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await user.click(await screen.findByText(humanText("FAKE_Report.pdf")));
+    await user.click(screen.getByRole("button", { name: humanText("Hide") }));
     await waitFor(() => expect(hideRecord).toHaveBeenCalledWith("record-1"));
     expect(
       await screen.findByText(
-        "FAKE_Report.pdf was hidden. It stays in the vault under Hidden.",
+        humanText(
+          "FAKE_Report.pdf was hidden. It stays in the vault under Hidden.",
+        ),
       ),
     ).toBeVisible();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.queryByText("FAKE_Report.pdf")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(humanText("FAKE_Report.pdf")),
+    ).not.toBeInTheDocument();
 
     // Under Hidden, with its size, and back with Restore.
-    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
-    expect(screen.getByRole("heading", { name: "Hidden" })).toBeVisible();
-    expect(screen.getByText("1 document · 2 KB")).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: "Restore FAKE_Report.pdf" }),
+      screen.getByRole("button", { name: humanText(/^Hidden/) }),
+    );
+    expect(
+      screen.getByRole("heading", { name: humanText("Hidden") }),
+    ).toBeVisible();
+    expect(screen.getByText(humanText("1 document · 2 KB"))).toBeVisible();
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Restore FAKE_Report.pdf"),
+      }),
     );
     await waitFor(() => expect(unhideRecord).toHaveBeenCalledWith("record-1"));
     expect(
-      await screen.findByText("FAKE_Report.pdf was restored to where it was."),
+      await screen.findByText(
+        humanText("FAKE_Report.pdf was restored to where it was."),
+      ),
     ).toBeVisible();
     expect(shim).not.toHaveBeenCalled();
   });
@@ -3970,7 +4514,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
-      expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+      expect(
+        screen.getByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
 
       window.dispatchEvent(new Event("blur"));
       await act(async () => undefined);
@@ -4003,7 +4549,7 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     const document = await screen.findByRole("article", {
-      name: "FAKE_Stay.pdf document",
+      name: humanText("FAKE_Stay.pdf document"),
     });
     const pane = screen.getByRole("main");
 
@@ -4014,7 +4560,7 @@ describe("durable vault UI", () => {
     await act(async () => undefined);
 
     expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
-    expect(screen.queryByText(/moved to/)).not.toBeInTheDocument();
+    expect(screen.queryByText(humanText(/moved to/))).not.toBeInTheDocument();
   });
 
   it("does not lock under a picker it opened, but locks once the picker closes if still hidden", async () => {
@@ -4039,7 +4585,9 @@ describe("durable vault UI", () => {
     try {
       render(<VaultApp bridge={bridge} />);
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(pickImportFiles).toHaveBeenCalled());
 
@@ -4048,14 +4596,18 @@ describe("durable vault UI", () => {
         document.dispatchEvent(new Event("visibilitychange"));
       });
       expect(bridge.lock).not.toHaveBeenCalled();
-      expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+      expect(
+        screen.getByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
 
       // The picker returns while the app is still hidden: the user left with
       // it open, so this is a backgrounding after all.
       await act(async () => finishPick("pick-1"));
       await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
       expect(
-        await screen.findByRole("heading", { name: "Unlock your vault" }),
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        }),
       ).toBeVisible();
     } finally {
       visibility.mockRestore();
@@ -4094,10 +4646,12 @@ describe("durable vault UI", () => {
         window.localStorage.removeItem("mycarlos.cameraExplained.v1");
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Take a photo" }),
+          await screen.findByRole("button", {
+            name: humanText("Take a photo"),
+          }),
         );
         await user.click(
-          screen.getByRole("button", { name: "Use the camera" }),
+          screen.getByRole("button", { name: humanText("Use the camera") }),
         );
         await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
 
@@ -4111,7 +4665,7 @@ describe("durable vault UI", () => {
         }
         expect(bridge.lock).not.toHaveBeenCalled();
         expect(
-          screen.getByRole("dialog", { name: "Take a photo" }),
+          screen.getByRole("dialog", { name: humanText("Take a photo") }),
         ).toBeVisible();
 
         // Answered while the app is still hidden: the patient left, so it
@@ -4157,7 +4711,9 @@ describe("durable vault UI", () => {
     try {
       render(<VaultApp bridge={bridge} />);
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(pickImportFiles).toHaveBeenCalled());
       await act(async () => {
@@ -4179,7 +4735,7 @@ describe("durable vault UI", () => {
       );
       expect(bridge.lock).not.toHaveBeenCalled();
       expect(
-        await screen.findByText("1 document encrypted and added."),
+        await screen.findByText(humanText("1 document encrypted and added.")),
       ).toBeVisible();
     } finally {
       visibility.mockRestore();
@@ -4198,7 +4754,9 @@ describe("durable vault UI", () => {
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
@@ -4221,7 +4779,9 @@ describe("durable vault UI", () => {
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       // A walked-away desktop dialog: the grace period, then the delay.
@@ -4252,7 +4812,9 @@ describe("durable vault UI", () => {
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       // Suspended under Android's picker, then away from it for an hour.
@@ -4283,7 +4845,9 @@ describe("durable vault UI", () => {
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       // Timers do not run while the page is suspended under Android's picker
@@ -4292,7 +4856,9 @@ describe("durable vault UI", () => {
       await act(async () => finishPick(null));
       await act(async () => vi.advanceTimersByTime(10_000));
       expect(bridge.lock).not.toHaveBeenCalled();
-      expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+      expect(
+        screen.getByRole("heading", { name: humanText("My records") }),
+      ).toBeVisible();
 
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
       expect(bridge.lock).toHaveBeenCalledOnce();
@@ -4324,9 +4890,9 @@ describe("durable vault UI", () => {
 
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
       expect(bridge.lock).not.toHaveBeenCalled();
-      expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+      expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
       expect(
-        screen.queryByRole("heading", { name: "My records" }),
+        screen.queryByRole("heading", { name: humanText("My records") }),
       ).not.toBeInTheDocument();
       // Rechecks keep waiting rather than locking under the transfer.
       await act(async () => vi.advanceTimersByTime(60_000));
@@ -4336,7 +4902,7 @@ describe("durable vault UI", () => {
       await act(async () => failExport(new Error("disk full")));
       expect(bridge.lock).toHaveBeenCalledOnce();
       expect(
-        screen.getByRole("heading", { name: "Unlock your vault" }),
+        screen.getByRole("heading", { name: humanText("Unlock your vault") }),
       ).toBeVisible();
     } finally {
       vi.useRealTimers();
@@ -4370,16 +4936,22 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Choose files to import" }),
+      await screen.findByRole("button", {
+        name: humanText("Choose files to import"),
+      }),
     );
     await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    );
     // The vault stays open, and the patient is here: told now, not after
     // some later unlock.
     expect(
       await screen.findByText(
-        new RegExp(
-          `The backup stopped because the vault locked\\. No backup was saved\\. Keep your older backups\\. ${note.replace(/\./g, "\\.")}`,
+        humanText(
+          new RegExp(
+            `The backup stopped because the vault locked\\. No backup was saved\\. Keep your older backups\\. ${note.replace(/\./g, "\\.")}`,
+          ),
         ),
       ),
     ).toBeVisible();
@@ -4412,7 +4984,9 @@ describe("durable vault UI", () => {
     try {
       render(<VaultApp bridge={bridge} />);
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
@@ -4422,12 +4996,12 @@ describe("durable vault UI", () => {
       visibility.mockReturnValue("visible");
       await user.click(
         screen.getByRole("button", {
-          name: "Lock now and cancel the transfer",
+          name: humanText("Lock now and cancel the transfer"),
         }),
       );
       expect(await screen.findByRole("alert")).toBeVisible();
       // An onlooker may see this screen: nothing held is shown on it.
-      expect(screen.queryByText(new RegExp(note))).toBeNull();
+      expect(screen.queryByText(humanText(new RegExp(note)))).toBeNull();
     } finally {
       visibility.mockRestore();
     }
@@ -4455,10 +5029,14 @@ describe("durable vault UI", () => {
       .mockReturnValue("visible");
     try {
       render(<VaultApp bridge={bridge} />);
-      await user.click(await screen.findByRole("button", { name: /Lock now/ }));
+      await user.click(
+        await screen.findByRole("button", { name: humanText(/Lock now/) }),
+      );
       await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
       await user.click(
-        screen.getByRole("button", { name: "Choose files to import" }),
+        screen.getByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
@@ -4466,17 +5044,19 @@ describe("durable vault UI", () => {
         document.dispatchEvent(new Event("visibilitychange"));
       });
       // The earlier manual failure is not this lock's.
-      expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+      expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
       await act(async () =>
         finishImport({ imported: [], skippedDuplicates: [] }),
       );
       expect(bridge.lock).toHaveBeenCalledTimes(2);
-      expect(screen.getByRole("alert")).toHaveTextContent(
+      expect(screen.getByRole("alert")).toHaveHumanTextContent(
         "myCarlos could not lock the vault.",
       );
-      expect(screen.queryByText(TRANSFER_HOLD)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(humanText(TRANSFER_HOLD)),
+      ).not.toBeInTheDocument();
     } finally {
       visibility.mockRestore();
     }
@@ -4515,7 +5095,9 @@ describe("durable vault UI", () => {
         });
         await act(async () => {
           fireEvent.click(
-            screen.getByRole("button", { name: "Choose files to import" }),
+            screen.getByRole("button", {
+              name: humanText("Choose files to import"),
+            }),
           );
         });
         const finish = () =>
@@ -4524,7 +5106,7 @@ describe("durable vault UI", () => {
           );
         if (dueFirst) {
           await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
-          expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+          expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
           // The transfer is done, but its operation is still refreshing the
           // library when the next recheck runs.
           await finish();
@@ -4534,7 +5116,7 @@ describe("durable vault UI", () => {
           await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
         }
         expect(bridge.lock).not.toHaveBeenCalled();
-        expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+        expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
 
         await act(async () => finishRefresh(emptySnapshot));
         expect(bridge.lock).toHaveBeenCalledOnce();
@@ -4578,7 +5160,9 @@ describe("durable vault UI", () => {
         });
         await act(async () => {
           fireEvent.click(
-            screen.getByRole("button", { name: "Choose files to import" }),
+            screen.getByRole("button", {
+              name: humanText("Choose files to import"),
+            }),
           );
         });
         const finish = () =>
@@ -4587,7 +5171,7 @@ describe("durable vault UI", () => {
           );
         if (dueFirst) {
           await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
-          expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+          expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
           // The transfer is done, but its operation is still refreshing the
           // library when the next recheck runs.
           await finish();
@@ -4597,7 +5181,7 @@ describe("durable vault UI", () => {
           await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
         }
         expect(bridge.lock).not.toHaveBeenCalled();
-        expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+        expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
 
         await act(async () => finishRefresh(emptySnapshot));
         expect(bridge.lock).toHaveBeenCalledOnce();
@@ -4619,7 +5203,9 @@ describe("durable vault UI", () => {
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       expect(bridge.importPickedFiles).toHaveBeenCalledOnce();
@@ -4643,15 +5229,17 @@ describe("durable vault UI", () => {
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
-      expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+      expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
       // A large transfer on a slow connection is not cut off.
       await act(async () => vi.advanceTimersByTime(3 * 60 * 60 * 1000));
       expect(bridge.lock).not.toHaveBeenCalled();
-      expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+      expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
     } finally {
       vi.useRealTimers();
     }
@@ -4682,7 +5270,9 @@ describe("durable vault UI", () => {
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
@@ -4690,12 +5280,12 @@ describe("durable vault UI", () => {
         finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
       );
       expect(bridge.lock).toHaveBeenCalledOnce();
-      expect(screen.getByRole("alert")).toHaveTextContent(
+      expect(screen.getByRole("alert")).toHaveHumanTextContent(
         "myCarlos could not lock the vault.",
       );
       await act(async () => vi.advanceTimersByTime(10_000));
       expect(bridge.lock).toHaveBeenCalledTimes(2);
-      expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+      expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
 
       // Once a lock succeeds, its error is forgotten: a held transfer in the
       // next session that fails the same way still reports it.
@@ -4707,25 +5297,31 @@ describe("durable vault UI", () => {
           }),
       );
       await act(async () => {
-        fireEvent.change(screen.getByLabelText("Passphrase"), {
+        fireEvent.change(screen.getByLabelText(humanText("Passphrase")), {
           target: { value: "river-azimuth-cobalt-sparrow-934" },
         });
       });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText("Unlock") }),
+        );
       });
       // The import's outcome is kept; the failed lock's error is not.
       await passAnnounceDelay();
       expect(
-        screen.getByText("Vault unlocked. 1 document encrypted and added."),
+        screen.getByText(
+          humanText("Vault unlocked. 1 document encrypted and added."),
+        ),
       ).toBeVisible();
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
-      expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+      expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
       await act(async () =>
         failImport({
           code: "storage",
@@ -4767,7 +5363,9 @@ describe("durable vault UI", () => {
     try {
       render(<VaultApp bridge={bridge} />);
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
@@ -4777,15 +5375,15 @@ describe("durable vault UI", () => {
       visibility.mockReturnValue("visible");
       await user.click(
         screen.getByRole("button", {
-          name: "Lock now and cancel the transfer",
+          name: humanText("Lock now and cancel the transfer"),
         }),
       );
-      expect(await screen.findByRole("alert")).toHaveTextContent(
+      expect(await screen.findByRole("alert")).toHaveHumanTextContent(
         storageError.message,
       );
 
       await act(async () => failImport(storageError));
-      await screen.findByText(LOCKED_MESSAGE);
+      await screen.findByText(humanText(LOCKED_MESSAGE));
       await expectOutcomeAfterUnlock(storageError.message);
     } finally {
       visibility.mockRestore();
@@ -4818,11 +5416,15 @@ describe("durable vault UI", () => {
       .mockReturnValue("visible");
     try {
       render(<VaultApp bridge={bridge} />);
-      await user.click(await screen.findByText("FAKE_Results.pdf"));
+      await user.click(await screen.findByText(humanText("FAKE_Results.pdf")));
       await user.click(
-        screen.getByRole("button", { name: "Save a copy to this computer" }),
+        screen.getByRole("button", {
+          name: humanText("Save a copy to this computer"),
+        }),
       );
-      await user.click(screen.getByRole("button", { name: "Save a copy" }));
+      await user.click(
+        screen.getByRole("button", { name: humanText("Save a copy") }),
+      );
       await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
       await act(async () => {
@@ -4831,16 +5433,16 @@ describe("durable vault UI", () => {
       visibility.mockReturnValue("visible");
       await user.click(
         screen.getByRole("button", {
-          name: "Lock now and cancel the transfer",
+          name: humanText("Lock now and cancel the transfer"),
         }),
       );
-      expect(await screen.findByRole("alert")).toHaveTextContent(
+      expect(await screen.findByRole("alert")).toHaveHumanTextContent(
         "myCarlos could not lock the vault.",
       );
 
       // The export then fails, and the lock that follows succeeds.
       await act(async () => failExport(PARTIAL_EXPORT));
-      await screen.findByText(LOCKED_MESSAGE);
+      await screen.findByText(humanText(LOCKED_MESSAGE));
       await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
     } finally {
       visibility.mockRestore();
@@ -4867,13 +5469,17 @@ describe("durable vault UI", () => {
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       expect(bridge.importPickedFiles).toHaveBeenCalled();
       // Lock now succeeds, and the app is hidden before the screen updates.
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText(/Lock now/) }),
+        );
         await Promise.resolve();
         await Promise.resolve();
         visibility.mockReturnValue("hidden");
@@ -4881,7 +5487,7 @@ describe("durable vault UI", () => {
       });
       await act(async () => failImport(CANCELLED));
       expect(bridge.lock).toHaveBeenCalledOnce();
-      expect(screen.getByText("Vault locked.")).toBeVisible();
+      expect(screen.getByText(humanText("Vault locked."))).toBeVisible();
     } finally {
       visibility.mockRestore();
     }
@@ -4905,7 +5511,9 @@ describe("durable vault UI", () => {
       });
       await act(async () => {
         fireEvent.click(
-          screen.getByRole("button", { name: "Choose files to import" }),
+          screen.getByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
       });
       expect(bridge.importPickedFiles).toHaveBeenCalled();
@@ -4914,14 +5522,16 @@ describe("durable vault UI", () => {
       // Lock now succeeds, and the deadline's recheck runs before the screen
       // updates.
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText(/Lock now/) }),
+        );
         await Promise.resolve();
         await Promise.resolve();
         vi.advanceTimersByTime(1000);
       });
       await act(async () => failImport(CANCELLED));
       expect(bridge.lock).toHaveBeenCalledOnce();
-      expect(screen.getByText("Vault locked.")).toBeVisible();
+      expect(screen.getByText(humanText("Vault locked."))).toBeVisible();
     } finally {
       vi.useRealTimers();
     }
@@ -4933,16 +5543,24 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "New folder" }));
-    await user.type(screen.getByLabelText("Folder name"), "Labs");
-    await user.click(screen.getByRole("button", { name: "Create" }));
-    expect(await screen.findByText("Labs was created.")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
+    await user.click(
+      await screen.findByRole("button", { name: humanText("New folder") }),
+    );
+    await user.type(screen.getByLabelText(humanText("Folder name")), "Labs");
+    await user.click(screen.getByRole("button", { name: humanText("Create") }));
     expect(
-      await screen.findByRole("heading", { name: "Unlock your vault" }),
+      await screen.findByText(humanText("Labs was created.")),
     ).toBeVisible();
-    expect(screen.getByText("Vault locked.")).toBeVisible();
-    expect(screen.queryByText(/Labs/)).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
+    ).toBeVisible();
+    expect(screen.getByText(humanText("Vault locked."))).toBeVisible();
+    expect(screen.queryByText(humanText(/Labs/))).not.toBeInTheDocument();
     // Nor is it kept for after the next unlock: no transfer ended.
     await expectNothingKeptAfterUnlock();
   });
@@ -4965,7 +5583,9 @@ describe("durable vault UI", () => {
     try {
       render(<VaultApp bridge={bridge} />);
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
@@ -4991,7 +5611,9 @@ describe("durable vault UI", () => {
     try {
       render(<VaultApp bridge={bridge} />);
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
@@ -5002,12 +5624,14 @@ describe("durable vault UI", () => {
 
       await user.click(
         screen.getByRole("button", {
-          name: "Lock now and cancel the transfer",
+          name: humanText("Lock now and cancel the transfer"),
         }),
       );
       expect(bridge.lock).toHaveBeenCalledOnce();
       expect(
-        await screen.findByRole("heading", { name: "Unlock your vault" }),
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        }),
       ).toBeVisible();
     } finally {
       visibility.mockRestore();
@@ -5044,11 +5668,17 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(await screen.findByText("FAKE_Results.pdf"));
         await user.click(
-          screen.getByRole("button", { name: "Save a copy to this computer" }),
+          await screen.findByText(humanText("FAKE_Results.pdf")),
         );
-        await user.click(screen.getByRole("button", { name: "Save a copy" }));
+        await user.click(
+          screen.getByRole("button", {
+            name: humanText("Save a copy to this computer"),
+          }),
+        );
+        await user.click(
+          screen.getByRole("button", { name: humanText("Save a copy") }),
+        );
         await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
         if (held) {
           visibility.mockReturnValue("hidden");
@@ -5060,10 +5690,14 @@ describe("durable vault UI", () => {
 
         await user.click(
           screen.getByRole("button", {
-            name: held ? "Lock now and cancel the transfer" : /Lock now/,
+            name: humanText(
+              held ? "Lock now and cancel the transfer" : /Lock now/,
+            ),
           }),
         );
-        await screen.findByRole("heading", { name: "Unlock your vault" });
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        });
         await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
@@ -5105,11 +5739,17 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(await screen.findByText("FAKE_Results.pdf"));
         await user.click(
-          screen.getByRole("button", { name: "Save a copy to this computer" }),
+          await screen.findByText(humanText("FAKE_Results.pdf")),
         );
-        await user.click(screen.getByRole("button", { name: "Save a copy" }));
+        await user.click(
+          screen.getByRole("button", {
+            name: humanText("Save a copy to this computer"),
+          }),
+        );
+        await user.click(
+          screen.getByRole("button", { name: humanText("Save a copy") }),
+        );
         await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
         if (held) {
           visibility.mockReturnValue("hidden");
@@ -5121,10 +5761,14 @@ describe("durable vault UI", () => {
 
         await user.click(
           screen.getByRole("button", {
-            name: held ? "Lock now and cancel the transfer" : /Lock now/,
+            name: humanText(
+              held ? "Lock now and cancel the transfer" : /Lock now/,
+            ),
           }),
         );
-        await screen.findByRole("heading", { name: "Unlock your vault" });
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        });
         await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
@@ -5164,7 +5808,9 @@ describe("durable vault UI", () => {
       try {
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Choose files to import" }),
+          await screen.findByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
@@ -5176,10 +5822,12 @@ describe("durable vault UI", () => {
         visibility.mockReturnValue("visible");
         await user.click(
           screen.getByRole("button", {
-            name: "Lock now and cancel the transfer",
+            name: humanText("Lock now and cancel the transfer"),
           }),
         );
-        await screen.findByRole("heading", { name: "Unlock your vault" });
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        });
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
         });
@@ -5220,7 +5868,9 @@ describe("durable vault UI", () => {
       try {
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Choose files to import" }),
+          await screen.findByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
@@ -5232,10 +5882,12 @@ describe("durable vault UI", () => {
         visibility.mockReturnValue("visible");
         await user.click(
           screen.getByRole("button", {
-            name: "Lock now and cancel the transfer",
+            name: humanText("Lock now and cancel the transfer"),
           }),
         );
-        await screen.findByRole("heading", { name: "Unlock your vault" });
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        });
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
         });
@@ -5277,7 +5929,9 @@ describe("durable vault UI", () => {
       try {
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Choose files to import" }),
+          await screen.findByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
@@ -5290,15 +5944,19 @@ describe("durable vault UI", () => {
 
         await user.click(
           screen.getByRole("button", {
-            name: "Lock now and cancel the transfer",
+            name: humanText("Lock now and cancel the transfer"),
           }),
         );
-        await screen.findByRole("heading", { name: "Unlock your vault" });
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        });
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
         });
-        expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
-        expect(screen.queryByText(/operation stopped/)).not.toBeInTheDocument();
+        expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
+        expect(
+          screen.queryByText(humanText(/operation stopped/)),
+        ).not.toBeInTheDocument();
         // The iOS note is not an outcome, so nothing is kept for the unlock.
         await expectNothingKeptAfterUnlock();
       } finally {
@@ -5336,7 +5994,9 @@ describe("durable vault UI", () => {
       try {
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Choose files to import" }),
+          await screen.findByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
@@ -5349,15 +6009,19 @@ describe("durable vault UI", () => {
 
         await user.click(
           screen.getByRole("button", {
-            name: "Lock now and cancel the transfer",
+            name: humanText("Lock now and cancel the transfer"),
           }),
         );
-        await screen.findByRole("heading", { name: "Unlock your vault" });
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        });
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
         });
-        expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
-        expect(screen.queryByText(/operation stopped/)).not.toBeInTheDocument();
+        expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
+        expect(
+          screen.queryByText(humanText(/operation stopped/)),
+        ).not.toBeInTheDocument();
         // The iOS note is not an outcome, so nothing is kept for the unlock.
         await expectNothingKeptAfterUnlock();
       } finally {
@@ -5386,11 +6050,13 @@ describe("durable vault UI", () => {
       fireEvent.keyDown(window);
       expect(bridge.touch).toHaveBeenCalledTimes(2);
 
-      fireEvent.click(screen.getByRole("button", { name: "Security" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Security") }),
+      );
       // From 5 minutes down to 1, one press at a time (#67).
       const shorter = within(
-        screen.getByRole("group", { name: "Automatic lock delay" }),
-      ).getByRole("button", { name: "Shorter delay" });
+        screen.getByRole("group", { name: humanText("Automatic lock delay") }),
+      ).getByRole("button", { name: humanText("Shorter delay") });
       for (let press = 0; press < 4; press++)
         await act(async () => {
           fireEvent.click(shorter);
@@ -5492,7 +6158,9 @@ describe("durable vault UI", () => {
       try {
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Choose files to import" }),
+          await screen.findByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
@@ -5503,22 +6171,24 @@ describe("durable vault UI", () => {
             document.dispatchEvent(new Event("visibilitychange"));
           });
           visibility.mockReturnValue("visible");
-          expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+          expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
         }
 
         await act(async () => failImport(error));
         // Content is hidden while that lock is confirmed.
         expect(
-          screen.queryByRole("heading", { name: "My records" }),
+          screen.queryByRole("heading", { name: humanText("My records") }),
         ).not.toBeInTheDocument();
         await act(async () => finishLock());
         expect(
-          await screen.findByRole("heading", { name: "Unlock your vault" }),
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
         ).toBeVisible();
         // A cancel is not proof that the vault locked, so it is locked here.
         expect(bridge.lock).toHaveBeenCalledOnce();
         if (outcome) await expectOutcomeAfterUnlock(outcome);
-        else expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+        else expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
       } finally {
         visibility.mockRestore();
       }
@@ -5591,7 +6261,9 @@ describe("durable vault UI", () => {
       try {
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Choose files to import" }),
+          await screen.findByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
@@ -5602,22 +6274,24 @@ describe("durable vault UI", () => {
             document.dispatchEvent(new Event("visibilitychange"));
           });
           visibility.mockReturnValue("visible");
-          expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+          expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
         }
 
         await act(async () => failImport(error));
         // Content is hidden while that lock is confirmed.
         expect(
-          screen.queryByRole("heading", { name: "My records" }),
+          screen.queryByRole("heading", { name: humanText("My records") }),
         ).not.toBeInTheDocument();
         await act(async () => finishLock());
         expect(
-          await screen.findByRole("heading", { name: "Unlock your vault" }),
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
         ).toBeVisible();
         // A cancel is not proof that the vault locked, so it is locked here.
         expect(bridge.lock).toHaveBeenCalledOnce();
         if (outcome) await expectOutcomeAfterUnlock(outcome);
-        else expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+        else expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
       } finally {
         visibility.mockRestore();
       }
@@ -5690,7 +6364,9 @@ describe("durable vault UI", () => {
       try {
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Choose files to import" }),
+          await screen.findByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
@@ -5701,22 +6377,24 @@ describe("durable vault UI", () => {
             document.dispatchEvent(new Event("visibilitychange"));
           });
           visibility.mockReturnValue("visible");
-          expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+          expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
         }
 
         await act(async () => failImport(error));
         // Content is hidden while that lock is confirmed.
         expect(
-          screen.queryByRole("heading", { name: "My records" }),
+          screen.queryByRole("heading", { name: humanText("My records") }),
         ).not.toBeInTheDocument();
         await act(async () => finishLock());
         expect(
-          await screen.findByRole("heading", { name: "Unlock your vault" }),
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
         ).toBeVisible();
         // A cancel is not proof that the vault locked, so it is locked here.
         expect(bridge.lock).toHaveBeenCalledOnce();
         if (outcome) await expectOutcomeAfterUnlock(outcome);
-        else expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+        else expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
       } finally {
         visibility.mockRestore();
       }
@@ -5789,7 +6467,9 @@ describe("durable vault UI", () => {
       try {
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Choose files to import" }),
+          await screen.findByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
@@ -5800,22 +6480,24 @@ describe("durable vault UI", () => {
             document.dispatchEvent(new Event("visibilitychange"));
           });
           visibility.mockReturnValue("visible");
-          expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+          expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
         }
 
         await act(async () => failImport(error));
         // Content is hidden while that lock is confirmed.
         expect(
-          screen.queryByRole("heading", { name: "My records" }),
+          screen.queryByRole("heading", { name: humanText("My records") }),
         ).not.toBeInTheDocument();
         await act(async () => finishLock());
         expect(
-          await screen.findByRole("heading", { name: "Unlock your vault" }),
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
         ).toBeVisible();
         // A cancel is not proof that the vault locked, so it is locked here.
         expect(bridge.lock).toHaveBeenCalledOnce();
         if (outcome) await expectOutcomeAfterUnlock(outcome);
-        else expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+        else expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
       } finally {
         visibility.mockRestore();
       }
@@ -5888,7 +6570,9 @@ describe("durable vault UI", () => {
       try {
         render(<VaultApp bridge={bridge} />);
         await user.click(
-          await screen.findByRole("button", { name: "Choose files to import" }),
+          await screen.findByRole("button", {
+            name: humanText("Choose files to import"),
+          }),
         );
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
@@ -5899,22 +6583,24 @@ describe("durable vault UI", () => {
             document.dispatchEvent(new Event("visibilitychange"));
           });
           visibility.mockReturnValue("visible");
-          expect(screen.getByText(TRANSFER_HOLD)).toBeVisible();
+          expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
         }
 
         await act(async () => failImport(error));
         // Content is hidden while that lock is confirmed.
         expect(
-          screen.queryByRole("heading", { name: "My records" }),
+          screen.queryByRole("heading", { name: humanText("My records") }),
         ).not.toBeInTheDocument();
         await act(async () => finishLock());
         expect(
-          await screen.findByRole("heading", { name: "Unlock your vault" }),
+          await screen.findByRole("heading", {
+            name: humanText("Unlock your vault"),
+          }),
         ).toBeVisible();
         // A cancel is not proof that the vault locked, so it is locked here.
         expect(bridge.lock).toHaveBeenCalledOnce();
         if (outcome) await expectOutcomeAfterUnlock(outcome);
-        else expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+        else expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
       } finally {
         visibility.mockRestore();
       }
@@ -5931,13 +6617,17 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "New folder" }));
-    await user.type(screen.getByLabelText("Folder name"), "Labs");
-    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(
+      await screen.findByRole("button", { name: humanText("New folder") }),
+    );
+    await user.type(screen.getByLabelText(humanText("Folder name")), "Labs");
+    await user.click(screen.getByRole("button", { name: humanText("Create") }));
     expect(
-      await screen.findByRole("heading", { name: "Unlock your vault" }),
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
     ).toBeVisible();
-    expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+    expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
   });
 
   it.each([
@@ -5955,11 +6645,16 @@ describe("durable vault UI", () => {
       });
       render(<VaultApp bridge={bridge} />);
       await user.click(
-        await screen.findByRole("button", { name: "Choose files to import" }),
+        await screen.findByRole("button", {
+          name: humanText("Choose files to import"),
+        }),
       );
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
-      if (shown) expect(screen.getByText(IOS_PAUSE)).toBeVisible();
-      else expect(screen.queryByText(IOS_PAUSE)).not.toBeInTheDocument();
+      if (shown) expect(screen.getByText(humanText(IOS_PAUSE))).toBeVisible();
+      else
+        expect(
+          screen.queryByText(humanText(IOS_PAUSE)),
+        ).not.toBeInTheDocument();
     },
   );
 
@@ -5972,11 +6667,15 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
 
     await user.click(
-      await screen.findByRole("button", { name: /Choose files to import/ }),
+      await screen.findByRole("button", {
+        name: humanText(/Choose files to import/),
+      }),
     );
     await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
     // Locking is what cancels streaming I/O, so it must stay reachable.
-    expect(screen.getByRole("button", { name: /Lock now/ })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    ).toBeEnabled();
   });
 
   it("announces a result inside the open document dialog", async () => {
@@ -6001,18 +6700,22 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await user.click(await screen.findByText("FAKE_Copy.pdf"));
+    await user.click(await screen.findByText(humanText("FAKE_Copy.pdf")));
     await user.click(
-      screen.getByRole("button", { name: "Save a copy to this computer" }),
+      screen.getByRole("button", {
+        name: humanText("Save a copy to this computer"),
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "Save a copy" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save a copy") }),
+    );
 
     // The page behind a modal is inert, so its status line is not announced.
     const details = await screen.findByRole("dialog", {
-      name: "FAKE_Copy.pdf",
+      name: humanText("FAKE_Copy.pdf"),
     });
     await waitFor(() =>
-      expect(within(details).getByRole("status")).toHaveTextContent(
+      expect(within(details).getByRole("status")).toHaveHumanTextContent(
         "Save cancelled. Nothing changed.",
       ),
     );
@@ -6085,19 +6788,19 @@ describe("durable vault UI", () => {
 
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
       expect(lock).toHaveBeenCalledOnce();
-      expect(screen.getByRole("alert")).toHaveTextContent(
+      expect(screen.getByRole("alert")).toHaveHumanTextContent(
         "the vault is still open",
       );
-      expect(screen.getByRole("alert")).toHaveTextContent(
+      expect(screen.getByRole("alert")).toHaveHumanTextContent(
         "myCarlos could not lock the vault. Its content is hidden, but the vault is still open. The storage operation could not be completed.",
       );
       expect(
-        screen.queryByRole("heading", { name: "My records" }),
+        screen.queryByRole("heading", { name: humanText("My records") }),
       ).not.toBeInTheDocument();
 
       await act(async () => vi.advanceTimersByTime(10 * 1000));
       expect(lock).toHaveBeenCalledTimes(2);
-      expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+      expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
     } finally {
       vi.useRealTimers();
     }
@@ -6132,7 +6835,7 @@ describe("durable vault UI", () => {
         vi.advanceTimersByTime(10 * 1000);
       });
       expect(lock).toHaveBeenCalledTimes(2);
-      expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+      expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
     } finally {
       visibility.mockRestore();
       vi.useRealTimers();
@@ -6162,18 +6865,20 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
 
     await user.click(
-      await screen.findByRole("button", { name: "Choose files to import" }),
+      await screen.findByRole("button", {
+        name: humanText("Choose files to import"),
+      }),
     );
     await waitFor(() =>
       expect(screen.getByRole("status")).not.toBeEmptyDOMElement(),
     );
     const earlierNotice = screen.getByRole("status").textContent ?? "";
 
-    await user.click(screen.getByText("FAKE_Other.pdf"));
+    await user.click(screen.getByText(humanText("FAKE_Other.pdf")));
     const details = await screen.findByRole("dialog", {
-      name: "FAKE_Other.pdf",
+      name: humanText("FAKE_Other.pdf"),
     });
-    expect(details).not.toHaveTextContent(earlierNotice);
+    expect(details).not.toHaveHumanTextContent(earlierNotice);
   });
 
   it("does not show an earlier manual lock failure while a later automatic lock is pending", async () => {
@@ -6200,17 +6905,19 @@ describe("durable vault UI", () => {
         render(<VaultApp bridge={bridge} />);
       });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Lock now/ }));
+        fireEvent.click(
+          screen.getByRole("button", { name: humanText(/Lock now/) }),
+        );
       });
       expect(lock).toHaveBeenCalledOnce();
 
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
       expect(lock).toHaveBeenCalledTimes(2);
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-      expect(screen.getByText(/finishes locking/)).toBeVisible();
+      expect(screen.getByText(humanText(/finishes locking/))).toBeVisible();
 
       await act(async () => finishLock());
-      expect(screen.getByText(LOCKED_MESSAGE)).toBeVisible();
+      expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
     } finally {
       vi.useRealTimers();
     }
@@ -6250,11 +6957,18 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await user.click(await screen.findByText("FAKE_Late.pdf"));
-    await user.click(screen.getByRole("button", { name: "Rename document" }));
-    await user.clear(screen.getByLabelText("File name"));
-    await user.type(screen.getByLabelText("File name"), "FAKE_Renamed.pdf");
-    await user.click(screen.getByRole("button", { name: "Save name" }));
+    await user.click(await screen.findByText(humanText("FAKE_Late.pdf")));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Rename document") }),
+    );
+    await user.clear(screen.getByLabelText(humanText("File name")));
+    await user.type(
+      screen.getByLabelText(humanText("File name")),
+      "FAKE_Renamed.pdf",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save name") }),
+    );
     await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
 
     const visibility = vi
@@ -6262,7 +6976,7 @@ describe("durable vault UI", () => {
       .mockReturnValue("hidden");
     try {
       document.dispatchEvent(new Event("visibilitychange"));
-      expect(await screen.findByText(LOCKED_MESSAGE)).toBeVisible();
+      expect(await screen.findByText(humanText(LOCKED_MESSAGE))).toBeVisible();
     } finally {
       visibility.mockRestore();
     }
@@ -6270,11 +6984,13 @@ describe("durable vault UI", () => {
     // Unlocked again before the earlier session's refresh returns: that result
     // must not replace the new session's library.
     await user.type(
-      screen.getByLabelText("Passphrase"),
+      screen.getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
-    expect(await screen.findByText("FAKE_Current.pdf")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    expect(
+      await screen.findByText(humanText("FAKE_Current.pdf")),
+    ).toBeVisible();
 
     await act(async () =>
       deliverSnapshot({
@@ -6282,8 +6998,10 @@ describe("durable vault UI", () => {
         records: [{ ...record, displayName: "FAKE_Renamed.pdf" }],
       }),
     );
-    expect(screen.getByText("FAKE_Current.pdf")).toBeVisible();
-    expect(screen.queryByText(/FAKE_Renamed/)).not.toBeInTheDocument();
+    expect(screen.getByText(humanText("FAKE_Current.pdf"))).toBeVisible();
+    expect(
+      screen.queryByText(humanText(/FAKE_Renamed/)),
+    ).not.toBeInTheDocument();
   });
 
   it("persists a bounded automatic lock delay", async () => {
@@ -6291,19 +7009,21 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByRole("heading", { name: "My records" });
+    await screen.findByRole("heading", { name: humanText("My records") });
 
-    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Security") }),
+    );
     const delay = screen.getByRole("group", {
-      name: "Automatic lock delay",
+      name: humanText("Automatic lock delay"),
     });
-    expect(within(delay).getByText("5 minutes")).toBeVisible();
+    expect(within(delay).getByText(humanText("5 minutes"))).toBeVisible();
     const shorter = within(delay).getByRole("button", {
-      name: "Shorter delay",
+      name: humanText("Shorter delay"),
     });
     for (let press = 0; press < 4; press++) fireEvent.click(shorter);
 
-    expect(within(delay).getByText("1 minute")).toBeVisible();
+    expect(within(delay).getByText(humanText("1 minute"))).toBeVisible();
     expect(window.localStorage.getItem("mycarlos.autoLockMinutes.v1")).toBe(
       "1",
     );
@@ -6337,12 +7057,14 @@ describe("durable vault UI", () => {
         bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })}
       />,
     );
-    await screen.findByRole("heading", { name: "My records" });
-    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    await screen.findByRole("heading", { name: humanText("My records") });
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Security") }),
+    );
     expect(
       within(
-        screen.getByRole("group", { name: "Automatic lock delay" }),
-      ).getByText("15 minutes"),
+        screen.getByRole("group", { name: humanText("Automatic lock delay") }),
+      ).getByText(humanText("15 minutes")),
     ).toBeVisible();
     first.unmount();
 
@@ -6352,12 +7074,14 @@ describe("durable vault UI", () => {
         bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })}
       />,
     );
-    await screen.findByRole("heading", { name: "My records" });
-    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    await screen.findByRole("heading", { name: humanText("My records") });
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Security") }),
+    );
     expect(
       within(
-        screen.getByRole("group", { name: "Automatic lock delay" }),
-      ).getByText("5 minutes"),
+        screen.getByRole("group", { name: humanText("Automatic lock delay") }),
+      ).getByText(humanText("5 minutes")),
     ).toBeVisible();
   });
 
@@ -6368,12 +7092,16 @@ describe("durable vault UI", () => {
     const guide = "mycarlos.oldBackupsGuide.v1";
     window.localStorage.setItem(guide, JSON.stringify({ step: "save" }));
     render(<VaultApp bridge={bridge} />);
-    await screen.findByRole("heading", { name: "Unlock your vault" });
-    await user.click(screen.getByText("Forgot your passphrase?"));
-    const erase = screen.getByRole("button", { name: "Set vault aside" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    await user.click(screen.getByText(humanText("Forgot your passphrase?")));
+    const erase = screen.getByRole("button", {
+      name: humanText("Set vault aside"),
+    });
     expect(erase).toBeDisabled();
     await user.type(
-      screen.getByLabelText("Type RESET MYCARLOS VAULT"),
+      screen.getByLabelText(humanText("Type RESET MYCARLOS VAULT")),
       "RESET MYCARLOS VAULT",
     );
     expect(erase).toBeEnabled();
@@ -6394,13 +7122,17 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "New folder" }));
-    await user.type(screen.getByLabelText("Folder name"), "Labs");
-    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(
+      await screen.findByRole("button", { name: humanText("New folder") }),
+    );
+    await user.type(screen.getByLabelText(humanText("Folder name")), "Labs");
+    await user.click(screen.getByRole("button", { name: humanText("Create") }));
     expect(
-      await screen.findByText("No vault exists on this device."),
+      await screen.findByText(humanText("No vault exists on this device.")),
     ).toBeVisible();
-    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: humanText("My records") }),
+    ).toBeVisible();
   });
 
   it("says only that the vault locked when a lock beats a command back", async () => {
@@ -6416,15 +7148,21 @@ describe("durable vault UI", () => {
       ),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "New folder" }));
-    await user.type(screen.getByLabelText("Folder name"), "Labs");
-    await user.click(screen.getByRole("button", { name: "Create" }));
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await user.click(
+      await screen.findByRole("button", { name: humanText("New folder") }),
+    );
+    await user.type(screen.getByLabelText(humanText("Folder name")), "Labs");
+    await user.click(screen.getByRole("button", { name: humanText("Create") }));
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    );
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     await act(async () =>
       failCreate({ code: "locked", message: "Unlock the vault to continue." }),
     );
-    expect(screen.getByText("Vault locked.")).toBeVisible();
+    expect(screen.getByText(humanText("Vault locked."))).toBeVisible();
   });
 
   it("keeps a refused profile name in the form and clears an accepted one", async () => {
@@ -6441,20 +7179,28 @@ describe("durable vault UI", () => {
       createProfile,
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByRole("heading", { name: "My records" });
-    await user.click(screen.getByRole("button", { name: "Security" }));
+    await screen.findByRole("heading", { name: humanText("My records") });
+    await user.click(
+      screen.getByRole("button", { name: humanText("Security") }),
+    );
 
-    const name = screen.getByLabelText("New profile name");
+    const name = screen.getByLabelText(humanText("New profile name"));
     await user.type(name, "Jamie's parent");
-    await user.click(screen.getByRole("button", { name: "Add profile" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
     await waitFor(() => expect(createProfile).toHaveBeenCalledOnce());
     expect(name).toHaveValue("Jamie's parent");
     // The refusal names the box to check (#69).
     expect(
-      await screen.findByText("Check the profile name, then try again."),
+      await screen.findByText(
+        humanText("Check the profile name, then try again."),
+      ),
     ).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: "Add profile" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
     await waitFor(() => expect(name).toHaveValue(""));
   });
 
@@ -6464,25 +7210,36 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "Security" }));
-    fireEvent.change(screen.getByLabelText("Current passphrase"), {
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    fireEvent.change(screen.getByLabelText(humanText("Current passphrase")), {
       target: { value: "fake-current-secret" },
     });
-    fireEvent.change(screen.getByLabelText("New passphrase"), {
+    fireEvent.change(screen.getByLabelText(humanText("New passphrase")), {
       target: { value: "fake-replacement-secret" },
     });
-    fireEvent.change(screen.getByLabelText("Confirm new passphrase"), {
-      target: { value: "fake-replacement-secret" },
-    });
+    fireEvent.change(
+      screen.getByLabelText(humanText("Confirm new passphrase")),
+      {
+        target: { value: "fake-replacement-secret" },
+      },
+    );
     await user.click(
       within(
-        screen.getByRole("navigation", { name: "Record library" }),
-      ).getByRole("button", { name: /My records/ }),
+        screen.getByRole("navigation", { name: humanText("Record library") }),
+      ).getByRole("button", { name: humanText(/My records/) }),
     );
-    await user.click(screen.getByRole("button", { name: "Security" }));
-    expect(screen.getByLabelText("Current passphrase")).toHaveValue("");
-    expect(screen.getByLabelText("New passphrase")).toHaveValue("");
-    expect(screen.getByLabelText("Confirm new passphrase")).toHaveValue("");
+    await user.click(
+      screen.getByRole("button", { name: humanText("Security") }),
+    );
+    expect(screen.getByLabelText(humanText("Current passphrase"))).toHaveValue(
+      "",
+    );
+    expect(screen.getByLabelText(humanText("New passphrase"))).toHaveValue("");
+    expect(
+      screen.getByLabelText(humanText("Confirm new passphrase")),
+    ).toHaveValue("");
     expect(bridge.changePassphrase).not.toHaveBeenCalled();
   });
 
@@ -6492,29 +7249,35 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: "Security" }));
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
 
     await user.type(
-      screen.getByLabelText("Current passphrase"),
+      screen.getByLabelText(humanText("Current passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
     await user.type(
-      screen.getByLabelText("New passphrase"),
+      screen.getByLabelText(humanText("New passphrase")),
       "lantern-orbit-willow-cascade-572",
     );
     await user.type(
-      screen.getByLabelText("Confirm new passphrase"),
+      screen.getByLabelText(humanText("Confirm new passphrase")),
       "different replacement",
     );
     expect(
-      screen.getByRole("button", { name: "Change passphrase" }),
+      screen.getByRole("button", { name: humanText("Change passphrase") }),
     ).toBeDisabled();
-    await user.clear(screen.getByLabelText("Confirm new passphrase"));
+    await user.clear(
+      screen.getByLabelText(humanText("Confirm new passphrase")),
+    );
     await user.type(
-      screen.getByLabelText("Confirm new passphrase"),
+      screen.getByLabelText(humanText("Confirm new passphrase")),
       "lantern-orbit-willow-cascade-572",
     );
-    await user.click(screen.getByRole("button", { name: "Change passphrase" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Change passphrase") }),
+    );
 
     await waitFor(() =>
       expect(bridge.changePassphrase).toHaveBeenCalledWith(
@@ -6545,21 +7308,23 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
-      name: "FAKE_Report.pdf",
+      name: humanText("FAKE_Report.pdf"),
     });
     await user.click(opener);
     const close = screen.getByRole("button", {
-      name: "Close document details",
+      name: humanText("Close document details"),
     });
     expect(close).toHaveFocus();
     // The dialog's text is read with it when it opens; Tab moves only between
     // its controls and wraps inside it.
     expect(
-      screen.getByRole("dialog", { name: "FAKE_Report.pdf" }),
-    ).toHaveAccessibleDescription(/The file stays encrypted in the vault/);
+      screen.getByRole("dialog", { name: humanText("FAKE_Report.pdf") }),
+    ).toHaveHumanAccessibleDescription(/The file stays encrypted in the vault/);
     await user.tab({ shift: true });
     expect(
-      screen.getByRole("button", { name: "Save a copy to this computer" }),
+      screen.getByRole("button", {
+        name: humanText("Save a copy to this computer"),
+      }),
     ).toHaveFocus();
     await user.tab();
     expect(close).toHaveFocus();
@@ -6589,13 +7354,15 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
-      name: "FAKE_Report.pdf",
+      name: humanText("FAKE_Report.pdf"),
     });
     await user.click(opener);
-    await user.click(screen.getByRole("button", { name: "Rename document" }));
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
     await user.click(
-      screen.getByRole("button", { name: "Close document details" }),
+      screen.getByRole("button", { name: humanText("Rename document") }),
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Close document details") }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
@@ -6611,12 +7378,18 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { name: /Lock now/ }));
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Lock now/) }),
+    );
     expect(bridge.lock).toHaveBeenCalledTimes(1);
     expect(
-      await screen.findByText(/storage operation could not be completed/i),
+      await screen.findByText(
+        humanText(/storage operation could not be completed/i),
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Lock now/ })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    ).toBeEnabled();
   });
 
   it("marks a document whose encrypted file is missing and blocks saving it", async () => {
@@ -6643,13 +7416,21 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     expect(
-      await screen.findByText(/Some encrypted files are missing/),
+      await screen.findByText(humanText(/Some encrypted files are missing/)),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Damaged: file missing/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "FAKE_Lost.pdf" }));
-    expect(screen.getByText("This document is damaged.")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Save a copy to this computer" }),
+      screen.getByText(humanText(/Damaged: file missing/)),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: humanText("FAKE_Lost.pdf") }),
+    );
+    expect(
+      screen.getByText(humanText("This document is damaged.")),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Save a copy to this computer"),
+      }),
     ).toBeDisabled();
   });
 
@@ -6700,40 +7481,54 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByText(/Some encrypted files are missing/);
+    await screen.findByText(humanText(/Some encrypted files are missing/));
     expect(
-      screen.queryByText("FAKE_Hidden_missing.pdf"),
+      screen.queryByText(humanText("FAKE_Hidden_missing.pdf")),
     ).not.toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Hide damaged documents" }),
+      screen.getByRole("button", { name: humanText("Hide damaged documents") }),
     );
     const review = screen.getByRole("alertdialog", {
-      name: "Hide 1 damaged document?",
+      name: humanText("Hide 1 damaged document?"),
     });
-    expect(within(review).getByText("FAKE_Hidden_missing.pdf")).toBeVisible();
     expect(
-      within(review).queryByText("FAKE_Already_damaged.pdf"),
+      within(review).getByText(humanText("FAKE_Hidden_missing.pdf")),
+    ).toBeVisible();
+    expect(
+      within(review).queryByText(humanText("FAKE_Already_damaged.pdf")),
     ).not.toBeInTheDocument();
     expect(bridge.hideUnavailableRecords).not.toHaveBeenCalled();
-    await user.click(within(review).getByRole("button", { name: "Hide" }));
+    await user.click(
+      within(review).getByRole("button", { name: humanText("Hide") }),
+    );
     await waitFor(() =>
       expect(bridge.hideUnavailableRecords).toHaveBeenCalledExactlyOnceWith([
         "patient-hidden",
       ]),
     );
     await screen.findByText(
-      "1 damaged document hidden. It is listed under Hidden. The vault accepts changes again.",
+      humanText(
+        "1 damaged document hidden. It is listed under Hidden. The vault accepts changes again.",
+      ),
     );
-    expect(screen.getByRole("button", { name: "New folder" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: /^Hidden/ }));
+    expect(
+      screen.getByRole("button", { name: humanText("New folder") }),
+    ).toBeEnabled();
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^Hidden/) }),
+    );
     for (const name of [
       "FAKE_Hidden_missing.pdf",
       "FAKE_Already_damaged.pdf",
     ]) {
-      const row = screen.getByRole("article", { name: `${name}, hidden` });
+      const row = screen.getByRole("article", {
+        name: humanText(`${name}, hidden`),
+      });
       expect(row).toBeVisible();
       expect(
-        within(row).queryByRole("button", { name: `Restore ${name}` }),
+        within(row).queryByRole("button", {
+          name: humanText(`Restore ${name}`),
+        }),
       ).not.toBeInTheDocument();
     }
     expect(shown.records).toHaveLength(2);
@@ -6778,35 +7573,41 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
 
     await user.click(
-      await screen.findByRole("button", { name: "Hide damaged documents" }),
+      await screen.findByRole("button", {
+        name: humanText("Hide damaged documents"),
+      }),
     );
     const warning = screen.getByRole("alertdialog", {
-      name: "Hide 1 damaged document?",
+      name: humanText("Hide 1 damaged document?"),
     });
-    expect(warning).toHaveAccessibleDescription(/stay listed under Hidden/);
+    expect(warning).toHaveHumanAccessibleDescription(
+      /stay listed under Hidden/,
+    );
     // Nothing is deleted any more (#71), so nothing says it cannot be undone.
-    expect(warning).not.toHaveTextContent(/cannot be undone|permanently/);
+    expect(warning).not.toHaveHumanTextContent(/cannot be undone|permanently/);
     // The files may only be out of reach, which is not the same as gone.
-    expect(warning).toHaveTextContent(/drive that is disconnected/);
-    expect(warning).toHaveTextContent(/backup/);
+    expect(warning).toHaveHumanTextContent(/drive that is disconnected/);
+    expect(warning).toHaveHumanTextContent(/backup/);
     // Nothing is removed without an explicit confirmation: Cancel has focus,
     // and Cancel, Escape and a click outside all leave everything in place.
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      screen.getByRole("button", { name: humanText("Cancel") }),
+    ).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: humanText("Cancel") }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     // Enter straight away presses Cancel, which has focus.
     await user.click(
-      screen.getByRole("button", { name: "Hide damaged documents" }),
+      screen.getByRole("button", { name: humanText("Hide damaged documents") }),
     );
     await user.keyboard("{Enter}");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Hide damaged documents" }),
+      screen.getByRole("button", { name: humanText("Hide damaged documents") }),
     );
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Hide damaged documents" }),
+      screen.getByRole("button", { name: humanText("Hide damaged documents") }),
     );
     await user.pointer({
       keys: "[MouseLeft]",
@@ -6816,9 +7617,9 @@ describe("durable vault UI", () => {
     expect(hideUnavailableRecords).not.toHaveBeenCalled();
 
     await user.click(
-      screen.getByRole("button", { name: "Hide damaged documents" }),
+      screen.getByRole("button", { name: humanText("Hide damaged documents") }),
     );
-    const remove = screen.getByRole("button", { name: "Hide" });
+    const remove = screen.getByRole("button", { name: humanText("Hide") });
     // Hiding can be undone, so it is not styled as a danger (#71).
     expect(remove).not.toHaveClass("danger");
     await user.click(remove);
@@ -6827,12 +7628,20 @@ describe("durable vault UI", () => {
     expect(hideUnavailableRecords).toHaveBeenCalledWith(["record-lost"]);
     expect(
       await screen.findByText(
-        "1 damaged document hidden. It is listed under Hidden. The vault accepts changes again.",
+        humanText(
+          "1 damaged document hidden. It is listed under Hidden. The vault accepts changes again.",
+        ),
       ),
     ).toBeVisible();
-    expect(screen.queryByText(/Changes are paused/)).not.toBeInTheDocument();
-    expect(screen.queryByText("FAKE_Lost.pdf")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New folder" })).toBeEnabled();
+    expect(
+      screen.queryByText(humanText(/Changes are paused/)),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(humanText("FAKE_Lost.pdf")),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: humanText("New folder") }),
+    ).toBeEnabled();
   });
 
   it("does not claim the vault accepts changes when removal left it read-only", async () => {
@@ -6864,15 +7673,19 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
 
     await user.click(
-      await screen.findByRole("button", { name: "Hide damaged documents" }),
+      await screen.findByRole("button", {
+        name: humanText("Hide damaged documents"),
+      }),
     );
-    await user.click(screen.getByRole("button", { name: "Hide" }));
+    await user.click(screen.getByRole("button", { name: humanText("Hide") }));
 
     expect(
-      await screen.findByText(/1 damaged document hidden/),
-    ).not.toHaveTextContent(/accepts changes/);
+      await screen.findByText(humanText(/1 damaged document hidden/)),
+    ).not.toHaveHumanTextContent(/accepts changes/);
     expect(
-      screen.getByText(/myCarlos could not save a change to this computer/),
+      screen.getByText(
+        humanText(/myCarlos could not save a change to this computer/),
+      ),
     ).toBeVisible();
   });
 
@@ -6885,9 +7698,13 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    expect(await screen.findByText(/could not be read/)).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Hide damaged documents" }),
+      await screen.findByText(humanText(/could not be read/)),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: humanText("Hide damaged documents"),
+      }),
     ).not.toBeInTheDocument();
   });
 
@@ -6914,14 +7731,14 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     const opener = await screen.findByRole("button", {
-      name: "Hide damaged documents",
+      name: humanText("Hide damaged documents"),
     });
     await user.click(opener);
     const dialog = screen.getByRole("alertdialog", {
-      name: "Hide 30 damaged documents?",
+      name: humanText("Hide 30 damaged documents?"),
     });
     const list = within(dialog).getByRole("list", {
-      name: "Documents to hide",
+      name: humanText("Documents to hide"),
     });
     // It overflows, and a region that scrolls must be reachable by keyboard.
     expect(list.scrollHeight).toBeGreaterThan(list.clientHeight);
@@ -6932,7 +7749,9 @@ describe("durable vault UI", () => {
       },
     });
     expect(results.violations).toEqual([]);
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: humanText("Cancel") }),
+    ).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
@@ -6973,48 +7792,58 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await user.click(
-      await screen.findByRole("button", { name: "Hide damaged documents" }),
+      await screen.findByRole("button", {
+        name: humanText("Hide damaged documents"),
+      }),
     );
     const confirmation = screen.getByRole("alertdialog", {
-      name: "Hide 1 damaged document?",
+      name: humanText("Hide 1 damaged document?"),
     });
     expect(confirmation).toBeVisible();
     // It names what would be removed, and nothing else.
     const named = within(confirmation).getByRole("list", {
-      name: "Documents to hide",
+      name: humanText("Documents to hide"),
     });
     expect(within(named).getAllByRole("listitem")).toHaveLength(1);
-    expect(named).toHaveTextContent("FAKE_a.pdf");
+    expect(named).toHaveHumanTextContent("FAKE_a.pdf");
     // It can be scrolled with the keyboard, but Cancel has the first focus,
     // and the names are not read out with the dialog.
     expect(named).toHaveAttribute("tabindex", "0");
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: humanText("Cancel") }),
+    ).toHaveFocus();
     // Tab reaches the list (to scroll it) and the two buttons, and wraps.
     await user.tab({ shift: true });
     expect(named).toHaveFocus();
     await user.tab({ shift: true });
-    expect(screen.getByRole("button", { name: "Hide" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: humanText("Hide") }),
+    ).toHaveFocus();
     await user.tab();
     expect(named).toHaveFocus();
     await user.tab();
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
-    expect(confirmation).toHaveAccessibleDescription(
+    expect(
+      screen.getByRole("button", { name: humanText("Cancel") }),
+    ).toHaveFocus();
+    expect(confirmation).toHaveHumanAccessibleDescription(
       /Their encrypted files are missing/,
     );
-    expect(confirmation).not.toHaveAccessibleDescription(/FAKE_a\.pdf/);
+    expect(confirmation).not.toHaveHumanAccessibleDescription(/FAKE_a\.pdf/);
     const asked = vi.mocked(bridge.snapshot).mock.calls.length;
-    await user.click(screen.getByRole("button", { name: "Hide" }));
-    expect(await screen.findByText("FAKE the vault changed.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: humanText("Hide") }));
+    expect(
+      await screen.findByText(humanText("FAKE the vault changed.")),
+    ).toBeVisible();
     // The refusal itself made the screen ask the vault again.
     expect(vi.mocked(bridge.snapshot).mock.calls.length).toBeGreaterThan(asked);
     expect(bridge.hideUnavailableRecords).toHaveBeenCalledWith(["a"]);
     // The next confirmation counts what is damaged now.
     await user.click(
-      screen.getByRole("button", { name: "Hide damaged documents" }),
+      screen.getByRole("button", { name: humanText("Hide damaged documents") }),
     );
     expect(
       screen.getByRole("alertdialog", {
-        name: "Hide 2 damaged documents?",
+        name: humanText("Hide 2 damaged documents?"),
       }),
     ).toBeVisible();
   });
@@ -7042,16 +7871,20 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    expect(await screen.findByText(/· File unavailable/)).toBeVisible();
-    expect(screen.queryByText(/Damaged: file missing/)).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(humanText(/· File unavailable/)),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText(/Damaged: file missing/)),
+    ).not.toBeInTheDocument();
     // The notice says which documents cannot be opened: those so marked.
     expect(
-      screen.getByText(/keeps its files on this device/),
-    ).toHaveTextContent("except any marked “File unavailable”");
-    await user.click(screen.getByText("FAKE_Unreadable.pdf"));
+      screen.getByText(humanText(/keeps its files on this device/)),
+    ).toHaveHumanTextContent("except any marked “File unavailable”");
+    await user.click(screen.getByText(humanText("FAKE_Unreadable.pdf")));
     expect(
       within(screen.getByRole("dialog")).getByRole("alert"),
-    ).toHaveTextContent("This document is unavailable.");
+    ).toHaveHumanTextContent("This document is unavailable.");
   });
 
   it("renders hostile durable metadata only as text and surfaces recovery mode", async () => {
@@ -7079,13 +7912,15 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    expect(await screen.findByText(hostileName)).toBeVisible();
+    expect(await screen.findByText(humanText(hostileName))).toBeVisible();
     expect(
       document.querySelector('img[src="https://attacker.invalid/leak"]'),
     ).toBeNull();
-    expect(screen.getByRole("alert")).toHaveTextContent("Changes are paused.");
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+      "Changes are paused.",
+    );
     expect(
-      screen.getByRole("button", { name: "Choose files to import" }),
+      screen.getByRole("button", { name: humanText("Choose files to import") }),
     ).toBeDisabled();
   });
 
@@ -7097,7 +7932,9 @@ describe("durable vault UI", () => {
       },
     };
     const locked = render(<VaultApp bridge={nativeBridge()} />);
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     expect((await axe.run(document.body, axeOptions)).violations).toEqual([]);
     locked.unmount();
 
@@ -7106,7 +7943,7 @@ describe("durable vault UI", () => {
         bridge={nativeBridge({ status: vi.fn().mockResolvedValue("unlocked") })}
       />,
     );
-    await screen.findByRole("heading", { name: "My records" });
+    await screen.findByRole("heading", { name: humanText("My records") });
     expect((await axe.run(document.body, axeOptions)).violations).toEqual([]);
   });
 
@@ -7130,10 +7967,14 @@ describe("durable vault UI", () => {
     const user = await holdLockForImport(bridge, () =>
       finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
     );
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     await expectOutcomeAfterUnlock("1 document encrypted and added.");
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
-    await screen.findByLabelText("Passphrase");
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    );
+    await screen.findByLabelText(humanText("Passphrase"));
     await expectNothingKeptAfterUnlock();
   });
 
@@ -7153,32 +7994,40 @@ describe("durable vault UI", () => {
     const user = await holdLockForImport(bridge, () =>
       finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
     );
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     vi.mocked(bridge.unlock).mockRejectedValueOnce({
       code: "missing",
       message: "No vault was found.",
     });
     await user.type(
-      screen.getByLabelText("Passphrase"),
+      screen.getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
     await continuePastComfort();
     await user.type(
-      await screen.findByLabelText("Whose records will you keep here?"),
+      await screen.findByLabelText(
+        humanText("Whose records will you keep here?"),
+      ),
       "FAKE Tester",
     );
     await user.type(
-      screen.getByLabelText("Passphrase"),
+      screen.getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
     await user.type(
-      screen.getByLabelText("Confirm passphrase"),
+      screen.getByLabelText(humanText("Confirm passphrase")),
       "river-azimuth-cobalt-sparrow-934",
     );
-    await user.click(screen.getByRole("button", { name: "Create vault" }));
-    await user.click(await screen.findByRole("button", { name: /Lock now/ }));
-    await screen.findByLabelText("Passphrase");
+    await user.click(
+      screen.getByRole("button", { name: humanText("Create vault") }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Lock now/) }),
+    );
+    await screen.findByLabelText(humanText("Passphrase"));
     await expectNothingKeptAfterUnlock();
   });
 
@@ -7202,9 +8051,13 @@ describe("durable vault UI", () => {
       finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
     );
     await user.click(
-      await screen.findByRole("button", { name: "Try locking again" }),
+      await screen.findByRole("button", {
+        name: humanText("Try locking again"),
+      }),
     );
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     await expectOutcomeAfterUnlock("1 document encrypted and added.");
   });
 
@@ -7224,7 +8077,7 @@ describe("durable vault UI", () => {
       ),
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByText("FAKE_Results.pdf");
+    await screen.findByText(humanText("FAKE_Results.pdf"));
     await startExport();
     await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
     const files = new DataTransfer();
@@ -7232,8 +8085,12 @@ describe("durable vault UI", () => {
     await act(async () => {
       fireDragEvent("drop", window, { dataTransfer: files });
     });
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    );
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     await act(async () => failExport(CANCELLED));
     await expectNothingKeptAfterUnlock();
   });
@@ -7264,7 +8121,7 @@ describe("durable vault UI", () => {
         }),
       });
       render(<VaultApp bridge={bridge} />);
-      await screen.findByText("FAKE_Results.pdf");
+      await screen.findByText(humanText("FAKE_Results.pdf"));
       await startExport();
       await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
       if (otherNotice) {
@@ -7276,8 +8133,12 @@ describe("durable vault UI", () => {
           fireDragEvent("drop", window, { dataTransfer: files });
         });
       }
-      await user.click(screen.getByRole("button", { name: /Lock now/ }));
-      await screen.findByRole("heading", { name: "Unlock your vault" });
+      await user.click(
+        screen.getByRole("button", { name: humanText(/Lock now/) }),
+      );
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      });
       await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
     },
   );
@@ -7297,11 +8158,15 @@ describe("durable vault UI", () => {
       ),
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByText("FAKE_Results.pdf");
+    await screen.findByText(humanText("FAKE_Results.pdf"));
     await startExport();
     await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
-    await user.click(screen.getByRole("button", { name: /Lock now/ }));
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Lock now/) }),
+    );
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     // The copy was already written when the cancel arrived.
     await act(async () => finishExport());
     await expectOutcomeAfterUnlock(
@@ -7325,7 +8190,7 @@ describe("durable vault UI", () => {
       ),
     });
     render(<VaultApp bridge={bridge} />);
-    await screen.findByText("FAKE_Results.pdf");
+    await screen.findByText(humanText("FAKE_Results.pdf"));
     await startExport();
     await waitFor(() => expect(bridge.exportToPicked).toHaveBeenCalled());
     // The native deadline locked the vault (e.g. after a sleep), which cut
@@ -7336,7 +8201,9 @@ describe("durable vault UI", () => {
       message: "The vault is locked.",
     });
     await act(async () => failExport(PARTIAL_EXPORT));
-    await screen.findByRole("heading", { name: "Unlock your vault" });
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
     vi.mocked(bridge.snapshot).mockResolvedValue(snapshotWithRecord);
     await expectOutcomeAfterUnlock(PARTIAL_EXPORT.message);
   });
@@ -7361,52 +8228,69 @@ describe("the app's notices in the language in use (#46)", () => {
     });
     window.localStorage.removeItem("mycarlos.autoLockMinutes.v1");
     render(<VaultApp bridge={nativeBridge()} />);
-    fireEvent.change(await screen.findByLabelText(pl("passphrase.label")), {
-      target: { value: "river-azimuth-cobalt-sparrow-934" },
-    });
-    await user.click(screen.getByRole("button", { name: pl("unlock.submit") }));
-    expect(await screen.findByText(pl("notice.unlocked"))).toBeVisible();
+    fireEvent.change(
+      await screen.findByLabelText(humanText(pl("passphrase.label"))),
+      {
+        target: { value: "river-azimuth-cobalt-sparrow-934" },
+      },
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText(pl("unlock.submit")) }),
+    );
+    expect(
+      await screen.findByText(humanText(pl("notice.unlocked"))),
+    ).toBeVisible();
     expect(pl("notice.unlocked")).toBe("Sejf odblokowany.");
 
     // 5 → 6 minutes: Polish says "6 minut" (many).
     await user.click(
-      screen.getAllByRole("button", { name: pl("security.title") })[0],
+      screen.getAllByRole("button", {
+        name: humanText(pl("security.title")),
+      })[0],
     );
     const delay = screen.getByRole("group", {
-      name: pl("security.autoLock.label"),
+      name: humanText(pl("security.autoLock.label")),
     });
     await user.click(
       within(delay).getByRole("button", {
-        name: pl("security.autoLock.longer"),
+        name: humanText(pl("security.autoLock.longer")),
       }),
     );
     expect(
-      await screen.findByText("Automatyczna blokada ustawiona na 6 minut."),
+      await screen.findByText(
+        humanText("Automatyczna blokada ustawiona na 6 minut."),
+      ),
     ).toBeVisible();
-    expect(screen.queryByText(/Automatic locking set/)).toBeNull();
+    expect(screen.queryByText(humanText(/Automatic locking set/))).toBeNull();
 
     await user.click(
       screen.getByRole("button", {
-        name: pl("interface.VaultLibrary.unlockedLockNow"),
+        name: humanText(pl("interface.VaultLibrary.unlockedLockNow")),
       }),
     );
-    expect(await screen.findByText(pl("notice.locked"))).toBeVisible();
-    expect(screen.queryByText("Vault locked.")).toBeNull();
+    expect(
+      await screen.findByText(humanText(pl("notice.locked"))),
+    ).toBeVisible();
+    expect(screen.queryByText(humanText("Vault locked."))).toBeNull();
   });
 
   it("names the import button as the library shows it when a file is dropped while locked", async () => {
     setLocaleOverride("fr");
     onTestFinished(() => setLocaleOverride(null));
     render(<VaultApp bridge={nativeBridge()} />);
-    await screen.findByLabelText(translate("fr", "passphrase.label"));
+    await screen.findByLabelText(
+      humanText(translate("fr", "passphrase.label")),
+    );
     const files = new DataTransfer();
     files.items.add(new File(["%PDF-1.7"], "FAKE.pdf"));
     fireDragEvent("drop", document.body, { dataTransfer: files });
     expect(
       await screen.findByText(
-        translate("fr", "notice.dropRefused", {
-          button: translate("fr", "interface.VaultApp.chooseFilesToImport"),
-        }),
+        humanText(
+          translate("fr", "notice.dropRefused", {
+            button: translate("fr", "interface.VaultApp.chooseFilesToImport"),
+          }),
+        ),
       ),
     ).toBeVisible();
   });
@@ -7429,22 +8313,28 @@ describe("the warning before the automatic lock (#68)", () => {
     await act(async () => {
       render(<VaultApp bridge={bridge} />);
     });
-    expect(screen.getByRole("heading", { name: "My records" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: humanText("My records") }),
+    ).toBeVisible();
     return bridge;
   }
   const wait = (ms: number) => act(async () => vi.advanceTimersByTime(ms));
   const warning = () =>
-    screen.queryByRole("alertdialog", { name: /^myCarlos will lock in/ });
+    screen.queryByRole("alertdialog", {
+      name: humanText(/^myCarlos will lock in/),
+    });
 
   it("warns 30 seconds before, with Keep open focused, and locks if nobody answers", async () => {
     const bridge = await openLibrary();
     await wait(29_999);
     expect(warning()).not.toBeInTheDocument();
     await wait(1);
-    expect(warning()).toHaveAccessibleName(
+    expect(warning()).toHaveHumanAccessibleName(
       "myCarlos will lock in 30 seconds to keep your records private.",
     );
-    expect(screen.getByRole("button", { name: "Keep open" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: humanText("Keep open") }),
+    ).toHaveFocus();
     // Nothing beneath it can be reached, by Tab or by a screen reader's
     // browse or touch mode, which may not honour aria-modal.
     expect(document.querySelector(".native-vault-page")).toHaveAttribute(
@@ -7456,7 +8346,7 @@ describe("the warning before the automatic lock (#68)", () => {
     expect(bridge.lock).toHaveBeenCalledOnce();
     // Why, on the unlock screen, and nothing of the records.
     expect(
-      screen.getByText("Locked after 1 minute without use."),
+      screen.getByText(humanText("Locked after 1 minute without use.")),
     ).toBeVisible();
     expect(warning()).not.toBeInTheDocument();
   });
@@ -7465,7 +8355,9 @@ describe("the warning before the automatic lock (#68)", () => {
     const bridge = await openLibrary();
     await wait(30_000);
     const touches = vi.mocked(bridge.touch).mock.calls.length;
-    fireEvent.click(screen.getByRole("button", { name: "Keep open" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Keep open") }),
+    );
     expect(warning()).not.toBeInTheDocument();
     expect(bridge.touch).toHaveBeenCalledTimes(touches + 1);
 
@@ -7484,13 +8376,15 @@ describe("the warning before the automatic lock (#68)", () => {
     await openLibrary(renameBridge());
     await act(async () => {
       fireEvent.click(
-        screen.getByRole("button", { name: "Rename folder FAKE Parent" }),
+        screen.getByRole("button", {
+          name: humanText("Rename folder FAKE Parent"),
+        }),
       );
     });
     const typed = () =>
       within(
-        screen.getByRole("dialog", { name: "Rename folder" }),
-      ).getByLabelText("Folder name");
+        screen.getByRole("dialog", { name: humanText("Rename folder") }),
+      ).getByLabelText(humanText("Folder name"));
     fireEvent.change(typed(), { target: { value: "FAKE New name" } });
     expect(typed()).toHaveFocus();
 
@@ -7499,7 +8393,7 @@ describe("the warning before the automatic lock (#68)", () => {
     // Rename beneath it is out of reach while the warning is up.
     expect(
       screen
-        .getByRole("dialog", { name: "Rename folder", hidden: true })
+        .getByRole("dialog", { name: humanText("Rename folder"), hidden: true })
         .closest("[inert]"),
     ).not.toBeNull();
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
@@ -7513,7 +8407,9 @@ describe("the warning before the automatic lock (#68)", () => {
 
     // The Escape was use: the next warning comes a full delay later.
     await wait(30_000);
-    fireEvent.click(screen.getByRole("button", { name: "Keep open" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Keep open") }),
+    );
     expect(warning()).not.toBeInTheDocument();
     expect(typed()).toHaveValue("FAKE New name");
   });
@@ -7526,17 +8422,19 @@ describe("the warning before the automatic lock (#68)", () => {
       }),
     );
     await act(async () => {
-      fireEvent.click(screen.getByText("FAKE_Results.pdf"));
+      fireEvent.click(screen.getByText(humanText("FAKE_Results.pdf")));
     });
     await act(async () => {
       fireEvent.click(
-        screen.getByRole("button", { name: "Save a copy to this computer" }),
+        screen.getByRole("button", {
+          name: humanText("Save a copy to this computer"),
+        }),
       );
     });
     // Hiding asks nothing (#71), so Save a copy's confirmation stands in.
     const confirmation = () =>
       screen.queryByRole("alertdialog", {
-        name: "Save a readable copy?",
+        name: humanText("Save a readable copy?"),
       });
     expect(confirmation()).toBeInTheDocument();
 
@@ -7545,7 +8443,9 @@ describe("the warning before the automatic lock (#68)", () => {
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     expect(warning()).not.toBeInTheDocument();
     expect(confirmation()).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: humanText("Cancel") }),
+    ).toHaveFocus();
     expect(bridge.pickExportDestination).not.toHaveBeenCalled();
   });
 
@@ -7592,7 +8492,9 @@ describe("the warning before the automatic lock (#68)", () => {
     expect(bridge.lock).toHaveBeenCalledOnce();
     expect(
       screen.getByText(
-        "Locked because myCarlos was minimized or sent to the background.",
+        humanText(
+          "Locked because myCarlos was minimized or sent to the background.",
+        ),
       ),
     ).toBeVisible();
   });

@@ -112,7 +112,10 @@ describe("the installed interface in the selected language", () => {
     ).toBeVisible();
     expect(screen.getByRole("button", { name: /^Masqués/ })).toBeVisible();
     expect(
-      screen.getByRole("button", { name: /^Partagés avec moi, / }),
+      screen.getByRole("button", {
+        name: (name) =>
+          name.replace(/[\u2068\u2069]/g, "").startsWith("Partagés avec moi, "),
+      }),
     ).toBeVisible();
     expect(screen.getByRole("searchbox")).toBe(search);
     expect(search).toHaveValue("FAKE {count}");
@@ -200,7 +203,7 @@ describe("the installed interface in the selected language", () => {
   });
 
   for (const locale of LOCALES) {
-    it(`localizes document details, hidden counts, dates, sizes and accessibility labels in ${locale}`, () => {
+    it(`localizes document details, hidden counts, sizes and accessibility labels while keeping computer dates in ${locale}`, () => {
       setLocaleOverride(locale);
       const details = render(
         <RecordDetails
@@ -234,7 +237,7 @@ describe("the installed interface in the selected language", () => {
       const size = `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(record.plaintextSize / (1024 * 1024))} MB`;
       expect(dialog).toHaveTextContent(size);
       expect(dialog).toHaveTextContent(
-        new Intl.DateTimeFormat(locale, {
+        new Intl.DateTimeFormat(undefined, {
           dateStyle: "medium",
           timeStyle: "short",
         }).format(record.importedAtMs),

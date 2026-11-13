@@ -1,3 +1,4 @@
+import { humanText, visibleText } from "../test/humanText";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -29,42 +30,56 @@ describe("secret input", () => {
   it("counts passwords after NFC normalization without changing the input", () => {
     const value = "abcdefghijklm" + "e\u0301";
     render(<SecretInput aria-label="Passphrase" value={value} readOnly />);
-    const input = screen.getByLabelText("Passphrase");
+    const input = screen.getByLabelText(humanText("Passphrase"));
     expect(input).toHaveValue(value);
-    expect(input).toHaveAttribute("title", "14 character password");
-    expect(input).toHaveAccessibleDescription("14 character password");
+    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
+      "14 character password",
+    );
+    expect(input).toHaveHumanAccessibleDescription("14 character password");
   });
 
   it("gives the character count on hover and in the field's description without copying secrets into accessible metadata", async () => {
     const user = userEvent.setup();
     render(<Field />);
-    const input = screen.getByLabelText("Passphrase");
+    const input = screen.getByLabelText(humanText("Passphrase"));
     expect(input).toHaveAttribute("type", "password");
-    expect(input).toHaveAccessibleName("Passphrase");
-    expect(input).toHaveAttribute("title", "0 character password");
+    expect(input).toHaveHumanAccessibleName("Passphrase");
+    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
+      "0 character password",
+    );
     await user.type(input, "FAKE secret");
-    expect(input).toHaveAttribute("title", "11 character password");
-    expect(input).toHaveAccessibleDescription(
+    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
+      "11 character password",
+    );
+    expect(input).toHaveHumanAccessibleDescription(
       "11 character password Use a long passphrase.",
     );
     // The count is read with the field; it is text, not a Tab stop.
-    const count = screen.getByText("11 character password");
+    const count = screen.getByText(humanText("11 character password"));
     expect(count).not.toHaveAttribute("tabindex");
     await user.tab();
     expect(
-      screen.getByRole("button", { name: "Toggle visibility" }),
+      screen.getByRole("button", { name: humanText("Toggle visibility") }),
     ).toHaveFocus();
     for (const attr of input.attributes) {
       if (attr.name.startsWith("aria-") || attr.name === "title")
         expect(attr.value).not.toContain("FAKE secret");
     }
     expect(document.body.textContent).not.toContain("FAKE secret");
-    await user.click(screen.getByRole("button", { name: "Toggle visibility" }));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Toggle visibility") }),
+    );
     expect(input).toHaveAttribute("type", "text");
-    expect(input).toHaveAttribute("title", "11 character password, shown");
+    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
+      "11 character password, shown",
+    );
     await user.clear(input);
-    expect(input).toHaveAttribute("title", "0 character password, shown");
-    await user.click(screen.getByRole("button", { name: "Toggle visibility" }));
+    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
+      "0 character password, shown",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Toggle visibility") }),
+    );
     expect(input).toHaveAttribute("type", "password");
   });
 
@@ -77,9 +92,11 @@ describe("secret input", () => {
         readOnly
       />,
     );
-    const input = screen.getByLabelText("Recovery key");
-    expect(input).toHaveAttribute("title", "3 character recovery key");
-    expect(input).toHaveAccessibleDescription("3 character recovery key");
+    const input = screen.getByLabelText(humanText("Recovery key"));
+    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
+      "3 character recovery key",
+    );
+    expect(input).toHaveHumanAccessibleDescription("3 character recovery key");
     expect(document.body.textContent).not.toContain("A😀é");
   });
 });

@@ -21,7 +21,8 @@ import {
   type Locale,
 } from "./index";
 import { parse } from "@fluent/syntax";
-import { CATALOGUE_SOURCES } from "./catalogues";
+import { translatePrintedKit } from "./core";
+import { CATALOGUE_SOURCES, fluentBundle } from "./catalogues";
 import { CreateVault, VaultAuthFrame, UnlockVault } from "../native/VaultAuth";
 import { MIN_PASSPHRASE_CHARS } from "../native/PassphraseChecklist";
 import { SHARED_FOLDER_NAME } from "../native/recordPresentation";
@@ -33,7 +34,7 @@ afterEach(() => setLocaleOverride(null));
 describe("catalogue", () => {
   it("parses every Fluent resource and keeps generated keys mapped", () => {
     for (const locale of LOCALES) {
-      const resource = parse(CATALOGUE_SOURCES[locale]);
+      const resource = parse(CATALOGUE_SOURCES[locale], {});
       expect(
         resource.body.some((entry) => entry.type === "Junk"),
         locale,
@@ -88,8 +89,10 @@ describe("choosing the language", () => {
 });
 
 describe("translating", () => {
-  it("shows an unknown key visibly rather than an empty message", () => {
-    expect(translate("fr", "nope" as never)).toBe("nope");
+  it("shows a recoverable error for an unknown key", () => {
+    expect(translate("fr", "nope" as never)).toBe(
+      translate("fr", "language.error.formatting"),
+    );
   });
   it("treats arguments as plain text and never reads their braces as Fluent syntax", () => {
     const result = translate("en", "create.profile.sharedTaken", {
@@ -136,7 +139,7 @@ describe("translating", () => {
       visibleText(translate("fr", "unlock.autoLock", { count: 15 })),
     ).toContain("15 minutes d’");
   });
-  it("formats numbers and dates with Intl for the language", () => {
+  it("formats numbers for the UI language and dates for the computer", () => {
     expect(formatNumber(1234.5, "en")).toBe("1,234.5");
     expect(formatNumber(1234.5, "de" as Locale)).toBe("1.234,5");
     expect(formatNumber(1234.5, "pl")).toBe(
@@ -148,7 +151,9 @@ describe("translating", () => {
     expect(formatDate(day, opts, "fr")).toBe("15 octobre 2026");
     expect(formatDate(day, opts, "pl")).toBe("15 października 2026");
     setLocaleOverride("es");
-    expect(formatDate(day, opts)).toBe("15 de octubre de 2026");
+    expect(formatDate(day, opts)).toBe(
+      new Intl.DateTimeFormat(undefined, opts).format(day),
+    );
     expect(t("create.submit")).toBe("Crear bóveda");
   });
   it("formats a big count in the language's own grouping", () => {
@@ -161,13 +166,17 @@ describe("translating", () => {
 });
 
 describe("a rendered screen in each language", () => {
-  const expected: Partial<Record<Locale, { heading: string; button: string }>> = {
-    en: { heading: "Unlock your vault", button: "Unlock" },
-    fr: { heading: "Déverrouiller votre coffre-fort", button: "Déverrouiller" },
-    es: { heading: "Desbloquee su bóveda", button: "Desbloquear" },
-    pl: { heading: "Odblokuj sejf", button: "Odblokuj" },
-    "pt-BR": { heading: "Desbloqueie seu cofre", button: "Desbloquear" },
-  };
+  const expected: Partial<Record<Locale, { heading: string; button: string }>> =
+    {
+      en: { heading: "Unlock your vault", button: "Unlock" },
+      fr: {
+        heading: "Déverrouiller votre coffre-fort",
+        button: "Déverrouiller",
+      },
+      es: { heading: "Desbloquee su bóveda", button: "Desbloquear" },
+      pl: { heading: "Odblokuj sejf", button: "Odblokuj" },
+      "pt-BR": { heading: "Desbloqueie seu cofre", button: "Desbloquear" },
+    };
   for (const locale of LOCALES) {
     it(`shows the unlock screen in ${locale}`, () => {
       setLocaleOverride(locale);
@@ -314,15 +323,17 @@ describe("a rendered screen in each language", () => {
   }
   it("keeps the English of the shared-file messages (#61)", () => {
     const folder = SHARED_FOLDER_NAME;
-    expect(translate("en", "unlock.waiting.one", { folder })).toBe(
+    expect(visibleText(translate("en", "unlock.waiting.one", { folder }))).toBe(
       "One shared file is waiting. Unlock and it goes into Shared with me. If myCarlos closes first, it is not kept: share it again.",
     );
-    expect(translate("en", "unlock.waiting", { count: 2, folder })).toBe(
+    expect(
+      visibleText(translate("en", "unlock.waiting", { count: 2, folder })),
+    ).toBe(
       "2 shared files are waiting. Unlock and they go into Shared with me. If myCarlos closes first, they are not kept: share them again.",
     );
-    expect(translate("en", "create.profile.sharedTaken", { folder })).toBe(
-      "Shared with me is where shared files go. Choose another name.",
-    );
+    expect(
+      visibleText(translate("en", "create.profile.sharedTaken", { folder })),
+    ).toBe("Shared with me is where shared files go. Choose another name.");
     // Polish counts files three ways.
     expect(
       [2, 5, 22].map(
@@ -341,6 +352,119 @@ describe("a rendered screen in each language", () => {
       expect(
         translate(locale, "reset.type", { phrase: "RESET MYCARLOS VAULT" }),
       ).toContain("RESET MYCARLOS VAULT");
+    }
+  });
+});
+
+describe("Chinese script negotiation", () => {
+  it.each([
+    ["zh", "zh-CN"],
+    ["ZH_cn", "zh-CN"],
+    ["zh-Hans", "zh-CN"],
+    ["zh-Hant", "zh-TW"],
+    ["zh-Hans-TW", "zh-CN"],
+    ["zh-Hant-CN", "zh-TW"],
+    ["zh-HK", "zh-TW"],
+    ["zh-MO", "zh-TW"],
+    ["zh-SG", "zh-CN"],
+  ] as const)("maps %s to %s", (tag, expected) =>
+    expect(matchLocale(tag)).toBe(expected),
+  );
+  it("uses supported system fallback while preserving an explicit saved choice", () => {
+    expect(resolveLocale(["xx", "zh-Hant-CN"])).toBe("zh-TW");
+    expect(resolveLocale(["xx"])).toBe("en");
+    setLocaleOverride("zh-CN");
+    expect(getLocale()).toBe("zh-CN");
+    expect(resolveLocale(["zh-Hant"])).toBe("zh-TW");
+    expect(getLocale()).toBe("zh-CN");
+  });
+  it("reports missing formatting arguments instead of exposing unresolved variables", () => {
+    expect(translate("en", "passphrase.rules")).toBe(
+      translate("en", "language.error.formatting"),
+    );
+    expect(translate("en", "missing.key" as never)).toBe(
+      translate("en", "language.error.formatting"),
+    );
+    const hostile = "FAKE <script>{label}</script> {$min}";
+    expect(
+      translate("en", "interface.person.records", { name: hostile }),
+    ).toContain(hostile);
+  });
+  it("keeps default dates independent of every UI language", () => {
+    const day = new Date(Date.UTC(2026, 9, 15, 12));
+    const options = { dateStyle: "long", timeZone: "UTC" } as const;
+    const expected = new Intl.DateTimeFormat(undefined, options).format(day);
+    for (const locale of LOCALES) {
+      setLocaleOverride(locale);
+      expect(formatDate(day, options)).toBe(expected);
+    }
+  });
+});
+
+describe("human isolation and printed kit metadata", () => {
+  it("isolates hostile RTL arguments without altering their contents", () => {
+    const name = "FAKE אבג <b>{name}</b>";
+    for (const locale of LOCALES) {
+      const result = translate(locale, "interface.person.records", { name });
+      expect(result).toContain(`\u2068${name}\u2069`);
+    }
+  });
+  it("keeps printed metadata byte-exact and separate from normal cached bundles", () => {
+    for (const locale of LOCALES) {
+      const params = { label: "BEAD", date: "2026-10-27" };
+      const raw = () => translatePrintedKit(locale, "kit.labelPrinted", params);
+      expect(raw()).not.toMatch(/[\u2066-\u2069]/u);
+      expect(raw()).toContain(params.label);
+      expect(raw()).toContain(params.date);
+      expect(translate(locale, "kit.labelPrinted", params)).toContain(
+        "\u2068BEAD\u2069",
+      );
+      expect(raw()).not.toMatch(/[\u2066-\u2069]/u);
+    }
+  });
+  it("returns the safe English failure for a forced invalid locale", () => {
+    expect(translate("__proto__" as Locale, "create.submit")).toBe(
+      translate("en", "language.error.formatting"),
+    );
+  });
+});
+
+describe("complete runtime resources", () => {
+  it("formats every shipped message and count branch without resolver errors", () => {
+    for (const locale of LOCALES) {
+      const bundle = fluentBundle(locale);
+      const ast = parse(CATALOGUE_SOURCES[locale], {});
+      for (const entry of ast.body) {
+        if (entry.type !== "Message") continue;
+        const names = new Set<string>();
+        const visit = (value: unknown) => {
+          if (!value || typeof value !== "object") return;
+          const node = value as { type?: string; id?: { name: string } };
+          if (node.type === "VariableReference") names.add(node.id!.name);
+          Object.values(value).forEach((child) =>
+            Array.isArray(child) ? child.forEach(visit) : visit(child),
+          );
+        };
+        visit(entry);
+        for (const count of [0, 1, 2, 5, 22, 1.5, 12345]) {
+          const args = Object.fromEntries(
+            [...names].map((name) => [
+              name,
+              name === "count" ? count : `FAKE אבג <b>{${name}}</b>`,
+            ]),
+          );
+          const errors: Error[] = [];
+          const result = bundle.formatPattern(
+            bundle.getMessage(entry.id.name)!.value!,
+            args,
+            errors,
+          );
+          expect(errors, `${locale}/${entry.id.name}/${count}`).toEqual([]);
+          expect(result.trim(), `${locale}/${entry.id.name}/${count}`).not.toBe(
+            "",
+          );
+        }
+      }
     }
   });
 });

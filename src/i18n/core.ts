@@ -1,4 +1,4 @@
-import { fluentBundle } from "./catalogues";
+import { fluentBundle, formattingFailure } from "./catalogues";
 import { type MessageKey, fluentId } from "./locales/fluent/keys";
 import { DEFAULT_LOCALE, LOCALES, type Locale } from "./types";
 
@@ -15,7 +15,9 @@ export function matchLocale(tag: string): Locale | null {
   const primary = wanted.split("-")[0];
   if (primary === "zh") {
     const subtags = wanted.split("-");
-    return subtags.includes("hant") || ["tw", "hk", "mo"].includes(subtags[1])
+    if (subtags.includes("hant")) return "zh-TW";
+    if (subtags.includes("hans")) return "zh-CN";
+    return subtags.some((tag) => ["tw", "hk", "mo"].includes(tag))
       ? "zh-TW"
       : "zh-CN";
   }
@@ -136,28 +138,61 @@ export function initLocale(): Locale {
 
 // --- translating ----------------------------------------------------------
 
-/** The text for a key in a language. A missing key or form falls back to
- * English, and a key unknown even there shows the key itself, so a gap is
- * visible rather than blank. A message with plural forms needs `count`. */
+/** Human-facing text isolates inserted values. Missing messages or arguments
+ * show a recoverable formatting failure without logging the arguments. */
 export function translate(
   locale: Locale,
   key: MessageKey,
   params: Params = {},
 ): string {
-  const local = fluentBundle(locale);
-  const id = fluentId(key);
-  const localMessage = local.getMessage(id);
-  const bundle = localMessage ? local : fluentBundle(DEFAULT_LOCALE);
-  const message = localMessage ?? bundle.getMessage(id);
-  if (!message?.value) return key;
-  const errors: Error[] = [];
-  const formatted = bundle.formatPattern(message.value, params, errors);
-  // Fluent isolates placeables for bidirectional text. Preserve those marks
-  // for user supplied values; remove them from unresolved placeholders so
-  // React helpers can replace the placeholder token safely.
-  return errors.length
-    ? formatted.replace(/\u2068(\{\$\w+\})\u2069/g, "$1")
-    : formatted;
+  return formatMessage(locale, key, params, true);
+}
+
+/** Only the printed kit metadata bypasses bidi isolation, so copied labels
+ * and dates contain no invisible formatter characters. Recovery bytes are
+ * rendered directly, outside translated messages. */
+export function translatePrintedKit(
+  locale: Locale,
+  key: "kit.labelPrinted" | "kit.printed",
+  params: Params,
+): string {
+  return formatMessage(locale, key, params, false);
+}
+
+/** A generated filename is stored data, not a human sentence. Do not add bidi
+ * delimiters to it or turn a formatter fault into a saved document name. */
+export function formatPhotoName(
+  locale: Locale,
+  date: string,
+  time: string,
+): string {
+  const value = formatMessage(
+    locale,
+    "interface.photo.name",
+    { date, time },
+    false,
+  );
+  if (value === formattingFailure(locale)) throw new Error(value);
+  return value;
+}
+
+function formatMessage(
+  locale: Locale,
+  key: MessageKey,
+  params: Params,
+  useIsolating: boolean,
+): string {
+  try {
+    const bundle = fluentBundle(locale, useIsolating);
+    const message = bundle.getMessage(fluentId(key));
+    if (!message?.value) return formattingFailure(locale);
+    const errors: Error[] = [];
+    const formatted = bundle.formatPattern(message.value, params, errors);
+    return errors.length ? formattingFailure(locale) : formatted;
+  } catch {
+    // A bundled resource/format fault remains visible and recoverable. Never log arguments.
+    return formattingFailure(locale);
+  }
 }
 
 /** Text in the language now in use. */
@@ -178,7 +213,7 @@ export function formatNumber(
 export function formatDate(
   value: Date | number,
   options: Intl.DateTimeFormatOptions = { dateStyle: "medium" },
-  locale: Locale = getLocale(),
+  locale?: string,
 ): string {
   return new Intl.DateTimeFormat(locale, options).format(value);
 }

@@ -591,6 +591,7 @@ export const MESSAGE_KEYS = [
   "unlock.title",
   "unlock.waiting",
   "unlock.waiting.one",
+  "language.error.formatting",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -653,138 +654,224 @@ const FLUENT_IDS_BY_KEY = {
   "frame.window.label": "frame-window-label",
   "interface.CameraDialog.cameraReady": "interface-CameraDialog-cameraReady",
   "interface.CameraDialog.cameraView": "interface-CameraDialog-cameraView",
-  "interface.CameraDialog.myCarlosUsesTheCameraToSavePhotos": "interface-CameraDialog-myCarlosUsesTheCameraToSavePhotos",
-  "interface.CameraDialog.photoTakenRetakeOrUseThePhoto": "interface-CameraDialog-photoTakenRetakeOrUseThePhoto",
+  "interface.CameraDialog.myCarlosUsesTheCameraToSavePhotos":
+    "interface-CameraDialog-myCarlosUsesTheCameraToSavePhotos",
+  "interface.CameraDialog.photoTakenRetakeOrUseThePhoto":
+    "interface-CameraDialog-photoTakenRetakeOrUseThePhoto",
   "interface.CameraDialog.retake": "interface-CameraDialog-retake",
-  "interface.CameraDialog.startingTheCamera": "interface-CameraDialog-startingTheCamera",
+  "interface.CameraDialog.startingTheCamera":
+    "interface-CameraDialog-startingTheCamera",
   "interface.CameraDialog.takeAPhoto": "interface-CameraDialog-takeAPhoto",
   "interface.CameraDialog.takePhoto": "interface-CameraDialog-takePhoto",
-  "interface.CameraDialog.theCameraIsOnOnlyWhileYou": "interface-CameraDialog-theCameraIsOnOnlyWhileYou",
-  "interface.CameraDialog.thePhotoCouldNotBePreparedChoose": "interface-CameraDialog-thePhotoCouldNotBePreparedChoose",
-  "interface.CameraDialog.thePhotoYouTook": "interface-CameraDialog-thePhotoYouTook",
+  "interface.CameraDialog.theCameraIsOnOnlyWhileYou":
+    "interface-CameraDialog-theCameraIsOnOnlyWhileYou",
+  "interface.CameraDialog.thePhotoCouldNotBePreparedChoose":
+    "interface-CameraDialog-thePhotoCouldNotBePreparedChoose",
+  "interface.CameraDialog.thePhotoYouTook":
+    "interface-CameraDialog-thePhotoYouTook",
   "interface.CameraDialog.tryAgain": "interface-CameraDialog-tryAgain",
   "interface.CameraDialog.usePhoto": "interface-CameraDialog-usePhoto",
   "interface.CameraDialog.useTheCamera": "interface-CameraDialog-useTheCamera",
-  "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay": "interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay",
-  "interface.DocumentReader.documentPassword": "interface-DocumentReader-documentPassword",
+  "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay":
+    "interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay",
+  "interface.DocumentReader.documentPassword":
+    "interface-DocumentReader-documentPassword",
   "interface.DocumentReader.fitWidth": "interface-DocumentReader-fitWidth",
   "interface.DocumentReader.larger": "interface-DocumentReader-larger",
   "interface.DocumentReader.nextPage": "interface-DocumentReader-nextPage",
-  "interface.DocumentReader.noTextCouldBeReadOnThis": "interface-DocumentReader-noTextCouldBeReadOnThis",
+  "interface.DocumentReader.noTextCouldBeReadOnThis":
+    "interface-DocumentReader-noTextCouldBeReadOnThis",
   "interface.DocumentReader.open": "interface-DocumentReader-open",
-  "interface.DocumentReader.previousPage": "interface-DocumentReader-previousPage",
+  "interface.DocumentReader.previousPage":
+    "interface-DocumentReader-previousPage",
   "interface.DocumentReader.smaller": "interface-DocumentReader-smaller",
-  "interface.DocumentReader.textOnThisPage": "interface-DocumentReader-textOnThisPage",
-  "interface.DocumentReader.thatPasswordDidNotOpenTheDocument": "interface-DocumentReader-thatPasswordDidNotOpenTheDocument",
-  "interface.DocumentReader.thisDocumentIsLockedWithItsOwn": "interface-DocumentReader-thisDocumentIsLockedWithItsOwn",
-  "interface.HiddenDocuments.documentsYouHideAreListedHere": "interface-HiddenDocuments-documentsYouHideAreListedHere",
+  "interface.DocumentReader.textOnThisPage":
+    "interface-DocumentReader-textOnThisPage",
+  "interface.DocumentReader.thatPasswordDidNotOpenTheDocument":
+    "interface-DocumentReader-thatPasswordDidNotOpenTheDocument",
+  "interface.DocumentReader.thisDocumentIsLockedWithItsOwn":
+    "interface-DocumentReader-thisDocumentIsLockedWithItsOwn",
+  "interface.HiddenDocuments.documentsYouHideAreListedHere":
+    "interface-HiddenDocuments-documentsYouHideAreListedHere",
   "interface.HiddenDocuments.hidden": "interface-HiddenDocuments-hidden",
-  "interface.HiddenDocuments.hiddenDocumentsStayInYourEncryptedVault": "interface-HiddenDocuments-hiddenDocumentsStayInYourEncryptedVault",
-  "interface.HiddenDocuments.nothingIsHidden": "interface-HiddenDocuments-nothingIsHidden",
+  "interface.HiddenDocuments.hiddenDocumentsStayInYourEncryptedVault":
+    "interface-HiddenDocuments-hiddenDocumentsStayInYourEncryptedVault",
+  "interface.HiddenDocuments.nothingIsHidden":
+    "interface-HiddenDocuments-nothingIsHidden",
   "interface.HiddenDocuments.restore": "interface-HiddenDocuments-restore",
   "interface.HiddenDocuments.wasIn": "interface-HiddenDocuments-wasIn",
   "interface.LibraryItems.in": "interface-LibraryItems-in",
-  "interface.LibrarySidebar.sharedWithMe": "interface-LibrarySidebar-sharedWithMe",
-  "interface.RecordDetails.closeDocumentDetails": "interface-RecordDetails-closeDocumentDetails",
-  "interface.RecordDetails.encryptedDocument": "interface-RecordDetails-encryptedDocument",
-  "interface.RecordDetails.encryptedDocumentDetails": "interface-RecordDetails-encryptedDocumentDetails",
+  "interface.LibrarySidebar.sharedWithMe":
+    "interface-LibrarySidebar-sharedWithMe",
+  "interface.RecordDetails.closeDocumentDetails":
+    "interface-RecordDetails-closeDocumentDetails",
+  "interface.RecordDetails.encryptedDocument":
+    "interface-RecordDetails-encryptedDocument",
+  "interface.RecordDetails.encryptedDocumentDetails":
+    "interface-RecordDetails-encryptedDocumentDetails",
   "interface.RecordDetails.file": "interface-RecordDetails-file",
   "interface.RecordDetails.folder": "interface-RecordDetails-folder",
   "interface.RecordDetails.hide": "interface-RecordDetails-hide",
-  "interface.RecordDetails.itsEncryptedFileIsMissingFromThis": "interface-RecordDetails-itsEncryptedFileIsMissingFromThis",
-  "interface.RecordDetails.itsEncryptedFileIsMissingOrCould": "interface-RecordDetails-itsEncryptedFileIsMissingOrCould",
+  "interface.RecordDetails.itsEncryptedFileIsMissingFromThis":
+    "interface-RecordDetails-itsEncryptedFileIsMissingFromThis",
+  "interface.RecordDetails.itsEncryptedFileIsMissingOrCould":
+    "interface-RecordDetails-itsEncryptedFileIsMissingOrCould",
   "interface.RecordDetails.kind": "interface-RecordDetails-kind",
-  "interface.RecordDetails.lockedWithAPasswordMyCarlosCannotOpen": "interface-RecordDetails-lockedWithAPasswordMyCarlosCannotOpen",
-  "interface.RecordDetails.lockedWithAPasswordUnlockAddsA": "interface-RecordDetails-lockedWithAPasswordUnlockAddsA",
+  "interface.RecordDetails.lockedWithAPasswordMyCarlosCannotOpen":
+    "interface-RecordDetails-lockedWithAPasswordMyCarlosCannotOpen",
+  "interface.RecordDetails.lockedWithAPasswordUnlockAddsA":
+    "interface-RecordDetails-lockedWithAPasswordUnlockAddsA",
   "interface.RecordDetails.move": "interface-RecordDetails-move",
   "interface.RecordDetails.moveTo": "interface-RecordDetails-moveTo",
   "interface.RecordDetails.read": "interface-RecordDetails-read",
-  "interface.RecordDetails.saveACopyToThisComputer": "interface-RecordDetails-saveACopyToThisComputer",
-  "interface.RecordDetails.theFileStaysEncryptedInTheVault": "interface-RecordDetails-theFileStaysEncryptedInTheVault",
-  "interface.RecordDetails.thisDocumentIsDamaged": "interface-RecordDetails-thisDocumentIsDamaged",
-  "interface.RecordDetails.thisDocumentIsUnavailable": "interface-RecordDetails-thisDocumentIsUnavailable",
+  "interface.RecordDetails.saveACopyToThisComputer":
+    "interface-RecordDetails-saveACopyToThisComputer",
+  "interface.RecordDetails.theFileStaysEncryptedInTheVault":
+    "interface-RecordDetails-theFileStaysEncryptedInTheVault",
+  "interface.RecordDetails.thisDocumentIsDamaged":
+    "interface-RecordDetails-thisDocumentIsDamaged",
+  "interface.RecordDetails.thisDocumentIsUnavailable":
+    "interface-RecordDetails-thisDocumentIsUnavailable",
   "interface.RecordDetails.unlock": "interface-RecordDetails-unlock",
   "interface.RecordDetails.viewPhoto": "interface-RecordDetails-viewPhoto",
-  "interface.SecuritySettings.evaluationBuild": "interface-SecuritySettings-evaluationBuild",
-  "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe": "interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe",
-  "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne": "interface-SecuritySettings-myCarlosNeverDeletesADocumentHidingOne",
-  "interface.SecuritySettings.releaseBuild": "interface-SecuritySettings-releaseBuild",
-  "interface.SecuritySettings.startingAgainOrRestoringABackupOver": "interface-SecuritySettings-startingAgainOrRestoringABackupOver",
-  "interface.SecuritySettings.whatMyCarlosKeeps": "interface-SecuritySettings-whatMyCarlosKeeps",
-  "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword": "interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword",
+  "interface.SecuritySettings.evaluationBuild":
+    "interface-SecuritySettings-evaluationBuild",
+  "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe":
+    "interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe",
+  "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne":
+    "interface-SecuritySettings-myCarlosNeverDeletesADocumentHidingOne",
+  "interface.SecuritySettings.releaseBuild":
+    "interface-SecuritySettings-releaseBuild",
+  "interface.SecuritySettings.startingAgainOrRestoringABackupOver":
+    "interface-SecuritySettings-startingAgainOrRestoringABackupOver",
+  "interface.SecuritySettings.whatMyCarlosKeeps":
+    "interface-SecuritySettings-whatMyCarlosKeeps",
+  "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword":
+    "interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword",
   "interface.UnlockPdfDialog.unlocking": "interface-UnlockPdfDialog-unlocking",
-  "interface.VaultApp.chooseFilesToImport": "interface-VaultApp-chooseFilesToImport",
-  "interface.VaultApp.finishingTheTransfer": "interface-VaultApp-finishingTheTransfer",
-  "interface.VaultApp.lockNowAndCancelTheTransfer": "interface-VaultApp-lockNowAndCancelTheTransfer",
-  "interface.VaultApp.myCarlosCouldNotLockTheVaultIts": "interface-VaultApp-myCarlosCouldNotLockTheVaultIts",
+  "interface.VaultApp.chooseFilesToImport":
+    "interface-VaultApp-chooseFilesToImport",
+  "interface.VaultApp.finishingTheTransfer":
+    "interface-VaultApp-finishingTheTransfer",
+  "interface.VaultApp.lockNowAndCancelTheTransfer":
+    "interface-VaultApp-lockNowAndCancelTheTransfer",
+  "interface.VaultApp.myCarlosCouldNotLockTheVaultIts":
+    "interface-VaultApp-myCarlosCouldNotLockTheVaultIts",
   "interface.VaultApp.openingMyCarlos": "interface-VaultApp-openingMyCarlos",
   "interface.VaultApp.tryLockingAgain": "interface-VaultApp-tryLockingAgain",
-  "interface.VaultApp.vaultContentIsHiddenMyCarlosWillLock": "interface-VaultApp-vaultContentIsHiddenMyCarlosWillLock",
-  "interface.VaultApp.vaultContentIsHiddenWhileMyCarlosFinishes": "interface-VaultApp-vaultContentIsHiddenWhileMyCarlosFinishes",
-  "interface.VaultLibrary.anotherVaultOperationIsStillRunningTry": "interface-VaultLibrary-anotherVaultOperationIsStillRunningTry",
-  "interface.VaultLibrary.changesArePaused": "interface-VaultLibrary-changesArePaused",
-  "interface.VaultLibrary.chooseAFolder": "interface-VaultLibrary-chooseAFolder",
-  "interface.VaultLibrary.chooseRecordView": "interface-VaultLibrary-chooseRecordView",
+  "interface.VaultApp.vaultContentIsHiddenMyCarlosWillLock":
+    "interface-VaultApp-vaultContentIsHiddenMyCarlosWillLock",
+  "interface.VaultApp.vaultContentIsHiddenWhileMyCarlosFinishes":
+    "interface-VaultApp-vaultContentIsHiddenWhileMyCarlosFinishes",
+  "interface.VaultLibrary.anotherVaultOperationIsStillRunningTry":
+    "interface-VaultLibrary-anotherVaultOperationIsStillRunningTry",
+  "interface.VaultLibrary.changesArePaused":
+    "interface-VaultLibrary-changesArePaused",
+  "interface.VaultLibrary.chooseAFolder":
+    "interface-VaultLibrary-chooseAFolder",
+  "interface.VaultLibrary.chooseRecordView":
+    "interface-VaultLibrary-chooseRecordView",
   "interface.VaultLibrary.clear": "interface-VaultLibrary-clear",
   "interface.VaultLibrary.create": "interface-VaultLibrary-create",
-  "interface.VaultLibrary.damagedFileMissing": "interface-VaultLibrary-damagedFileMissing",
+  "interface.VaultLibrary.damagedFileMissing":
+    "interface-VaultLibrary-damagedFileMissing",
   "interface.VaultLibrary.destination": "interface-VaultLibrary-destination",
-  "interface.VaultLibrary.documentMoved": "interface-VaultLibrary-documentMoved",
-  "interface.VaultLibrary.documentsToHide": "interface-VaultLibrary-documentsToHide",
-  "interface.VaultLibrary.encryptedBackupSavedKeepItSomewhereOther": "interface-VaultLibrary-encryptedBackupSavedKeepItSomewhereOther",
-  "interface.VaultLibrary.encryptedBackupSavedThisIsYourNew": "interface-VaultLibrary-encryptedBackupSavedThisIsYourNew",
-  "interface.VaultLibrary.everyFileIsBackOnThisDevice": "interface-VaultLibrary-everyFileIsBackOnThisDevice",
-  "interface.VaultLibrary.fileUnavailable": "interface-VaultLibrary-fileUnavailable",
-  "interface.VaultLibrary.filesAndRecordDetailsAreEncryptedAnd": "interface-VaultLibrary-filesAndRecordDetailsAreEncryptedAnd",
-  "interface.VaultLibrary.filesYouOpenWithMyCarlosArriveHere": "interface-VaultLibrary-filesYouOpenWithMyCarlosArriveHere",
-  "interface.VaultLibrary.filesYouShareToMyCarlosFromAnother": "interface-VaultLibrary-filesYouShareToMyCarlosFromAnother",
-  "interface.VaultLibrary.firstCheckThatTheFilesAreNot": "interface-VaultLibrary-firstCheckThatTheFilesAreNot",
-  "interface.VaultLibrary.foldersStayWithTheirPersonMoveIndividual": "interface-VaultLibrary-foldersStayWithTheirPersonMoveIndividual",
+  "interface.VaultLibrary.documentMoved":
+    "interface-VaultLibrary-documentMoved",
+  "interface.VaultLibrary.documentsToHide":
+    "interface-VaultLibrary-documentsToHide",
+  "interface.VaultLibrary.encryptedBackupSavedKeepItSomewhereOther":
+    "interface-VaultLibrary-encryptedBackupSavedKeepItSomewhereOther",
+  "interface.VaultLibrary.encryptedBackupSavedThisIsYourNew":
+    "interface-VaultLibrary-encryptedBackupSavedThisIsYourNew",
+  "interface.VaultLibrary.everyFileIsBackOnThisDevice":
+    "interface-VaultLibrary-everyFileIsBackOnThisDevice",
+  "interface.VaultLibrary.fileUnavailable":
+    "interface-VaultLibrary-fileUnavailable",
+  "interface.VaultLibrary.filesAndRecordDetailsAreEncryptedAnd":
+    "interface-VaultLibrary-filesAndRecordDetailsAreEncryptedAnd",
+  "interface.VaultLibrary.filesYouOpenWithMyCarlosArriveHere":
+    "interface-VaultLibrary-filesYouOpenWithMyCarlosArriveHere",
+  "interface.VaultLibrary.filesYouShareToMyCarlosFromAnother":
+    "interface-VaultLibrary-filesYouShareToMyCarlosFromAnother",
+  "interface.VaultLibrary.firstCheckThatTheFilesAreNot":
+    "interface-VaultLibrary-firstCheckThatTheFilesAreNot",
+  "interface.VaultLibrary.foldersStayWithTheirPersonMoveIndividual":
+    "interface-VaultLibrary-foldersStayWithTheirPersonMoveIndividual",
   "interface.VaultLibrary.grid": "interface-VaultLibrary-grid",
   "interface.VaultLibrary.gridView": "interface-VaultLibrary-gridView",
-  "interface.VaultLibrary.hideDamagedDocuments": "interface-VaultLibrary-hideDamagedDocuments",
-  "interface.VaultLibrary.holdAndDragADocumentOrFolder": "interface-VaultLibrary-holdAndDragADocumentOrFolder",
-  "interface.VaultLibrary.ifYouForgetYourPassphraseWithoutOne": "interface-VaultLibrary-ifYouForgetYourPassphraseWithoutOne",
+  "interface.VaultLibrary.hideDamagedDocuments":
+    "interface-VaultLibrary-hideDamagedDocuments",
+  "interface.VaultLibrary.holdAndDragADocumentOrFolder":
+    "interface-VaultLibrary-holdAndDragADocumentOrFolder",
+  "interface.VaultLibrary.ifYouForgetYourPassphraseWithoutOne":
+    "interface-VaultLibrary-ifYouForgetYourPassphraseWithoutOne",
   "interface.VaultLibrary.insideFolder": "interface-VaultLibrary-insideFolder",
   "interface.VaultLibrary.list": "interface-VaultLibrary-list",
   "interface.VaultLibrary.listView": "interface-VaultLibrary-listView",
-  "interface.VaultLibrary.moveAFolderWithTheKeyboard": "interface-VaultLibrary-moveAFolderWithTheKeyboard",
+  "interface.VaultLibrary.moveAFolderWithTheKeyboard":
+    "interface-VaultLibrary-moveAFolderWithTheKeyboard",
   "interface.VaultLibrary.moveFolder": "interface-VaultLibrary-moveFolder",
-  "interface.VaultLibrary.moveSelectedTo": "interface-VaultLibrary-moveSelectedTo",
-  "interface.VaultLibrary.moveTheSelectedDocuments": "interface-VaultLibrary-moveTheSelectedDocuments",
-  "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou": "interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou",
-  "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo": "interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo",
-  "interface.VaultLibrary.myCarlosEncryptedRecordLibrary": "interface-VaultLibrary-myCarlosEncryptedRecordLibrary",
+  "interface.VaultLibrary.moveSelectedTo":
+    "interface-VaultLibrary-moveSelectedTo",
+  "interface.VaultLibrary.moveTheSelectedDocuments":
+    "interface-VaultLibrary-moveTheSelectedDocuments",
+  "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou":
+    "interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou",
+  "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo":
+    "interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo",
+  "interface.VaultLibrary.myCarlosEncryptedRecordLibrary":
+    "interface-VaultLibrary-myCarlosEncryptedRecordLibrary",
   "interface.VaultLibrary.nameAZ": "interface-VaultLibrary-nameAZ",
   "interface.VaultLibrary.new": "interface-VaultLibrary-new",
   "interface.VaultLibrary.newFolder": "interface-VaultLibrary-newFolder",
   "interface.VaultLibrary.newestFirst": "interface-VaultLibrary-newestFirst",
-  "interface.VaultLibrary.noFilesSelectedNothingChanged": "interface-VaultLibrary-noFilesSelectedNothingChanged",
-  "interface.VaultLibrary.noLocationChosenNothingChanged": "interface-VaultLibrary-noLocationChosenNothingChanged",
-  "interface.VaultLibrary.noRecoveryKeyYet": "interface-VaultLibrary-noRecoveryKeyYet",
-  "interface.VaultLibrary.passphraseChanged": "interface-VaultLibrary-passphraseChanged",
+  "interface.VaultLibrary.noFilesSelectedNothingChanged":
+    "interface-VaultLibrary-noFilesSelectedNothingChanged",
+  "interface.VaultLibrary.noLocationChosenNothingChanged":
+    "interface-VaultLibrary-noLocationChosenNothingChanged",
+  "interface.VaultLibrary.noRecoveryKeyYet":
+    "interface-VaultLibrary-noRecoveryKeyYet",
+  "interface.VaultLibrary.passphraseChanged":
+    "interface-VaultLibrary-passphraseChanged",
   "interface.VaultLibrary.privateVault": "interface-VaultLibrary-privateVault",
   "interface.VaultLibrary.records": "interface-VaultLibrary-records",
-  "interface.VaultLibrary.recoveryKeySavedKeepYourKitSomewhere": "interface-VaultLibrary-recoveryKeySavedKeepYourKitSomewhere",
-  "interface.VaultLibrary.recoveryKeySetupWasNotFinishedThe": "interface-VaultLibrary-recoveryKeySetupWasNotFinishedThe",
-  "interface.VaultLibrary.recoveryKeySetupWasNotFinishedTheAlternative": "interface-VaultLibrary-recoveryKeySetupWasNotFinishedTheAlternative",
+  "interface.VaultLibrary.recoveryKeySavedKeepYourKitSomewhere":
+    "interface-VaultLibrary-recoveryKeySavedKeepYourKitSomewhere",
+  "interface.VaultLibrary.recoveryKeySetupWasNotFinishedThe":
+    "interface-VaultLibrary-recoveryKeySetupWasNotFinishedThe",
+  "interface.VaultLibrary.recoveryKeySetupWasNotFinishedTheAlternative":
+    "interface-VaultLibrary-recoveryKeySetupWasNotFinishedTheAlternative",
   "interface.VaultLibrary.saveACopy": "interface-VaultLibrary-saveACopy",
-  "interface.VaultLibrary.saveAReadableCopy": "interface-VaultLibrary-saveAReadableCopy",
-  "interface.VaultLibrary.saveCancelledNothingChanged": "interface-VaultLibrary-saveCancelledNothingChanged",
-  "interface.VaultLibrary.savingCreatesAReadableFileOutsideThe": "interface-VaultLibrary-savingCreatesAReadableFileOutsideThe",
-  "interface.VaultLibrary.searchSharedWithMe": "interface-VaultLibrary-searchSharedWithMe",
-  "interface.VaultLibrary.searchThisFolderAndItsSubfolders": "interface-VaultLibrary-searchThisFolderAndItsSubfolders",
+  "interface.VaultLibrary.saveAReadableCopy":
+    "interface-VaultLibrary-saveAReadableCopy",
+  "interface.VaultLibrary.saveCancelledNothingChanged":
+    "interface-VaultLibrary-saveCancelledNothingChanged",
+  "interface.VaultLibrary.savingCreatesAReadableFileOutsideThe":
+    "interface-VaultLibrary-savingCreatesAReadableFileOutsideThe",
+  "interface.VaultLibrary.searchSharedWithMe":
+    "interface-VaultLibrary-searchSharedWithMe",
+  "interface.VaultLibrary.searchThisFolderAndItsSubfolders":
+    "interface-VaultLibrary-searchThisFolderAndItsSubfolders",
   "interface.VaultLibrary.section": "interface-VaultLibrary-section",
-  "interface.VaultLibrary.someEncryptedFilesAreMissingFromThis": "interface-VaultLibrary-someEncryptedFilesAreMissingFromThis",
-  "interface.VaultLibrary.someOfTheVaultsFilesCouldNot": "interface-VaultLibrary-someOfTheVaultsFilesCouldNot",
+  "interface.VaultLibrary.someEncryptedFilesAreMissingFromThis":
+    "interface-VaultLibrary-someEncryptedFilesAreMissingFromThis",
+  "interface.VaultLibrary.someOfTheVaultsFilesCouldNot":
+    "interface-VaultLibrary-someOfTheVaultsFilesCouldNot",
   "interface.VaultLibrary.sortBy": "interface-VaultLibrary-sortBy",
-  "interface.VaultLibrary.thatFolderIsNoLongerAvailable": "interface-VaultLibrary-thatFolderIsNoLongerAvailable",
-  "interface.VaultLibrary.theVaultIsReadonlySoTheName": "interface-VaultLibrary-theVaultIsReadonlySoTheName",
-  "interface.VaultLibrary.theirEncryptedFilesAreMissingFromThis": "interface-VaultLibrary-theirEncryptedFilesAreMissingFromThis",
-  "interface.VaultLibrary.theyAreInNoOnesRecordsUntil": "interface-VaultLibrary-theyAreInNoOnesRecordsUntil",
-  "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault": "interface-VaultLibrary-thisPhotoIsAlreadyInTheVault",
+  "interface.VaultLibrary.thatFolderIsNoLongerAvailable":
+    "interface-VaultLibrary-thatFolderIsNoLongerAvailable",
+  "interface.VaultLibrary.theVaultIsReadonlySoTheName":
+    "interface-VaultLibrary-theVaultIsReadonlySoTheName",
+  "interface.VaultLibrary.theirEncryptedFilesAreMissingFromThis":
+    "interface-VaultLibrary-theirEncryptedFilesAreMissingFromThis",
+  "interface.VaultLibrary.theyAreInNoOnesRecordsUntil":
+    "interface-VaultLibrary-theyAreInNoOnesRecordsUntil",
+  "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault":
+    "interface-VaultLibrary-thisPhotoIsAlreadyInTheVault",
   "interface.VaultLibrary.topLevel": "interface-VaultLibrary-topLevel",
-  "interface.VaultLibrary.unlockedLockNow": "interface-VaultLibrary-unlockedLockNow",
+  "interface.VaultLibrary.unlockedLockNow":
+    "interface-VaultLibrary-unlockedLockNow",
   "interface.VaultLibrary.working": "interface-VaultLibrary-working",
   "interface.camera.denied": "interface-camera-denied",
   "interface.count.documents": "interface-count-documents",
@@ -825,22 +912,36 @@ const FLUENT_IDS_BY_KEY = {
   "interface.notice.restored": "interface-notice-restored",
   "interface.notice.sharedAdded": "interface-notice-sharedAdded",
   "interface.notice.whereFolder": "interface-notice-whereFolder",
-  "interface.oldBackups.eachBackupYouSavedBeforeNowStill": "interface-oldBackups-eachBackupYouSavedBeforeNowStill",
-  "interface.oldBackups.yourOldKitCouldStillOpenBackups": "interface-oldBackups-yourOldKitCouldStillOpenBackups",
-  "interface.oldBackups.yourOldKitCouldStillOpenBackupsAlternative": "interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative",
+  "interface.oldBackups.eachBackupYouSavedBeforeNowStill":
+    "interface-oldBackups-eachBackupYouSavedBeforeNowStill",
+  "interface.oldBackups.yourOldKitCouldStillOpenBackups":
+    "interface-oldBackups-yourOldKitCouldStillOpenBackups",
+  "interface.oldBackups.yourOldKitCouldStillOpenBackupsAlternative":
+    "interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative",
   "interface.person.records": "interface-person-records",
-  "interface.photo.checkYourComputersCameraPrivacySettingsAnd": "interface-photo-checkYourComputersCameraPrivacySettingsAnd",
-  "interface.photo.inSystemSettingsOpenPrivacySecurityThen": "interface-photo-inSystemSettingsOpenPrivacySecurityThen",
-  "interface.photo.inWindowsSettingsOpenPrivacySecurityThen": "interface-photo-inWindowsSettingsOpenPrivacySecurityThen",
+  "interface.photo.checkYourComputersCameraPrivacySettingsAnd":
+    "interface-photo-checkYourComputersCameraPrivacySettingsAnd",
+  "interface.photo.inSystemSettingsOpenPrivacySecurityThen":
+    "interface-photo-inSystemSettingsOpenPrivacySecurityThen",
+  "interface.photo.inWindowsSettingsOpenPrivacySecurityThen":
+    "interface-photo-inWindowsSettingsOpenPrivacySecurityThen",
   "interface.photo.name": "interface-photo-name",
-  "interface.photo.noCameraWasFoundConnectACamera": "interface-photo-noCameraWasFoundConnectACamera",
-  "interface.photo.openYourPhonesSettingsThenAppsThen": "interface-photo-openYourPhonesSettingsThenAppsThen",
-  "interface.photo.openYourPhonesSettingsThenMyCarlosAnd": "interface-photo-openYourPhonesSettingsThenMyCarlosAnd",
-  "interface.photo.theCameraCouldNotBeStartedChoose": "interface-photo-theCameraCouldNotBeStartedChoose",
-  "interface.photo.theCameraIsInUseByAnother": "interface-photo-theCameraIsInUseByAnother",
-  "interface.photo.theCameraStoppedCheckThatItIs": "interface-photo-theCameraStoppedCheckThatItIs",
-  "interface.photo.theCameraStoppedChooseTryAgain": "interface-photo-theCameraStoppedChooseTryAgain",
-  "interface.photo.thisPhonesCameraCouldNotBeFound": "interface-photo-thisPhonesCameraCouldNotBeFound",
+  "interface.photo.noCameraWasFoundConnectACamera":
+    "interface-photo-noCameraWasFoundConnectACamera",
+  "interface.photo.openYourPhonesSettingsThenAppsThen":
+    "interface-photo-openYourPhonesSettingsThenAppsThen",
+  "interface.photo.openYourPhonesSettingsThenMyCarlosAnd":
+    "interface-photo-openYourPhonesSettingsThenMyCarlosAnd",
+  "interface.photo.theCameraCouldNotBeStartedChoose":
+    "interface-photo-theCameraCouldNotBeStartedChoose",
+  "interface.photo.theCameraIsInUseByAnother":
+    "interface-photo-theCameraIsInUseByAnother",
+  "interface.photo.theCameraStoppedCheckThatItIs":
+    "interface-photo-theCameraStoppedCheckThatItIs",
+  "interface.photo.theCameraStoppedChooseTryAgain":
+    "interface-photo-theCameraStoppedChooseTryAgain",
+  "interface.photo.thisPhonesCameraCouldNotBeFound":
+    "interface-photo-thisPhonesCameraCouldNotBeFound",
   "interface.reader.opening": "interface-reader-opening",
   "interface.reader.page": "interface-reader-page",
   "interface.reader.textFollows": "interface-reader-textFollows",
@@ -848,9 +949,12 @@ const FLUENT_IDS_BY_KEY = {
   "interface.reader.zoom": "interface-reader-zoom",
   "interface.receive.dropped": "interface-receive-dropped",
   "interface.receive.refused": "interface-receive-refused",
-  "interface.recordPresentation.imaging": "interface-recordPresentation-imaging",
-  "interface.recordPresentation.prescription": "interface-recordPresentation-prescription",
-  "interface.recordPresentation.testResult": "interface-recordPresentation-testResult",
+  "interface.recordPresentation.imaging":
+    "interface-recordPresentation-imaging",
+  "interface.recordPresentation.prescription":
+    "interface-recordPresentation-prescription",
+  "interface.recordPresentation.testResult":
+    "interface-recordPresentation-testResult",
   "interface.recovery.earlierStopped": "interface-recovery-earlierStopped",
   "interface.recovery.replaced": "interface-recovery-replaced",
   "interface.recovery.savedBeforeLock": "interface-recovery-savedBeforeLock",
@@ -863,8 +967,10 @@ const FLUENT_IDS_BY_KEY = {
   "interface.speed.runs": "interface-speed-runs",
   "interface.speed.simulator": "interface-speed-simulator",
   "interface.tab.withNew": "interface-tab-withNew",
-  "interface.unfinishedRecoveryKey.recoveryKeySetupEndedWhenTheVault": "interface-unfinishedRecoveryKey-recoveryKeySetupEndedWhenTheVault",
-  "interface.unfinishedRecoveryKey.yourRecoveryKeyWasNotReplacedSetup": "interface-unfinishedRecoveryKey-yourRecoveryKeyWasNotReplacedSetup",
+  "interface.unfinishedRecoveryKey.recoveryKeySetupEndedWhenTheVault":
+    "interface-unfinishedRecoveryKey-recoveryKeySetupEndedWhenTheVault",
+  "interface.unfinishedRecoveryKey.yourRecoveryKeyWasNotReplacedSetup":
+    "interface-unfinishedRecoveryKey-yourRecoveryKeyWasNotReplacedSetup",
   "kit.keep": "kit-keep",
   "kit.labelNote": "kit-labelNote",
   "kit.labelPrinted": "kit-labelPrinted",
@@ -1124,13 +1230,15 @@ const FLUENT_IDS_BY_KEY = {
   "security.oldBackups.inPlace": "security-oldBackups-inPlace",
   "security.oldBackups.intro": "security-oldBackups-intro",
   "security.oldBackups.justSaved": "security-oldBackups-justSaved",
-  "security.oldBackups.justSavedWithSize": "security-oldBackups-justSavedWithSize",
+  "security.oldBackups.justSavedWithSize":
+    "security-oldBackups-justSavedWithSize",
   "security.oldBackups.keepCopy": "security-oldBackups-keepCopy",
   "security.oldBackups.named": "security-oldBackups-named",
   "security.oldBackups.namedWithSize": "security-oldBackups-namedWithSize",
   "security.oldBackups.none": "security-oldBackups-none",
   "security.oldBackups.saveNow": "security-oldBackups-saveNow",
-  "security.oldBackups.saveWhenWritable": "security-oldBackups-saveWhenWritable",
+  "security.oldBackups.saveWhenWritable":
+    "security-oldBackups-saveWhenWritable",
   "security.oldBackups.thenDelete": "security-oldBackups-thenDelete",
   "security.oldBackups.title": "security-oldBackups-title",
   "security.passphrase.copies": "security-passphrase-copies",
@@ -1187,6 +1295,7 @@ const FLUENT_IDS_BY_KEY = {
   "unlock.title": "unlock-title",
   "unlock.waiting": "unlock-waiting",
   "unlock.waiting.one": "unlock-waiting-one",
+  "language.error.formatting": "language-error-formatting",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -1201,9 +1310,9 @@ export type FluentArgument = string | number | boolean;
 export interface MessageArgsByKey {
   "appearance.dark": undefined;
   "appearance.error.notRemembered": undefined;
-  "appearance.error.unreadable": { "system": FluentArgument };
+  "appearance.error.unreadable": { system: FluentArgument };
   "appearance.error.window": undefined;
-  "appearance.help": { "system": FluentArgument };
+  "appearance.help": { system: FluentArgument };
   "appearance.highContrast": undefined;
   "appearance.light": undefined;
   "appearance.system": undefined;
@@ -1221,31 +1330,37 @@ export interface MessageArgsByKey {
   "checklist.done": undefined;
   "checklist.hardToGuess": undefined;
   "checklist.heading": undefined;
-  "checklist.length": { "min": FluentArgument };
+  "checklist.length": { min: FluentArgument };
   "checklist.notAName": undefined;
   "checklist.notYet": undefined;
   "checklist.spaces": undefined;
   "comfort.autoLock.body": undefined;
   "comfort.continue": undefined;
   "comfort.intro": undefined;
-  "comfort.later": { "autoLock": FluentArgument; "preferences": FluentArgument; "security": FluentArgument; "settings": FluentArgument; "textSize": FluentArgument };
+  "comfort.later": {
+    autoLock: FluentArgument;
+    preferences: FluentArgument;
+    security: FluentArgument;
+    settings: FluentArgument;
+    textSize: FluentArgument;
+  };
   "comfort.sample": undefined;
   "comfort.title": undefined;
   "comfort.usual": undefined;
   "common.cancel": undefined;
   "create.intro": undefined;
   "create.profile.label": undefined;
-  "create.profile.sharedTaken": { "folder": FluentArgument };
+  "create.profile.sharedTaken": { folder: FluentArgument };
   "create.profile.tooLong": undefined;
   "create.stays": undefined;
   "create.submit": undefined;
   "create.title": undefined;
-  "error.checkBoxes": { "boxes": FluentArgument };
-  "error.damaged": { "name": FluentArgument; "where": FluentArgument };
-  "error.damaged.where": { "date": FluentArgument };
-  "error.damaged.whereFor": { "date": FluentArgument; "person": FluentArgument };
+  "error.checkBoxes": { boxes: FluentArgument };
+  "error.damaged": { name: FluentArgument; where: FluentArgument };
+  "error.damaged.where": { date: FluentArgument };
+  "error.damaged.whereFor": { date: FluentArgument; person: FluentArgument };
   "error.fallback": undefined;
-  "error.retryIn": { "count": FluentArgument };
+  "error.retryIn": { count: FluentArgument };
   "frame.banner.body": undefined;
   "frame.banner.title": undefined;
   "frame.state.locked": undefined;
@@ -1389,53 +1504,72 @@ export interface MessageArgsByKey {
   "interface.VaultLibrary.topLevel": undefined;
   "interface.VaultLibrary.unlockedLockNow": undefined;
   "interface.VaultLibrary.working": undefined;
-  "interface.camera.denied": { "help": FluentArgument };
-  "interface.count.documents": { "count": FluentArgument };
-  "interface.count.folders": { "count": FluentArgument };
-  "interface.count.found": { "items": FluentArgument };
-  "interface.count.foundInLocation": { "documents": FluentArgument; "folders": FluentArgument };
-  "interface.count.hidden": { "count": FluentArgument };
-  "interface.count.inLocation": { "documents": FluentArgument; "folders": FluentArgument };
-  "interface.count.new": { "count": FluentArgument };
-  "interface.count.selected": { "count": FluentArgument };
+  "interface.camera.denied": { help: FluentArgument };
+  "interface.count.documents": { count: FluentArgument };
+  "interface.count.folders": { count: FluentArgument };
+  "interface.count.found": { items: FluentArgument };
+  "interface.count.foundInLocation": {
+    documents: FluentArgument;
+    folders: FluentArgument;
+  };
+  "interface.count.hidden": { count: FluentArgument };
+  "interface.count.inLocation": {
+    documents: FluentArgument;
+    folders: FluentArgument;
+  };
+  "interface.count.new": { count: FluentArgument };
+  "interface.count.selected": { count: FluentArgument };
   "interface.hidden.fileBack": undefined;
   "interface.hidden.fileMissing": undefined;
-  "interface.hidden.record": { "name": FluentArgument };
-  "interface.hidden.restore": { "name": FluentArgument };
-  "interface.hideDamaged.title": { "count": FluentArgument };
-  "interface.inLocation": { "location": FluentArgument };
-  "interface.notice.alreadyFiled": { "name": FluentArgument; "person": FluentArgument; "source": FluentArgument };
-  "interface.notice.alreadyShared": { "name": FluentArgument };
-  "interface.notice.changesResumed": { "outcome": FluentArgument };
+  "interface.hidden.record": { name: FluentArgument };
+  "interface.hidden.restore": { name: FluentArgument };
+  "interface.hideDamaged.title": { count: FluentArgument };
+  "interface.inLocation": { location: FluentArgument };
+  "interface.notice.alreadyFiled": {
+    name: FluentArgument;
+    person: FluentArgument;
+    source: FluentArgument;
+  };
+  "interface.notice.alreadyShared": { name: FluentArgument };
+  "interface.notice.changesResumed": { outcome: FluentArgument };
   "interface.notice.copySaved": undefined;
-  "interface.notice.damagedHidden": { "count": FluentArgument };
-  "interface.notice.duplicates": { "count": FluentArgument };
-  "interface.notice.folderCreated": { "name": FluentArgument };
+  "interface.notice.damagedHidden": { count: FluentArgument };
+  "interface.notice.duplicates": { count: FluentArgument };
+  "interface.notice.folderCreated": { name: FluentArgument };
   "interface.notice.folderCycle": undefined;
-  "interface.notice.folderMoved": { "where": FluentArgument };
-  "interface.notice.folderMovedNamed": { "name": FluentArgument };
-  "interface.notice.hidden": { "name": FluentArgument };
-  "interface.notice.imported": { "count": FluentArgument };
-  "interface.notice.moved": { "count": FluentArgument };
-  "interface.notice.movedMany": { "count": FluentArgument; "where": FluentArgument };
-  "interface.notice.movedNamed": { "name": FluentArgument; "where": FluentArgument };
-  "interface.notice.notPdf": { "name": FluentArgument };
-  "interface.notice.pdfUnlocked": { "name": FluentArgument };
-  "interface.notice.personAdded": { "name": FluentArgument };
-  "interface.notice.photoSaved": { "name": FluentArgument };
-  "interface.notice.renamedDocument": { "name": FluentArgument };
-  "interface.notice.renamedFolder": { "name": FluentArgument };
-  "interface.notice.restored": { "name": FluentArgument };
-  "interface.notice.sharedAdded": { "count": FluentArgument };
-  "interface.notice.whereFolder": { "folder": FluentArgument; "person": FluentArgument };
+  "interface.notice.folderMoved": { where: FluentArgument };
+  "interface.notice.folderMovedNamed": { name: FluentArgument };
+  "interface.notice.hidden": { name: FluentArgument };
+  "interface.notice.imported": { count: FluentArgument };
+  "interface.notice.moved": { count: FluentArgument };
+  "interface.notice.movedMany": {
+    count: FluentArgument;
+    where: FluentArgument;
+  };
+  "interface.notice.movedNamed": {
+    name: FluentArgument;
+    where: FluentArgument;
+  };
+  "interface.notice.notPdf": { name: FluentArgument };
+  "interface.notice.pdfUnlocked": { name: FluentArgument };
+  "interface.notice.personAdded": { name: FluentArgument };
+  "interface.notice.photoSaved": { name: FluentArgument };
+  "interface.notice.renamedDocument": { name: FluentArgument };
+  "interface.notice.renamedFolder": { name: FluentArgument };
+  "interface.notice.restored": { name: FluentArgument };
+  "interface.notice.sharedAdded": { count: FluentArgument };
+  "interface.notice.whereFolder": {
+    folder: FluentArgument;
+    person: FluentArgument;
+  };
   "interface.oldBackups.eachBackupYouSavedBeforeNowStill": undefined;
   "interface.oldBackups.yourOldKitCouldStillOpenBackups": undefined;
   "interface.oldBackups.yourOldKitCouldStillOpenBackupsAlternative": undefined;
-  "interface.person.records": { "name": FluentArgument };
+  "interface.person.records": { name: FluentArgument };
   "interface.photo.checkYourComputersCameraPrivacySettingsAnd": undefined;
   "interface.photo.inSystemSettingsOpenPrivacySecurityThen": undefined;
   "interface.photo.inWindowsSettingsOpenPrivacySecurityThen": undefined;
-  "interface.photo.name": { "date": FluentArgument; "time": FluentArgument };
+  "interface.photo.name": { date: FluentArgument; time: FluentArgument };
   "interface.photo.noCameraWasFoundConnectACamera": undefined;
   "interface.photo.openYourPhonesSettingsThenAppsThen": undefined;
   "interface.photo.openYourPhonesSettingsThenMyCarlosAnd": undefined;
@@ -1444,34 +1578,48 @@ export interface MessageArgsByKey {
   "interface.photo.theCameraStoppedCheckThatItIs": undefined;
   "interface.photo.theCameraStoppedChooseTryAgain": undefined;
   "interface.photo.thisPhonesCameraCouldNotBeFound": undefined;
-  "interface.reader.opening": { "page": FluentArgument };
-  "interface.reader.page": { "page": FluentArgument };
-  "interface.reader.textFollows": { "page": FluentArgument; "total": FluentArgument };
-  "interface.reader.where": { "page": FluentArgument; "total": FluentArgument };
-  "interface.reader.zoom": { "percent": FluentArgument };
-  "interface.receive.dropped": { "count": FluentArgument };
-  "interface.receive.refused": { "count": FluentArgument };
+  "interface.reader.opening": { page: FluentArgument };
+  "interface.reader.page": { page: FluentArgument };
+  "interface.reader.textFollows": {
+    page: FluentArgument;
+    total: FluentArgument;
+  };
+  "interface.reader.where": { page: FluentArgument; total: FluentArgument };
+  "interface.reader.zoom": { percent: FluentArgument };
+  "interface.receive.dropped": { count: FluentArgument };
+  "interface.receive.refused": { count: FluentArgument };
   "interface.recordPresentation.imaging": undefined;
   "interface.recordPresentation.prescription": undefined;
   "interface.recordPresentation.testResult": undefined;
-  "interface.recovery.earlierStopped": { "backups": FluentArgument };
-  "interface.recovery.replaced": { "backups": FluentArgument };
+  "interface.recovery.earlierStopped": { backups: FluentArgument };
+  "interface.recovery.replaced": { backups: FluentArgument };
   "interface.recovery.savedBeforeLock": undefined;
-  "interface.search.all": { "location": FluentArgument };
-  "interface.sidebar.sharedNew": { "new": FluentArgument; "shared": FluentArgument };
-  "interface.size.bytes": { "count": FluentArgument };
-  "interface.speed.median": { "max": FluentArgument; "median": FluentArgument };
-  "interface.speed.parameters": { "iterations": FluentArgument; "lanes": FluentArgument; "memory": FluentArgument };
-  "interface.speed.platform": { "architecture": FluentArgument; "platform": FluentArgument; "version": FluentArgument };
-  "interface.speed.runs": { "count": FluentArgument; "samples": FluentArgument };
-  "interface.speed.simulator": { "build": FluentArgument };
-  "interface.tab.withNew": { "new": FluentArgument; "section": FluentArgument };
+  "interface.search.all": { location: FluentArgument };
+  "interface.sidebar.sharedNew": {
+    new: FluentArgument;
+    shared: FluentArgument;
+  };
+  "interface.size.bytes": { count: FluentArgument };
+  "interface.speed.median": { max: FluentArgument; median: FluentArgument };
+  "interface.speed.parameters": {
+    iterations: FluentArgument;
+    lanes: FluentArgument;
+    memory: FluentArgument;
+  };
+  "interface.speed.platform": {
+    architecture: FluentArgument;
+    platform: FluentArgument;
+    version: FluentArgument;
+  };
+  "interface.speed.runs": { count: FluentArgument; samples: FluentArgument };
+  "interface.speed.simulator": { build: FluentArgument };
+  "interface.tab.withNew": { new: FluentArgument; section: FluentArgument };
   "interface.unfinishedRecoveryKey.recoveryKeySetupEndedWhenTheVault": undefined;
   "interface.unfinishedRecoveryKey.yourRecoveryKeyWasNotReplacedSetup": undefined;
   "kit.keep": undefined;
   "kit.labelNote": undefined;
-  "kit.labelPrinted": { "date": FluentArgument; "label": FluentArgument };
-  "kit.printed": { "date": FluentArgument };
+  "kit.labelPrinted": { date: FluentArgument; label: FluentArgument };
+  "kit.printed": { date: FluentArgument };
   "kit.title": undefined;
   "kit.use": undefined;
   "language.error.notRemembered": undefined;
@@ -1483,25 +1631,31 @@ export interface MessageArgsByKey {
   "library.column.name": undefined;
   "library.column.source": undefined;
   "library.details": undefined;
-  "library.document.details": { "name": FluentArgument };
-  "library.document.label": { "name": FluentArgument };
+  "library.document.details": { name: FluentArgument };
+  "library.document.label": { name: FluentArgument };
   "library.empty.help": undefined;
   "library.empty.title": undefined;
-  "library.folder.items": { "count": FluentArgument };
-  "library.folder.label": { "name": FluentArgument };
-  "library.folder.open": { "name": FluentArgument };
-  "library.folder.rename": { "name": FluentArgument };
-  "library.items": { "count": FluentArgument };
+  "library.folder.items": { count: FluentArgument };
+  "library.folder.label": { name: FluentArgument };
+  "library.folder.open": { name: FluentArgument };
+  "library.folder.rename": { name: FluentArgument };
+  "library.items": { count: FluentArgument };
   "library.noMatch.help": undefined;
   "library.noMatch.title": undefined;
   "library.rename": undefined;
-  "library.search.cleared": { "documents": FluentArgument; "folders": FluentArgument };
-  "library.search.results": { "documents": FluentArgument; "folders": FluentArgument };
-  "library.select": { "name": FluentArgument };
-  "lockWarning.help": { "keepOpen": FluentArgument };
+  "library.search.cleared": {
+    documents: FluentArgument;
+    folders: FluentArgument;
+  };
+  "library.search.results": {
+    documents: FluentArgument;
+    folders: FluentArgument;
+  };
+  "library.select": { name: FluentArgument };
+  "lockWarning.help": { keepOpen: FluentArgument };
   "lockWarning.keepOpen": undefined;
-  "lockWarning.left": { "count": FluentArgument };
-  "lockWarning.title": { "count": FluentArgument };
+  "lockWarning.left": { count: FluentArgument };
+  "lockWarning.title": { count: FluentArgument };
   "native.backup.noteEmptied": undefined;
   "native.backup.noteUntouched": undefined;
   "native.cancel": undefined;
@@ -1556,35 +1710,42 @@ export interface MessageArgsByKey {
   "native.error.speedTest": undefined;
   "native.filter.backups": undefined;
   "native.filter.pdf": undefined;
-  "native.kit.text": { "date": FluentArgument; "key": FluentArgument; "label": FluentArgument };
+  "native.kit.text": {
+    date: FluentArgument;
+    key: FluentArgument;
+    label: FluentArgument;
+  };
   "native.recovery.keep": undefined;
   "native.recovery.replace": undefined;
   "native.recovery.title": undefined;
   "native.recovery.warning": undefined;
   "native.reset.phrase": undefined;
-  "native.restore.changed": { "documents": FluentArgument; "kept": FluentArgument };
-  "native.restore.other": { "documents": FluentArgument; "kept": FluentArgument };
+  "native.restore.changed": { documents: FluentArgument; kept: FluentArgument };
+  "native.restore.other": { documents: FluentArgument; kept: FluentArgument };
   "native.restore.replace": undefined;
-  "native.restore.same": { "documents": FluentArgument; "kept": FluentArgument };
+  "native.restore.same": { documents: FluentArgument; kept: FluentArgument };
   "native.restore.title": undefined;
-  "native.restore.unreadable": { "documents": FluentArgument; "kept": FluentArgument };
+  "native.restore.unreadable": {
+    documents: FluentArgument;
+    kept: FluentArgument;
+  };
   "native.setAside.confirm": undefined;
-  "native.setAside.desktop": { "folder": FluentArgument };
+  "native.setAside.desktop": { folder: FluentArgument };
   "native.setAside.kept": undefined;
   "native.setAside.mobile": undefined;
   "native.setAside.title": undefined;
-  "native.setAside.warning": { "kept": FluentArgument; "removal": FluentArgument };
+  "native.setAside.warning": { kept: FluentArgument; removal: FluentArgument };
   "native.vault.keep": undefined;
-  "notice.autoLockSet": { "count": FluentArgument };
-  "notice.backupCutOff": { "note": FluentArgument };
+  "notice.autoLockSet": { count: FluentArgument };
+  "notice.backupCutOff": { note: FluentArgument };
   "notice.created": undefined;
   "notice.createdThenLocked": undefined;
-  "notice.dropRefused": { "button": FluentArgument };
+  "notice.dropRefused": { button: FluentArgument };
   "notice.eraseCancelled": undefined;
   "notice.iosKeepOpen": undefined;
   "notice.locked": undefined;
   "notice.lockedHidden": undefined;
-  "notice.lockedIdle": { "count": FluentArgument };
+  "notice.lockedIdle": { count: FluentArgument };
   "notice.recovered": undefined;
   "notice.recoveredReadOnly": undefined;
   "notice.restored": undefined;
@@ -1597,19 +1758,19 @@ export interface MessageArgsByKey {
   "passphrase.longerThanAny": undefined;
   "passphrase.mismatch": undefined;
   "passphrase.new.label": undefined;
-  "passphrase.rules": { "min": FluentArgument };
+  "passphrase.rules": { min: FluentArgument };
   "passphrase.show": undefined;
   "passphrase.show.inConfirm": undefined;
   "passphrase.tooLong": undefined;
-  "passphrase.tooShort": { "min": FluentArgument };
-  "photo.alt": { "name": FluentArgument };
+  "passphrase.tooShort": { min: FluentArgument };
+  "photo.alt": { name: FluentArgument };
   "photo.area": undefined;
   "photo.close": undefined;
   "photo.eyebrow": undefined;
   "photo.fitted": undefined;
   "photo.zoomIn": undefined;
   "photo.zoomOut": undefined;
-  "photo.zoomed": { "percent": FluentArgument };
+  "photo.zoomed": { percent: FluentArgument };
   "preferences.subtitle": undefined;
   "record.kind.document": undefined;
   "record.source.manual": undefined;
@@ -1634,12 +1795,12 @@ export interface MessageArgsByKey {
   "recoveryKey.discard.body": undefined;
   "recoveryKey.discard.confirm": undefined;
   "recoveryKey.discard.title": undefined;
-  "recoveryKey.group": { "characters": FluentArgument; "number": FluentArgument };
+  "recoveryKey.group": { characters: FluentArgument; number: FluentArgument };
   "recoveryKey.hiddenWhileSaving": undefined;
   "recoveryKey.instructions": undefined;
   "recoveryKey.keyboardHint": undefined;
   "recoveryKey.kitSaved": undefined;
-  "recoveryKey.label": { "label": FluentArgument };
+  "recoveryKey.label": { label: FluentArgument };
   "recoveryKey.leave.offered": undefined;
   "recoveryKey.leave.required": undefined;
   "recoveryKey.next": undefined;
@@ -1656,29 +1817,29 @@ export interface MessageArgsByKey {
   "recoveryKey.title.key": undefined;
   "recoveryKey.title.replace": undefined;
   "recoveryKey.title.setUp": undefined;
-  "recoveryKey.typedCount": { "count": FluentArgument; "total": FluentArgument };
+  "recoveryKey.typedCount": { count: FluentArgument; total: FluentArgument };
   "rename.gainsExtension": undefined;
   "rename.help.document": undefined;
-  "rename.help.documentExtension": { "extension": FluentArgument };
+  "rename.help.documentExtension": { extension: FluentArgument };
   "rename.help.folder": undefined;
   "rename.label.document": undefined;
   "rename.label.folder": undefined;
-  "rename.reserved": { "word": FluentArgument };
+  "rename.reserved": { word: FluentArgument };
   "rename.save": undefined;
   "rename.saving": undefined;
-  "rename.stemMissing": { "extension": FluentArgument };
+  "rename.stemMissing": { extension: FluentArgument };
   "rename.title.document": undefined;
   "rename.title.folder": undefined;
   "rename.tooLong": undefined;
-  "rename.unsafe": { "characters": FluentArgument };
+  "rename.unsafe": { characters: FluentArgument };
   "reset.plainly": undefined;
   "reset.submit": undefined;
-  "reset.type": { "phrase": FluentArgument };
+  "reset.type": { phrase: FluentArgument };
   "restore.agree.erase": undefined;
   "restore.agree.replace": undefined;
   "restore.cancelled": undefined;
   "restore.check": undefined;
-  "restore.checked": { "consequence": FluentArgument; "count": FluentArgument };
+  "restore.checked": { consequence: FluentArgument; count: FluentArgument };
   "restore.checking": undefined;
   "restore.choose": undefined;
   "restore.chooseOther": undefined;
@@ -1698,13 +1859,13 @@ export interface MessageArgsByKey {
   "restore.submit": undefined;
   "restore.summary": undefined;
   "restore.tooLong": undefined;
-  "secret.count.password": { "count": FluentArgument };
-  "secret.count.recoveryKey": { "count": FluentArgument };
-  "secret.count.shown": { "description": FluentArgument };
+  "secret.count.password": { count: FluentArgument };
+  "secret.count.recoveryKey": { count: FluentArgument };
+  "secret.count.shown": { description: FluentArgument };
   "security.autoLock.body": undefined;
   "security.autoLock.label": undefined;
   "security.autoLock.longer": undefined;
-  "security.autoLock.minutes": { "count": FluentArgument };
+  "security.autoLock.minutes": { count: FluentArgument };
   "security.autoLock.shorter": undefined;
   "security.autoLock.title": undefined;
   "security.backup.body": undefined;
@@ -1726,11 +1887,21 @@ export interface MessageArgsByKey {
   "security.oldBackups.done": undefined;
   "security.oldBackups.inPlace": undefined;
   "security.oldBackups.intro": undefined;
-  "security.oldBackups.justSaved": { "date": FluentArgument; "time": FluentArgument };
-  "security.oldBackups.justSavedWithSize": { "date": FluentArgument; "size": FluentArgument; "time": FluentArgument };
+  "security.oldBackups.justSaved": {
+    date: FluentArgument;
+    time: FluentArgument;
+  };
+  "security.oldBackups.justSavedWithSize": {
+    date: FluentArgument;
+    size: FluentArgument;
+    time: FluentArgument;
+  };
   "security.oldBackups.keepCopy": undefined;
-  "security.oldBackups.named": { "name": FluentArgument };
-  "security.oldBackups.namedWithSize": { "name": FluentArgument; "size": FluentArgument };
+  "security.oldBackups.named": { name: FluentArgument };
+  "security.oldBackups.namedWithSize": {
+    name: FluentArgument;
+    size: FluentArgument;
+  };
   "security.oldBackups.none": undefined;
   "security.oldBackups.saveNow": undefined;
   "security.oldBackups.saveWhenWritable": undefined;
@@ -1741,8 +1912,8 @@ export interface MessageArgsByKey {
   "security.passphrase.currentTooLong": undefined;
   "security.passphrase.mismatch": undefined;
   "security.passphrase.newTooLong": undefined;
-  "security.passphrase.newTooShort": { "min": FluentArgument };
-  "security.passphrase.rules": { "min": FluentArgument };
+  "security.passphrase.newTooShort": { min: FluentArgument };
+  "security.passphrase.rules": { min: FluentArgument };
   "security.passphrase.submit": undefined;
   "security.passphrase.title": undefined;
   "security.profiles.add": undefined;
@@ -1750,11 +1921,14 @@ export interface MessageArgsByKey {
   "security.profiles.label": undefined;
   "security.profiles.title": undefined;
   "security.recoveryKey.body": undefined;
-  "security.recoveryKey.current": { "date": FluentArgument; "label": FluentArgument };
+  "security.recoveryKey.current": {
+    date: FluentArgument;
+    label: FluentArgument;
+  };
   "security.recoveryKey.notSetUp": undefined;
   "security.recoveryKey.replace": undefined;
   "security.recoveryKey.setUp": undefined;
-  "security.recoveryKey.setUpOn": { "date": FluentArgument };
+  "security.recoveryKey.setUpOn": { date: FluentArgument };
   "security.recoveryKey.title": undefined;
   "security.speed.body": undefined;
   "security.speed.measuring": undefined;
@@ -1762,40 +1936,44 @@ export interface MessageArgsByKey {
   "security.speed.title": undefined;
   "security.subtitle": undefined;
   "security.title": undefined;
-  "sidebar.documents": { "count": FluentArgument };
-  "sidebar.folderCount": { "count": FluentArgument };
+  "sidebar.documents": { count: FluentArgument };
+  "sidebar.folderCount": { count: FluentArgument };
   "sidebar.label": undefined;
   "sidebar.myRecords": undefined;
   "sidebar.preferences": undefined;
   "sidebar.settings": undefined;
   "sidebar.storage": undefined;
-  "textSize.announce": { "percent": FluentArgument };
-  "textSize.between": { "size": FluentArgument; "typed": FluentArgument };
+  "textSize.announce": { percent: FluentArgument };
+  "textSize.between": { size: FluentArgument; typed: FluentArgument };
   "textSize.box": undefined;
   "textSize.followsDevice": undefined;
-  "textSize.help": { "max": FluentArgument; "min": FluentArgument; "modifier": FluentArgument };
+  "textSize.help": {
+    max: FluentArgument;
+    min: FluentArgument;
+    modifier: FluentArgument;
+  };
   "textSize.key.command": undefined;
   "textSize.larger": undefined;
-  "textSize.largest": { "max": FluentArgument };
-  "textSize.notNumber": { "max": FluentArgument; "min": FluentArgument };
+  "textSize.largest": { max: FluentArgument };
+  "textSize.notNumber": { max: FluentArgument; min: FluentArgument };
   "textSize.reset": undefined;
   "textSize.smaller": undefined;
-  "textSize.smallest": { "min": FluentArgument };
+  "textSize.smallest": { min: FluentArgument };
   "textSize.title": undefined;
-  "unlock.autoLock": { "count": FluentArgument };
+  "unlock.autoLock": { count: FluentArgument };
   "unlock.forgot.summary": undefined;
   "unlock.noKey.body": undefined;
   "unlock.noKey.heading": undefined;
   "unlock.submit": undefined;
   "unlock.title": undefined;
-  "unlock.waiting": { "count": FluentArgument; "folder": FluentArgument };
-  "unlock.waiting.one": { "folder": FluentArgument };
+  "unlock.waiting": { count: FluentArgument; folder: FluentArgument };
+  "unlock.waiting.one": { folder: FluentArgument };
+  "language.error.formatting": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];
-export type MessageArgsTuple<K extends MessageKey> = MessageArgs<K> extends undefined
-  ? []
-  : [args: MessageArgs<K>];
+export type MessageArgsTuple<K extends MessageKey> =
+  MessageArgs<K> extends undefined ? [] : [args: MessageArgs<K>];
 export type FluentTranslate = <K extends MessageKey>(
   id: K,
   ...args: MessageArgsTuple<K>
