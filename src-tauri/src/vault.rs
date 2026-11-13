@@ -8089,11 +8089,13 @@ pub(crate) fn valid_birth_date(date: &str) -> bool {
     year > 0 && day > 0 && day <= max
 }
 
+type CheckedProfileDetails = (Option<String>, Option<String>, Option<Vec<String>>);
+
 fn checked_profile_details(
     details: ProfileDetails,
     today: &str,
     now_ms: u64,
-) -> Result<(Option<String>, Option<String>, Option<Vec<String>>), VaultError> {
+) -> Result<CheckedProfileDetails, VaultError> {
     // Calendar dates come from this device's renderer, as for backup names. Bound its
     // local day to the native clock's adjacent UTC dates, covering all time zones.
     if !valid_birth_date(today)
