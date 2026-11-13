@@ -55,6 +55,13 @@ test("first setup works from the keyboard alone", async ({ page }) => {
 
   await page.getByRole("textbox", { name: "Whose records" }).focus();
   await page.keyboard.type("FAKE Patient");
+  // Then the person's details, or later (#234): Space ticks "Add them later",
+  // which leaves the details out, and Tab goes on to the passphrase.
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("checkbox", { name: "Add them later" }),
+  ).toBeFocused();
+  await page.keyboard.press("Space");
   await page.keyboard.press("Tab");
   await page.keyboard.type("FAKE correct horse battery staple");
   await page.getByRole("textbox", { name: "Confirm passphrase" }).focus();

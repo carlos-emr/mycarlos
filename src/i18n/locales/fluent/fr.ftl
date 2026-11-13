@@ -1404,6 +1404,16 @@ personDetails-futureDate = La date de naissance ne peut pas être dans le futur.
 
 personDetails-help = Conservés dans ce coffre chiffré pour suggérer à qui un document partagé est destiné. Ces renseignements ne vérifient pas la source d'un document.
 
+personDetails-setup = Nom complet et date de naissance
+
+personDetails-later = Les ajouter plus tard
+
+personDetails-reminder = Ajoutez le nom complet et la date de naissance de { $name }. Ils aident myCarlos à savoir à qui un document est destiné.
+
+personDetails-notNow = Pas maintenant
+
+personDetails-notSaved = Le coffre-fort est prêt, mais le nom complet et la date de naissance n’ont pas été enregistrés. Ajoutez-les dans Modifier les renseignements.
+
 personDetails-invalidDate = Saisissez une date de naissance valide : année, mois et jour.
 
 personDetails-list = Renseignements des personnes
