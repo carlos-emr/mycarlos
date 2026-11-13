@@ -452,8 +452,8 @@ sees is in `AI_HELPER_NOTICE.md`.
 helper is meant to explain one document in plain words. It can be used in two ways:
 
 - **On this device:** a small AI model runs in a separate helper inside myCarlos and writes a
-  plain-words summary of one document, or explains a word or phrase the patient selects. Nothing
-  about the patient leaves the device.
+  plain-words summary of one document. Explaining a word or phrase the patient selects is switched
+  off in the UI for now (THREAT_MODEL AI-05). Nothing about the patient leaves the device.
 - **With another AI service, by the patient:** myCarlos removes identifying details from a
   document's text and shows the result. The patient then saves it as a text file and gives it to
   whichever AI service they choose. myCarlos itself sends none of it anywhere. Ben chose this on

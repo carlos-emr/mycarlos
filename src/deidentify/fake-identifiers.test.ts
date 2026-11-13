@@ -69,8 +69,10 @@ function peselValid(digits: string): boolean {
   return (10 - (sum % 10)) % 10 === Number(digits[10]);
 }
 
-// Only lines that name the identifier are read, so that a phone number or a
-// count written in threes is never taken for one.
+// A SIN, DNI/NIE, PESEL or undotted CPF counts only on a line that names it, so
+// that a phone number or a count written in threes is never taken for one. A CPF
+// in its dotted form (123.456.789-00) is read on every line: no other number is
+// written that way.
 const SIN_LABEL = /\b(?:SIN|NAS)\b|[Ss]ocial [Ii]nsurance|assurance sociale/;
 const SIN = /(?<![\d.-])(\d{3})([ .-]?)(\d{3})\2(\d{3})(?!\d)(?!-\d)/g;
 const DNI_LABEL = /\b(?:DNI|NIE|NIF)\b/;

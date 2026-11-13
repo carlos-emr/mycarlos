@@ -18,6 +18,11 @@ import { VaultLibrary } from "./VaultLibrary";
 import type { ModelStatus } from "../ai/types";
 import { FAKE_MODEL, fakeDocumentText } from "../test/fakeLocalModel";
 
+// Explain is switched off in the UI (src/ai/features.ts). These tests keep
+// its code covered with the switch on; ReaderExplainOff.test.tsx checks the
+// reader as patients see it now.
+vi.mock("../ai/features", () => ({ AI_EXPLAIN_ENABLED: true }));
+
 // One fake native runtime: stamp and clone when data is captured, before delivery.
 let snapshotSequence = 1;
 function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {

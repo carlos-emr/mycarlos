@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  formatDeviceName,
   useI18n,
   useTextState,
   message,
@@ -203,10 +204,16 @@ export function PortalDocuments({
   dialogHost,
   onDialogChange,
 }: Props) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [address, setAddress] = useState("");
   const [code, setCode] = useState("");
-  const [device, setDevice] = useState("myCarlos");
+  // The name the patient typed for this device, if any. Until they type one,
+  // `device` is the default in the language in use ("myCarlos on Windows").
+  const [typedDevice, setDevice] = useState<string | null>(null);
+  const [platformName, setPlatformName] = useState<string | null>(null);
+  const device =
+    typedDevice ??
+    (platformName ? formatDeviceName(locale, platformName) : "myCarlos");
   const [person, setPerson] = useState("");
   // The link the notices step follows, while it is offered.
   const [offerNotices, setOfferNotices] = useState<string | null>(null);
@@ -310,10 +317,7 @@ export function PortalDocuments({
           android: "Android",
           ios: "iOS",
         };
-        if (shown.current && os[platform])
-          setDevice((current) =>
-            current === "myCarlos" ? `myCarlos on ${os[platform]}` : current,
-          );
+        if (shown.current && os[platform]) setPlatformName(os[platform]);
       })
       .catch(() => {});
     return () => {
