@@ -59,7 +59,9 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_AI_HIDDEN_CAP;
+const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 14;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
+const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
@@ -69,8 +71,7 @@ const MANIFEST_FORMAT_HISTORY: u32 = 3;
 /// most 32 per document, hidden ones included.
 const MANIFEST_FORMAT_AI_RESULTS: u32 = 10;
 /// The first format whose hidden AI answers have a cap of their own (D13):
-/// 32 shown and 96 hidden per document. The newest, so `VAULT_FORMAT` is this
-/// one. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
+/// 32 shown and 96 hidden per document. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
 /// taken at merge"): a renumber changes this line and the format's heading in
 /// VAULT_FORMAT.md, nothing else here.
 const MANIFEST_FORMAT_AI_HIDDEN_CAP: u32 = 11;
@@ -460,6 +461,12 @@ pub struct PatientProfile {
         deserialize_with = "present_identity"
     )]
     pub birth_date: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_previous_names"
+    )]
+    pub previous_full_names: Option<Vec<String>>,
 }
 
 // A present identity field must be a string, never null. Together with the
@@ -470,11 +477,34 @@ fn present_identity<'de, D: serde::Deserializer<'de>>(
     String::deserialize(deserializer).map(Some)
 }
 
+fn present_previous_names<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<String>>, D::Error> {
+    Vec::<String>::deserialize(deserializer).map(Some)
+}
+
+fn checked_previous_names(names: Vec<String>) -> Result<Vec<String>, VaultError> {
+    if names.len() > MAX_PREVIOUS_FULL_NAMES {
+        return Err(VaultError::Invalid);
+    }
+    let mut result = Vec::new();
+    for name in names {
+        let name = name.trim().to_owned();
+        validate_name(&name)?;
+        if !result.contains(&name) {
+            result.push(name);
+        }
+    }
+    Ok(result)
+}
+
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProfileDetails {
     pub full_name: Option<String>,
     pub birth_date: Option<String>,
+    #[serde(default, deserialize_with = "present_previous_names")]
+    pub previous_full_names: Option<Vec<String>>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1375,6 +1405,7 @@ impl VaultStore {
                     created_at_ms: now_ms,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 }],
                 folders: Vec::new(),
                 records: Vec::new(),
@@ -2115,7 +2146,8 @@ impl VaultStore {
         now_ms: u64,
     ) -> Result<Uuid, VaultError> {
         validate_person_name(display_name)?;
-        let (full_name, birth_date) = checked_profile_details(details, today, now_ms)?;
+        let (full_name, birth_date, previous_full_names) =
+            checked_profile_details(details, today, now_ms)?;
         self.mutate_recorded(|manifest, entries| {
             let id = Uuid::new_v4();
             let display_name = display_name.trim().to_owned();
@@ -2136,6 +2168,7 @@ impl VaultStore {
                 created_at_ms: now_ms,
                 full_name,
                 birth_date,
+                previous_full_names: previous_full_names.filter(|names| !names.is_empty()),
             });
             Ok(id)
         })
@@ -2148,7 +2181,8 @@ impl VaultStore {
         today: &str,
         now_ms: u64,
     ) -> Result<(), VaultError> {
-        let (full_name, birth_date) = checked_profile_details(details, today, now_ms)?;
+        let (full_name, birth_date, previous_full_names) =
+            checked_profile_details(details, today, now_ms)?;
         self.mutate_recorded(|manifest, entries| {
             if id == shared_profile_id(manifest.vault_id) {
                 return Err(VaultError::Invalid);
@@ -2158,9 +2192,16 @@ impl VaultStore {
                 .iter_mut()
                 .find(|p| p.id == id)
                 .ok_or(VaultError::NotFound)?;
-            if profile.full_name != full_name || profile.birth_date != birth_date {
+            let previous_full_names = previous_full_names
+                .map(|names| if names.is_empty() { None } else { Some(names) })
+                .unwrap_or_else(|| profile.previous_full_names.clone());
+            if profile.full_name != full_name
+                || profile.birth_date != birth_date
+                || profile.previous_full_names != previous_full_names
+            {
                 profile.full_name = full_name;
                 profile.birth_date = birth_date;
+                profile.previous_full_names = previous_full_names;
                 let mut entry = HistoryEntry::new(HistoryEvent::ProfileDetailsChanged, now_ms);
                 entry.profile_id = Some(id);
                 entries.push(entry);
@@ -2592,6 +2633,7 @@ impl VaultStore {
                     created_at_ms: now_ms,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 });
             }
             next.records
@@ -3114,6 +3156,9 @@ impl VaultStore {
             if profile.id == shared {
                 continue;
             }
+            known
+                .names
+                .extend(profile.previous_full_names.iter().flatten().cloned());
             known.names.push(profile.display_name.clone());
             if let Some(full_name) = &profile.full_name {
                 known.names.push(full_name.clone());
@@ -4762,7 +4807,8 @@ fn object_presence_name(root: &Path, object_name: &str) -> ObjectPresence {
 /// Checks everything about a decrypted manifest except whether its objects
 /// are on disk, so a vault with a lost object can still be opened read-only.
 fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
-    if !(MANIFEST_FORMAT_V1..=VAULT_FORMAT).contains(&manifest.format_version)
+    if !((MANIFEST_FORMAT_V1..=MANIFEST_FORMAT_AI_HIDDEN_CAP).contains(&manifest.format_version)
+        || manifest.format_version == MANIFEST_FORMAT_PREVIOUS_FULL_NAMES)
         || manifest.vault_id != vault_id
         || manifest.generation == 0
         || manifest.profiles.is_empty()
@@ -4772,7 +4818,12 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
 
     let mut profile_ids = HashSet::new();
     for profile in &manifest.profiles {
-        if profile.id.is_nil()
+        if profile.previous_full_names.as_ref().is_some_and(|names| {
+            manifest.format_version < MANIFEST_FORMAT_PREVIOUS_FULL_NAMES
+                || profile.id == shared_profile_id(vault_id)
+                || names.is_empty()
+                || checked_previous_names(names.clone()).ok().as_ref() != Some(names)
+        }) || profile.id.is_nil()
             || !profile_ids.insert(profile.id)
             || validate_name(&profile.display_name).is_err()
             || profile
@@ -6665,8 +6716,10 @@ fn newer_build_manifest(plaintext: &[u8]) -> bool {
     struct FormatOnly {
         format_version: u64,
     }
-    serde_json::from_slice::<FormatOnly>(plaintext)
-        .is_ok_and(|manifest| manifest.format_version > u64::from(VAULT_FORMAT))
+    serde_json::from_slice::<FormatOnly>(plaintext).is_ok_and(|manifest| {
+        manifest.format_version > u64::from(VAULT_FORMAT)
+            || matches!(manifest.format_version, 12 | 13)
+    })
 }
 
 /// Which generation an unlock opens, and what the session may do with it.
@@ -8043,11 +8096,13 @@ pub(crate) fn valid_birth_date(date: &str) -> bool {
     year > 0 && day > 0 && day <= max
 }
 
+type CheckedProfileDetails = (Option<String>, Option<String>, Option<Vec<String>>);
+
 fn checked_profile_details(
     details: ProfileDetails,
     today: &str,
     now_ms: u64,
-) -> Result<(Option<String>, Option<String>), VaultError> {
+) -> Result<CheckedProfileDetails, VaultError> {
     // Calendar dates come from this device's renderer, as for backup names. Bound its
     // local day to the native clock's adjacent UTC dates, covering all time zones.
     if !valid_birth_date(today)
@@ -8070,7 +8125,11 @@ fn checked_profile_details(
     {
         return Err(VaultError::Invalid);
     }
-    Ok((full_name, birth_date))
+    let previous_full_names = details
+        .previous_full_names
+        .map(checked_previous_names)
+        .transpose()?;
+    Ok((full_name, birth_date, previous_full_names))
 }
 
 /// The people a vault keeps records for: every profile but the shared one.
@@ -9631,6 +9690,7 @@ mod tests {
                     created_at_ms: 1,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 },
                 PatientProfile {
                     id: second_profile,
@@ -9638,6 +9698,7 @@ mod tests {
                     created_at_ms: 2,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 },
             ],
             folders: vec![
@@ -15385,6 +15446,7 @@ mod tests {
                 created_at_ms: 1,
                 full_name: None,
                 birth_date: None,
+                previous_full_names: None,
             }],
             folders: vec![],
             records: records
@@ -19932,10 +19994,195 @@ mod tests {
             assert!(documented.contains(value.as_str()), "{value}");
         }
     }
+    #[test]
+    fn previous_full_names_persist_preserve_clear_and_feed_authoritative_context() {
+        let (_temp, store, record, _) = original_pdf_fixture();
+        let id = store.snapshot().unwrap().profiles[0].id;
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        let aliases = || ProfileDetails {
+            previous_full_names: Some(vec![
+                "  FAKE Zorvana Neralis  ".into(),
+                "FAKE Zorvana Neralis".into(),
+            ]),
+            ..Default::default()
+        };
+        store
+            .update_profile_details(id, aliases(), &today, now)
+            .unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().profiles[0].previous_full_names,
+            Some(vec!["FAKE Zorvana Neralis".into()])
+        );
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(store
+            .known_identifiers(record)
+            .unwrap()
+            .names
+            .contains(&"FAKE Zorvana Neralis".into()));
+        store
+            .update_profile_details(id, ProfileDetails::default(), &today, now + 1)
+            .unwrap();
+        assert!(store
+            .known_identifiers(record)
+            .unwrap()
+            .names
+            .contains(&"FAKE Zorvana Neralis".into()));
+        store
+            .update_profile_details(
+                id,
+                ProfileDetails {
+                    previous_full_names: Some(vec![]),
+                    ..Default::default()
+                },
+                &today,
+                now + 2,
+            )
+            .unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().profiles[0].previous_full_names,
+            None
+        );
+        assert!(!store
+            .known_identifiers(record)
+            .unwrap()
+            .names
+            .contains(&"FAKE Zorvana Neralis".into()));
+        // Details events never gain the alias value, even after deletion.
+        let view = store.history_view().unwrap();
+        assert!(!serde_json::to_string(&view.entries)
+            .unwrap()
+            .contains("Zorvana"));
+    }
+
+    #[test]
+    fn previous_full_names_mutations_keep_existing_shared_and_locked_guards() {
+        let (_temp, store, _, _) = original_pdf_fixture();
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        let id = store.snapshot().unwrap().profiles[0].id;
+        let shared = shared_profile_id(store.session().as_ref().unwrap().manifest.vault_id);
+        let details = || ProfileDetails {
+            previous_full_names: Some(vec!["FAKE Previous Name".into()]),
+            ..Default::default()
+        };
+        assert!(matches!(
+            store.update_profile_details(shared, details(), &today, now),
+            Err(VaultError::Invalid)
+        ));
+        assert!(matches!(
+            store.update_profile_details(Uuid::new_v4(), details(), &today, now),
+            Err(VaultError::NotFound)
+        ));
+        store.lock();
+        assert!(matches!(
+            store.update_profile_details(id, details(), &today, now),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn previous_full_names_validate_bounds_and_strict_request_presence() {
+        for value in [
+            serde_json::json!({"previousFullNames":null}),
+            serde_json::json!({"previousFullNames":"FAKE"}),
+        ] {
+            assert!(serde_json::from_value::<ProfileDetails>(value).is_err());
+        }
+        let omitted: ProfileDetails = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(omitted.previous_full_names.is_none());
+        let clear: ProfileDetails =
+            serde_json::from_value(serde_json::json!({"previousFullNames":[]})).unwrap();
+        assert_eq!(clear.previous_full_names, Some(vec![]));
+        for names in [
+            vec!["".into()],
+            vec!["FAKE\nName".into()],
+            vec!["x".repeat(121)],
+            vec!["FAKE".into(); 17],
+        ] {
+            assert!(checked_previous_names(names).is_err());
+        }
+        assert!(checked_previous_names(vec!["界".repeat(120)]).is_ok());
+    }
+
+    #[test]
+    fn previous_full_names_upgrade_legacy_and_refuse_unknown_slots_without_rewriting() {
+        for version in [11, 12, 13] {
+            let (_temp, store, _, _) = original_pdf_fixture();
+            let (key, mut manifest) = {
+                let guard = store.session();
+                let unlocked = guard.as_ref().unwrap();
+                (*unlocked.master_key, unlocked.manifest.clone())
+            };
+            // Use the actual owned fixture root, not a guessed destination.
+            let root = store.root.clone();
+            manifest.format_version = version;
+            for _ in 0..2 {
+                manifest.generation += 1;
+                write_manifest_at(&root, &key, &manifest).unwrap();
+            }
+            store.lock();
+            let paths = [
+                manifest_path(&root, manifest.generation),
+                manifest_path(&root, manifest.generation - 1),
+            ];
+            let before: Vec<_> = paths.iter().map(|p| fs::read(p).unwrap()).collect();
+            let opened = store.unlock(PASSWORD);
+            if version == 11 {
+                opened.unwrap();
+                assert_eq!(
+                    store.session().as_ref().unwrap().manifest.format_version,
+                    14
+                );
+                assert!(store.snapshot().unwrap().profiles[0]
+                    .previous_full_names
+                    .is_none());
+            } else {
+                assert!(opened.is_err());
+                assert_eq!(
+                    before,
+                    paths
+                        .iter()
+                        .map(|p| fs::read(p).unwrap())
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn previous_full_names_format_gate_rejects_unknown_and_noncanonical_storage() {
+        let (_temp, store, _, _) = original_pdf_fixture();
+        let mut manifest = store.session().as_ref().unwrap().manifest.clone();
+        let id = manifest.vault_id;
+        for version in [12, 13] {
+            manifest.format_version = version;
+            assert!(validate_manifest_structure(&manifest, id).is_err());
+            assert!(newer_build_manifest(
+                &serde_json::to_vec(&manifest).unwrap()
+            ));
+        }
+        manifest.format_version = 11;
+        manifest.profiles[0].previous_full_names = Some(vec!["FAKE Zorvana".into()]);
+        assert!(validate_manifest_structure(&manifest, id).is_err());
+        manifest.format_version = 14;
+        assert!(validate_manifest_structure(&manifest, id).is_ok());
+        for invalid in [
+            vec![],
+            vec![" FAKE Zorvana ".into()],
+            vec!["FAKE Zorvana".into(); 2],
+        ] {
+            manifest.profiles[0].previous_full_names = Some(invalid);
+            assert!(validate_manifest_structure(&manifest, id).is_err());
+        }
+    }
+
     fn identity_details() -> ProfileDetails {
         ProfileDetails {
             full_name: Some("  FAKE Mary Smith  ".into()),
             birth_date: Some("1958-03-12".into()),
+            previous_full_names: None,
         }
     }
 
@@ -20011,7 +20258,8 @@ mod tests {
                     id,
                     ProfileDetails {
                         full_name: None,
-                        birth_date: Some(date.into())
+                        birth_date: Some(date.into()),
+                        previous_full_names: None,
                     },
                     &today,
                     now

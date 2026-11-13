@@ -2014,3 +2014,10 @@ ai-models-starting = 正在開始下載…
 ai-models-picking = 請選擇要新增的模型檔案。
 
 ai-models-changed = 已變更正在使用的模型
+
+personDetails-previousTitle = 曾用全名
+personDetails-previousHelp = 最多可儲存16個曾用全名，以協助尋找身分資訊。變更姓名時，原姓名會在此處建議保留；如不想保留，請在儲存前移除。移除僅影響此清單項目，其他紀錄與備份仍可能保留該姓名。
+personDetails-previousEntry = 曾用全名 { $number }
+personDetails-previousRemove = 移除曾用全名 { $number }
+personDetails-previousAdd = 新增曾用全名
+personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。

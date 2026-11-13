@@ -1008,5 +1008,11 @@
   "personDetails.later",
   "personDetails.reminder",
   "personDetails.notNow",
-  "personDetails.notSaved"
+  "personDetails.notSaved",
+  "personDetails.previousTitle",
+  "personDetails.previousHelp",
+  "personDetails.previousEntry",
+  "personDetails.previousRemove",
+  "personDetails.previousAdd",
+  "personDetails.previousInvalid"
 ]

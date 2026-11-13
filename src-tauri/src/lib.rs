@@ -7433,6 +7433,131 @@ mod historical_identifier_export_tests {
         .is_err());
         assert!(!destination.exists());
     }
+
+    #[test]
+    fn profile_details_ipc_distinguishes_omission_clear_and_invalid_null() {
+        let profile = Uuid::new_v4();
+        let request = |details| serde_json::json!({"profileId":profile,"details":details,"today":"2026-11-09"});
+        let omitted: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({}))).unwrap();
+        assert!(omitted.details.previous_full_names.is_none());
+        let cleared: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({"previousFullNames":[]}))).unwrap();
+        assert_eq!(cleared.details.previous_full_names, Some(vec![]));
+        assert!(serde_json::from_value::<ProfileDetailsRequest>(request(
+            serde_json::json!({"previousFullNames":null})
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn native_text_export_refuses_a_previous_full_name_and_unverifiable_history_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        // The baseline uses every authoritative current, historical and delivery
+        // source. This canary must depend only on the explicit previous-name list.
+        let baseline = store.known_identifiers(record).unwrap();
+        assert!(
+            text_recheck::identifier_hits("Velorina", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        assert!(
+            !text_recheck::identifier_hits("Neralis", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        let now = 1_792_713_600_000;
+        store
+            .update_profile_details(
+                profile,
+                vault::ProfileDetails {
+                    previous_full_names: Some(vec!["FAKE Velorina Tersovan".into()]),
+                    ..Default::default()
+                },
+                &vault::utc_date_text(now),
+                now,
+            )
+            .unwrap();
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                pages_digest: pages_digest([(0, "Velorina")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let request = || TextExportPickedRequest {
+            record_id: record,
+            ticket,
+            pick_id,
+            text: "Velorina".to_owned(),
+        };
+        let with_previous = store.known_identifiers(record).unwrap();
+        let hits = text_recheck::identifier_hits(
+            "Velorina",
+            &with_previous.names,
+            &with_previous.birth_dates,
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!((hits[0].start, hits[0].end), (0, 8));
+        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
+        assert!(!outcome.saved);
+        assert_eq!(outcome.hits.len(), 1);
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 8));
+        assert!(!destination.exists());
+
+        // Only this disposable synthetic vault is damaged. The audit view may
+        // retain checked fragments; a privacy check must not certify the gap.
+        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .is_err());
+        assert!(!destination.exists());
+    }
 }
 
 #[cfg(test)]

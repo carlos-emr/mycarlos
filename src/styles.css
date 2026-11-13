@@ -4334,3 +4334,20 @@ button:disabled,
 .native-person-details-setup input {
   min-width: 0;
 }
+/* Previous full names in Edit details: each name and its Remove button stay
+   in one column at any width and text size. */
+.previous-full-names,
+.previous-full-names > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.previous-full-names input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.previous-full-names button {
+  white-space: normal;
+  min-height: 44px;
+}

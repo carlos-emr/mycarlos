@@ -208,7 +208,12 @@ export interface FakeVaultSetup {
    * missing, so changes are paused until they are hidden as damaged. */
   missingFiles?: string[];
   /** More people in the vault, with the details clinic documents carry. */
-  people?: { displayName: string; fullName?: string; birthDate?: string }[];
+  people?: {
+    displayName: string;
+    fullName?: string;
+    birthDate?: string;
+    previousFullNames?: string[];
+  }[];
   /** Files another app shared to myCarlos, waiting to be added (#61). */
   received?: string[];
   /** What the vault finds on a shared document, by its name: the name and
@@ -304,6 +309,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           createdAtMs: number;
           fullName?: string;
           birthDate?: string;
+          previousFullNames?: string[];
         }[];
         folders: {
           id: string;
@@ -395,7 +401,11 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         profileId?: string | null;
         currentPassphrase?: string;
         displayName?: string;
-        details?: { fullName?: string; birthDate?: string };
+        details?: {
+          fullName?: string;
+          birthDate?: string;
+          previousFullNames?: string[];
+        };
         confirmed?: string[];
         pickId?: string;
         replace?: boolean;
@@ -588,6 +598,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             createdAtMs: 3 + index,
             ...(person.fullName ? { fullName: person.fullName } : {}),
             ...(person.birthDate ? { birthDate: person.birthDate } : {}),
+            ...(person.previousFullNames
+              ? { previousFullNames: [...person.previousFullNames] }
+              : {}),
           });
         }
         const history: HistoryEntry[] = [
@@ -1461,6 +1474,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               person.fullName = request.details.fullName;
             if (request.details?.birthDate)
               person.birthDate = request.details.birthDate;
+            if (request.details?.previousFullNames !== undefined)
+              person.previousFullNames = [...request.details.previousFullNames];
             return;
           }
           case "vault_move_to_person": {

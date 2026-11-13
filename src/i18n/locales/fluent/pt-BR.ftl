@@ -2206,3 +2206,10 @@ ai-models-starting = Iniciando o download…
 ai-models-picking = Escolha um arquivo de modelo para adicionar.
 
 ai-models-changed = Modelo em uso alterado
+
+personDetails-previousTitle = Nomes completos anteriores
+personDetails-previousHelp = Até 16 nomes completos anteriores ajudam a encontrar dados de identificação. Um nome alterado é sugerido aqui; remova-o antes de salvar se não quiser guardá-lo. A remoção afeta apenas esta entrada; outros registros e backups podem mantê-lo.
+personDetails-previousEntry = Nome completo anterior { $number }
+personDetails-previousRemove = Remover nome completo anterior { $number }
+personDetails-previousAdd = Adicionar nome completo anterior
+personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
