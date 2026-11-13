@@ -1314,7 +1314,8 @@ pub mod engine_testing {
 
     pub struct ModelRunner {
         runner: Arc<Runner>,
-        /// The quotes the last summary had that were not in the pages read.
+        /// Original model quotes rejected before post-steps, for diagnostics;
+        /// final measured sentences separately report their current source location.
         unlocated: std::sync::Mutex<Vec<String>>,
         /// The model file's SHA-256 as it was handed over, and its size.
         model_sha256: String,
@@ -1538,19 +1539,15 @@ pub mod engine_testing {
                     after: rewrite.after,
                 })
                 .collect();
-            // The runner empties a quote it cannot find, in sentence order, and keeps what it
-            // said in `unlocated_quotes`; the grammar never lets the model write an empty one.
-            let mut missing = summary.unlocated_quotes.into_iter();
+            // Post-steps can repair an unfound model quote. Original missing quotes stay
+            // keyed to their sentence, so a repair cannot shift the next sentence's quote.
+            let missing = summary.unlocated_quotes;
             let sentences = summary
                 .sentences
                 .into_iter()
-                .map(|sentence| {
-                    let located = !sentence.quote.is_empty();
-                    let quote = if located {
-                        sentence.quote
-                    } else {
-                        missing.next().unwrap_or_default()
-                    };
+                .enumerate()
+                .map(|(index, sentence)| {
+                    let (quote, located) = missing.for_measurement(index, sentence.quote);
                     MeasuredSentence {
                         text: sentence.text,
                         quote,
@@ -1597,7 +1594,7 @@ pub mod engine_testing {
             self.runner
                 .summarize(self.runner.ticket(), &request)
                 .map(|summary| {
-                    *self.unlocated.lock().unwrap() = summary.unlocated_quotes;
+                    *self.unlocated.lock().unwrap() = summary.unlocated_quotes.into_quotes();
                     (
                         summary
                             .sentences
@@ -1610,7 +1607,7 @@ pub mod engine_testing {
                 .map_err(|error| format!("{error:?}"))
         }
 
-        /// What the last summary's quotes said where they were not in the pages read.
+        /// Original rejected model quotes, including any source later repaired.
         pub fn last_unlocated(&self) -> Vec<String> {
             self.unlocated.lock().unwrap().clone()
         }
