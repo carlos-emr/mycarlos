@@ -1,0 +1,27 @@
+{
+  "candidate_head": "0929f4ac398bfb027021379a9dff448eb2814c21",
+  "candidate_tree": "f63dd22faae241e3836b4fed6069e8421066567e",
+  "files": {
+    "coordinator.py": "406e204f558760b4967e086a088521b3265eb1be1552e87d4817266e22664de4",
+    "entry.py": "b03ab1969c928079f0eea2e945bfd04d58110d767bdbf35449f5ad80c2dd7add",
+    "exec_observer.py": "cbe12765340a3d95d2d8901956c28b8f4238992eb836b0644b13148e2e2f5426",
+    "fake_exec_controls.py": "2b57ead6d6274e8fc1c33bfdd95aca243384820050554d251e7118463ca54921",
+    "guard_support.py": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+    "interfaces.py": "156cdf201e8fe900114a635788ed7785e2723eb73c24af5023505a8479378bde",
+    "phase.py": "7af2e64c74da68165a3fa858a5f894452408548f3dfab63e5042b1e260cf669d",
+    "safety.py": "dc7b48d5e02de7088a240201636f1b593359c6df1c2c4d87c91d0fd34a672d4a",
+    "test_adopted_peek.py": "b98c9db0e94765691fd2c55bf47882944096f8e083a4eb017776b07581759e88",
+    "test_argv_exit.py": "32ec5533270ec0d52122f8e49a214afe2f53bcba62c20265416d667c60b6a20c",
+    "test_dispatch_controls.py": "93c7ff94394b786a4d6a32cf9ff3357f15b2344e7dc4acc75a2d4aae45385f88",
+    "test_entry_deadlines.py": "fa2a32cd6ea2a4ff09cd088f2fcc2b7c5f0d57a2787632b839beb43830a99110",
+    "test_entry_priority_controls.py": "ad0ff7accc61e07570eceabf7625fa07478df5869489a22c2277824da0c17ce6",
+    "test_exec_observer.py": "48a5a232df6971cc14be78ce26b7362b73417e8053b5e97384ca16d1b2c92709",
+    "test_exec_ready_controls.py": "e05631294cf0e1a8b8374c7358dd382c9aec74f52c654d140e142a1cb14df894",
+    "test_fake_interfaces.py": "3ab06dc2f65dcefc8bb096dcfd09252dd1aea145b60a6b35cc6398a05e8f50ad",
+    "test_owner_window.py": "2de62338043a7679c7d32e724389094f30198554ab4e482c2e4f795922ff8822",
+    "test_prompt_identity.py": "216fc09fe60d16ad0f068c630fa5f8d50e9361548457d256cbc34b850e2e539d",
+    "test_runtime_contracts.py": "17412ee578d9b52488e3b239178aab1a961b1e9570e0d97278cca28663c712d4",
+    "test_task_exit.py": "526da91e8d9cf02e9f2a00a0c543cc1660c8658020a9003b75190309e429a3c9"
+  },
+  "schema": "prompt0929-coordinator-source-manifest-v1"
+}
