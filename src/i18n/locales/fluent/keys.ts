@@ -3141,7 +3141,7 @@ export interface MessageArgsByKey {
     tool: FluentArgument;
   };
   "ai.summary.showInDocument": undefined;
-  "ai.summary.partial": { last: FluentArgument };
+  "ai.summary.partial": undefined;
   "ai.summary.noText": undefined;
   "ai.explain.box": undefined;
   "ai.explain.hint": undefined;

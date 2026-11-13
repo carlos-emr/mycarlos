@@ -1671,7 +1671,7 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文件中顯示
 
-ai-summary-partial = 此摘要僅涵蓋文件開頭部分：第 1 頁至第 { $last } 頁。
+ai-summary-partial = 此摘要僅使用了文件的部分文字。
 
 ai-summary-noText = myCarlos 無法讀取此文件中的任何文字，因此無法產生摘要。這可能是掃描檔。
 

@@ -382,9 +382,7 @@ export function ReaderAiPanel({
           {/* Pages with no text, cut short or not read at all are never
               left out silently, for a kept summary as for a new one. */}
           {summary.pagesMissing && <p>{t("ai.summary.pagesMissing")}</p>}
-          {summary.partial && (
-            <p>{t("ai.summary.partial", { last: summary.lastPage })}</p>
-          )}
+          {summary.partial && <p>{t("ai.summary.partial")}</p>}
           <ResultMeta
             tool={summary.tool}
             model={summary.model}
