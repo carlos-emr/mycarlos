@@ -11,7 +11,7 @@ import type { ModelCapacity } from "./types";
  * it looks anything up (llama.cpp `LLAMA_VOCAB_PRE_TYPE_QWEN35`, the same
  * expression). A piece never merges with the next, so each is at least one
  * token. Each piece then costs:
- * - a digit, or a run of spaces or line breaks: one token, as in the model;
+ * - a digit, or a run of spaces or line breaks: one estimated token;
  * - signs (".", ", ", "/", " (", "’"): one, or one for every 3 bytes of a
  *   longer run;
  * - a word, with its leading space: one for every so many bytes of its
@@ -31,12 +31,16 @@ import type { ModelCapacity } from "./types";
  *   QWEN35 pieces and the model's own vocabulary; that count matched the
  *   run's on all 30 documents.
  *
- * Every one of those texts counts at least 3% above the model's count, so
- * the question comes before a document is too long, never after: English
- * documents about 16% above (a question can come for a document that would
- * just fit), French about 25%. Chinese is not checked against real Chinese
- * documents yet (its rate is today's, cautious one); Gemma 4 splits digits
- * too, so this is a close guide there.
+ * On these 158 seen calibration texts, every estimate is at least 3%
+ * above the recorded count: the English run documents about 16% above,
+ * French about 25%. These fitted rates can overestimate or underestimate
+ * other text. In particular, whitespace-only pieces cost one estimated
+ * token regardless of length, which can underestimate long runs of
+ * spaces, tabs or line breaks. A warning may therefore be absent before
+ * the helper cuts a document, or appear for text that would fit. The
+ * helper's exact fit and reported pages remain authoritative. These
+ * counts do not establish accuracy for other Chinese documents or for
+ * Gemma 4.
  *
  * A page, for the settings' "about so many pages", is 3,000 characters: a
  * full page of single-spaced typed text, read at `BYTES_PER_TOKEN`. The
