@@ -433,15 +433,40 @@ fn carries(sentence: &str, trigger: &[String]) -> bool {
 
 /// Words of a lead-in step that need not be carried: the writer's narrative verbs and filler.
 const STEP_STOP: &[&str] = &[
-    "yourself", "yourselves", "every", "each", "use", "using", "take", "taking", "keep", "given",
-    "gave", "give", "asked", "ask", "told", "tell", "advised", "advise", "instructed", "first",
-    "then", "please",
+    "yourself",
+    "yourselves",
+    "every",
+    "each",
+    "use",
+    "using",
+    "take",
+    "taking",
+    "keep",
+    "given",
+    "gave",
+    "give",
+    "asked",
+    "ask",
+    "told",
+    "tell",
+    "advised",
+    "advise",
+    "instructed",
+    "first",
+    "then",
+    "please",
 ];
 
 /// The content words of the rule's lead-in step: its span before the rule (`start..at`), and the
 /// rule's own words before its first action or condition word; none when the rule's condition
 /// does not point back to them.
-fn step_words(pages: &str, start: usize, at: usize, rule: &str, trigs: &[Vec<String>]) -> Vec<String> {
+fn step_words(
+    pages: &str,
+    start: usize,
+    at: usize,
+    rule: &str,
+    trigs: &[Vec<String>],
+) -> Vec<String> {
     let toks = tokens(rule);
     let condition = find_phrase(&toks, CONDITIONS, 0);
     let first = [find_phrase(&toks, ACTIONS, 0), condition]
@@ -772,10 +797,13 @@ mod tests {
             "new café-related symptoms and ".repeat(12)
         );
         let pages = format!("FAKE document.\n{rule}");
-        for original in [Vec::new(), vec![Line {
-            text: "Call the clinic if chest pain returns.".to_owned(),
-            quote: "FAKE document.".to_owned(),
-        }]] {
+        for original in [
+            Vec::new(),
+            vec![Line {
+                text: "Call the clinic if chest pain returns.".to_owned(),
+                quote: "FAKE document.".to_owned(),
+            }],
+        ] {
             let mut lines = original;
             assert_eq!(check(&pages, &mut lines).len(), 1);
             assert_eq!(lines[0].text, quoted(&rule));
@@ -907,7 +935,8 @@ mod tests {
     }
 
     #[test]
-    fn given_a_rule_whose_first_step_is_left_out_when_checked_then_the_sentence_becomes_the_whole_step_quoted() {
+    fn given_a_rule_whose_first_step_is_left_out_when_checked_then_the_sentence_becomes_the_whole_step_quoted(
+    ) {
         check_case("a_first_step_left_out");
     }
 
@@ -927,7 +956,8 @@ mod tests {
     }
 
     #[test]
-    fn given_the_writers_narrative_verbs_before_a_rule_when_checked_then_only_its_objects_are_required() {
+    fn given_the_writers_narrative_verbs_before_a_rule_when_checked_then_only_its_objects_are_required(
+    ) {
         check_case("the_writers_narrative_verbs_are_no_step");
     }
 
@@ -954,7 +984,8 @@ mod tests {
         loose stools a day or blood in the stool.";
 
     #[test]
-    fn given_a_rule_whose_sentence_starts_at_its_bullet_when_checked_then_it_is_quoted_without_a_panic() {
+    fn given_a_rule_whose_sentence_starts_at_its_bullet_when_checked_then_it_is_quoted_without_a_panic(
+    ) {
         let mut lines = vec![Line {
             text: "Drink 6 to 8 glasses of fluid a day.".to_owned(),
             quote: "Drink about 6 to 8 glasses of fluid a day".to_owned(),
@@ -966,7 +997,10 @@ mod tests {
         assert_eq!(log.len(), 1);
         assert_eq!(log[0].check, "get-help");
         assert_eq!(log[0].after, quoted(rule));
-        assert_eq!(lines.last().map(|l| l.text.as_str()), Some(quoted(rule).as_str()));
+        assert_eq!(
+            lines.last().map(|l| l.text.as_str()),
+            Some(quoted(rule).as_str())
+        );
     }
 
     #[test]

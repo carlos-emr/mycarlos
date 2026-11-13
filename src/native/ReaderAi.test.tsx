@@ -459,7 +459,9 @@ describe("the reader's AI helper", () => {
     });
     renderReader(fakeLocalModel(), { kept });
     await firstPage();
-    await userEvent.setup().click(screen.getByRole("button", { name: "Summary" }));
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The complete summary is too large. No new summary was saved.",
     );
@@ -1020,7 +1022,9 @@ describe("the reader's AI helper", () => {
   it("names a complete-summary size refusal at generation without relying on server prose", async () => {
     renderReader(refusingModel("aiSummaryTooLarge", "ai.failed"));
     await firstPage();
-    await userEvent.setup().click(screen.getByRole("button", { name: "Summary" }));
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
     expect((await screen.findByRole("alert")).textContent).toBe(
       "The complete summary is too large. No new summary was saved.",
     );

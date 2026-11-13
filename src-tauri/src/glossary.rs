@@ -75,7 +75,10 @@ fn entries() -> &'static [Entry] {
             .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
             .map(|line| {
                 let parts: Vec<&str> = line.split(" | ").map(str::trim).collect();
-                assert!(parts.len() == 4 || parts.len() == 5, "glossary line: {line}");
+                assert!(
+                    parts.len() == 4 || parts.len() == 5,
+                    "glossary line: {line}"
+                );
                 let block = parts.get(4).map_or(Vec::new(), |column| {
                     column
                         .strip_prefix("block:")
@@ -284,7 +287,10 @@ pub(crate) fn explain(sentence: &str, lang: &str) -> Option<(String, Vec<(String
         let head = text(0, i);
         let inside = head.matches('(').count() > head.matches(')').count();
         let insert = if inside {
-            if matches!(rest.trim_start().chars().next(), None | Some(')' | ',' | ';')) {
+            if matches!(
+                rest.trim_start().chars().next(),
+                None | Some(')' | ',' | ';')
+            ) {
                 format!(", {explanation}")
             } else {
                 format!(", {explanation},")
@@ -632,7 +638,8 @@ mod tests {
     }
 
     #[test]
-    fn given_a_unit_per_millilitre_inside_brackets_when_explained_twice_then_the_second_run_changes_nothing() {
+    fn given_a_unit_per_millilitre_inside_brackets_when_explained_twice_then_the_second_run_changes_nothing(
+    ) {
         check("a_unit_per_millilitre_inside_brackets");
     }
 
