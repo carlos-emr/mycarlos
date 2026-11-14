@@ -19,6 +19,14 @@ The first experiment proposes at most one token and gives the target one
 recurrent rollback plane through the public `with_n_rs_seq(1)` API. Both contexts
 use sequence zero, the existing context/batch bounds and the existing generation
 and batch thread settings. Actual context capacities are checked before prefill.
+Both logical batches remain 512 tokens. The target microbatch remains 512, while
+the draft microbatch is 64 to reduce its compute-buffer reservation. The context
+checks retain the 512-token logical capacity requirement for both contexts and
+check their separate microbatch requirements. Full input batches still reach the
+native draft processor; no prompt tokens are dropped or clipped. The native
+source supports splitting these batches on the causal decoder path. The pinned
+Rust wrapper has no public getter for the loaded causal-attention flag, so that
+condition still needs verification in the separately admitted native fixture.
 Every target prefill batch is immediately processed by the draft driver; only
 after complete prefill does `begin()` run.
 
@@ -72,7 +80,18 @@ failures or ignored tests. A crate-root driver imports `mtp_verifier.rs` through
 `#[cfg(test)]`. This route uses only the Rust standard library. Rust formatting
 and whitespace checks also passed.
 
-Feature/default application compilation, native adapter tests, actual recurrent
+For the draft-microbatch change, a separately admitted constructor-only native
+fixture failed with a 512-token draft microbatch when reserving a 519,045,120-byte
+compute buffer. Changing only the draft microbatch to 64 constructed both
+contexts successfully under the same 5,160,511,456-byte data limit, with context
+8192, logical batches 512 and three threads. The fixture used pinned cached
+0.1.160 native archives; byte identity with the original production archives was
+not established. It did not reproduce the application sandbox or execute
+prefill, decode, generation or clinical inputs. This is constructor evidence
+only, not an application build, inference, memory-peak or performance result.
+The application memory cap and sandbox are unchanged.
+
+Feature/default compilation of this successor, native adapter tests, actual recurrent
 rollback, native grammar behavior, request isolation, peak memory, quality and
 timing still need separately admitted execution. Batched target arithmetic may
 differ from single-token arithmetic, so control-flow verification does not establish

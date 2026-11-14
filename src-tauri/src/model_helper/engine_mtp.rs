@@ -18,6 +18,8 @@ use verification::{candidate_count, keep_end, verify_prefix, TargetOracle};
 /// First source experiment: at most one proposal, and one recurrent rollback plane.
 /// A different depth requires its own memory/cap/rollback qualification.
 const DRAFT_TOKENS: usize = 1;
+// Bound draft compute buffers while keeping every logical prefill batch intact.
+const DRAFT_MICROBATCH_TOKENS: u32 = 64;
 
 pub(super) fn validate_model(model: &LlamaModel) -> Result<(), Failure> {
     let metadata = |key, expected: &str| {
@@ -46,10 +48,10 @@ fn check_position(context: &LlamaContext<'_>, end: usize) -> Result<(), Failure>
     Ok(())
 }
 
-fn check_context(context: &LlamaContext<'_>) -> Result<(), Failure> {
+fn check_context(context: &LlamaContext<'_>, minimum_microbatch: u32) -> Result<(), Failure> {
     if context.n_ctx() != CONTEXT_TOKENS
         || context.n_batch() < BATCH_TOKENS
-        || context.n_ubatch() < BATCH_TOKENS
+        || context.n_ubatch() < minimum_microbatch
         || DRAFT_TOKENS + 1 > context.n_ubatch() as usize
     {
         return Err(failed("mtp context"));
@@ -202,11 +204,12 @@ impl Engine {
                 self.backend,
                 context_params(self.threads, self.batch_threads)
                     .with_n_seq_max(1)
+                    .with_n_ubatch(DRAFT_MICROBATCH_TOKENS)
                     .with_context_type(LlamaContextType::Mtp),
             )
             .map_err(|_| failed("mtp draft"))?;
-        check_context(&target)?;
-        check_context(&draft)?;
+        check_context(&target, BATCH_TOKENS)?;
+        check_context(&draft, DRAFT_MICROBATCH_TOKENS)?;
         let mut spec = MtpSpeculative::new(
             target,
             draft,
