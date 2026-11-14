@@ -1,0 +1,19 @@
+{
+  "actual_run": false,
+  "candidate_source_package_sha256": "c2cde8d8e47942f233c08392c5a1b8783e29815886011d18aca032437d7fa7c2",
+  "execution_authorized": false,
+  "files": {
+    "exec_observer.py": "cbe12765340a3d95d2d8901956c28b8f4238992eb836b0644b13148e2e2f5426",
+    "guard_support.py": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+    "helper_affinity.py": "f3a9772ec5ed80f43302af4a2867bf1573f9f75599f7d4cbe7a1dea97086ef13",
+    "interfaces.py": "f705575bdb76245178dd34f311081ea33b50784bad1075b5e45548b10db50823",
+    "live_controls.py": "361bb8326d4ecb20667244dbd2b2c3196dec9017da21861897b923db71feaec0",
+    "outer_supervisor.py": "2b97839dfd444a7cdd4da3576d917afb76e05ddcd9c5430f07874969dadc1866",
+    "phase.py": "63c7e443b296976e829cb06d578e73c3f558d059d9ac62b2e348db177a89d4ce",
+    "profile2.py": "2ca811879f12c020f0fdead3d24a1fbafeff201d3b322a94977134f314706a6e",
+    "safety.py": "66e45af38c02f19d422b1ad9987634e830a68828d48cdad3305062ddd2d06ce2",
+    "trace_fixture.py": "336410bd47aa741f65adfacc09618f0885788eae52d8acc9802a24d12a6297a1"
+  },
+  "schema": "helper-affinity-tiny-public-source-snapshot-v1",
+  "scope": "Python interpreter ELF fixture, exact observer/affinity/task-observer functions only."
+}

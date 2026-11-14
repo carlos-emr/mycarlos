@@ -1,0 +1,7 @@
+# Prompt0929 H10 metadata finalizer
+
+This fixed-purpose source snapshot fills the existing runtime approval and H10 grant only after independently pinned actual candidate build, native runtime and READY evidence plus a fresh Root owner admission. It hashes the current executables, model and whole source inventory, preserves original V9 observer provenance, and reuses the frozen controller’s Authority, runtime, observer and roster checks. It writes a command for Root and never executes that command.
+
+The original ninety-second wall/boot limit bounds finalization; deployment also uses an external ninety-second timeout. H10 retains its 3,000-second phase cap and fixed owner expiries. The canonical compile-time helper path is distinct from the extraction helper copy. Original full inputs, strict quality criteria and the 180-second target are retained. No model header or quality result is claimed in advance.
+
+Five pure metadata controls passed with process/native primitives blocked. Independent source review found no blockers. This backup contains only the two source files and their manifest; the scripts retain historical local reference paths and digest constants. Actual grants, admission/runtime proofs, input documents, clinical outputs, models and invocation files are excluded. The snapshot alone supplies no execution authority. It is not a portable launcher and cannot renew or retry a model run.

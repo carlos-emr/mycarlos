@@ -1,0 +1,113 @@
+{
+  "status": "SOURCE_TEMPLATE_ONLY_NOT_AN_EXECUTION_GRANT",
+  "candidate_head": "12f8743d2f86ed1856c1e4df7d4e0724771742c9",
+  "candidate_tree": "bb2de8e2c503de6305225a926d139ef43f19cf1e",
+  "baseline_head": "0929f4ac398bfb027021379a9dff448eb2814c21",
+  "parameters": {
+    "TOOLCHAIN_BIN": "Explicit Cargo/rustc1.98 toolchain bin directory",
+    "CANDIDATE_SOURCE": "Clean candidate12f worktree; distinct from baseline worktree",
+    "SHARED_BUILD_DIR": "Qualified baseline intermediate target cache; only mutate after separately granted build",
+    "FINAL_TARGET_DIR": "Unique NEW candidate final target directory",
+    "CARGO_HOME": "Same qualified baseline Cargo home",
+    "VARIANT_TMP_DIR": "New candidate-only temporary directory",
+    "CCACHE_DIR": "Existing read-only native compiler cache"
+  },
+  "cwd": "${CANDIDATE_SOURCE}/src-tauri",
+  "argv": [
+    "${TOOLCHAIN_BIN}/cargo",
+    "test",
+    "--offline",
+    "--locked",
+    "--jobs",
+    "2",
+    "--features",
+    "ai-helper-stub",
+    "--lib",
+    "--test",
+    "model_engine",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "environment_from_empty_env": {
+    "PATH": "${TOOLCHAIN_BIN}:/usr/bin:/bin",
+    "RUSTC": "${TOOLCHAIN_BIN}/rustc",
+    "RUSTDOC": "${TOOLCHAIN_BIN}/rustdoc",
+    "CARGO_HOME": "${CARGO_HOME}",
+    "CARGO_TARGET_DIR": "${FINAL_TARGET_DIR}",
+    "CARGO_BUILD_BUILD_DIR": "${SHARED_BUILD_DIR}",
+    "CARGO_BUILD_JOBS": "2",
+    "CMAKE_BUILD_PARALLEL_LEVEL": "2",
+    "CARGO_NET_OFFLINE": "true",
+    "TMPDIR": "${VARIANT_TMP_DIR}",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "GIT_OPTIONAL_LOCKS": "0",
+    "CCACHE_CONFIGPATH": "/dev/null",
+    "CCACHE_DIR": "${CCACHE_DIR}",
+    "CCACHE_READONLY": "true",
+    "CCACHE_NOSTATS": "true",
+    "CCACHE_NOHARDLINK": "true",
+    "CCACHE_TEMPDIR": "${VARIANT_TMP_DIR}"
+  },
+  "delta": "Add CARGO_BUILD_BUILD_DIR pointing at qualified shared baseline intermediates; change CARGO_TARGET_DIR and temporary paths to unique variant paths. Keep Cargo home, native flags, source config, features and exact full O1 recipe. No RUSTFLAGS, profile override, compiler wrapper or second feature-different recipe.",
+  "candidate_only_mtime_touches": [
+    "src-tauri/src/lib.rs",
+    "src-tauri/src/main.rs",
+    "src-tauri/tests/model_engine.rs",
+    "src-tauri/build.rs"
+  ],
+  "artifact_admission": {
+    "fresh_false_required": [
+      "helper binary",
+      "library test executable",
+      "model_engine integration harness",
+      "regular root library"
+    ],
+    "features": [
+      "ai-helper-stub",
+      "default"
+    ],
+    "profile": {
+      "opt_level": "1",
+      "debuginfo": 2,
+      "debug_assertions": true,
+      "overflow_checks": true
+    },
+    "helper_final_path": "${FINAL_TARGET_DIR}/debug/mycarlos-tauri-poc",
+    "test_executables": "Discover actual Cargo JSON paths under ${SHARED_BUILD_DIR}/debug/deps, then create independent verified byte copies before any later cache reuse.",
+    "binding": "Verify newly compiled harness actually embeds the unique new helper path before native/model qualification. A copied helper or changed manifest cannot rebind an old compiled harness."
+  },
+  "native_configuration": {
+    "source_config": "src-tauri/.cargo/config.toml unchanged",
+    "CMake_cache_glob": "${SHARED_BUILD_DIR}/debug/build/llama-cpp-sys-2-*/out/build/CMakeCache.txt",
+    "CPU_flags_relative_to_cache": "ggml/src/CMakeFiles/ggml-cpu.dir/flags.make",
+    "required_values": {
+      "CMAKE_BUILD_TYPE": "Release",
+      "GGML_AVX": "ON",
+      "GGML_AVX2": "ON",
+      "GGML_FMA": "ON",
+      "GGML_F16C": "ON",
+      "GGML_BMI2": "ON",
+      "GGML_SSE42": "ON",
+      "GGML_NATIVE": "OFF",
+      "GGML_AVX512": "OFF",
+      "GGML_AVX_VNNI": "OFF",
+      "GGML_CPU": "ON",
+      "GGML_CUDA": "OFF",
+      "GGML_BLAS": "OFF",
+      "GGML_OPENMP": "OFF"
+    },
+    "required_C_and_CXX_flags": [
+      "-O3",
+      "-DNDEBUG",
+      "-mavx2",
+      "-mfma",
+      "-mf16c",
+      "-mbmi2",
+      "-msse4.2"
+    ]
+  },
+  "preservation": "Snapshot baseline final helper and all independently copied baseline ELF bundle files before/after: require SHA/device/inode/mode unchanged, record nlink and original shared-cache aliases. Old raw shared deps paths can be replaced and are not immutable evidence. Require new candidate final helper and its shared-deps aliases not to share old helper inode. Preserve all fixed cohort inputs and rosters unchanged. No baseline Cargo repair.",
+  "adapter_scope": "Plan only. Reuse existing bounded stage adapter after source review; explicit final/shared artifact roots and shared native-flag lookup are needed. Runtime proofs/grants/manifests must be freshly pinned; no local invocation or authority is included."
+}
