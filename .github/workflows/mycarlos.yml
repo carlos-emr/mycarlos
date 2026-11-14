@@ -24,6 +24,84 @@ defaults:
     working-directory: .
 
 jobs:
+  experimental-mtp-native:
+    name: Experimental MTP native artifacts (build only)
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/agent1-experimental-mtp-20261113'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      SOURCE_COMMIT: ${{ github.event.pull_request.head.sha }}
+      NATIVE_ROOT: /opt/mycarlos-native/${{ github.event.pull_request.head.sha }}
+      CARGO_TARGET_DIR: /opt/mycarlos-native/${{ github.event.pull_request.head.sha }}/target
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      # Keep debug assertions and the existing optimization settings; omit symbols only.
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install existing Linux native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libclang-dev
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install existing pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - name: Prepare canonical source and target paths
+        run: |
+          set -euo pipefail
+          sudo install -d -o "$(id -u)" -g "$(id -g)" "$NATIVE_ROOT"
+          mkdir "$NATIVE_ROOT/source" "$NATIVE_ROOT/logs"
+          cp -a "$GITHUB_WORKSPACE/." "$NATIVE_ROOT/source/"
+          test "$(git -C "$NATIVE_ROOT/source" rev-parse HEAD)" = "$SOURCE_COMMIT"
+          rustc -vV > "$NATIVE_ROOT/logs/toolchain.txt"
+          cargo -vV >> "$NATIVE_ROOT/logs/toolchain.txt"
+          {
+            cat /etc/os-release
+            getconf GNU_LIBC_VERSION
+            c++ --version
+            pkg-config --modversion gtk+-3.0 webkit2gtk-4.1 javascriptcoregtk-4.1
+          } > "$NATIVE_ROOT/logs/native-environment.txt"
+      - name: Build the existing frontend for native assets
+        working-directory: /opt/mycarlos-native/${{ github.event.pull_request.head.sha }}/source
+        run: |
+          npm ci
+          npm run build
+      - name: Build native evaluation targets with explicit MTP and stub features
+        working-directory: /opt/mycarlos-native/${{ github.event.pull_request.head.sha }}/source/src-tauri
+        run: |
+          set -euo pipefail
+          set -x
+          exec 3> "$NATIVE_ROOT/logs/commands.txt"
+          export BASH_XTRACEFD=3
+          cargo test --lib --test model_engine --no-run --locked \
+            --features ai-helper-stub,experimental-mtp --message-format=json \
+            > "$NATIVE_ROOT/logs/native.jsonl"
+          git diff --exit-code
+      - name: Package selected native files and Cargo witnesses only
+        run: python3 "$NATIVE_ROOT/source/scripts/ci/export-native-evaluation-artifacts.py"
+      - name: Upload build-only MTP artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-mtp-native-${{ github.event.pull_request.head.sha }}
+          path: /opt/mycarlos-native/${{ github.event.pull_request.head.sha }}/mycarlos-mtp-native.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
   supply-chain:
     name: Locked dependencies and SBOMs
     runs-on: ubuntu-24.04
