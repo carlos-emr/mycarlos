@@ -1,0 +1,30 @@
+{
+  "candidate_head": "12f8743d2f86ed1856c1e4df7d4e0724771742c9",
+  "candidate_tree": "bb2de8e2c503de6305225a926d139ef43f19cf1e",
+  "files": {
+    "coordinator.py": "0e68281c60641fb80c14899209d4da4fdafc8be5420e9a2974a2fb217f25d4ca",
+    "entry.py": "bc12a80672ec6dd367731f97e18ba4478f9275aa77664c810565f5120d719b17",
+    "exec_observer.py": "cbe12765340a3d95d2d8901956c28b8f4238992eb836b0644b13148e2e2f5426",
+    "fake_exec_controls.py": "2b57ead6d6274e8fc1c33bfdd95aca243384820050554d251e7118463ca54921",
+    "guard_support.py": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+    "interfaces.py": "b6ee26ae1a5a3363676cd34a672c088d16a574f2a73176235f185b6a4b9408e8",
+    "phase.py": "eb869bb47c109bc53ef3725162ab9c45c37caf59cf67789658e85e18f3c88014",
+    "safety.py": "4c2a45cb5a85ad364045322892b40f9e8e3700ba8be835fd685a7015ed2cfc31",
+    "test_adopted_peek.py": "b98c9db0e94765691fd2c55bf47882944096f8e083a4eb017776b07581759e88",
+    "test_argv_exit.py": "32ec5533270ec0d52122f8e49a214afe2f53bcba62c20265416d667c60b6a20c",
+    "test_dispatch_controls.py": "93c7ff94394b786a4d6a32cf9ff3357f15b2344e7dc4acc75a2d4aae45385f88",
+    "test_entry_deadlines.py": "fa2a32cd6ea2a4ff09cd088f2fcc2b7c5f0d57a2787632b839beb43830a99110",
+    "test_entry_priority_controls.py": "1987d8c3bdd352656db009556fb5eb87e833643a4a4353dc04f4b87dae409216",
+    "test_exec_observer.py": "48a5a232df6971cc14be78ce26b7362b73417e8053b5e97384ca16d1b2c92709",
+    "test_exec_ready_controls.py": "e05631294cf0e1a8b8374c7358dd382c9aec74f52c654d140e142a1cb14df894",
+    "test_fake_interfaces.py": "748053886cfc519d5d9068527164215614c6b3800467d76bb2a8667535ec9a31",
+    "test_owner_window.py": "4ba28b3fd4730a9bebbe6d3a5b494ab720a491ba3fe62e48260e348dff20e4a7",
+    "test_runtime_contracts.py": "1b18585639e501147016c04cdff9551d11ed7f555f1a7c66c5729e9e94a706bf",
+    "test_task_exit.py": "526da91e8d9cf02e9f2a00a0c543cc1660c8658020a9003b75190309e429a3c9",
+    "test_timer2.py": "5c619eb7053cd29a03aad467279e2ccfd0ee5ce40457e6d6faee0c0629fbab82",
+    "test_timer2_measurement.py": "c16f53c689a9389a6efae94be8b17cbc5fc03d31dcd200a04fb58c0b17663296",
+    "test_timer_identity.py": "addb8167c7b5a26dbdf05f1b0ccd8312ede51e3f2d54bc9166877f7f10ba5737",
+    "timer2.py": "75f20383053a0f30c3040f1ec3277b5104dcfdb9b120c348f2edea70cba4775d"
+  },
+  "schema": "timer12f874-fixed2-coordinator-source-manifest-v1"
+}
