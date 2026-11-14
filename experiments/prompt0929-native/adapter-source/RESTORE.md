@@ -11,3 +11,5 @@ The manifest hashes the seven exact source files. This is not a portable executi
 Actual candidate ELF hashes remain unknown and READY binding remains unissued. A future actual build must preserve the compile-time helper path selected by Cargo; the model harness uses that target helper, not the extraction helper copy. The copied model harness is `bundle/harness`.
 
 Later retained-target continuation and wrapper-manifest repair sources are backed up in the sibling `continuation-source` and `runtime-repair-source` directories. Their restore notes distinguish actual validation from pending qualification.
+
+The initial expanded17 wrapper-manifest construction is historical: the compiled extraction wrapper requires exactly12 entries. Use the reviewed runtime projection repair for that mismatch. The separate timer splitdir backup under `experiments/timer12f874-native` retains17 external bindings and emits exact12 wrapper entries from the start.
