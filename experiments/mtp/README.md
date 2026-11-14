@@ -107,9 +107,32 @@ and its [scope notes](https://github.com/carlos-emr/mycarlos/blob/8d6276b715dea1
 in [PR322](https://github.com/carlos-emr/mycarlos/pull/322) distinguish the private
 executed fixture from the public, uncompiled source copy.
 
+A two-request native fixture loaded the model once and created fresh contexts
+and a speculative driver for each request. Both processed 513 prefill tokens,
+committed eight synthetic tokens, and produced identical token vectors and final
+positions. This comparison checked the vectors themselves, not only a hash.
+Post-teardown data usage increased by 24,708 KiB and RSS by 52,924 KiB between
+requests; two successful requests do not establish leak-free operation.
+The [sanitized isolation fixture](https://github.com/carlos-emr/mycarlos/blob/1d5cde814f7ebdcb9f5a7ca9cd16192837a560be/experiments/mtp-native-synthetic/request-isolation-source/request_isolation.cpp)
+is backed up separately in PR322.
+
+A fixed-literal native grammar fixture used two fresh requests with 33 prefill
+tokens each. Its normal request produced exactly `{"ok":"v7Qz"}` and terminal
+target EOG: nine committed tokens, ten picks and nine grammar accepts. It observed
+six natural grammar-invalid draft rejections and one clipped EOG proposal, with
+no forced rejection. The two-token capped request produced the literal prefix
+`{"ok` with two picks and two grammar accepts, one natural grammar-invalid
+rejection, and no bonus pick. Both requests passed token accounting and position
+checks; native logs were empty. The cap exercised the final pending-token decode
+path; the accepted-proposal cap path was not observed. This validates fixed-literal
+native mechanics, not the application's complete grammar templates or sandbox.
+The [grammar source backup in PR322](https://github.com/carlos-emr/mycarlos/blob/3fb5a98835d3295539b7f60d8f86d36a6b830ad5/experiments/mtp-native-synthetic/grammar-eog-cap-source/grammar_eog_cap.cpp)
+retains separate private and public source hashes; public copies were not run.
+
 Feature/default compilation of this successor and application integration checks,
-production grammar and EOG behavior, request isolation, peak memory, quality and
-real H10 timing still need separately admitted execution. The native synthetic
+application grammar/EOG behavior and request isolation, the accepted-proposal cap
+path, peak memory, quality and real H10 timing still need separately admitted
+execution. The native synthetic
 fixture does not establish application or sandbox qualification, nor byte
 identity with the original production archives. Batched target arithmetic may
 differ from single-token arithmetic, so control-flow verification does not establish
