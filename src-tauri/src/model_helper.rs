@@ -444,9 +444,10 @@ const SUMMARY_ORDER: &str =
      with its number and unit. Then say what the patient must do and when, only where the \
      document tells the patient to do it: a doctor's name or signature, a printed, collected or \
      reported date, or a medicine already given is not an instruction. Use available sentences \
-     for explicit patient instructions before extra descriptive findings, while keeping the \
-     final answer in the order above. Include an instruction only when the document tells the \
-     patient what to do, and keep its stated conditions and timing.";
+     for explicit patient instructions, including what to avoid or stop, before extra \
+     findings; keep findings-first order. Do not turn open questions or tentative plans into \
+     instructions. Keep each instruction's negation; use only conditions and timing supported \
+     by its quote.";
 
 /// Part (b) of the 11 Nov variant design: a rule or a medicine is stated whole, with every
 /// condition, medicine or group, number and limit, or not at all.
@@ -1117,7 +1118,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_asks_found_first_instruction_selection_status_and_the_language_twice() {
+    fn summary_asks_instruction_selection_without_question_promotion_and_language_twice() {
         // Preserve the existing request while keeping explicitly sourced status/comparisons.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
@@ -1129,9 +1130,10 @@ mod tests {
              what the patient must do and when, only where the document tells the patient to do \
              it: a doctor's name or signature, a printed, collected or reported date, or a \
              medicine already given is not an instruction. Use available sentences for explicit \
-             patient instructions before extra descriptive findings, while keeping the final \
-             answer in the order above. Include an instruction only when the document tells the \
-             patient what to do, and keep its stated conditions and timing. Put one fact in each \
+             patient instructions, including what to avoid or stop, before extra findings; \
+             keep findings-first order. Do not turn open questions or tentative plans into \
+             instructions. Keep each instruction's negation; use only conditions and timing \
+             supported by its quote. Put one fact in each \
              sentence. When \
              a sentence gives a rule with a condition (if, when, unless) or names a medicine or \
              a group of medicines, keep every condition, every medicine or group, and every \
