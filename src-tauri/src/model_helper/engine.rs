@@ -1,12 +1,13 @@
 //! llama.cpp, through llama-cpp-2, inside the model helper: the model is loaded once, then asked
 //! one thing at a time, each from a fresh cache. Only the helper process runs this.
 
+#[cfg(not(feature = "experimental-mtp"))]
+use super::AnswerTiming;
 use super::{
     answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
     read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    AnswerTiming, ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START,
-    BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
-    SYSTEM_PROMPT,
+    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
+    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -18,26 +19,33 @@ use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::data::LlamaTokenData;
 use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 use llama_cpp_2::token::LlamaToken;
+#[cfg(not(feature = "experimental-mtp"))]
 use llama_cpp_2::{LlamaStateSeqFlags, SeqState};
 use std::num::NonZeroU32;
+
+#[cfg(feature = "experimental-mtp")]
+#[path = "engine_mtp.rs"]
+mod mtp;
 
 /// Whether the weights are mapped from the file rather than read into the helper's memory.
 /// Linux: read, so that the sealed copy (shared memory) can be closed once loaded and is not
 /// held twice. Windows: mapped from the file, which the system can page out and back in.
 const MAP_FILE: bool = cfg!(windows);
 
-/// The loaded model and its one context. Both live as long as the helper: leaked on purpose,
-/// since the process ends when it is done.
+/// The model lives as long as the helper. The ordinary path retains one context; the
+/// experimental MTP path allocates and drops its context pair inside each request.
 pub(super) struct Engine {
     backend: &'static LlamaBackend,
     model: &'static LlamaModel,
     /// The context. Missing only while it is made again (see [`Engine::use_threads`]); the
     /// helper ends when it cannot be made at all.
+    #[cfg(not(feature = "experimental-mtp"))]
     context: Option<LlamaContext<'static>>,
     /// The model's own template, for [`ChatFormat::Builtin`] only.
     template: Option<LlamaChatTemplate>,
     chat_format: ChatFormat,
     /// The instruction prefixes read so far, the latest first (see [`Prefix`]).
+    #[cfg(not(feature = "experimental-mtp"))]
     prefixes: Vec<Prefix>,
     /// The threads answers are written on now, and the prompt is read on (the helper's
     /// `--threads`, the most it uses).
@@ -54,14 +62,17 @@ pub(super) struct Engine {
 /// from a cleared, zeroed cache; when its prefix is one read before, word for word, that state
 /// is put back instead of reading the prefix again. Kept in the helper's memory only, until it
 /// stops (at lock).
+#[cfg(not(feature = "experimental-mtp"))]
 struct Prefix {
     tokens: Vec<LlamaToken>,
     state: SeqState,
 }
 
 /// At most this many prefixes are kept: a summary's and an explanation's, in practice.
+#[cfg(not(feature = "experimental-mtp"))]
 const KEPT_PREFIXES: usize = 2;
 /// A prefix state larger than this is not kept.
+#[cfg(not(feature = "experimental-mtp"))]
 const MAX_PREFIX_BYTES: usize = 128 * 1024 * 1024;
 
 /// A prompt's tokens from its templated text: each piece between [`SLOT`]s read with control
@@ -126,8 +137,17 @@ impl Engine {
             .with_n_gpu_layers(0)
             .with_use_mmap(MAP_FILE)
             .with_use_mlock(false);
+        #[cfg(feature = "experimental-mtp")]
+        let params = params.with_load_mtp(true);
         let model =
             LlamaModel::load_from_file(backend, &path, &params).map_err(|_| failed("model"))?;
+        #[cfg(feature = "experimental-mtp")]
+        {
+            mtp::validate_model(&model)?;
+            if settings.chat_format != ChatFormat::Builtin {
+                return Err(failed("mtp template"));
+            }
+        }
         let model: &'static LlamaModel = Box::leak(Box::new(model));
         // Gemma 4's turns are written here; llama.cpp's built-in template code cannot apply its
         // template. Every other model's own template is used.
@@ -136,15 +156,18 @@ impl Engine {
             ChatFormat::Gemma4 => None,
         };
         let threads = i32::try_from(settings.threads).map_err(|_| failed("threads"))?;
+        #[cfg(not(feature = "experimental-mtp"))]
         let context = model
             .new_context(backend, context_params(threads, threads))
             .map_err(|_| failed("context"))?;
         Ok(Self {
             backend,
             model,
+            #[cfg(not(feature = "experimental-mtp"))]
             context: Some(context),
             template,
             chat_format: settings.chat_format,
+            #[cfg(not(feature = "experimental-mtp"))]
             prefixes: Vec::new(),
             threads,
             batch_threads: threads,
@@ -156,6 +179,7 @@ impl Engine {
     /// as the app chose from the computer's load; none keeps them as they are. Prompts are
     /// always read on all of the helper's. The context is made again when the number changes:
     /// each answer starts from an empty cache, so only the time to make it is spent.
+    #[cfg(not(feature = "experimental-mtp"))]
     pub(super) fn use_threads(&mut self, threads: Option<u32>) -> Result<(), Failure> {
         let Some(threads) = threads else {
             return Ok(());
@@ -195,17 +219,20 @@ impl Engine {
     }
 
     /// Whether the engine still has its context (see [`Engine::use_threads`]).
+    #[cfg(not(feature = "experimental-mtp"))]
     pub(super) fn has_context(&self) -> bool {
         self.context.is_some()
     }
 
     /// The context: always there between requests (see [`Engine::use_threads`]).
+    #[cfg(not(feature = "experimental-mtp"))]
     fn ctx(&self) -> &LlamaContext<'static> {
         self.context
             .as_ref()
             .expect("the context is there between requests")
     }
 
+    #[cfg(not(feature = "experimental-mtp"))]
     fn ctx_mut(&mut self) -> &mut LlamaContext<'static> {
         self.context
             .as_mut()
@@ -285,6 +312,7 @@ impl Engine {
     /// Reads `tokens`, then writes at most `max` tokens, under `grammar` if given. Returns what
     /// it wrote and whether it stopped at `max`. The first `prefix_len` tokens are the
     /// instruction prefix: read once, then put back (see [`Prefix`]).
+    #[cfg(not(feature = "experimental-mtp"))]
     fn generate(
         &mut self,
         tokens: &[LlamaToken],
@@ -378,6 +406,7 @@ impl Engine {
     }
 
     /// Reads `tokens` from `start` on, in batches; the token at `last` gets its scores.
+    #[cfg(not(feature = "experimental-mtp"))]
     fn read(
         &mut self,
         batch: &mut LlamaBatch,
@@ -401,6 +430,7 @@ impl Engine {
 
     /// Puts back the state after `prefix`, if it was read before word for word, into the
     /// cleared context. A state that does not go back is dropped, and the cache cleared again.
+    #[cfg(not(feature = "experimental-mtp"))]
     fn restore_prefix(&mut self, prefix: &[LlamaToken]) -> bool {
         let Some(at) = self.prefixes.iter().position(|kept| kept.tokens == prefix) else {
             return false;
@@ -416,6 +446,7 @@ impl Engine {
     }
 
     /// Keeps the state after `prefix`, read just now into a cleared context and nothing else.
+    #[cfg(not(feature = "experimental-mtp"))]
     fn keep_prefix(&mut self, prefix: &[LlamaToken]) {
         let flags = LlamaStateSeqFlags::empty();
         let size = self.ctx().state_seq_get_size_ext(0, flags);
@@ -443,8 +474,18 @@ impl Engine {
     /// llama.cpp's own server does. Ties go to the lower token id, as llama.cpp's greedy
     /// sampler gives them.
     /// Also says whether the whole vocabulary had to be looked at.
+    #[cfg(not(feature = "experimental-mtp"))]
     fn pick(&self, index: i32, grammar: Option<&mut LlamaSampler>) -> (LlamaToken, bool) {
-        let logits = self.ctx().get_logits_ith(index);
+        self.pick_from(self.ctx(), index, grammar)
+    }
+
+    fn pick_from(
+        &self,
+        context: &LlamaContext<'_>,
+        index: i32,
+        grammar: Option<&mut LlamaSampler>,
+    ) -> (LlamaToken, bool) {
+        let logits = context.get_logits_ith(index);
         let Some((best, score)) = first_best(
             logits
                 .iter()
@@ -466,7 +507,7 @@ impl Engine {
         {
             return (best, false);
         }
-        let mut all = self.ctx().token_data_array_ith(index);
+        let mut all = context.token_data_array_ith(index);
         all.apply_sampler(grammar);
         first_best(
             all.data

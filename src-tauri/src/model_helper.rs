@@ -355,6 +355,11 @@ pub(crate) struct Stats {
     /// zero. Microseconds retain short per-token costs; these are wall times, not CPU times.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) answer_timing: Option<AnswerTiming>,
+    /// Experimental MTP uses batch/draft work, so it reports its own disjoint measurements.
+    /// Setup and full uncached prefill are included; ordinary answerTiming stays absent.
+    #[cfg(feature = "experimental-mtp")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) experimental_mtp: Option<ExperimentalMtpStats>,
     pub(crate) capped: bool,
     pub(crate) grammar_scans: u32,
     /// The prompt's instruction prefix, in tokens (in `prompt_tokens`), whether its state was
@@ -382,6 +387,40 @@ pub(crate) struct AnswerTiming {
     /// These include native scheduling and worker setup, not just useful next-token work.
     pub(crate) decode_us: u64,
     pub(crate) decode_calls: u32,
+}
+
+/// Source experiment only. No prompt/document/token text is recorded. `total_us` covers
+/// generate(): fresh contexts/driver, grammar setup, full prefill, generation and teardown.
+/// Model loading, prompt construction and post-processing remain in the harness wall time.
+#[cfg(feature = "experimental-mtp")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub(crate) struct ExperimentalMtpStats {
+    pub(crate) n_max: u32,
+    pub(crate) rollback_capacity: u32,
+    pub(crate) setup_us: u64,
+    pub(crate) prefill_target_us: u64,
+    pub(crate) prefill_draft_us: u64,
+    pub(crate) pick_us: u64,
+    pub(crate) emit_us: u64,
+    pub(crate) draft_us: u64,
+    pub(crate) verify_target_us: u64,
+    pub(crate) catchup_us: u64,
+    pub(crate) rollback_us: u64,
+    pub(crate) teardown_us: u64,
+    pub(crate) total_us: u64,
+    pub(crate) pick_calls: u32,
+    pub(crate) target_decode_calls: u32,
+    pub(crate) target_decode_tokens: u32,
+    pub(crate) draft_rounds: u32,
+    pub(crate) drafted_tokens: u32,
+    pub(crate) submitted_tokens: u32,
+    pub(crate) accepted_tokens: u32,
+    /// All unaccepted proposals, including EOG/cap truncation before target submission.
+    pub(crate) rejected_tokens: u32,
+    pub(crate) target_rollbacks: u32,
+    /// Submitted but rejected target inputs; exactly the extra target_decode_tokens.
+    pub(crate) rollback_tokens: u32,
 }
 
 /// FNV-1a's starting value and step (64-bit).

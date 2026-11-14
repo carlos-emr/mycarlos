@@ -216,6 +216,7 @@ fn model_file(dir: &std::path::Path, bytes: &[u8]) -> std::path::PathBuf {
 }
 
 #[test]
+#[cfg(not(feature = "experimental-mtp"))]
 fn the_real_engine_reads_an_instruction_prefix_once_and_puts_it_back_after() {
     let dir = tempfile::tempdir().unwrap();
     let model = model_file(dir.path(), &tiny_model());
@@ -255,6 +256,7 @@ fn the_real_engine_reads_an_instruction_prefix_once_and_puts_it_back_after() {
 }
 
 #[test]
+#[cfg(not(feature = "experimental-mtp"))]
 fn the_real_engine_writes_an_answer_on_the_threads_it_is_given() {
     let dir = tempfile::tempdir().unwrap();
     let model = model_file(dir.path(), &tiny_model());
@@ -291,6 +293,7 @@ fn the_real_engine_writes_an_answer_on_the_threads_it_is_given() {
 }
 
 #[test]
+#[cfg(not(feature = "experimental-mtp"))]
 fn the_real_engine_loads_the_model_as_handed_over_and_summarizes_under_the_grammar() {
     let dir = tempfile::tempdir().unwrap();
     let model = model_file(dir.path(), &tiny_model());
@@ -338,6 +341,19 @@ fn a_model_file_that_is_not_a_model_ends_the_helper_before_it_greets() {
     let error = ModelRunner::start(executable(), &model)
         .err()
         .expect("refused");
+    assert!(error.contains("ended before its hello"), "{error}");
+}
+
+/// The byte-vocabulary fixture has no Qwen MTP tensors. This experiment must refuse it,
+/// never silently fall back to ordinary decode.
+#[cfg(feature = "experimental-mtp")]
+#[test]
+fn experimental_mtp_refuses_a_model_without_the_required_architecture_and_head() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = model_file(dir.path(), &tiny_model());
+    let error = ModelRunner::start(executable(), &model)
+        .err()
+        .expect("MTP model refused");
     assert!(error.contains("ended before its hello"), "{error}");
 }
 
@@ -415,9 +431,9 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
     runner.stop();
 }
 
-/// By hand, with a real model (`MYCARLOS_TEST_MODEL`): an answer read from a put-back prefix
-/// after another document is word for word the answer a fresh helper gives, for a summary and
-/// for an explanation after it, so nothing of the first document carries over. Never in CI:
+/// By hand, with a real model (`MYCARLOS_TEST_MODEL`): after another document, the answer is
+/// word for word the answer a fresh helper gives. Ordinary decode reuses only its instruction
+/// prefix; experimental MTP creates a fresh driver/context pair every time. Never in CI:
 /// run with `--ignored --nocapture`.
 #[test]
 #[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
@@ -434,13 +450,55 @@ fn a_real_model_answers_the_same_after_another_document_as_fresh() {
     warm.summarize("en", &[(0, first)]).unwrap();
     let warm_summary = warm.summarize("en", &[(0, second)]).unwrap();
     let warm_summary_hash = warm.last_answer_hash().unwrap();
-    assert!(warm.last_prefix().unwrap().1, "the prefix was put back");
+    assert_eq!(
+        warm.last_prefix().unwrap().1,
+        !cfg!(feature = "experimental-mtp")
+    );
     let warm_explained = warm.explain("en", term, context).unwrap();
     let warm_explained_hash = warm.last_answer_hash().unwrap();
     warm.explain("en", term, first).unwrap();
     let warm_again = warm.explain("en", term, context).unwrap();
     let warm_again_hash = warm.last_answer_hash().unwrap();
-    assert!(warm.last_prefix().unwrap().1, "the prefix was put back");
+    assert_eq!(
+        warm.last_prefix().unwrap().1,
+        !cfg!(feature = "experimental-mtp")
+    );
+    #[cfg(feature = "experimental-mtp")]
+    {
+        let stats = warm.last_stats_json().expect("experimental MTP stats");
+        assert_eq!(stats["cacheHit"], false);
+        assert_eq!(stats["snapshotBytes"], 0);
+        assert!(stats.get("answerTiming").is_none());
+        let mtp = &stats["experimentalMtp"];
+        assert_eq!(mtp["nMax"], 1);
+        assert_eq!(mtp["rollbackCapacity"], 1);
+        let value = |key: &str| mtp[key].as_u64().expect("MTP count/time");
+        assert_eq!(
+            value("targetDecodeTokens"),
+            stats["answerTokens"].as_u64().unwrap() + value("rollbackTokens")
+        );
+        assert_eq!(
+            value("submittedTokens"),
+            value("acceptedTokens") + value("rollbackTokens")
+        );
+        assert_eq!(
+            value("draftedTokens"),
+            value("acceptedTokens") + value("rejectedTokens")
+        );
+        let stages = [
+            "setupUs",
+            "prefillTargetUs",
+            "prefillDraftUs",
+            "pickUs",
+            "emitUs",
+            "draftUs",
+            "verifyTargetUs",
+            "catchupUs",
+            "rollbackUs",
+            "teardownUs",
+        ];
+        assert!(stages.iter().map(|key| value(key)).sum::<u64>() <= value("totalUs"));
+    }
     warm.stop();
     let cold = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
     let cold_summary = cold.summarize("en", &[(0, second)]).unwrap();
@@ -473,6 +531,7 @@ fn a_real_model_answers_the_same_after_another_document_as_fresh() {
 /// The evaluation run's measured summary, on the tiny model: each sentence with its quote and
 /// whether it was found, the fit, the stats, the runner's time limit, and the model file's hash.
 #[test]
+#[cfg(not(feature = "experimental-mtp"))]
 fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
     use sha2::{Digest, Sha256};
     let dir = tempfile::tempdir().unwrap();
