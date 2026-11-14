@@ -149,11 +149,13 @@ impl BoundHelper {
             compiled_sources(),
             "helper and test must bind the same source"
         );
-        let features = if cfg!(feature = "ai-helper-stub") {
-            vec!["ai-helper-stub".to_owned()]
-        } else {
-            Vec::new()
-        };
+        let mut features = Vec::new();
+        if cfg!(feature = "ai-helper-stub") {
+            features.push("ai-helper-stub".to_owned());
+        }
+        if cfg!(feature = "experimental-mtp") {
+            features.push("experimental-mtp".to_owned());
+        }
         assert_eq!(manifest.build_features, features);
         assert_eq!(
             file_digest(&manifest.build_receipt_path),

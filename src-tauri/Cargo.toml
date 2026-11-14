@@ -18,6 +18,9 @@ default = []
 # (src/model_helper.rs), so CI tests the launcher, sandbox, cancel and lock without a model. No
 # installer enables it; CI fails a build of the app that accepts the stub argument.
 ai-helper-stub = []
+# Experimental source only: same-model Qwen3.5 MTP, fresh contexts for each request.
+# No installer/default enables this. Requires separate native/quality/timing qualification.
+experimental-mtp = ["llama-cpp-2/common"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
