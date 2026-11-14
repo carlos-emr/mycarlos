@@ -23,7 +23,7 @@
     "coordinator/test_prompt_identity.py": "d39340a57981e7d7fdeb33ee7dd151de797dde086444351dc2dfe1df23204492",
     "coordinator/test_runtime_contracts.py": "076a280cc6875ff264defb541b6679955c488afdb12c9a6fe84d64f97a762f90",
     "coordinator/test_task_exit.py": "526da91e8d9cf02e9f2a00a0c543cc1660c8658020a9003b75190309e429a3c9",
-    "finalizer/finalize_h10.py": "8b14bc8df9a6d8bfb2fe3ad07ae708bcf7b5c54fbed865e9334e4a49a3c766d9",
+    "finalizer/finalize_h10.py": "3de7893c3201121e5a493dfd2d050f9ff6345ef38669615ca31b1f03620ab292",
     "ready/frozen_loader.py": "26a896f020b79b4ea216f0c5cbc705d5f3f14209b2670b161f1b60f6cc1e42c6",
     "ready/gated_exec.py": "85be88d37acc0de26649ed82cb6c731b28fac9b9724d91799440efda20b180c8",
     "ready/probe.py": "2c287db96583b225c2aadf5f2ff08f03f52d9804c22bdad3c80d965d18af6ed5"

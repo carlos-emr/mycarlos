@@ -12,11 +12,11 @@ import sys
 import time
 from types import SimpleNamespace
 
-R = Path('/PRIVATE_UNSET/binding_2')
-T = Path('/PRIVATE_UNSET/binding_3')
-P = Path('/PRIVATE_UNSET/binding_4')
-W = Path('/PRIVATE_UNSET/binding_5')
-V9 = Path('/PRIVATE_UNSET/binding_6')
+R = Path('/PRIVATE_UNSET/healthy_binding_1')
+T = Path('/PRIVATE_UNSET/healthy_binding_2')
+P = Path('/PRIVATE_UNSET/healthy_binding_3')
+W = Path('/PRIVATE_UNSET/healthy_binding_4')
+V9 = Path('/PRIVATE_UNSET/healthy_binding_5')
 HEAD = '717641f575ef69b1038cad1274f767e46c7e05ac'
 TREE = '0a547d9ef2dae92470fceaebcd7482f338fb90ed'
 PACKAGE_SHA = '98b5c07f6d8119148d5af7c76d46aa63b9bb430eae1058c80db87c8704e23916'
@@ -116,6 +116,12 @@ def main():
     need(actual['schema'] == 'quality717641-root-actual-evidence-v1'
          and actual['candidate_head'] == HEAD and actual['candidate_tree'] == TREE,
          'explicit Root-pinned new717 actual-evidence manifest required')
+    for key in ('owner', 'build', 'runtime_raw', 'build_proof', 'runtime_proof', 'ready_proof',
+                'ready_binding', 'source_inventory', 'approved_roster', 'confinement_source',
+                'observer_qualification_unaccepted', 'retained_hold_origin_grant'):
+        item = actual[key]
+        need(isinstance(item['path'], str) and Path(item['path']).is_relative_to('/root'),
+             'actual evidence must be explicit healthy /root refs: ' + key)
     owner_ref, runtime_proof_ref, ready_proof_ref = actual['owner'], actual['runtime_proof'], actual['ready_proof']
     owner, rp, qp = checked(owner_ref), checked(runtime_proof_ref), checked(ready_proof_ref)
     bash = owner['bash']
@@ -185,7 +191,7 @@ def main():
          'actual READY record does not bind current harness bytes and instance')
     binding = checked(actual['ready_binding'])
     need(binding['expected_harness'] == harness and binding['expected_argv'] == [str(harness_path), '--list'], 'READY binding does not match current harness instance')
-    ready_source = Path('/PRIVATE_UNSET/binding_7')
+    ready_source = Path('/PRIVATE_UNSET/healthy_binding_6')
     need(actual['ready_binding']['path'] == str(ready_source / 'BINDING.json')
          and binding['coordinator_directory'] == str(P)
          and ready['coordinator_freeze'] == binding['coordinator_files']['FREEZE.json']
@@ -205,17 +211,22 @@ def main():
     issued = time.time()
     need(owner['HOLD_unchanged'] is True and 3100 < wall - issued <= 7200
          and 3100 < boot_end - safety.boot() <= 7200, 'fresh complete H10 phase does not fit owner window')
-    approval = pinned(T / 'RUNTIME-APPROVAL.UNISSUED.json', '8de894bf5f18b04a67f6ce4b604e2784c5356f03443b76e570408717ae0fe6e9')
-    grant = pinned(T / 'H10.GRANT.UNISSUED.json', '1073a39cf2b0749fc65f09c65cd1a3a9a86adf9e53bcc32cae53d615ef2a3fe6')
+    approval = pinned(T / 'RUNTIME-APPROVAL.UNISSUED.json', 'b0932918cd06d4cb9b2ba68a101b60724773d09e4cd1c91e353a07f73c6124de')
+    grant = pinned(T / 'H10.GRANT.UNISSUED.json', '66ffbc6d16f0ad8a9ece5d55ba2c01b5d50b9402389ef3ffe20da42d3eb70a90')
     need(approval['candidate_head'] == grant['candidate_head'] == HEAD
          and approval['candidate_tree'] == grant['candidate_tree'] == TREE, 'candidate identity differs')
+    approval.update(source_inventory=actual['source_inventory'], confinement_source=actual['confinement_source'])
+    grant.update(source_inventory=actual['source_inventory'], approved_roster=actual['approved_roster'])
+    need(sha(actual['confinement_source']['path']) == actual['confinement_source']['sha256']
+         == '1d6e653dbffa63f38b2a28f5c7c585479d3b6d38042992e20ae5edd560a5d80c',
+         'unchanged candidate confinement source required')
     for r in grant['actual_prerequisite_artifacts']:
         checked(r)
     inventory = checked(approval['source_inventory'])
     need(inventory['candidate_head'] == HEAD and inventory['candidate_tree'] == TREE
          and len(inventory['files']) == 656, 'whole source inventory incomplete')
     for r in inventory['files']:
-        need(sha(r['path']) == r['sha256'], 'application source changed')
+        need(Path(r['path']).is_relative_to('/root') and sha(r['path']) == r['sha256'], 'application source changed')
     evidence = pinned(T / 'OBSERVER-REBIND-EVIDENCE.json', '1d7f055b7bac4186da68530fe5e14aa042c4a71df99170b11b97e60bb85c6612')
     for name in evidence['byte_identical_modules']:
         need((V9 / name).read_bytes() == (P / name).read_bytes(), 'historical observer source differs')
@@ -224,9 +235,9 @@ def main():
             return {n.name: ast.dump(n, include_attributes=False) for n in ast.parse(path.read_text()).body if hasattr(n, 'name')}
         old, new = definitions(V9 / name), definitions(P / name)
         need(all(old[n] == new[n] for n in names), 'historical observation/ownership callback differs')
-    observer = pinned(T / 'OBSERVER-QUALIFICATION.UNACCEPTED.json', '74891cb21e5ee08bf2059141f645dcdf828cd5dd8c28c15376d2a9f0a793b874')
+    observer = checked(actual['observer_qualification_unaccepted'])
     for r in observer['actual_artifacts'] + [observer['qualification_origin'], observer['actual_run_observer_source'], observer['actual_run_phase_source']]:
-        need(sha(r['path']) == r['sha256'], 'historical actual observer evidence changed')
+        need(Path(r['path']).is_relative_to('/root') and sha(r['path']) == r['sha256'], 'historical actual observer evidence changed')
     need(checked(observer['qualification_origin'])['root_accepted'] is True
          and observer['root_accepted'] is False and observer['new_candidate_live_run_performed'] is False,
          'unexpected observer template authority')
@@ -248,8 +259,10 @@ def main():
     need(approval['model_inference_authorized'] is False and approval['summary_build_actually_observed'] is False,
          'no model execution or observed model header may be preclaimed')
     approval_ref = write(R / 'candidate717641-runtime-approval-H10-a1-ISSUED.json', approval)
-    old = pinned(R / 'model-grant-literal6595-H10-v9task-exit-a1-ISSUED-20261113.json',
-                 '3a0b3f31454d2e745267626bcce6e64d79d21c73733eb88fa5cbb265edc67a73')
+    need(actual['retained_hold_origin_grant']['sha256'] ==
+         '3a0b3f31454d2e745267626bcce6e64d79d21c73733eb88fa5cbb265edc67a73',
+         'exact original retained-HOLD grant bytes required')
+    old = checked(actual['retained_hold_origin_grant'])
     holder = {k: owner['holder'][k] for k in ('pid', 'start')}
     holder.update(fd=owner['lock']['fd'], lock_device=owner['lock']['device'], lock_inode=owner['lock']['inode'])
     grant.update(holder=holder, retained_hold=old['retained_hold'], root_fresh_admission=owner_ref,
