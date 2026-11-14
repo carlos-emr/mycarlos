@@ -1,0 +1,40 @@
+{
+  "contextTokens": 8192,
+  "dataLimitBytes": 5160511456,
+  "fixtures": [
+    {
+      "draftMicrobatchTokens": 512,
+      "file": "constructor_baseline_ub512.cpp",
+      "privateConstructorExitCode": 3,
+      "privateConstructorOutcome": "Failed to reserve a 519045120-byte draft compute buffer.",
+      "privateFixtureSourceSha256": "cd9d05fe707bc83536b890e52d5e19660ccc56934bbfd0e134744bd0ea55463a",
+      "publicSha256": "8e5dac1396768d7424f8c846a8f131b080b5c4513470c561a7420ddc5cbad5f2",
+      "publicSourceCompiledOrRun": false,
+      "sourceDifferenceFromPrivateFixture": "Only model path changed to PRIVATE_UNSET"
+    },
+    {
+      "draftMicrobatchTokens": 64,
+      "file": "constructor_draft_ub64.cpp",
+      "privateConstructorExitCode": 0,
+      "privateConstructorOutcome": "Both target and draft contexts constructed.",
+      "privateFixtureSourceSha256": "252d4d8bce51a0ac6d7b095f8dd3011f1d5270a9e8e46c104cc68263c63752f3",
+      "publicSha256": "4ac6b4715b3bee050456dbad51b0c345a98807bed24287cc258b64b4c595d6e5",
+      "publicSourceCompiledOrRun": false,
+      "sourceDifferenceFromPrivateFixture": "Only model path changed to PRIVATE_UNSET"
+    }
+  ],
+  "limits": {
+    "applicationBuildOrInferenceQualified": false,
+    "clinicalInputsRead": false,
+    "loadedCausalFlagMeasuredByConstructorFixtures": false,
+    "originalProductionArchiveByteIdentityEstablished": false,
+    "prefillDecodeOrGenerationInvoked": false,
+    "productionSandboxReproduced": false
+  },
+  "logicalBatchTokens": 512,
+  "nativeApi": "llama-cpp-sys-2 0.1.160",
+  "schema": "mtp-constructor-source-comparison-v1",
+  "scope": "Sanitized source backup, not execution authorization or public-source qualification",
+  "targetMicrobatchTokens": 512,
+  "threads": 3
+}
