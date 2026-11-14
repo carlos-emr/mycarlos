@@ -1,0 +1,25 @@
+{
+  "execution_authority": false,
+  "files": {
+    "qualify_cloud_native.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "298483b23ff0fb902ceb4c9714d8dc39d145af840629a8f36ed4a74f7acbab7e",
+      "public_backup_sha256": "298483b23ff0fb902ceb4c9714d8dc39d145af840629a8f36ed4a74f7acbab7e"
+    },
+    "run_mock_checks.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "717b0a9c9cf9fc3d005ade76fe49384b280c6f24124d735bfa0bf5bd32986833",
+      "public_backup_sha256": "717b0a9c9cf9fc3d005ade76fe49384b280c6f24124d735bfa0bf5bd32986833"
+    },
+    "test_cloud_artifact.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "496ef20188d86fdde2445c30b780e1ce5f769c82979d869b49de83ab02349f3c",
+      "public_backup_sha256": "496ef20188d86fdde2445c30b780e1ce5f769c82979d869b49de83ab02349f3c"
+    }
+  },
+  "predecessor_negative": "Initial reader source was not used for actual qualification; first8 pure controls had7passes/1error on truncated oversized TAR (rejected via tarfile.ReadError). V2 tightened early payload bounds, ZIP preallocation limits, streamed Cargo parsing and strict ISA/math policy rather than weakening rejection.",
+  "private_policies_expected_inventories_api_responses_receipts_results_included": false,
+  "schema": "github-ci77-artifact-reader-source-backup-v1",
+  "source_only": true,
+  "validation": "Exact V2: A2 independently executed11 data-only controls with process/native/signaling primitives blocked,0failures/errors/skips; source peer0remaining material findings. Root actual data-only reader exited0 against authenticated GitHub APIs/original ZIP and exported payload. Public copies AST-parsed only. No native/model execution by Agent3; native35/READY/model admission separate."
+}
