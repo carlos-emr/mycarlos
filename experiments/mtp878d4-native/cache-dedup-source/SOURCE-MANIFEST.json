@@ -1,0 +1,51 @@
+{
+  "candidate_head": "878d4a65ecc0358de2fdc7724cce448d0bb02360",
+  "candidate_tree": "fde4a3f4e8da1b2cece3306c7f0c7309a678291d",
+  "execution_authority": false,
+  "files": {
+    "guard_support.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+      "public_backup_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8"
+    },
+    "native_guard.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "95a11b0461c0c10c9bea821402556461a3d61470552c32ed15f7e5d5fce7e5a5",
+      "public_backup_sha256": "95a11b0461c0c10c9bea821402556461a3d61470552c32ed15f7e5d5fce7e5a5"
+    },
+    "run_mock_checks.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "9d63e994e6b1bd1b0bafaee2de3f73768a7e4ac8b69e57a652ab2028dddd9d52",
+      "public_backup_sha256": "9d63e994e6b1bd1b0bafaee2de3f73768a7e4ac8b69e57a652ab2028dddd9d52"
+    },
+    "scratch_driver.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef",
+      "public_backup_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef"
+    },
+    "test_extraction_projection.py": {
+      "parameterizations": [
+        "Candidate extraction fixture uses repository-relative path; restore against exact candidate head."
+      ],
+      "private_reviewed_source_sha256": "167c29bfa1112a6bf58a6ebb5b1d5f061437347c7c8fd0317ee7c67a422744ad",
+      "public_backup_sha256": "8dace80371d6542f5f9f113431ca36e4073b57f98efbf31e3b076610ebeceb0c"
+    },
+    "test_splitdir.py": {
+      "parameterizations": [
+        "Private actual cache manifest and Cargo home paths replaced by required NATIVE_BACKUP_CACHE_MANIFEST and NATIVE_BACKUP_CARGO_HOME environment variables; no fixture data published."
+      ],
+      "private_reviewed_source_sha256": "d40e713c7753f6c6c2ca3f232b8b881ac0e0e510cd7c89c2a2c5cc0c2c8579f3",
+      "public_backup_sha256": "b8e5fca3dc307baa68a33fdbb353d546da396de895f2c1f299bba49b2dc0bf7f"
+    },
+    "test_timer_artifacts.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "20a865d41823caa32ea8bba6aae94e435fbf6f8565953b3f54e3255840a61bb3",
+      "public_backup_sha256": "20a865d41823caa32ea8bba6aae94e435fbf6f8565953b3f54e3255840a61bb3"
+    }
+  },
+  "portable_or_execution_ready": false,
+  "private_policy_grants_inventories_receipts_results_included": false,
+  "schema": "mtp878d4-cache-dedup-code-backup-v1",
+  "source_only": true,
+  "validation": "Exact private adapter: 33 pure controls passed with process/native/signaling primitives blocked; actual Root build passed; 34 exact model-free Rust tests and one extraction wrapper passed with zero failures/ignored tests; separate READY EXEC-stop probe passed. Public parameterized copies AST-parsed only. No model inference, quality, or performance result is claimed."
+}
