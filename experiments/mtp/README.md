@@ -26,7 +26,9 @@ check their separate microbatch requirements. Full input batches still reach the
 native draft processor; no prompt tokens are dropped or clipped. The native
 source supports splitting these batches on the causal decoder path. The pinned
 Rust wrapper has no public getter for the loaded causal-attention flag, so that
-condition still needs verification in the separately admitted native fixture.
+condition is checked in a separate native fixture. That fixture observed the
+loaded draft flag as true for the pinned model; this does not qualify the
+application build or other models.
 Every target prefill batch is immediately processed by the draft driver; only
 after complete prefill does `begin()` run.
 
@@ -91,9 +93,25 @@ prefill, decode, generation or clinical inputs. This is constructor evidence
 only, not an application build, inference, memory-peak or performance result.
 The application memory cap and sandbox are unchanged.
 
-Feature/default compilation of this successor, native adapter tests, actual recurrent
-rollback, native grammar behavior, request isolation, peak memory, quality and
-timing still need separately admitted execution. Batched target arithmetic may
+A separately admitted native synthetic K1 fixture passed with all 513 prefill
+tokens processed as logical batches of 512 and 1, with matching target/draft
+positions after each call. Four K1 rounds covered one deliberately forced
+zero-acceptance rollback of depth one, its following decode, and three natural
+full acceptances. A final ordinary decode brought the total to eight committed
+tokens. The forced round's proposal matched the target; no natural rejection
+was observed. The expected nine internal microbatches are source-derived, not
+an observed internal trace. The fixture used greedy non-EOG selection and did
+not exercise production EOG handling or grammar. Its native logs were empty.
+[Sanitized fixture source](https://github.com/carlos-emr/mycarlos/blob/8d6276b715dea13386f29a6a1196e998b7f32dd9/experiments/mtp-native-synthetic/v3-source/synthetic_k1.cpp)
+and its [scope notes](https://github.com/carlos-emr/mycarlos/blob/8d6276b715dea13386f29a6a1196e998b7f32dd9/experiments/mtp-native-synthetic/v3-source/RESTORE.md)
+in [PR322](https://github.com/carlos-emr/mycarlos/pull/322) distinguish the private
+executed fixture from the public, uncompiled source copy.
+
+Feature/default compilation of this successor and application integration checks,
+production grammar and EOG behavior, request isolation, peak memory, quality and
+real H10 timing still need separately admitted execution. The native synthetic
+fixture does not establish application or sandbox qualification, nor byte
+identity with the original production archives. Batched target arithmetic may
 differ from single-token arithmetic, so control-flow verification does not establish
 bit-identical baseline output. No speed gain or quality result is claimed. This
 candidate needs its own binary and runtime qualification; prior timer or
