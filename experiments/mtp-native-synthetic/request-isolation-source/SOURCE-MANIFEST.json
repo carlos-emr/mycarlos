@@ -1,0 +1,12 @@
+{
+  "schema": "mtp-fresh-request-isolation-code-backup-v1",
+  "source_only": true,
+  "execution_authority": false,
+  "private_source_sha256": "07a6aa44ff84f85fb16174a22830563c3a6aa86b065a24ed6fd8989f36939593",
+  "public_source_sha256": "8d36715cde4717044e7b3473a240c5ee137b717cd9031481e856ca51e977ca9f",
+  "parameterizations": [
+    "Private model path replaced by explicit REPLACE_WITH_ROOT_ADMITTED_GGUF literal; original model byte-size/cap assertions retained."
+  ],
+  "private_admission_results_receipts_model_paths_included": false,
+  "validation": "Private source peer cleared; Root compile and standalone synthetic two-request run passed. One loaded model/two fresh context+wrapper lifecycles, each513 prefill tokens and8 answer commits; exact committed token vectors, diagnostic hashes and final positions matched. Public path-parameterized source not compiled/run. No leak-free, production grammar/EOG/sandbox, quality or performance qualification."
+}
