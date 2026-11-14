@@ -1,0 +1,54 @@
+{
+  "candidate_head": "717641f575ef69b1038cad1274f767e46c7e05ac",
+  "candidate_tree": "0a547d9ef2dae92470fceaebcd7482f338fb90ed",
+  "execution_authority": false,
+  "files": {
+    "guard_support.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+      "public_backup_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8"
+    },
+    "native_guard.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "2e4ba8df597bdbaaec3d701e444d82d583815b3f11cc77cb93a4ef021b8e6742",
+      "public_backup_sha256": "2e4ba8df597bdbaaec3d701e444d82d583815b3f11cc77cb93a4ef021b8e6742"
+    },
+    "run_mock_checks.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "ae443d0306f5de0ba2a25185d2140d50d62bbf7b4ce856c278295adc190fc35a",
+      "public_backup_sha256": "ae443d0306f5de0ba2a25185d2140d50d62bbf7b4ce856c278295adc190fc35a"
+    },
+    "scratch_driver.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef",
+      "public_backup_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef"
+    },
+    "test_extraction_projection.py": {
+      "parameterizations": [
+        "Private candidate extraction fixture uses repository-relative path; restore against exact candidate head."
+      ],
+      "private_reviewed_source_sha256": "bdb5d44a66aab3eecd57f725f67c87054f19d14e008af6e84be6f7c8fad6793f",
+      "public_backup_sha256": "645e929e65fcefefec951ae141573b73f4db61962a75befc861d4df832c59f60"
+    },
+    "test_splitdir.py": {
+      "parameterizations": [
+        "Private cache manifest/Cargo home paths replaced by required NATIVE_BACKUP_CACHE_MANIFEST and NATIVE_BACKUP_CARGO_HOME environment variables; no private fixture published."
+      ],
+      "private_reviewed_source_sha256": "e5885d2a2f06910c8582e8a2cd90c79ee3ee3aa1af552169bcf90afa810496b6",
+      "public_backup_sha256": "8bb5d7c756ccf2a908df87ba5e47cb79ddef93be9ef4de07fca491e47c055871"
+    },
+    "test_timer_artifacts.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "702c727dd0f32086982fd638a9ee8a33639b8330cf915d2a05de64287188973a",
+      "public_backup_sha256": "702c727dd0f32086982fd638a9ee8a33639b8330cf915d2a05de64287188973a"
+    }
+  },
+  "model_run": false,
+  "native24_run": false,
+  "native_build_run": false,
+  "portable_or_execution_ready": false,
+  "private_policy_grants_inventories_receipts_results_included": false,
+  "schema": "quality717641-native-code-backup-v1",
+  "source_only": true,
+  "validation": "All34 private pure controls passed with zero failures/errors/skips under CPU0/nice19/Python-I-B and real process/native/signaling primitives blocked before imports; actual outer timeout30 seconds (runner static report60 noted in private receipt). All seven public Python files AST-parsed only. Independent source peer pending. No candidate native build, runtime24, READY or model result is claimed."
+}

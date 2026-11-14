@@ -1,0 +1,11 @@
+# Synthetic grammar, EOG and token-cap fixture source
+
+This authoritative Astra fixture is backed up alongside the other standalone native fixtures in PR #322. The private exact source passed source peers, actual compilation and Root's standalone synthetic execution. Two fresh requests share one loaded model, each with33 fixed synthetic prefill tokens. The normal request requires the exact tiny-grammar literal {"ok":"v7Qz"} and terminal target EOG. The capped request requires a nonempty proper prefix at exactly2 committed tokens, with no extra pick.
+
+The actual normal result had9 committed tokens and10 picks,6 natural grammar-invalid proposal rejections,1 clipped proposal EOG, and1 terminal target EOG selection. The cap2 result had2 commits/2 picks and no extra pick. The standalone pending-token cap route was observed. The accepted-proposal cap route was not observed; source code covering that branch is not execution evidence. The fixed tiny grammar and synthetic inputs do not qualify the production application, full production grammar, helper sandbox, clinical quality or speed.
+
+The public copy changes only the private MODEL path to REPLACE_WITH_ROOT_ADMITTED_GGUF. It is uncompiled and unrun. Restore against independently admitted model/headers/archive inputs, retaining the original byte-size/cap assertions. Reuse the existing pinned0.1.160 headers, six native archives and generated build-info.cpp.o object described in ../v3-source/RESTORE.md. The invocation is --grammar-eog-cap under a separately issued Root admission. Internal alarm110 seconds requires a120-second Root outer budget including cleanup.
+
+Context8192, logical batch512, target micro512, draft micro64, three threads, target recurrent snapshot depth1 and draft depth0 are unchanged. Causal attention is checked on the actual draft context. The verifier advances grammar only for committed tokens; target EOG is not emitted or accepted into grammar. Provisional draft trimming, single-depth target rollback, accepted-boundary cleanup and explicit accounting checks remain in the source.
+
+Private model files/paths, grants, admission scripts, runtime receipts/results/logs and credentials are excluded. SOURCE-MANIFEST.json records private/public code hashes and the sole literal substitution. No execution authority is conferred by this backup.

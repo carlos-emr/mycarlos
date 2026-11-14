@@ -1,0 +1,23 @@
+{
+  "actual_candidate_elf_sha256": null,
+  "app_opt_level": "1",
+  "candidate_head": "0929f4ac398bfb027021379a9dff448eb2814c21",
+  "candidate_pr": 315,
+  "execution_authority": false,
+  "files": {
+    "guard_support.py": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+    "native_guard.py": "1e75394c5dd20122eae945584a622dd2962f25e32a1aa18e5f5815422c44e569",
+    "ready-probe/frozen_loader.py": "26a896f020b79b4ea216f0c5cbc705d5f3f14209b2670b161f1b60f6cc1e42c6",
+    "ready-probe/gated_exec.py": "85be88d37acc0de26649ed82cb6c731b28fac9b9724d91799440efda20b180c8",
+    "ready-probe/probe.py": "36157c9e07455729e86d38fed7e8c735d12c27b4375227a3d9fb0d921977df0a",
+    "scratch_driver.py": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef",
+    "test_prompt_artifacts.py": "702c727dd0f32086982fd638a9ee8a33639b8330cf915d2a05de64287188973a"
+  },
+  "native_runtime_qualified": false,
+  "portable_or_execution_ready": false,
+  "ready_binding_issued": false,
+  "schema": "prompt0929-native-code-backup-v1",
+  "scope": "Code only; excludes private policy, grants, bindings, inventories, holder proofs, credentials, logs and runtime receipts.",
+  "source_only": true,
+  "validation": "Root executed seven synthetic parser controls: 7 passed, zero failures/errors/skips, real process primitives blocked. No new native build or model run."
+}

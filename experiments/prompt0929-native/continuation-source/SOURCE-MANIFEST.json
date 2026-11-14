@@ -1,0 +1,41 @@
+{
+  "actual_private_grants_bindings_receipts_included": false,
+  "execution_authority": false,
+  "files": {
+    "guard_support.py": {
+      "parameterizations": [],
+      "public_backup_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+      "reviewed_private_source_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8"
+    },
+    "native_guard.py": {
+      "parameterizations": [
+        "Private runtime lineage value parameterized: ORIGINAL_PACKAGE_SHA",
+        "Private runtime lineage value parameterized: ORIGINAL_CACHE_RESULT_SHA"
+      ],
+      "public_backup_sha256": "a7fc5c79adb31724b2903832e92de3354fc0ba10635b4732f5b4cd3e4e218de7",
+      "reviewed_private_source_sha256": "f97d36f155ed53f6e9399b3df272308845a697a11bafd56e411efd034f60e4b7"
+    },
+    "scratch_driver.py": {
+      "parameterizations": [],
+      "public_backup_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef",
+      "reviewed_private_source_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef"
+    },
+    "test_continuation.py": {
+      "parameterizations": [],
+      "public_backup_sha256": "d18de06c6eed77c79a57a277d7630517bc29bd85081c15cb06627a327ca68df0",
+      "reviewed_private_source_sha256": "d18de06c6eed77c79a57a277d7630517bc29bd85081c15cb06627a327ca68df0"
+    },
+    "test_prompt_artifacts.py": {
+      "parameterizations": [],
+      "public_backup_sha256": "702c727dd0f32086982fd638a9ee8a33639b8330cf915d2a05de64287188973a",
+      "reviewed_private_source_sha256": "702c727dd0f32086982fd638a9ee8a33639b8330cf915d2a05de64287188973a"
+    }
+  },
+  "model_run_performed": false,
+  "portable_or_execution_ready": false,
+  "runtime24_qualification": "Pending at backup preparation; no pass claimed",
+  "schema": "prompt0929-parameterized-code-backup-v1",
+  "scope": "continuation-source",
+  "source_only": true,
+  "validation": "Continuation: Root executed15 synthetic controls,0failures/errors/skips. Projection repair: Root executed7 pure source/JSON controls,0failures/errors/skips. Published parameterized copies were AST-parsed only; no runtime result transfers to modified placeholders."
+}

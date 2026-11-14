@@ -1,0 +1,41 @@
+{
+  "actual_private_grants_bindings_receipts_included": false,
+  "execution_authority": false,
+  "files": {
+    "guard_support.py": {
+      "parameterizations": [],
+      "public_backup_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+      "reviewed_private_source_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8"
+    },
+    "native_guard.py": {
+      "parameterizations": [
+        "Private runtime lineage value parameterized: ORIGINAL_PACKAGE_SHA",
+        "Private runtime lineage value parameterized: ORIGINAL_CACHE_RESULT_SHA",
+        "Private runtime lineage value parameterized: REUSED_BUILD_PACKAGE_SHA",
+        "Private runtime lineage value parameterized: REUSED_BUILD_RESULT_SHA",
+        "Private runtime lineage value parameterized: FAILED_RUNTIME_RESULT_SHA"
+      ],
+      "public_backup_sha256": "76b8b74cf21cb4e657ba22caa898ffa50593d770d86ce9af2b617157caf084d4",
+      "reviewed_private_source_sha256": "3503ba3553268203b967935665792a99f9434b7c3778bb882d0748f8461b78db"
+    },
+    "scratch_driver.py": {
+      "parameterizations": [],
+      "public_backup_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef",
+      "reviewed_private_source_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef"
+    },
+    "test_extraction_projection.py": {
+      "parameterizations": [
+        "Fixture source resolved relative to repository root"
+      ],
+      "public_backup_sha256": "30651979528cf90e3d000875cd8dd8404ac957ed853a10841deaa8387c69480f",
+      "reviewed_private_source_sha256": "b767ac0af0a591301a48dc52b3dd66ef8ef29c36f1ee0c596a8a58f366cc0fc7"
+    }
+  },
+  "model_run_performed": false,
+  "portable_or_execution_ready": false,
+  "runtime24_qualification": "Pending at backup preparation; no pass claimed",
+  "schema": "prompt0929-parameterized-code-backup-v1",
+  "scope": "runtime-repair-source",
+  "source_only": true,
+  "validation": "Continuation: Root executed15 synthetic controls,0failures/errors/skips. Projection repair: Root executed7 pure source/JSON controls,0failures/errors/skips. Published parameterized copies were AST-parsed only; no runtime result transfers to modified placeholders."
+}

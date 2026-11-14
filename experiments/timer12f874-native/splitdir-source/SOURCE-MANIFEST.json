@@ -1,0 +1,51 @@
+{
+  "actual_timer_build_passed": false,
+  "actual_timer_model_run": false,
+  "candidate_head": "12f8743d2f86ed1856c1e4df7d4e0724771742c9",
+  "candidate_tree": "bb2de8e2c503de6305225a926d139ef43f19cf1e",
+  "execution_authority": false,
+  "files": {
+    "guard_support.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8",
+      "public_backup_sha256": "ca396b511f857c0396a5f24fedd76e93df7d5553a7ecc8ea735e97425d4f2bd8"
+    },
+    "native_guard.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "c0d59406925fe008c77648ea7785c9b17f84696ad0d90b42e82a7ae10934b850",
+      "public_backup_sha256": "c0d59406925fe008c77648ea7785c9b17f84696ad0d90b42e82a7ae10934b850"
+    },
+    "run_mock_checks.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "ab6e61fcc345f4a953d7486fbaf00b32f5262dd92ce44bdd0a9ae231214c07ff",
+      "public_backup_sha256": "ab6e61fcc345f4a953d7486fbaf00b32f5262dd92ce44bdd0a9ae231214c07ff"
+    },
+    "scratch_driver.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef",
+      "public_backup_sha256": "57aec7980c292b149bd15eab58c757e70a167f1087dac0f44acbca93379070ef"
+    },
+    "test_extraction_projection.py": {
+      "parameterizations": [
+        "Private fixture source path replaced by repository-relative path; restore against exact timer candidate."
+      ],
+      "private_reviewed_source_sha256": "41f357a7e68e2bda1538a3bc3998747b4644013d2d001256fd678b7bf7e1316f",
+      "public_backup_sha256": "3c684d3d12f5d6496aa4acddde5b1adb64cea30462b800f0cdcf02d659555f6b"
+    },
+    "test_splitdir.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "78448cbf22195e07a8ce980367cc3e05b765fbc6e7272d7b411cce7dd4bbd976",
+      "public_backup_sha256": "78448cbf22195e07a8ce980367cc3e05b765fbc6e7272d7b411cce7dd4bbd976"
+    },
+    "test_timer_artifacts.py": {
+      "parameterizations": [],
+      "private_reviewed_source_sha256": "702c727dd0f32086982fd638a9ee8a33639b8330cf915d2a05de64287188973a",
+      "public_backup_sha256": "702c727dd0f32086982fd638a9ee8a33639b8330cf915d2a05de64287188973a"
+    }
+  },
+  "portable_or_execution_ready": false,
+  "private_policy_grants_inventories_receipts_results_included": false,
+  "schema": "timer12f874-splitdir-code-backup-v1",
+  "source_only": true,
+  "validation": "Root/Astra executed all32 private pure controls with real process/native/signaling primitives blocked:0 failures/errors/skips. A2 and A4 final source peers cleared all preservation MUSTs. Public copies were AST-parsed only; no public execution result is claimed."
+}

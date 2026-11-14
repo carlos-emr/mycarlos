@@ -1,0 +1,12 @@
+{
+  "schema": "mtp-synthetic-v3-code-backup-v1",
+  "source_only": true,
+  "execution_authority": false,
+  "private_source_sha256": "0241b51d40e4aab48dbd13d5d255e1e7b21fa4b1e8cad14d9f3fd692533abfe2",
+  "public_source_sha256": "317fdc66e96d9cbed8f4ccd0fe4b245a83baf76f938bbe70e11cb5fa7d7dbff8",
+  "parameterizations": [
+    "Private model path replaced by explicit REPLACE_WITH_ROOT_ADMITTED_GGUF literal; original model byte-size/cap assertions retained."
+  ],
+  "private_admission_results_receipts_model_paths_included": false,
+  "validation": "Private V3 compiled and Root-executed synthetic fixture passed exit0 in58.82s: 513 prefill tokens,3 naturally accepted draft tokens,1 explicitly forced prefix truncation/rollback and8 answer commits; causal flag measured true and positions checked. Public parameterized code not compiled or run. No production grammar/EOG/sandbox/quality/performance qualification."
+}
