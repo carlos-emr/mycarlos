@@ -1,0 +1,12 @@
+{
+  "schema": "mtp-synthetic-grammar-eog-cap-code-backup-v1",
+  "source_only": true,
+  "execution_authority": false,
+  "private_source_sha256": "30041bc91309cfa5dabc980175e89f4b4e62526549b22976b066233ed8d9e4b4",
+  "public_source_sha256": "6310bff553e04ac36345f9ac4a6e8d57040965f6132261dfe81be1706eb6852b",
+  "parameterizations": [
+    "Only private MODEL literal replaced by explicit REPLACE_WITH_ROOT_ADMITTED_GGUF placeholder; all other source bytes retained."
+  ],
+  "private_admission_results_receipts_model_paths_included": false,
+  "validation": "Exact private source compiled and Root standalone synthetic run passed. Normal request: exact fixed literal,9commits/10picks,6natural grammar-invalid rejections,1proposalEOG clip and terminal targetEOG. Cap2 request: proper literal prefix,2commits/2picks, no extra pick. Pending-token cap path observed; accepted-proposal cap path not observed. Public path-parameterized source uncompiled/unrun. No production application/full grammar/sandbox, clinical quality or performance qualification."
+}
