@@ -1,0 +1,6 @@
+# This file is prepared for the dependency-free toy only.
+version = 4
+
+[[package]]
+name = "cargo-split-toy"
+version = "0.0.0"

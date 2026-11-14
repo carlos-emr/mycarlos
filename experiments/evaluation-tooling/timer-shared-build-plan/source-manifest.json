@@ -1,0 +1,8 @@
+{
+  "schema": "source-only-backup-v1",
+  "status": "SOURCE_ONLY_NO_RUNTIME_AUTHORITY",
+  "files": {
+    "README.md": "40f1f0d9c5f276e96e3d6e2adb979a76f28f33ca31dcea2feefdc60bac6ed90d",
+    "build-plan.template.json": "712ad4c916e6c38867e4b977b7fb32efef5cdd09c2653c05be7c471447249c2f"
+  }
+}
