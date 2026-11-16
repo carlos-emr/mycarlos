@@ -649,6 +649,22 @@ mod tests {
     }
 
     #[test]
+    fn given_kidney_disease_stage_3a_when_explained_then_the_stage_gets_its_own_explanation() {
+        check("kidney_disease_stage_3a");
+    }
+
+    #[test]
+    fn given_kidney_disease_stade_3a_in_french_when_explained_then_the_stage_is_explained_in_french(
+    ) {
+        check("kidney_disease_stade_3a_in_french");
+    }
+
+    #[test]
+    fn given_a_cancer_stage_3a_when_explained_then_the_kidney_explanation_is_not_used() {
+        check("a_cancer_stage_3a_is_not_kidney_disease");
+    }
+
+    #[test]
     fn given_the_glossary_when_read_then_every_block_word_is_one_lower_case_word() {
         for entry in entries() {
             for word in &entry.block {

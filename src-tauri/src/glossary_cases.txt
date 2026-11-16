@@ -266,3 +266,18 @@ name: a_list_inside_brackets
 lang: en
 sentence: Have a blood test (creatinine, potassium) in 1 week.
 expect: Have a blood test (creatinine, a waste product in the blood that shows how well the kidneys work, potassium) in 1 week.
+===
+name: kidney_disease_stage_3a
+lang: en
+sentence: He has chronic kidney disease stage 3a.
+expect: He has chronic kidney disease (kidneys that have worked less well for a long time) stage 3a (a middle stage of long-term kidney disease).
+===
+name: kidney_disease_stade_3a_in_french
+lang: fr
+sentence: Il a une maladie rénale chronique de stade 3a.
+expect: Il a une maladie rénale chronique (des reins qui travaillent moins bien depuis longtemps) de stade 3a (un stade intermédiaire d'une maladie des reins de longue durée).
+===
+name: a_cancer_stage_3a_is_not_kidney_disease
+lang: en
+sentence: The lung cancer is stage 3A.
+expect: The lung cancer is stage 3A.
