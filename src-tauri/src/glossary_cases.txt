@@ -1,4 +1,4 @@
-The glossary post-step's shared cases (K19, glossary-2.1): synthetic sentences only. Read by the Rust tests in
+The glossary post-step's shared cases (K19, glossary-2.2): synthetic sentences only. Read by the Rust tests in
 glossary.rs and by the evaluation's Python port. One case per block, blocks separated by a line "===". Every case is
 also run twice: a second run must change nothing.
 ===

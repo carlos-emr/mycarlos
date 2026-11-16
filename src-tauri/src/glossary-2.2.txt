@@ -1,9 +1,9 @@
-# glossary-2.1 (K19, evaluation only): plain explanations of medical words, by general meaning only. An explanation
+# glossary-2.2 (K19, evaluation only): plain explanations of medical words, by general meaning only. An explanation
 # never says anything about a patient, never gives a cause of the patient's illness or a claim, has no digit, and
 # contains no listed term (so running the step twice changes nothing). glossary-1 + the medical review of 12 Nov
 # (review-k19-glossary-20261112.md): its 24 rewordings, ACR taken out, its clash phrases blocked. 2.1 (the blind review
 # of glossary-2): U/mL and IU/mL back, but never in a sentence about insulin or another medicine's strength; units
-# with a lower-case l; the Polish count unit; saturation (not the iron test's). Then (Ben, 16 Nov, grading answer 10):
+# with a lower-case l; the Polish count unit; saturation (not the iron test's). 2.2 (Ben, 16 Nov, grading answer 10):
 # "stage 3a" gets "a middle stage of long-term kidney disease", but never in a sentence about a cancer.
 # Each line: kind | terms (";"-separated) | English | French [| block: words (";"-separated) that, anywhere in the
 # sentence as whole words in any case, stop this line's explanation]
