@@ -1,15 +1,57 @@
-The document trim's shared cases (evaluation candidate, 16 Nov 2026): synthetic lines only. Read by the Rust tests in
+The document trim's shared cases (evaluation candidate v2, 16 Nov 2026): synthetic lines only. Read by the Rust tests in
 document_trim.rs and by the evaluation's Python port. One case per block, blocks separated by a line "===". A case's
 "input:" letter runs to its "expect:" line; pages are separated by a line "<<page>>". "expect:" is the trimmed letter.
 ===
-name: a_fax_transmission_line_goes_when_its_sender_is_named_in_a_kept_line
+name: a_fax_transmission_line_goes_when_its_sender_is_named_in_the_body
 input:
 OCT-03-2026 09:12  FROM:NORTHFIELD TEST CLINIC (FAKE) 555-0100  TO:5550199  P.001/002
 Northfield Test Clinic (FAKE)
+100 Example Road, Testville
 Your blood test is on 9 October.
+Bring this letter to Northfield Test Clinic (FAKE) on the day.
+Drink water before the test.
+Dr. Jane FAKE-Smith (FAKE)
 expect:
 Northfield Test Clinic (FAKE)
+100 Example Road, Testville
 Your blood test is on 9 October.
+Bring this letter to Northfield Test Clinic (FAKE) on the day.
+Drink water before the test.
+Dr. Jane FAKE-Smith (FAKE)
+===
+name: a_fax_line_stays_when_its_sender_is_named_only_in_the_letterhead
+input:
+OCT-03-2026 09:12  FROM:NORTHFIELD TEST CLINIC (FAKE) 555-0100  TO:5550199  P.001/002
+Northfield Test Clinic (FAKE)
+100 Example Road, Testville
+Your blood test is on 9 October.
+Bring this letter on the day.
+Drink water before the test.
+Dr. Jane FAKE-Smith (FAKE)
+expect:
+OCT-03-2026 09:12  FROM:NORTHFIELD TEST CLINIC (FAKE) 555-0100  TO:5550199  P.001/002
+Northfield Test Clinic (FAKE)
+100 Example Road, Testville
+Your blood test is on 9 October.
+Bring this letter on the day.
+Drink water before the test.
+Dr. Jane FAKE-Smith (FAKE)
+===
+name: a_fax_line_stays_when_another_organization_shares_a_word_of_its_name
+input:
+OCT-03-2026 09:12  FROM:NORTHFIELD EX HOSP (FAKE) 555-0100  TO:5550199  P.001/002
+Sam FAKE-Doe was discharged home.
+A nurse from Northfield Home Care (FAKE) will visit daily.
+Go back to the hospital if the fever returns.
+Change the dressing every second day.
+Keep the wound dry.
+expect:
+OCT-03-2026 09:12  FROM:NORTHFIELD EX HOSP (FAKE) 555-0100  TO:5550199  P.001/002
+Sam FAKE-Doe was discharged home.
+A nurse from Northfield Home Care (FAKE) will visit daily.
+Go back to the hospital if the fever returns.
+Change the dressing every second day.
+Keep the wound dry.
 ===
 name: a_fax_transmission_line_stays_when_it_is_the_only_mention_of_its_sender
 input:
@@ -23,19 +65,35 @@ name: a_fax_line_without_a_from_marker_and_with_digit_swaps_still_matches
 input:
 05/11/2026 11:31  C0MMUNITY TEST LAB0RATORIES (FICTIVE)  514 555-0181  P. 2/3
 Community Test Laboratories (FICTIVE)
+300 Specimen Street
 Potassium 4.1 mmol/L.
+Tested at Community Test Laboratories (FICTIVE) on 4 November.
+Sodium 139 mmol/L.
+Verified by the laboratory.
 expect:
 Community Test Laboratories (FICTIVE)
+300 Specimen Street
 Potassium 4.1 mmol/L.
+Tested at Community Test Laboratories (FICTIVE) on 4 November.
+Sodium 139 mmol/L.
+Verified by the laboratory.
 ===
 name: a_polish_fax_line_goes
 input:
 02-11-2026 14:01  SZPITAL TESTOWY (FIKCYJNY) FAKS 00 000 01 91  STR. 1/2
 Szpital Testowy (FIKCYJNY)
+ul. Przykładowa 12
+Pacjent leczony w Szpital Testowy (FIKCYJNY) przez 6 dni.
 Kontrola za 7 dni.
+Lekarz prowadzący
+lek. Anna FAKE-Kowalska
 expect:
 Szpital Testowy (FIKCYJNY)
+ul. Przykładowa 12
+Pacjent leczony w Szpital Testowy (FIKCYJNY) przez 6 dni.
 Kontrola za 7 dni.
+Lekarz prowadzący
+lek. Anna FAKE-Kowalska
 ===
 name: a_fax_line_naming_a_patient_stays
 input:
@@ -65,10 +123,13 @@ See the table on Page 2 of 3 for your doses.
 expect:
 See the table on Page 2 of 3 for your doses.
 ===
-name: a_print_footer_goes_when_its_organization_is_named_in_a_kept_line
+name: a_print_footer_goes_when_its_organization_is_named_in_the_body
 input:
 Northfield Test Hospital (FAKE) · Patient: FAKE-Doe · Page 1 of 2
+Admission note
+Admitted to Northfield Test Hospital (FAKE) with a fever.
 Drink fluids.
+Rest at home.
 Health Records copy · printed 28-Oct-2026 16:44 by FAKE-HIM07 · Northfield Test Hospital (FAKE) · CONFIDENTIAL
 <<page>>
 Northfield Test Hospital (FAKE) · Patient: FAKE-Doe · Page 2 of 2
@@ -76,7 +137,10 @@ Come back if the fever returns.
 Health Records copy · printed 28-Oct-2026 16:44 by FAKE-HIM07 · Northfield Test Hospita1 (FAKE) · CONFIDENTIAL
 expect:
 Northfield Test Hospital (FAKE) · Patient: FAKE-Doe · Page 1 of 2
+Admission note
+Admitted to Northfield Test Hospital (FAKE) with a fever.
 Drink fluids.
+Rest at home.
 <<page>>
 Northfield Test Hospital (FAKE) · Patient: FAKE-Doe · Page 2 of 2
 Come back if the fever returns.
@@ -168,3 +232,93 @@ Do not take ibuprofen. Call the clinic if the pain gets worse.
 Sincerely,
 Dr. Jane FAKE-Smith (FAKE)
 cc: Sam FAKE-Doe (patient copy)
+===
+name: v2_fax_headers_in_other_machine_styles_go
+input:
+Received: 2026-11-09 10:41:58 EST   From: 705 555 0131   To: 7055550160   Pg 02/04
+--- 14/11/2026 08:51 ---   +1 905 555 0133   >>   P 1/8
+11/09/2026 4:11:52 PM -0500    FAXCOM    PAGE 1 OF 3
+Take one tablet each morning.
+expect:
+Take one tablet each morning.
+===
+name: v2_print_footers_and_page_lines_go
+input:
+Printed: 2026-11-14 08:44   User: ROI-FAKE-LD   Chart copy - not for redistribution   Page 1 of 7
+Ce document est confidentiel. — 1 —
+PRINTED COPY - VERIFY AGAINST ELECTRONIC RECORD   Page 2 of 2
+Take one tablet each morning.
+expect:
+Take one tablet each morning.
+===
+name: v2_a_bare_print_date_stays
+input:
+Printed: 2026-10-27
+Potassium 4.4 mmol/L.
+expect:
+Printed: 2026-10-27
+Potassium 4.4 mmol/L.
+===
+name: v2_stamps_markers_and_cover_fields_go
+input:
+F A X   C O V E R   S H E E T
+Total pages: 2 (including this page)
+FAX: 613-555-0177
+D: 2026-11-08 12:10   T: 2026-11-09 07:55   Job# 773120   /kp
+Dicté le 2026-11-06 — Transcrit le 2026-11-09 — no 448812 — ld
+Electronically signed to expedite delivery; not proofread.
+E-signed 2026-11-07 16:44
+cc: Chart
+c.c. Dossier
+--- END OF REPORT ---
+** CONTINUED ON NEXT PAGE **
+Rest for two days.
+expect:
+Rest for two days.
+===
+name: v2_a_warning_notice_goes_whole
+input:
+WARNING: This facsimile contains personal health information that is confidential. If you are not the intended
+recipient, any review or copying is strictly prohibited. Please notify us at 905-555-0130
+and destroy the pages received.
+
+See your doctor in one week.
+expect:
+
+See your doctor in one week.
+===
+name: v2_clinical_lines_that_look_like_noise_stay
+input:
+Page 2 of 3: Plan
+— 2 — Conduite / Plan
+PAGE 3 — MEDICATIONS
+CONFIDENTIAL: HIV result attached
+Received: blood culture positive for E. coli
+Dictated 2026-11-10: increase metoprolol to 50 mg twice daily
+2 of 3 tablets taken
+Metoprolol 25 mg, 1/2 tablet twice daily
+Avis : prendre le comprimé avec de la nourriture.
+The result was sent to you in error last week; the corrected result is attached.
+Dictated by: Dr. Jane FAKE-Smith, Radiologist   D: 2026-11-10 16:02   T: 2026-11-10 16:40
+expect:
+Page 2 of 3: Plan
+— 2 — Conduite / Plan
+PAGE 3 — MEDICATIONS
+CONFIDENTIAL: HIV result attached
+Received: blood culture positive for E. coli
+Dictated 2026-11-10: increase metoprolol to 50 mg twice daily
+2 of 3 tablets taken
+Metoprolol 25 mg, 1/2 tablet twice daily
+Avis : prendre le comprimé avec de la nourriture.
+The result was sent to you in error last week; the corrected result is attached.
+Dictated by: Dr. Jane FAKE-Smith, Radiologist   D: 2026-11-10 16:02   T: 2026-11-10 16:40
+===
+name: v2_a_fax_header_with_the_patients_name_stays
+input:
+Re: Sam FAKE-Doe · DOB: 1 January 1990
+11/12/2026 14:23   FAKE-DOE SAM   6135550143   P.002/003
+Rest for two days.
+expect:
+Re: Sam FAKE-Doe · DOB: 1 January 1990
+11/12/2026 14:23   FAKE-DOE SAM   6135550143   P.002/003
+Rest for two days.
