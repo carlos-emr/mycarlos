@@ -27,6 +27,8 @@ mod idle;
 mod local_model;
 // K17 (evaluation only): the post-step on summary sentences (pure std; tested on its own).
 mod addressee;
+// Evaluation candidate (16 Nov): the document trim before fitting (pure std; tested on its own).
+mod document_trim;
 // K19 (evaluation only): the glossary post-step (pure std; tested on its own).
 mod glossary;
 mod local_runner;
