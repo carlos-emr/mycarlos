@@ -52,7 +52,8 @@ pub(super) struct Engine {
 /// words: those are always parts, read after the prefix (see [`assemble`]). Each answer starts
 /// from a cleared, zeroed cache; when its prefix is one read before, word for word, that state
 /// is put back instead of reading the prefix again. Kept in the helper's memory only, until it
-/// stops (at lock).
+/// stops (at lock), also when the context is made again for other answer threads (see
+/// [`kept_across_threads`]).
 struct Prefix {
     tokens: Vec<LlamaToken>,
     state: SeqState,
@@ -62,6 +63,15 @@ struct Prefix {
 const KEPT_PREFIXES: usize = 2;
 /// A prefix state larger than this is not kept.
 const MAX_PREFIX_BYTES: usize = 128 * 1024 * 1024;
+
+/// Whether a kept prefix of `len` tokens still fits a context made again for other answer
+/// threads. Its state is plain bytes, read in [`BATCH_TOKENS`] batches on the prompt's threads,
+/// which never change: put back, it is what the new context would read itself. Except when its
+/// last batch is a single token: llama.cpp reads a one-token batch on the answer threads, and
+/// its sums (one-token attention over a long cache) depend on how many there are.
+fn kept_across_threads(len: usize) -> bool {
+    len % BATCH_TOKENS as usize != 1
+}
 
 /// A prompt's tokens from its templated text: each piece between [`SLOT`]s read with control
 /// tokens (the first with the model's start token), each part (a document's, a term's or a
@@ -154,7 +164,9 @@ impl Engine {
     /// Answers from now on are written on `threads` threads (between one and the prompt's),
     /// as the app chose from the computer's load; none keeps them as they are. Prompts are
     /// always read on all of the helper's. The context is made again when the number changes:
-    /// each answer starts from an empty cache, so only the time to make it is spent.
+    /// each answer starts from an empty cache, so only the time to make it is spent, and the
+    /// kept prefixes stay (see [`kept_across_threads`]), so a busy computer does not also read
+    /// the instructions again.
     pub(super) fn use_threads(&mut self, threads: Option<u32>) -> Result<(), Failure> {
         let Some(threads) = threads else {
             return Ok(());
@@ -166,8 +178,10 @@ impl Engine {
             return Ok(());
         }
         // The old context goes first: with the real model's weights, two at once would not fit
-        // the helper's memory cap. Its kept prefixes go with it.
-        self.prefixes.clear();
+        // the helper's memory cap. The kept prefixes are copies of its state, not part of it:
+        // they stay, unless the new threads would have read them differently.
+        self.prefixes
+            .retain(|kept| kept_across_threads(kept.tokens.len()));
         // Zeroed, then dropped: nothing of the last answer stays in the memory it frees.
         if let Some(context) = self.context.as_mut() {
             context.clear_kv_cache();
@@ -578,5 +592,18 @@ mod tests {
         // A prompt whose slots don't match its parts is refused.
         assert!(assemble(&summary, &[], by_character).is_none());
         assert!(assemble(&summary, &["a", "b"], by_character).is_none());
+    }
+
+    #[test]
+    fn a_prefix_is_kept_across_threads_unless_its_last_batch_is_one_token() {
+        let batch = BATCH_TOKENS as usize;
+        // Read in batches of more than one token, on the prompt's threads only: kept.
+        for len in [2, 43, batch - 1, batch, batch + 2, batch + 43, 2 * batch] {
+            assert!(kept_across_threads(len), "{len}");
+        }
+        // A last batch of one token is read on the answer threads: not kept.
+        for len in [1, batch + 1, 2 * batch + 1] {
+            assert!(!kept_across_threads(len), "{len}");
+        }
     }
 }
