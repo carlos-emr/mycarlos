@@ -453,10 +453,13 @@ const SUMMARY_WHOLE_RULES: &str =
      limit the document gives for it; if they do not all fit in one sentence, leave that \
      sentence out.";
 
-/// Part (c) of the 11 Nov variant design: which, how much and when, in one sentence.
+/// Part (c) of the 11 Nov variant design: which, how much and when, in one sentence. A result
+/// is called high or low only where the source says so for that result (16 Nov: a list of
+/// results was called "high" although one of them was low).
 const SUMMARY_SAME_SENTENCE: &str =
     "Say which, how much and when in the same sentence: the test or medicine by name, the \
-     number with its unit, the date or time.";
+     number with its unit, the date or time. Call a result high or low only where the source \
+     gives that direction for that result; never give one direction to a list of results.";
 
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
@@ -1126,7 +1129,9 @@ mod tests {
              number or limit the document gives for it; if they do not all fit in one sentence, \
              leave that sentence out. Say which, how much and when in the same sentence: the \
              test or \
-             medicine by name, the number with its unit, the date or time. For each sentence, \
+             medicine by name, the number with its unit, the date or time. Call a result high or \
+             low only where the source gives that direction for that result; never give one \
+             direction to a list of results. For each sentence, \
              copy into \"quote\" one continuous piece of the document, 3 to 25 words, exactly \
              as written (same spelling, numbers, accents and punctuation, no '...' and no \
              joined pieces), in the document's own language (only the quote is copied; the \
