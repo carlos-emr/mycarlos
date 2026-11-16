@@ -269,11 +269,15 @@ fn the_real_engine_writes_an_answer_on_the_threads_it_is_given() {
     runner.summarize("en", &pages).unwrap();
     assert_eq!(runner.last_threads(), Some((1, batch)));
     assert!(runner.last_prefix().unwrap().1);
-    // ...and goes with the context when it is made again.
+    // ...and stays when the context is made again for other threads: it was read on the
+    // prompt's threads, which do not change. Not when its last batch (of 512) is one token,
+    // which llama.cpp reads on the answer threads.
     if batch > 1 {
+        let prefix_len = runner.last_prefix().unwrap().0;
         runner.override_threads(Some(batch));
         runner.summarize("en", &pages).unwrap();
-        assert!(!runner.last_prefix().unwrap().1);
+        assert_eq!(runner.last_threads(), Some((batch, batch)));
+        assert_eq!(runner.last_prefix().unwrap().1, prefix_len % 512 != 1);
     }
     // As many as the prompt's again: the context is made again, inside the sandbox.
     runner.override_threads(Some(batch));
@@ -454,6 +458,66 @@ fn a_real_model_answers_the_same_after_another_document_as_fresh() {
         assert!(!text.contains("FAKE-MARKER") && !quote.contains("FAKE-MARKER"));
     }
     assert!(!warm_explained.contains("FAKE-MARKER"));
+}
+
+/// By hand, with a real model (`MYCARLOS_TEST_MODEL`) on a computer with at least 4 cores: a
+/// summary written after the answer threads changed, from the prefix kept across the change, is
+/// word for word the summary a fresh helper writes on those threads, both ways (all of the
+/// helper's threads to 2, and 2 to all). Prints the prompt times, kept and fresh. Never in CI:
+/// run with `--ignored --nocapture`.
+#[test]
+#[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
+fn a_real_model_answers_the_same_after_a_change_of_threads_as_fresh() {
+    let model = std::path::PathBuf::from(
+        std::env::var_os("MYCARLOS_TEST_MODEL").expect("MYCARLOS_TEST_MODEL"),
+    );
+    let first = "FAKE-MARKER-Q7 Rowan Testwood: potassium 6.9 mmol/L, start spironolactone \
+                 25 mg daily, see Dr. Fakeham in 3 days.";
+    let second = "FAKE lab report. Potassium is mildly high (5.3 mmol/L). The A1c of 8.1% is \
+                  above the usual target. Repeat the potassium within 1 week.";
+    let probe = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    probe.summarize("en", &[(0, first)]).unwrap();
+    let (_, all) = probe.last_threads().unwrap();
+    probe.stop();
+    assert!(
+        all > 2,
+        "needs more than 2 threads for the helper, found {all}"
+    );
+    for (before, after) in [(all, 2), (2, all)] {
+        let kept =
+            ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+        kept.override_threads(Some(before));
+        kept.summarize("en", &[(0, first)]).unwrap();
+        kept.override_threads(Some(after));
+        let kept_summary = kept.summarize("en", &[(0, second)]).unwrap();
+        let kept_hash = kept.last_answer_hash().unwrap();
+        assert_eq!(kept.last_threads(), Some((after, all)));
+        assert!(
+            kept.last_prefix().unwrap().1,
+            "the prefix was kept across the change"
+        );
+        let kept_stats = kept.last_stats();
+        kept.stop();
+        let fresh =
+            ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+        fresh.override_threads(Some(after));
+        let fresh_summary = fresh.summarize("en", &[(0, second)]).unwrap();
+        let fresh_hash = fresh.last_answer_hash().unwrap();
+        assert!(
+            !fresh.last_prefix().unwrap().1,
+            "a fresh helper reads the prefix"
+        );
+        let fresh_stats = fresh.last_stats();
+        fresh.stop();
+        println!("{before} -> {after} threads: kept {kept_stats}\n  fresh {fresh_stats}");
+        println!("  token hashes: kept {kept_hash:016x} / fresh {fresh_hash:016x}");
+        // Token for token the same: what the model wrote, not only what was read from it.
+        assert_eq!(kept_hash, fresh_hash);
+        assert_eq!(kept_summary, fresh_summary);
+        for (text, quote) in &kept_summary.0 {
+            assert!(!text.contains("FAKE-MARKER") && !quote.contains("FAKE-MARKER"));
+        }
+    }
 }
 
 /// The evaluation run's measured summary, on the tiny model: each sentence with its quote and
