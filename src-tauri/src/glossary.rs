@@ -1,4 +1,4 @@
-//! K19 (evaluation only): a reviewed, versioned glossary ("glossary-2.1.txt") puts a short plain
+//! K19 (evaluation only): a reviewed, versioned glossary ("glossary-2.2.txt") puts a short plain
 //! explanation beside the first use of a medical word, germ, test or unit in a summary sentence:
 //! "creatinine (a waste product in the blood that shows how well the kidneys work)". Ben (12 Nov)
 //! kept the plain-language rule as written: a sentence with an unexplained medical term counts
@@ -6,7 +6,8 @@
 //! blocked clash phrases, and its code findings M1–M3, S1–S4 and C3–C5. glossary-2.1 follows the
 //! blind review of glossary-2's output: each different unit gets its own explanation, a line can
 //! name words that stop it (an insulin strength in U/mL is no lab result), and a unit matches
-//! only as written ("G/L", a French cell count, is not "g/l").
+//! only as written ("G/L", a French cell count, is not "g/l"). glossary-2.2 adds "stage 3a"
+//! (Ben's grading answer 10, 16 Nov), never explained in a sentence that names a cancer.
 //!
 //! An explanation is the word's general meaning only: never anything about the patient, no cause
 //! of the patient's illness, no claim, no digit, and no listed term (so a second run changes
@@ -41,9 +42,9 @@ use std::sync::OnceLock;
 
 /// The glossary's name in a measurement.
 #[allow(dead_code)]
-pub(crate) const NAME: &str = "glossary-2.1";
+pub(crate) const NAME: &str = "glossary-2.2";
 
-const GLOSSARY: &str = include_str!("glossary-2.1.txt");
+const GLOSSARY: &str = include_str!("glossary-2.2.txt");
 
 /// The runner's longest sentence (`local_runner::MAX_SENTENCE_CHARS`).
 const MAX_CHARS: usize = 2_000;
