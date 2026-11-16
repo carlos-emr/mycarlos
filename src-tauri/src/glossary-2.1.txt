@@ -3,7 +3,8 @@
 # contains no listed term (so running the step twice changes nothing). glossary-1 + the medical review of 12 Nov
 # (review-k19-glossary-20261112.md): its 24 rewordings, ACR taken out, its clash phrases blocked. 2.1 (the blind review
 # of glossary-2): U/mL and IU/mL back, but never in a sentence about insulin or another medicine's strength; units
-# with a lower-case l; the Polish count unit; saturation (not the iron test's).
+# with a lower-case l; the Polish count unit; saturation (not the iron test's). Then (Ben, 16 Nov, grading answer 10):
+# "stage 3a" gets "a middle stage of long-term kidney disease", but never in a sentence about a cancer.
 # Each line: kind | terms (";"-separated) | English | French [| block: words (";"-separated) that, anywhere in the
 # sentence as whole words in any case, stop this line's explanation]
 # Matching: a unit, or a term with an upper-case letter, matches only as written; an all-lower-case term that is not
@@ -51,6 +52,7 @@ germ | Escherichia coli; E. coli | a common germ | un microbe courant
 germ | Clostridioides difficile; Clostridium difficile; C. difficile; C. diff | a germ that can cause diarrhea | un microbe qui peut causer de la diarrhée
 diagnosis | acute kidney injury; insuffisance rénale aiguë; atteinte rénale aiguë; AKI; IRA | a sudden drop in how well the kidneys work | une baisse soudaine du fonctionnement des reins
 diagnosis | chronic kidney disease; maladie rénale chronique; insuffisance rénale chronique; CKD | kidneys that have worked less well for a long time | des reins qui travaillent moins bien depuis longtemps
+term | stage 3a; stade 3a | a middle stage of long-term kidney disease | un stade intermédiaire d'une maladie des reins de longue durée | block: cancer; tumour; tumor; tumeur; carcinoma; carcinome; lymphoma; lymphome; melanoma; mélanome; sarcoma; sarcome; myeloma; myélome; leukemia; leukaemia; leucémie
 diagnosis | pyelonephritis; pyélonéphrite | a kidney infection | une infection du rein
 diagnosis | delirium; délirium | sudden confusion | une confusion soudaine
 diagnosis | rheumatoid arthritis; polyarthrite rhumatoïde | a disease in which the body's defences attack the joints | une maladie où les défenses du corps attaquent les articulations
