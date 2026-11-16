@@ -1176,7 +1176,11 @@ describe("the document reader", () => {
 // (the right, or the left in a right-to-left language) at every width, with the
 // reading-aid button just before it; a long document name wraps instead of
 // pushing Close away or being cut short.
-describe("the reader's Close button (#311)", () => {
+// #312: on a phone Close (with the reading-aid button) stays on the title's
+// line whenever the whole title fits beside it, and has a row of its own under
+// the title only when it does not.
+describe("the reader's Close button (#311, #312)", () => {
+  const SHORT_NAME = "FAKE_Rx.pdf";
   const LONG_NAME =
     "FAKE Discharge summary from the FAKE Regional Health Centre, cardiology follow-up visit, with FAKE laboratory results and a FAKE imaging report attached.pdf";
   const readingAid: VaultRecord["readingAid"] = {
@@ -1192,7 +1196,19 @@ describe("the reader's Close button (#311)", () => {
     points: [],
   };
 
-  for (const width of [1100, 360] as const)
+  /** The title's width on one line, which is what decides whether the actions fit beside it. */
+  const oneLineWidth = (title: HTMLElement) => {
+    const probe = title.cloneNode(true) as HTMLElement;
+    probe.removeAttribute("id");
+    probe.style.cssText =
+      "position: absolute; visibility: hidden; white-space: nowrap; width: max-content";
+    title.parentElement!.append(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+    return width;
+  };
+
+  for (const width of [1100, 412, 360] as const)
     for (const direction of ["ltr", "rtl"] as const)
       it(`is the header's last control, at its end edge, at ${width}px (${direction})`, async () => {
         const original = {
@@ -1204,7 +1220,7 @@ describe("the reader's Close button (#311)", () => {
         try {
           await browserPage.viewport(width, 900);
           root.dir = direction;
-          for (const displayName of [record.displayName, LONG_NAME])
+          for (const displayName of [SHORT_NAME, record.displayName, LONG_NAME])
             for (const aid of [undefined, readingAid]) {
               const shown: VaultRecord = {
                 ...record,
@@ -1252,6 +1268,38 @@ describe("the reader's Close button (#311)", () => {
                 expect(title.getBoundingClientRect().height).toBeGreaterThan(
                   parseFloat(getComputedStyle(title).lineHeight) * 1.5,
                 );
+
+              // #312: beside the title's first line when the whole title fits
+              // beside the actions (always on a wide window, where it wraps
+              // beside them), and otherwise on a row of its own under it.
+              const heading = title.getBoundingClientRect();
+              // The buttons themselves, wherever their row's box ends.
+              const buttons = within(head)
+                .getAllByRole("button")
+                .map((button) => button.getBoundingClientRect());
+              const start = Math.min(...buttons.map((button) => button.left));
+              const end = Math.max(...buttons.map((button) => button.right));
+              const inner =
+                head.clientWidth -
+                parseFloat(style.paddingLeft) -
+                parseFloat(style.paddingRight);
+              const fits =
+                width > 640 ||
+                oneLineWidth(title) +
+                  (parseFloat(style.columnGap) || 0) +
+                  (end - start) <=
+                  inner + 0.5;
+              if (width === 360 && !aid && displayName !== LONG_NAME)
+                expect(fits).toBe(true);
+              if (width < 640 && displayName === LONG_NAME)
+                expect(fits).toBe(false);
+              if (fits) {
+                expect(Math.abs(shut.top - heading.top)).toBeLessThanOrEqual(1);
+                if (direction === "rtl")
+                  expect(end).toBeLessThanOrEqual(heading.left + 1);
+                else expect(start).toBeGreaterThanOrEqual(heading.right - 1);
+              } else
+                expect(shut.top).toBeGreaterThanOrEqual(heading.bottom - 1);
               unmount();
             }
         } finally {

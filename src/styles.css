@@ -906,13 +906,33 @@ p {
     grid-template-columns: minmax(0, 1fr);
     padding-inline: 12px;
   }
-  /* #311: on their own row under the title, the actions still end at the header's end edge
-     (the right, or the left in a right-to-left language), with Close last. */
+  /* #312: on a phone the reader's header is a wrapping row. A short title keeps Close (and the
+     reading-aid button) on its own line, at the header's end edge (the right, or the left in a
+     right-to-left language); a title too long for that line keeps the whole width and wraps, and
+     the actions move to their own row under it, still at the end edge with Close last (#311). The
+     status and source line and the date stay full rows after both. Only the reader's header has
+     this class: the anonymize preview shares the other header classes but keeps its layout. */
+  .dialog-head.native-reader-head.native-reader-head-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0 12px;
+  }
+  .native-reader-head-flow > div > * {
+    flex: 1 0 100%;
+    order: 1;
+  }
+  /* The title asks for its whole width first, so the actions join its line only when it fits. */
+  .dialog-head.native-reader-head-flow h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+    order: 0;
+    margin-block-end: 6px;
+  }
   .native-reader-head-actions {
-    grid-column: 1;
-    grid-row: 2;
     justify-content: flex-end;
-    margin-block: 6px;
+    margin-block: 0 6px;
+    margin-inline-start: auto;
   }
 }
 .native-reader-head p {
