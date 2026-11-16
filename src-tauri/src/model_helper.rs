@@ -457,7 +457,9 @@ const SUMMARY_WHOLE_RULES: &str =
      limit the document gives for it; if they do not all fit in one sentence, leave that \
      sentence out.";
 
-/// Which, how much and when, with the source's status and comparison kept together.
+/// Which, how much and when, with the source's status and comparison kept together. A
+/// negation keeps the source's scope (Ben's grading rule 17, 16 Nov: a "no" widened to a
+/// broader group is unsafe).
 const SUMMARY_SAME_SENTENCE: &str =
     "Say which, how much and when in the same sentence: the test or medicine by name, the \
      number with its unit, the date or time. When you include a medicine, keep its stated \
@@ -465,7 +467,8 @@ const SUMMARY_SAME_SENTENCE: &str =
      duration and conditions in the same sentence. When the source compares a dose or test \
      result with an earlier value, keep both values and their stated dates together. Copy a \
      quote containing that status or comparison. Never infer a status or change that the \
-     source does not state.";
+     source does not state. Keep each \"no\" or \"not\" about exactly what the source names; \
+     never widen it to a broader group.";
 
 /// The summary request, with [`SLOT`] where the document goes.
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
@@ -1118,7 +1121,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_asks_instruction_selection_without_question_promotion_and_language_twice() {
+    fn summary_asks_instruction_selection_narrow_negations_and_language_twice() {
         // Preserve the existing request while keeping explicitly sourced status/comparisons.
         let prompt = summary_prompt("English", MAX_SENTENCES);
         let (before, after) = prompt.split_once(SLOT).unwrap();
@@ -1145,7 +1148,9 @@ mod tests {
              stopped) with its dose, frequency, duration and conditions in the same sentence. \
              When the source compares a dose or test result with an earlier value, keep both \
              values and their stated dates together. Copy a quote containing that status or \
-             comparison. Never infer a status or change that the source does not state. For each sentence, \
+             comparison. Never infer a status or change that the source does not state. Keep \
+             each \"no\" or \"not\" about exactly what the source names; never widen it to a \
+             broader group. For each sentence, \
              copy into \"quote\" one continuous piece of the document, 3 to 25 words, exactly \
              as written (same spelling, numbers, accents and punctuation, no '...' and no \
              joined pieces), in the document's own language (only the quote is copied; the \
