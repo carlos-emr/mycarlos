@@ -1,0 +1,170 @@
+The document trim's shared cases (evaluation candidate, 16 Nov 2026): synthetic lines only. Read by the Rust tests in
+document_trim.rs and by the evaluation's Python port. One case per block, blocks separated by a line "===". A case's
+"input:" letter runs to its "expect:" line; pages are separated by a line "<<page>>". "expect:" is the trimmed letter.
+===
+name: a_fax_transmission_line_goes_when_its_sender_is_named_in_a_kept_line
+input:
+OCT-03-2026 09:12  FROM:NORTHFIELD TEST CLINIC (FAKE) 555-0100  TO:5550199  P.001/002
+Northfield Test Clinic (FAKE)
+Your blood test is on 9 October.
+expect:
+Northfield Test Clinic (FAKE)
+Your blood test is on 9 October.
+===
+name: a_fax_transmission_line_stays_when_it_is_the_only_mention_of_its_sender
+input:
+OCT-03-2026 09:12  FROM:NORTHFIELD TEST CLINIC (FAKE) 555-0100  TO:5550199  P.001/002
+Your blood test is on 9 October.
+expect:
+OCT-03-2026 09:12  FROM:NORTHFIELD TEST CLINIC (FAKE) 555-0100  TO:5550199  P.001/002
+Your blood test is on 9 October.
+===
+name: a_fax_line_without_a_from_marker_and_with_digit_swaps_still_matches
+input:
+05/11/2026 11:31  C0MMUNITY TEST LAB0RATORIES (FICTIVE)  514 555-0181  P. 2/3
+Community Test Laboratories (FICTIVE)
+Potassium 4.1 mmol/L.
+expect:
+Community Test Laboratories (FICTIVE)
+Potassium 4.1 mmol/L.
+===
+name: a_polish_fax_line_goes
+input:
+02-11-2026 14:01  SZPITAL TESTOWY (FIKCYJNY) FAKS 00 000 01 91  STR. 1/2
+Szpital Testowy (FIKCYJNY)
+Kontrola za 7 dni.
+expect:
+Szpital Testowy (FIKCYJNY)
+Kontrola za 7 dni.
+===
+name: a_fax_line_naming_a_patient_stays
+input:
+OCT-03-2026 09:12  FROM:NORTHFIELD TEST CLINIC (FAKE)  RE: Patient FAKE-Doe  P.1/2
+Northfield Test Clinic (FAKE)
+expect:
+OCT-03-2026 09:12  FROM:NORTHFIELD TEST CLINIC (FAKE)  RE: Patient FAKE-Doe  P.1/2
+Northfield Test Clinic (FAKE)
+===
+name: page_counters_go_in_any_of_the_languages
+input:
+Northfield Test Clinic (FAKE)
+Page 1 of 3
+CONFIDENTIAL · Page 2 of 3
+Page 1 de 2
+Strona 2 z 2
+*** END OF REPORT ***   Page 1 of 1
+Page 3 of 3        Printed 2026-10-20 15:12 by FAKE-CLERK
+Rest at home.
+expect:
+Northfield Test Clinic (FAKE)
+Rest at home.
+===
+name: a_page_counter_inside_a_sentence_stays
+input:
+See the table on Page 2 of 3 for your doses.
+expect:
+See the table on Page 2 of 3 for your doses.
+===
+name: a_print_footer_goes_when_its_organization_is_named_in_a_kept_line
+input:
+Northfield Test Hospital (FAKE) · Patient: FAKE-Doe · Page 1 of 2
+Drink fluids.
+Health Records copy · printed 28-Oct-2026 16:44 by FAKE-HIM07 · Northfield Test Hospital (FAKE) · CONFIDENTIAL
+<<page>>
+Northfield Test Hospital (FAKE) · Patient: FAKE-Doe · Page 2 of 2
+Come back if the fever returns.
+Health Records copy · printed 28-Oct-2026 16:44 by FAKE-HIM07 · Northfield Test Hospita1 (FAKE) · CONFIDENTIAL
+expect:
+Northfield Test Hospital (FAKE) · Patient: FAKE-Doe · Page 1 of 2
+Drink fluids.
+<<page>>
+Northfield Test Hospital (FAKE) · Patient: FAKE-Doe · Page 2 of 2
+Come back if the fever returns.
+===
+name: a_print_footer_stays_when_it_is_the_only_mention_of_its_hospital
+input:
+Come back to the emergency department if the fever returns.
+Health Records copy · printed 28-Oct-2026 16:44 by FAKE-HIM07 · Northfield Test Hospital (FAKE) · CONFIDENTIAL
+expect:
+Come back to the emergency department if the fever returns.
+Health Records copy · printed 28-Oct-2026 16:44 by FAKE-HIM07 · Northfield Test Hospital (FAKE) · CONFIDENTIAL
+===
+name: fax_cover_fields_without_a_name_go_and_fields_with_a_name_or_a_date_stay
+input:
+FAX COVER SHEET
+Northfield Test Hospital (FAKE) — Health Records
+Date: 19/10/2026   Time: 18:55
+To: Dr. Jane FAKE-Smith, Maple Test Family Health Team      Fax: 555-0101
+From: Health Records Department                                      Fax: 555-0168
+Pages (including this cover): 4
+Re: Discharge summary — FAKE-DOE, Sam — MRN FAKE-000123
+expect:
+Northfield Test Hospital (FAKE) — Health Records
+Date: 19/10/2026   Time: 18:55
+To: Dr. Jane FAKE-Smith, Maple Test Family Health Team      Fax: 555-0101
+Re: Discharge summary — FAKE-DOE, Sam — MRN FAKE-000123
+===
+name: a_from_field_naming_a_doctor_stays
+input:
+From: Dr. Jane FAKE-Smith (FAKE)                           Fax: 555-0101
+expect:
+From: Dr. Jane FAKE-Smith (FAKE)                           Fax: 555-0101
+===
+name: a_confidentiality_notice_goes_whole_in_english_and_french
+input:
+CONFIDENTIALITY NOTICE: This fax contains personal health information for the person named above only.
+If you received it in error, notify the sender at 555-0167 and return or destroy all pages.
+
+AVIS DE CONFIDENTIALITÉ : ce document est destiné uniquement au destinataire. S'il vous est parvenu
+par erreur, veuillez le retourner à l'expéditeur et le détruire.
+
+Your next visit is in 2 weeks.
+expect:
+
+
+Your next visit is in 2 weeks.
+===
+name: a_sentence_about_confidentiality_without_a_misdirected_fax_stays
+input:
+Your results are confidential and are shared only with your family doctor.
+expect:
+Your results are confidential and are shared only with your family doctor.
+===
+name: dictation_stamps_go
+input:
+Dictated but not read.   D: 2026-10-20 13:40   T: 2026-10-20 14:01
+Dictated but not read. Signed electronically to avoid delay.
+D: 19/10/2026 15:10   T: 19/10/2026 18:42   Job FAKE-55821
+Dictated but not read. Transcribed 2026-11-05 by FAKE-TX03.
+Dicté mais non relu.
+Dokument dyktowany, nieprzeczytany przez lekarza.
+Electronically signed: Dr. Jane FAKE-Smith, MD (FAKE) · 19 October 2026
+expect:
+Electronically signed: Dr. Jane FAKE-Smith, MD (FAKE) · 19 October 2026
+===
+name: report_markers_go
+input:
+*** FINAL REPORT ***
+Potassium 5.3 mmol/L
+expect:
+Potassium 5.3 mmol/L
+===
+name: a_clean_letter_is_left_exactly_as_it_is
+input:
+SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY
+Northfield Test Clinic (FAKE)
+100 Example Road · Tel 555-0100 · Fax 555-0101
+Re: Sam FAKE-Doe · DOB: 1 January 1990
+Do not take ibuprofen. Call the clinic if the pain gets worse.
+Sincerely,
+Dr. Jane FAKE-Smith (FAKE)
+cc: Sam FAKE-Doe (patient copy)
+expect:
+SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY
+Northfield Test Clinic (FAKE)
+100 Example Road · Tel 555-0100 · Fax 555-0101
+Re: Sam FAKE-Doe · DOB: 1 January 1990
+Do not take ibuprofen. Call the clinic if the pain gets worse.
+Sincerely,
+Dr. Jane FAKE-Smith (FAKE)
+cc: Sam FAKE-Doe (patient copy)

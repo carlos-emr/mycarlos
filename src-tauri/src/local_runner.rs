@@ -400,6 +400,30 @@ pub(crate) struct Page {
     pub(crate) text: String,
 }
 
+/// `request` with its pages' administrative lines taken out (`document_trim`), pages and their
+/// indexes kept.
+fn trimmed_request(request: &SummaryRequest) -> SummaryRequest {
+    let texts: Vec<&str> = request
+        .pages
+        .iter()
+        .map(|page| page.text.as_str())
+        .collect();
+    let pages = request
+        .pages
+        .iter()
+        .zip(crate::document_trim::trim(&texts))
+        .map(|(page, text)| Page {
+            index: page.index,
+            text,
+        })
+        .collect();
+    SummaryRequest {
+        lang: request.lang.clone(),
+        pages,
+        max_sentences: request.max_sentences,
+    }
+}
+
 /// A summary request: the pages in order, as the reader read them.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -849,6 +873,12 @@ impl Runner {
         ticket: Ticket,
         request: &SummaryRequest,
     ) -> Result<Summary, RunnerError> {
+        // Evaluation candidate (16 Nov): fax transmission lines, page counters, print footers,
+        // nameless fax cover fields, misdirected-fax notices and dictation stamps leave the pages
+        // before the helper fits them (`document_trim`); the fit, the quote check and every
+        // post-step below read the same trimmed pages.
+        let trimmed = trimmed_request(request);
+        let request = &trimmed;
         let request_json = serde_json::to_value(request)
             .map_err(|error| RunnerError::Protocol(error.to_string()))?;
         let text_bytes = request.pages.iter().map(|page| page.text.len()).sum();
