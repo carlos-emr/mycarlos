@@ -553,6 +553,21 @@ fn a_real_model_evaluation_run() {
         threads > 0,
         "explicit positive MYCARLOS_TEST_THREADS required"
     );
+    // Experimental prompt-lookup drafting: both MYCARLOS_TEST_LOOKUP_DRAFT and
+    // MYCARLOS_TEST_LOOKUP_NGRAM, or neither (off, as the app runs).
+    let lookup = match (
+        optional("MYCARLOS_TEST_LOOKUP_DRAFT"),
+        optional("MYCARLOS_TEST_LOOKUP_NGRAM"),
+    ) {
+        (Some(draft), Some(ngram)) => Some((
+            draft.parse::<u32>().expect("lookup draft count"),
+            ngram.parse::<u32>().expect("lookup n-gram length"),
+        )),
+        (None, None) => None,
+        _ => {
+            panic!("set both MYCARLOS_TEST_LOOKUP_DRAFT and MYCARLOS_TEST_LOOKUP_NGRAM, or neither")
+        }
+    };
     let variant = variable("MYCARLOS_EVAL_VARIANT");
     let commit = variable("MYCARLOS_EVAL_COMMIT");
     assert!(
@@ -598,8 +613,8 @@ fn a_real_model_evaluation_run() {
     let harness_sha256 = evaluation_evidence::executable_sha256(&std::env::current_exe().unwrap())
         .expect("hash the actual harness executable");
     let started = Instant::now();
-    let runner =
-        ModelRunner::start_with(program, &model, &format).unwrap_or_else(|error| panic!("{error}"));
+    let runner = ModelRunner::start_with_lookup(program, &model, &format, lookup)
+        .unwrap_or_else(|error| panic!("{error}"));
     let start_ms = started.elapsed().as_millis() as u64;
     let (model_sha256, model_bytes) = runner.model_file();
     // The helper's memory once the model is loaded: its peak so far is the load's.
@@ -624,6 +639,7 @@ fn a_real_model_evaluation_run() {
         },
         "lang": lang,
         "threads": threads,
+        "lookup": lookup.map(|(draft, ngram)| json!({ "draft": draft, "ngram": ngram })),
         "startMs": start_ms,
         "startedAt": now(),
         "helperMemory": loaded,

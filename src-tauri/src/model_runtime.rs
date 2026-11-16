@@ -607,11 +607,16 @@ fn idle_config() -> RunnerConfig {
 /// the verified model expected in its hello. Production code builds no other helper start.
 pub(crate) fn helper_launch(verified: &Verified) -> Result<RunnerConfig, AiError> {
     let executable = std::env::current_exe().map_err(|_| AiError::Failed)?;
-    launch_at(executable, verified)
+    launch_at(executable, verified, None)
 }
 
-/// [`helper_launch`] with the executable given.
-fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, AiError> {
+/// [`helper_launch`] with the executable given, and experimental prompt-lookup drafting when
+/// asked for (evaluation only; the app never asks for it).
+fn launch_at(
+    executable: PathBuf,
+    verified: &Verified,
+    lookup: Option<model_helper::Lookup>,
+) -> Result<RunnerConfig, AiError> {
     if !cfg!(any(target_os = "linux", windows)) {
         return Err(AiError::Failed);
     }
@@ -632,6 +637,7 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
         model,
         name: verified.info.name.clone(),
         sha256: verified.info.sha256.clone(),
+        lookup,
     });
     Ok(RunnerConfig {
         command: executable,
@@ -1542,6 +1548,18 @@ pub mod engine_testing {
             path: &std::path::Path,
             chat_format: &str,
         ) -> Result<Self, String> {
+            Self::start_with_lookup(executable, path, chat_format, None)
+        }
+
+        /// As [`Self::start_with`], with experimental prompt-lookup drafting: `(draft, ngram)`,
+        /// up to `draft` tokens found after an earlier match of at least `ngram` tokens.
+        pub fn start_with_lookup(
+            executable: &std::path::Path,
+            path: &std::path::Path,
+            chat_format: &str,
+            lookup: Option<(u32, u32)>,
+        ) -> Result<Self, String> {
+            let lookup = lookup.map(|(draft, ngram)| model_helper::Lookup { draft, ngram });
             let chat_format = match chat_format {
                 "builtin" => model_helper::ChatFormat::Builtin,
                 "gemma4" => model_helper::ChatFormat::Gemma4,
@@ -1559,7 +1577,7 @@ pub mod engine_testing {
                 size_bytes,
                 chat_format,
             };
-            let config = launch_at(executable.to_owned(), &verified)
+            let config = launch_at(executable.to_owned(), &verified, lookup)
                 .map_err(|error| format!("{error:?}"))?;
             // The runner keeps no model file of its own: this one start hands the sealed copy
             // over and lets it go once the helper has greeted, as the app does. So a test holds

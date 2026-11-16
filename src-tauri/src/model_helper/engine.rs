@@ -4,8 +4,9 @@
 use super::{
     answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
     read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
-    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    ChatFormat, Fit, Lookup, LookupStats, ModelFile, Page, Sentence, Settings, Stats,
+    ANSWER_HASH_START, BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, LOOKUP_MAX_NGRAM,
+    MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -42,6 +43,8 @@ pub(super) struct Engine {
     /// `--threads`, the most it uses).
     threads: i32,
     batch_threads: i32,
+    /// Experimental prompt-lookup drafting, when the helper was started with it.
+    lookup: Option<Lookup>,
     /// How the last answer was made.
     stats: Stats,
 }
@@ -91,14 +94,48 @@ fn assemble<T>(
 }
 
 /// The context: the model's whole window, prompts read in batches, answers written on
-/// `threads` threads and prompts read on `batch_threads`.
-fn context_params(threads: i32, batch_threads: i32) -> LlamaContextParams {
-    LlamaContextParams::default()
+/// `threads` threads and prompts read on `batch_threads`. With prompt-lookup drafting it also
+/// keeps the recurrent state after each of the last `draft` tokens, so that a check's untaken
+/// tokens can be taken back (llama.cpp's rollback snapshots); without, it is as it always was.
+fn context_params(threads: i32, batch_threads: i32, lookup: Option<Lookup>) -> LlamaContextParams {
+    let params = LlamaContextParams::default()
         .with_n_ctx(NonZeroU32::new(CONTEXT_TOKENS))
         .with_n_batch(BATCH_TOKENS)
         .with_n_ubatch(BATCH_TOKENS)
         .with_n_threads(threads)
-        .with_n_threads_batch(batch_threads)
+        .with_n_threads_batch(batch_threads);
+    match lookup {
+        Some(lookup) => params.with_n_rs_seq(lookup.draft),
+        None => params,
+    }
+}
+
+/// Up to `draft` tokens that followed the latest earlier occurrence of `history`'s last `n`
+/// tokens, for `n` from `max_ngram` down to `min_ngram`: the first length that has one wins.
+/// Empty when none occurs before.
+fn lookup_draft<T: PartialEq + Copy>(
+    history: &[T],
+    min_ngram: usize,
+    max_ngram: usize,
+    draft: usize,
+) -> Vec<T> {
+    if draft == 0 || min_ngram == 0 {
+        return Vec::new();
+    }
+    for n in (min_ngram..=max_ngram.max(min_ngram)).rev() {
+        if history.len() <= n {
+            continue;
+        }
+        let key = &history[history.len() - n..];
+        // Latest start first; the match must leave at least one token after it.
+        for start in (0..history.len() - n).rev() {
+            if &history[start..start + n] == key {
+                let from = start + n;
+                return history[from..(from + draft).min(history.len())].to_vec();
+            }
+        }
+    }
+    Vec::new()
 }
 
 /// Why a request got no answer, as the helper's error line says it: short, fixed words.
@@ -136,7 +173,7 @@ impl Engine {
         };
         let threads = i32::try_from(settings.threads).map_err(|_| failed("threads"))?;
         let context = model
-            .new_context(backend, context_params(threads, threads))
+            .new_context(backend, context_params(threads, threads, settings.lookup))
             .map_err(|_| failed("context"))?;
         Ok(Self {
             backend,
@@ -147,6 +184,7 @@ impl Engine {
             prefixes: Vec::new(),
             threads,
             batch_threads: threads,
+            lookup: settings.lookup,
             stats: Stats::default(),
         })
     }
@@ -175,7 +213,10 @@ impl Engine {
         self.context = None;
         let made = |threads| {
             self.model
-                .new_context(self.backend, context_params(threads, self.batch_threads))
+                .new_context(
+                    self.backend,
+                    context_params(threads, self.batch_threads, self.lookup),
+                )
                 .ok()
         };
         if let Some(context) = made(threads) {
@@ -335,6 +376,9 @@ impl Engine {
         self.read(&mut batch, &tokens[prefix_len..], prefix_len, last)?;
         let read = std::time::Instant::now();
         self.stats.prompt_ms = (read - started).as_millis() as u64;
+        if let Some(lookup) = self.lookup {
+            return self.write_with_lookup(tokens, &mut batch, max, grammar.as_mut(), read, lookup);
+        }
         let vocab = self.model.vocab();
         let mut written = Vec::new();
         for position in (tokens.len()..).take(max) {
@@ -361,6 +405,139 @@ impl Engine {
         self.stats.answer_ms = read.elapsed().as_millis() as u64;
         self.stats.capped = true;
         Ok((String::from_utf8_lossy(&written).into_owned(), true))
+    }
+
+    /// The answer after the prompt is read, with prompt-lookup drafting: each written token is
+    /// read together with up to `lookup.draft` tokens found after an earlier match in the prompt
+    /// and answer so far. Each drafted position gets the same greedy, grammar-aware choice
+    /// ([`Engine::pick`]) as one token at a time would: a draft token is taken only when it is
+    /// that choice, and from the first that is not, the rest is taken back (the cache drops
+    /// them; the recurrent state goes back to its snapshot). The choice that differed is the next
+    /// token, kept rather than chosen again. With no draft, one token is read as before. So the
+    /// answer is the one-token-at-a-time answer whenever the batch's scores equal one token's.
+    fn write_with_lookup(
+        &mut self,
+        tokens: &[LlamaToken],
+        batch: &mut LlamaBatch,
+        max: usize,
+        mut grammar: Option<&mut LlamaSampler>,
+        read: std::time::Instant,
+        lookup: Lookup,
+    ) -> Result<(String, bool), Failure> {
+        let vocab = self.model.vocab();
+        let mut stats = LookupStats {
+            draft: lookup.draft,
+            ngram: lookup.ngram,
+            ..LookupStats::default()
+        };
+        let micros = |since: std::time::Instant| since.elapsed().as_micros() as u64;
+        let mut written = Vec::new();
+        let mut history: Vec<LlamaToken> = tokens.to_vec();
+        // The batch row whose scores give the next token, and that token when a check already
+        // chose it.
+        let mut row = batch.n_tokens() - 1;
+        let mut chosen: Option<(LlamaToken, bool)> = None;
+        let mut count = 0usize;
+        let finished = loop {
+            if count == max {
+                break true;
+            }
+            let (token, scanned) = match chosen.take() {
+                Some(choice) => choice,
+                None => {
+                    let picking = std::time::Instant::now();
+                    let choice = self.pick(row, grammar.as_deref_mut());
+                    stats.pick_us += micros(picking);
+                    choice
+                }
+            };
+            self.stats.grammar_scans += u32::from(scanned);
+            if vocab.is_eog(token) {
+                break false;
+            }
+            self.stats.answer_tokens += 1;
+            self.stats.answer_hash = answer_hash(self.stats.answer_hash, token.0);
+            if let Some(grammar) = grammar.as_deref_mut() {
+                grammar.accept(token);
+            }
+            vocab.token_to_piece_into(token, &mut written, false, None);
+            count += 1;
+            let position = tokens.len() + count - 1;
+            history.push(token);
+            // The draft: never past the answer's cap, and never an end of generation.
+            let looking = std::time::Instant::now();
+            let mut draft = lookup_draft(
+                &history,
+                lookup.ngram as usize,
+                LOOKUP_MAX_NGRAM as usize,
+                (lookup.draft as usize).min(max - count),
+            );
+            if let Some(end) = draft.iter().position(|token| vocab.is_eog(*token)) {
+                draft.truncate(end);
+            }
+            stats.lookup_us += micros(looking);
+            batch.clear();
+            batch
+                .add(token, position as i32, &[0], true)
+                .map_err(|_| failed("batch"))?;
+            for (offset, drafted) in draft.iter().enumerate() {
+                batch
+                    .add(*drafted, (position + 1 + offset) as i32, &[0], true)
+                    .map_err(|_| failed("batch"))?;
+            }
+            let decoding = std::time::Instant::now();
+            self.ctx_mut().decode(batch).map_err(|_| failed("decode"))?;
+            if draft.is_empty() {
+                stats.plain_calls += 1;
+                stats.plain_us += micros(decoding);
+                row = 0;
+                continue;
+            }
+            stats.verify_calls += 1;
+            stats.verify_tokens += 1 + draft.len() as u32;
+            stats.verify_us += micros(decoding);
+            stats.drafted_tokens += draft.len() as u32;
+            let mut taken = 0usize;
+            for drafted in &draft {
+                let picking = std::time::Instant::now();
+                let (choice, scanned) = self.pick(taken as i32, grammar.as_deref_mut());
+                stats.pick_us += micros(picking);
+                if choice != *drafted {
+                    chosen = Some((choice, scanned));
+                    break;
+                }
+                self.stats.grammar_scans += u32::from(scanned);
+                self.stats.answer_tokens += 1;
+                self.stats.answer_hash = answer_hash(self.stats.answer_hash, choice.0);
+                if let Some(grammar) = grammar.as_deref_mut() {
+                    grammar.accept(choice);
+                }
+                vocab.token_to_piece_into(choice, &mut written, false, None);
+                count += 1;
+                history.push(choice);
+                taken += 1;
+            }
+            stats.accepted_tokens += taken as u32;
+            let untaken = draft.len() - taken;
+            if untaken > 0 {
+                // Everything after the last token taken goes: positions from there on.
+                let from = (position + taken + 1) as u32;
+                let dropped = self
+                    .ctx_mut()
+                    .clear_kv_cache_seq(Some(0), Some(from), None)
+                    .map_err(|_| failed("rollback"))?;
+                if !dropped {
+                    return Err(failed("rollback"));
+                }
+                stats.rollbacks += 1;
+                stats.rollback_tokens += untaken as u32;
+            }
+            row = taken as i32;
+        };
+        self.stats.answer_ms = read.elapsed().as_millis() as u64;
+        self.stats.capped = finished;
+        self.stats.lookup = Some(stats);
+        Ok((String::from_utf8_lossy(&written).into_owned(), finished))
     }
 
     /// Reads `tokens` from `start` on, in batches; the token at `last` gets its scores.
@@ -538,6 +715,33 @@ mod tests {
     }
 
     const MARKER: &str = "FAKE-MARKER-Q7 Rowan Testwood 148/88";
+
+    #[test]
+    fn a_lookup_draft_follows_the_latest_longest_earlier_match() {
+        let history: Vec<char> = "abcXdeabcYfgabc".chars().collect();
+        // "abc" occurs earlier twice: the latest one (before "Yfg") wins.
+        assert_eq!(lookup_draft(&history, 2, 4, 3), vec!['Y', 'f', 'g']);
+        // At most `draft` tokens, and fewer when the history ends first.
+        assert_eq!(lookup_draft(&history, 2, 4, 1), vec!['Y']);
+        let short: Vec<char> = "xyzxy".chars().collect();
+        assert_eq!(lookup_draft(&short, 2, 4, 5), vec!['z', 'x', 'y']);
+        // A longer match wins over a later shorter one: "Qab" occurs once, before "1";
+        // "ab" alone occurs later, before "2".
+        let longer: Vec<char> = "Qab1ab2Qab".chars().collect();
+        assert_eq!(lookup_draft(&longer, 2, 4, 1), vec!['1']);
+        assert_eq!(lookup_draft(&longer, 2, 2, 1), vec!['2']);
+        // No earlier match at the minimum length: no draft.
+        let none: Vec<char> = "abcdef".chars().collect();
+        assert!(lookup_draft(&none, 1, 4, 3).is_empty());
+        let once: Vec<char> = "abcab".chars().collect();
+        assert!(lookup_draft(&once, 3, 4, 3).is_empty());
+        assert_eq!(lookup_draft(&once, 2, 4, 3), vec!['c', 'a', 'b']);
+        // Nothing to draft, or no length to match: empty, never a panic.
+        assert!(lookup_draft(&once, 2, 4, 0).is_empty());
+        assert!(lookup_draft(&once, 0, 4, 3).is_empty());
+        assert!(lookup_draft::<char>(&[], 1, 4, 3).is_empty());
+        assert!(lookup_draft(&['a'], 1, 4, 3).is_empty());
+    }
 
     #[test]
     fn the_instruction_prefix_never_holds_a_document_a_term_or_a_sentence() {

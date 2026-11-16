@@ -179,7 +179,25 @@ pub(crate) struct Settings {
     /// The verified model's name and hash, which the hello repeats.
     pub(crate) name: String,
     pub(crate) sha256: String,
+    /// Experimental prompt-lookup drafting (see [`Lookup`]); `None`, as the app starts it, writes
+    /// one token per step exactly as before.
+    pub(crate) lookup: Option<Lookup>,
 }
+
+/// Experimental prompt-lookup (n-gram) drafting: after each written token, up to `draft` tokens
+/// that followed the latest earlier occurrence of the last `ngram` to [`LOOKUP_MAX_NGRAM`]
+/// tokens (prompt and answer so far) are checked with it in one batch, each by the same greedy,
+/// grammar-aware choice as one token at a time; the first that differs, and all after it, are
+/// taken back. Only the evaluation harness turns it on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Lookup {
+    pub(crate) draft: u32,
+    pub(crate) ngram: u32,
+}
+
+/// The most draft tokens one check may take, and the longest n-gram looked for.
+pub(crate) const LOOKUP_MAX_DRAFT: u32 = 15;
+pub(crate) const LOOKUP_MAX_NGRAM: u32 = 8;
 
 /// The helper's arguments for `settings`, after [`HELPER_ARG`].
 ///
@@ -197,6 +215,14 @@ pub(crate) fn arguments(settings: &Settings) -> Vec<OsString> {
         "--chat-format".into(),
         settings.chat_format.word().into(),
     ];
+    if let Some(lookup) = settings.lookup {
+        arguments.extend([
+            "--lookup-draft".into(),
+            lookup.draft.to_string().into(),
+            "--lookup-ngram".into(),
+            lookup.ngram.to_string().into(),
+        ]);
+    }
     match &settings.model {
         ModelFile::Descriptor(fd) => {
             arguments.push("--model-fd".into());
@@ -229,6 +255,8 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> Option<Mode> {
     let mut sha256 = None;
     let mut model = None;
     let mut chat_format = None;
+    let mut lookup_draft = None;
+    let mut lookup_ngram = None;
     while let Some(flag) = arguments.next() {
         let flag = flag.into_string().ok()?;
         let value = arguments.next()?;
@@ -264,15 +292,32 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> Option<Mode> {
             "--model-path" if model.is_none() => {
                 model = Some(ModelFile::Path(std::path::PathBuf::from(value)));
             }
+            "--lookup-draft" if lookup_draft.is_none() => {
+                let count: u32 = value.into_string().ok()?.parse().ok()?;
+                lookup_draft = Some(count).filter(|count| (1..=LOOKUP_MAX_DRAFT).contains(count));
+                lookup_draft?;
+            }
+            "--lookup-ngram" if lookup_ngram.is_none() => {
+                let count: u32 = value.into_string().ok()?.parse().ok()?;
+                lookup_ngram = Some(count).filter(|count| (1..=LOOKUP_MAX_NGRAM).contains(count));
+                lookup_ngram?;
+            }
             _ => return None,
         }
     }
+    // Both lookup settings or neither.
+    let lookup = match (lookup_draft, lookup_ngram) {
+        (Some(draft), Some(ngram)) => Some(Lookup { draft, ngram }),
+        (None, None) => None,
+        _ => return None,
+    };
     Some(Mode::Model(Settings {
         chat_format: chat_format?,
         threads: threads?,
         model: model?,
         name: name?,
         sha256: sha256?,
+        lookup,
     }))
 }
 
@@ -351,6 +396,9 @@ pub(crate) struct Stats {
     pub(crate) answer_tokens: u32,
     pub(crate) prompt_ms: u64,
     pub(crate) answer_ms: u64,
+    /// Experimental prompt-lookup drafting's counts and times, when it is on (see [`Lookup`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lookup: Option<LookupStats>,
     pub(crate) capped: bool,
     pub(crate) grammar_scans: u32,
     /// The prompt's instruction prefix, in tokens (in `prompt_tokens`), whether its state was
@@ -364,6 +412,29 @@ pub(crate) struct Stats {
     /// The threads the answer was written on, and the prompt read on.
     pub(crate) threads: u32,
     pub(crate) batch_threads: u32,
+}
+
+/// How an answer with prompt-lookup drafting was written: counts and wall times only.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub(crate) struct LookupStats {
+    pub(crate) draft: u32,
+    pub(crate) ngram: u32,
+    /// One-token steps: no draft was found.
+    pub(crate) plain_calls: u32,
+    pub(crate) plain_us: u64,
+    /// Checks: the written token and its draft in one batch.
+    pub(crate) verify_calls: u32,
+    pub(crate) verify_tokens: u32,
+    pub(crate) verify_us: u64,
+    pub(crate) drafted_tokens: u32,
+    pub(crate) accepted_tokens: u32,
+    /// Checks that took some draft back, and how many tokens.
+    pub(crate) rollbacks: u32,
+    pub(crate) rollback_tokens: u32,
+    /// Finding drafts, and the greedy choices made while checking them.
+    pub(crate) lookup_us: u64,
+    pub(crate) pick_us: u64,
 }
 
 /// FNV-1a's starting value and step (64-bit).
@@ -903,6 +974,7 @@ mod tests {
             model,
             name: "FAKE model".to_owned(),
             sha256: "ab".repeat(32),
+            lookup: None,
         }
     }
 
@@ -934,6 +1006,40 @@ mod tests {
         let at = unknown.iter().position(|a| a == "--chat-format").unwrap();
         unknown[at + 1] = "llama9".into();
         assert_eq!(parse(unknown), None);
+    }
+
+    #[test]
+    fn lookup_settings_go_to_the_helper_and_back_only_together_and_in_range() {
+        let plain = arguments(&settings(ModelFile::Descriptor(MODEL_FD)));
+        assert!(!plain
+            .iter()
+            .any(|a| a == "--lookup-draft" || a == "--lookup-ngram"));
+        let mut drafting = settings(ModelFile::Descriptor(MODEL_FD));
+        drafting.lookup = Some(Lookup { draft: 3, ngram: 2 });
+        let built: Vec<OsString> = arguments(&drafting).into_iter().skip(1).collect();
+        assert_eq!(parse(built.clone()), Some(Mode::Model(drafting)));
+        let set = |flag: &str, value: &str| {
+            let mut changed = built.clone();
+            let at = changed.iter().position(|a| a == flag).unwrap();
+            changed[at + 1] = value.into();
+            parse(changed)
+        };
+        for (flag, value) in [
+            ("--lookup-draft", "0"),
+            ("--lookup-draft", "16"),
+            ("--lookup-ngram", "0"),
+            ("--lookup-ngram", "9"),
+            ("--lookup-ngram", "two"),
+        ] {
+            assert_eq!(set(flag, value), None, "{flag} {value}");
+        }
+        // One without the other refuses.
+        for flag in ["--lookup-draft", "--lookup-ngram"] {
+            let mut alone = built.clone();
+            let at = alone.iter().position(|a| a == flag).unwrap();
+            alone.drain(at..at + 2);
+            assert_eq!(parse(alone), None, "{flag}");
+        }
     }
 
     /// Gemma 4's own template, run by llama.cpp's server on the model's GGUF for
