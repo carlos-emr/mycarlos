@@ -7133,7 +7133,10 @@ mod tests {
             assert!(on != off, "{flag} must be a plain true or false constant");
             let grant = format!("allow-{}", command.replace('_', "-"));
             let granted = permissions.contains(&grant.as_str());
-            assert_eq!(granted, on, "{grant} must be granted exactly when {flag} is on");
+            assert_eq!(
+                granted, on,
+                "{grant} must be granted exactly when {flag} is on"
+            );
             assert!(library.contains(&format!("fn {command}(")));
             assert!(build_script.contains(&format!("\"{command}\"")));
             not_granted += usize::from(!granted);
