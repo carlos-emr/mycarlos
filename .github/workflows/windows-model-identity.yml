@@ -1,0 +1,129 @@
+name: Windows model identity (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit whose evaluation build is checked (default: the M2 candidate)"
+        required: true
+        default: "6595b3c25beb32c2cbd44892698c3fd66265ad2f"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-model-identity-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  windows-identity:
+    # Does a Windows build (MSVC, the Universal C Runtime) write the same summary, token for token, as the
+    # Linux evaluation build that was graded? Two FAKE documents, the graded harness, the real model.
+    name: Windows model identity (two FAKE documents)
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      MODEL_SHA256: 13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983
+      MODEL_URL: https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      # As the windows job in mycarlos.yml prepares before its cargo test.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - run: npm ci
+      # llama.cpp's C++ build, restored as in the windows job of mycarlos.yml (read only: nothing is saved here).
+      - name: Key for the llama.cpp build cache
+        id: llama-key
+        shell: pwsh
+        run: |
+          $rustc = (rustc -V) -replace '[^A-Za-z0-9.]', '-'
+          "key=llama-build-v1-${{ runner.os }}-$env:ImageOS-$env:ImageVersion-$rustc-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml', 'src-tauri/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
+      - name: Restore the llama.cpp build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/target/debug/build/llama-cpp-sys-2-*/out
+          key: ${{ steps.llama-key.outputs.key }}
+      - name: Download the catalogue model and check its SHA-256
+        # The app's own pinned address (local_model::CATALOG); public weights, no patient data.
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force model | Out-Null
+          curl.exe --fail --location --retry 3 --silent --show-error --output model/model.gguf $env:MODEL_URL
+          $hash = (Get-FileHash model/model.gguf -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:MODEL_SHA256) { throw "model SHA-256 $hash" }
+          # The helper reads the model by path inside its AppContainer, as the app's model folder allows it.
+          icacls model /grant "*S-1-15-2-1:(OI)(CI)(RX)" | Out-Null
+      - name: Write the two FAKE documents (byte-identical to the graded inputs)
+        shell: pwsh
+        run: |
+          python scripts/summary-evaluation/harness/compare.py prepare --out docs --only bakeoff-long-discharge-summary --only fr-medication_plan
+          $expected = @{
+            "bakeoff-long-discharge-summary.json" = "80a2d1ffc89ebb45c8352315f0c461faf6a5520c98a58eec493eab13683c7d83"
+            "fr-medication_plan.json" = "4ce94f42433569c7aff3f2be1524384e6ab62c10e49a5b38047977d20dee12f3"
+          }
+          foreach ($name in $expected.Keys) {
+            $hash = (Get-FileHash "docs/$name" -Algorithm SHA256).Hash.ToLower()
+            if ($hash -ne $expected[$name]) { throw "$name SHA-256 $hash" }
+          }
+      - name: Summarise them with the graded harness (real model, 3 threads)
+        shell: pwsh
+        working-directory: src-tauri
+        env:
+          MYCARLOS_TEST_THREADS: "3"
+          MYCARLOS_TEST_LANG: en
+          MYCARLOS_TEST_CHAT_FORMAT: builtin
+          MYCARLOS_EVAL_VARIANT: WIN-IDENTITY
+        run: |
+          $env:MYCARLOS_TEST_MODEL = "$env:GITHUB_WORKSPACE\model\model.gguf"
+          $env:MYCARLOS_EVAL_EXPECT_SHA256 = $env:MODEL_SHA256
+          $env:MYCARLOS_EVAL_DOCS = "$env:GITHUB_WORKSPACE\docs"
+          $env:MYCARLOS_EVAL_OUT = "$env:GITHUB_WORKSPACE\run.jsonl"
+          $env:MYCARLOS_EVAL_COMMIT = (git rev-parse HEAD)
+          cargo test --locked --features ai-helper-stub --test model_engine -- --ignored --nocapture --exact a_real_model_evaluation_run --test-threads=1
+      - name: Compare with the graded Linux run
+        # The Linux values come from the graded M2 run A1-T2-M2-6595-20261116-r1 (16 Nov 2026, 15:11Z, threads 3/3).
+        # A difference is a finding, not a failure: the job passes and says DIFFERENT.
+        if: always()
+        shell: pwsh
+        run: |
+          @'
+          import json, sys
+          linux = {
+              "bakeoff-long-discharge-summary": (13904233594595837042, 376),
+              "fr-medication_plan": (17190060008008508975, 182),
+          }
+          seen, lines = {}, []
+          try:
+              for line in open("run.jsonl", encoding="utf-8"):
+                  record = json.loads(line)
+                  if record.get("kind") == "document":
+                      stats = (record.get("result") or {}).get("stats") or {}
+                      seen[record["id"]] = (stats.get("answerHash"), stats.get("answerTokens"))
+          except FileNotFoundError:
+              pass
+          for doc, want in linux.items():
+              got = seen.get(doc)
+              word = "SAME" if got == want else ("MISSING" if got is None else "DIFFERENT")
+              lines.append(f"{word} {doc}: windows {got} linux {want}")
+          verdict = "ALL SAME" if all(l.startswith("SAME") for l in lines) else "NOT ALL SAME"
+          text = "\n".join(lines + [verdict])
+          print(text)
+          open("result.txt", "w", encoding="utf-8").write(verdict + "\n")
+          '@ | python -
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: windows-model-identity
+          path: |
+            run.jsonl
+            result.txt
+          retention-days: 14
+          if-no-files-found: warn
