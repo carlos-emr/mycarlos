@@ -7125,9 +7125,11 @@ mod tests {
         // tested, but is granted only while its flag in src/ai/features.ts is on (with
         // removeUnusedCommands, Tauri then leaves it out of the handler). The flag and the grant
         // change together.
+        // Each switched-off command with the flag in features.ts that switches it on.
+        const SWITCHABLE: &[(&str, &str)] = &[("ai_explain", "AI_EXPLAIN_ENABLED")];
         let features = include_str!("../../src/ai/features.ts");
         let mut not_granted = 0;
-        for (command, flag) in [("ai_explain", "AI_EXPLAIN_ENABLED")] {
+        for &(command, flag) in SWITCHABLE {
             let on = features.contains(&format!("export const {flag}: boolean = true;"));
             let off = features.contains(&format!("export const {flag}: boolean = false;"));
             assert!(on != off, "{flag} must be a plain true or false constant");
