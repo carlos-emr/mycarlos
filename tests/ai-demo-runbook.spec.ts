@@ -186,7 +186,8 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
 
   // Step 5: New (the button that imports files) → the three, Unverified,
   // Manual import. The button shows "New" and is named by it (WCAG 2.5.3);
-  // "Choose files to import" is its description (#149; runbook updated).
+  // "Choose files to import" is its description (#149; the runbook changes
+  // when this merges).
   await page
     .getByRole("button", { name: /My records/ })
     .locator("visible=true")
