@@ -314,6 +314,103 @@ test("folds the summary on a short window, as a large screen at 200% zoom, and k
   await expectOnlyFakedCommands(page);
 });
 
+/** Whether a pointer press at the centre of `target`, once it is scrolled into
+ * view, lands on it and not on something laid over it (`toBeVisible` only
+ * says its box is not empty: the folded summary's button had one, covered by
+ * the text box above it, at ordinary window sizes). */
+async function reachable(target: Locator) {
+  await target.scrollIntoViewIfNeeded();
+  return target.evaluate((element) => {
+    const at = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      at.x + at.width / 2,
+      at.y + at.height / 2,
+    );
+    return hit !== null && (hit === element || element.contains(hit));
+  });
+}
+
+// The summary panel keeps a usable height at every size the reader is used
+// at, and the folded summary's button can be pressed (#292). The first three
+// are the sizes where the panel was squeezed to 13px and the button covered.
+for (const [width, height] of [
+  [560, 800],
+  [900, 600],
+  [1280, 600],
+  [1280, 400],
+  [412, 780],
+  [1280, 800],
+]) {
+  test(`keeps the summary usable and its button pressable in a ${width} x ${height} window`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    const reader = await openReader(page);
+    await showQuote(page, reader);
+    await expect(boxes(reader)).toHaveCount(2);
+    const panel = reader.locator("#reader-ai-panel");
+    const folded = (await unfold(reader).count()) > 0;
+    // Its own height, not squeezed to its padding: a folded line with its
+    // 44px button, or the sentences with a share of the window of their own.
+    const box = (await panel.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(folded ? 56 : 120);
+    if (folded) {
+      // Pressed for real: Playwright refuses a click that would land on
+      // another element.
+      expect(await reachable(unfold(reader))).toBe(true);
+      await unfold(reader).click();
+      await expect(unfold(reader)).toHaveCount(0);
+    }
+    const show = reader.getByRole("button", {
+      name: en("ai.summary.showInDocument"),
+      exact: true,
+    });
+    for (const index of [0, 1, 2]) {
+      expect(await reachable(show.nth(index))).toBe(true);
+    }
+    // The page bar and Close stay reachable at the same size.
+    await reader.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    expect(
+      await reachable(
+        reader.getByRole("button", {
+          name: en("photo.close"),
+          exact: true,
+        }),
+      ),
+    ).toBe(true);
+    await reader.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    expect(
+      await reachable(
+        reader.getByRole("button", {
+          name: en("interface.DocumentReader.nextPage"),
+          exact: true,
+        }),
+      ),
+    ).toBe(true);
+    await shot(page, `show-in-document-summary-${width}x${height}`);
+    await expectOnlyFakedCommands(page);
+  });
+}
+
+test("keeps the summary usable and its button pressable at 200% text in a 1280 x 800 window", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const reader = await openReader(page);
+  await page.addStyleTag({ content: "html { font-size: 200%; }" });
+  await showQuote(page, reader);
+  await expect(boxes(reader)).toHaveCount(2);
+  const folded = (await unfold(reader).count()) > 0;
+  const box = (await reader.locator("#reader-ai-panel").boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(folded ? 56 : 120);
+  if (folded) expect(await reachable(unfold(reader))).toBe(true);
+  await shot(page, "show-in-document-summary-200-percent");
+});
+
 test("draws no box where the helper cannot place every word, and says the words are in the text", async ({
   page,
 }) => {

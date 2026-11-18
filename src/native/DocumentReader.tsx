@@ -535,7 +535,9 @@ function ReadingDocument({
   // version a screen reader reads, and the picture keeps its own scroll.
   useEffect(() => {
     const mark = markRef.current;
-    const box = mark?.closest<HTMLElement>(".native-reader-text");
+    // The text's own scrolling box (the focusable region inside the details),
+    // not the details around it, which never scrolls.
+    const box = mark?.closest<HTMLElement>(".native-reader-text > div");
     if (mark && box) centreIn(box, mark);
     mark?.focus({ preventScroll: true });
   }, [highlight, current]);

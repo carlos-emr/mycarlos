@@ -1146,13 +1146,23 @@ p {
 /* While Show in document marks a quote, the text and the AI panel give the
    picture room, so that a short or narrow window keeps the words in view in
    both places (#292). */
-.native-reader-highlighting .native-reader-text {
-  max-height: 20vh;
+/* The text box scrolls in its own region; capping the details around it only
+   let the text run over the summary below (#292). */
+.native-reader-highlighting .native-reader-text div {
+  max-height: max(5em, 16vh);
 }
 .native-reader-highlighting .native-reader-ai {
   max-height: 25vh;
 }
+/* The summary panel is never squeezed away. In a column that is too short
+   for everything it used to shrink to its padding (13px at 560x800), which
+   hid the summary and the button that unfolds it. Now it keeps its own
+   height (up to the cap, with its own scroll), and what gives way is, in
+   this order: the page picture, down to its own minimum above; then the
+   reader itself scrolls, with the page bar kept at its foot (D144), as it
+   does for "Text on this page". */
 .native-reader-ai {
+  flex-shrink: 0;
   max-height: 40vh;
   overflow: auto;
   padding: 8px 20px 14px;
