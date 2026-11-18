@@ -1389,8 +1389,9 @@ fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
         // A sentence on a line of its own says something.
         return false;
     }
-    let in_capitals =
-        line.chars().any(char::is_alphabetic) && !line.chars().any(char::is_lowercase);
+    // Capitals need an upper-case letter: a script with no case (Chinese, Japanese, Korean,
+    // Arabic, Hebrew) has none, so a sentence in it on a line of its own is no heading by this.
+    let in_capitals = line.chars().any(char::is_uppercase) && !line.chars().any(char::is_lowercase);
     let over_a_list = next.is_some_and(|next| {
         let item = next.trim_start();
         let numbered = item
@@ -1550,6 +1551,50 @@ mod tests {
         ] {
             assert!(!quote_is_heading(summary, content), "{content}");
         }
+    }
+
+    #[test]
+    fn a_sentence_in_a_script_without_case_on_a_line_of_its_own_keeps_its_quote() {
+        // FAKE sentences, each with no ASCII digit, on a line of their own under a title line.
+        // Such a line has no lower-case letter, but no upper-case one either: it is no heading
+        // "in capitals", so its sentence keeps its quote (and with it its source and its checks).
+        for (title, sentence) in [
+            ("\u{51FA}\u{9662}\u{987B}\u{77E5}", "\u{8BF7}\u{5728}\u{5BB6}\u{4F11}\u{606F}\u{FF0C}\u{591A}\u{559D}\u{6C34}\u{3002}"),
+            ("\u{9000}\u{9662}\u{6642}\u{306E}\u{6CE8}\u{610F}", "\u{81EA}\u{5B85}\u{3067}\u{5B89}\u{9759}\u{306B}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}"),
+            // Korean, Arabic, Hebrew.
+            ("\u{D1F4}\u{C6D0} \u{C548}\u{B0B4}", "\u{C9D1}\u{C5D0}\u{C11C} \u{C26C}\u{C138}\u{C694}"),
+            ("\u{62A}\u{639}\u{644}\u{64A}\u{645}\u{627}\u{62A} \u{627}\u{644}\u{62E}\u{631}\u{648}\u{62C}", "\u{627}\u{633}\u{62A}\u{631}\u{62D} \u{641}\u{64A} \u{627}\u{644}\u{645}\u{646}\u{632}\u{644}"),
+            ("\u{5D4}\u{5D5}\u{5E8}\u{5D0}\u{5D5}\u{5EA} \u{5E9}\u{5D7}\u{5E8}\u{5D5}\u{5E8}", "\u{5E0}\u{5D5}\u{5D7}\u{5D5} \u{5D1}\u{5D1}\u{5D9}\u{5EA}"),
+        ] {
+            let letter = format!("{title}\n{sentence}\nFAKE end.");
+            assert!(!quote_is_heading(&letter, sentence), "{sentence}");
+            assert!(quote_in(&letter, sentence), "{sentence}");
+            assert!(!reads_as_heading(sentence, Some("FAKE end.")), "{sentence}");
+        }
+    }
+
+    #[test]
+    fn a_line_in_real_capitals_is_still_a_heading_and_a_line_of_symbols_is_not() {
+        let letter = "DISCHARGE SUMMARY\nBlood tests in 1 week.\nSORTIE DE L'H\u{D4}PITAL\nRepos \u{E0} la maison.\n\u{412}\u{42B}\u{41F}\u{418}\u{421}\u{41A}\u{410}\nFAKE text.\n***\nFAKE more text.";
+        for heading in [
+            "Discharge summary",
+            "Sortie de l'h\u{F4}pital",
+            "\u{432}\u{44B}\u{43F}\u{438}\u{441}\u{43A}\u{430}",
+        ] {
+            assert!(quote_is_heading(letter, heading), "{heading}");
+        }
+        // Capitals with a digit are not a heading (as before); neither is a line with no letter.
+        assert!(!quote_is_heading("DISCHARGE 2026\nFAKE.", "Discharge 2026"));
+        assert!(!reads_as_heading("***", None));
+        assert!(!reads_as_heading("12 / 34 - 56", None));
+        assert!(reads_as_heading("DISCHARGE SUMMARY", None));
+        // A mixed-case line is not capitals; a colon or a list under it still makes a heading.
+        assert!(!reads_as_heading("Discharge Summary", None));
+        assert!(reads_as_heading("\u{51FA}\u{9662}\u{987B}\u{77E5}:", None));
+        assert!(reads_as_heading(
+            "\u{51FA}\u{9662}\u{987B}\u{77E5}",
+            Some("- FAKE item")
+        ));
     }
 
     #[test]
