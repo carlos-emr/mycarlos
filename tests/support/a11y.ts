@@ -252,6 +252,21 @@ export async function fakeVault(
               snapshot.portalLinks = [added];
               return structuredClone(added);
             }
+            // main's linking (#136, #258): one native call links this device
+            // and asks the clinic to approve it, as tests/support/vaultFake.ts
+            // models it.
+            case "vault_portal_connect": {
+              const added = {
+                ...link(false),
+                approvalRequested: true,
+                approvalStatus: "pending",
+                portalBase: request.portalBase ?? "",
+                deviceName: request.deviceName ?? "",
+                profileId: request.profileId ?? null,
+              };
+              snapshot.portalLinks = [added];
+              return { link: structuredClone(added), approvalError: null };
+            }
             case "vault_request_device_approval":
             case "vault_restart_device_approval":
               for (const item of snapshot.portalLinks)

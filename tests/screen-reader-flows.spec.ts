@@ -93,19 +93,28 @@ test("Security: clinic documents, profiles and the open section are named and re
       - textbox "Linking code"
       - textbox "Name for this device"
       - combobox "Whose records"
-      - button "Link to clinic"
+      - button "Connect and request approval"
   `);
 
   // An empty profile form is not an error: no alert on arrival, but each field
   // says what it still needs, and the next step is read out as it changes.
   const main = page.getByRole("main");
   await expect(main.getByRole("alert")).toHaveCount(0);
-  const fullName = main.getByRole("textbox", {
+  // A profile's details open from its own "Edit details" button (main's
+  // Security screen lists the profiles and opens the form in a dialog).
+  await main
+    .getByRole("button", { name: /^Edit details for .?FAKE Patient.?$/ })
+    .click();
+  const details = page.getByRole("dialog", { name: "Edit details" });
+  const fullName = details.getByRole("textbox", {
     name: "Full name, as on clinic documents",
   });
   await expect(fullName).toHaveAccessibleDescription(/full name/i);
   await fullName.fill("FAKE Avery Example");
   await expectAnnounced(page, "Enter a date of birth");
+  // The dialog is modal: close it before going on with Security.
+  await details.getByRole("button", { name: "Cancel" }).click();
+  await expect(details).toHaveCount(0);
 
   // Linking: the clinic's card names its device code, the fingerprint to
   // compare, and what to press next.
@@ -113,16 +122,28 @@ test("Security: clinic documents, profiles and the open section are named and re
     .getByRole("textbox", { name: "Portal HTTPS address" })
     .fill("https://portal.fake-clinic.example/patient");
   await clinic.getByRole("textbox", { name: "Linking code" }).fill("FAKE-CODE");
-  await clinic.getByRole("button", { name: "Link to clinic" }).click();
+  // main's linking (#258) names the button by what it does: it connects and
+  // sends the approval request in one step.
+  await clinic
+    .getByRole("button", { name: "Connect and request approval" })
+    .click();
+  // main's card after Connect: the request is sent, the clinic's answer is
+  // awaited, and the device's code and fingerprint are under a disclosure.
   await expect(clinic).toMatchAriaSnapshot(`
     - region "Clinic documents":
       - heading "FAKE Family Clinic" [level=3]
-      - paragraph: /[Aa]pproval/
-      - textbox "Device code"
-      - button "Copy device code"
-      - textbox "Full device fingerprint"
-      - button "Request clinic approval"
-      - button "Check for new documents"
+      - paragraph: /[Aa]pproval request/
+      - group: Show device details
+      - button "Retry saved approval request"
+      - button "Link another clinic"
+  `);
+  await clinic.getByText("Show device details").click();
+  await expect(clinic).toMatchAriaSnapshot(`
+    - region "Clinic documents":
+      - group:
+        - textbox "Device code"
+        - button "Copy device code"
+        - textbox "Full device fingerprint"
   `);
   await screenReaderSmoke(page, "Security with a linked clinic");
   await expectOnlyFakedCommands(page);
@@ -139,10 +160,12 @@ test("Security: a clinic waiting to approve this device says so", async ({
     - region "Clinic documents":
       - heading "FAKE Family Clinic" [level=3]
       - paragraph: /Approval request/
-      - button "Check for new documents"
+      - button "Retry saved approval request"
   `);
+  // While approval is awaited, main's panel offers to send the saved request
+  // again (it checks for the answer by itself while the page is open).
   await expect(
-    clinic.getByRole("button", { name: "Check for new documents" }),
+    clinic.getByRole("button", { name: "Retry saved approval request" }),
   ).toBeEnabled();
   await screenReaderSmoke(page, "Security, approval awaited");
   await expectOnlyFakedCommands(page);
