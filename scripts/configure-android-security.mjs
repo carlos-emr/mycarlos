@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -66,6 +66,86 @@ export function declareCamera(manifest) {
     );
 }
 
+// The system bars (#phone feedback, 18 Nov 2026). From Android 15 an activity is
+// drawn edge to edge, so the status bar (clock, notifications) and the gesture
+// bar lie over the top and bottom of the page. The WebView does not report them
+// to the page (`env(safe-area-inset-*)` is not reliable in it), so the activity
+// itself moves the page in by their size (and by a display cutout's and the
+// keyboard's). Native only: the page, the desktop apps and the browser tests are
+// not touched.
+const BARS_MARKER = "mycarlos: keep the page clear of the system bars";
+const BARS_IMPORTS = [
+  "import android.webkit.WebView",
+  "import androidx.core.view.ViewCompat",
+  "import androidx.core.view.WindowInsetsCompat",
+];
+const BARS_METHOD = `    // ${BARS_MARKER}
+    override fun onWebViewCreate(webView: WebView) {
+        super.onWebViewCreate(webView)
+        ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
+            WindowInsetsCompat.CONSUMED
+        }
+        ViewCompat.requestApplyInsets(webView)
+    }
+`;
+
+/** The generated MainActivity with the page kept clear of the system bars, once. */
+export function keepPageClearOfSystemBars(source) {
+  if (source.includes(BARS_MARKER)) return source;
+  if (/onWebViewCreate/.test(source)) {
+    throw new Error(
+      "MainActivity already overrides onWebViewCreate; review it before patching",
+    );
+  }
+  const classMatch = /class\s+MainActivity\b[^{\n]*/.exec(source);
+  if (!classMatch) throw new Error("MainActivity class not found");
+  let patched = source;
+  const end = classMatch.index + classMatch[0].length;
+  if (patched.slice(end).trimStart().startsWith("{")) {
+    // Before the class's own closing brace (found by counting braces), so that
+    // anything declared after the class stays where it is.
+    let depth = 0;
+    let close = -1;
+    for (let i = patched.indexOf("{", end); i < patched.length; i++) {
+      if (patched[i] === "{") depth++;
+      if (patched[i] === "}" && --depth === 0) {
+        close = i;
+        break;
+      }
+    }
+    if (close < 0) throw new Error("MainActivity class body is not closed");
+    patched = `${patched.slice(0, close).replace(/\s*$/, "")}\n\n${BARS_METHOD}${patched.slice(close)}`;
+  } else {
+    patched = `${patched.slice(0, end)} {\n${BARS_METHOD}}${patched.slice(end)}`;
+  }
+  const missing = BARS_IMPORTS.filter((line) => !patched.includes(line));
+  if (missing.length > 0) {
+    patched = patched.replace(
+      /^(package\s+[\w.]+[^\n]*\n)/m,
+      `$1\n${missing.join("\n")}\n`,
+    );
+  }
+  return patched;
+}
+
+async function findMainActivity(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      const found = await findMainActivity(path);
+      if (found) return found;
+    } else if (entry.name === "MainActivity.kt") {
+      return path;
+    }
+  }
+  return null;
+}
+
 export async function configureAndroidSecurity(manifestPath) {
   let manifest = await readFile(manifestPath, "utf8");
   if (!/<application\b/.test(manifest)) {
@@ -86,6 +166,18 @@ export async function configureAndroidSecurity(manifestPath) {
   await mkdir(resources, { recursive: true });
   await writeFile(join(resources, `${RULES_NAME}.xml`), RULES, "utf8");
   await writeFile(manifestPath, manifest, "utf8");
+
+  const activity = await findMainActivity(join(dirname(manifestPath), "java"));
+  if (!activity) {
+    throw new Error(
+      `MainActivity.kt not found under ${dirname(manifestPath)}/java`,
+    );
+  }
+  await writeFile(
+    activity,
+    keepPageClearOfSystemBars(await readFile(activity, "utf8")),
+    "utf8",
+  );
 }
 
 if (

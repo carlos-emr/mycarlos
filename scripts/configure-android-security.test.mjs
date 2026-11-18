@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
   configureAndroidSecurity,
   declareCamera,
+  keepPageClearOfSystemBars,
 } from "./configure-android-security.mjs";
 
 test("Android backup exclusions are applied exactly once", async () => {
@@ -17,8 +18,28 @@ test("Android backup exclusions are applied exactly once", async () => {
       '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:allowBackup="true" android:label="myCarlos" /></manifest>',
     );
 
+    const activityDirectory = join(
+      directory,
+      "java",
+      "ca",
+      "carlos",
+      "mycarlos",
+    );
+    await mkdir(activityDirectory, { recursive: true });
+    const activityPath = join(activityDirectory, "MainActivity.kt");
+    await writeFile(
+      activityPath,
+      "package ca.carlos.mycarlos\n\nclass MainActivity : TauriActivity()\n",
+    );
+
     await configureAndroidSecurity(manifestPath);
     await configureAndroidSecurity(manifestPath);
+    // The page is kept clear of the system bars, once.
+    const activity = await readFile(activityPath, "utf8");
+    assert.equal(
+      (activity.match(/override fun onWebViewCreate/g) ?? []).length,
+      1,
+    );
     const manifest = await readFile(manifestPath, "utf8");
     assert.equal(
       (manifest.match(/android:allowBackup="false"/g) ?? []).length,
@@ -77,6 +98,13 @@ test("the camera is declared once, not required, and the microphone not at all (
       manifestPath,
       '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <application android:label="myCarlos" />\n</manifest>',
     );
+    await mkdir(join(directory, "java", "ca", "carlos", "mycarlos"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(directory, "java", "ca", "carlos", "mycarlos", "MainActivity.kt"),
+      "package ca.carlos.mycarlos\n\nclass MainActivity : TauriActivity()\n",
+    );
     await configureAndroidSecurity(manifestPath);
     await configureAndroidSecurity(manifestPath);
     const manifest = await readFile(manifestPath, "utf8");
@@ -129,4 +157,68 @@ test("a camera feature marked required is replaced by one that is not", () => {
     /<uses-feature android:name="android\.hardware\.camera\.autofocus" android:required="false" \/>/,
   );
   assert.throws(() => declareCamera("<application />"), /manifest element/);
+});
+
+test("the page is kept clear of the status bar, the gesture bar and the keyboard, once", () => {
+  const withBody = [
+    "package ca.carlos.mycarlos",
+    "",
+    "import android.os.Bundle",
+    "",
+    "class MainActivity : TauriActivity() {",
+    "  override fun onCreate(savedInstanceState: Bundle?) {",
+    "    super.onCreate(savedInstanceState)",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+  for (const source of [
+    "package ca.carlos.mycarlos\n\nclass MainActivity : TauriActivity()\n",
+    withBody,
+  ]) {
+    const patched = keepPageClearOfSystemBars(source);
+    assert.match(patched, /override fun onWebViewCreate\(webView: WebView\)/);
+    assert.match(patched, /WindowInsetsCompat\.Type\.systemBars\(\)/);
+    assert.match(patched, /WindowInsetsCompat\.Type\.displayCutout\(\)/);
+    assert.match(patched, /WindowInsetsCompat\.Type\.ime\(\)/);
+    for (const line of [
+      "import android.webkit.WebView",
+      "import androidx.core.view.ViewCompat",
+      "import androidx.core.view.WindowInsetsCompat",
+    ]) {
+      assert.equal(patched.split(line).length - 1, 1, line);
+    }
+    // Idempotent, and what was there stays.
+    assert.equal(keepPageClearOfSystemBars(patched), patched);
+    assert.match(patched, /class MainActivity : TauriActivity\(\)/);
+  }
+  assert.match(
+    keepPageClearOfSystemBars(withBody),
+    /override fun onCreate\(savedInstanceState: Bundle\?\)/,
+  );
+});
+
+test("the override goes inside the class, before anything declared after it", () => {
+  const patched = keepPageClearOfSystemBars(
+    "package ca.carlos.mycarlos\n\nclass MainActivity : TauriActivity() {\n  val a = 1\n}\n\nprivate fun later() {}\n",
+  );
+  assert.ok(
+    patched.indexOf("onWebViewCreate") < patched.indexOf("private fun later"),
+  );
+  assert.ok(patched.indexOf("val a = 1") < patched.indexOf("onWebViewCreate"));
+  assert.match(
+    patched,
+    /ViewCompat\.requestApplyInsets\(webView\)\n    }\n}\n\nprivate fun later/,
+  );
+});
+
+test("a MainActivity that already handles the web view is not patched blindly", () => {
+  assert.throws(
+    () =>
+      keepPageClearOfSystemBars(
+        "package a\nclass MainActivity : TauriActivity() {\n  override fun onWebViewCreate(webView: android.webkit.WebView) {}\n}\n",
+      ),
+    /review it before patching/,
+  );
+  assert.throws(() => keepPageClearOfSystemBars("package a\n"), /not found/);
 });
