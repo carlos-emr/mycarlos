@@ -791,6 +791,13 @@ pub(crate) fn check_guarded<E>(
         let replace = partial.filter(|&i| covered_by(&lines[i].text, &pages[start..to]));
         if let (Some(index), None) = (partial, replace) {
             guard(lines, None, &after, &quote)?;
+            // Every logged line after the new one moves down by one, so the log keeps naming
+            // each line where it finally stands (`moved_to` relies on it).
+            for logged in &mut log {
+                if logged.index > index {
+                    logged.index += 1;
+                }
+            }
             log.push(Fallback {
                 check: "get-help",
                 index: index + 1,
@@ -824,6 +831,20 @@ pub(crate) fn check_guarded<E>(
         }
     }
     Ok(log)
+}
+
+/// Where each line that was there before `check_guarded` now stands: `to[i]` is line `i`'s
+/// final index among `len` final lines. The checks only add lines (a rule put in after a
+/// sentence, or at the end), each logged with no `before` at its final index; every other line
+/// keeps its order. Anything recorded by line index before the checks (unfound quotes, the
+/// addressee rewrites) is moved with this.
+pub(crate) fn moved_to(log: &[Fallback], len: usize) -> Vec<usize> {
+    let added: std::collections::HashSet<usize> = log
+        .iter()
+        .filter(|f| f.before.is_none())
+        .map(|f| f.index)
+        .collect();
+    (0..len).filter(|i| !added.contains(i)).collect()
 }
 
 #[cfg(test)]

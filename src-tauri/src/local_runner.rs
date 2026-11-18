@@ -1011,6 +1011,13 @@ impl Runner {
                         quote: line.quote,
                     })
                     .collect();
+                // A rule put in between two sentences moves the ones after it: the unfound
+                // quotes and the rewrites, recorded by index before the checks, move with them.
+                let moved = crate::safety::moved_to(&fallbacks, sentences.len());
+                unlocated_quotes.remap(&moved);
+                for rewrite in &mut rewrites {
+                    rewrite.index = moved[rewrite.index];
+                }
             }
         }
         // K19 (evaluation only): after the addressee step, a short plain explanation beside the
