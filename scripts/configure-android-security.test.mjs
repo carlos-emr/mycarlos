@@ -200,11 +200,24 @@ test("the page is kept clear of the status bar, the gesture bar and the keyboard
     // The strip behind the clock takes the header's colours, dark or light.
     assert.match(patched, /0xFF21372F/);
     assert.match(patched, /0xFFE7EFED/);
-    assert.match(patched, /isAppearanceLightStatusBars = !night/);
+    assert.match(patched, /isAppearanceLightStatusBars = !darkBackground/);
+    // The page can change the strip through one validated method only.
+    assert.match(
+      patched,
+      /addJavascriptInterface\(SystemBarsBridge\(\), "MyCarlosSystemBars"\)/,
+    );
+    assert.match(patched, /@JavascriptInterface/);
+    assert.match(patched, /\^#\[0-9a-fA-F\]\{6\}\$/);
+    assert.match(
+      patched,
+      /runOnUiThread \{ setStripColour\(value, darkBackground\) \}/,
+    );
     for (const line of [
       "import android.content.res.Configuration",
+      "import android.graphics.Color",
       "import android.graphics.drawable.ColorDrawable",
       "import android.view.View",
+      "import android.webkit.JavascriptInterface",
       "import android.webkit.WebView",
       "import androidx.core.view.ViewCompat",
       "import androidx.core.view.WindowCompat",

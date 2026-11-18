@@ -81,15 +81,22 @@ export function declareCamera(manifest) {
 // own padding for page content, so the padding goes on the activity's content
 // view, which does move the WebView: the page is moved in by the size of the
 // bars, of a display cutout and of the keyboard, and the insets are consumed.
-// The strip that shows behind the clock is the window background, set to the
-// header's colour (dark or light as the system is) with matching icon colours,
-// so it does not flash white. Native only: the page, the desktop apps and the
-// browser tests are not touched.
+// The strip that shows behind the clock is the window background. It starts
+// as the header's colour for the phone's night mode (so it does not flash white
+// before the page has loaded) and then follows myCarlos's own Appearance
+// setting: the page tells the activity through the one-method bridge
+// `MyCarlosSystemBars.set(colour, darkBackground)` (src/appearance.ts) whenever
+// the setting, the system's dark mode or the theme changes, locked or not (the
+// setting is read from the page's own storage, not from the vault). The bridge
+// accepts only "#rrggbb". Native only: the desktop apps and the browser tests
+// are not touched.
 const BARS_MARKER = "mycarlos: keep the page clear of the system bars";
 const BARS_IMPORTS = [
   "import android.content.res.Configuration",
+  "import android.graphics.Color",
   "import android.graphics.drawable.ColorDrawable",
   "import android.view.View",
+  "import android.webkit.JavascriptInterface",
   "import android.webkit.WebView",
   "import androidx.core.view.ViewCompat",
   "import androidx.core.view.WindowCompat",
@@ -97,14 +104,29 @@ const BARS_IMPORTS = [
 ];
 // The header's colours from src/styles.css: --canvas-2 light and dark.
 const BARS_METHOD = `    // ${BARS_MARKER}
+    private fun setStripColour(colour: Int, darkBackground: Boolean) {
+        window.setBackgroundDrawable(ColorDrawable(colour))
+        val appearance = WindowCompat.getInsetsController(window, window.decorView)
+        appearance.isAppearanceLightStatusBars = !darkBackground
+        appearance.isAppearanceLightNavigationBars = !darkBackground
+    }
+
+    // What the page may say: a colour as "#rrggbb" and whether it is dark. Nothing else.
+    private inner class SystemBarsBridge {
+        @JavascriptInterface
+        fun set(colour: String?, darkBackground: Boolean) {
+            if (colour == null || !Regex("^#[0-9a-fA-F]{6}$").matches(colour)) return
+            val value = Color.parseColor(colour)
+            runOnUiThread { setStripColour(value, darkBackground) }
+        }
+    }
+
     override fun onWebViewCreate(webView: WebView) {
         super.onWebViewCreate(webView)
         val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
-        window.setBackgroundDrawable(ColorDrawable(if (night) 0xFF21372F.toInt() else 0xFFE7EFED.toInt()))
-        val appearance = WindowCompat.getInsetsController(window, window.decorView)
-        appearance.isAppearanceLightStatusBars = !night
-        appearance.isAppearanceLightNavigationBars = !night
+        setStripColour(if (night) 0xFF21372F.toInt() else 0xFFE7EFED.toInt(), night)
+        webView.addJavascriptInterface(SystemBarsBridge(), "MyCarlosSystemBars")
         val content = findViewById<View>(android.R.id.content)
         ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
             val bars = insets.getInsets(
