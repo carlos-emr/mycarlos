@@ -1184,7 +1184,7 @@ describe("Settings > AI helper (#72)", () => {
       }),
     ).toBeVisible();
     expect(
-      screen.getByText(humanText("How the AI helper works on this computer")),
+      screen.getByText(humanText("How the AI helper works on this device")),
     ).toBeVisible();
     // The model's row, as Preferences had it: not installed here.
     expect(await screen.findByText(humanText("Not installed"))).toBeVisible();
@@ -2279,7 +2279,7 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     });
     expect(
       await within(panel).findByText(
-        humanText("The AI helper isn't on this computer yet"),
+        humanText("The AI helper isn't on this device yet"),
       ),
     ).toBeVisible();
     expect(notice()).toBeNull();

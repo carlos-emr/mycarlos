@@ -33,7 +33,6 @@
   --auth-end: #e8efed;
   --warning-line: #eccf9d;
   --warning-ink: #6f4300;
-  --window-dot: #c8d5d2;
   --green-line: #bfe0ca;
   --on-accent: #fff;
   --danger-line: #e6bcbc;
@@ -95,7 +94,6 @@
   --auth-end: #1a3028;
   --warning-line: #906824;
   --warning-ink: #f3d9aa;
-  --window-dot: #71877e;
   --green-line: #4b805c;
   --on-accent: #082e26;
   --danger-line: #996169;
@@ -168,7 +166,6 @@
   --auth-start: #000;
   --auth-middle: #000;
   --auth-end: #000;
-  --window-dot: #fff;
   --shadow: none;
   --shadow-sm: none;
   --thumb-shadow: none;
@@ -487,17 +484,6 @@ p {
   padding: 9px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--canvas-2);
-}
-.window-dots {
-  display: flex;
-  gap: 6px;
-}
-.window-dots i {
-  display: block;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--window-dot);
 }
 .window-title {
   color: var(--ink-faint);
@@ -4326,6 +4312,58 @@ button:disabled,
 .native-details-reminder p {
   flex: 1 1 16rem;
   margin: 0;
+}
+/* A birth date as year, month and day: the year first, typed, and the month
+   from a list, in one row that wraps on a narrow screen (a phone's calendar
+   makes a date decades back slow to reach). */
+.native-birth-date {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.native-birth-date legend {
+  padding: 0;
+  margin-bottom: 5px;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+.native-birth-date label {
+  min-width: 0;
+}
+.native-birth-year {
+  flex: 0 0 6rem;
+}
+.native-birth-month {
+  flex: 1 1 8rem;
+}
+.native-birth-day {
+  flex: 0 0 4.5rem;
+}
+.native-birth-date select,
+.native-birth-date input {
+  width: 100%;
+  min-width: 0;
+}
+.native-birth-date select {
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.native-birth-date select:focus {
+  border-color: var(--focus);
+  outline: 2px solid var(--focus);
+}
+.native-birth-date:disabled {
+  opacity: 0.6;
 }
 .native-person-details-setup {
   display: grid;

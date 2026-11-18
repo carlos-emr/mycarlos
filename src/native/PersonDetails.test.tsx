@@ -9,8 +9,15 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { humanText } from "../test/humanText";
 import {
+  birthDateGroup,
+  birthDateValue,
+  enterBirthDate,
+} from "../test/birthDate";
+import {
   PersonDetailsList,
   detailsProblem,
+  joinBirthDate,
+  splitBirthDate,
   trimmedDetails,
 } from "./PersonDetails";
 import { localDateText } from "../vault";
@@ -127,9 +134,7 @@ describe("required profile identity details", () => {
     );
     expect(fullName).toHaveFocus();
     expect(fullName).toHaveValue("FAKE Mary Smith");
-    expect(within(dialog).getByLabelText("Date of birth")).toHaveValue(
-      "1958-03-12",
-    );
+    expect(birthDateValue(birthDateGroup(dialog))).toBe("1958-03-12");
     fireEvent.keyDown(fullName, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(edit).toHaveFocus();
@@ -181,7 +186,7 @@ describe("required profile identity details", () => {
         unknown: within(dialog).getByRole("checkbox", {
           name: "I don't know this person's date of birth",
         }),
-        date: within(dialog).getByLabelText("Date of birth"),
+        date: birthDateGroup(dialog),
       };
     };
     let shown = open("FAKE Fresh");
@@ -228,7 +233,7 @@ describe("required profile identity details", () => {
         unknown: within(dialog).getByRole("checkbox", {
           name: "I don't know this person's date of birth",
         }),
-        date: within(dialog).getByLabelText("Date of birth"),
+        date: birthDateGroup(dialog),
         cancel: within(dialog).getByRole("button", { name: "Cancel" }),
       };
     };
@@ -238,7 +243,7 @@ describe("required profile identity details", () => {
     expect(opened.fullName).toHaveValue("");
     expect(opened.unknown).not.toBeChecked();
     expect(opened.date).toBeEnabled();
-    expect(opened.date).toHaveValue("");
+    expect(birthDateValue(opened.date)).toBe("");
     fireEvent.click(opened.cancel);
     rerender(list({ profileId: "p2" }));
     opened = shown();
@@ -250,7 +255,7 @@ describe("required profile identity details", () => {
     opened = shown();
     expect(opened.fullName).toHaveValue("FAKE Dated Example");
     expect(opened.unknown).not.toBeChecked();
-    expect(opened.date).toHaveValue("2015-06-01");
+    expect(birthDateValue(opened.date)).toBe("2015-06-01");
     fireEvent.click(opened.cancel);
     // The same person by their own button: the same dialog.
     fireEvent.click(
@@ -340,7 +345,7 @@ describe("required profile identity details", () => {
       }),
     );
     const name = screen.getByLabelText("Full name, as on clinic documents");
-    const date = screen.getByLabelText("Date of birth");
+    const date = birthDateGroup();
     const unknown = screen.getByRole("checkbox");
     const form = screen.getByRole("form", {
       name: humanText("Details for FAKE Avery"),
@@ -360,12 +365,12 @@ describe("required profile identity details", () => {
     ).toBe(name);
     expect(name).toHaveValue(draft);
     expect(name).toHaveFocus();
-    expect(date).toHaveValue("2000-02-29");
+    expect(birthDateValue(date)).toBe("2000-02-29");
     expect(screen.queryByRole("alert")).toBeNull();
 
-    fireEvent.change(date, { target: { value: "" } });
+    enterBirthDate(date, "");
     act(() => setLocaleOverride("pl"));
-    expect(screen.getByLabelText("Data urodzenia")).toBe(date);
+    expect(birthDateGroup(document.body, "Data urodzenia")).toBe(date);
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Proszę wpisać datę urodzenia lub zaznaczyć, że jest nieznana.",
     );
@@ -394,5 +399,46 @@ describe("required profile identity details", () => {
     fireEvent.click(screen.getByRole("button", { name: "Zapisz dane" }));
     await waitFor(() => expect(form).not.toBeInTheDocument());
     expect(save).toHaveBeenNthCalledWith(2, "p1", { fullName: draft.trim() });
+  });
+});
+
+describe("the birth date as year, month and day", () => {
+  it("joins to the stored YYYY-MM-DD text and splits back", () => {
+    expect(splitBirthDate("1958-03-12")).toEqual({
+      year: "1958",
+      month: "03",
+      day: "12",
+    });
+    expect(joinBirthDate({ year: "1958", month: "03", day: "12" })).toBe(
+      "1958-03-12",
+    );
+    // A day typed as one digit is padded.
+    expect(joinBirthDate({ year: "2015", month: "06", day: "5" })).toBe(
+      "2015-06-05",
+    );
+    expect(splitBirthDate("")).toEqual({ year: "", month: "", day: "" });
+  });
+
+  it("is empty until the year, the month and the day are all given", () => {
+    for (const parts of [
+      { year: "", month: "03", day: "12" },
+      { year: "1958", month: "", day: "12" },
+      { year: "1958", month: "03", day: "" },
+    ])
+      expect(joinBirthDate(parts)).toBe("");
+  });
+
+  it("says a date is not valid, not that it is missing, when the year has fewer than four digits", () => {
+    const date = joinBirthDate({ year: "85", month: "03", day: "12" });
+    expect(date).toBe("85-03-12");
+    expect(
+      detailsProblem({ fullName: "FAKE Robin Example", birthDate: date }),
+    ).toBe("personDetails.invalidDate");
+    expect(
+      detailsProblem({
+        fullName: "FAKE Robin Example",
+        birthDate: joinBirthDate({ year: "1985", month: "02", day: "31" }),
+      }),
+    ).toBe("personDetails.invalidDate");
   });
 });

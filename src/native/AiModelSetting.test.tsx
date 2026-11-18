@@ -260,14 +260,14 @@ describe("Add a model file", () => {
     ],
     [
       "noDisk",
-      "There is not enough free space on this computer. The model needs about 4 GB.",
+      "There is not enough free space on this device. The model needs about 4 GB.",
     ],
     [
       "incomplete",
       "The file could not be read completely. Check that it finished downloading, then try again.",
     ],
     ["busy", "The AI helper is working. Try again when it has finished."],
-    ["storage", "The model could not be saved on this computer."],
+    ["storage", "The model could not be saved on this device."],
   ])("explains a refusal: %s", async (outcome, text) => {
     answer({
       ai_model_catalog: [fake],
@@ -1044,13 +1044,10 @@ describe("A computer that cannot run the helper", () => {
   it.each([
     [
       "ram",
-      "This computer does not have enough memory for the AI helper (it needs about 8 GB).",
+      "This device does not have enough memory for the AI helper (it needs about 8 GB).",
     ],
-    ["cpu", "This computer’s processor is not supported by the AI helper."],
-    [
-      "platform",
-      "The AI helper is not available on this kind of computer yet.",
-    ],
+    ["cpu", "This device’s processor is not supported by the AI helper."],
+    ["platform", "The AI helper is not available on this kind of device yet."],
   ] as const)("says why (%s) and offers nothing", async (reason, text) => {
     answer({ ai_model_catalog: [fake] });
     render(

@@ -6018,9 +6018,9 @@ mod tests {
             (
                 AiError::NotInstalled,
                 "aiNotInstalled",
-                "isn't on this computer",
+                "isn't on this device",
             ),
-            (AiError::Damaged, "aiDamaged", "isn't on this computer"),
+            (AiError::Damaged, "aiDamaged", "isn't on this device"),
             (AiError::Memory, "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
             (AiError::Storage, "aiStorage", "could not be read"),

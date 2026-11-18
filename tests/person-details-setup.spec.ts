@@ -1,6 +1,7 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
+import { fillBirthDate } from "./support/birthDate";
 import {
   fakeCalls,
   fakeSnapshot,
@@ -118,9 +119,7 @@ test("a new vault keeps the first person's full name and date of birth, as Edit 
     .getByLabel(en("personDetails.fullName"), { exact: true })
     .fill(FULL_NAME);
   await expect(create).toBeDisabled();
-  await details
-    .getByLabel(en("personDetails.birthDate"), { exact: true })
-    .fill(BIRTH_DATE);
+  await fillBirthDate(details, BIRTH_DATE);
   await expect(create).toBeEnabled();
   await create.click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -258,9 +257,7 @@ test("a person added with their details left for later is reminded about too", a
   await form
     .getByLabel(en("personDetails.fullName"), { exact: true })
     .fill(FULL_NAME);
-  await form
-    .getByLabel(en("personDetails.birthDate"), { exact: true })
-    .fill(BIRTH_DATE);
+  await fillBirthDate(form, BIRTH_DATE);
   await form
     .getByRole("button", { name: en("personDetails.save"), exact: true })
     .click();

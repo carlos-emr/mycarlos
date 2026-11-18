@@ -4,7 +4,6 @@ import {
   trimmedDetails,
 } from "./PersonDetails";
 import { useI18n, MessageKey } from "../i18n";
-import { LanguageSetting } from "./LanguageSetting";
 import { SecretInput } from "./SecretInput";
 import {
   useEffect,
@@ -67,11 +66,6 @@ export function VaultAuthFrame({
           aria-label={t("frame.window.label")}
         >
           <header className="titlebar">
-            <span className="window-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
             <span className="window-title">myCarlos</span>
             <span className="native-auth-state">
               <Icon name="shield" /> {t(FRAME_STATES[state])}
@@ -242,7 +236,6 @@ export function CreateVault({
   return (
     <VaultAuthFrame state="Setting up">
       <section className="vault-card" aria-labelledby="create-title">
-        <LanguageSetting compact />
         <p className="vault-kicker">{t("auth.kicker")}</p>
         <h1 id="create-title">{t("create.title")}</h1>
         <p>{t("create.intro")}</p>
@@ -401,7 +394,6 @@ export function UnlockVault({
   return (
     <VaultAuthFrame state="Locked">
       <section className="vault-card" aria-labelledby="unlock-title">
-        <LanguageSetting compact />
         <p className="vault-kicker">{t("auth.kicker")}</p>
         <h1 id="unlock-title">{t("unlock.title")}</h1>
         <p>{t("unlock.autoLock", { count: autoLockMinutes })}</p>

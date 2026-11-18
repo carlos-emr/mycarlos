@@ -610,6 +610,10 @@ export const MESSAGE_KEYS = [
   "personDetails.birthDate",
   "personDetails.birthDateRequired",
   "personDetails.birthDateUnknown",
+  "personDetails.birthDay",
+  "personDetails.birthMonth",
+  "personDetails.birthMonthChoose",
+  "personDetails.birthYear",
   "personDetails.cancel",
   "personDetails.edit",
   "personDetails.editFor",
@@ -1731,6 +1735,10 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.birthDate": "personDetails-birthDate",
   "personDetails.birthDateRequired": "personDetails-birthDateRequired",
   "personDetails.birthDateUnknown": "personDetails-birthDateUnknown",
+  "personDetails.birthDay": "personDetails-birthDay",
+  "personDetails.birthMonth": "personDetails-birthMonth",
+  "personDetails.birthMonthChoose": "personDetails-birthMonthChoose",
+  "personDetails.birthYear": "personDetails-birthYear",
   "personDetails.cancel": "personDetails-cancel",
   "personDetails.edit": "personDetails-edit",
   "personDetails.editFor": "personDetails-editFor",
@@ -2915,6 +2923,10 @@ export interface MessageArgsByKey {
   "personDetails.birthDate": undefined;
   "personDetails.birthDateRequired": undefined;
   "personDetails.birthDateUnknown": undefined;
+  "personDetails.birthDay": undefined;
+  "personDetails.birthMonth": undefined;
+  "personDetails.birthMonthChoose": undefined;
+  "personDetails.birthYear": undefined;
   "personDetails.cancel": undefined;
   "personDetails.edit": undefined;
   "personDetails.editFor": { name: FluentArgument };
