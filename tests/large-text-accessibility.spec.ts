@@ -468,7 +468,9 @@ async function walkTheVault(large: LargeText) {
   await expect(page.getByText("Not installed", { exact: true })).toBeVisible();
   // The row says how much the model reads at a time: the answer to ai_model_limits (model limits).
   // The page number comes wrapped in invisible direction marks (Fluent), so match it as one word.
-  await expect(page.getByText(/Reads about \S+ pages? at a time/)).toBeVisible();
+  await expect(
+    page.getByText(/Reads about \S+ pages? at a time/),
+  ).toBeVisible();
   await expectNoViolations(page, "AI helper, the model's row", large.cutOff);
   await expectOnlyMockedCommands(page);
 }
