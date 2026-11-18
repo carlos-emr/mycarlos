@@ -24,8 +24,8 @@ export function LanguageButton() {
         onClick={() => setOpen(true)}
       >
         <Icon name="globe" />
-        <span className="sr-only">{t("language.title")}: </span>
         <span lang={locale}>{languageName(locale)}</span>
+        <span className="sr-only"> ({t("language.title")})</span>
       </button>
       {open && (
         <LanguageDialog

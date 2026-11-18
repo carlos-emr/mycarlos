@@ -25,19 +25,23 @@ describe("the language button on the unlock and set-up screens", () => {
       render(<LanguageButton />);
       const own = languageName(locale);
       const button = screen.getByRole("button", {
-        name: `${translate(locale, "language.title")}: ${own}`,
+        name: `${own} (${translate(locale, "language.title")})`,
       });
       // What a person who cannot read the screen sees: the globe and the name.
       expect(button.querySelector("svg")).not.toBeNull();
       expect(within(button).getByText(own)).toHaveAttribute("lang", locale);
       expect(button).toHaveAttribute("aria-haspopup", "dialog");
+      // What it shows leads the name, so voice control's "click <name>" works.
+      expect(button.textContent?.startsWith(own)).toBe(true);
     },
   );
 
   it("opens the language list in a dialog, changes the language, and returns focus", async () => {
     const user = userEvent.setup();
     render(<LanguageButton />);
-    const button = screen.getByRole("button", { name: /Language: English/ });
+    const button = screen.getByRole("button", {
+      name: /^English \(Language\)$/,
+    });
     await user.click(button);
     const dialog = screen.getByRole("dialog", { name: "Language" });
     await user.click(within(dialog).getByRole("radio", { name: "Français" }));
@@ -54,7 +58,7 @@ describe("the language button on the unlock and set-up screens", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
       screen.getByRole("button", {
-        name: `${translate("fr", "language.title")}: Français`,
+        name: `Français (${translate("fr", "language.title")})`,
       }),
     ).toHaveFocus();
   });
@@ -62,7 +66,7 @@ describe("the language button on the unlock and set-up screens", () => {
   it("closes with Escape without changing the language", async () => {
     const user = userEvent.setup();
     render(<LanguageButton />);
-    await user.click(screen.getByRole("button", { name: /Language/ }));
+    await user.click(screen.getByRole("button", { name: /\(Language\)$/ }));
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(getLanguagePreference().choice).toBeNull();
@@ -81,7 +85,7 @@ describe("the language button on the unlock and set-up screens", () => {
         <p>card</p>
       </VaultAuthFrame>,
     );
-    expect(screen.queryByRole("button", { name: /Language/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /\(Language\)$/ })).toBeNull();
   });
 
   it("follows a language chosen elsewhere", () => {
@@ -89,7 +93,7 @@ describe("the language button on the unlock and set-up screens", () => {
     act(() => setLocaleOverride("pl"));
     expect(
       screen.getByRole("button", {
-        name: `${translate("pl", "language.title")}: Polski`,
+        name: `Polski (${translate("pl", "language.title")})`,
       }),
     ).toBeInTheDocument();
   });

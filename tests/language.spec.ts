@@ -197,7 +197,7 @@ test("the unlock screen has a globe and language button that opens the list, wit
   const field = page.getByLabel("Passphrase", { exact: true });
   await expect(field).toBeVisible();
   const before = await field.boundingBox();
-  const button = page.getByRole("button", { name: /^Language: English$/ });
+  const button = page.getByRole("button", { name: /^English \(Language\)$/ });
   await expect(button).toBeVisible();
   const box = await button.boundingBox();
   expect(box!.height).toBeGreaterThanOrEqual(44);
@@ -208,7 +208,7 @@ test("the unlock screen has a globe and language button that opens the list, wit
   await expect(page.locator("html")).toHaveAttribute("lang", "es");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  const own = page.getByRole("button", { name: /Español$/ });
+  const own = page.getByRole("button", { name: /^Español \(/ });
   await expect(own).toBeFocused();
   // Choosing a language does not move the passphrase field.
   const after = await page
