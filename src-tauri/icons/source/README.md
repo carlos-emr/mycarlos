@@ -1,16 +1,21 @@
-# Android launcher icon sources
+# CARLOS app icon sources
 
-`carlos-logo-460.jpg` is the CARLOS logo (the carlos-emr organisation avatar, 460 x 460 px, white
-background). It is too small for the 1,024 px desktop and iOS masters, so those icons stay on the
+`carlos-logo-460.jpg` is the CARLOS logo: the carlos-emr GitHub organisation's picture
+(https://avatars.githubusercontent.com/u/123763729?v=4, 460 x 460 px JPEG, white background), kept
+byte for byte. The heart icon (`../app-icon.svg`) stays in the repository as the source of the macOS
+and iOS icons. It is too small for the 1,024 px desktop and iOS masters, so those icons stay on the
 heart icon until a larger original exists.
 
-`android-master-safe-zone.png` is the same picture, only scaled (Lanczos, 0.667) and centred on a
+`android-master-safe-zone.png` is the same picture, only scaled (Lanczos, 0.623) and centred on a
 white 460 px square so that the farthest ink (the figure's foot) lies inside the adaptive icon's
-66 dp safe circle (0.30 of the width). Nothing else was changed. The Android icons in
+66 dp safe circle (0.28 of the width: about 8% inside the 0.306 edge, so launcher scaling does not touch the figure). Nothing else was changed. The Android icons in
 `../android/` come from it with the project's own tool, not by hand:
 
     npx tauri icon src-tauri/icons/source/android-master-safe-zone.png -o <empty dir>
     # then copy only <dir>/android/* over src-tauri/icons/android/
+
+`scripts/configure-android-security.mjs` (run by `npm run android:secure` after `tauri android
+init`) copies `src-tauri/icons/android/` into the generated project's `res` folder.
 
 The adaptive background is white (`values/ic_launcher_background.xml`, `#fff`).
 
@@ -21,6 +26,10 @@ from the 460 px logo (no safe-zone scaling; nothing upscaled), then only these f
 `icon.ico` (largest entry 256 px), `32x32.png`, `64x64.png`, `128x128.png`, `128x128@2x.png` (256 px),
 `Square30x30Logo.png` ... `Square310x310Logo.png` and `StoreLogo.png`.
 
-Still the heart icon, because they need more than 460 px: `icon.icns` (macOS), `icon.png` (512 px)
-and the whole `ios/` set (up to 1,024 px). `app-icon.svg` is the heart's source and is unchanged.
+`icon.png` (512 px, the Linux icon) is larger than the logo, so the unscaled 460 px picture sits on
+a white 512 px canvas with an even 26 px margin (the only padded file; nothing is upscaled).
+
+Still the heart icon, because they need a 1,024 px original: `icon.icns` (macOS) and the whole `ios/`
+set. At 16 px the figure is mush and only the blue hexagon reads; a simplified small-size mark would
+be a separate design job. `app-icon.svg` is the heart's source and is unchanged.
 The JPEG has a white background, so these icons are the logo on opaque white.
