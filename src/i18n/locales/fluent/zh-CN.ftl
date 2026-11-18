@@ -1236,7 +1236,7 @@ personDetails-birthDay = 日
 
 personDetails-birthMonth = 月
 
-personDetails-birthMonthChoose = 选择月份
+personDetails-birthMonthChoose = 选择
 
 personDetails-birthYear = 年
 

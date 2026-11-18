@@ -1364,7 +1364,7 @@ personDetails-birthDay = Day
 
 personDetails-birthMonth = Month
 
-personDetails-birthMonthChoose = Choose a month
+personDetails-birthMonthChoose = Choose
 
 personDetails-birthYear = Year
 

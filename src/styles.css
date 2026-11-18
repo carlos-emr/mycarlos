@@ -4335,14 +4335,18 @@ button:disabled,
 .native-birth-date label {
   min-width: 0;
 }
+/* Year, month and day share one row on a narrow phone (about 254 px): the
+ * year and day are as wide as their digits need, the month takes the rest.
+ * At a larger text size the three no longer fit and the row wraps there. */
 .native-birth-year {
-  flex: 0 0 6rem;
+  flex: 0 0 4.75rem;
 }
 .native-birth-month {
-  flex: 1 1 8rem;
+  flex: 1 1 5rem;
+  min-width: 0;
 }
 .native-birth-day {
-  flex: 0 0 4.5rem;
+  flex: 0 0 3.5rem;
 }
 .native-birth-date select,
 .native-birth-date input {
@@ -4351,7 +4355,7 @@ button:disabled,
 }
 .native-birth-date select {
   min-height: 44px;
-  padding: 8px 10px;
+  padding: 8px 6px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper);

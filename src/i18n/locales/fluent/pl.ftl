@@ -1428,7 +1428,7 @@ personDetails-birthDay = Dzień
 
 personDetails-birthMonth = Miesiąc
 
-personDetails-birthMonthChoose = Wybierz miesiąc
+personDetails-birthMonthChoose = Wybierz
 
 personDetails-birthYear = Rok
 
