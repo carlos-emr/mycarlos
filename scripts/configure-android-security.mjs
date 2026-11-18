@@ -112,7 +112,7 @@ const BARS_METHOD = `    // ${BARS_MARKER}
     }
 
     // What the page may say: a colour as "#rrggbb" and whether it is dark. Nothing else.
-    private inner class SystemBarsBridge {
+    inner class SystemBarsBridge {
         @JavascriptInterface
         fun set(colour: String?, darkBackground: Boolean) {
             if (colour == null || !Regex("^#[0-9a-fA-F]{6}$").matches(colour)) return

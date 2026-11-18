@@ -207,6 +207,9 @@ test("the page is kept clear of the status bar, the gesture bar and the keyboard
       /addJavascriptInterface\(SystemBarsBridge\(\), "MyCarlosSystemBars"\)/,
     );
     assert.match(patched, /@JavascriptInterface/);
+    // Not private: the WebView calls the method by reflection.
+    assert.match(patched, /\n    inner class SystemBarsBridge \{/);
+    assert.doesNotMatch(patched, /private inner class/);
     assert.match(patched, /\^#\[0-9a-fA-F\]\{6\}\$/);
     assert.match(
       patched,
