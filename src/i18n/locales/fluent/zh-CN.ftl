@@ -140,9 +140,13 @@ interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay = 手机会询问一�
 
 interface-DocumentReader-documentPassword = 文档密码
 
+interface-DocumentReader-firstPage = 第一页
+
 interface-DocumentReader-fitWidth = 符合宽度
 
 interface-DocumentReader-larger = 放大
+
+interface-DocumentReader-lastPage = 最后一页
 
 interface-DocumentReader-nextPage = 下一页
 
@@ -1319,6 +1323,8 @@ portal-copy = 复制设备代码
 portal-copyFailed = 请选取完整的设备代码并复制。
 
 portal-dateNotRecorded = 未记录日期
+
+portal-defaultDeviceName = { $platform } 上的 myCarlos
 
 portal-deviceCode = 设备代码
 

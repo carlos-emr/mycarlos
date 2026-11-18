@@ -2825,8 +2825,8 @@ const RULES: Rule[] = [
     group: 1,
     skipDates: true,
   },
-  // A national identity number after its label: DNI/NIE "12345678Z", PESEL, CPF
-  // "123.456.789-09", RG, NIF; and a CPF by its shape.
+  // A national identity number after its label: DNI/NIE "12345678A", PESEL, CPF
+  // "123.456.789-00", RG, NIF; and a CPF by its shape.
   {
     kind: "sin",
     pattern:
@@ -2907,7 +2907,7 @@ const RULES: Rule[] = [
     ),
   },
   {
-    // 1234, rue Sherbrooke Est; 88, boul. René-Lévesque Ouest, app. 5
+    // 1234, rue Imaginaire Est; 88, boul. Émile-Exemple Ouest, app. 5
     kind: "address",
     pattern: new RegExp(
       `${UNIT_FIRST}\\b\\d{1,6}[A-Za-z]?(?:-\\d{1,6})?,?[ \\t]+${FRENCH_STREET_TYPE}[ \\t]+(?:(?:de|du|des|la|le|l['’]|d['’])[ \\t]*)*${NAME_WORD}(?:[ \\t-]+${NAME_WORD})*(?:[ \\t]+(?:Est|Ouest|Nord|Sud|E|O|N|S)\\b)?${UNIT}${TOWN_AFTER}`,
@@ -2989,7 +2989,7 @@ const RULES: Rule[] = [
     ),
   },
   {
-    // Clinique médicale Saint-Laurent; Centre hospitalier de Fictiveville
+    // Clinique médicale Saint-Fictif; Centre hospitalier de Fictiveville
     kind: "clinic",
     pattern: new RegExp(
       `(?<![\\p{L}])(?:\\p{Lu}\\p{L}*-)?${anyCase(["Hôpital", "Polyclinique", "Cliniques", "Clinique", "Centre hospitalier", "Centre de santé", "CLSC", "CHSLD", "Pharmacie", "Laboratoire", "Cabinet médical"])}(?:(?:[ \\t]+|(?<=[ldLD]['’])|[ \\t]*(?:\/|&|–)[ \\t]*)(?:(?:de|du|des|la|le|les|médicales?|universitaire|régionale?|générale?|familiale)(?![\\p{L}])|l['’]|d['’]|${NAME_WORD})){1,8}(?:[ \\t]*\\(${NAME_WORD}(?:[ -]${NAME_WORD}){0,3}\\))?`,
