@@ -11,12 +11,15 @@ const gone = (text: string, ...parts: string[]) => {
 };
 
 describe("phones in es/pl/pt", () => {
+  // Numbers no one can be reached on, in each country's written form: Spanish
+  // numbers never start with 1, Polish ones never with 0, and (30) is not a
+  // Brazilian area code. The phone rules go by shape, so each is still a phone.
   it.each([
-    ["Llamar al +34 655 908 117 por la tarde.", "655"],
-    ["Kontakt: +48 512 330 908.", "512"],
-    ["Ligar para (31) 98877-1203 amanhã.", "98877"],
-    ["Móvil: 655 908 117", "655"],
-    ["Tel. kom. 512 330 908", "512"],
+    ["Llamar al +34 155 908 117 por la tarde.", "155"],
+    ["Kontakt: +48 012 330 908.", "012"],
+    ["Ligar para (30) 98877-1203 amanhã.", "98877"],
+    ["Móvil: 155 908 117", "155"],
+    ["Tel. kom. 012 330 908", "012"],
   ])("%s", (text, part) => {
     expect(gone(text, part)).toMatch(/\[PHONE 1\]/);
   });
@@ -24,12 +27,13 @@ describe("phones in es/pl/pt", () => {
 
 describe("national identity numbers and health cards", () => {
   it.each([
-    ["Paciente con DNI 87654321X acude a consulta.", "87654321X"],
+    ["Paciente con DNI 87654321A acude a consulta.", "87654321A"],
     ["NIE: Y7654321T", "7654321"],
     ["Numer PESEL 90010154321 w dokumentacji.", "90010154321"],
-    ["CPF: 987.654.321-00", "987.654.321"],
-    ["Seu CPF é 987.654.321-00.", "987.654.321"],
-    ["Tarjeta sanitaria: MRGA870512345011", "MRGA870512345011"],
+    ["CPF: 987.654.321-01", "987.654.321"],
+    ["Seu CPF é 987.654.321-01.", "987.654.321"],
+    // The birth date inside the card is impossible (month 13, day 32).
+    ["Tarjeta sanitaria: MRGA871332345011", "MRGA871332345011"],
     ["Cartão Nacional de Saúde 700 5009 1234 5678", "5009"],
   ])("%s", (text, part) => {
     gone(text, part);
@@ -67,7 +71,7 @@ describe("clinicians, patients and relatives in es/pl/pt", () => {
     ["Le remito a Julián Ficticio Barrios por disnea.", "Barrios"],
     ["Encaminho Joana Teste Prado para avaliação.", "Prado"],
     ["Kieruję pana Marka Przykładnego na konsultację.", "Przykładnego"],
-    ["Julián Ficticio Barrios, DNI 87654321X, acude solo.", "Barrios"],
+    ["Julián Ficticio Barrios, DNI 87654321A, acude solo.", "Barrios"],
     ["Przyjechała z córką, Zofią Testowską.", "Testowską"],
     ["Opiekuje się nią syn, Adam Przykładny.", "Przykładny"],
   ])("%s", (text, part) => {
@@ -124,7 +128,7 @@ describe("look-alikes found in the #252 review", () => {
   });
 
   it("keeps an identity label and removes its number", () => {
-    expect(send("Paciente CPF 987.654.321-00, acompanhada.")).toBe(
+    expect(send("Paciente CPF 987.654.321-01, acompanhada.")).toBe(
       "Paciente CPF [SIN 1], acompanhada.",
     );
   });
@@ -412,28 +416,28 @@ describe("a run right before an identity label", () => {
     "Oddział Chorób Wewnętrznych PESEL 41031412345",
     "Oddział Ratunkowy    Nr księgi 12345/2026",
     "Zapalenie Płuc    PESEL 41031412345",
-    "Servicio de Cardiología    DNI 12345678Z",
+    "Servicio de Cardiología    DNI 12345678A",
     "Medicina Interna    NHC 4471829",
     "Neumonía Adquirida    NHC 4471829",
     "Informe de alta: Neumonía Adquirida    NHC 4471829",
-    "Insuficiencia Renal Crónica, DNI 12345678Z",
+    "Insuficiencia Renal Crónica, DNI 12345678A",
     "Consulta Externa    CNS 123456789012345",
     "Atención Primaria, Tarjeta sanitaria BBBB123456",
-    "Unidade Coronariana    CPF 987.654.321-00",
-    "Resumo de alta: Pneumonia Comunitária    CPF 987.654.321-00",
+    "Unidade Coronariana    CPF 987.654.321-01",
+    "Resumo de alta: Pneumonia Comunitária    CPF 987.654.321-01",
   ])("leaves a ward, a service or a diagnosis: %j", (text) => {
     expect(send(text)).not.toMatch(/\[NAME/);
   });
 
   it.each([
-    ["Tomás Prueba Iglesias, DNI 12345678Z", "Iglesias"],
+    ["Tomás Prueba Iglesias, DNI 12345678A", "Iglesias"],
     ["Zuzanna Wierzbicka    PESEL 58031412345", "Wierzbicka"],
-    ["Bożena Kwiatkowska, PESEL 50060212345", "Kwiatkowska"],
-    ["Tomé Vasconcelos Brito, CPF 987.654.321-00", "Brito"],
+    ["Bożena Kwiatkowska, PESEL 50060212346", "Kwiatkowska"],
+    ["Tomé Vasconcelos Brito, CPF 987.654.321-01", "Brito"],
     ["Inés Valcárcel Pruneda    NHC 4471829", "Pruneda"],
     ["Remedios Falcón Ibarra, Tarjeta sanitaria BBBB123456", "Ibarra"],
-    ["Firmado: Lucía Prueba Sanz, DNI 12345678Z", "Sanz"],
-    ["Atendemos a Lucía Prueba Sanz, DNI 12345678Z", "Sanz"],
+    ["Firmado: Lucía Prueba Sanz, DNI 12345678A", "Sanz"],
+    ["Atendemos a Lucía Prueba Sanz, DNI 12345678A", "Sanz"],
     [
       "Karta informacyjna — WIERZBICKA, Zuzanna    PESEL 58031412345",
       "Zuzanna",
@@ -456,17 +460,17 @@ describe("a run right before an identity label", () => {
 describe("identity labels after the review", () => {
   it.each([
     "Pronto Socorro Adulto    CNS 123456789012345",
-    "Ambulatório de Cardiologia    CPF 987.654.321-00",
+    "Ambulatório de Cardiologia    CPF 987.654.321-01",
     "Pain Clinic    NHC 4471829",
-    "FRACTURE, Displaced    DNI 12345678Z",
+    "FRACTURE, Displaced    DNI 12345678A",
   ])("leaves a unit or a condition: %j", (text) => {
     expect(send(text)).not.toMatch(/\[NAME/);
   });
 
   it.each([
     ["WIERZBICKA, Zuzanna    PESEL 58031412345", "Zuzanna"],
-    ["PRUEBA SANZ, Lucía, DNI 12345678Z", "Lucía"],
-    ["Rana Khan, DNI 12345678Z", "Khan"],
+    ["PRUEBA SANZ, Lucía, DNI 12345678A", "Lucía"],
+    ["Rana Khan, DNI 12345678A", "Khan"],
     ["Summer Hand, PESEL 58031412345", "Hand"],
   ])(
     "removes a name, also written SURNAME, Given or with a word that is a name: %j",
@@ -478,7 +482,7 @@ describe("identity labels after the review", () => {
   // An identity label in capitals is never a word of the name before it.
   it.each([
     ["Pacjentka: WIERZBICKA, Zuzanna    PESEL 58031412345", "PESEL", "Zuzanna"],
-    ["Nombre: Lucía Prueba Sanz    DNI 12345678Z", "DNI", "Sanz"],
+    ["Nombre: Lucía Prueba Sanz    DNI 12345678A", "DNI", "Sanz"],
   ])("keeps the label after the name: %j", (text, label, part) => {
     const sent = send(text);
     expect(sent).toContain(label);

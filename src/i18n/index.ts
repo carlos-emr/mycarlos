@@ -4,6 +4,7 @@ import type { MessageKey } from "./locales";
 
 export {
   formatDate,
+  formatDeviceName,
   formatNumber,
   getLocale,
   getLocaleOverride,

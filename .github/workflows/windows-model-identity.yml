@@ -1,0 +1,147 @@
+name: Windows model identity (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit whose evaluation build is checked (the Linux values below fit 6595b3c only; another commit reports NOT COMPARABLE)"
+        required: true
+        default: "6595b3c25beb32c2cbd44892698c3fd66265ad2f"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-identity:
+    # Does a Windows build (MSVC, the Universal C Runtime) write the same summary, token for token, as the
+    # Linux evaluation build that was graded? Two FAKE documents, the graded harness, the real model.
+    name: Windows model identity (two FAKE documents)
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      MODEL_SHA256: 13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983
+      MODEL_URL: https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      # The test builds without the web pages (a debug build serves them from the dev address), so no Node step.
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+      # llama.cpp's C++ build, restored as in the windows job of mycarlos.yml (read only: nothing is saved here).
+      - name: Key for the llama.cpp build cache
+        id: llama-key
+        shell: pwsh
+        run: |
+          $rustc = (rustc -V) -replace '[^A-Za-z0-9.]', '-'
+          "key=llama-build-v1-${{ runner.os }}-$env:ImageOS-$env:ImageVersion-$rustc-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml', 'src-tauri/.cargo/config.toml') }}" >> $env:GITHUB_OUTPUT
+      - name: Restore the llama.cpp build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: src-tauri/target/debug/build/llama-cpp-sys-2-*/out
+          key: ${{ steps.llama-key.outputs.key }}
+      - name: Download the catalogue model and check its SHA-256
+        # The app's own pinned address (local_model::CATALOG); public weights, no patient data.
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force model | Out-Null
+          curl.exe --fail --location --proto =https --proto-redir =https --connect-timeout 30 --retry 3 --retry-all-errors --silent --show-error --output model/model.gguf $env:MODEL_URL
+          $hash = (Get-FileHash model/model.gguf -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:MODEL_SHA256) { throw "model SHA-256 $hash" }
+          # The harness opens the model by path from inside the helper's AppContainer. This grants read to every
+          # AppContainer (the app grants the helper's own one only); acceptable on a throwaway runner, public weights.
+          icacls model /grant "*S-1-15-2-1:(OI)(CI)(RX)" | Out-Null
+      - name: Write the two FAKE documents
+        # Checked in the compare step by the page hashes the harness records (what the model read), not by file
+        # bytes: on Windows the script ends each file with CRLF, which is whitespace outside the JSON strings.
+        shell: pwsh
+        run: |
+          python scripts/summary-evaluation/harness/compare.py prepare --out "$env:RUNNER_TEMP\identity-docs" --only bakeoff-long-discharge-summary --only fr-medication_plan
+          foreach ($name in "bakeoff-long-discharge-summary.json", "fr-medication_plan.json") {
+            if (-not (Test-Path "$env:RUNNER_TEMP\identity-docs\$name")) { throw "$name was not written" }
+          }
+      - name: Summarise them with the graded harness (real model, 3 threads)
+        shell: pwsh
+        working-directory: src-tauri
+        env:
+          MYCARLOS_TEST_THREADS: "3"
+          MYCARLOS_TEST_LANG: en
+          MYCARLOS_TEST_CHAT_FORMAT: builtin
+          MYCARLOS_EVAL_VARIANT: windows-identity
+        run: |
+          $env:MYCARLOS_TEST_MODEL = "$env:GITHUB_WORKSPACE\model\model.gguf"
+          $env:MYCARLOS_EVAL_EXPECT_SHA256 = $env:MODEL_SHA256
+          $env:MYCARLOS_EVAL_DOCS = "$env:RUNNER_TEMP\identity-docs"
+          $env:MYCARLOS_EVAL_OUT = "$env:GITHUB_WORKSPACE\run.jsonl"
+          $env:MYCARLOS_EVAL_COMMIT = (git rev-parse HEAD)
+          cargo test --locked --features ai-helper-stub --test model_engine -- --ignored --nocapture --exact a_real_model_evaluation_run --test-threads=1
+      - name: Compare with the graded Linux run
+        # The Linux values come from the graded Linux run of 6595b3c (16 Nov 2026, started 15:12:01Z, threads 3).
+        # First the run must be comparable: same commit, same build fingerprint (prompts, grammar, caps), same
+        # threads, and the same page text read (page hashes). Then each answer: the same token ids (64-bit hash of the
+        # answer's tokens, and their count). DIFFERENT is a finding and the job passes; NOT COMPARABLE also passes and
+        # says why; a missing run or a document that failed is a broken run and fails the job.
+        if: always()
+        shell: pwsh
+        run: |
+          @'
+          import json, os, sys
+          expect = {
+              "commit": "6595b3c25beb32c2cbd44892698c3fd66265ad2f",
+              "fingerprint": "d2ba1ec0c479ca24fc7199884fd2c2fcb4e4e368851f51adae603f3c57541d42",
+              "threads": 3,
+          }
+          linux = {
+              "bakeoff-long-discharge-summary": ("8deb7440a479cd894c564283d71efe4bde42900a8758c1a96a8c8f44200e95f4", 13904233594595837042, 376),
+              "fr-medication_plan": ("a250e7c42e979078084f26a07d9d463522c75b39089133498f6d6d47c84910a3", 17190060008008508975, 182),
+          }
+          def finish(verdict, lines, code):
+              text = "\n".join(lines + [verdict])
+              print(text)
+              open("result.txt", "w", encoding="utf-8").write(text + "\n")
+              summary = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary:
+                  open(summary, "a", encoding="utf-8").write("```\n" + text + "\n```\n")
+              sys.exit(code)
+          header, seen = None, {}
+          try:
+              for line in open("run.jsonl", encoding="utf-8"):
+                  record = json.loads(line)
+                  if record.get("kind") == "run":
+                      header = record
+                  elif record.get("kind") == "document":
+                      result = record.get("result") or {}
+                      stats = result.get("stats") or {}
+                      failed = record.get("error") or result.get("error")
+                      seen[record["id"]] = None if failed else (stats.get("answerHash"), stats.get("answerTokens"))
+          except FileNotFoundError:
+              finish("BROKEN RUN", ["no run.jsonl: the harness did not run"], 1)
+          if header is None:
+              finish("BROKEN RUN", ["run.jsonl has no run header"], 1)
+          build = header.get("build") or {}
+          got = {"commit": header.get("commit"), "fingerprint": build.get("fingerprint"), "threads": header.get("threads")}
+          lines = [f"{key}: windows {got[key]} linux {want}" for key, want in expect.items() if got[key] != want]
+          for doc, (pages, _, _) in linux.items():
+              read = ((header.get("documents") or {}).get(doc) or {}).get("pagesSha256")
+              if read != pages:
+                  lines.append(f"pages read for {doc}: windows {read} linux {pages}")
+          if lines:
+              finish("NOT COMPARABLE (the answers were not compared)", lines, 0)
+          broken = [doc for doc in linux if seen.get(doc) is None]
+          if broken:
+              finish("BROKEN RUN", [f"no answer for {doc}" for doc in broken], 1)
+          for doc, (_, answer_hash, tokens) in linux.items():
+              word = "SAME" if seen[doc] == (answer_hash, tokens) else "DIFFERENT"
+              lines.append(f"{word} {doc}: windows {seen[doc]} linux {(answer_hash, tokens)}")
+          finish("ALL SAME" if all(l.startswith("SAME") for l in lines) else "NOT ALL SAME", lines, 0)
+          '@ | python -
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: windows-model-identity
+          path: |
+            run.jsonl
+            result.txt
+          retention-days: 14
+          if-no-files-found: warn
