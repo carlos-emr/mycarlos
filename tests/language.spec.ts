@@ -201,19 +201,21 @@ test("the unlock screen has a globe and language button that opens the list, wit
   await expect(button).toBeVisible();
   const box = await button.boundingBox();
   expect(box!.height).toBeGreaterThanOrEqual(44);
+  // Opening and closing the list does not move the passphrase field.
   await button.click();
   const dialog = page.getByRole("dialog", { name: "Language" });
   await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(button).toBeFocused();
+  const reopened = await field.boundingBox();
+  expect(Math.abs(reopened!.y - before!.y)).toBeLessThan(2);
+  // A language chosen from the list applies and the button shows its own name.
+  await button.click();
   await dialog.getByRole("radio", { name: "Español" }).check();
   await expect(page.locator("html")).toHaveAttribute("lang", "es");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  const own = page.getByRole("button", { name: /^Español \(/ });
-  await expect(own).toBeFocused();
-  // Choosing a language does not move the passphrase field.
-  const after = await page
-    .getByLabel(translate("es", "passphrase.label"), { exact: true })
-    .boundingBox();
-  expect(Math.abs(after!.y - before!.y)).toBeLessThan(2);
+  await expect(page.getByRole("button", { name: /^Español \(/ })).toBeFocused();
   await expectOnlyFakedCommands(page);
 });
