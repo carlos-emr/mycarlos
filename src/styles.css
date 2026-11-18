@@ -4355,7 +4355,7 @@ button:disabled,
 }
 .native-birth-date select {
   min-height: 44px;
-  padding: 8px 6px;
+  padding: 8px 3px 8px 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper);
