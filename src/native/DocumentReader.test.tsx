@@ -1385,9 +1385,12 @@ describe("the reader's page bar", () => {
       "Next page",
       "Last page",
     ]);
-    // Below the page, in one row on a wide reader.
+    // Below the page, in one row on a wide reader. The picture sits in a span
+    // (for the highlight) inside the scrolling page, so the page is measured,
+    // not the picture's parent.
     expect(bar().getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      picture.parentElement!.getBoundingClientRect().bottom - 1,
+      picture.closest(".native-reader-page")!.getBoundingClientRect().bottom -
+        1,
     );
     expect(new Set(rowsOf(Array.from(bar().children))).size).toBe(1);
     // The top row holds the zoom only, from the reader's left.
