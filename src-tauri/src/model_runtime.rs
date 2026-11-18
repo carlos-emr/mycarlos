@@ -1757,7 +1757,7 @@ pub mod engine_testing {
         }
 
         /// Answers are written on `threads` threads from now on, whatever the computer's load;
-        /// `None` chooses from the load again.
+        /// `None` goes back to the app's own number.
         pub fn override_threads(&self, threads: Option<u32>) {
             self.runner.override_threads(threads);
         }

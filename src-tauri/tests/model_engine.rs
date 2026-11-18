@@ -281,7 +281,7 @@ fn the_real_engine_writes_an_answer_on_the_threads_it_is_given() {
         .explain("en", "blood test", "FAKE: a blood test was done.")
         .unwrap();
     assert_eq!(runner.last_threads(), Some((batch, batch)));
-    // Chosen from the computer's load: never more than the prompt's.
+    // The app's own number: never more than the prompt's.
     runner.override_threads(None);
     runner.summarize("en", &pages).unwrap();
     assert!(runner
@@ -331,7 +331,7 @@ fn a_model_file_that_is_not_a_model_ends_the_helper_before_it_greets() {
 /// `MYCARLOS_TEST_MODEL` names a GGUF file, `MYCARLOS_TEST_DOCS` a folder of FAKE `.txt`
 /// documents, `MYCARLOS_TEST_LANG` the summaries' language (default `en`), `MYCARLOS_TEST_CHAT_FORMAT` the model's chat
 /// format (`builtin`, the default, or `gemma4`), and `MYCARLOS_TEST_THREADS` a fixed number of
-/// threads to write the answers on (default: chosen from the load). Prints each answer
+/// threads to write the answers on (default: the app's own number). Prints each answer
 /// and its time. Never in CI: run with `--ignored --nocapture`.
 #[test]
 #[ignore = "needs a real model file; run by hand with --ignored --nocapture"]

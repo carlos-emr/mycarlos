@@ -170,12 +170,32 @@ pub(crate) struct RunnerConfig {
     /// caps its memory at `memory_limit_bytes`); on unix the helper sandboxes itself.
     pub(crate) sandboxed: bool,
     /// The most threads the model writes an answer on (the helper's `--threads`). With it, each
-    /// answer is sent with a number chosen from the computer's load at the time
-    /// ([`generation_threads`]); `None` sends none (fakes, and the stub's tests).
+    /// answer is sent with [`answer_threads`] of them; `None` sends none (fakes, and the stub's
+    /// tests).
     pub(crate) generation_threads: Option<u32>,
 }
 
-// --- Threads from the computer's load --------------------------------------------------
+// --- Threads an answer is written on ----------------------------------------------------
+
+/// Answers are written on this many threads, or on all of the helper's when it has fewer,
+/// whatever the computer's load. The words a model writes depend on the number of threads it
+/// writes them on (measured 17 Nov 2026: one long FAKE letter came out as three different
+/// summaries on 1, 2 and 3 threads), so a number chosen from the load at the time made the same
+/// computer word the same letter differently when it was busy. Fixed, the same computer always
+/// writes the same summary; the cost is speed on a busy computer, where threads that share
+/// cores wait for each other (2 to 4 times slower, measured 5 Nov 2026). The helper never
+/// writes on more threads than it reads prompts on (one core left for myCarlos), so this never
+/// asks for more threads than the computer has. `None` chooses from the load again
+/// ([`generation_threads`]).
+const FIXED_ANSWER_THREADS: Option<u32> = Some(3);
+
+/// The threads an answer is sent with when the helper has `most`: [`FIXED_ANSWER_THREADS`], at
+/// most `most`; `None` when they are chosen from the load instead.
+pub(crate) fn answer_threads(most: u32) -> Option<u32> {
+    FIXED_ANSWER_THREADS.map(|fixed| fixed.min(most).max(1))
+}
+
+// --- Threads from the computer's load (when not fixed) ---------------------------------
 
 /// How long the computer's processor use is sampled before an answer.
 const LOAD_SAMPLE: Duration = Duration::from_millis(250);
@@ -629,7 +649,7 @@ impl Runner {
     }
 
     /// Answers are written on `threads` threads from now on, whatever the computer's load;
-    /// `None` chooses from the load again. For measuring by hand.
+    /// `None` goes back to the app's own number ([`answer_threads`]). For measuring by hand.
     #[allow(dead_code)] // `engine_testing` only.
     pub(crate) fn override_threads(&self, threads: Option<u32>) {
         *self
@@ -1119,6 +1139,7 @@ impl Runner {
             .unwrap_or_else(|e| e.into_inner());
         let chooses = matches!(tool, "summary" | "explain")
             && forced.is_none()
+            && FIXED_ANSWER_THREADS.is_none()
             && self
                 .sidecar
                 .lock()
@@ -1142,9 +1163,9 @@ impl Runner {
         if let Some(object) = request.as_object_mut() {
             object.insert("id".to_owned(), serde_json::json!(id));
             object.insert("tool".to_owned(), serde_json::json!(tool));
-            // The threads to write this answer on, from the computer's load now.
+            // The threads to write this answer on: fixed, else from the computer's load now.
             if let (Some(most), "summary" | "explain") = (running.generation_threads, tool) {
-                let threads = forced.unwrap_or_else(|| {
+                let threads = forced.or_else(|| answer_threads(most)).unwrap_or_else(|| {
                     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
                     generation_threads(most, cores, busy)
                 });
@@ -1850,6 +1871,17 @@ mod tests {
         assert_eq!(generation_threads(4, 6, Some(7.0)), 2);
     }
 
+    #[test]
+    fn answers_are_written_on_three_threads_or_all_of_a_smaller_helpers() {
+        assert_eq!(FIXED_ANSWER_THREADS, Some(3));
+        // Six or more cores (helper 4), four (3), three (2), two (1): never more than the helper.
+        assert_eq!(answer_threads(4), Some(3));
+        assert_eq!(answer_threads(3), Some(3));
+        assert_eq!(answer_threads(2), Some(2));
+        assert_eq!(answer_threads(1), Some(1));
+        assert_eq!(answer_threads(0), Some(1));
+    }
+
     fn idle_config() -> RunnerConfig {
         RunnerConfig {
             command: PathBuf::from("/nonexistent/FAKE-model"),
@@ -2088,9 +2120,79 @@ mod tests {
         }
 
         #[test]
+        fn every_answer_is_sent_with_the_fixed_threads_and_the_load_is_never_sampled() {
+            /// Keeps a copy of every byte written to the helper.
+            struct Copy {
+                input: Box<dyn Write + Send>,
+                bytes: Arc<Mutex<Vec<u8>>>,
+            }
+
+            impl Write for Copy {
+                fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                    let written = self.input.write(bytes)?;
+                    self.bytes
+                        .lock()
+                        .unwrap()
+                        .extend_from_slice(&bytes[..written]);
+                    Ok(written)
+                }
+
+                fn flush(&mut self) -> std::io::Result<()> {
+                    self.input.flush()
+                }
+            }
+
+            for (most, sent) in [(4, 3), (2, 2)] {
+                let mut fixed = config(&[], GIB);
+                fixed.generation_threads = Some(most);
+                let runner = Runner::new(fixed);
+                runner.start(&Fixed(Some(8 * GIB))).unwrap();
+                let bytes = Arc::new(Mutex::new(Vec::new()));
+                {
+                    let mut slot = runner.sidecar.lock().unwrap();
+                    let running = slot.as_mut().unwrap();
+                    let input = std::mem::replace(&mut running.input, Box::new(std::io::sink()));
+                    running.input = Box::new(Copy {
+                        input,
+                        bytes: Arc::clone(&bytes),
+                    });
+                }
+                for _ in 0..2 {
+                    runner
+                        .ask_with_sampler(
+                            runner.ticket(),
+                            "explain",
+                            serde_json::json!({ "term": "tablet", "context": TEXT, "lang": "en" }),
+                            (
+                                prompt_tokens(EXPLAIN_PROMPT_TOKENS, "tablet".len() + TEXT.len()),
+                                crate::model_helper::EXPLAIN_TOKENS as u32,
+                            ),
+                            || panic!("the load must not be sampled"),
+                        )
+                        .unwrap();
+                }
+                let written = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+                let lines: Vec<serde_json::Value> = written
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                assert_eq!(lines.len(), 2, "helper {most}");
+                for line in lines {
+                    assert_eq!(line["threads"], serde_json::json!(sent), "helper {most}");
+                }
+                runner.stop();
+            }
+        }
+
+        #[test]
         fn a_ticket_cancelled_while_sampling_leaves_the_newer_requests_helper_alone() {
             use std::sync::atomic::AtomicUsize;
             use std::sync::mpsc;
+            // Nothing is sampled while answers are written on fixed threads; this guards the
+            // load-chosen path for when `FIXED_ANSWER_THREADS` is `None` again.
+            if FIXED_ANSWER_THREADS.is_some() {
+                return;
+            }
 
             struct CountWrites {
                 input: Box<dyn Write + Send>,

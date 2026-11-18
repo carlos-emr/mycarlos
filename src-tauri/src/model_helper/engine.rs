@@ -152,7 +152,7 @@ impl Engine {
     }
 
     /// Answers from now on are written on `threads` threads (between one and the prompt's),
-    /// as the app chose from the computer's load; none keeps them as they are. Prompts are
+    /// as the app chose (`local_runner::answer_threads`); none keeps them as they are. Prompts are
     /// always read on all of the helper's. The context is made again when the number changes:
     /// each answer starts from an empty cache, so only the time to make it is spent.
     pub(super) fn use_threads(&mut self, threads: Option<u32>) -> Result<(), Failure> {
