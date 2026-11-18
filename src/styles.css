@@ -195,6 +195,7 @@
      hides what overflows it, and cut off the Create button. */
   grid-template-columns: minmax(0, 1fr);
   place-items: center;
+  align-content: center;
   padding: 24px;
   background: linear-gradient(
     145deg,
@@ -4410,6 +4411,9 @@ button:disabled,
 .language-corner {
   display: flex;
   justify-content: flex-end;
+  /* As wide as the card below it, so the button sits over the card's right
+     corner. */
+  width: min(100%, 470px);
   margin-bottom: 8px;
 }
 .language-button {
