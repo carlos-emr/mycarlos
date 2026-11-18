@@ -177,6 +177,31 @@ describe("the installed interface in the selected language", () => {
     expect(native.pickImportFiles).toHaveBeenCalledTimes(1);
   });
 
+  it("names the import button by the word it shows, and describes what it does, in every language", async () => {
+    setLocaleOverride("en");
+    render(<VaultApp bridge={bridge()} />);
+    const button = await screen.findByRole("button", {
+      name: "New",
+      description: "Choose files to import",
+    });
+    for (const locale of LOCALES) {
+      changeLanguage(locale);
+      const shown = translate(locale, "interface.VaultLibrary.new");
+      // WCAG 2.5.3: the name is the word on the button; what it does is its
+      // description, so voice control finds it by what it shows.
+      expect(button).toHaveTextContent(shown);
+      expect(
+        screen.getByRole("button", {
+          name: shown,
+          description: translate(
+            locale,
+            "interface.VaultApp.chooseFilesToImport",
+          ),
+        }),
+      ).toBe(button);
+    }
+  });
+
   it("finishes a cancelled picker in the current language without reopening it", async () => {
     setLocaleOverride("en");
     const native = bridge();

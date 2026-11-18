@@ -663,6 +663,11 @@ describe("the library list and grid in each language", () => {
           name: tr("library.folder.open", { name }),
         }),
       ).toHaveAccessibleDescription(tr("library.folder.items", { count: 3 }));
+      // WCAG 2.5.3: the folder's name, the words the tile shows, leads the
+      // button's name in every language (Chinese puts "，" after it).
+      expect(visibleText(tr("library.folder.open", { name }))).toMatch(
+        new RegExp(`^${name}[,，]`),
+      );
       expect(
         screen.getByRole("button", {
           name: tr("library.folder.rename", { name }),
