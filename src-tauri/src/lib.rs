@@ -33,6 +33,9 @@ mod model_acl;
 mod model_download;
 mod model_helper;
 mod model_runtime;
+mod notice_key;
+#[cfg(windows)]
+mod notice_store_windows;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -2556,7 +2559,13 @@ async fn vault_unlock(
 /// asked for) runs in the background, so opening never waits on the network.
 fn after_open(store: &Arc<VaultStore>) {
     let store = Arc::clone(store);
-    tauri::async_runtime::spawn_blocking(move || store.after_open());
+    tauri::async_runtime::spawn_blocking(move || {
+        // Notice keys of any other vault go (#230).
+        if let Some(vault_id) = store.open_vault_id() {
+            notice_key::after_open(vault_id);
+        }
+        store.after_open();
+    });
 }
 
 #[tauri::command]
@@ -4971,6 +4980,8 @@ async fn vault_reset(
     }
     picks.clear();
     run_blocking(store.inner(), VaultStore::reset).await?;
+    // Its notice keys go with it (#230).
+    let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
     forget_vault(throttle.inner()).await;
     Ok(true)
@@ -5158,6 +5169,9 @@ pub fn run() {
                     .join("vault-home")
                     .join("attempts.json"),
             ))));
+            // Notice keys (#230) live beside `vault-home` too, so no vault
+            // backup holds them.
+            notice_key::install(&app.path().app_local_data_dir()?);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
@@ -5741,7 +5755,11 @@ mod tests {
             ),
             (
                 "async fn vault_reset(",
-                "VaultStore::reset).await?; forget_vault(throttle.inner()).await; Ok(true)",
+                concat!(
+                    "VaultStore::reset).await?; ",
+                    "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
+                    "forget_vault(throttle.inner()).await; Ok(true)",
+                ),
             ),
             (
                 "async fn vault_restore(",
@@ -7118,7 +7136,32 @@ mod tests {
         let library = include_str!("lib.rs");
         let build_script = include_str!("../build.rs");
         let command_marker = ["#[tauri", "::command]"].concat();
-        assert_eq!(permissions.len(), library.matches(&command_marker).count());
+        // A command whose feature is switched off in the screens stays declared, compiled and
+        // tested, but is granted only while its flag in src/ai/features.ts is on (with
+        // removeUnusedCommands, Tauri then leaves it out of the handler). The flag and the grant
+        // change together.
+        // Each switched-off command with the flag in features.ts that switches it on.
+        const SWITCHABLE: &[(&str, &str)] = &[("ai_explain", "AI_EXPLAIN_ENABLED")];
+        let features = include_str!("../../src/ai/features.ts");
+        let mut not_granted = 0;
+        for &(command, flag) in SWITCHABLE {
+            let on = features.contains(&format!("export const {flag}: boolean = true;"));
+            let off = features.contains(&format!("export const {flag}: boolean = false;"));
+            assert!(on != off, "{flag} must be a plain true or false constant");
+            let grant = format!("allow-{}", command.replace('_', "-"));
+            let granted = permissions.contains(&grant.as_str());
+            assert_eq!(
+                granted, on,
+                "{grant} must be granted exactly when {flag} is on"
+            );
+            assert!(library.contains(&format!("fn {command}(")));
+            assert!(build_script.contains(&format!("\"{command}\"")));
+            not_granted += usize::from(!granted);
+        }
+        assert_eq!(
+            permissions.len() + not_granted,
+            library.matches(&command_marker).count()
+        );
         for permission in permissions {
             assert!(!permission.contains(':'));
             let command = permission.strip_prefix("allow-").unwrap().replace('-', "_");

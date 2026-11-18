@@ -2,7 +2,7 @@ SYNTHETIC TEST DOCUMENT - FAKE DATA ONLY
 Hôpital Fictif de Testville - Department of Diagnostic Imaging
 
 Name: Avery Example
-RAMQ: EXAA 6104 1799
+RAMQ: EXAA 6164 1799
 Chart #: 0045123
 Requisition number: R-778812
 

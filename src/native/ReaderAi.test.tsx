@@ -20,6 +20,11 @@ import {
 } from "../test/fakeLocalModel";
 import type { VaultRecord, ViewedPage } from "../vault";
 
+// Explain is switched off in the UI (src/ai/features.ts). These tests keep
+// its code covered with the switch on; ReaderExplainOff.test.tsx checks the
+// reader as patients see it now.
+vi.mock("../ai/features", () => ({ AI_EXPLAIN_ENABLED: true }));
+
 // FAKE documents only. A real 1 x 1 PNG, drawn here, so the picture loads.
 const PNG = (() => {
   const canvas = document.createElement("canvas");

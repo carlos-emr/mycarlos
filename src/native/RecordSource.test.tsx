@@ -408,19 +408,19 @@ describe("a document's status before its source (#135)", () => {
             );
           const controls = actions.getBoundingClientRect();
           const heading = title.getBoundingClientRect();
-          // The actual controls occupy the title area (a second row on a
-          // narrow screen), before the full-width status/source and date.
+          // The actual controls occupy the title area, before the full-width
+          // status/source and date: beside the title, or on a narrow screen
+          // on a row of their own under it when the title leaves no room
+          // (#312). Never over the title.
           expect(controls.bottom).toBeLessThanOrEqual(
             trust.getBoundingClientRect().top + 0.5,
           );
-          if (width > 640) {
-            expect(Math.abs(controls.top - heading.top)).toBeLessThanOrEqual(
-              0.5,
-            );
+          const besideTitle = Math.abs(controls.top - heading.top) <= 0.5;
+          if (width > 640) expect(besideTitle).toBe(true);
+          if (besideTitle)
             expect(controls.left).toBeGreaterThanOrEqual(heading.right - 0.5);
-          } else {
+          else
             expect(controls.top).toBeGreaterThanOrEqual(heading.bottom - 0.5);
-          }
           const [, status, source] = expected(locale)[0];
           expectWholeSource(trust, status, source);
           expectInView(trust);

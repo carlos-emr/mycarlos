@@ -10,6 +10,7 @@ import {
   MESSAGE_KEYS,
   LOCALES,
   formatDate,
+  formatDeviceName,
   formatNumber,
   hasMessageKey,
   getLocale,
@@ -463,6 +464,22 @@ describe("human isolation and printed kit metadata", () => {
       );
       expect(raw()).not.toMatch(/[\u2066-\u2069]/u);
     }
+  });
+  it("names a new device in every language, as data the portal can keep (#124 review)", () => {
+    for (const locale of LOCALES) {
+      const name = formatDeviceName(locale, "Windows");
+      expect(name).toContain("myCarlos");
+      expect(name).toContain("Windows");
+      // Sent to the clinic's portal: no invisible marks, and within the
+      // 64 characters the native side accepts.
+      expect(name).not.toMatch(/[\u2066-\u2069]/u);
+      expect(name.trim()).toBe(name);
+      expect([...name].length).toBeLessThanOrEqual(64);
+    }
+    expect(formatDeviceName("fr", "macOS")).toBe("myCarlos sur macOS");
+    expect(formatDeviceName("zh-CN", "iOS")).toBe("iOS 上的 myCarlos");
+    // A formatter fault gives the app's name, not the fault text.
+    expect(formatDeviceName("__proto__" as Locale, "Windows")).toBe("myCarlos");
   });
   it("returns the safe English failure for a forced invalid locale", () => {
     expect(translate("__proto__" as Locale, "create.submit")).toBe(
