@@ -199,3 +199,91 @@ expect:
 You must have blood tests every 2 weeks.
 Call the clinic at once if you get a fever or mouth sores.
 
+===
+name: a_rule_inside_a_sentence_that_also_gives_a_dose
+pages:
+Going home
+Take FAKEDRUG 2 tablets daily. Call the clinic if you get a rash or your lips swell.
+summary:
+Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash. || Take FAKEDRUG 2 tablets daily
+expect:
+Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash.
+The document says: “Call the clinic if you get a rash or your lips swell.”
+===
+name: m3_act_a_rule_missing_is_added
+pages:
+Going home
+Use the cream twice a day. If the redness spreads past the line, call the clinic.
+summary:
+Use the cream twice a day. || Use the cream twice a day
+expect:
+Use the cream twice a day.
+The document says: “If the redness spreads past the line, call the clinic.”
+===
+name: m3_act_a_sentence_inside_the_rule_is_replaced_by_it
+pages:
+Going home
+If you have chest pain or trouble breathing, call 911.
+summary:
+Call 911 if you have chest pain. || If you have chest pain
+expect:
+The document says: “If you have chest pain or trouble breathing, call 911.”
+===
+name: m3_act_the_partial_sentence_is_replaced_and_the_dose_sentence_is_untouched
+pages:
+Going home
+Take FAKEDRUG 2 tablets each morning. Come back to the emergency department if you have a fever over 38 °C or new confusion.
+summary:
+Take FAKEDRUG 2 tablets each morning. || Take FAKEDRUG 2 tablets each morning
+Come back if you have a fever over 38 °C. || Come back to the emergency department if you have a fever over 38 °C
+expect:
+Take FAKEDRUG 2 tablets each morning.
+The document says: “Come back to the emergency department if you have a fever over 38 °C or new confusion.”
+===
+name: m3_keep_a_dose_and_half_a_rule
+pages:
+Going home
+Take FAKEDRUG 2 tablets daily. If you get a rash or lip swelling, stop FAKEDRUG and call 911.
+summary:
+Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash. || Take FAKEDRUG 2 tablets daily
+expect:
+Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash.
+The document says: “If you get a rash or lip swelling, stop FAKEDRUG and call 911.”
+===
+name: m3_keep_a_dose_limit_and_one_trigger
+pages:
+Going home
+Take 1 tablet of FAKEDRUG for pain, up to 4 a day. If the pain gets worse or you get a fever, call the clinic.
+summary:
+Take 1 tablet of FAKEDRUG for pain, up to 4 a day, and call the clinic if the pain gets worse. || Take 1 tablet of FAKEDRUG for pain, up to 4 a day
+expect:
+The document says: “Take 1 tablet of FAKEDRUG for pain, up to 4 a day. If the pain gets worse or you get a fever, call the clinic.”
+===
+name: m3_keep_a_night_dose_and_one_trigger
+pages:
+Going home
+Take 1 tablet of FAKEDRUG each night for sleep. If you feel very drowsy in the morning or fall, call the clinic.
+summary:
+Take 1 tablet of FAKEDRUG each night for sleep and call the clinic if you fall. || Take 1 tablet of FAKEDRUG each night for sleep
+expect:
+Take 1 tablet of FAKEDRUG each night for sleep and call the clinic if you fall.
+The document says: “If you feel very drowsy in the morning or fall, call the clinic.”
+===
+name: m3_keep_quote_inside_the_rule_but_other_advice_in_the_sentence
+pages:
+Going home
+Keep taking your other medicines. If your lips or tongue swell, stop FAKEDRUG and call 911.
+summary:
+Stop FAKEDRUG and call 911 if your lips get bigger, and keep taking your other medicines. || stop FAKEDRUG and call 911
+expect:
+Stop FAKEDRUG and call 911 if your lips get bigger, and keep taking your other medicines.
+The document says: “If your lips or tongue swell, stop FAKEDRUG and call 911.”
+===
+name: a_sentence_negating_what_the_rule_says_is_replaced_by_the_rule
+pages:
+Going home
+If the pain gets worse or you get a fever, call the clinic.
+summary:
+Do not call the clinic if the pain gets worse. || If the pain gets worse
+expect:
+The document says: “If the pain gets worse or you get a fever, call the clinic.”

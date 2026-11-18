@@ -525,6 +525,29 @@ fn carries_step(sentence: &str, step: &[String]) -> bool {
     })
 }
 
+/// Whether every content word of `sentence` (three letters or more, or a number, not a stop word)
+/// is in `span`, as written or sharing its first five letters: the sentence says nothing the
+/// span does not.
+fn covered_by(sentence: &str, span: &str) -> bool {
+    // Who says it and how ("the patient must", "he was told"): no instruction of its own.
+    const FILLER: &[&str] = &[
+        "patient", "must", "was", "were", "will", "should", "need", "needs", "can", "may",
+    ];
+    let have: Vec<String> = tokens(span).into_iter().map(|t| t.0).collect();
+    tokens(sentence).into_iter().map(|t| t.0).all(|w| {
+        let digits = w.chars().all(|c| c.is_ascii_digit());
+        STOP.contains(&w.as_str())
+            || STEP_STOP.contains(&w.as_str())
+            || FILLER.contains(&w.as_str())
+            || !(w.chars().count() >= 3 || digits)
+            || have.contains(&w)
+            || (w.chars().count() >= 5 && {
+                let head: String = w.chars().take(5).collect();
+                have.iter().any(|x| x.starts_with(&head))
+            })
+    })
+}
+
 fn has_action(text: &str) -> bool {
     find_phrase(&tokens(text), ACTIONS, 0).is_some()
 }
@@ -727,6 +750,23 @@ pub(crate) fn check_guarded<E>(
                         && some_word
                 })
             });
+        // The partial sentence is replaced only when it says nothing the rule's span does not
+        // (every content word of it is in the span). A sentence that also says something else
+        // keeps its words, and the rule goes in just after it: a dose ("Take FAKEDRUG 2 tablets
+        // daily; call the clinic if you get a rash"), or other advice even when its quote lies
+        // inside the rule ("… if your lips swell, and keep taking your other medicines").
+        let replace = partial.filter(|&i| covered_by(&lines[i].text, &pages[start..to]));
+        if let (Some(index), None) = (partial, replace) {
+            guard(lines, None, &after, &quote)?;
+            log.push(Fallback {
+                check: "get-help",
+                index: index + 1,
+                before: None,
+                after: after.clone(),
+            });
+            lines.insert(index + 1, Line { text: after, quote });
+            continue;
+        }
         guard(lines, partial, &after, &quote)?;
         match partial {
             Some(index) => {
@@ -883,6 +923,57 @@ mod tests {
     #[test]
     fn given_a_summary_that_carries_every_trigger_when_checked_then_nothing_changes() {
         check_case("a_rule_carried_whole");
+    }
+
+    // 18 Nov 2026: a sentence that carries a rule only in part, but also says something else (a
+    // dose), keeps its words; the rule is added just after it instead of replacing it.
+    #[test]
+    fn given_a_rule_inside_a_sentence_that_also_gives_a_dose_when_checked_then_the_dose_stays() {
+        check_case("a_rule_inside_a_sentence_that_also_gives_a_dose");
+    }
+
+    // "not" and "no" are not counted as content: a sentence that says the opposite of the rule
+    // is replaced by the rule in the letter's own words, which is the safe direction.
+    #[test]
+    fn given_a_sentence_negating_the_rule_when_checked_then_the_rule_replaces_it() {
+        check_case("a_sentence_negating_what_the_rule_says_is_replaced_by_the_rule");
+    }
+
+    // The independent acceptance set for the 18 Nov 2026 fixes (written apart from them, from
+    // bf4b06b9): ACT cases the step must still handle, KEEP cases it must leave whole.
+    #[test]
+    fn acceptance_m3_act_a_rule_missing_is_added() {
+        check_case("m3_act_a_rule_missing_is_added");
+    }
+
+    #[test]
+    fn acceptance_m3_act_a_sentence_inside_the_rule_is_replaced_by_it() {
+        check_case("m3_act_a_sentence_inside_the_rule_is_replaced_by_it");
+    }
+
+    #[test]
+    fn acceptance_m3_act_the_partial_sentence_is_replaced_and_the_dose_sentence_is_untouched() {
+        check_case("m3_act_the_partial_sentence_is_replaced_and_the_dose_sentence_is_untouched");
+    }
+
+    #[test]
+    fn acceptance_m3_keep_a_dose_and_half_a_rule() {
+        check_case("m3_keep_a_dose_and_half_a_rule");
+    }
+
+    #[test]
+    fn acceptance_m3_keep_a_dose_limit_and_one_trigger() {
+        check_case("m3_keep_a_dose_limit_and_one_trigger");
+    }
+
+    #[test]
+    fn acceptance_m3_keep_a_night_dose_and_one_trigger() {
+        check_case("m3_keep_a_night_dose_and_one_trigger");
+    }
+
+    #[test]
+    fn acceptance_m3_keep_quote_inside_the_rule_but_other_advice_in_the_sentence() {
+        check_case("m3_keep_quote_inside_the_rule_but_other_advice_in_the_sentence");
     }
 
     #[test]
