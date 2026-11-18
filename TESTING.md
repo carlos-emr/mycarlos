@@ -302,7 +302,7 @@ On every platform:
    choose the other person's records or one of their folders under **Move to**, then press
    **Move**. Check it appears there and its saved copy is unchanged. If that person already
    has the same file, the document stays with its original person and the notice says so.
-6. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
+6. Open a document, choose **Save a copy to this device**, then **Save a copy**, and confirm the
    copy opens in a PDF viewer (a new emulator may not have one installed).
 7. In **Security**, choose **Save encrypted backup…** and save the file somewhere other than the
    app's own folder. Import one more document (any PDF), then lock the vault and choose **Restore from a

@@ -314,3 +314,22 @@ test("copying the icons stops when the generated res folder or the icons are mis
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("the strip behind the status bar uses the header's colours from styles.css", async () => {
+  const css = await readFile(
+    new URL("../src/styles.css", import.meta.url),
+    "utf8",
+  );
+  // --canvas-2 in the light theme (:root) and in the dark theme.
+  const light = /:root\s*{[^}]*--canvas-2:\s*#([0-9a-fA-F]{6})/.exec(css)?.[1];
+  const dark =
+    /:root\[data-theme="dark"\]\s*{[^}]*--canvas-2:\s*#([0-9a-fA-F]{6})/.exec(
+      css,
+    )?.[1];
+  assert.ok(light && dark, "--canvas-2 colours not found in styles.css");
+  const patched = keepPageClearOfSystemBars(
+    "package a\n\nclass MainActivity : TauriActivity()\n",
+  );
+  assert.ok(patched.includes(`0xFF${light.toUpperCase()}`), "light colour");
+  assert.ok(patched.includes(`0xFF${dark.toUpperCase()}`), "dark colour");
+});

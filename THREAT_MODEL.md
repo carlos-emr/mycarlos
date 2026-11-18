@@ -412,7 +412,7 @@ This model does **not** cover:
 - phones: the PDF helper does not run there (IMP-02), so a phone can neither read a document's
   text nor run a local model, and neither the export nor the AI on this device works on a phone
   until a phone design is reviewed;
-- macOS for now: the model helper is built for Windows and Linux only, and a Mac says "not available on this kind of computer yet" until #211;
+- macOS for now: the model helper is built for Windows and Linux only, and a Mac says "not available on this kind of device yet" until #211;
 - the later tools (questions to ask, filing suggestions).
 
 Stated limits: removing details is never perfect (AI-01); an AI service the patient is signed in
