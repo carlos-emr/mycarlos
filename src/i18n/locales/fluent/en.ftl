@@ -1922,6 +1922,9 @@ ai-error-storage = The AI helper's model could not be read from this computer. T
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 
 ai-summary-noSource = No source found
+
+ai-summary-englishOnly = For now, summaries are written in English. myCarlos checks numbers and “when to get help” rules only in English, so check those in the document itself.
+
 aiHelper-notice-title = About the AI helper
 
 aiHelper-notice-introShare = myCarlos can prepare a document's text for an AI service you choose. The AI helper never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this computer’s internet address to the download site.

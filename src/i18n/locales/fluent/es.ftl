@@ -1959,6 +1959,9 @@ ai-error-storage = No se pudo leer el modelo del asistente de IA en este equipo.
 ai-summary-pagesMissing = Algunas páginas no se pudieron leer completas, así que puede que este resumen omita partes.
 
 ai-summary-noSource = No se encontró la fuente
+
+ai-summary-englishOnly = Por ahora, los resúmenes se escriben en inglés. myCarlos solo comprueba los números y las indicaciones de «cuándo pedir ayuda» en inglés, así que compruébelos en el propio documento.
+
 aiHelper-notice-title = Acerca del asistente de IA
 
 aiHelper-notice-introShare = myCarlos puede preparar el texto de un documento para el servicio de IA que usted elija. El asistente de IA nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este equipo.
