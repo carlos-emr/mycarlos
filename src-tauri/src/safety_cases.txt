@@ -210,6 +210,93 @@ expect:
 Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash.
 The document says: “Call the clinic if you get a rash or your lips swell.”
 ===
+name: a_rule_whose_waiting_time_is_left_out
+pages:
+Going home
+For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Use the spray once for chest pain. || For chest pain, use the spray once
+Call 911 if chest pain is not gone after using the spray once. || If the pain is not gone after 5 minutes, call 911
+expect:
+Use the spray once for chest pain.
+The document says: “For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.”
+===
+name: a_rule_cut_before_its_number
+pages:
+Going home
+For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Use the spray once for chest pain. || For chest pain, use the spray once
+Call 911 if the pain is not gone after. || If the pain is not gone after 5 minutes, call 911
+expect:
+Use the spray once for chest pain.
+The document says: “For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.”
+===
+name: a_rule_whose_number_is_written_as_a_word
+pages:
+Going home
+For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Use the spray once for chest pain. || For chest pain, use the spray once
+Call 911 if the pain is not gone five minutes after the spray. || If the pain is not gone after 5 minutes, call 911
+expect:
+Use the spray once for chest pain.
+Call 911 if the pain is not gone five minutes after the spray.
+===
+name: a_rule_cut_right_after_if
+pages:
+Going home
+Call the clinic if your wound gets red and swollen.
+summary:
+Call the clinic if. || Call the clinic if your wound gets red and swollen
+expect:
+The document says: “Call the clinic if your wound gets red and swollen.”
+===
+name: a_rule_cut_at_or_with_its_number_left_out
+pages:
+Going home
+Call the clinic if you have a fever over 38 or the wound gets red and swollen.
+summary:
+Call the clinic if you have a fever or the wound gets red. || Call the clinic if you have a fever over 38
+expect:
+The document says: “Call the clinic if you have a fever over 38 or the wound gets red and swollen.”
+===
+name: a_rule_cut_at_or_before_its_last_trigger
+pages:
+Going home
+Call the clinic if you have a fever over 38 or the wound gets red and swollen.
+summary:
+Call the clinic if you have a fever over 38 or. || Call the clinic if you have a fever over 38
+expect:
+The document says: “Call the clinic if you have a fever over 38 or the wound gets red and swollen.”
+===
+name: a_rule_with_a_decimal_and_an_abbreviation
+pages:
+Going home
+If your temperature is over 38.5 C, call Dr. Fakeham at the clinic.
+summary:
+Call Dr. Fakeham at the clinic if your temperature is over 38. || If your temperature is over 38.5 C
+expect:
+The document says: “If your temperature is over 38.5 C, call Dr. Fakeham at the clinic.”
+===
+name: a_rule_with_its_number_and_an_abbreviated_unit
+pages:
+Going home
+If the bleeding has not stopped after 20 minutes, call 911.
+summary:
+Call 911 if the bleeding has not stopped after 20 min. || If the bleeding has not stopped after 20 minutes
+expect:
+Call 911 if the bleeding has not stopped after 20 min.
+===
+name: a_trigger_cut_in_the_middle_without_a_number_still_passes
+pages:
+Going home
+Call 911 if you have chest pain or trouble breathing.
+summary:
+Call 911 if you have chest pain or trouble. || Call 911 if you have chest pain or trouble breathing
+expect:
+Call 911 if you have chest pain or trouble.
+===
 name: m3_act_a_rule_missing_is_added
 pages:
 Going home

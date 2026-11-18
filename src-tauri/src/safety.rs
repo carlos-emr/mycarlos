@@ -420,15 +420,48 @@ fn triggers(rule: &str) -> Vec<Vec<String>> {
     out
 }
 
+/// Number words that are a rule's count when they stand in its trigger ("after five minutes"):
+/// "one", "once", "first" and the like are left out, as they are seldom a condition ("if one of
+/// these happens").
+const COUNTED: &[&str] = &[
+    "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+    "twice",
+];
+
+/// The number a word stands for: its digits (no leading zeros), or a number word's ("five": 5).
+fn number_of(word: &str) -> Option<String> {
+    if !word.is_empty() && word.chars().all(|c| c.is_ascii_digit()) {
+        let trimmed = word.trim_start_matches('0');
+        return Some(if trimmed.is_empty() { "0" } else { trimmed }.to_owned());
+    }
+    NUMBER_WORDS
+        .iter()
+        .find(|(w, _)| *w == word)
+        .map(|(_, n)| (*n).to_owned())
+}
+
+/// Whether a sentence carries a trigger: one of its content words (or a word sharing its first
+/// five letters), and every number it holds, as digits or as a number word ("after 5 minutes",
+/// "over 38.5"). A rule's waiting time, dose or temperature is its condition: "after using the
+/// spray" does not carry "after 5 minutes". Words without a number keep the one-word rule, so
+/// a paraphrase still carries ("does not go away" for "is not gone"); a trigger cut in the
+/// middle with no number in it ("trouble" for "trouble breathing") still passes too.
 fn carries(sentence: &str, trigger: &[String]) -> bool {
     let words: Vec<String> = tokens(sentence).into_iter().map(|t| t.0).collect();
-    trigger.iter().any(|w| {
-        words.contains(w)
-            || (w.chars().count() >= 5 && {
-                let head: String = w.chars().take(5).collect();
-                words.iter().any(|x| x.starts_with(&head))
-            })
-    })
+    let numbers: Vec<String> = words.iter().filter_map(|w| number_of(w)).collect();
+    let numbers_kept = trigger
+        .iter()
+        .filter(|w| w.chars().all(|c| c.is_ascii_digit()) || COUNTED.contains(&w.as_str()))
+        .filter_map(|w| number_of(w))
+        .all(|n| numbers.contains(&n));
+    numbers_kept
+        && trigger.iter().any(|w| {
+            words.contains(w)
+                || (w.chars().count() >= 5 && {
+                    let head: String = w.chars().take(5).collect();
+                    words.iter().any(|x| x.starts_with(&head))
+                })
+        })
 }
 
 /// Words of a lead-in step that need not be carried: the writer's narrative verbs and filler.
@@ -923,6 +956,56 @@ mod tests {
     #[test]
     fn given_a_summary_that_carries_every_trigger_when_checked_then_nothing_changes() {
         check_case("a_rule_carried_whole");
+    }
+
+    // A trigger that holds a number needs that number (18 Nov 2026): the shape the graded
+    // review marked unsafe ("Call 911 if chest pain is not gone after using the spray once"
+    // for "If the pain is not gone after 5 minutes, call 911"), and its neighbours.
+    #[test]
+    fn given_a_rule_whose_waiting_time_is_left_out_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_whose_waiting_time_is_left_out");
+    }
+
+    #[test]
+    fn given_a_rule_cut_before_its_number_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_cut_before_its_number");
+    }
+
+    #[test]
+    fn given_a_rule_whose_number_is_written_as_a_word_when_checked_then_it_stays() {
+        check_case("a_rule_whose_number_is_written_as_a_word");
+    }
+
+    #[test]
+    fn given_a_rule_cut_right_after_if_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_cut_right_after_if");
+    }
+
+    #[test]
+    fn given_a_rule_cut_at_or_with_its_number_left_out_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_cut_at_or_with_its_number_left_out");
+    }
+
+    #[test]
+    fn given_a_rule_cut_at_or_before_its_last_trigger_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_cut_at_or_before_its_last_trigger");
+    }
+
+    #[test]
+    fn given_a_rule_with_a_decimal_and_an_abbreviation_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_with_a_decimal_and_an_abbreviation");
+    }
+
+    #[test]
+    fn given_a_rule_with_its_number_and_an_abbreviated_unit_when_checked_then_it_stays() {
+        check_case("a_rule_with_its_number_and_an_abbreviated_unit");
+    }
+
+    // By design, not closed: a trigger cut in the middle with no number in it still carries
+    // (one of its words is there). A stricter rule would turn paraphrases into quotes.
+    #[test]
+    fn given_a_trigger_cut_in_the_middle_without_a_number_when_checked_then_it_still_passes() {
+        check_case("a_trigger_cut_in_the_middle_without_a_number_still_passes");
     }
 
     // 18 Nov 2026: a sentence that carries a rule only in part, but also says something else (a
