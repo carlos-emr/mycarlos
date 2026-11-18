@@ -2812,7 +2812,11 @@ p {
   font: inherit;
 }
 /* #149: the state is text beside the button inside the pill; the button keeps
-   the pill's look and is the whole click target. */
+   the pill's look and is the whole click target. The pill takes the title
+   bar's font, as it did when the pill was the button (font: inherit below). */
+.unlock-pill.native-lock-pill {
+  font: inherit;
+}
 .unlock-pill .native-lock-button {
   padding: 0;
   border: 0;
