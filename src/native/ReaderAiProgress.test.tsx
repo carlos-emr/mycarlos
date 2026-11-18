@@ -5,6 +5,7 @@ import { DocumentReader } from "./DocumentReader";
 import type { SummaryProgressEvent } from "../ai/summaryProgress";
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { fakeDocumentText, fakeLocalModel } from "../test/fakeLocalModel";
+import { humanText } from "../test/humanText";
 import type { VaultRecord, ViewedPage } from "../vault";
 
 // The summary's progress (#72): the helper's events, faked, drive the bar, the
@@ -68,7 +69,7 @@ async function startSummary(model: ReturnType<typeof heldModel>["model"]) {
       }}
     />,
   );
-  await screen.findByRole("img", { name: /Page 1 of 2/ });
+  await screen.findByRole("img", { name: humanText(/Page 1 of 2/) });
   await userEvent
     .setup({ advanceTimers: vi.advanceTimersByTime })
     .click(screen.getByRole("button", { name: "Summary" }));
@@ -143,6 +144,11 @@ describe("the summary's progress", () => {
     const { model, held } = heldModel();
     const panel = await startSummary(model);
     await waitFor(() => expect(held.report).not.toBeNull());
+    // One turn between events, so that the observer sees each change.
+    const send = async (report: () => void) => {
+      act(report);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
     const changes: string[] = [];
     const watch = new MutationObserver(() =>
       changes.push(status(panel).textContent ?? ""),
@@ -152,7 +158,7 @@ describe("the summary's progress", () => {
       characterData: true,
       subtree: true,
     });
-    act(() =>
+    await send(() =>
       held.report!({
         stage: "reading",
         done: 1,
@@ -160,7 +166,7 @@ describe("the summary's progress", () => {
         estimateSeconds: 200,
       }),
     );
-    act(() =>
+    await send(() =>
       held.report!({
         stage: "reading",
         done: 2,
@@ -168,7 +174,7 @@ describe("the summary's progress", () => {
         estimateSeconds: 150,
       }),
     );
-    act(() =>
+    await send(() =>
       held.report!({
         stage: "reading",
         done: 3,
@@ -176,9 +182,8 @@ describe("the summary's progress", () => {
         estimateSeconds: 100,
       }),
     );
-    act(() => held.report!({ stage: "writing", done: 1, total: 10 }));
-    act(() => held.report!({ stage: "writing", done: 2, total: 10 }));
-    await Promise.resolve();
+    await send(() => held.report!({ stage: "writing", done: 1, total: 10 }));
+    await send(() => held.report!({ stage: "writing", done: 2, total: 10 }));
     watch.disconnect();
     expect(changes).toEqual(["Reading the letter…", "Writing the summary…"]);
   });
@@ -195,7 +200,9 @@ describe("the summary's progress", () => {
         estimateSeconds: 100,
       }),
     );
-    expect(within(panel).getByText("About 2 minutes left")).toBeVisible();
+    expect(
+      within(panel).getByText(humanText("About 2 minutes left")),
+    ).toBeVisible();
     act(() =>
       held.report!({
         stage: "reading",
@@ -204,7 +211,9 @@ describe("the summary's progress", () => {
         estimateSeconds: 400,
       }),
     );
-    expect(within(panel).getByText("About 2 minutes left")).toBeVisible();
+    expect(
+      within(panel).getByText(humanText("About 2 minutes left")),
+    ).toBeVisible();
     act(() =>
       held.report!({
         stage: "writing",
@@ -213,7 +222,9 @@ describe("the summary's progress", () => {
         estimateSeconds: 40,
       }),
     );
-    expect(within(panel).getByText("Less than a minute left")).toBeVisible();
+    expect(
+      within(panel).getByText(humanText("Less than a minute left")),
+    ).toBeVisible();
     // The status line does not carry it: nothing is read out every few seconds.
     expect(status(panel)).toHaveTextContent("Writing the summary…");
     expect(status(panel)).not.toHaveTextContent("left");
@@ -240,7 +251,9 @@ describe("the summary's progress", () => {
         estimateSeconds: 100,
       }),
     );
-    expect(within(panel).getByText("About 2 minutes left")).toBeVisible();
+    expect(
+      within(panel).getByText(humanText("About 2 minutes left")),
+    ).toBeVisible();
     act(() => vi.advanceTimersByTime(121_000));
     const slower = "This is taking longer than expected.";
     expect(
@@ -318,7 +331,10 @@ describe("the six texts in every language", () => {
 
   it("says the minutes as each language counts them", () => {
     const say = (locale: (typeof LOCALES)[number], minutes: number) =>
-      translate(locale, "ai.summary.progress.estimate", { minutes });
+      translate(locale, "ai.summary.progress.estimate", { minutes }).replace(
+        /[\u2068\u2069]/g,
+        "",
+      );
     expect(say("en", 0)).toBe("Less than a minute left");
     expect(say("en", 2)).toBe("About 2 minutes left");
     expect(say("en", 1)).toBe("About 1 minute left");
@@ -349,7 +365,7 @@ describe("the six texts in every language", () => {
         }}
       />,
     );
-    await screen.findByRole("img", { name: /Page 1 of 2/ });
+    await screen.findByRole("img", { name: humanText(/Page 1 of 2/) });
     act(() => setLocaleOverride("fr"));
     await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(
       screen.getByRole("button", {
@@ -370,6 +386,8 @@ describe("the six texts in every language", () => {
         selector: "p.native-reader-ai-wait",
       }),
     ).toBeVisible();
-    expect(screen.getByText("Environ 2 minutes restantes")).toBeVisible();
+    expect(
+      screen.getByText(humanText("Environ 2 minutes restantes")),
+    ).toBeVisible();
   });
 });
