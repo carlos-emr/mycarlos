@@ -1,5 +1,5 @@
 The post-step's shared cases (K17): synthetic letters only, none of the evaluation letters' words. Read by the Rust
-tests in addressee.rs and by the evaluation's Python port, so both say the same thing. One case per block, blocks
+tests in addressee.rs (no other reader: no Python port exists in the repository). One case per block, blocks
 separated by a line "===". Fields: name, letter (the lines up to "sentence:"), sentence, quote, expect (the rewritten
 sentence, or "(none)" when it is left as it is), kind.
 ===

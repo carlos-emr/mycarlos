@@ -24,7 +24,7 @@
 //! in another language than English is left as it is (the wording is English).
 //!
 //! Pure std, so its tests run on their own: `rustc --edition 2021 --test src/addressee.rs`.
-//! The cases are shared with the evaluation's Python port (`addressee_cases.txt`).
+//! Its cases are in `addressee_cases.txt`, read by these tests.
 
 /// The post-step's name in a measurement (read by the evaluation measurement only).
 #[allow(dead_code)]
@@ -778,7 +778,7 @@ fn you_rewrite(source: &str, sentence: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// The shared cases (also run by the evaluation's Python port).
+    /// The cases (`addressee_cases.txt`).
     const CASES: &str = include_str!("addressee_cases.txt");
 
     struct Case {

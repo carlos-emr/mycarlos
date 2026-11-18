@@ -1,5 +1,5 @@
-The safety checks' shared cases (K20): synthetic letters only. Read by the Rust tests in safety.rs and by the
-evaluation's Python port. Blocks separated by "===". "pages:" up to "summary:"; one summary sentence per line as
+The safety checks' shared cases (K20): synthetic letters only. Read by the Rust tests in safety.rs (no other
+reader: no Python port exists in the repository). Blocks separated by "===". "pages:" up to "summary:"; one summary sentence per line as
 "<text> || <quote>" (no quote: not found); "expect:" the sentences after the checks.
 ===
 name: a_rule_with_a_trigger_left_out
