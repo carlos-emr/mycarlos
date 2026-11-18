@@ -2741,7 +2741,7 @@ p {
   }
   .native-vault-page .titlebar .native-lock-pill {
     margin-left: 0;
-    /* #149: the state and the button are two parts of the pill; on a narrow
+    /* Issue 149: the state and the button are two parts of the pill; on a narrow
        window they wrap inside it, as the one button's words used to. */
     flex-wrap: wrap;
     row-gap: 2px;
