@@ -7795,6 +7795,108 @@ mod approval_recovery_tests {
         check_listing(&store, &link, &[]);
         assert!(refused_saved(&store).is_empty());
     }
+    /// #143, the review's SHOULD 1: a clinic that re-sends a corrected document is
+    /// not blocked by the old refusal, with or without Try again. The refusal
+    /// is for one delivery id and hash; the corrected document is another, so
+    /// a check downloads and files it. After Try again the old refusal is gone
+    /// too (no card count, one cleared entry in the history), and the filed
+    /// document has its own history entry. The package is committed directly,
+    /// as the other filing tests do: through `check_using` the signed PDF
+    /// would need the confined helper, which unit tests do not have.
+    #[test]
+    fn should_take_a_corrected_document_after_try_again_and_never_skip_it_for_the_old_refusal() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let refused = undecryptable(&base, 7);
+        check_listing(&store, &link, std::slice::from_ref(&refused));
+        assert_eq!(refused_saved(&store).len(), 1);
+        let (_, corrected, opened, checked) = signed_delivery();
+        assert_ne!(corrected.delivery_id, refused.0.delivery_id);
+        let session = store.portal_link_ticket();
+        // Not skipped for the old refusal, before Try again...
+        assert!(!store
+            .refusal_remembered(&link, &corrected, session)
+            .unwrap());
+        // ...and the old one is still skipped (nothing was forgotten by this).
+        assert!(store
+            .refusal_remembered(&link, &refused.0, session)
+            .unwrap());
+        // Try again forgets the old refusal.
+        store.forget_refusals(link.id).unwrap();
+        assert!(refused_saved(&store).is_empty());
+        assert_eq!(shown_refused(&store, &link), 0);
+        assert!(!store
+            .refusal_remembered(&link, &refused.0, session)
+            .unwrap());
+        assert_eq!(
+            history_count(&store, HistoryEvent::DeliveryRefusalsCleared),
+            1
+        );
+        // The corrected document is filed once, with its own history entry,
+        // and leaves no refusal behind.
+        let (id, added) = store
+            .commit_delivery(
+                &corrected,
+                opened,
+                &link,
+                &checked,
+                crate::now_ms(),
+                session,
+            )
+            .unwrap();
+        assert!(added);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        assert_eq!(store.snapshot().unwrap().records[0].id, id);
+        assert_eq!(history_count(&store, HistoryEvent::DeliveryFiled), 1);
+        assert!(refused_saved(&store).is_empty());
+        assert_eq!(shown_refused(&store, &link), 0);
+    }
+
+    /// #143, the review's SHOULD 1: a new link to the same clinic (the vault
+    /// has no unlink: linking again adds another link, with its own id) starts
+    /// with no remembered refusals. Refusals belong to a link id, so the old
+    /// link keeps its own until they expire or the patient chooses Try again
+    /// for it; the vault with both links is still valid (a refusal needs a
+    /// saved link, which the old one remains); and Try again on the new link
+    /// writes nothing.
+    #[test]
+    fn should_not_carry_remembered_refusals_to_a_new_link_to_the_same_clinic() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        let refused = undecryptable(&base, 7);
+        check_listing(&store, &link, std::slice::from_ref(&refused));
+        assert_eq!(refused_saved(&store).len(), 1);
+        let links_before = store.snapshot().unwrap().portal_links.len();
+        let mut again = link.clone();
+        again.id = Uuid::new_v4();
+        add_link(&store, &again);
+        let session = store.portal_link_ticket();
+        // The new link has no refusal for the same delivery; the old one does.
+        assert!(!store
+            .refusal_remembered(&again, &refused.0, session)
+            .unwrap());
+        assert!(store
+            .refusal_remembered(&link, &refused.0, session)
+            .unwrap());
+        assert_eq!(shown_refused(&store, &again), 0);
+        assert_eq!(shown_refused(&store, &link), 1);
+        // Try again on the new link forgets nothing and writes nothing.
+        let history = crate::vault::history_events_for_test(&store).len();
+        store.forget_refusals(again.id).unwrap();
+        assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+        assert_eq!(refused_saved(&store).len(), 1);
+        // The vault with both links opens again: the refusal still has its link.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(refused_saved(&store).len(), 1);
+        assert_eq!(
+            store.snapshot().unwrap().portal_links.len(),
+            links_before + 1
+        );
+    }
+
     /// #143: at most MAX_REFUSED_PER_LINK refusals are kept for a clinic.
     /// Those kept stay, so none is downloaded and refused again at each
     /// check; a further one is not remembered.
