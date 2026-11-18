@@ -34,6 +34,20 @@ test.beforeEach(({}, testInfo) => {
 const folderButton = (page: import("@playwright/test").Page, name: string) =>
   sidebar(page).getByRole("button", { name: new RegExp(`^${name}\\b`) });
 
+/** A folder's count as it is seen (the bare number) and as it is heard (the
+ * number with its unit, Fluent-isolated), since the screen-reader pass (#149). */
+async function expectFolderCount(
+  page: import("@playwright/test").Page,
+  name: string,
+  count: number,
+) {
+  const button = folderButton(page, name);
+  await expect(button.locator(".nav-count")).toHaveText(String(count));
+  await expect(button).toHaveAccessibleName(
+    `${name} ${en("sidebar.documents", { count })}`,
+  );
+}
+
 async function newFolder(page: import("@playwright/test").Page, name: string) {
   await page
     .getByRole("button", {
@@ -117,7 +131,7 @@ test("a folder, a folder inside it, documents moved in from the selection bar an
   await expect(
     page.getByRole("button", { name: "FAKE Letter.pdf", exact: true }),
   ).toHaveCount(0);
-  await expect(folderButton(page, "FAKE Imaging")).toHaveText(/1$/);
+  await expectFolderCount(page, "FAKE Imaging", 1);
 
   // One of them on into the nested folder, from its details.
   await folderButton(page, "FAKE Imaging").click();
@@ -260,8 +274,8 @@ test("a refused bulk move keeps both selections and the destination for an expli
     await expect(page.getByRole("button", { name, exact: true })).toHaveCount(
       0,
     );
-  await expect(folderButton(page, "FAKE Imaging")).toHaveText(/2$/);
-  await expect(folderButton(page, "FAKE Results")).toHaveText(/0$/);
+  await expectFolderCount(page, "FAKE Imaging", 2);
+  await expectFolderCount(page, "FAKE Results", 0);
   await folderButton(page, "FAKE Imaging").click();
   for (const name of names) {
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
