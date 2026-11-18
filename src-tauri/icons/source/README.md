@@ -6,6 +6,9 @@ carlos-emr GitHub organisation's picture (https://avatars.githubusercontent.com/
 removed from the repository: nothing referenced it once macOS and iOS also moved to the logo (it is
 in git history).
 
+The logo is the CARLOS project's mark, used with the CARLOS project's permission. It is not covered by the
+code's open licence (see ../../../LICENSE_NOTES.md): a fork or redistributor replaces these files.
+
 Rules used, so no file has the figure stretched:
 
 - **direct**: the 460 px picture scaled down (Lanczos) to the file's size; nothing is enlarged.
