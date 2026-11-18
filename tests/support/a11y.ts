@@ -543,12 +543,19 @@ const comparable = (text: string) =>
  * Anything more (a count, what the control does) goes after them, or in its
  * description. Icon-only controls show no words and are left to
  * expectEveryControlNamed.
+ *
+ * At least one control with words must be checked, so that a scope that
+ * matches nothing (a dialog not open yet, a wrong selector) fails rather than
+ * passing with nothing checked. A screen that truly has none says so with
+ * `allowNone`.
  */
 export async function expectVisibleWordsLeadNames(
   scope: Locator,
   where: string,
+  { allowNone = false }: { allowNone?: boolean } = {},
 ) {
   const offenders: string[] = [];
+  let checked = 0;
   const controls = scope.locator(
     "button, a[href], [role=button], [role=link], [role=tab], [role=menuitem]",
   );
@@ -556,24 +563,31 @@ export async function expectVisibleWordsLeadNames(
     if (!(await control.isVisible())) continue;
     const shown = (await control.innerText()).split("\n")[0] ?? "";
     if (!comparable(shown)) continue;
+    checked++;
     const name = await accessibleName(control);
     if (!comparable(name).startsWith(comparable(shown)))
       offenders.push(`shows "${shown.trim()}", named "${name}"`);
   }
   expect(offenders, `${where}: visible words lead each name`).toEqual([]);
+  if (!allowNone)
+    expect(
+      checked,
+      `${where}: controls with visible words checked (allowNone if none)`,
+    ).toBeGreaterThan(0);
 }
 
 /** axe, names, visible words leading names (WCAG 2.5.3) and headings, for
- * one screen or dialog. */
+ * one screen or dialog. `allowNone`: the screen has no control with words. */
 export async function screenReaderSmoke(
   page: Page,
   where: string,
   dialog?: Locator,
+  { allowNone = false }: { allowNone?: boolean } = {},
 ) {
   await expectNoAxeViolations(page, where);
   const scope = dialog ?? page.locator("body");
   await expectEveryControlNamed(scope, where);
-  await expectVisibleWordsLeadNames(scope, where);
+  await expectVisibleWordsLeadNames(scope, where, { allowNone });
   await expectHeadingsInOrder(scope, where, Boolean(dialog));
 }
 

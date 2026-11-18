@@ -123,6 +123,26 @@ test("the label-in-name check passes names that start with the shown words", asy
   await expectVisibleWordsLeadNames(page.locator("body"), "fixture");
 });
 
+test("the label-in-name check fails when it has nothing to check, unless told so", async ({
+  page,
+}) => {
+  await show(
+    page,
+    `<p>FAKE text</p>
+     <button aria-label="Close"><svg width="16" height="16"></svg></button>
+     <button hidden>Hidden</button>`,
+  );
+  await expect(
+    expectVisibleWordsLeadNames(page.locator("body"), "fixture"),
+  ).rejects.toThrow(/controls with visible words checked/);
+  await expect(
+    expectVisibleWordsLeadNames(page.locator("dialog"), "no dialog"),
+  ).rejects.toThrow(/controls with visible words checked/);
+  await expectVisibleWordsLeadNames(page.locator("body"), "fixture", {
+    allowNone: true,
+  });
+});
+
 test("the label-in-name check finds a name that does not start with the shown words", async ({
   page,
 }) => {
