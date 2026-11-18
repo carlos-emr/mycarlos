@@ -2521,6 +2521,7 @@ p {
     .button,
     .side-nav button,
     .unlock-pill,
+    .native-lock-button,
     .breadcrumb,
     .main-head p,
     .name-copy strong,
@@ -2549,6 +2550,7 @@ p {
     .button,
     .side-nav button,
     .unlock-pill,
+    .native-lock-button,
     .native-rename-button,
     .bulkbar button,
     .native-dialog-actions select,
@@ -2737,7 +2739,7 @@ p {
     flex-wrap: wrap;
     row-gap: 6px;
   }
-  .native-vault-page .titlebar .native-lock-button {
+  .native-vault-page .titlebar .native-lock-pill {
     margin-left: 0;
   }
 }
@@ -2800,6 +2802,17 @@ p {
 .native-lock-button {
   cursor: pointer;
   font: inherit;
+}
+/* #149: the state is text beside the button inside the pill; the button keeps
+   the pill's look and is the whole click target. */
+.unlock-pill .native-lock-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .native-lock-button:disabled {
   cursor: default;

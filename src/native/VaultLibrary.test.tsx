@@ -1908,10 +1908,15 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       const lock = within(
         document.querySelector(".titlebar") as HTMLElement,
       ).getByRole("button");
-      // WCAG 2.5.3: the name is the words on the button, so saying "click"
-      // and what it shows works by voice; the state before them is not read.
+      // WCAG 2.5.3: the button shows exactly the words it is named by, so
+      // saying "click" and what it shows works by voice. The vault's state is
+      // shown beside it in the pill, as text, not as part of the button (#149).
       expect(lock).toHaveHumanAccessibleName(lockNow);
-      expect(lock).toHaveHumanTextContent(
+      expect(lock).toHaveHumanTextContent(lockNow);
+      const pill = document.querySelector(
+        ".titlebar .native-lock-pill",
+      ) as HTMLElement;
+      expect(pill).toHaveHumanTextContent(
         `${translate(locale, "library.lock.unlocked")} · ${lockNow}`,
       );
       const label = translate(locale, "interface.VaultLibrary.sortBy");
