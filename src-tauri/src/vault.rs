@@ -66,8 +66,8 @@ const MANIFEST_FORMAT_V1: u32 = 1;
 /// follows 10 (AI answers, #212) and 11 (their caps, #250). The newest, so
 /// `VAULT_FORMAT` is this one. Its number is taken at merge (VAULT_FORMAT.md,
 /// "Format numbers are taken at merge"): a renumber changes this line, the
-/// list of formats above and the format's heading in VAULT_FORMAT.md, nothing
-/// else here.
+/// list of formats above, the format's heading in VAULT_FORMAT.md and the
+/// "format 12" in THREAT_MODEL.md (DEL-01), nothing else here.
 const MANIFEST_FORMAT_REFUSED: u32 = 12;
 /// At most this many remembered refusals per linked clinic. Those kept stay;
 /// a further refusal is not remembered. A refusal lasts as long as its
