@@ -407,3 +407,47 @@ sentence: The doctor asks you to take the aspirin every day.
 quote: Pourriez-vous lui demander de prendre l'aspirine chaque jour?
 expect: (none)
 kind: (none)
+===
+name: m1_keep_she_can_call_my_office_to_book_her_follow_up
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, after her knee operation.
+She can call my office at 555-0199 to book her follow-up.
+sentence: Call the office at 555-0199 to book your follow-up.
+quote: She can call my office at 555-0199 to book her follow-up
+expect: (none)
+kind: (none)
+===
+name: m1_keep_a_patient_rule_whose_condition_the_summary_dropped
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, after her knee operation.
+If her wound turns red, she can call my office at 555-0199.
+sentence: Call the office at 555-0199.
+quote: If her wound turns red, she can call my office at 555-0199
+expect: (none)
+kind: (none)
+===
+name: m1_act_the_reader_may_call_my_office
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, for knee pain.
+You may call my office at 555-0151 with any questions about her care.
+sentence: You can call the office at 555-0151 with any questions about your care.
+quote: You may call my office at 555-0151 with any questions about her care
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: m1_act_another_doctor_may_call_my_office
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, for knee pain.
+Dr. Lind's surgeon can call my office at 555-0151 to discuss her care.
+sentence: Call the office at 555-0151 to discuss your care.
+quote: Dr. Lind's surgeon can call my office at 555-0151 to discuss her care
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact

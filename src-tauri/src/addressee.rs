@@ -548,6 +548,83 @@ fn tells_when_to_call(sentence: &str) -> bool {
     })
 }
 
+/// The verbs of getting in touch, as the letter says the patient will.
+const CALLING: &[&str] = &["call", "phone", "contact", "reach", "ring", "telephone"];
+
+/// What comes between the caller and the verb: "she can call", "Sam may call", "the patient
+/// knows to call", "he is to phone" (an adverb such as "also" may follow).
+const MAY_CALL: &[&[&str]] = &[
+    &["can"],
+    &["may"],
+    &["should"],
+    &["must"],
+    &["will"],
+    &["could"],
+    &["might"],
+    &["is", "to"],
+    &["are", "to"],
+    &["knows", "to"],
+    &["know", "to"],
+    &["is", "welcome", "to"],
+    &["are", "welcome", "to"],
+    &["is", "able", "to"],
+];
+
+/// Whether the letter's sentence names the patient as the one who calls: "she can call my office
+/// …", "Sam may call …", "the patient knows to call my line …", "ask Ms Lind to call …". Then
+/// the number is the patient's line to the writer's office, whatever the summary kept of the
+/// sentence (it may drop the condition, or say "to book your follow-up"). The receiving doctor
+/// ("you can call my office") and another doctor ("Dr. Lind can call") are not the patient.
+fn the_patient_calls(source: &str) -> bool {
+    let tokens: Vec<&str> = source
+        .split(|c: char| !(c.is_alphanumeric() || c == '\'' || c == '\u{2019}'))
+        .filter(|w| !w.is_empty())
+        .collect();
+    let lower: Vec<String> = tokens.iter().map(|w| w.to_lowercase()).collect();
+    let doctor = |at: usize| {
+        at.checked_sub(1)
+            .is_some_and(|p| matches!(lower[p].as_str(), "dr" | "doctor" | "docteur"))
+    };
+    let the_patient = |at: usize| match lower[at].as_str() {
+        "she" | "he" | "they" | "patient" => true,
+        // A sentence's first word is capitalised too: only a name counts, never these.
+        "i" | "we" | "you" | "please" | "it" | "this" | "that" | "who" | "your" | "our" | "my"
+        | "his" | "her" | "their" | "the" | "a" | "an" | "any" | "anyone" | "someone"
+        | "everyone" | "staff" | "family" | "nursing" | "office" | "colleagues" | "team" => false,
+        _ => tokens[at].chars().next().is_some_and(char::is_uppercase) && !doctor(at),
+    };
+    (0..lower.len())
+        .filter(|&v| CALLING.contains(&lower[v].as_str()))
+        .any(|v| {
+            let mut end = v;
+            if end > 0 && matches!(lower[end - 1].as_str(), "also" | "always" | "just" | "then") {
+                end -= 1;
+            }
+            let modal = MAY_CALL.iter().find(|m| {
+                end >= m.len()
+                    && lower[end - m.len()..end]
+                        .iter()
+                        .zip(m.iter())
+                        .all(|(a, b)| a == b)
+            });
+            let caller = modal.is_some_and(|m| end > m.len() && the_patient(end - m.len() - 1));
+            // "ask Ms Lind to call", "tell him to phone": the letter relays the call to the patient.
+            let relayed = v >= 3
+                && lower[v - 1] == "to"
+                && (2..=4).any(|back| {
+                    v > back
+                        && matches!(
+                            lower[v - 1 - back].as_str(),
+                            "ask" | "tell" | "remind" | "advise" | "instruct" | "encourage"
+                        )
+                        && lower[v - back..v - 1]
+                            .iter()
+                            .all(|w| !matches!(w.as_str(), "you" | "me" | "us" | "to"))
+                });
+            caller || relayed
+        })
+}
+
 fn contact_rewrite(pages: &str, source: &str, sentence: &str) -> Option<String> {
     let lower = format!(" {}", source.to_lowercase().replace('\u{2019}', "'"));
     let offers = CONTACT_OFFERS.iter().any(|offer| {
@@ -569,7 +646,9 @@ fn contact_rewrite(pages: &str, source: &str, sentence: &str) -> Option<String> 
     // office at …") is the patient's rule, not the writer's line for the receiving doctor: it
     // stays whole, number and all (the get-help check leaves contact offers alone, so nothing
     // would put it back). Only a courtesy offer ("if you need anything else") is the writer's.
-    if tells_when_to_call(sentence) {
+    // The same when the letter names the patient as the caller, even if the summary dropped
+    // the condition or the sentence has none ("she can call my office … to book her follow-up").
+    if tells_when_to_call(sentence) || the_patient_calls(source) {
         return None;
     }
     let spans = phones(sentence);
@@ -921,6 +1000,27 @@ mod tests {
     #[test]
     fn acceptance_m1_keep_the_patient_knows_to_call_my_line() {
         check("m1_keep_the_patient_knows_to_call_my_line");
+    }
+
+    // The letter names the patient as the caller: the sentence stays, with or without a condition.
+    #[test]
+    fn given_the_patient_named_as_the_caller_when_post_processed_then_the_booking_line_stays() {
+        check("m1_keep_she_can_call_my_office_to_book_her_follow_up");
+    }
+
+    #[test]
+    fn given_a_patient_rule_whose_condition_was_dropped_when_post_processed_then_it_stays() {
+        check("m1_keep_a_patient_rule_whose_condition_the_summary_dropped");
+    }
+
+    #[test]
+    fn given_the_reader_as_the_caller_when_post_processed_then_it_is_the_writers_line() {
+        check("m1_act_the_reader_may_call_my_office");
+    }
+
+    #[test]
+    fn given_another_doctor_as_the_caller_when_post_processed_then_it_is_the_writers_line() {
+        check("m1_act_another_doctor_may_call_my_office");
     }
 
     #[test]
