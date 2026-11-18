@@ -1449,7 +1449,15 @@ describe("Show in document also marks the page picture (#292)", () => {
     const height = (element: Element) =>
       parseFloat(getComputedStyle(element).maxHeight);
     expect(reader).toHaveClass("native-reader-highlighting");
-    expect(height(text)).toBeCloseTo(window.innerHeight * 0.2, 0);
+    // The cap is on the text's own scrolling box: max(5em, 16vh).
+    const box = text.querySelector("div")!;
+    expect(height(box)).toBeCloseTo(
+      Math.max(
+        5 * parseFloat(getComputedStyle(box).fontSize),
+        window.innerHeight * 0.16,
+      ),
+      0,
+    );
     expect(height(panel)).toBeCloseTo(window.innerHeight * 0.25, 0);
     // A page turn ends the highlight, and the usual heights come back.
     await user.click(screen.getByRole("button", { name: "Previous page" }));
