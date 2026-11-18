@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
   configureAndroidSecurity,
+  copyLauncherIcons,
   declareCamera,
   keepPageClearOfSystemBars,
 } from "./configure-android-security.mjs";
@@ -12,6 +20,7 @@ import {
 test("Android backup exclusions are applied exactly once", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-security-"));
   try {
+    await mkdir(join(directory, "res"));
     const manifestPath = join(directory, "AndroidManifest.xml");
     await writeFile(
       manifestPath,
@@ -93,6 +102,7 @@ test("Android backup exclusions are applied exactly once", async () => {
 test("the camera is declared once, not required, and the microphone not at all (D97)", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-camera-"));
   try {
+    await mkdir(join(directory, "res"));
     const manifestPath = join(directory, "AndroidManifest.xml");
     await writeFile(
       manifestPath,
@@ -221,4 +231,72 @@ test("a MainActivity that already handles the web view is not patched blindly", 
     /review it before patching/,
   );
   assert.throws(() => keepPageClearOfSystemBars("package a\n"), /not found/);
+});
+
+test("the repository's launcher icons are copied into the generated project, again without harm", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-icons-"));
+  try {
+    const icons = join(directory, "icons");
+    const res = join(directory, "res");
+    for (const [folder, file] of [
+      ["mipmap-mdpi", "ic_launcher.png"],
+      ["mipmap-xxxhdpi", "ic_launcher_foreground.png"],
+      ["mipmap-anydpi-v26", "ic_launcher.xml"],
+      ["values", "ic_launcher_background.xml"],
+    ]) {
+      await mkdir(join(icons, folder), { recursive: true });
+      await writeFile(join(icons, folder, file), `ours ${file}`);
+    }
+    await mkdir(join(res, "mipmap-mdpi"), { recursive: true });
+    await writeFile(join(res, "mipmap-mdpi", "ic_launcher.png"), "default");
+    await writeFile(join(res, "mipmap-mdpi", "ic_launcher.webp"), "default");
+    await writeFile(join(res, "mipmap-mdpi", "other.png"), "kept");
+
+    await copyLauncherIcons(res, icons);
+    await copyLauncherIcons(res, icons);
+
+    assert.equal(
+      await readFile(join(res, "mipmap-mdpi", "ic_launcher.png"), "utf8"),
+      "ours ic_launcher.png",
+    );
+    // A same-named file of another type would be a duplicate resource.
+    assert.deepEqual((await readdir(join(res, "mipmap-mdpi"))).sort(), [
+      "ic_launcher.png",
+      "other.png",
+    ]);
+    for (const path of [
+      "mipmap-xxxhdpi/ic_launcher_foreground.png",
+      "mipmap-anydpi-v26/ic_launcher.xml",
+      "values/ic_launcher_background.xml",
+    ]) {
+      assert.match(await readFile(join(res, path), "utf8"), /^ours /);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("copying the icons stops when the generated res folder or the icons are missing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-icons-"));
+  try {
+    await mkdir(join(directory, "icons", "values"), { recursive: true });
+    await mkdir(join(directory, "res"));
+    await assert.rejects(
+      copyLauncherIcons(
+        join(directory, "missing-res"),
+        join(directory, "icons"),
+      ),
+      /generated Android res folder was not found/,
+    );
+    await assert.rejects(
+      copyLauncherIcons(join(directory, "res"), join(directory, "no-icons")),
+      /repository Android icons was not found/,
+    );
+    await assert.rejects(
+      copyLauncherIcons(join(directory, "res"), join(directory, "icons")),
+      /No mipmap folders/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

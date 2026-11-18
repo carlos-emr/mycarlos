@@ -1,6 +1,14 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import {
+  cp,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const RULES_NAME = "mycarlos_data_extraction_rules";
 const DOMAINS = [
@@ -146,7 +154,59 @@ async function findMainActivity(directory) {
   return null;
 }
 
-export async function configureAndroidSecurity(manifestPath) {
+const REPOSITORY_ANDROID_ICONS = fileURLToPath(
+  new URL("../src-tauri/icons/android", import.meta.url),
+);
+
+/**
+ * Put the repository's launcher icons (`src-tauri/icons/android`, laid out as
+ * an Android `res` folder) into the generated project, which `tauri android
+ * init` fills with Tauri's default icon. It overwrites the files of the same
+ * name, removes a same-named file of another image type next to one it writes
+ * (a duplicate resource would stop the build), and is safe to run again. It
+ * stops, loudly, when the generated `res` folder or the icons are missing.
+ */
+export async function copyLauncherIcons(
+  resDirectory,
+  iconsDirectory = REPOSITORY_ANDROID_ICONS,
+) {
+  for (const [directory, what] of [
+    [resDirectory, "generated Android res folder"],
+    [iconsDirectory, "repository Android icons"],
+  ]) {
+    const info = await stat(directory).catch(() => null);
+    if (!info?.isDirectory()) {
+      throw new Error(`The ${what} was not found: ${directory}`);
+    }
+  }
+  const folders = (await readdir(iconsDirectory, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  if (!folders.some((name) => name.startsWith("mipmap-"))) {
+    throw new Error(`No mipmap folders in ${iconsDirectory}`);
+  }
+  for (const folder of folders) {
+    const target = join(resDirectory, folder);
+    await mkdir(target, { recursive: true });
+    for (const file of await readdir(join(iconsDirectory, folder))) {
+      const stem = file.slice(0, file.length - extname(file).length);
+      for (const other of await readdir(target)) {
+        if (
+          other !== file &&
+          other.slice(0, other.length - extname(other).length) === stem
+        ) {
+          await rm(join(target, other));
+        }
+      }
+      await cp(join(iconsDirectory, folder, file), join(target, file));
+    }
+  }
+}
+
+export async function configureAndroidSecurity(
+  manifestPath,
+  iconsDirectory = REPOSITORY_ANDROID_ICONS,
+) {
   let manifest = await readFile(manifestPath, "utf8");
   if (!/<application\b/.test(manifest)) {
     throw new Error(`Android application element not found in ${manifestPath}`);
@@ -162,7 +222,9 @@ export async function configureAndroidSecurity(manifestPath) {
     );
   manifest = declareCamera(manifest);
 
-  const resources = join(dirname(manifestPath), "res", "xml");
+  const resDirectory = join(dirname(manifestPath), "res");
+  await copyLauncherIcons(resDirectory, iconsDirectory);
+  const resources = join(resDirectory, "xml");
   await mkdir(resources, { recursive: true });
   await writeFile(join(resources, `${RULES_NAME}.xml`), RULES, "utf8");
   await writeFile(manifestPath, manifest, "utf8");
