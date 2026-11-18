@@ -78,7 +78,7 @@ const NUMBER_WORDS: &[(&str, &str)] = &[
     ("twelve", "12"),
     ("twice", "2"),
     ("once", "1"),
-    ("half", "5"),
+    ("half", "0.5"),
     ("un", "1"),
     ("une", "1"),
     ("deux", "2"),
@@ -285,7 +285,17 @@ fn find_phrase(
     None
 }
 
-/// Numbers as written, each with its digits (no separators, no leading zeros).
+/// Numbers as written, each with its value as text, so that a decimal is never read as a whole
+/// number ("2.5" is not "25", "0.5" is not "5"):
+/// - a decimal point or comma keeps its place: "2.5" and "2,5" (a French letter) are both "2.5",
+///   ".5" is "0.5", and trailing zeros go ("0.50" is "0.5", "1.0" is "1");
+/// - thousands separators go when the number says so: "1,000.5" and "1.000,5" (two different
+///   separators: the last one is the decimal) are "1000.5", "1,000,000" is "1000000";
+/// - leading zeros go ("05" is "5");
+/// - a number that reads both ways ("1,500" is 1500 in an English letter and 1.5 in a French one,
+///   and the same for "1.500") is kept as written, marked with "~", and so is a number whose groups
+///   are not thousands ("12.03.2024", a date): the summary must write it the same way, or the
+///   sentence falls back to the document's own words.
 fn numbers(text: &str) -> Vec<(String, String)> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
@@ -304,36 +314,97 @@ fn numbers(text: &str) -> Vec<(String, String)> {
             i += 1;
         }
         let raw: String = chars[start..i].iter().collect();
-        let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
-        let trimmed = digits.trim_start_matches('0');
-        out.push((
-            raw,
-            if trimmed.is_empty() {
-                "0".to_owned()
-            } else {
-                trimmed.to_owned()
-            },
-        ));
+        // ".5": a decimal written without its leading zero (not "2.5", whose "5" follows a digit).
+        // Only after a space, "(" or the start: "5 mg,10 mg" is two numbers, not 5 and 0.1.
+        let bare_decimal = start >= 1
+            && matches!(chars[start - 1], '.' | ',')
+            && (start == 1 || chars[start - 2].is_whitespace() || chars[start - 2] == '(');
+        let value = if bare_decimal {
+            number_value(&format!("0.{raw}"))
+        } else {
+            number_value(&raw)
+        };
+        out.push((raw, value));
     }
     out
 }
 
+/// A whole number's digits without leading zeros ("0" for none).
+fn whole(digits: &str) -> String {
+    let t = digits.trim_start_matches('0');
+    if t.is_empty() {
+        "0".to_owned()
+    } else {
+        t.to_owned()
+    }
+}
+
+/// The value of one number as written (digits joined by "." or ","), as `numbers` describes.
+fn number_value(raw: &str) -> String {
+    let separators: Vec<char> = raw.chars().filter(|c| matches!(c, '.' | ',')).collect();
+    let groups: Vec<&str> = raw.split(['.', ',']).collect();
+    let decimal = |int: &str, fraction: &str| {
+        let fraction = fraction.trim_end_matches('0');
+        if fraction.is_empty() {
+            whole(int)
+        } else {
+            format!("{}.{fraction}", whole(int))
+        }
+    };
+    match separators.as_slice() {
+        [] => whole(raw),
+        [_] => {
+            let (int, fraction) = (groups[0], groups[1]);
+            // "1,500" / "1.500": thousands in one convention, a decimal in the other.
+            if fraction.len() == 3 && int.len() <= 3 && !int.starts_with('0') {
+                format!("~{raw}")
+            } else {
+                decimal(int, fraction)
+            }
+        }
+        [first, rest @ ..] => {
+            let last = *rest.last().unwrap_or(first);
+            let thousands = |g: &[&str]| g.iter().all(|g| g.len() == 3);
+            if rest.iter().all(|c| c == first) {
+                // One separator, used again: thousands ("1,000,000"), or a date-like number.
+                if groups[0].len() <= 3 && thousands(&groups[1..]) {
+                    whole(&groups.concat())
+                } else {
+                    format!("~{raw}")
+                }
+            } else if separators[..separators.len() - 1]
+                .iter()
+                .all(|c| *c != last)
+                && thousands(&groups[1..groups.len() - 1])
+            {
+                // "1,000.5" / "1.000,5": the last, different separator is the decimal.
+                decimal(
+                    &groups[..groups.len() - 1].concat(),
+                    groups[groups.len() - 1],
+                )
+            } else {
+                format!("~{raw}")
+            }
+        }
+    }
+}
+
 fn page_numbers(pages: &str) -> std::collections::HashSet<String> {
-    let mut found: std::collections::HashSet<String> =
-        numbers(pages).into_iter().map(|(_, d)| d).collect();
+    let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (raw, value) in numbers(pages) {
+        // A number kept as written with two or more separators (a date such as "12.03.2024", a
+        // phone number such as "613.555.0142") also gives its parts, which a summary may write
+        // apart ("12 March 2024"). A decimal never does: "2.5" must not allow "2" or "5".
+        if value.starts_with('~') && raw.matches(['.', ',']).count() >= 2 {
+            for part in raw.split(['.', ',']) {
+                found.insert(whole(part));
+            }
+        }
+        found.insert(value);
+    }
     for (word, ..) in tokens(pages) {
         if let Some((_, n)) = NUMBER_WORDS.iter().find(|(w, _)| *w == word) {
             found.insert((*n).to_owned());
-        }
-    }
-    for (raw, _) in numbers(pages) {
-        for part in raw.split(['.', ',']) {
-            let t = part.trim_start_matches('0');
-            found.insert(if t.is_empty() {
-                "0".to_owned()
-            } else {
-                t.to_owned()
-            });
         }
     }
     found
@@ -944,6 +1015,98 @@ mod tests {
             return;
         }
         panic!("no case {name}");
+    }
+
+    #[test]
+    fn given_a_decimal_dose_written_as_a_whole_number_when_checked_then_the_sentence_is_quoted() {
+        check_case("a_decimal_dose_written_as_a_whole_number");
+    }
+
+    #[test]
+    fn given_a_half_milligram_dose_written_as_five_when_checked_then_the_sentence_is_quoted() {
+        check_case("a_half_milligram_dose_written_as_five");
+    }
+
+    #[test]
+    fn given_half_a_tablet_written_as_five_when_checked_then_the_sentence_is_quoted() {
+        check_case("half_a_tablet_written_as_five");
+    }
+
+    #[test]
+    fn given_a_decimal_without_its_leading_zero_written_as_five_when_checked_then_it_is_quoted() {
+        check_case("a_decimal_without_its_leading_zero");
+    }
+
+    #[test]
+    fn given_decimal_doses_written_the_same_when_checked_then_nothing_changes() {
+        check_case("a_decimal_dose_kept");
+    }
+
+    #[test]
+    fn given_a_french_decimal_comma_when_written_with_a_point_then_nothing_changes() {
+        check_case("a_french_decimal_comma_read_as_its_value");
+    }
+
+    #[test]
+    fn given_a_french_decimal_comma_written_as_a_whole_number_when_checked_then_it_is_quoted() {
+        check_case("a_french_decimal_comma_written_as_a_whole_number");
+    }
+
+    #[test]
+    fn given_thousands_and_trailing_zeros_written_another_way_when_checked_then_nothing_changes() {
+        check_case("thousands_and_trailing_zeros_kept");
+    }
+
+    #[test]
+    fn given_a_number_that_reads_both_ways_rewritten_when_checked_then_the_sentence_is_quoted() {
+        check_case("a_number_that_reads_both_ways_rewritten");
+    }
+
+    #[test]
+    fn given_a_dotted_date_written_out_when_checked_then_nothing_changes() {
+        check_case("a_dotted_date_written_out");
+    }
+
+    #[test]
+    fn given_a_comma_with_no_space_before_a_number_when_checked_then_it_is_two_numbers() {
+        check_case("a_comma_with_no_space_before_a_number");
+    }
+
+    #[test]
+    fn given_a_number_that_reads_both_ways_written_without_its_separator_then_it_is_quoted() {
+        check_case("a_number_that_reads_both_ways_written_without_its_separator");
+    }
+
+    #[test]
+    fn numbers_keep_a_decimal_apart_from_a_whole_number() {
+        let value = |raw: &str| numbers(raw).into_iter().map(|(_, v)| v).collect::<Vec<_>>();
+        assert_eq!(value("2.5"), ["2.5"]);
+        assert_eq!(value("2,5"), ["2.5"]);
+        assert_eq!(value("25"), ["25"]);
+        assert_eq!(value("0.5"), ["0.5"]);
+        assert_eq!(value("0,500"), ["0.5"]);
+        assert_eq!(value("0.50"), ["0.5"]);
+        assert_eq!(value("1.0"), ["1"]);
+        assert_eq!(value("05"), ["5"]);
+        assert_eq!(value("take .5 mg"), ["0.5"]);
+        assert_eq!(value("(.5 mg)"), ["0.5"]);
+        assert_eq!(value("5 mg,10 mg"), ["5", "10"]);
+        assert_eq!(value("twice,5 days"), ["5"]);
+        assert_eq!(value("1,000.5"), ["1000.5"]);
+        assert_eq!(value("1.000,5"), ["1000.5"]);
+        assert_eq!(value("1,000,000"), ["1000000"]);
+        assert_eq!(value("1,500"), ["~1,500"]);
+        assert_eq!(value("1.500"), ["~1.500"]);
+        assert_eq!(value("12.03.2024"), ["~12.03.2024"]);
+        assert_eq!(value("12.250"), ["~12.250"]);
+        assert_ne!(value("2.5"), value("25"));
+        let have = page_numbers("Take 2.5 mg, then half, on 12.03.2024.");
+        for allowed in ["2.5", "0.5", "~12.03.2024", "12", "3", "2024"] {
+            assert!(have.contains(allowed), "{allowed}");
+        }
+        for refused in ["25", "2", "5"] {
+            assert!(!have.contains(refused), "{refused}");
+        }
     }
 
     #[test]

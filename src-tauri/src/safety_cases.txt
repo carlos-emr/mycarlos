@@ -374,3 +374,115 @@ summary:
 Do not call the clinic if the pain gets worse. || If the pain gets worse
 expect:
 The document says: “If the pain gets worse or you get a fever, call the clinic.”
+===
+name: a_decimal_dose_written_as_a_whole_number
+pages:
+Going home
+Take FAKEDRUG 2.5 mg each morning.
+summary:
+Take FAKEDRUG 25 mg each morning. || Take FAKEDRUG 2.5 mg each morning
+expect:
+The document says: “Take FAKEDRUG 2.5 mg each morning.”
+===
+name: a_half_milligram_dose_written_as_five
+pages:
+Going home
+Take FAKEDRUG 0.5 mg at night.
+summary:
+Take FAKEDRUG 5 mg at night. || Take FAKEDRUG 0.5 mg at night
+expect:
+The document says: “Take FAKEDRUG 0.5 mg at night.”
+===
+name: half_a_tablet_written_as_five
+pages:
+Going home
+Take half a tablet each morning.
+summary:
+Take 5 tablets each morning. || Take half a tablet each morning
+expect:
+The document says: “Take half a tablet each morning.”
+===
+name: a_decimal_without_its_leading_zero
+pages:
+Going home
+Take FAKEDRUG .5 mg at night.
+summary:
+Take FAKEDRUG 5 mg at night. || Take FAKEDRUG .5 mg at night
+expect:
+The document says: “Take FAKEDRUG .5 mg at night.”
+===
+name: a_decimal_dose_kept
+pages:
+Going home
+Take FAKEDRUG 2.5 mg daily. Take half a tablet of FAKEPILL at night.
+summary:
+Take 2.5 mg of FAKEDRUG every day. || Take FAKEDRUG 2.5 mg daily
+Take 0.5 of a FAKEPILL tablet at night. || Take half a tablet of FAKEPILL at night
+expect:
+Take 2.5 mg of FAKEDRUG every day.
+Take 0.5 of a FAKEPILL tablet at night.
+===
+name: a_french_decimal_comma_read_as_its_value
+pages:
+Retour à la maison
+Prendre FAKEDRUG 2,5 mg chaque matin.
+summary:
+Take FAKEDRUG 2.5 mg every morning. || Prendre FAKEDRUG 2,5 mg chaque matin
+expect:
+Take FAKEDRUG 2.5 mg every morning.
+===
+name: a_french_decimal_comma_written_as_a_whole_number
+pages:
+Retour à la maison
+Prendre FAKEDRUG 2,5 mg chaque matin.
+summary:
+Take FAKEDRUG 25 mg every morning. || Prendre FAKEDRUG 2,5 mg chaque matin
+expect:
+The document says: “Prendre FAKEDRUG 2,5 mg chaque matin.”
+===
+name: thousands_and_trailing_zeros_kept
+pages:
+Going home
+Drink 1,500 mL a day. Take FAKEDRUG 1.0 mg and 1,000.5 units as before.
+summary:
+Drink 1,500 mL a day. || Drink 1,500 mL a day
+Take FAKEDRUG 1 mg and 1000.5 units as before. || Take FAKEDRUG 1.0 mg and 1,000.5 units as before
+expect:
+Drink 1,500 mL a day.
+Take FAKEDRUG 1 mg and 1000.5 units as before.
+===
+name: a_number_that_reads_both_ways_rewritten
+pages:
+Going home
+Drink 1,500 mL a day.
+summary:
+Drink 1.5 mL a day. || Drink 1,500 mL a day
+expect:
+The document says: “Drink 1,500 mL a day.”
+===
+name: a_dotted_date_written_out
+pages:
+Results
+Seen on 12.03.2024 in the clinic.
+summary:
+You were seen on 12 March 2024 in the clinic. || Seen on 12.03.2024 in the clinic
+expect:
+You were seen on 12 March 2024 in the clinic.
+===
+name: a_comma_with_no_space_before_a_number
+pages:
+Going home
+Take FAKEDRUG 5 mg,10 mg later.
+summary:
+Take FAKEDRUG 5 mg, then 10 mg later. || Take FAKEDRUG 5 mg,10 mg later
+expect:
+Take FAKEDRUG 5 mg, then 10 mg later.
+===
+name: a_number_that_reads_both_ways_written_without_its_separator
+pages:
+Going home
+Drink 1,500 mL a day.
+summary:
+Drink 1500 mL a day. || Drink 1,500 mL a day
+expect:
+The document says: “Drink 1,500 mL a day.”
