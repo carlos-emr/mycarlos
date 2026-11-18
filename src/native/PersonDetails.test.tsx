@@ -441,4 +441,20 @@ describe("the birth date as year, month and day", () => {
       }),
     ).toBe("personDetails.invalidDate");
   });
+
+  it("refuses a day of 00 or 32, 31 February and a year 0000 as not valid, and a future date as in the future", () => {
+    const problem = (year: string, month: string, day: string) =>
+      detailsProblem({
+        fullName: "FAKE Robin Example",
+        birthDate: joinBirthDate({ year, month, day }),
+      });
+    expect(problem("2020", "03", "00")).toBe("personDetails.invalidDate");
+    expect(problem("2020", "03", "32")).toBe("personDetails.invalidDate");
+    expect(problem("2021", "02", "29")).toBe("personDetails.invalidDate");
+    expect(problem("2020", "02", "31")).toBe("personDetails.invalidDate");
+    expect(problem("0000", "01", "01")).toBe("personDetails.invalidDate");
+    expect(problem("2020", "02", "29")).toBeNull();
+    const nextYear = String(new Date().getFullYear() + 1);
+    expect(problem(nextYear, "01", "01")).toBe("personDetails.futureDate");
+  });
 });

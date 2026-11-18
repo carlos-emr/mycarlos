@@ -191,9 +191,23 @@ test("the page is kept clear of the status bar, the gesture bar and the keyboard
     assert.match(patched, /WindowInsetsCompat\.Type\.systemBars\(\)/);
     assert.match(patched, /WindowInsetsCompat\.Type\.displayCutout\(\)/);
     assert.match(patched, /WindowInsetsCompat\.Type\.ime\(\)/);
+    // The padding goes on the content view (the WebView ignores its own
+    // padding for page content), not on the WebView.
+    assert.match(patched, /findViewById<View>\(android\.R\.id\.content\)/);
+    assert.match(patched, /setOnApplyWindowInsetsListener\(content\)/);
+    assert.doesNotMatch(patched, /setOnApplyWindowInsetsListener\(webView\)/);
+    assert.match(patched, /WindowInsetsCompat\.CONSUMED/);
+    // The strip behind the clock takes the header's colours, dark or light.
+    assert.match(patched, /0xFF21372F/);
+    assert.match(patched, /0xFFE7EFED/);
+    assert.match(patched, /isAppearanceLightStatusBars = !night/);
     for (const line of [
+      "import android.content.res.Configuration",
+      "import android.graphics.drawable.ColorDrawable",
+      "import android.view.View",
       "import android.webkit.WebView",
       "import androidx.core.view.ViewCompat",
+      "import androidx.core.view.WindowCompat",
       "import androidx.core.view.WindowInsetsCompat",
     ]) {
       assert.equal(patched.split(line).length - 1, 1, line);
@@ -218,7 +232,7 @@ test("the override goes inside the class, before anything declared after it", ()
   assert.ok(patched.indexOf("val a = 1") < patched.indexOf("onWebViewCreate"));
   assert.match(
     patched,
-    /ViewCompat\.requestApplyInsets\(webView\)\n    }\n}\n\nprivate fun later/,
+    /ViewCompat\.requestApplyInsets\(content\)\n    }\n}\n\nprivate fun later/,
   );
 });
 

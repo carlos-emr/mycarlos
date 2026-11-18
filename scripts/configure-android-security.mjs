@@ -74,23 +74,39 @@ export function declareCamera(manifest) {
     );
 }
 
-// The system bars (#phone feedback, 18 Nov 2026). From Android 15 an activity is
+// The system bars (phone feedback, 18 Nov 2026). From Android 15 an activity is
 // drawn edge to edge, so the status bar (clock, notifications) and the gesture
 // bar lie over the top and bottom of the page. The WebView does not report them
-// to the page (`env(safe-area-inset-*)` is not reliable in it), so the activity
-// itself moves the page in by their size (and by a display cutout's and the
-// keyboard's). Native only: the page, the desktop apps and the browser tests are
-// not touched.
+// to the page (`env(safe-area-inset-*)` is not reliable in it) and ignores its
+// own padding for page content, so the padding goes on the activity's content
+// view, which does move the WebView: the page is moved in by the size of the
+// bars, of a display cutout and of the keyboard, and the insets are consumed.
+// The strip that shows behind the clock is the window background, set to the
+// header's colour (dark or light as the system is) with matching icon colours,
+// so it does not flash white. Native only: the page, the desktop apps and the
+// browser tests are not touched.
 const BARS_MARKER = "mycarlos: keep the page clear of the system bars";
 const BARS_IMPORTS = [
+  "import android.content.res.Configuration",
+  "import android.graphics.drawable.ColorDrawable",
+  "import android.view.View",
   "import android.webkit.WebView",
   "import androidx.core.view.ViewCompat",
+  "import androidx.core.view.WindowCompat",
   "import androidx.core.view.WindowInsetsCompat",
 ];
+// The header's colours from src/styles.css: --canvas-2 light and dark.
 const BARS_METHOD = `    // ${BARS_MARKER}
     override fun onWebViewCreate(webView: WebView) {
         super.onWebViewCreate(webView)
-        ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        window.setBackgroundDrawable(ColorDrawable(if (night) 0xFF21372F.toInt() else 0xFFE7EFED.toInt()))
+        val appearance = WindowCompat.getInsetsController(window, window.decorView)
+        appearance.isAppearanceLightStatusBars = !night
+        appearance.isAppearanceLightNavigationBars = !night
+        val content = findViewById<View>(android.R.id.content)
+        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
@@ -98,7 +114,7 @@ const BARS_METHOD = `    // ${BARS_MARKER}
             view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
             WindowInsetsCompat.CONSUMED
         }
-        ViewCompat.requestApplyInsets(webView)
+        ViewCompat.requestApplyInsets(content)
     }
 `;
 
