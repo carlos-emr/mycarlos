@@ -1833,6 +1833,30 @@ ai-summary-readPages =
 
 ai-summary-readStart = Summarize the start of page 1
 
+ai-summary-long =
+    { $pages ->
+    [one] This is a long document (about { $pages } page).
+   *[other] This is a long document (about { $pages } pages).
+    }
+
+ai-summary-readAllTime =
+    { $minutes ->
+    [one] Reading all of it may take about { $minutes } minute on this computer.
+   *[other] Reading all of it may take about { $minutes } minutes on this computer.
+    }
+
+ai-summary-readPagesTime =
+    { $minutes ->
+    [one] Reading them may take about { $minutes } minute on this computer.
+   *[other] Reading them may take about { $minutes } minutes on this computer.
+    }
+
+ai-summary-memoryHint = Closing other programs may let the AI helper read more of this document.
+
+ai-summary-readAll = Read all of it
+
+ai-summary-firstPages = First pages only
+
 ai-summary-noText = myCarlos could not read any text in this document, so it can't summarize it. It may be a scan.
 
 ai-explain-box = Word or phrase
@@ -1860,6 +1884,12 @@ ai-model-reads =
     }
 
 ai-model-readsEstimate = An estimate until you next use this model.
+
+ai-model-readsLonger =
+    { $pages ->
+    [one] With enough free memory, it can read up to about { $pages } page of a long document.
+   *[other] With enough free memory, it can read up to about { $pages } pages of a long document.
+    }
 ai-model-loadCheck = Checking that this model runs on this computer…
 ai-model-loadCheckCannotRun = This computer could not run this model. Try again later, or choose another model.
 ai-model-loadCheckMemory = There isn't enough free memory to try this model now. Close some other programs, then try again.

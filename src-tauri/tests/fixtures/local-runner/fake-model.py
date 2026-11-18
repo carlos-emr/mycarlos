@@ -18,6 +18,10 @@ file or opens a connection. Modes, by argument:
   --quote-unread    adds a sentence quoting a page it did not read
   --read-fd         explains with the first bytes of descriptor 3
   --greet-after S   waits that long before greeting (for the lock-during-start test)
+  --card            greets with a model card (trained context 262144, 8192 made)
+  --refuse-window   refuses a summary that asks for a larger window with "window"
+  --log-windows F   appends each summary's window (contextTokens, or "none") to F
+  --context-made N  reports the summary as read in a window of N tokens
 """
 import json
 import sys
@@ -42,8 +46,12 @@ if "--mute" in args:
 if "--greet-after" in args:
     time.sleep(float(args[args.index("--greet-after") + 1]))
 
-print(json.dumps({"hello": "mycarlos-model/1",
-                  "model": {"name": "FAKE model", "sha256": "0" * 64}}), flush=True)
+hello = {"hello": "mycarlos-model/1", "model": {"name": "FAKE model", "sha256": "0" * 64}}
+if "--card" in args:
+    hello["card"] = {"architecture": "qwen35", "trainedContext": 262144, "contextMade": 8192,
+                     "parameters": 4330000000, "layers": 32, "vocabulary": 248320,
+                     "recurrent": False, "hybrid": True}
+print(json.dumps(hello), flush=True)
 
 for line in sys.stdin:
     line = line.strip()
@@ -60,6 +68,13 @@ for line in sys.stdin:
               flush=True)
         continue
     if request.get("tool") == "summary":
+        window = request.get("contextTokens")
+        if "--log-windows" in args:
+            with open(args[args.index("--log-windows") + 1], "a") as log:
+                log.write(f"{window if window is not None else 'none'}\n")
+        if "--refuse-window" in args and window is not None:
+            print(json.dumps({"id": request["id"], "error": "window"}), flush=True)
+            continue
         pages = request.get("pages", [])
         read = pages if "--read-all" in args else pages[:1]
         text = "\n\n".join(page["text"] for page in read)
@@ -76,8 +91,11 @@ for line in sys.stdin:
             answer.append({"text": f"In short: {sentence.rstrip('.')}.", "quote": quote})
         if "--quote-unread" in args and len(pages) > 1:
             answer.append({"text": "In short: the clinic phoned.", "quote": pages[1]["text"][:20]})
-        print(json.dumps({"id": request["id"], "sentences": answer, "lastPage": last,
-                          "lastPageCut": "--cut-first" in args}), flush=True)
+        reply = {"id": request["id"], "sentences": answer, "lastPage": last,
+                 "lastPageCut": "--cut-first" in args}
+        if "--context-made" in args:
+            reply["stats"] = {"contextTokens": int(args[args.index("--context-made") + 1])}
+        print(json.dumps(reply), flush=True)
     elif request.get("tool") == "explain":
         if "--read-fd" in args:
             import os

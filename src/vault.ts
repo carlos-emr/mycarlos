@@ -580,6 +580,8 @@ export interface VaultBridge {
     pages: DocumentPageText[],
     lang: string,
     keep?: { recordId: string; ticket: string },
+    /** The larger window the patient agreed to (D249, D250). */
+    contextTokens?: number,
     answerId?: string,
   ): Promise<ModelSummary>;
   /** A term explained in plain words, with the sentence it is in. With
@@ -1092,10 +1094,21 @@ export function createVaultBridge(): VaultBridge {
       return cancellation;
     },
     aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
-    aiSummarize: (pages, lang, keep, answerId = crypto.randomUUID()) =>
+    aiSummarize: (
+      pages,
+      lang,
+      keep,
+      contextTokens,
+      answerId = crypto.randomUUID(),
+    ) =>
       invoke<ModelSummary>("ai_summarize", {
         answerId,
-        request: { pages, lang, ...keep },
+        request: {
+          pages,
+          lang,
+          ...keep,
+          ...(contextTokens ? { contextTokens } : {}),
+        },
       }),
     aiExplain: (
       term,

@@ -1907,6 +1907,36 @@ ai-summary-readPages =
 
 ai-summary-readStart = Podsumuj początek strony 1
 
+ai-summary-long =
+    { $pages ->
+    [one] To długi dokument (około { $pages } strony).
+    [few] To długi dokument (około { $pages } stron).
+    [many] To długi dokument (około { $pages } stron).
+   *[other] To długi dokument (około { $pages } strony).
+    }
+
+ai-summary-readAllTime =
+    { $minutes ->
+    [one] Przeczytanie całości może zająć na tym komputerze około { $minutes } minuty.
+    [few] Przeczytanie całości może zająć na tym komputerze około { $minutes } minut.
+    [many] Przeczytanie całości może zająć na tym komputerze około { $minutes } minut.
+   *[other] Przeczytanie całości może zająć na tym komputerze około { $minutes } minuty.
+    }
+
+ai-summary-readPagesTime =
+    { $minutes ->
+    [one] Przeczytanie ich może zająć na tym komputerze około { $minutes } minuty.
+    [few] Przeczytanie ich może zająć na tym komputerze około { $minutes } minut.
+    [many] Przeczytanie ich może zająć na tym komputerze około { $minutes } minut.
+   *[other] Przeczytanie ich może zająć na tym komputerze około { $minutes } minuty.
+    }
+
+ai-summary-memoryHint = Zamknięcie innych programów może pozwolić asystentowi AI przeczytać większą część tego dokumentu.
+
+ai-summary-readAll = Przeczytaj całość
+
+ai-summary-firstPages = Tylko pierwsze strony
+
 ai-summary-noText = Nie udało się odczytać żadnego tekstu w tym dokumencie, więc nie można go podsumować. To może być skan.
 
 ai-explain-box = Słowo lub wyrażenie
@@ -1936,6 +1966,14 @@ ai-model-reads =
     }
 
 ai-model-readsEstimate = To wartość szacunkowa do następnego użycia tego modelu.
+
+ai-model-readsLonger =
+    { $pages ->
+    [one] Przy wystarczającej ilości wolnej pamięci może przeczytać do około { $pages } strony długiego dokumentu.
+    [few] Przy wystarczającej ilości wolnej pamięci może przeczytać do około { $pages } stron długiego dokumentu.
+    [many] Przy wystarczającej ilości wolnej pamięci może przeczytać do około { $pages } stron długiego dokumentu.
+   *[other] Przy wystarczającej ilości wolnej pamięci może przeczytać do około { $pages } strony długiego dokumentu.
+    }
 ai-model-loadCheck = Sprawdzanie, czy ten model działa na tym komputerze…
 ai-model-loadCheckCannotRun = Ten komputer nie mógł uruchomić tego modelu. Można spróbować ponownie później albo wybrać inny model.
 ai-model-loadCheckMemory = Brakuje teraz wolnej pamięci, aby wypróbować ten model. Można zamknąć inne programy i spróbować ponownie.

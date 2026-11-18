@@ -2098,6 +2098,8 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       [{ index: 0, text: pageText }],
       "en",
       { recordId: expect.any(String), ticket: expect.any(String) },
+      // The default window: no longer read was agreed to.
+      undefined,
     );
     await waitFor(() =>
       expect(native.saveAiResult).toHaveBeenCalledWith(

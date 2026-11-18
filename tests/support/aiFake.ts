@@ -69,6 +69,8 @@ export type FakeModelStatus =
       state: "installed";
       model: { name: string; sha256: string };
       capacity?: FakeCapacity | null;
+      /** The larger windows a long document may be read in (D249). */
+      windows?: { sizes: FakeCapacity[]; memoryAllows: number } | null;
     }
   | { state: "unsupported"; reason: "ram" | "cpu" | "platform" }
   | { state: "damaged" };
@@ -183,6 +185,10 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       const ours = new Set<string>(Object.values(setup.commands));
       // What the model is now: adding or removing it changes it.
       let model = structuredClone(setup.model);
+      // The larger windows the native side would say for the model in use
+      // (D249), as set up: kept while a model is installed.
+      const windows =
+        setup.model.state === "installed" ? setup.model.windows : undefined;
       let modelRows = structuredClone(setup.models);
       try {
         const keptModels = JSON.parse(
@@ -220,6 +226,7 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
                 ...(chosen.model.capacity
                   ? { capacity: structuredClone(chosen.model.capacity) }
                   : {}),
+                ...(windows ? { windows: structuredClone(windows) } : {}),
               };
         persistModels();
         return model;

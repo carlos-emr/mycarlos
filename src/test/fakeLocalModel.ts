@@ -4,12 +4,19 @@ import type {
   ModelInfo,
   ModelSentence,
   ModelStatus,
+  ReadRate,
 } from "../ai/types";
 
 /** For tests only: a model that answers at once with fixed, FAKE text, so the
  * AI helper's screens can be tested before a real model can be installed. */
 export interface FakeLocalModel extends LocalModel {
-  calls: { tool: "summary" | "explain"; lang: string; input: string }[];
+  calls: {
+    tool: "summary" | "explain";
+    lang: string;
+    input: string;
+    /** The larger window a summary was asked in (D249), when it was. */
+    contextTokens?: number;
+  }[];
   /** How many times `cancel` was called. */
   cancels: number;
   /** The answers kept for a document's save, as the native side keeps them
@@ -39,6 +46,8 @@ export function fakeLocalModel(
     lastPage?: (document: DocumentText) => number;
     /** The first page alone was too long, and only its start was read. */
     lastPageCut?: boolean;
+    /** The reading time a summary reports (D250). */
+    readRate?: ReadRate;
   } = {},
 ): FakeLocalModel {
   const calls: FakeLocalModel["calls"] = [];
@@ -58,8 +67,13 @@ export function fakeLocalModel(
     cancels: 0,
     kept: [],
     status: async () => status,
-    summarize: async (document, lang, keepFor) => {
-      calls.push({ tool: "summary", lang, input: document.joined });
+    summarize: async (document, lang, keepFor, contextTokens) => {
+      calls.push({
+        tool: "summary",
+        lang,
+        input: document.joined,
+        ...(contextTokens ? { contextTokens } : {}),
+      });
       const keptId = keep(keepFor, { tool: "summary", lang });
       const sentences = options.sentences
         ? options.sentences(document)
@@ -72,6 +86,7 @@ export function fakeLocalModel(
           : (document.pages.at(-1)?.index ?? 0),
         lastPageCut: options.lastPageCut ?? false,
         ...(keptId ? { keptId } : {}),
+        ...(options.readRate ? { readRate: options.readRate } : {}),
       };
     },
     explain: async (term, context, lang, keepFor) => {

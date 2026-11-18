@@ -6627,7 +6627,7 @@ describe("durable vault UI", () => {
         aiModelStatus: vi
           .fn()
           .mockResolvedValue({ state: "installed", model: FAKE_MODEL }),
-        aiSummarize: vi.fn((_pages, _lang, _keep, answerId) => {
+        aiSummarize: vi.fn((_pages, _lang, _keep, _window, answerId) => {
           if (synchronousLimit !== undefined)
             started({ answerId: answerId!, limitMs: synchronousLimit });
           return new Promise<ModelSummary>((resolve, reject) => {
@@ -6680,7 +6680,7 @@ describe("durable vault UI", () => {
         settles,
         started: (limitMs: number, index = settles.length - 1) =>
           act(async () => {
-            const answerId = vi.mocked(bridge.aiSummarize).mock.calls[index][3];
+            const answerId = vi.mocked(bridge.aiSummarize).mock.calls[index][4];
             expect(answerId).toMatch(/^[0-9a-f-]{36}$/);
             started({ answerId: answerId!, limitMs });
           }),

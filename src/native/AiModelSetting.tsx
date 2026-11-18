@@ -308,7 +308,13 @@ export function AiModelSetting({
   const readingOf = (row: ModelRow) => {
     const found = limits?.find((entry) => entry.index === row.index);
     const capacity = found?.capacity ?? row.model.capacity;
-    return capacity ? { capacity, confirmed: found?.confirmed ?? false } : null;
+    return capacity
+      ? {
+          capacity,
+          confirmed: found?.confirmed ?? false,
+          longest: found?.longest,
+        }
+      : null;
   };
 
   const reloadRef = useRef(reloadRows);
@@ -829,6 +835,17 @@ export function AiModelSetting({
                   reading && (
                     <p id={`${prefix}-reads`}>
                       {t("ai.model.reads", capacityInPages(reading.capacity))}
+                      {/* A long document: up to the largest window's pages
+                          when memory allows (D249), the same figure on
+                          every computer. */}
+                      {reading.longest && (
+                        <>
+                          {" "}
+                          {t("ai.model.readsLonger", {
+                            pages: capacityInPages(reading.longest).pages,
+                          })}
+                        </>
+                      )}
                       {/* Until the model has started in this session, the
                           catalogue's figure: said to be an estimate (model
                           limits). */}

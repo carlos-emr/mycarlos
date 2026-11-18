@@ -256,6 +256,36 @@ describe("Add a model file", () => {
     expect(screen.queryByText(/7,000,000,000|6\.5 GB|262,144|4\.3/)).toBeNull();
   });
 
+  it("says how much of a long document it can read when memory allows a larger window (D249)", async () => {
+    const capacity = { contextTokens: 8192, documentTokens: 6510 };
+    answer({
+      ai_model_catalog: [{ ...fake, capacity }],
+      ai_model_limits: [
+        {
+          index: 0,
+          capacity,
+          confirmed: true,
+          trainedContext: 262144,
+          parameters: 4330000000,
+          fileBytes: fake.sizeBytes,
+          neededBytes: 7000000000,
+          // 32,768 tokens, 31,086 for the document: about 31 pages.
+          longest: { contextTokens: 32768, documentTokens: 31086 },
+        },
+      ],
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages. With enough free memory, it can read up to about 31 pages of a long document.",
+        ),
+      ),
+    ).toBeVisible();
+  });
+
   it("keeps saying it is an estimate while the limits are not confirmed", async () => {
     const capacity = { contextTokens: 8192, documentTokens: 6510 };
     answer({

@@ -726,9 +726,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
       exportToPicked: (pickId, recordId) =>
         transfer(() => bridge.exportToPicked(pickId, recordId)),
-      aiSummarize: (pages, lang, keep) =>
+      aiSummarize: (pages, lang, keep, contextTokens) =>
         answering((answerId) =>
-          bridge.aiSummarize(pages, lang, keep, answerId),
+          bridge.aiSummarize(pages, lang, keep, contextTokens, answerId),
         ),
       aiExplain: (term, context, lang, recordId) =>
         answering((answerId) =>

@@ -1735,11 +1735,21 @@ fn ai_model_catalog() -> Vec<local_model::Accepted> {
     local_model::listed(local_model::CATALOG)
 }
 
+/// What `ai_model_status` answers: the status, and for the model in use the windows a summary
+/// may be read in (D249), for the reader's question before a long read.
+#[derive(Serialize)]
+struct ModelStatusAnswer {
+    #[serde(flatten)]
+    status: local_model::ModelStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    windows: Option<model_runtime::SummaryWindows>,
+}
+
 /// Whether the AI helper (#72) has a model on this computer, and if not,
 /// why: not installed, this computer cannot run it, or the file is damaged.
 #[tauri::command]
-fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::ModelStatus {
-    match models.status(&local_model::Here) {
+fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> ModelStatusAnswer {
+    let status = match models.status(&local_model::Here) {
         // Once the helper has made this model's context, the reader's question reads from it,
         // as the settings do (model limits).
         local_model::ModelStatus::Installed {
@@ -1753,7 +1763,27 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
             }
         }
         status => status,
-    }
+    };
+    // The larger windows, and the largest free memory allows now (D249–D251): from the model's
+    // list entry, its card when the helper has run it, and the memory probe. Never waits for an
+    // answer being written.
+    let windows = match &status {
+        local_model::ModelStatus::Installed {
+            model,
+            capacity: Some(_),
+        } => local_model::CATALOG
+            .iter()
+            .find(|entry| entry.sha256 == model.sha256)
+            .and_then(|entry| {
+                model_runtime::app().summary_windows(
+                    model,
+                    entry.size_bytes,
+                    entry.cache_bytes_per_token,
+                )
+            }),
+        _ => None,
+    };
+    ModelStatusAnswer { status, windows }
 }
 
 /// Every model the app offers, and any other accepted one on this computer, with its state,
@@ -5368,6 +5398,41 @@ mod tests {
     use super::*;
 
     use proptest::prelude::*;
+
+    #[test]
+    fn the_model_status_carries_the_summary_windows_beside_its_state() {
+        let model = local_runner::ModelInfo {
+            name: "FAKE model".to_owned(),
+            sha256: "0".repeat(64),
+        };
+        let installed = ModelStatusAnswer {
+            status: local_model::ModelStatus::Installed {
+                model,
+                capacity: Some(local_model::Capacity::HELPER),
+            },
+            windows: Some(model_runtime::SummaryWindows {
+                sizes: vec![
+                    local_model::Capacity::HELPER,
+                    local_model::Capacity::at(12_288),
+                ],
+                memory_allows: 8_192,
+            }),
+        };
+        let json = serde_json::to_value(&installed).unwrap();
+        assert_eq!(json["state"], "installed");
+        assert_eq!(json["capacity"]["documentTokens"], 6_510);
+        assert_eq!(json["windows"]["sizes"][1]["contextTokens"], 12_288);
+        assert_eq!(json["windows"]["memoryAllows"], 8_192);
+        // No windows: the status as before.
+        let none = ModelStatusAnswer {
+            status: local_model::ModelStatus::NotInstalled,
+            windows: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&none).unwrap(),
+            serde_json::json!({ "state": "notInstalled" })
+        );
+    }
 
     #[test]
     fn does_not_return_a_page_for_a_cancelled_view_ticket() {
