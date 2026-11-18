@@ -132,7 +132,9 @@ test("a photo's details offer View photo, the viewer shows and closes; moved and
   const hiddenLabel = en("interface.HiddenDocuments.hidden");
   await page
     .getByRole("button", {
-      name: new RegExp(`^${escapeRegExp(hiddenLabel)}\\s+1\\s+`),
+      name: new RegExp(
+        `^${escapeRegExp(hiddenLabel)}\\s+${escapeRegExp(en("sidebar.documents", { count: 1 }))}\\s+`,
+      ),
     })
     .click();
   await expect(

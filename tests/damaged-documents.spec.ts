@@ -153,7 +153,7 @@ test("a missing file pauses changes and marks the document; hiding it is asked f
   await page
     .getByRole("button", {
       name: new RegExp(
-        `^${escapeRegExp(en("interface.HiddenDocuments.hidden"))}\\s+1\\s+`,
+        `^${escapeRegExp(en("interface.HiddenDocuments.hidden"))}\\s+${escapeRegExp(en("sidebar.documents", { count: 1 }))}\\s+`,
       ),
     })
     .click();
