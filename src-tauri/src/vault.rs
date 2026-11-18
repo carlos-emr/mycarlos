@@ -54,15 +54,34 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// keeps reading aids with their original; format 9 adds remote notice consent
 /// and push destinations (#192); format 10 adds the AI helper's answers (#72),
 /// objects of their own; format 11 caps the hidden answers apart from the
-/// shown ones (D13).
+/// shown ones (D13); format 12 remembers clinic deliveries that failed their
+/// checks (#143).
 /// Formats 1–3 are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
+/// Format 14 (previous full names) follows 12 (remembered refusals, #143). Slot 13 is
+/// defined by no build here (another draft holds it, #298): a vault at 13 is refused as
+/// newer and never read. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
+/// taken at merge"); a renumber changes this line, the section in VAULT_FORMAT.md and the
+/// tests that name 12, 13 and 14.
 const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 14;
+/// A slot no build here defines: refused as newer, never interpreted.
+const MANIFEST_FORMAT_UNDEFINED: u32 = 13;
 const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
 const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
+/// Format 12 (#143) remembers clinic deliveries that failed their checks. It
+/// follows 10 (AI answers, #212) and 11 (their caps, #250); previous full names
+/// are format 14 above. Its number was taken at merge (VAULT_FORMAT.md, "Format
+/// numbers are taken at merge"): a renumber changes this line, the list of formats
+/// above, the format's heading in VAULT_FORMAT.md and the "format 12" in
+/// THREAT_MODEL.md (DEL-01), nothing else here.
+const MANIFEST_FORMAT_REFUSED: u32 = 12;
+/// At most this many remembered refusals per linked clinic. Those kept stay;
+/// a further refusal is not remembered. A refusal lasts as long as its
+/// delivery, and at most 8 days.
+const MAX_REFUSED_PER_LINK: usize = 100;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
 /// The first format that can hold a history.
@@ -71,9 +90,7 @@ const MANIFEST_FORMAT_HISTORY: u32 = 3;
 /// most 32 per document, hidden ones included.
 const MANIFEST_FORMAT_AI_RESULTS: u32 = 10;
 /// The first format whose hidden AI answers have a cap of their own (D13):
-/// 32 shown and 96 hidden per document. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
-/// taken at merge"): a renumber changes this line and the format's heading in
-/// VAULT_FORMAT.md, nothing else here.
+/// 32 shown and 96 hidden per document.
 const MANIFEST_FORMAT_AI_HIDDEN_CAP: u32 = 11;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
@@ -646,6 +663,51 @@ struct Manifest {
         skip_serializing_if = "crate::document_notifications::RemoteNotices::is_empty"
     )]
     remote_notices: crate::document_notifications::RemoteNotices,
+    /// Clinic deliveries that failed their checks, so that they are not
+    /// downloaded and refused again (#143). Format 12 only (after main's
+    /// 10, AI answers, and 11, their caps). Kept here, not in
+    /// the link, so that the link a check is working from stays as saved.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    refused_deliveries: Vec<RefusedDelivery>,
+}
+
+/// A clinic delivery that failed its checks (#143): what the portal's
+/// listing says of it, never the document or anything inside it.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RefusedDelivery {
+    link_id: Uuid,
+    delivery_id: String,
+    ciphertext_sha256: String,
+    refused_at_ms: u64,
+    /// The delivery's own expiry, in seconds, from the listing.
+    expires_at: u64,
+}
+
+/// A link's remembered refusals whose deliveries have not expired.
+fn refused_for(
+    manifest: &Manifest,
+    link_id: Uuid,
+    now_ms: u64,
+) -> impl Iterator<Item = &RefusedDelivery> {
+    manifest
+        .refused_deliveries
+        .iter()
+        .filter(move |r| r.link_id == link_id && !r.expired(now_ms))
+}
+
+impl RefusedDelivery {
+    /// Whether its delivery has expired, so the portal no longer offers it.
+    fn expired(&self, now_ms: u64) -> bool {
+        self.expires_at.saturating_mul(1000) <= now_ms
+    }
+
+    fn valid(&self) -> bool {
+        crate::portal_delivery::uuid4(&self.delivery_id)
+            && crate::portal_delivery::hash(&self.ciphertext_sha256)
+            && self.expires_at > 0
+            && self.expires_at <= 9_007_199_254_740_991
+    }
 }
 
 /// Where the history's entries are, and what pins its chain: how many there
@@ -1413,6 +1475,7 @@ impl VaultStore {
                 portal_links: Vec::new(),
                 waiting_aids: Vec::new(),
                 remote_notices: Default::default(),
+                refused_deliveries: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -1885,7 +1948,12 @@ impl VaultStore {
                 .manifest
                 .portal_links
                 .iter()
-                .map(|link| self.link_summary(link))
+                .map(|link| {
+                    let mut summary = self.link_summary(link);
+                    summary.refused_deliveries =
+                        refused_for(&unlocked.manifest, link.id, crate::now_ms()).count();
+                    summary
+                })
                 .collect(),
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
@@ -4807,7 +4875,7 @@ fn object_presence_name(root: &Path, object_name: &str) -> ObjectPresence {
 /// Checks everything about a decrypted manifest except whether its objects
 /// are on disk, so a vault with a lost object can still be opened read-only.
 fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
-    if !((MANIFEST_FORMAT_V1..=MANIFEST_FORMAT_AI_HIDDEN_CAP).contains(&manifest.format_version)
+    if !((MANIFEST_FORMAT_V1..=MANIFEST_FORMAT_REFUSED).contains(&manifest.format_version)
         || manifest.format_version == MANIFEST_FORMAT_PREVIOUS_FULL_NAMES)
         || manifest.vault_id != vault_id
         || manifest.generation == 0
@@ -4897,6 +4965,25 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || link
                 .profile_id
                 .is_some_and(|id| !profile_ids.contains(&id) || id == shared_profile_id(vault_id))
+        {
+            return Err(VaultError::Corrupt);
+        }
+    }
+    // Remembered refusals (#143): format 12, for a saved link, one per
+    // delivery, and a bounded number per link.
+    if manifest.format_version < MANIFEST_FORMAT_REFUSED && !manifest.refused_deliveries.is_empty()
+    {
+        return Err(VaultError::Corrupt);
+    }
+    let mut refused = HashSet::new();
+    let mut refused_per_link = HashMap::<Uuid, usize>::new();
+    for entry in &manifest.refused_deliveries {
+        let count = refused_per_link.entry(entry.link_id).or_default();
+        *count += 1;
+        if !link_ids.contains(&entry.link_id)
+            || *count > MAX_REFUSED_PER_LINK
+            || !refused.insert((entry.link_id, entry.delivery_id.as_str()))
+            || !entry.valid()
         {
             return Err(VaultError::Corrupt);
         }
@@ -6718,7 +6805,7 @@ fn newer_build_manifest(plaintext: &[u8]) -> bool {
     }
     serde_json::from_slice::<FormatOnly>(plaintext).is_ok_and(|manifest| {
         manifest.format_version > u64::from(VAULT_FORMAT)
-            || matches!(manifest.format_version, 12 | 13)
+            || manifest.format_version == u64::from(MANIFEST_FORMAT_UNDEFINED)
     })
 }
 
@@ -9759,6 +9846,7 @@ mod tests {
             portal_links: Vec::new(),
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
+            refused_deliveries: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -15480,6 +15568,7 @@ mod tests {
             portal_links: Vec::new(),
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
+            refused_deliveries: Vec::new(),
         }
     }
 
@@ -17369,6 +17458,11 @@ mod tests {
             MANIFEST_FORMAT_AI_RESULTS - 1,
             // The AI helper's answers under one cap, format 10.
             MANIFEST_FORMAT_AI_RESULTS,
+            // Their hidden answers capped apart, format 11.
+            MANIFEST_FORMAT_AI_HIDDEN_CAP,
+            // Remembered refusals (#143), format 12: the last before previous
+            // full names (14; 13 is undefined).
+            MANIFEST_FORMAT_REFUSED,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =
@@ -20108,7 +20202,7 @@ mod tests {
 
     #[test]
     fn previous_full_names_upgrade_legacy_and_refuse_unknown_slots_without_rewriting() {
-        for version in [11, 12, 13] {
+        for version in [11, MANIFEST_FORMAT_REFUSED, MANIFEST_FORMAT_UNDEFINED] {
             let (_temp, store, _, _) = original_pdf_fixture();
             let (key, mut manifest) = {
                 let guard = store.session();
@@ -20129,7 +20223,8 @@ mod tests {
             ];
             let before: Vec<_> = paths.iter().map(|p| fs::read(p).unwrap()).collect();
             let opened = store.unlock(PASSWORD);
-            if version == 11 {
+            if version != MANIFEST_FORMAT_UNDEFINED {
+                // Formats 11 and 12 (remembered refusals, #143) upgrade to this build's.
                 opened.unwrap();
                 assert_eq!(
                     store.session().as_ref().unwrap().manifest.format_version,
@@ -20156,13 +20251,18 @@ mod tests {
         let (_temp, store, _, _) = original_pdf_fixture();
         let mut manifest = store.session().as_ref().unwrap().manifest.clone();
         let id = manifest.vault_id;
-        for version in [12, 13] {
-            manifest.format_version = version;
-            assert!(validate_manifest_structure(&manifest, id).is_err());
-            assert!(newer_build_manifest(
-                &serde_json::to_vec(&manifest).unwrap()
-            ));
-        }
+        // Slot 13 is defined by no build here: refused as newer, never read.
+        manifest.format_version = MANIFEST_FORMAT_UNDEFINED;
+        assert!(validate_manifest_structure(&manifest, id).is_err());
+        assert!(newer_build_manifest(
+            &serde_json::to_vec(&manifest).unwrap()
+        ));
+        // Format 12 is a real format again: it validates, and is not "newer".
+        manifest.format_version = MANIFEST_FORMAT_REFUSED;
+        assert!(validate_manifest_structure(&manifest, id).is_ok());
+        assert!(!newer_build_manifest(
+            &serde_json::to_vec(&manifest).unwrap()
+        ));
         manifest.format_version = 11;
         manifest.profiles[0].previous_full_names = Some(vec!["FAKE Zorvana".into()]);
         assert!(validate_manifest_structure(&manifest, id).is_err());
@@ -20387,7 +20487,9 @@ mod tests {
     #[test]
     fn identity_survives_migration_of_all_older_formats_without_record_loss() {
         let temp = tempfile::tempdir().unwrap();
-        for version in [1, 2, 3, 4, 5, 6, 7, 8] {
+        // Every format below this build's (12, #143), 10 and 11 (the AI helper's
+        // answers and their caps) included.
+        for version in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] {
             let root = temp.path().join(format!("v{version}"));
             let (store, ids, key, vault_id) =
                 old_format_vault(&root, &["FAKE a.pdf", "FAKE b.pdf"], version);

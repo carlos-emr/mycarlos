@@ -8,6 +8,7 @@ import { notInstalledModel } from "../ai/localModel";
 import type { LocalModel } from "../ai/types";
 import { fakeDocumentText, fakeLocalModel } from "../test/fakeLocalModel";
 import type { VaultRecord, ViewedPage } from "../vault";
+import capability from "../../src-tauri/capabilities/default.json";
 
 // The reader as patients see it with Explain switched off in the UI
 // (src/ai/features.ts, Ben, 11 November 2026). No mock here: this file reads
@@ -64,6 +65,13 @@ const firstPage = () =>
   screen.findByRole("img", { name: humanText(/^Page 1 of 2/) });
 
 describe("the reader with Explain switched off", () => {
+  it("is not granted the native Explain command while the switch is off", () => {
+    // The switch and the window's grant change together (lib.rs checks the same).
+    expect(capability.permissions.includes("allow-ai-explain")).toBe(
+      AI_EXPLAIN_ENABLED,
+    );
+  });
+
   it("offers Summary only: no Explain button, panel or term box", async () => {
     // The tests below describe the app with the switch off; turning it back
     // on is a product change, so this file changes with it.

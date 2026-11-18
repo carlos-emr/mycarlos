@@ -1656,6 +1656,10 @@ interface-history-event-copySaved = Cópia legível salva
 
 interface-history-event-created = Cofre criado
 
+interface-history-event-deliveryRefusalsCleared = Nova tentativa solicitada para os documentos não verificados da clínica
+
+interface-history-event-deliveryRefused = Documento da clínica não verificado
+
 interface-history-event-deliveryFiled = Documento da clínica salvo
 
 interface-history-event-deliveryReceiptSettled = Recibo de retirada encerrado
@@ -1834,6 +1838,16 @@ portal-codeRefused = O portal da clínica não aceitou o código. Tente novament
 portal-codeSubmit = Confirmar código
 
 portal-codeSubmitted = Código enviado. Aguardando sua clínica confirmar este dispositivo. Se ele não for confirmado em 10 minutos, peça novamente.
+
+portal-refusedDocuments =
+    { $count ->
+    [one] Não foi possível verificar { $count } documento desta clínica. Peça à clínica que o envie novamente.
+    *[other] Não foi possível verificar { $count } documentos desta clínica. Peça à clínica que os envie novamente.
+    }
+
+portal-tryAgain = Tentar de novo
+
+portal-tryAgainFor = Tentar de novo para { $clinic }
 
 portal-linkAnother = Vincular outra clínica
 

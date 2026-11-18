@@ -2953,6 +2953,20 @@ async fn vault_restart_device_approval(
         .map_err(Into::into)
 }
 
+/// Try again (#143): forgets a clinic's remembered refusals, so that the next
+/// check downloads and checks its documents again.
+#[tauri::command]
+async fn vault_forget_refused_deliveries(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
 #[tauri::command]
 async fn vault_check_documents(
     store: State<'_, Arc<VaultStore>>,
@@ -5228,6 +5242,7 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
             vault_set_automatic_document_checks,
@@ -7121,7 +7136,32 @@ mod tests {
         let library = include_str!("lib.rs");
         let build_script = include_str!("../build.rs");
         let command_marker = ["#[tauri", "::command]"].concat();
-        assert_eq!(permissions.len(), library.matches(&command_marker).count());
+        // A command whose feature is switched off in the screens stays declared, compiled and
+        // tested, but is granted only while its flag in src/ai/features.ts is on (with
+        // removeUnusedCommands, Tauri then leaves it out of the handler). The flag and the grant
+        // change together.
+        // Each switched-off command with the flag in features.ts that switches it on.
+        const SWITCHABLE: &[(&str, &str)] = &[("ai_explain", "AI_EXPLAIN_ENABLED")];
+        let features = include_str!("../../src/ai/features.ts");
+        let mut not_granted = 0;
+        for &(command, flag) in SWITCHABLE {
+            let on = features.contains(&format!("export const {flag}: boolean = true;"));
+            let off = features.contains(&format!("export const {flag}: boolean = false;"));
+            assert!(on != off, "{flag} must be a plain true or false constant");
+            let grant = format!("allow-{}", command.replace('_', "-"));
+            let granted = permissions.contains(&grant.as_str());
+            assert_eq!(
+                granted, on,
+                "{grant} must be granted exactly when {flag} is on"
+            );
+            assert!(library.contains(&format!("fn {command}(")));
+            assert!(build_script.contains(&format!("\"{command}\"")));
+            not_granted += usize::from(!granted);
+        }
+        assert_eq!(
+            permissions.len() + not_granted,
+            library.matches(&command_marker).count()
+        );
         for permission in permissions {
             assert!(!permission.contains(':'));
             let command = permission.strip_prefix("allow-").unwrap().replace('-', "_");

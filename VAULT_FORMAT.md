@@ -1166,9 +1166,52 @@ commit of its own, with nothing else changed. An older myCarlos then refuses
 the vault as newer rather than reading a record with more than 32 answers as
 damaged. Header and object formats are unchanged.
 
+#### Format 12: clinic documents that failed their checks (#143)
+
+Format 12 adds one manifest list, `refusedDeliveries`. It follows formats 10 and 11
+(the AI helper's answers and their caps, #212 and #250). When a clinic delivery
+fails its checks (it does not decrypt or open, its signed PDF is not verified for
+this link, what the PDF says differs from its envelope, or a delivery already
+filed is listed again with another hash), the vault remembers what the portal's
+listing said of it: `linkId`, `deliveryId`, `ciphertextSha256`, `refusedAtMs`
+and the delivery's own `expiresAt` (seconds; however far off the portal sets it,
+no later than 8 days after the refusal: a delivery's 7 days and the day's grace
+after them). Nothing from inside the document is kept, and
+the portal is not told: the refusal stays on this device (Ben, 29 Oct).
+
+A check for new documents, and the check after unlocking, skip a listed delivery
+whose link, id and hash match a remembered refusal that has not expired, without
+downloading it. So the patient is told once, and the clinic's card says how many
+of its documents could not be verified. The same id with another hash is a
+different document and is checked again. Try again (`vault_forget_refused_deliveries`)
+forgets a clinic's refusals, so the next check checks them again. A refusal is
+dropped once its delivery has expired. A check that could not be made, such as a
+missing or failed PDF helper, a cancelled check, bytes that do not match the
+listing (which may be a damaged download), or a package version newer than this
+build reads (which an update may open), is not remembered: that delivery is
+tried again next time, as before.
+
+The list is kept apart from `portalLinks`, so that the link a check is working
+from stays as saved while refusals are added. It holds at most 100 refusals per
+link. Those kept stay until they expire or Try again; a further refusal is not
+remembered (dropping a kept one would only have it downloaded and refused again).
+Forgetting expired refusals at the start of a check is only tidying: if it cannot
+be written, the check goes on. Each remembered refusal and each Try again is recorded
+in the history (`deliveryRefused`, `deliveryRefusalsCleared`) in the same commit. A
+manifest below format 12 that holds refusals is corrupt, as is a refusal for no
+saved link, a second refusal for one delivery, more than 100 for a link, or a
+malformed id, hash or expiry.
+
+A format 1–11 vault opens with no refusals and is upgraded at its next writable
+unlock to the newest format this build writes (a build with only this change writes
+12; a build that also has previous full names writes 14), in a commit of its own, as
+for every earlier format. An older
+myCarlos then refuses the vault as newer: there is no downgrade. Header/object
+formats and the delivery wire format are unchanged.
+
 ## Provisional format 14: previous full names
 
-This branch understands manifest formats 1–11 and 14 only. Unknown slots 12 and 13 are explicitly unsupported, including recovery/fallback selection: they are never interpreted as known semantics. Format 14 is a provisional working value, not a reservation. The constant, documentation and refusal/upgrade tests must be reconciled with the next free format number and the existing landing-order decision before merge or migration approval. Header, object and backup container formats do not change.
+This build understands manifest formats 1–12 and 14 only. Format 12 (remembered refusals, #143, above) is a real format: a vault at 12 upgrades to 14 at its next writable unlock, in a commit of its own, like any older one. Slot 13 is defined by no build here (another draft holds it, #298) and is explicitly unsupported, including recovery/fallback selection: a vault at 13 is refused as newer and is never interpreted as known semantics. Format 14 is a provisional working value, not a reservation. The constant, documentation and refusal/upgrade tests must be reconciled with the next free format number and the existing landing-order decision before merge or migration approval. Header, object and backup container formats do not change.
 
 A non-Shared encrypted profile may contain `previousFullNames`, a nonempty ordered array of at most 16 distinct trimmed names. Each uses the existing 120-Unicode-scalar name/control validation. Absence is the canonical empty state; null, wrong types, empty stored arrays, duplicates and noncanonical stored names are refused. The field is forbidden in older declared formats and on Shared. Writable legacy unlock uses the existing redundant standalone manifest upgrade; read-only recovery does not migrate. Older builds must refuse format 14 rather than read/drop this field.
 
