@@ -120,10 +120,13 @@ describe("the installed interface in the selected language", () => {
       target: { value: "FAKE {name} Shared with me" },
     });
     changeLanguage("fr");
-    // Named by its words, with the state shown before them (#121).
-    expect(
-      screen.getByRole("button", { name: "Verrouiller maintenant" }),
-    ).toHaveTextContent("Déverrouillé · Verrouiller maintenant");
+    // Named by its words, which are all it shows; the state is shown before
+    // it in the pill, as text (#121, #149).
+    const lock = screen.getByRole("button", { name: "Verrouiller maintenant" });
+    expect(lock).toHaveTextContent(/^Verrouiller maintenant$/);
+    expect(lock.closest(".native-lock-pill")).toHaveTextContent(
+      "Déverrouillé · Verrouiller maintenant",
+    );
     expect(screen.queryByRole("button", { name: /^Masqués/ })).toBeNull();
     expect(screen.getByRole("button", { name: "Sécurité" })).toBeVisible();
     expect(
@@ -139,9 +142,11 @@ describe("the installed interface in the selected language", () => {
     );
     expect(draft).toHaveValue("FAKE {name} Shared with me");
     changeLanguage("pl");
-    expect(
-      screen.getByRole("button", { name: "Zablokuj teraz" }),
-    ).toHaveTextContent("Odblokowany · Zablokuj teraz");
+    const lockPl = screen.getByRole("button", { name: "Zablokuj teraz" });
+    expect(lockPl).toHaveTextContent(/^Zablokuj teraz$/);
+    expect(lockPl.closest(".native-lock-pill")).toHaveTextContent(
+      "Odblokowany · Zablokuj teraz",
+    );
     expect(screen.getByRole("searchbox")).toBe(search);
     expect(draft).toHaveValue("FAKE {name} Shared with me");
   });
