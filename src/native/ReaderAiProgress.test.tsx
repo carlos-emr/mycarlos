@@ -381,11 +381,14 @@ describe("the six texts in every language", () => {
         estimateSeconds: 100,
       }),
     );
+    await waitFor(() =>
+      expect(screen.getByRole("progressbar")).toHaveAccessibleName(
+        "Lecture de la lettre…",
+      ),
+    );
     expect(
-      await screen.findByText("Lecture de la lettre…", {
-        selector: "p.native-reader-ai-wait",
-      }),
-    ).toBeVisible();
+      screen.getAllByRole("status").map((each) => each.textContent),
+    ).toContain("Lecture de la lettre…");
     expect(
       screen.getByText(humanText("Environ 2 minutes restantes")),
     ).toBeVisible();

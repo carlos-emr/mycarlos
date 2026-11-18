@@ -372,11 +372,18 @@ export function ReaderAiPanel({
           minute; read with the panel. */}
       {working && tool === "summary" && (
         <div className="native-reader-ai-progress">
-          <p id="reader-ai-stage" className="native-reader-ai-wait">
-            {stageWords}
-          </p>
+          {/* The stage's words are in the status line above, which is on
+              screen too; only before the helper starts does the panel say
+              more (how long it can take). */}
+          {progress.view.stage === "before" && (
+            <p id="reader-ai-stage" className="native-reader-ai-wait">
+              {stageWords}
+            </p>
+          )}
           <progress
-            aria-labelledby="reader-ai-stage"
+            {...(progress.view.stage === "before"
+              ? { "aria-labelledby": "reader-ai-stage" }
+              : { "aria-label": stageWords })}
             max={100}
             {...(progress.view.percent === null
               ? {}
