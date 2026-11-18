@@ -1935,6 +1935,9 @@ ai-summary-progress-writing = Writing the summary…
 
 ai-summary-progress-checking = Checking the summary…
 
+# Translators: the time is rounded up, so "0" (less than a minute) and 2 or more
+# are what the app says; "About 1 minute" is kept only for languages whose plural
+# rules need the singular form.
 ai-summary-progress-estimate =
     { $minutes ->
         [0] Less than a minute left

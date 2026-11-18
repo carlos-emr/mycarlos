@@ -91,6 +91,12 @@ describe("the stages and the bar", () => {
     ["a count with a fraction", { stage: "writing", done: 1.5, total: 10 }],
     ["not a number", { stage: "writing", done: Number.NaN, total: 10 }],
     ["an unknown stage", { stage: "thinking", done: 1, total: 2 }],
+    ["a name every object has", { stage: "constructor", done: 1, total: 2 }],
+    [
+      "a name every object has (toString)",
+      { stage: "toString", done: 1, total: 2 },
+    ],
+    ["the prototype key", { stage: "__proto__", done: 1, total: 2 }],
     ["the screen's own stage", { stage: "before", done: 1, total: 2 }],
   ] as const)("ignores %s", (_name, event) => {
     const state = initialProgress();

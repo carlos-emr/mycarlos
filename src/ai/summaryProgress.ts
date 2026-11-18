@@ -82,9 +82,11 @@ export function applyProgress(
     Partial<Pick<SummaryProgressEvent, "estimateSeconds">>,
   now: number,
 ): ProgressState {
+  // Only the stages' own names: "constructor" or "__proto__" are properties of
+  // every object and are no stage.
+  if (!Object.hasOwn(RANK, event.stage)) return state;
   const rank = RANK[event.stage as ProgressStage];
-  if (rank === undefined || rank === 0 || rank < RANK[state.stage])
-    return state;
+  if (rank === 0 || rank < RANK[state.stage]) return state;
   let next: ProgressState = state;
   if (event.stage === "checking") {
     next = { ...state, stage: "checking", fraction: 1 };

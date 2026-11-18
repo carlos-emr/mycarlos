@@ -1107,7 +1107,7 @@ export function createVaultBridge(): VaultBridge {
       // missed; only this answer's events are passed on.
       const stop = onProgress
         ? listen<SummaryProgressEvent>("ai-answer-progress", (event) => {
-            if (event.payload.answerId === answerId) onProgress(event.payload);
+            if (event.payload?.answerId === answerId) onProgress(event.payload);
           })
         : null;
       try {
