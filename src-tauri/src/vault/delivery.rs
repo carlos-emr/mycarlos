@@ -1233,7 +1233,7 @@ impl VaultStore {
             if self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
             }
-            // Written only once the vault holds format 8 (the upgrade at a
+            // Written only once the vault holds format 12 (the upgrade at a
             // writable unlock), and only for a link it still holds.
             if manifest.format_version < MANIFEST_FORMAT_REFUSED
                 || !manifest.portal_links.iter().any(|l| l.id == link.id)
@@ -3825,7 +3825,7 @@ mod approval_recovery_tests {
             .unwrap()
             .receipt_outcome
             .is_some());
-        // It survives a restart: the validation of format 8 accepts what was written.
+        // It survives a restart: the validation of format 12 accepts what was written.
         let store = restart(store);
         let kept = stored_aid(&store, record_id).unwrap();
         assert_eq!(kept.outer.delivery_id, outer.delivery_id);
@@ -8033,9 +8033,9 @@ mod approval_recovery_tests {
         assert!(refused_saved(&store).is_empty());
     }
     /// #143: a format 7 vault opens with no remembered refusals and is
-    /// upgraded to format 8 at the writable unlock, after which a refusal is
+    /// upgraded to format 12 at the writable unlock, after which a refusal is
     /// remembered. A manifest is refused as damaged when it holds refusals
-    /// below format 8, or for no saved link, twice for one delivery, more
+    /// below format 12, or for no saved link, twice for one delivery, more
     /// than MAX_REFUSED_PER_LINK for a link, or with a malformed id, hash or
     /// expiry.
     #[test]

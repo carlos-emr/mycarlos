@@ -1202,6 +1202,13 @@ manifest below format 12 that holds refusals is corrupt, as is a refusal for no
 saved link, a second refusal for one delivery, more than 100 for a link, or a
 malformed id, hash or expiry.
 
+Rule for any code that removes a clinic link: **it must forget that link's remembered
+refusals in the same write; a refusal whose link is gone makes the vault read as
+damaged.** The check that enforces it is the "for a saved link" test in
+`validate_manifest_structure` (a refusal whose `linkId` is in no `portalLinks` entry
+is `Corrupt`). The vault has no unlink today (linking again adds a second link with a
+new id, and the old link keeps its refusals), so nothing breaks yet.
+
 A format 1–11 vault opens with no refusals and is upgraded to format 12 at its next
 writable unlock, in a commit of its own, as for every earlier format. An older
 myCarlos then refuses the vault as newer: there is no downgrade. Header/object
