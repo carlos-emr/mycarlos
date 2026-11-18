@@ -13,6 +13,7 @@ export type {
   SourceSpan,
 } from "../documentText";
 import type { DocumentText, SourceSpan } from "../documentText";
+import type { SummaryProgressEvent } from "./summaryProgress";
 
 export type AiTool = "summary" | "explain";
 
@@ -155,6 +156,8 @@ export interface LocalModel {
     document: DocumentText,
     lang: string,
     keepFor?: string,
+    /** Told how far the run is, as the helper reports it (counts only). */
+    onProgress?: (event: SummaryProgressEvent) => void,
   ): Promise<ModelSummary>;
   explain(
     term: string,

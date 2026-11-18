@@ -1925,6 +1925,25 @@ ai-summary-noSource = No source found
 
 ai-summary-englishOnly = For now, summaries are written in English. myCarlos checks numbers and “when to get help” rules only in English, so check those in the document itself.
 
+## PROVISIONAL: English wording for Ben's approval (summary progress, 18 Nov).
+
+ai-summary-progress-before = This can take a few minutes. You can keep reading the letter.
+
+ai-summary-progress-reading = Reading the letter…
+
+ai-summary-progress-writing = Writing the summary…
+
+ai-summary-progress-checking = Checking the summary…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Less than a minute left
+        [one] About { $minutes } minute left
+       *[other] About { $minutes } minutes left
+    }
+
+ai-summary-progress-slower = This is taking longer than expected.
+
 aiHelper-notice-title = About the AI helper
 
 aiHelper-notice-introShare = myCarlos can prepare a document's text for an AI service you choose. The AI helper never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this computer’s internet address to the download site.

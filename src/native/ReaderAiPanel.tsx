@@ -8,6 +8,7 @@ import {
 } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
+import { useSummaryProgress } from "./useSummaryProgress";
 import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
 import {
   ModelCancelled,
@@ -119,6 +120,9 @@ export function ReaderAiPanel({
       setWorkingMinutes(0);
     };
   }, [working]);
+  const progress = useSummaryProgress(working && tool === "summary");
+  // Events of a run that is no longer the latest are not shown.
+  const run = useRef(0);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -208,6 +212,8 @@ export function ReaderAiPanel({
     if (tool !== "summary" || !installed || startedFor.current === request)
       return;
     startedFor.current = request;
+    const mine = ++run.current;
+    progress.reset();
     setWorking(true);
     setFailed(null);
     setKeepFailed(null);
@@ -244,6 +250,10 @@ export function ReaderAiPanel({
             SUMMARY_LANGUAGE,
             Date.now,
             aiRef.current.kept?.recordId,
+            (event) => {
+              if (live.current && run.current === mine)
+                progress.onProgress(event);
+            },
           ),
         );
         if (!live.current) return;
@@ -284,6 +294,17 @@ export function ReaderAiPanel({
       .finally(() => live.current && setWorking(false));
   };
 
+  // The words of the stage the run is in. Before the helper's first word
+  // the status line keeps today's "working" words; the panel says how long.
+  const stageWords =
+    progress.view.stage === "before"
+      ? t("ai.summary.progress.before")
+      : t(`ai.summary.progress.${progress.view.stage}`);
+  const statusWords = progress.view.statusSaysSlower
+    ? t("ai.summary.progress.slower")
+    : progress.view.stage === "before"
+      ? t("ai.working")
+      : stageWords;
   const title = t(tool === "summary" ? "ai.summary.title" : "ai.explain.title");
   return (
     <section
@@ -338,7 +359,9 @@ export function ReaderAiPanel({
           answer. */}
       <p className={working ? "native-dialog-status" : "sr-only"} role="status">
         {working
-          ? t("ai.working")
+          ? tool === "summary"
+            ? statusWords
+            : t("ai.working")
           : !failed && readyFor === tool && tool === "summary" && summary
             ? t("ai.summary.ready")
             : !failed && readyFor === tool && tool === "explain" && explained
@@ -348,9 +371,39 @@ export function ReaderAiPanel({
       {/* Not in the status above, so a screen reader is not told each
           minute; read with the panel. */}
       {working && tool === "summary" && (
-        <p className="native-reader-ai-wait">{t("ai.workingLong")}</p>
+        <div className="native-reader-ai-progress">
+          <p id="reader-ai-stage" className="native-reader-ai-wait">
+            {stageWords}
+          </p>
+          <progress
+            aria-labelledby="reader-ai-stage"
+            max={100}
+            {...(progress.view.percent === null
+              ? {}
+              : {
+                  value: progress.view.percent,
+                  "aria-valuetext": `${stageWords}, ${new Intl.NumberFormat(
+                    lang,
+                    { style: "percent" },
+                  ).format(progress.view.percent / 100)}`,
+                })}
+          />
+          {progress.view.slower ? (
+            <p className="native-reader-ai-wait">
+              {t("ai.summary.progress.slower")}
+            </p>
+          ) : (
+            progress.view.minutesLeft !== null && (
+              <p className="native-reader-ai-wait">
+                {t("ai.summary.progress.estimate", {
+                  minutes: progress.view.minutesLeft,
+                })}
+              </p>
+            )
+          )}
+        </div>
       )}
-      {working && workingMinutes > 0 && (
+      {working && tool === "explain" && workingMinutes > 0 && (
         <p className="native-reader-ai-wait">
           {t("ai.workingFor", { minutes: workingMinutes })}
         </p>
