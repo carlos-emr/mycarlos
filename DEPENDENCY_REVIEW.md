@@ -241,6 +241,36 @@ executable to sign and sandbox, and a downloaded binary to pin (RUNTIME-PLAN, op
 The lockfile grows from 628 to 644 packages, all MIT, Apache-2.0, BSD-3-Clause or ISC, which
 are compatible with AGPL-3.0-or-later.
 
+## Added for keeping myCarlos running in the background (#206)
+
+**The tray icon.** Tauri's `tray-icon` feature brings `tray-icon` 0.24.2 (MIT OR Apache-2.0)
+and, on Linux only, `libappindicator` and `libappindicator-sys` 0.9.0 (Apache-2.0 OR MIT), which
+load the desktop's AppIndicator library at run time. Menus already came with Tauri (`muda`).
+
+**One myCarlos per user, Windows only.** `tauri-plugin-single-instance` 2.4.0 (Apache-2.0 OR MIT),
+from the Tauri project, is pinned exactly (`=2.4.0`): it is the newest release that accepts the
+locked Tauri 2.11 (2.5.x needs Tauri 2.12). It is a Windows-only dependency with no optional
+features, registered first in the builder. What it does at start, read from its source: it takes
+a named mutex (`<identifier>-sim`, in the user's session). If that mutex already exists, it finds
+the running copy's hidden message window (`<identifier>-sic` / `-siw`), sends it the new launch's
+working folder and arguments with `WM_COPYDATA`, and ends the new process (exit 0) before any
+vault, window or webview is set up. Otherwise it keeps the mutex and creates that hidden window,
+whose messages call the app's callback. Here the callback only brings the running window forward
+(still locked if it was locked) and does nothing for a start from the login entry
+(`--background`); it does not take the arguments. A launch during the first copy's start, before
+its hidden window exists, still starts in full. macOS keeps one copy of an app by itself (a Dock
+click brings the hidden window back); Linux is not covered. The file-open forwarding draft (#133)
+uses the same crate and version with its reviewed Windows transport, vendored with a patch, and
+also forwards the files; the two use the same registration (see that draft's vendor record).
+
+The lockfile grows by 31 packages: the plugin and its upstream Linux D-Bus backend (`zbus`,
+`zvariant` and their `async-*` and `event-listener` support), which Cargo locks for the
+all-target graph although the application uses the plugin only on Windows. No existing package
+changes version. All 31 declare MIT, Apache-2.0 OR MIT, or MIT OR Apache-2.0, compatible with
+AGPL-3.0-or-later. `cargo audit` reports the D-Bus crates `zbus_names`, `zvariant` and
+`zvariant_derive` as unmaintained (RUSTSEC-2026-0371, -0370, -0372), as noted for #133; they come
+from the Linux backend that this app does not enable. They are reported, not ignored.
+
 ## Native remediation
 
 ### Mobile live reload restored

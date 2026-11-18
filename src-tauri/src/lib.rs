@@ -2594,6 +2594,25 @@ pub(crate) fn tell_screen_if_locked<R: tauri::Runtime>(app: &tauri::AppHandle<R>
     }
 }
 
+/// Whether a second launch brings the running window forward: always, except a start from the
+/// login entry (`--background`), which finds myCarlos already running and changes nothing.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn second_launch_shows_window<S: AsRef<str>>(args: &[S]) -> bool {
+    !args
+        .iter()
+        .any(|arg| arg.as_ref() == desktop_background::BACKGROUND_ARG)
+}
+
+/// A second launch while myCarlos runs (Windows, #206): it starts no second process and no second
+/// tray icon; the running window comes forward as from the tray, still locked if it was locked.
+/// Files given to the second launch ("Open with") are not taken yet (#53; #133 forwards them).
+#[cfg(windows)]
+fn on_second_launch(app: &tauri::AppHandle, args: &[String]) {
+    if second_launch_shows_window(args) {
+        desktop_background::desktop::show_main(app);
+    }
+}
+
 /// The lock the background mode runs on close-to-tray and on Quit, as `run` gives it: from the
 /// app's own vault and picks. Tests take it from here too, so they test `run`'s wiring.
 #[cfg_attr(not(desktop), allow(dead_code))]
@@ -5232,7 +5251,15 @@ fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // One myCarlos per user (#206): registered first, before any vault or window setup, so a
+    // second launch ends before it opens anything and the running copy comes forward instead.
+    // Windows only for now, the same plugin and pin as the file-open forwarding draft (#133).
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        on_second_launch(app, &args)
+    }));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(navigation_guard())
@@ -5471,6 +5498,17 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
                 _app.state::<Arc<VaultStore>>().stop_document_collection();
+            }
+            // macOS: a click on the Dock icon, or opening myCarlos again, while its window is
+            // hidden in the tray brings it back as the tray's Open does, the screen told first
+            // that the vault is locked (#206). macOS itself keeps one copy of an app running.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = &_event
+            {
+                desktop_background::desktop::show_main(_app);
             }
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = _event {
@@ -6686,6 +6724,25 @@ mod tests {
             .build(production_context())
             .unwrap();
         (app, store)
+    }
+
+    #[test]
+    fn a_second_launch_brings_the_window_forward_unless_it_is_the_login_start() {
+        assert!(second_launch_shows_window::<&str>(&[]));
+        assert!(second_launch_shows_window(&["C:\\myCarlos\\myCarlos.exe"]));
+        assert!(second_launch_shows_window(&[
+            "C:\\myCarlos\\myCarlos.exe",
+            "C:\\Users\\Jamie\\FAKE.pdf",
+        ]));
+        assert!(!second_launch_shows_window(&[
+            "C:\\myCarlos\\myCarlos.exe",
+            "--background",
+        ]));
+        // Only the exact login argument: a look-alike opens the window as always.
+        assert!(second_launch_shows_window(&[
+            "myCarlos.exe",
+            "--background-x"
+        ]));
     }
 
     #[test]

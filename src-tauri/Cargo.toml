@@ -88,6 +88,10 @@ seccompiler = "=0.5.0"
 # Win32_System_Diagnostics_Debug and Win32_System_Kernel turn crash reports off in the AI
 # helper's model process (src/model_helper/confine.rs).
 [target.'cfg(windows)'.dependencies]
+# One myCarlos per user on Windows (#206): a second launch brings the running window forward
+# instead of a second process and tray icon. 2.4.0 is the newest release that accepts the locked
+# Tauri 2.11 (2.5.x needs 2.12); no optional features. See DEPENDENCY_REVIEW.md.
+tauri-plugin-single-instance = "=2.4.0"
 webview2-com = "=0.38.2"
 windows = { version = "=0.61.3", features = [
     "Data_Xml_Dom",
