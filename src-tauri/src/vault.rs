@@ -60,20 +60,17 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
-/// Format 14 (previous full names) follows 12 (remembered refusals, #143). Slot 13 is
-/// defined by no build here (another draft holds it, #298): a vault at 13 is refused as
-/// newer and never read. Its number is taken at merge (VAULT_FORMAT.md, "Format numbers are
-/// taken at merge"); a renumber changes this line, the section in VAULT_FORMAT.md and the
-/// tests that name 12, 13 and 14.
-const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 14;
-/// A slot no build here defines: refused as newer, never interpreted.
-const MANIFEST_FORMAT_UNDEFINED: u32 = 13;
+/// Format 13 (previous full names) follows 12 (remembered refusals, #143). Its number was
+/// taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge"); the parked
+/// model-file draft (#298) takes the next number when it merges. A renumber changes this
+/// line, the section in VAULT_FORMAT.md and the tests that name 12 and 13.
+const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
 const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
 const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// Format 12 (#143) remembers clinic deliveries that failed their checks. It
 /// follows 10 (AI answers, #212) and 11 (their caps, #250); previous full names
-/// are format 14 above. Its number was taken at merge (VAULT_FORMAT.md, "Format
+/// are format 13 above. Its number was taken at merge (VAULT_FORMAT.md, "Format
 /// numbers are taken at merge"): a renumber changes this line, the list of formats
 /// above, the format's heading in VAULT_FORMAT.md and the "format 12" in
 /// THREAT_MODEL.md (DEL-01), nothing else here.
@@ -4875,8 +4872,7 @@ fn object_presence_name(root: &Path, object_name: &str) -> ObjectPresence {
 /// Checks everything about a decrypted manifest except whether its objects
 /// are on disk, so a vault with a lost object can still be opened read-only.
 fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
-    if !((MANIFEST_FORMAT_V1..=MANIFEST_FORMAT_REFUSED).contains(&manifest.format_version)
-        || manifest.format_version == MANIFEST_FORMAT_PREVIOUS_FULL_NAMES)
+    if !(MANIFEST_FORMAT_V1..=VAULT_FORMAT).contains(&manifest.format_version)
         || manifest.vault_id != vault_id
         || manifest.generation == 0
         || manifest.profiles.is_empty()
@@ -6803,10 +6799,8 @@ fn newer_build_manifest(plaintext: &[u8]) -> bool {
     struct FormatOnly {
         format_version: u64,
     }
-    serde_json::from_slice::<FormatOnly>(plaintext).is_ok_and(|manifest| {
-        manifest.format_version > u64::from(VAULT_FORMAT)
-            || manifest.format_version == u64::from(MANIFEST_FORMAT_UNDEFINED)
-    })
+    serde_json::from_slice::<FormatOnly>(plaintext)
+        .is_ok_and(|manifest| manifest.format_version > u64::from(VAULT_FORMAT))
 }
 
 /// Which generation an unlock opens, and what the session may do with it.
@@ -17461,7 +17455,7 @@ mod tests {
             // Their hidden answers capped apart, format 11.
             MANIFEST_FORMAT_AI_HIDDEN_CAP,
             // Remembered refusals (#143), format 12: the last before previous
-            // full names (14; 13 is undefined).
+            // full names (13).
             MANIFEST_FORMAT_REFUSED,
         ] {
             let root = temp.path().join(format!("format-{from}"));
@@ -20202,7 +20196,7 @@ mod tests {
 
     #[test]
     fn previous_full_names_upgrade_legacy_and_refuse_unknown_slots_without_rewriting() {
-        for version in [11, MANIFEST_FORMAT_REFUSED, MANIFEST_FORMAT_UNDEFINED] {
+        for version in [11, MANIFEST_FORMAT_REFUSED, VAULT_FORMAT + 1] {
             let (_temp, store, _, _) = original_pdf_fixture();
             let (key, mut manifest) = {
                 let guard = store.session();
@@ -20223,12 +20217,12 @@ mod tests {
             ];
             let before: Vec<_> = paths.iter().map(|p| fs::read(p).unwrap()).collect();
             let opened = store.unlock(PASSWORD);
-            if version != MANIFEST_FORMAT_UNDEFINED {
+            if version <= VAULT_FORMAT {
                 // Formats 11 and 12 (remembered refusals, #143) upgrade to this build's.
                 opened.unwrap();
                 assert_eq!(
                     store.session().as_ref().unwrap().manifest.format_version,
-                    14
+                    VAULT_FORMAT
                 );
                 assert!(store.snapshot().unwrap().profiles[0]
                     .previous_full_names
@@ -20251,13 +20245,13 @@ mod tests {
         let (_temp, store, _, _) = original_pdf_fixture();
         let mut manifest = store.session().as_ref().unwrap().manifest.clone();
         let id = manifest.vault_id;
-        // Slot 13 is defined by no build here: refused as newer, never read.
-        manifest.format_version = MANIFEST_FORMAT_UNDEFINED;
+        // A format newer than this build's is refused, and said to be newer.
+        manifest.format_version = VAULT_FORMAT + 1;
         assert!(validate_manifest_structure(&manifest, id).is_err());
         assert!(newer_build_manifest(
             &serde_json::to_vec(&manifest).unwrap()
         ));
-        // Format 12 is a real format again: it validates, and is not "newer".
+        // Format 12 (remembered refusals) is a real format below this build's.
         manifest.format_version = MANIFEST_FORMAT_REFUSED;
         assert!(validate_manifest_structure(&manifest, id).is_ok());
         assert!(!newer_build_manifest(
@@ -20266,7 +20260,7 @@ mod tests {
         manifest.format_version = 11;
         manifest.profiles[0].previous_full_names = Some(vec!["FAKE Zorvana".into()]);
         assert!(validate_manifest_structure(&manifest, id).is_err());
-        manifest.format_version = 14;
+        manifest.format_version = VAULT_FORMAT;
         assert!(validate_manifest_structure(&manifest, id).is_ok());
         for invalid in [
             vec![],
