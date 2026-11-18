@@ -14622,3 +14622,199 @@ describe("Automatic arrival snapshot ownership", () => {
     expect(bridge.snapshot).toHaveBeenCalledTimes(before + 1);
   });
 });
+
+describe("the vault locked natively: closed to the tray, Quit or the native idle lock (#206)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem("mycarlos.autoLockMinutes.v1", "1");
+  });
+
+  // An unlocked library with FAKE_Results.pdf, and the way to say what the
+  // native side would emit.
+  async function openLibrary(overrides: Partial<VaultBridge> = {}) {
+    let say: (locked: { by: "closed" | "idle" }) => void = () => {
+      throw new Error("the screen did not listen for the native lock");
+    };
+    const stop = vi.fn();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+      viewPage: vi.fn().mockResolvedValue({
+        pageCount: 1,
+        width: 800,
+        height: 1035,
+        image:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        text: "FAKE results text",
+      }),
+      documentText: vi.fn(async () => fakeDocumentText(["FAKE results text"])),
+      onVaultLocked: vi.fn(
+        (handler: (locked: { by: "closed" | "idle" }) => void) => {
+          say = handler;
+          return stop;
+        },
+      ),
+      ...overrides,
+    });
+    let view!: ReturnType<typeof render>;
+    await act(async () => {
+      view = render(<VaultApp bridge={bridge} />);
+    });
+    expect(
+      screen.getByRole("heading", { name: humanText("My records") }),
+    ).toBeVisible();
+    return {
+      bridge,
+      view,
+      stop,
+      say: (by: "closed" | "idle") => act(async () => say({ by })),
+    };
+  }
+
+  it("lets go of the library and the open letter at once when the window is closed to the tray, and says why", async () => {
+    const { bridge, say } = await openLibrary();
+    await act(async () => {
+      fireEvent.click(screen.getByText(humanText("FAKE_Results.pdf")));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: humanText("Read") }));
+    });
+    expect(
+      screen.getByRole("dialog", { name: humanText("FAKE_Results.pdf") }),
+    ).toBeVisible();
+
+    // No visibilitychange: a hidden window may never get one.
+    await say("closed");
+
+    expect(
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.body).not.toHaveTextContent("FAKE_Results.pdf");
+    expect(document.body).not.toHaveTextContent("FAKE results text");
+    expect(
+      screen.getByText(
+        humanText(
+          "Locked because myCarlos was minimized or sent to the background.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(bridge.lock).toHaveBeenCalledOnce();
+  });
+
+  it("says the idle reason when the native idle lock fell due", async () => {
+    const { say } = await openLibrary();
+    await say("idle");
+    expect(
+      await screen.findByText(humanText("Locked after 1 minute without use.")),
+    ).toBeVisible();
+    expect(document.body).not.toHaveTextContent("FAKE_Results.pdf");
+  });
+
+  it("does nothing on a screen that is already locked, and stops listening when it goes", async () => {
+    const { bridge, say, stop, view } = await openLibrary();
+    await say("closed");
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    // Told again as the window is shown from the tray: no second lock.
+    await say("closed");
+    expect(bridge.lock).toHaveBeenCalledOnce();
+    view.unmount();
+    expect(stop).toHaveBeenCalled();
+  });
+
+  it("takes the record, its page text and the summary off the screen before its own lock has even answered", async () => {
+    const summary: ModelSummary = {
+      sentences: [{ text: "FAKE: a short summary.", quote: "FAKE results" }],
+      model: FAKE_MODEL,
+      lastPage: 0,
+      lastPageCut: false,
+      keptId: "FAKE-kept-1",
+    };
+    const { bridge, say } = await openLibrary({
+      aiModelStatus: vi
+        .fn()
+        .mockResolvedValue({ state: "installed", model: FAKE_MODEL }),
+      aiSummarize: vi.fn().mockResolvedValue(summary),
+      // The screen's own lock never answers: what leaves the screen must not wait for it.
+      lock: vi.fn(() => new Promise<void>(() => undefined)),
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText(humanText("FAKE_Results.pdf")));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: humanText("Read") }));
+    });
+    const reader = screen.getByRole("dialog", {
+      name: humanText("FAKE_Results.pdf"),
+    });
+    await act(async () => {
+      fireEvent.click(
+        within(reader).getByRole("button", { name: humanText("Summary") }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Continue") }),
+      );
+    });
+    expect(
+      await screen.findByText(humanText("FAKE: a short summary.")),
+    ).toBeVisible();
+
+    await say("closed");
+
+    expect(bridge.lock).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.body).not.toHaveTextContent("FAKE_Results.pdf");
+    expect(document.body).not.toHaveTextContent("FAKE results text");
+    expect(document.body).not.toHaveTextContent("FAKE: a short summary.");
+  });
+
+  it("does not hold the screen open for a transfer: the vault is already locked natively", async () => {
+    let say: (locked: { by: "closed" | "idle" }) => void = () => undefined;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+      // An import in flight that never ends by itself.
+      importPickedFiles: vi.fn(
+        () => new Promise<ImportOutcome>(() => undefined),
+      ),
+      onVaultLocked: vi.fn(
+        (handler: (locked: { by: "closed" | "idle" }) => void) => {
+          say = handler;
+          return () => undefined;
+        },
+      ),
+    });
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Choose files to import"),
+      }),
+    );
+    await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
+
+    await act(async () => say({ by: "closed" }));
+
+    // Not the "finishing the transfer" hold: the content goes at once.
+    expect(screen.queryByText(humanText(TRANSFER_HOLD))).toBeNull();
+    expect(
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
+    ).toBeVisible();
+    expect(document.body).not.toHaveTextContent("FAKE_Results.pdf");
+    expect(bridge.lock).toHaveBeenCalledOnce();
+  });
+});

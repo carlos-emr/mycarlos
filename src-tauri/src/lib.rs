@@ -2553,6 +2553,82 @@ async fn vault_unlock(
     run_blocking(store.inner(), VaultStore::snapshot).await
 }
 
+/// The screen's word that the vault locked natively, without the screen asking: the window was
+/// closed to the tray, Quit was chosen in the tray, or the native idle lock fell due. The vault is
+/// already locked when it is sent; the screen then lets go of everything it shows (the library,
+/// an open letter, any summary or text read from it) exactly as its own lock does, and does not
+/// wait for a `visibilitychange` that a hidden window may never get (#206).
+const VAULT_LOCKED: &str = "vault-locked";
+
+/// What locked the vault, as the screen is told it: it says why on the unlock screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum LockedBy {
+    /// Closing the window to the tray, or Quit from the tray.
+    Closed,
+    /// The native idle lock.
+    Idle,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VaultLocked {
+    by: LockedBy,
+}
+
+/// Tells the screen that the vault locked natively. Sent after the lock, never instead of it:
+/// the native lock never waits for the screen.
+fn tell_screen_vault_locked<R: tauri::Runtime>(app: &tauri::AppHandle<R>, by: LockedBy) {
+    use tauri::Emitter;
+    let _ = app.emit(VAULT_LOCKED, VaultLocked { by });
+}
+
+/// Before a hidden window is shown again (from the tray, or by a second launch): if the vault is
+/// locked, the screen is told once more, so a page that did not run while hidden lets go before it
+/// is drawn. Never waits for the vault: while an unlock holds it, nothing is said (#206).
+pub(crate) fn tell_screen_if_locked<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(store) = app.try_state::<Arc<VaultStore>>() {
+        if store.is_unlocked_now() == Some(false) {
+            tell_screen_vault_locked(app, LockedBy::Closed);
+        }
+    }
+}
+
+/// The lock the background mode runs on close-to-tray and on Quit, as `run` gives it: from the
+/// app's own vault and picks. Tests take it from here too, so they test `run`'s wiring.
+#[cfg_attr(not(desktop), allow(dead_code))]
+fn close_lock<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Arc<dyn Fn() + Send + Sync> {
+    let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
+    let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+    let app = app.clone();
+    Arc::new(move || lock_vault_for_close(&app, &store, &picks))
+}
+
+/// One turn of the idle-lock thread, as `run` spawns it: lock if the vault is due, and if it
+/// locked, tell the screen (a hidden window's own idle timer may not run). Returns whether it locked.
+fn idle_step<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &VaultStore,
+    picks: &PendingPicks,
+    now: Instant,
+) -> bool {
+    let locked = lock_if_idle(store, picks, now);
+    if locked {
+        tell_screen_vault_locked(app, LockedBy::Idle);
+    }
+    locked
+}
+
+/// Closing the window to the tray, and Quit: everything lets go natively, then the screen is told.
+fn lock_vault_for_close<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &VaultStore,
+    picks: &PendingPicks,
+) {
+    lock_vault_now(store, picks);
+    tell_screen_vault_locked(app, LockedBy::Closed);
+}
+
 /// Everything that holds the vault's contents lets go: what `vault_lock` does, for the places that
 /// lock without a command (closing the window to the tray, Quit from the tray).
 fn lock_vault_now(store: &VaultStore, picks: &PendingPicks) {
@@ -5276,26 +5352,23 @@ pub fn run() {
             }
             let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+            let idle_app = app.handle().clone();
             std::thread::Builder::new()
                 .name("vault-idle-lock".into())
                 .spawn(move || loop {
                     std::thread::sleep(IDLE_CHECK_INTERVAL);
-                    lock_if_idle(&store, &picks, Instant::now());
+                    idle_step(&idle_app, &store, &picks, Instant::now());
                 })?;
             // The background mode (M2): the tray icon, the quiet start and the lock on close.
             #[cfg(desktop)]
-            {
-                let lock_store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
-                let lock_picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
-                desktop_background::desktop::install(
-                    app,
-                    app.path()
-                        .app_local_data_dir()?
-                        .join("vault-home")
-                        .join("background-v1.json"),
-                    Arc::new(move || lock_vault_now(&lock_store, &lock_picks)),
-                );
-            }
+            desktop_background::desktop::install(
+                app,
+                app.path()
+                    .app_local_data_dir()?
+                    .join("vault-home")
+                    .join("background-v1.json"),
+                close_lock(app.handle()),
+            );
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -6586,6 +6659,116 @@ mod tests {
         ));
         // A locked vault has no deadline, so the timer does not lock it again.
         assert!(!lock_if_idle(&store, &picks, idle_past(Instant::now())));
+    }
+
+    /// Every `vault-locked` word a mock app's screen would hear, as its JSON payload.
+    fn screen_hears(
+        app: &tauri::App<tauri::test::MockRuntime>,
+    ) -> std::sync::mpsc::Receiver<String> {
+        use tauri::Listener;
+        let (heard, hears) = std::sync::mpsc::channel();
+        app.listen_any(VAULT_LOCKED, move |event| {
+            let _ = heard.send(event.payload().to_owned());
+        });
+        hears
+    }
+
+    /// A mock app holding an unlocked FAKE vault and its picks, as the built app manages them.
+    fn app_with_unlocked_vault(
+        root: &std::path::Path,
+    ) -> (tauri::App<tauri::test::MockRuntime>, Arc<VaultStore>) {
+        let store = Arc::new(VaultStore::new(root.join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(Arc::new(PendingPicks::default()))
+            .build(production_context())
+            .unwrap();
+        (app, store)
+    }
+
+    #[test]
+    fn closing_to_the_tray_locks_the_vault_and_then_tells_the_screen_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let (app, store) = app_with_unlocked_vault(temp.path());
+        let hears = screen_hears(&app);
+        let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+        let pick_id = picks.store_export(
+            picks.session(),
+            Uuid::new_v4(),
+            tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+        );
+
+        // What the window's close (and Quit) runs: the `LockAll` that `run` gives the background
+        // mode, built the same way from the app's own vault and picks.
+        (close_lock(app.handle()))();
+
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        assert!(matches!(
+            picks.take_export(pick_id, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        let said = hears
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the screen must be told the vault locked");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&said).unwrap(),
+            serde_json::json!({ "by": "closed" })
+        );
+        assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
+    }
+
+    #[test]
+    fn the_native_idle_lock_tells_the_screen_and_a_check_that_does_not_lock_says_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (app, store) = app_with_unlocked_vault(temp.path());
+        let hears = screen_hears(&app);
+        let picks = PendingPicks::default();
+        // The idle thread's own step, the one `run` spawns.
+        assert!(!idle_step(app.handle(), &store, &picks, Instant::now()));
+        assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
+        assert!(idle_step(
+            app.handle(),
+            &store,
+            &picks,
+            idle_past(Instant::now())
+        ));
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        let said = hears.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&said).unwrap(),
+            serde_json::json!({ "by": "idle" })
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn showing_the_window_again_tells_the_screen_only_while_the_vault_is_locked() {
+        let temp = tempfile::tempdir().unwrap();
+        let (app, store) = app_with_unlocked_vault(temp.path());
+        let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let hears = screen_hears(&app);
+        // `show_main` itself: what the tray's Open, a tray click and a second launch run.
+        let show = || desktop_background::desktop::show_main(app.handle());
+
+        // Open from the tray while unlocked and shown: nothing is said, nothing locks.
+        show();
+        assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+
+        store.lock();
+        main.hide().unwrap();
+        show();
+        let said = hears.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&said).unwrap(),
+            serde_json::json!({ "by": "closed" })
+        );
+        // (While another call holds the session, `is_unlocked_now` is `None` and nothing is said:
+        // vault.rs `is_unlocked_now_never_waits_for_the_session`.)
     }
 
     /// When the default delay and the margin after `from` run out, exactly.
@@ -8640,8 +8823,8 @@ mod event_permission_ipc_tests {
 
     /// With the real generated capability authority (only the OS runtime is mocked), as the
     /// built app checks it: the main window may listen for every event the page listens to (the
-    /// model download's, and an AI answer's start for the idle lock) and stop listening, may not
-    /// emit, and no other window may listen.
+    /// model download's, an AI answer's start for the idle lock, the native lock) and stop
+    /// listening, may not emit, and no other window may listen.
     #[test]
     fn the_main_window_may_listen_for_events_and_may_not_emit() {
         let app = tauri::test::mock_builder()
@@ -8663,6 +8846,7 @@ mod event_permission_ipc_tests {
             "ai-model-add-progress",
             "ai-model-add-ended",
             "ai-answer-started",
+            VAULT_LOCKED,
         ] {
             let id = tauri::test::get_ipc_response(&main, listen(event))
                 .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))

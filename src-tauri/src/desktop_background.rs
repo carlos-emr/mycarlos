@@ -563,8 +563,11 @@ pub(crate) mod desktop {
 
     pub(crate) type Background = Controller<TauriBackend>;
 
-    /// Brings the window back. The vault stays locked: it was locked as the window closed.
-    fn show_main(app: &AppHandle) {
+    /// Brings the window back. The vault stays locked: it was locked as the window closed. A
+    /// screen that did not take the lock while hidden is told again first, so it lets go of the
+    /// vault's contents before it is drawn (#206).
+    pub(crate) fn show_main<R: tauri::Runtime>(app: &AppHandle<R>) {
+        crate::tell_screen_if_locked(app);
         if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
             let _ = window.unminimize();
             let _ = window.show();
