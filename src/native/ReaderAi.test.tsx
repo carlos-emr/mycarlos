@@ -416,13 +416,10 @@ describe("the reader's AI helper", () => {
     expect(screen.getByText(AI_LABEL)).toBeVisible();
     expect(screen.getByText(humanText(/FAKE older model/))).toBeVisible();
     expect(model.calls).toHaveLength(0);
-    // A kept summary keeps its own notices: what was read, and what was not.
+    // A kept summary keeps its own notices: incomplete coverage stays clear
+    // even after the answer is read back from the vault.
     expect(
-      screen.getByText(
-        humanText(
-          "This summary covers only the start of the document: pages 1 to 4.",
-        ),
-      ),
+      screen.getByText("This summary uses only part of the document’s text."),
     ).toBeVisible();
     expect(
       screen.getByText(
@@ -641,7 +638,7 @@ describe("the reader's AI helper", () => {
     expect(model.calls).toEqual([]);
   });
 
-  it("says how far the model read when it had no room for every page", async () => {
+  it("warns when the model could not cover every page", async () => {
     renderReader(fakeLocalModel({ lastPage: () => 0 }));
     await firstPage();
     await userEvent
@@ -649,9 +646,7 @@ describe("the reader's AI helper", () => {
       .click(screen.getByRole("button", { name: "Summary" }));
     expect(
       await screen.findByText(
-        humanText(
-          "This summary covers only the start of the document: pages 1 to 1.",
-        ),
+        "This summary uses only part of the document’s text.",
       ),
     ).toBeVisible();
   });
@@ -894,8 +889,8 @@ describe("the reader's AI helper", () => {
     expect(within(explainPanel).getByRole("status")).toHaveTextContent("");
   });
 
-  it("numbers the last page read by its page, not by the count, when a page failed", async () => {
-    // Pages 1, 2 and 4 read, page 3 refused, the rest left out: "pages 1 to 4".
+  it("warns that coverage is incomplete when a page failed", async () => {
+    // Pages 1, 2 and 4 read, page 3 refused, and the rest left out.
     renderReader(fakeLocalModel(), {
       loadText: async () =>
         fakeDocumentText(
@@ -912,14 +907,12 @@ describe("the reader's AI helper", () => {
       .click(screen.getByRole("button", { name: "Summary" }));
     expect(
       await screen.findByText(
-        humanText(
-          "This summary covers only the start of the document: pages 1 to 4.",
-        ),
+        "This summary uses only part of the document’s text.",
       ),
     ).toBeVisible();
   });
 
-  it("says when only the start of a long document was summarized", async () => {
+  it("warns when only part of a long document was summarized", async () => {
     renderReader(fakeLocalModel(), {
       loadText: async () => fakeDocumentText(pageTexts, true),
     });
@@ -929,11 +922,54 @@ describe("the reader's AI helper", () => {
       .click(screen.getByRole("button", { name: "Summary" }));
     expect(
       await screen.findByText(
-        humanText(
-          "This summary covers only the start of the document: pages 1 to 2.",
-        ),
+        "This summary uses only part of the document’s text.",
       ),
     ).toBeVisible();
+  });
+
+  it("keeps the partial notice for a saved summary with sparse head and tail sources", async () => {
+    const model = fakeLocalModel();
+    const { kept } = fakeKept(
+      [
+        {
+          input: { tool: "summary", lang: "en" },
+          content: JSON.stringify({
+            tool: "summary",
+            sentences: [
+              {
+                text: "FAKE: head source.",
+                quote: "FAKE head text",
+                source: { page: 0, start: 0, end: 14 },
+              },
+              {
+                text: "FAKE: tail source.",
+                quote: "FAKE tail text",
+                source: { page: 17, start: 0, end: 14 },
+              },
+            ],
+            model: { name: "FAKE sparse model", sha256: "cd".repeat(32) },
+            lang: "en",
+            createdAt: Date.UTC(2026, 9, 1),
+            partial: true,
+            lastPage: 18,
+            pagesMissing: false,
+          }),
+        },
+      ],
+      model,
+    );
+    renderReader(model, { kept });
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+
+    expect(await screen.findByText("FAKE: head source.")).toBeVisible();
+    expect(screen.getByText("FAKE: tail source.")).toBeVisible();
+    expect(
+      screen.getByText("This summary uses only part of the document’s text."),
+    ).toBeVisible();
+    expect(model.calls).toHaveLength(0);
   });
 
   it.each([
