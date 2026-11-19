@@ -7593,6 +7593,7 @@ mod historical_identifier_export_tests {
                 truncated: false,
                 pages_missing: false,
                 last_index: Some(0),
+                page_count: 1,
                 pages_digest: pages_digest([(0, "Velorina")]),
             },
         );
