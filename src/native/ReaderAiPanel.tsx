@@ -55,6 +55,13 @@ const OWN_WORDS = {
   aiSummaryTooLarge: "ai.summaryTooLarge",
 } as const satisfies Record<string, MessageKey>;
 
+/** The language summaries are written in, whatever language myCarlos is in
+ * (English only for now). The number and "when to get help" checks after the
+ * model work in English only, so a summary in another language would reach the
+ * patient without them. The Explain tool still answers in the app's language.
+ * To be lifted only when the other languages are checked and measured. */
+const SUMMARY_LANGUAGE = "en";
+
 /** The AI helper's panel in the reader: a plain-words summary of the
  * document, or the explanation of a term. Until a model is installed it says
  * so and points to Preferences. Every result carries the "Written by AI"
@@ -192,12 +199,12 @@ export function ReaderAiPanel({
 
   // A summary starts once the panel opens on an installed model: the patient
   // asked for it by opening the panel. A summary the vault kept in this
-  // language is shown instead, until "Summarize again". Once per language
-  // and request: React may run this effect twice (StrictMode), and a model
-  // takes a while.
+  // language (English, `SUMMARY_LANGUAGE`) is shown instead, until
+  // "Summarize again". Once per request: React may run this effect twice
+  // (StrictMode), and a model takes a while.
   const startedFor = useRef<string | null>(null);
   useEffect(() => {
-    const request = `${lang}#${again}`;
+    const request = `${SUMMARY_LANGUAGE}#${again}`;
     if (tool !== "summary" || !installed || startedFor.current === request)
       return;
     startedFor.current = request;
@@ -207,7 +214,7 @@ export function ReaderAiPanel({
     const fresh = again > 0;
     Promise.resolve(
       !fresh && aiRef.current.kept
-        ? keptSummary(aiRef.current.kept, lang)
+        ? keptSummary(aiRef.current.kept, SUMMARY_LANGUAGE)
         : null,
     )
       .then(async (found) => {
@@ -234,7 +241,7 @@ export function ReaderAiPanel({
           summarizeDocument(
             aiRef.current.model,
             document,
-            lang,
+            SUMMARY_LANGUAGE,
             Date.now,
             aiRef.current.kept?.recordId,
           ),
@@ -248,7 +255,7 @@ export function ReaderAiPanel({
       .catch(stopped)
       .finally(() => live.current && setWorking(false));
     // `stopped` and `keep` only read refs and setters: not dependencies.
-  }, [tool, installed, lang, again]);
+  }, [tool, installed, again]);
 
   const explain = (event: FormEvent) => {
     event.preventDefault();
@@ -286,6 +293,11 @@ export function ReaderAiPanel({
       aria-busy={status === null || working}
     >
       <h3 id="reader-ai-title">{title}</h3>
+      {/* Said in the app's language, only when it is not English: the summary
+          below is in English (`SUMMARY_LANGUAGE`). */}
+      {tool === "summary" && lang !== SUMMARY_LANGUAGE && (
+        <p id="reader-ai-english-only">{t("ai.summary.englishOnly")}</p>
+      )}
       {/* No model to use: not added, failed its check, or not one this
           computer can run. Preferences says which. */}
       {status !== null && !installed && (
@@ -356,7 +368,7 @@ export function ReaderAiPanel({
       {summary && (
         <div className="native-reader-ai-result">
           <p className="ai-label">{t("aiHelper.resultLabel")}</p>
-          <ol>
+          <ol lang={summary.lang}>
             {summary.sentences.map(({ text, source }, index) => (
               <li key={index}>
                 <span id={`reader-ai-sentence-${index}`}>{text}</span>{" "}

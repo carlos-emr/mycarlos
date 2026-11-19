@@ -1770,6 +1770,9 @@ ai-error-storage = 无法从此电脑读取 AI 助手的模型。请重试。如
 ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能遗漏部分内容。
 
 ai-summary-noSource = 未找到来源
+
+ai-summary-englishOnly = 目前摘要以英文撰写。myCarlos 只对英文摘要核对数字和“何时就医”的提示，请在文档本身中核对这些内容。
+
 aiHelper-notice-title = 关于 AI 助手
 
 aiHelper-notice-introShare = myCarlos 可以为您选择的 AI 服务准备文档的文本。AI 助手绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。下载时，下载网站会看到这台电脑的互联网地址。

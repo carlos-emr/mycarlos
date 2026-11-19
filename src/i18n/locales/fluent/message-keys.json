@@ -842,6 +842,7 @@
   "ai.error.storage",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
+  "ai.summary.englishOnly",
   "aiHelper.notice.title",
   "aiHelper.notice.introShare",
   "aiHelper.notice.intro",

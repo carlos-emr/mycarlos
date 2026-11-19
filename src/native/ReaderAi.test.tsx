@@ -348,6 +348,85 @@ describe("the reader's AI helper", () => {
     expect(model.calls).toHaveLength(1);
   });
 
+  // English only for now: the checks after the model work in English only, so
+  // a summary in another language would reach the patient without them.
+  it.each(LOCALES.filter((locale) => locale !== "en"))(
+    "asks for an English summary and says so in %s, whatever language the app is in",
+    async (locale) => {
+      const model = fakeLocalModel();
+      renderReader(model);
+      await firstPage();
+      // The page label is English until the language is chosen.
+      act(() => setLocaleOverride(locale));
+      await userEvent.setup().click(
+        screen.getByRole("button", {
+          name: translate(locale, "ai.summary.button"),
+        }),
+      );
+      await waitFor(() => expect(model.calls).toHaveLength(1));
+      expect(model.calls[0]).toMatchObject({ tool: "summary", lang: "en" });
+      const notice = await screen.findByText(
+        translate(locale, "ai.summary.englishOnly"),
+      );
+      expect(notice).toBeVisible();
+      expect(translate(locale, "ai.summary.englishOnly")).not.toBe(
+        translate("en", "ai.summary.englishOnly"),
+      );
+      // The words are marked English for a screen reader.
+      await waitFor(() =>
+        expect(screen.getAllByRole("list")[0]).toHaveAttribute("lang", "en"),
+      );
+    },
+  );
+
+  it("says nothing about the language when the app is in English, and asks for English", async () => {
+    const model = fakeLocalModel();
+    renderReader(model);
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText(AI_LABEL);
+    expect(model.calls[0]).toMatchObject({ tool: "summary", lang: "en" });
+    expect(
+      screen.queryByText(translate("en", "ai.summary.englishOnly")),
+    ).toBeNull();
+  });
+
+  it("keeps the English summary when the app language changes, and still explains in the app's language", async () => {
+    const model = fakeLocalModel();
+    renderReader(model);
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText(AI_LABEL);
+    act(() => setLocaleOverride("fr"));
+    expect(
+      await screen.findByText(translate("fr", "ai.summary.englishOnly")),
+    ).toBeVisible();
+    // No second summary was asked for by the change of language.
+    expect(model.calls.filter((call) => call.tool === "summary")).toHaveLength(
+      1,
+    );
+    await user.click(
+      screen.getByRole("button", { name: translate("fr", "ai.explain.title") }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: translate("fr", "ai.explain.box") }),
+      "potassium",
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: translate("fr", "ai.explain.submit"),
+      }),
+    );
+    await waitFor(() =>
+      expect(model.calls.filter((call) => call.tool === "explain")).toEqual([
+        expect.objectContaining({ tool: "explain", lang: "fr" }),
+      ]),
+    );
+  });
+
   it("keeps a new summary and a new explanation with the document, by the id the model kept each under", async () => {
     const model = fakeLocalModel();
     const { kept, saved, saves } = fakeKept([], model);

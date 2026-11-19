@@ -1959,6 +1959,9 @@ ai-error-storage = Le modèle de l’assistant IA n’a pas pu être lu sur cet 
 ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; ce résumé peut donc en omettre des parties.
 
 ai-summary-noSource = Source introuvable
+
+ai-summary-englishOnly = Pour l’instant, les résumés sont rédigés en anglais. myCarlos ne vérifie les chiffres et les consignes « quand demander de l’aide » qu’en anglais : vérifiez-les dans le document lui-même.
+
 aiHelper-notice-title = À propos de l’assistant IA
 
 aiHelper-notice-introShare = myCarlos peut préparer le texte d’un document pour le service d’IA de votre choix. L’assistant IA n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger. Son téléchargement montre l’adresse Internet de cet ordinateur au site de téléchargement.
