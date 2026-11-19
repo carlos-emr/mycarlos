@@ -422,10 +422,16 @@ export function ReaderAiPanel({
           <p id="reader-ai-too-long">
             {tooLong.fit.firstPageCut
               ? t("ai.summary.tooLongStart")
-              : t("ai.summary.tooLong", {
-                  last: tooLong.fit.lastPage,
-                  total: tooLong.fit.pageCount,
-                })}
+              : tooLong.fit.tailPage !== undefined
+                ? t("ai.summary.tooLongWithLast", {
+                    last: tooLong.fit.lastPage,
+                    tail: tooLong.fit.tailPage,
+                    total: tooLong.fit.pageCount,
+                  })
+                : t("ai.summary.tooLong", {
+                    last: tooLong.fit.lastPage,
+                    total: tooLong.fit.pageCount,
+                  })}
           </p>
           <p id="reader-ai-too-long-after">{t("ai.summary.tooLongAfter")}</p>
           <div className="native-reader-ai-choice-actions">
@@ -438,7 +444,12 @@ export function ReaderAiPanel({
             >
               {tooLong.fit.firstPageCut
                 ? t("ai.summary.readStart")
-                : t("ai.summary.readPages", { last: tooLong.fit.lastPage })}
+                : tooLong.fit.tailPage !== undefined
+                  ? t("ai.summary.readPagesAndLast", {
+                      last: tooLong.fit.lastPage,
+                      tail: tooLong.fit.tailPage,
+                    })
+                  : t("ai.summary.readPages", { last: tooLong.fit.lastPage })}
             </button>
             <button className="button" type="button" onClick={cancelQuestion}>
               {t("common.cancel")}

@@ -95,13 +95,45 @@ describe("estimateFit", () => {
     ).toEqual({ fits: true });
   });
 
-  it("reads whole pages from the first while they fit", () => {
+  it("reads whole pages from the first while they fit, and the last page too when it takes at most half the room", () => {
+    // As the helper's fit_pages: the last page (1,001 with its separator) takes at most half
+    // of 2,500, so pages from page 1 fill the other 1,499: page 1 only.
     expect(
       estimateFit(fakeDocumentText([page, page, page, page]), {
         contextTokens: 8192,
         documentTokens: 2500,
       }),
+    ).toEqual({
+      fits: false,
+      lastPage: 1,
+      tailPage: 4,
+      firstPageCut: false,
+      pageCount: 4,
+    });
+  });
+
+  it("does not read the last page when it takes more than half the room", () => {
+    expect(
+      estimateFit(fakeDocumentText([page, page, page, page + page]), {
+        contextTokens: 8192,
+        documentTokens: 2500,
+      }),
     ).toEqual({ fits: false, lastPage: 2, firstPageCut: false, pageCount: 4 });
+  });
+
+  it("takes the last page with text as the tail, never a blank last page", () => {
+    expect(
+      estimateFit(fakeDocumentText([page, page, page, page, ""]), {
+        contextTokens: 8192,
+        documentTokens: 2500,
+      }),
+    ).toEqual({
+      fits: false,
+      lastPage: 1,
+      tailPage: 4,
+      firstPageCut: false,
+      pageCount: 5,
+    });
   });
 
   it("reads only the start of a first page too long on its own", () => {
@@ -120,12 +152,20 @@ describe("estimateFit", () => {
         documentTokens: 2003,
       }),
     ).toEqual({ fits: true });
+    // One token short: the last page (1,001) takes half of 2,002, so pages from page 1 fill
+    // the other 1,001: pages 1 and 2 (an empty page costs its separator).
     expect(
       estimateFit(fakeDocumentText([page, "", "", page]), {
         contextTokens: 8192,
         documentTokens: 2002,
       }),
-    ).toEqual({ fits: false, lastPage: 3, firstPageCut: false, pageCount: 4 });
+    ).toEqual({
+      fits: false,
+      lastPage: 2,
+      tailPage: 4,
+      firstPageCut: false,
+      pageCount: 4,
+    });
   });
 
   it("does not fit a document whose later pages the reader could not collect", () => {

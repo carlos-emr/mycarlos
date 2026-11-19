@@ -1679,14 +1679,26 @@ ai-summary-tooLong =
    *[other] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁至第 { $last } 頁（共 { $total } 頁）。
     }
 
+ai-summary-tooLongWithLast =
+    { $last ->
+    [1] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁和最後一頁，即第 { $tail } 頁（共 { $total } 頁）。
+   *[other] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁至第 { $last } 頁，以及最後一頁，即第 { $tail } 頁（共 { $total } 頁）。
+    }
+
 ai-summary-tooLongStart = 這份文件可能太長，AI 助理無法一次讀完。它大約只能讀第 1 頁的開頭部分。
 
-ai-summary-tooLongAfter = 摘要會說明讀了哪些頁。
+ai-summary-tooLongAfter = 如果無法讀完全部內容，摘要會說明讀了哪些頁。
 
 ai-summary-readPages =
     { $last ->
     [1] 為第 1 頁產生摘要
    *[other] 為第 1 頁至第 { $last } 頁產生摘要
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [1] 為第 1 頁和第 { $tail } 頁產生摘要
+   *[other] 為第 1 頁至第 { $last } 頁和第 { $tail } 頁產生摘要
     }
 
 ai-summary-readStart = 為第 1 頁的開頭部分產生摘要

@@ -134,8 +134,12 @@ export type FitEstimate =
   | { fits: true }
   | {
       fits: false;
-      /** The last page it would read, counted from 1. */
+      /** The last page it would read from page 1 on, counted from 1. */
       lastPage: number;
+      /** The document's last page, read after a gap (counted from 1), when
+       * the pages from page 1 do not all fit and that page takes at most
+       * half of the room: the helper's `tail_page`. */
+      tailPage?: number;
       /** Only the start of the first page would be read. */
       firstPageCut: boolean;
       /** The document's pages, read or not. */
@@ -143,10 +147,15 @@ export type FitEstimate =
     };
 
 /**
- * Whole pages from the first, in order, while their estimated tokens fit the
- * model's room: as the helper's `fit_pages` does with the exact count, empty
- * pages and the separator between pages included. A document whose later
- * pages the reader could not collect (`truncated`) does not fit either.
+ * The pages a summary would read, as the helper's `fit_pages` chooses them
+ * with the exact count, here with the estimate: whole pages from the first,
+ * in order, while they fit the model's room, empty pages and the separator
+ * between pages included. When they do not all fit, the last page with text
+ * is read too if it takes at most half of the room; the pages from page 1
+ * then fill the rest (`tailPage`). When the first page alone does not fit,
+ * only its start. A document whose later pages the reader could not collect
+ * (`truncated`) does not fit either; its tail is the last page collected, as
+ * the helper only ever sees those.
  */
 export function estimateFit(
   document: DocumentText,
@@ -154,26 +163,51 @@ export function estimateFit(
 ): FitEstimate {
   const budget = Math.max(0, capacity.documentTokens);
   const separator = estimateTokens(SEPARATOR);
-  let used = 0;
-  let fitted = 0;
-  for (const [position, page] of document.pages.entries()) {
-    const cost = estimateTokens(page.text) + (position > 0 ? separator : 0);
-    if (used + cost > budget) break;
-    used += cost;
-    fitted = position + 1;
-  }
-  if (fitted === document.pages.length && !document.truncated)
-    return { fits: true };
-  const first = document.pages[0];
-  return {
-    fits: false,
-    lastPage:
-      fitted > 0
-        ? document.pages[fitted - 1].index + 1
-        : first
-          ? first.index + 1
-          : 1,
-    firstPageCut: fitted === 0,
+  const pages = document.pages;
+  // How many pages from the first fit `room`.
+  const fromFirst = (among: typeof pages, room: number) => {
+    let used = 0;
+    let fitted = 0;
+    for (const [position, page] of among.entries()) {
+      const cost = estimateTokens(page.text) + (position > 0 ? separator : 0);
+      if (used + cost > room) break;
+      used += cost;
+      fitted = position + 1;
+    }
+    return fitted;
+  };
+  const fitted = fromFirst(pages, budget);
+  if (fitted === pages.length && !document.truncated) return { fits: true };
+  const notFit = {
+    fits: false as const,
+    firstPageCut: false,
     pageCount: document.pageCount,
+  };
+  // The tail is the last page with text, one the pages from page 1 did not
+  // reach, as `fit_pages` takes it (integer half of the room, as in Rust).
+  let tailAt = -1;
+  for (let at = pages.length - 1; at >= 0; at -= 1)
+    if (pages[at].text.trim() !== "") {
+      tailAt = at;
+      break;
+    }
+  if (tailAt >= 1 && fitted <= tailAt) {
+    const tailCost = estimateTokens(pages[tailAt].text) + separator;
+    if (tailCost <= Math.floor(budget / 2)) {
+      const head = pages.slice(0, tailAt);
+      const kept = fromFirst(head, budget - tailCost);
+      if (kept > 0 && kept < head.length)
+        return {
+          ...notFit,
+          lastPage: head[kept - 1].index + 1,
+          tailPage: pages[tailAt].index + 1,
+        };
+    }
+  }
+  if (fitted > 0) return { ...notFit, lastPage: pages[fitted - 1].index + 1 };
+  return {
+    ...notFit,
+    lastPage: pages[0] ? pages[0].index + 1 : 1,
+    firstPageCut: true,
   };
 }

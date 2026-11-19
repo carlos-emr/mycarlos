@@ -2718,13 +2718,21 @@ mod tests {
                 SUMMARY_TOKENS
             )
         );
-        // The reserve covers the prompt the helper writes around the pages: its words at a
-        // cautious 3 bytes a token, in every language the reader asks in.
+        // The reserve covers the prompt the helper writes around the pages, at the summary's
+        // own cap, in every language the reader asks in: its words at a cautious 4 bytes a
+        // token, plus the chat template's own tokens. Measured on the M2 prompt (17-18 Nov
+        // 2026, every graded run): 555 tokens before the document (`prefixLen`, every
+        // language) and about 45 after it, about 600 in all for about 2,700 bytes, so 4.5
+        // bytes a token; 3 bytes a token (the old bound) put it at 880 to 920, above the
+        // reserve, although the real prompt fits it with about 150 to spare.
+        const TEMPLATE_TOKENS: usize = 30;
         for (_, language) in crate::model_helper::LANGUAGES {
             let words = crate::model_helper::SYSTEM_PROMPT.len()
-                + crate::model_helper::summary_prompt(language, 6).len();
+                + crate::model_helper::summary_prompt(language, crate::model_helper::MAX_SENTENCES)
+                    .len();
             assert!(
-                words.div_ceil(3) < crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
+                words.div_ceil(4) + TEMPLATE_TOKENS
+                    < crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
                 "{language}: {words}"
             );
         }

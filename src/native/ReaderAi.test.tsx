@@ -1292,7 +1292,9 @@ describe("the reader's AI helper", () => {
 describe("a document longer than the model reads at a time (#301)", () => {
   // Five FAKE pages of 3,151 bytes: 1,143 tokens each (capacity.ts: " FAKE"
   // in capitals, then plain words, signs and a digit), so two fit a room of
-  // 2,400 and none fits 500 whole.
+  // 2,287 exactly and none fits 500 whole. At 2,287 the last page (1,144 with
+  // its separator) takes more than half the room, so the helper reads pages 1
+  // and 2 only (fit_pages); at 2,400 it would read page 1 and the last page.
   const longPages = Array.from(
     { length: 5 },
     (_, index) => "FAKE long page text. ".repeat(150) + index,
@@ -1313,14 +1315,16 @@ describe("a document longer than the model reads at a time (#301)", () => {
   );
 
   it("asks before the model starts, with the focus on its first answer, and summarizes the pages it can read on request", async () => {
-    const model = withRoom(2400);
+    const model = withRoom(2287);
     renderReader(model, { loadText: long });
     await firstPage();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Summary" }));
     expect(await screen.findByText(warning)).toBeVisible();
     expect(
-      screen.getByText("The summary will say which pages it read."),
+      screen.getByText(
+        "If it cannot read all of it, the summary will say which pages it read.",
+      ),
     ).toBeVisible();
     expect(model.calls).toHaveLength(0);
     // The first answer takes the focus, and is described by the question, so
@@ -1334,7 +1338,7 @@ describe("a document longer than the model reads at a time (#301)", () => {
       .map((id) => document.getElementById(id)?.textContent ?? "")
       .join(" ");
     expect(visibleText(description)).toBe(
-      "This document is probably too long for the AI helper to read at once. It can read about pages 1 to 2 of 5. The summary will say which pages it read.",
+      "This document is probably too long for the AI helper to read at once. It can read about pages 1 to 2 of 5. If it cannot read all of it, the summary will say which pages it read.",
     );
     // Tab reaches Cancel next, and back.
     await user.tab();
@@ -1358,8 +1362,31 @@ describe("a document longer than the model reads at a time (#301)", () => {
     ).toBeVisible();
   });
 
-  it("closes the panel on Cancel, asks no model, and puts the focus back on Summary", async () => {
+  it("names the last page too when the helper will read it after a gap", async () => {
+    // 2,400: the last page (1,144) takes at most half the room, so the helper reads page 1 and
+    // page 5 (fit_pages' tail page), and the question and its first answer say so.
     const model = withRoom(2400);
+    renderReader(model, { loadText: long });
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(
+      await screen.findByText(
+        humanText(
+          "This document is probably too long for the AI helper to read at once. It can read about page 1 and the last page, page 5, of 5.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: humanText("Summarize page 1 and page 5"),
+      }),
+    ).toBeVisible();
+    expect(model.calls).toHaveLength(0);
+  });
+
+  it("closes the panel on Cancel, asks no model, and puts the focus back on Summary", async () => {
+    const model = withRoom(2287);
     renderReader(model, { loadText: long });
     await firstPage();
     const user = userEvent.setup();
@@ -1423,7 +1450,7 @@ describe("a document longer than the model reads at a time (#301)", () => {
   });
 
   it("shows a kept summary without asking, and reads no text for it", async () => {
-    const model = withRoom(2400);
+    const model = withRoom(2287);
     const { kept } = fakeKept(
       [
         {
@@ -1477,7 +1504,7 @@ describe("a document longer than the model reads at a time (#301)", () => {
   });
 
   it("asks after the notice about the AI helper, the first time", async () => {
-    const model = withRoom(2400);
+    const model = withRoom(2287);
     let release: () => void = () => undefined;
     renderReader(model, {
       loadText: long,

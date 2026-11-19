@@ -1863,14 +1863,26 @@ ai-summary-tooLong =
    *[other] Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Puede leer aproximadamente las páginas 1 a { $last } de { $total }.
     }
 
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Puede leer aproximadamente la página 1 y la última página, la página { $tail }, de { $total }.
+   *[other] Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Puede leer aproximadamente las páginas 1 a { $last } y la última página, la página { $tail }, de { $total }.
+    }
+
 ai-summary-tooLongStart = Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Solo puede leer aproximadamente el comienzo de la página 1.
 
-ai-summary-tooLongAfter = El resumen indicará qué páginas leyó.
+ai-summary-tooLongAfter = Si no puede leerlo todo, el resumen indicará qué páginas leyó.
 
 ai-summary-readPages =
     { $last ->
     [one] Resumir la página 1
    *[other] Resumir las páginas 1 a { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Resumir la página 1 y la página { $tail }
+   *[other] Resumir las páginas 1 a { $last } y la página { $tail }
     }
 
 ai-summary-readStart = Resumir el comienzo de la página 1
