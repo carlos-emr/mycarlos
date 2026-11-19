@@ -2,12 +2,13 @@
 //! `agent1-summary-progress-design`, v2): from the helper's own progress (`local_runner::Progress`)
 //! and the speed this computer wrote its last summaries at, kept per model.
 //!
-//! What is kept, in `ai-speed.json` beside `vault-home` (never inside it, so no vault backup
-//! holds it), per model SHA-256: the answer speed of the last finished summary (tokens a
-//! second) and the answer lengths of the last [`KEPT_LENGTHS`] (tokens). Numbers only: no time,
-//! no record, document or answer id, nothing about any letter. A cancelled or failed run is not
-//! kept. A file that does not read as exactly that is not used, and is replaced by the next
-//! finished summary's numbers.
+//! What is kept, in the app's memory only, for as long as it runs (nothing is written, inside
+//! the vault or out, and closing the app forgets it), per model SHA-256: the answer speed of
+//! the last finished summary (tokens a second) and the answer lengths of the last
+//! [`KEPT_LENGTHS`] (tokens). Numbers only: no time, no record, document or answer id, nothing
+//! about any letter. A cancelled or failed run is not kept. So the first summary after the app
+//! starts has no number while reading (as on a computer that never made one); it gets one from
+//! its first written sentence.
 //!
 //! The estimate, in seconds, only ever goes down (the screen rounds it, and says "taking
 //! longer" once the run passes it):
@@ -20,11 +21,8 @@
 //! - checking: none (milliseconds).
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
-
-use serde::{Deserialize, Serialize};
 
 use crate::local_runner::{Progress, Stage};
 use crate::model_helper::Stats;
@@ -33,14 +31,13 @@ use crate::model_helper::Stats;
 const CHECK_SECONDS: f64 = 2.0;
 /// The answer lengths kept per model: the estimate uses their median.
 pub(crate) const KEPT_LENGTHS: usize = 5;
-/// At most this many models are kept; the file stays small whatever happens.
+/// At most this many models are kept, whatever happens.
 const KEPT_MODELS: usize = 16;
-/// Kept numbers outside these bounds are not believed (a damaged or foreign file).
+/// A speed outside these bounds is not kept.
 const MAX_TOKENS_PER_SECOND: f64 = 10_000.0;
 
 /// What is kept for one model.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Kept {
     /// Answer tokens a second, the last finished summary's.
     pub(crate) answer_tokens_per_second: f64,
@@ -76,8 +73,7 @@ impl Kept {
 }
 
 /// The kept speeds, by model SHA-256 (64 lowercase hex characters).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Speeds(BTreeMap<String, Kept>);
 
 fn is_sha256(text: &str) -> bool {
@@ -88,17 +84,6 @@ fn is_sha256(text: &str) -> bool {
 }
 
 impl Speeds {
-    /// The speeds in `text`, only when every entry is believable; otherwise none.
-    pub(crate) fn read(text: &str) -> Option<Self> {
-        let speeds: Self = serde_json::from_str(text).ok()?;
-        (speeds.0.len() <= KEPT_MODELS
-            && speeds
-                .0
-                .iter()
-                .all(|(sha, kept)| is_sha256(sha) && kept.believable()))
-        .then_some(speeds)
-    }
-
     pub(crate) fn kept(&self, sha256: &str) -> Option<&Kept> {
         self.0.get(sha256)
     }
@@ -135,48 +120,24 @@ impl Speeds {
     }
 }
 
-/// Where the speeds are kept, set once at setup.
-static FILE: OnceLock<PathBuf> = OnceLock::new();
-/// One reader or writer at a time.
-static LOCK: Mutex<()> = Mutex::new(());
+/// The speeds kept while the app runs.
+static SPEEDS: Mutex<Speeds> = Mutex::new(Speeds(BTreeMap::new()));
 
-/// Names the file (`ai-speed.json` in `dir`), once, at setup.
-pub(crate) fn install(dir: &Path) {
-    let _ = FILE.set(dir.join("ai-speed.json"));
-}
-
-fn load(path: &Path) -> Speeds {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|text| Speeds::read(&text))
-        .unwrap_or_default()
-}
-
-/// What is kept for the model, if anything (none before setup).
+/// What is kept for the model, if anything.
 pub(crate) fn kept(sha256: &str) -> Option<Kept> {
-    let path = FILE.get()?;
-    let _held = LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    load(path).kept(sha256).cloned()
+    SPEEDS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .kept(sha256)
+        .cloned()
 }
 
-/// Keeps a finished summary's speed. A file that cannot be written leaves the estimate
-/// without it, nothing else.
+/// Keeps a finished summary's speed, in memory only.
 pub(crate) fn record(sha256: &str, stats: &Stats) {
-    let Some(path) = FILE.get() else {
-        return;
-    };
-    let _held = LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    let mut speeds = load(path);
-    if !speeds.record(sha256, stats) {
-        return;
-    }
-    let Ok(text) = serde_json::to_string(&speeds) else {
-        return;
-    };
-    let _ = atomicwrites::AtomicFile::new(path, atomicwrites::AllowOverwrite).write(|file| {
-        use std::io::Write;
-        file.write_all(text.as_bytes())
-    });
+    SPEEDS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .record(sha256, stats);
 }
 
 /// The time left of one summary, in whole seconds, that only ever goes down.
@@ -299,37 +260,26 @@ mod tests {
     }
 
     #[test]
-    fn the_kept_file_holds_numbers_by_model_only_and_a_wrong_one_is_not_used() {
-        let mut speeds = Speeds::default();
-        speeds.record(SHA, &stats(450, 86_538));
-        let text = serde_json::to_string(&speeds).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(value.as_object().unwrap().keys().collect::<Vec<_>>(), [SHA]);
-        let entry = value[SHA].as_object().unwrap();
-        assert_eq!(
-            entry.keys().collect::<Vec<_>>(),
-            ["answerTokens", "answerTokensPerSecond"]
-        );
-        assert!(entry["answerTokensPerSecond"].is_number());
-        assert!(entry["answerTokens"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(serde_json::Value::is_u64));
-        assert_eq!(Speeds::read(&text), Some(speeds));
-        // Not used: another key, a name that is no SHA, a speed or a length out of bounds,
-        // too many lengths, or not JSON.
-        for wrong in [
-            format!(r#"{{"{SHA}":{{"answerTokensPerSecond":5.0,"answerTokens":[450],"x":1}}}}"#),
-            r#"{"FAKE":{"answerTokensPerSecond":5.0,"answerTokens":[450]}}"#.to_owned(),
-            format!(r#"{{"{SHA}":{{"answerTokensPerSecond":0.0,"answerTokens":[450]}}}}"#),
-            format!(r#"{{"{SHA}":{{"answerTokensPerSecond":5.0,"answerTokens":[]}}}}"#),
-            format!(r#"{{"{SHA}":{{"answerTokensPerSecond":5.0,"answerTokens":[99999]}}}}"#),
-            format!(r#"{{"{SHA}":{{"answerTokensPerSecond":5.0,"answerTokens":[1,2,3,4,5,6]}}}}"#),
-            "not JSON".to_owned(),
-        ] {
-            assert_eq!(Speeds::read(&wrong), None, "{wrong}");
-        }
+    fn the_first_summary_of_a_session_has_no_number_until_it_writes_and_the_next_has_one_while_reading(
+    ) {
+        // A model this session has not finished a summary with (its own FAKE SHA, so other tests'
+        // records never meet it): nothing is kept, so reading gives no number, and the first
+        // written sentence does.
+        let sha = format!("{:064x}", 0xFA4E_5E55_u64);
+        assert_eq!(super::kept(&sha), None);
+        let start = Instant::now();
+        let at = |seconds: u64| start + Duration::from_secs(seconds);
+        let mut first = Estimate::new(super::kept(&sha), start);
+        assert_eq!(first.after(reading(512, 1000), at(20)), None);
+        assert_eq!(first.after(reading(1000, 1000), at(40)), None);
+        assert!(first.after(writing(1, 10), at(50)).is_some());
+        // It finishes: its speed is kept, in memory, for the next summary of this session.
+        super::record(&sha, &stats(300, 60_000));
+        let next_kept = super::kept(&sha).unwrap();
+        assert_eq!(next_kept.answer_tokens, [300]);
+        let mut next = Estimate::new(Some(next_kept), start);
+        // Reading 500 of 1000 in 20 s, then 300 tokens at 5 a second, and the checks.
+        assert_eq!(next.after(reading(500, 1000), at(20)), Some(20 + 60 + 2));
     }
 
     #[test]

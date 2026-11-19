@@ -5446,9 +5446,6 @@ pub fn run() {
             // Notice keys (#230) live beside `vault-home` too, so no vault
             // backup holds them.
             notice_key::install(&app.path().app_local_data_dir()?);
-            // A summary's measured speed, per model, numbers only (`summary_progress`), beside
-            // `vault-home` too.
-            summary_progress::install(&app.path().app_local_data_dir()?);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
