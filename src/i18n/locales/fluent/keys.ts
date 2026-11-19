@@ -825,6 +825,11 @@ export const MESSAGE_KEYS = [
   "ai.result.meta",
   "ai.summary.showInDocument",
   "ai.summary.partial",
+  "ai.summary.tooLong",
+  "ai.summary.tooLongStart",
+  "ai.summary.tooLongAfter",
+  "ai.summary.readPages",
+  "ai.summary.readStart",
   "ai.summary.noText",
   "ai.explain.box",
   "ai.explain.hint",
@@ -948,6 +953,7 @@ export const MESSAGE_KEYS = [
   "native.notice.arrival",
   "ai.model.add",
   "ai.model.accepted",
+  "ai.model.reads",
   "ai.model.where",
   "ai.model.copy",
   "ai.model.copied",
@@ -1975,6 +1981,11 @@ const FLUENT_IDS_BY_KEY = {
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
   "ai.summary.partial": "ai-summary-partial",
+  "ai.summary.tooLong": "ai-summary-tooLong",
+  "ai.summary.tooLongStart": "ai-summary-tooLongStart",
+  "ai.summary.tooLongAfter": "ai-summary-tooLongAfter",
+  "ai.summary.readPages": "ai-summary-readPages",
+  "ai.summary.readStart": "ai-summary-readStart",
   "ai.summary.noText": "ai-summary-noText",
   "ai.explain.box": "ai-explain-box",
   "ai.explain.hint": "ai-explain-hint",
@@ -2156,6 +2167,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.notice.arrival": "native-notice-arrival",
   "ai.model.add": "ai-model-add",
   "ai.model.accepted": "ai-model-accepted",
+  "ai.model.reads": "ai-model-reads",
   "ai.model.where": "ai-model-where",
   "ai.model.copy": "ai-model-copy",
   "ai.model.copied": "ai-model-copied",
@@ -3144,6 +3156,11 @@ export interface MessageArgsByKey {
   };
   "ai.summary.showInDocument": undefined;
   "ai.summary.partial": undefined;
+  "ai.summary.tooLong": { last: FluentArgument; total: FluentArgument };
+  "ai.summary.tooLongStart": undefined;
+  "ai.summary.tooLongAfter": undefined;
+  "ai.summary.readPages": { last: FluentArgument };
+  "ai.summary.readStart": undefined;
   "ai.summary.noText": undefined;
   "ai.explain.box": undefined;
   "ai.explain.hint": undefined;
@@ -3275,6 +3292,7 @@ export interface MessageArgsByKey {
     name: FluentArgument;
     size: FluentArgument;
   };
+  "ai.model.reads": { characters: FluentArgument; pages: FluentArgument };
   "ai.model.where": undefined;
   "ai.model.copy": undefined;
   "ai.model.copied": undefined;
