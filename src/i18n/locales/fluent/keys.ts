@@ -250,6 +250,8 @@ export const MESSAGE_KEYS = [
   "interface.reader.page",
   "interface.reader.textFollows",
   "interface.reader.where",
+  "interface.reader.markedOnPage",
+  "interface.reader.markedInText",
   "interface.reader.zoom",
   "interface.receive.dropped",
   "interface.receive.refused",
@@ -610,6 +612,10 @@ export const MESSAGE_KEYS = [
   "personDetails.birthDate",
   "personDetails.birthDateRequired",
   "personDetails.birthDateUnknown",
+  "personDetails.birthDay",
+  "personDetails.birthMonth",
+  "personDetails.birthMonthChoose",
+  "personDetails.birthYear",
   "personDetails.cancel",
   "personDetails.edit",
   "personDetails.editFor",
@@ -829,6 +835,8 @@ export const MESSAGE_KEYS = [
   "aiHelper.resultLabel",
   "ai.result.meta",
   "ai.summary.showInDocument",
+  "ai.summary.folded",
+  "ai.summary.showWhole",
   "ai.summary.partial",
   "ai.summary.tooLong",
   "ai.summary.tooLongWithLast",
@@ -856,6 +864,12 @@ export const MESSAGE_KEYS = [
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
   "ai.summary.englishOnly",
+  "ai.summary.progress.before",
+  "ai.summary.progress.reading",
+  "ai.summary.progress.writing",
+  "ai.summary.progress.checking",
+  "ai.summary.progress.estimate",
+  "ai.summary.progress.slower",
   "aiHelper.notice.title",
   "aiHelper.notice.introShare",
   "aiHelper.notice.intro",
@@ -1390,6 +1404,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.reader.page": "interface-reader-page",
   "interface.reader.textFollows": "interface-reader-textFollows",
   "interface.reader.where": "interface-reader-where",
+  "interface.reader.markedOnPage": "interface-reader-markedOnPage",
+  "interface.reader.markedInText": "interface-reader-markedInText",
   "interface.reader.zoom": "interface-reader-zoom",
   "interface.receive.dropped": "interface-receive-dropped",
   "interface.receive.refused": "interface-receive-refused",
@@ -1757,6 +1773,10 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.birthDate": "personDetails-birthDate",
   "personDetails.birthDateRequired": "personDetails-birthDateRequired",
   "personDetails.birthDateUnknown": "personDetails-birthDateUnknown",
+  "personDetails.birthDay": "personDetails-birthDay",
+  "personDetails.birthMonth": "personDetails-birthMonth",
+  "personDetails.birthMonthChoose": "personDetails-birthMonthChoose",
+  "personDetails.birthYear": "personDetails-birthYear",
   "personDetails.cancel": "personDetails-cancel",
   "personDetails.edit": "personDetails-edit",
   "personDetails.editFor": "personDetails-editFor",
@@ -2005,6 +2025,8 @@ const FLUENT_IDS_BY_KEY = {
   "aiHelper.resultLabel": "aiHelper-resultLabel",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
+  "ai.summary.folded": "ai-summary-folded",
+  "ai.summary.showWhole": "ai-summary-showWhole",
   "ai.summary.partial": "ai-summary-partial",
   "ai.summary.tooLong": "ai-summary-tooLong",
   "ai.summary.tooLongWithLast": "ai-summary-tooLongWithLast",
@@ -2032,6 +2054,12 @@ const FLUENT_IDS_BY_KEY = {
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
   "ai.summary.englishOnly": "ai-summary-englishOnly",
+  "ai.summary.progress.before": "ai-summary-progress-before",
+  "ai.summary.progress.reading": "ai-summary-progress-reading",
+  "ai.summary.progress.writing": "ai-summary-progress-writing",
+  "ai.summary.progress.checking": "ai-summary-progress-checking",
+  "ai.summary.progress.estimate": "ai-summary-progress-estimate",
+  "ai.summary.progress.slower": "ai-summary-progress-slower",
   "aiHelper.notice.title": "aiHelper-notice-title",
   "aiHelper.notice.introShare": "aiHelper-notice-introShare",
   "aiHelper.notice.intro": "aiHelper-notice-intro",
@@ -2561,6 +2589,8 @@ export interface MessageArgsByKey {
     total: FluentArgument;
   };
   "interface.reader.where": { page: FluentArgument; total: FluentArgument };
+  "interface.reader.markedOnPage": { page: FluentArgument };
+  "interface.reader.markedInText": { page: FluentArgument };
   "interface.reader.zoom": { percent: FluentArgument };
   "interface.receive.dropped": { count: FluentArgument };
   "interface.receive.refused": { count: FluentArgument };
@@ -2969,6 +2999,10 @@ export interface MessageArgsByKey {
   "personDetails.birthDate": undefined;
   "personDetails.birthDateRequired": undefined;
   "personDetails.birthDateUnknown": undefined;
+  "personDetails.birthDay": undefined;
+  "personDetails.birthMonth": undefined;
+  "personDetails.birthMonthChoose": undefined;
+  "personDetails.birthYear": undefined;
   "personDetails.cancel": undefined;
   "personDetails.edit": undefined;
   "personDetails.editFor": { name: FluentArgument };
@@ -3198,6 +3232,8 @@ export interface MessageArgsByKey {
     tool: FluentArgument;
   };
   "ai.summary.showInDocument": undefined;
+  "ai.summary.folded": undefined;
+  "ai.summary.showWhole": undefined;
   "ai.summary.partial": undefined;
   "ai.summary.tooLong": { last: FluentArgument; total: FluentArgument };
   "ai.summary.tooLongWithLast": {
@@ -3229,6 +3265,12 @@ export interface MessageArgsByKey {
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
   "ai.summary.englishOnly": undefined;
+  "ai.summary.progress.before": undefined;
+  "ai.summary.progress.reading": undefined;
+  "ai.summary.progress.writing": undefined;
+  "ai.summary.progress.checking": undefined;
+  "ai.summary.progress.estimate": { minutes: FluentArgument };
+  "ai.summary.progress.slower": undefined;
   "aiHelper.notice.title": undefined;
   "aiHelper.notice.introShare": undefined;
   "aiHelper.notice.intro": undefined;

@@ -1,3 +1,4 @@
+import type { SummaryProgressEvent } from "./ai/summaryProgress";
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -577,6 +578,16 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** Where the span `start..end` (UTF-16 units) of page `page`'s readable
+   * text, which holds `quoted`, is drawn on the page picture (#292). Exact or
+   * nothing: `rects` is empty, with the reason, when the helper cannot tie
+   * every character of the span to the glyph that draws it. Computers only. */
+  pageBoxes?(
+    recordId: string,
+    page: number,
+    span: { start: number; end: number; quoted: string },
+    password?: string,
+  ): Promise<PageBoxes>;
   /** Whether the AI helper (#72) has a model on this computer. */
   aiModelStatus(): Promise<ModelStatus>;
   /** A plain-words summary of a document's pages, written by the model on
@@ -589,6 +600,9 @@ export interface VaultBridge {
     lang: string,
     keep?: { recordId: string; ticket: string },
     answerId?: string,
+    /** Told how far this answer's run is, as the helper reports it: counts
+     * only (`ai-answer-progress`), matched to `answerId`. */
+    onProgress?: (event: SummaryProgressEvent) => void,
   ): Promise<ModelSummary>;
   /** A term explained in plain words, with the sentence it is in. With
    * `recordId`, kept natively for that document's save, as a summary is. */
@@ -885,6 +899,15 @@ export interface ViewedPage {
   readableText?: string;
 }
 
+/** Where a quoted span is on a page picture (#292): one rectangle per line
+ * run, as fractions of the picture's width and height from its top left
+ * ([left, top, right, bottom]), or none, with why. */
+export interface PageBoxes {
+  rects: [number, number, number, number][];
+  /** Why there is no box, for tests and support; never shown as such. */
+  absent?: string;
+}
+
 /** True when the native side refused with `code`. */
 export function hasVaultErrorCode(error: unknown, code: string): boolean {
   return hasErrorCode(error, code);
@@ -1095,6 +1118,10 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, page, width, password: password ?? null },
       });
     },
+    pageBoxes: (recordId, page, span, password) =>
+      invoke<PageBoxes>("vault_page_boxes", {
+        request: { recordId, page, ...span, password: password ?? null },
+      }),
     cancelView: () => {
       viewGeneration += 1;
       // No newer page can start while this is pending, so one cancellation
@@ -1111,11 +1138,45 @@ export function createVaultBridge(): VaultBridge {
       return cancellation;
     },
     aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
-    aiSummarize: (pages, lang, keep, answerId = crypto.randomUUID()) =>
-      invoke<ModelSummary>("ai_summarize", {
-        answerId,
-        request: { pages, lang, ...keep },
-      }),
+    aiSummarize: async (
+      pages,
+      lang,
+      keep,
+      answerId = crypto.randomUUID(),
+      onProgress,
+    ) => {
+      // Listening starts before the run does, so that no early event is
+      // missed; only this answer's events are passed on. The progress is
+      // only for show: a listener that cannot be attached (a refused
+      // permission, a webview that will not listen) leaves the summary to
+      // run without it, never fails it.
+      let unlisten: (() => void) | null = null;
+      if (onProgress) {
+        try {
+          unlisten = await listen<SummaryProgressEvent>(
+            "ai-answer-progress",
+            (event) => {
+              if (event.payload?.answerId === answerId)
+                onProgress(event.payload);
+            },
+          );
+        } catch {
+          unlisten = null;
+        }
+      }
+      try {
+        return await invoke<ModelSummary>("ai_summarize", {
+          answerId,
+          request: { pages, lang, ...keep },
+        });
+      } finally {
+        try {
+          unlisten?.();
+        } catch {
+          // Already gone: nothing to stop.
+        }
+      }
+    },
     aiExplain: (
       term,
       context,

@@ -368,7 +368,7 @@ async function walkTheVault(large: LargeText) {
   await expectNoViolations(create, "comfort settings", large.cutOff);
   await create.getByRole("button", { name: "Continue" }).click();
   await expect(
-    create.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+    create.getByRole("heading", { name: "Set up myCarlos on this device" }),
   ).toBeVisible();
   await expectNoViolations(create, "create the vault", large.cutOff);
   await expectOnlyMockedCommands(create);

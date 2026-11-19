@@ -159,4 +159,46 @@ describe("device appearance", () => {
       else meta.remove();
     }
   });
+
+  describe("the Android status bar strip", () => {
+    afterEach(() => {
+      delete (window as { MyCarlosSystemBars?: unknown }).MyCarlosSystemBars;
+      document.documentElement.style.removeProperty("--canvas-2");
+    });
+
+    it("is told the title bar's colour and whether it is dark, at start and on each change", () => {
+      const calls: [string, boolean][] = [];
+      (
+        window as {
+          MyCarlosSystemBars?: { set: (c: string, d: boolean) => void };
+        }
+      ).MyCarlosSystemBars = { set: (c, d) => calls.push([c, d]) };
+      document.documentElement.style.setProperty("--canvas-2", "#e7efed");
+      const appearance = startAppearance();
+      expect(calls.at(-1)).toEqual(["#e7efed", false]);
+      // A choice made inside myCarlos: dark and high contrast are dark
+      // strips, whatever the phone's own mode is.
+      document.documentElement.style.setProperty("--canvas-2", "#21372f");
+      appearance.set("dark");
+      expect(calls.at(-1)).toEqual(["#21372f", true]);
+      document.documentElement.style.setProperty("--canvas-2", "#000");
+      appearance.set("high-contrast");
+      // "#000" is not "#rrggbb": the page sends nothing it cannot be sure of.
+      expect(calls.at(-1)).toEqual(["#21372f", true]);
+      document.documentElement.style.setProperty("--canvas-2", "#ffffff");
+      appearance.set("light");
+      expect(calls.at(-1)).toEqual(["#ffffff", false]);
+    });
+
+    it("does nothing where there is no bridge, and survives one that throws", () => {
+      document.documentElement.style.setProperty("--canvas-2", "#112233");
+      expect(() => startAppearance().set("dark")).not.toThrow();
+      (window as { MyCarlosSystemBars?: unknown }).MyCarlosSystemBars = {
+        set: () => {
+          throw new Error("refused");
+        },
+      };
+      expect(() => startAppearance().set("light")).not.toThrow();
+    });
+  });
 });

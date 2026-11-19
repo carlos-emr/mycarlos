@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Commit whose evaluation build is checked (the Linux values below fit 6595b3c only; another commit reports NOT COMPARABLE)"
+        description: "Full 40-character commit whose evaluation build is checked (its build fingerprint must be d2ba1ec0..., or the run reports NOT COMPARABLE)"
         required: true
         default: "6595b3c25beb32c2cbd44892698c3fd66265ad2f"
 
@@ -77,18 +77,22 @@ jobs:
           $env:MYCARLOS_EVAL_COMMIT = (git rev-parse HEAD)
           cargo test --locked --features ai-helper-stub --test model_engine -- --ignored --nocapture --exact a_real_model_evaluation_run --test-threads=1
       - name: Compare with the graded Linux run
-        # The Linux values come from the graded Linux run of 6595b3c (16 Nov 2026, started 15:12:01Z, threads 3).
+        # The Linux values come from the graded Linux run of 6595b3c (16 Nov 2026, started 15:12:01Z, threads 3); a Linux run
+        # of 83e71781 (FB2) on 19 Nov 2026 gave the same values (run A1-FB2-winref2-20261119). The commit checked is the
+        # one dispatched: the answers must be these for any commit with this build fingerprint.
         # First the run must be comparable: same commit, same build fingerprint (prompts, grammar, caps), same
         # threads, and the same page text read (page hashes). Then each answer: the same token ids (64-bit hash of the
         # answer's tokens, and their count). DIFFERENT is a finding and the job passes; NOT COMPARABLE also passes and
         # says why; a missing run or a document that failed is a broken run and fails the job.
         if: always()
         shell: pwsh
+        env:
+          EXPECT_COMMIT: ${{ inputs.ref }}
         run: |
           @'
           import json, os, sys
           expect = {
-              "commit": "6595b3c25beb32c2cbd44892698c3fd66265ad2f",
+              "commit": os.environ["EXPECT_COMMIT"],
               "fingerprint": "d2ba1ec0c479ca24fc7199884fd2c2fcb4e4e368851f51adae603f3c57541d42",
               "threads": 3,
           }

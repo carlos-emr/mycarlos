@@ -613,6 +613,9 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           (answers[command] ??= []).push(value),
         listening: (event: string) =>
           listeners.filter((each) => each.event === event).length,
+        // An event as the app's native side would send it (progress of a
+        // run, for example), to the screens that listen for it.
+        emit: (event: string, payload: unknown) => emit(event, payload),
         release: (command: string) => {
           const entry = held.find((each) => each.command === command);
           if (!entry) throw new Error(`Nothing held for ${command}`);
