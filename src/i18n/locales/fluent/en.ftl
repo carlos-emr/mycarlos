@@ -350,6 +350,10 @@ interface-reader-textFollows = Page { $page } of { $total }. The page's text fol
 
 interface-reader-where = Page { $page } of { $total }
 
+interface-reader-markedOnPage = Page { $page }: the quoted words are marked on the page picture and in Text on this page.
+
+interface-reader-markedInText = Page { $page }: the quoted words are marked in Text on this page. They could not be marked on the page picture.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =
@@ -1833,6 +1837,10 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Show in document
 
+ai-summary-folded = The summary is folded so the page has room.
+
+ai-summary-showWhole = Show the whole summary
+
 ai-summary-partial = This summary uses only part of the document’s text.
 
 ai-summary-tooLong =
@@ -1974,6 +1982,28 @@ ai-summary-pagesMissing = Some pages could not be read in full, so this summary 
 ai-summary-noSource = No source found
 
 ai-summary-englishOnly = For now, summaries are written in English. myCarlos checks numbers and “when to get help” rules only in English, so check those in the document itself.
+
+## PROVISIONAL: English wording for Ben's approval (summary progress, 18 Nov).
+
+ai-summary-progress-before = This can take a few minutes. You can keep reading the letter.
+
+ai-summary-progress-reading = Reading the letter…
+
+ai-summary-progress-writing = Writing the summary…
+
+ai-summary-progress-checking = Checking the summary…
+
+# Translators: the time is rounded up, so "0" (less than a minute) and 2 or more
+# are what the app says; "About 1 minute" is kept only for languages whose plural
+# rules need the singular form.
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Less than a minute left
+        [one] About { $minutes } minute left
+       *[other] About { $minutes } minutes left
+    }
+
+ai-summary-progress-slower = This is taking longer than expected.
 
 aiHelper-notice-title = About the AI helper
 

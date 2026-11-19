@@ -497,6 +497,10 @@ interface-reader-textFollows = 第 { $page } 页，共 { $total } 页。以下�
 
 interface-reader-where = 第 { $page } 页，共 { $total } 页
 
+interface-reader-markedOnPage = 第 { $page } 页：引用的文字已在页面图像和「本页文本」中标出。
+
+interface-reader-markedInText = 第 { $page } 页：引用的文字已在「本页文本」中标出，但无法在页面图像上标出。
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped = 有 { $count } 个分享项目未接收：myCarlos 只接受 PDF 文件。
@@ -1681,6 +1685,10 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文档中显示
 
+ai-summary-folded = 摘要已收起，以便为页面留出空间。
+
+ai-summary-showWhole = 显示完整摘要
+
 ai-summary-partial = 此摘要仅使用了文档的部分文本。
 
 ai-summary-tooLong =
@@ -1814,6 +1822,24 @@ ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能
 ai-summary-noSource = 未找到来源
 
 ai-summary-englishOnly = 目前摘要以英文撰写。myCarlos 只对英文摘要核对数字和“何时就医”的提示，请在文档本身中核对这些内容。
+
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = 这可能需要几分钟。您可以继续阅读这封信。
+
+ai-summary-progress-reading = 正在阅读信件…
+
+ai-summary-progress-writing = 正在撰写摘要…
+
+ai-summary-progress-checking = 正在检查摘要…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] 剩余不到一分钟
+       *[other] 大约还剩 { $minutes } 分钟
+    }
+
+ai-summary-progress-slower = 耗时比预期更长。
 
 aiHelper-notice-title = 关于 AI 助手
 

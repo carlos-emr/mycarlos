@@ -363,6 +363,10 @@ interface-reader-textFollows = Page { $page } sur { $total }. Le texte de la pag
 
 interface-reader-where = Page { $page } sur { $total }
 
+interface-reader-markedOnPage = Page { $page } : les mots cités sont marqués sur l’image de la page et dans « Texte de cette page ».
+
+interface-reader-markedInText = Page { $page } : les mots cités sont marqués dans « Texte de cette page ». Ils n’ont pas pu être marqués sur l’image de la page.
+
 interface-reader-zoom = { $percent }%
 
 interface-receive-dropped =
@@ -1869,6 +1873,10 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Voir dans le document
 
+ai-summary-folded = Le résumé est replié pour laisser de la place à la page.
+
+ai-summary-showWhole = Voir tout le résumé
+
 ai-summary-partial = Ce résumé utilise seulement une partie du texte du document.
 
 ai-summary-tooLong =
@@ -2012,6 +2020,25 @@ ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; 
 ai-summary-noSource = Source introuvable
 
 ai-summary-englishOnly = Pour l’instant, les résumés sont rédigés en anglais. myCarlos ne vérifie les chiffres et les consignes « quand demander de l’aide » qu’en anglais : vérifiez-les dans le document lui-même.
+
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = Cela peut prendre quelques minutes. Vous pouvez continuer à lire la lettre.
+
+ai-summary-progress-reading = Lecture de la lettre…
+
+ai-summary-progress-writing = Rédaction du résumé…
+
+ai-summary-progress-checking = Vérification du résumé…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Moins d’une minute restante
+        [one] Environ { $minutes } minute restante
+       *[other] Environ { $minutes } minutes restantes
+    }
+
+ai-summary-progress-slower = Cela prend plus de temps que prévu.
 
 aiHelper-notice-title = À propos de l’assistant IA
 
