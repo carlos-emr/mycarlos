@@ -250,6 +250,8 @@ export const MESSAGE_KEYS = [
   "interface.reader.page",
   "interface.reader.textFollows",
   "interface.reader.where",
+  "interface.reader.markedOnPage",
+  "interface.reader.markedInText",
   "interface.reader.zoom",
   "interface.receive.dropped",
   "interface.receive.refused",
@@ -829,6 +831,8 @@ export const MESSAGE_KEYS = [
   "aiHelper.resultLabel",
   "ai.result.meta",
   "ai.summary.showInDocument",
+  "ai.summary.folded",
+  "ai.summary.showWhole",
   "ai.summary.partial",
   "ai.summary.tooLong",
   "ai.summary.tooLongWithLast",
@@ -1379,6 +1383,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.reader.page": "interface-reader-page",
   "interface.reader.textFollows": "interface-reader-textFollows",
   "interface.reader.where": "interface-reader-where",
+  "interface.reader.markedOnPage": "interface-reader-markedOnPage",
+  "interface.reader.markedInText": "interface-reader-markedInText",
   "interface.reader.zoom": "interface-reader-zoom",
   "interface.receive.dropped": "interface-receive-dropped",
   "interface.receive.refused": "interface-receive-refused",
@@ -1994,6 +2000,8 @@ const FLUENT_IDS_BY_KEY = {
   "aiHelper.resultLabel": "aiHelper-resultLabel",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
+  "ai.summary.folded": "ai-summary-folded",
+  "ai.summary.showWhole": "ai-summary-showWhole",
   "ai.summary.partial": "ai-summary-partial",
   "ai.summary.tooLong": "ai-summary-tooLong",
   "ai.summary.tooLongWithLast": "ai-summary-tooLongWithLast",
@@ -2539,6 +2547,8 @@ export interface MessageArgsByKey {
     total: FluentArgument;
   };
   "interface.reader.where": { page: FluentArgument; total: FluentArgument };
+  "interface.reader.markedOnPage": { page: FluentArgument };
+  "interface.reader.markedInText": { page: FluentArgument };
   "interface.reader.zoom": { percent: FluentArgument };
   "interface.receive.dropped": { count: FluentArgument };
   "interface.receive.refused": { count: FluentArgument };
@@ -3176,6 +3186,8 @@ export interface MessageArgsByKey {
     tool: FluentArgument;
   };
   "ai.summary.showInDocument": undefined;
+  "ai.summary.folded": undefined;
+  "ai.summary.showWhole": undefined;
   "ai.summary.partial": undefined;
   "ai.summary.tooLong": { last: FluentArgument; total: FluentArgument };
   "ai.summary.tooLongWithLast": {
