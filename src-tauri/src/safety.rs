@@ -3,23 +3,27 @@
 //! glossary step (which leaves a fallback quote as it is).
 //!
 //! - **Numbers.** Every number a summary sentence writes in digits must be in the pages read, by
-//!   its value (see `numbers`): a decimal stays a decimal ("2.5" is not "25", ".5" is "0.5"),
-//!   thousands separators and leading zeros go, and a number the pages give as a word counts
-//!   ("two" for 2, "half" for 0.5). A number that reads two ways ("1,500") or is date-like
-//!   ("12.03.2024") must be written as the pages write it (a date's parts also count). A sentence
-//!   that fails becomes the document's own sentence at its quote, marked as a quote:
-//!   `The document says: “…”`. A sentence whose quote was not found stays as it is.
+//!   its value (see `numbers`): a decimal stays a decimal ("2.5" is not "25"; ".5" after a
+//!   space, "(" or the start is "0.5"), thousands separators and leading zeros go, and a number
+//!   the pages give as a word counts ("two" for 2, "half" for 0.5). A number that reads two ways
+//!   ("1,500") or is date-like ("12.03.2024") must be written as the pages write it (a date's
+//!   parts also count). A sentence that fails becomes the document's own sentence at its quote,
+//!   marked as a quote: `The document says: “…”`. A sentence whose quote was not found stays as
+//!   it is.
 //! - **Get-help rules.** Every sentence of the pages read that is a rule about when to call or
 //!   get help (an action word and a condition word) needs one summary sentence that has an
 //!   action word and every trigger of the rule (see `carries`: one of the trigger's content
-//!   words, or a word sharing its first five letters, and every number the trigger holds, as
-//!   digits or as a number word). When none has, the rule is put in, quoted. A summary sentence
-//!   that covers the rule in part (its quote lies in the rule, or it has an action word and
-//!   carries one trigger) is replaced by the rule only when it says nothing the rule's span does
-//!   not (`covered_by`); otherwise it keeps its words and the rule is added just after it. With
-//!   no such sentence, the rule is added at the end. Only English rules are checked (the summary
-//!   is English); the writer's own line to another doctor ("please call me …") is no rule for
-//!   the patient (K17 handles it).
+//!   words, or a word sharing its first five letters, and the trigger's count when it has one:
+//!   its digits, or a counted number word from two to twelve, or "twice", written in the
+//!   sentence as digits or as a number word; "one", "once" and "half" are no count). When none
+//!   has, the rule is put in, quoted. A summary sentence that covers the rule in part (its quote
+//!   lies in the rule, or it has an action word, carries one trigger and has one of the
+//!   trigger's words of four letters or more as written; never a line that is a quote already)
+//!   is replaced by the rule only when it says nothing the rule's span does not (`covered_by`);
+//!   otherwise it keeps its words and the rule is added just after it. With no such sentence,
+//!   the rule is added at the end. Only English rules are checked (the summary is English); the
+//!   writer's own line to another doctor ("please call me …") is no rule for the patient (K17
+//!   handles it).
 //! - **The rule's whole span (safety-2).** The quote is the rule with what it needs: in a
 //!   bulleted or numbered step, the whole step up to the rule ("Weigh yourself every morning.
 //!   Call if …"); otherwise, for a rule that refers back ("it", "this", "they", "these", "that",
