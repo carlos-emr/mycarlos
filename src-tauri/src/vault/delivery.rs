@@ -7869,8 +7869,16 @@ mod approval_recovery_tests {
         check_listing(&store, &link, std::slice::from_ref(&refused));
         assert_eq!(refused_saved(&store).len(), 1);
         let links_before = store.snapshot().unwrap().portal_links.len();
+        // A second link to the same clinic is a new device: the vault takes one
+        // link per device key, so it gets keys of its own.
         let mut again = link.clone();
         again.id = Uuid::new_v4();
+        again.keys = serde_json::from_value(serde_json::json!({
+            "x25519": wire::sha256(b"FAKE second link x25519").as_bytes()[..32].to_vec(),
+            "ed25519": wire::sha256(b"FAKE second link ed25519").as_bytes()[..32].to_vec(),
+        }))
+        .unwrap();
+        again.clinic.as_mut().unwrap().device_key_id = again.keys.device_key_id();
         add_link(&store, &again);
         let session = store.portal_link_ticket();
         // The new link has no refusal for the same delivery; the old one does.
