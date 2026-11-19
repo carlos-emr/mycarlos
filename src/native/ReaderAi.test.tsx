@@ -804,6 +804,16 @@ describe("the reader's AI helper", () => {
     );
   });
 
+  /** The minute counter's interval starts in an effect, and the "working…" text can be in the page
+   * before that effect has run (it showed on a loaded machine: the clock moved on, the interval was
+   * only started afterwards, and the count stayed at 0). Let the effect run and take one tick (15 s)
+   * before any minutes are counted, and check that a timer is there. */
+  const startCounting = async () => {
+    await act(async () => undefined);
+    await act(async () => vi.advanceTimersByTime(15_000));
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+  };
+
   it("says a summary can take several minutes, and how many it has taken, outside its status", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
@@ -830,9 +840,10 @@ describe("the reader's AI helper", () => {
           humanText("This can take several minutes for a long document."),
         ),
       ).toBeVisible();
+      await startCounting();
       // No time before the first minute.
       expect(within(panel).queryByText(/so far/)).toBeNull();
-      await act(async () => vi.advanceTimersByTime(60_000));
+      await act(async () => vi.advanceTimersByTime(45_000));
       expect(
         within(panel).getByText(humanText("Working for 1 minute so far.")),
       ).toBeVisible();
@@ -873,7 +884,8 @@ describe("the reader's AI helper", () => {
           "The AI helper is working…",
         ),
       );
-      await act(async () => vi.advanceTimersByTime(2 * 60_000));
+      await startCounting();
+      await act(async () => vi.advanceTimersByTime(105_000));
       expect(
         within(panel).getByText(humanText("Working for 2 minutes so far.")),
       ).toBeVisible();
