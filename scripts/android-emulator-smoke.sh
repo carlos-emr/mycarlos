@@ -28,7 +28,9 @@ grep -q "^package: name='$package'" "$out/badging.txt" || fail "APK is not $pack
 grep -q "^launchable-activity:" "$out/badging.txt" || fail "APK has no launchable activity"
 icon=$(sed -n "s/^application: .* icon='\([^']*\)'.*/\1/p" "$out/badging.txt" | head -n 1)
 [ -n "$icon" ] || fail "APK names no launcher icon"
-unzip -l "$apk" | grep -q " $icon\$" || fail "launcher icon $icon is not inside the APK"
+# Listed to a file first: with pipefail, `unzip | grep -q` fails by SIGPIPE when grep stops early.
+unzip -Z1 "$apk" > "$out/apk-files.txt"
+grep -Fxq -- "$icon" "$out/apk-files.txt" || { grep -i "ic_launcher" "$out/apk-files.txt" | head -n 20 || true; fail "launcher icon $icon is not inside the APK"; }
 echo "launcher icon: $icon"
 
 adb wait-for-device
@@ -42,7 +44,8 @@ adb shell monkey -p "$package" -c android.intent.category.LAUNCHER 1 > "$out/lau
 # Up to 60 s for the app's window to be on top, then a few more seconds for its first screen.
 resumed=no
 for _ in $(seq 1 30); do
-  if adb shell dumpsys activity activities | grep -E "(mResumedActivity|topResumedActivity)" | grep -q "$package"; then
+  top=$(adb shell dumpsys activity activities | grep -E "(mResumedActivity|topResumedActivity)" || true)
+  if [[ "$top" == *"$package"* ]]; then
     resumed=yes
     break
   fi
