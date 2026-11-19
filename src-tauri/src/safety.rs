@@ -78,7 +78,7 @@ const NUMBER_WORDS: &[(&str, &str)] = &[
     ("twelve", "12"),
     ("twice", "2"),
     ("once", "1"),
-    ("half", "5"),
+    ("half", "0.5"),
     ("un", "1"),
     ("une", "1"),
     ("deux", "2"),
@@ -285,7 +285,17 @@ fn find_phrase(
     None
 }
 
-/// Numbers as written, each with its digits (no separators, no leading zeros).
+/// Numbers as written, each with its value as text, so that a decimal is never read as a whole
+/// number ("2.5" is not "25", "0.5" is not "5"):
+/// - a decimal point or comma keeps its place: "2.5" and "2,5" (a French letter) are both "2.5",
+///   ".5" is "0.5", and trailing zeros go ("0.50" is "0.5", "1.0" is "1");
+/// - thousands separators go when the number says so: "1,000.5" and "1.000,5" (two different
+///   separators: the last one is the decimal) are "1000.5", "1,000,000" is "1000000";
+/// - leading zeros go ("05" is "5");
+/// - a number that reads both ways ("1,500" is 1500 in an English letter and 1.5 in a French one,
+///   and the same for "1.500") is kept as written, marked with "~", and so is a number whose groups
+///   are not thousands ("12.03.2024", a date): the summary must write it the same way, or the
+///   sentence falls back to the document's own words.
 fn numbers(text: &str) -> Vec<(String, String)> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
@@ -304,36 +314,97 @@ fn numbers(text: &str) -> Vec<(String, String)> {
             i += 1;
         }
         let raw: String = chars[start..i].iter().collect();
-        let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
-        let trimmed = digits.trim_start_matches('0');
-        out.push((
-            raw,
-            if trimmed.is_empty() {
-                "0".to_owned()
-            } else {
-                trimmed.to_owned()
-            },
-        ));
+        // ".5": a decimal written without its leading zero (not "2.5", whose "5" follows a digit).
+        // Only after a space, "(" or the start: "5 mg,10 mg" is two numbers, not 5 and 0.1.
+        let bare_decimal = start >= 1
+            && matches!(chars[start - 1], '.' | ',')
+            && (start == 1 || chars[start - 2].is_whitespace() || chars[start - 2] == '(');
+        let value = if bare_decimal {
+            number_value(&format!("0.{raw}"))
+        } else {
+            number_value(&raw)
+        };
+        out.push((raw, value));
     }
     out
 }
 
+/// A whole number's digits without leading zeros ("0" for none).
+fn whole(digits: &str) -> String {
+    let t = digits.trim_start_matches('0');
+    if t.is_empty() {
+        "0".to_owned()
+    } else {
+        t.to_owned()
+    }
+}
+
+/// The value of one number as written (digits joined by "." or ","), as `numbers` describes.
+fn number_value(raw: &str) -> String {
+    let separators: Vec<char> = raw.chars().filter(|c| matches!(c, '.' | ',')).collect();
+    let groups: Vec<&str> = raw.split(['.', ',']).collect();
+    let decimal = |int: &str, fraction: &str| {
+        let fraction = fraction.trim_end_matches('0');
+        if fraction.is_empty() {
+            whole(int)
+        } else {
+            format!("{}.{fraction}", whole(int))
+        }
+    };
+    match separators.as_slice() {
+        [] => whole(raw),
+        [_] => {
+            let (int, fraction) = (groups[0], groups[1]);
+            // "1,500" / "1.500": thousands in one convention, a decimal in the other.
+            if fraction.len() == 3 && int.len() <= 3 && !int.starts_with('0') {
+                format!("~{raw}")
+            } else {
+                decimal(int, fraction)
+            }
+        }
+        [first, rest @ ..] => {
+            let last = *rest.last().unwrap_or(first);
+            let thousands = |g: &[&str]| g.iter().all(|g| g.len() == 3);
+            if rest.iter().all(|c| c == first) {
+                // One separator, used again: thousands ("1,000,000"), or a date-like number.
+                if groups[0].len() <= 3 && thousands(&groups[1..]) {
+                    whole(&groups.concat())
+                } else {
+                    format!("~{raw}")
+                }
+            } else if separators[..separators.len() - 1]
+                .iter()
+                .all(|c| *c != last)
+                && thousands(&groups[1..groups.len() - 1])
+            {
+                // "1,000.5" / "1.000,5": the last, different separator is the decimal.
+                decimal(
+                    &groups[..groups.len() - 1].concat(),
+                    groups[groups.len() - 1],
+                )
+            } else {
+                format!("~{raw}")
+            }
+        }
+    }
+}
+
 fn page_numbers(pages: &str) -> std::collections::HashSet<String> {
-    let mut found: std::collections::HashSet<String> =
-        numbers(pages).into_iter().map(|(_, d)| d).collect();
+    let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (raw, value) in numbers(pages) {
+        // A number kept as written with two or more separators (a date such as "12.03.2024", a
+        // phone number such as "613.555.0142") also gives its parts, which a summary may write
+        // apart ("12 March 2024"). A decimal never does: "2.5" must not allow "2" or "5".
+        if value.starts_with('~') && raw.matches(['.', ',']).count() >= 2 {
+            for part in raw.split(['.', ',']) {
+                found.insert(whole(part));
+            }
+        }
+        found.insert(value);
+    }
     for (word, ..) in tokens(pages) {
         if let Some((_, n)) = NUMBER_WORDS.iter().find(|(w, _)| *w == word) {
             found.insert((*n).to_owned());
-        }
-    }
-    for (raw, _) in numbers(pages) {
-        for part in raw.split(['.', ',']) {
-            let t = part.trim_start_matches('0');
-            found.insert(if t.is_empty() {
-                "0".to_owned()
-            } else {
-                t.to_owned()
-            });
         }
     }
     found
@@ -420,15 +491,48 @@ fn triggers(rule: &str) -> Vec<Vec<String>> {
     out
 }
 
+/// Number words that are a rule's count when they stand in its trigger ("after five minutes"):
+/// "one", "once", "first" and the like are left out, as they are seldom a condition ("if one of
+/// these happens").
+const COUNTED: &[&str] = &[
+    "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+    "twice",
+];
+
+/// The number a word stands for: its digits (no leading zeros), or a number word's ("five": 5).
+fn number_of(word: &str) -> Option<String> {
+    if !word.is_empty() && word.chars().all(|c| c.is_ascii_digit()) {
+        let trimmed = word.trim_start_matches('0');
+        return Some(if trimmed.is_empty() { "0" } else { trimmed }.to_owned());
+    }
+    NUMBER_WORDS
+        .iter()
+        .find(|(w, _)| *w == word)
+        .map(|(_, n)| (*n).to_owned())
+}
+
+/// Whether a sentence carries a trigger: one of its content words (or a word sharing its first
+/// five letters), and every number it holds, as digits or as a number word ("after 5 minutes",
+/// "over 38.5"). A rule's waiting time, dose or temperature is its condition: "after using the
+/// spray" does not carry "after 5 minutes". Words without a number keep the one-word rule, so
+/// a paraphrase still carries ("does not go away" for "is not gone"); a trigger cut in the
+/// middle with no number in it ("trouble" for "trouble breathing") still passes too.
 fn carries(sentence: &str, trigger: &[String]) -> bool {
     let words: Vec<String> = tokens(sentence).into_iter().map(|t| t.0).collect();
-    trigger.iter().any(|w| {
-        words.contains(w)
-            || (w.chars().count() >= 5 && {
-                let head: String = w.chars().take(5).collect();
-                words.iter().any(|x| x.starts_with(&head))
-            })
-    })
+    let numbers: Vec<String> = words.iter().filter_map(|w| number_of(w)).collect();
+    let numbers_kept = trigger
+        .iter()
+        .filter(|w| w.chars().all(|c| c.is_ascii_digit()) || COUNTED.contains(&w.as_str()))
+        .filter_map(|w| number_of(w))
+        .all(|n| numbers.contains(&n));
+    numbers_kept
+        && trigger.iter().any(|w| {
+            words.contains(w)
+                || (w.chars().count() >= 5 && {
+                    let head: String = w.chars().take(5).collect();
+                    words.iter().any(|x| x.starts_with(&head))
+                })
+        })
 }
 
 /// Words of a lead-in step that need not be carried: the writer's narrative verbs and filler.
@@ -522,6 +626,29 @@ fn carries_step(sentence: &str, step: &[String]) -> bool {
                 || x.strip_prefix(w.as_str())
                     .is_some_and(|rest| matches!(rest, "s" | "es" | "d" | "ed" | "ing"))
         })
+    })
+}
+
+/// Whether every content word of `sentence` (three letters or more, or a number, not a stop word)
+/// is in `span`, as written or sharing its first five letters: the sentence says nothing the
+/// span does not.
+fn covered_by(sentence: &str, span: &str) -> bool {
+    // Who says it and how ("the patient must", "he was told"): no instruction of its own.
+    const FILLER: &[&str] = &[
+        "patient", "must", "was", "were", "will", "should", "need", "needs", "can", "may",
+    ];
+    let have: Vec<String> = tokens(span).into_iter().map(|t| t.0).collect();
+    tokens(sentence).into_iter().map(|t| t.0).all(|w| {
+        let digits = w.chars().all(|c| c.is_ascii_digit());
+        STOP.contains(&w.as_str())
+            || STEP_STOP.contains(&w.as_str())
+            || FILLER.contains(&w.as_str())
+            || !(w.chars().count() >= 3 || digits)
+            || have.contains(&w)
+            || (w.chars().count() >= 5 && {
+                let head: String = w.chars().take(5).collect();
+                have.iter().any(|x| x.starts_with(&head))
+            })
     })
 }
 
@@ -727,6 +854,30 @@ pub(crate) fn check_guarded<E>(
                         && some_word
                 })
             });
+        // The partial sentence is replaced only when it says nothing the rule's span does not
+        // (every content word of it is in the span). A sentence that also says something else
+        // keeps its words, and the rule goes in just after it: a dose ("Take FAKEDRUG 2 tablets
+        // daily; call the clinic if you get a rash"), or other advice even when its quote lies
+        // inside the rule ("… if your lips swell, and keep taking your other medicines").
+        let replace = partial.filter(|&i| covered_by(&lines[i].text, &pages[start..to]));
+        if let (Some(index), None) = (partial, replace) {
+            guard(lines, None, &after, &quote)?;
+            // Every logged line after the new one moves down by one, so the log keeps naming
+            // each line where it finally stands (`moved_to` relies on it).
+            for logged in &mut log {
+                if logged.index > index {
+                    logged.index += 1;
+                }
+            }
+            log.push(Fallback {
+                check: "get-help",
+                index: index + 1,
+                before: None,
+                after: after.clone(),
+            });
+            lines.insert(index + 1, Line { text: after, quote });
+            continue;
+        }
         guard(lines, partial, &after, &quote)?;
         match partial {
             Some(index) => {
@@ -751,6 +902,20 @@ pub(crate) fn check_guarded<E>(
         }
     }
     Ok(log)
+}
+
+/// Where each line that was there before `check_guarded` now stands: `to[i]` is line `i`'s
+/// final index among `len` final lines. The checks only add lines (a rule put in after a
+/// sentence, or at the end), each logged with no `before` at its final index; every other line
+/// keeps its order. Anything recorded by line index before the checks (unfound quotes, the
+/// addressee rewrites) is moved with this.
+pub(crate) fn moved_to(log: &[Fallback], len: usize) -> Vec<usize> {
+    let added: std::collections::HashSet<usize> = log
+        .iter()
+        .filter(|f| f.before.is_none())
+        .map(|f| f.index)
+        .collect();
+    (0..len).filter(|i| !added.contains(i)).collect()
 }
 
 #[cfg(test)]
@@ -853,6 +1018,98 @@ mod tests {
     }
 
     #[test]
+    fn given_a_decimal_dose_written_as_a_whole_number_when_checked_then_the_sentence_is_quoted() {
+        check_case("a_decimal_dose_written_as_a_whole_number");
+    }
+
+    #[test]
+    fn given_a_half_milligram_dose_written_as_five_when_checked_then_the_sentence_is_quoted() {
+        check_case("a_half_milligram_dose_written_as_five");
+    }
+
+    #[test]
+    fn given_half_a_tablet_written_as_five_when_checked_then_the_sentence_is_quoted() {
+        check_case("half_a_tablet_written_as_five");
+    }
+
+    #[test]
+    fn given_a_decimal_without_its_leading_zero_written_as_five_when_checked_then_it_is_quoted() {
+        check_case("a_decimal_without_its_leading_zero");
+    }
+
+    #[test]
+    fn given_decimal_doses_written_the_same_when_checked_then_nothing_changes() {
+        check_case("a_decimal_dose_kept");
+    }
+
+    #[test]
+    fn given_a_french_decimal_comma_when_written_with_a_point_then_nothing_changes() {
+        check_case("a_french_decimal_comma_read_as_its_value");
+    }
+
+    #[test]
+    fn given_a_french_decimal_comma_written_as_a_whole_number_when_checked_then_it_is_quoted() {
+        check_case("a_french_decimal_comma_written_as_a_whole_number");
+    }
+
+    #[test]
+    fn given_thousands_and_trailing_zeros_written_another_way_when_checked_then_nothing_changes() {
+        check_case("thousands_and_trailing_zeros_kept");
+    }
+
+    #[test]
+    fn given_a_number_that_reads_both_ways_rewritten_when_checked_then_the_sentence_is_quoted() {
+        check_case("a_number_that_reads_both_ways_rewritten");
+    }
+
+    #[test]
+    fn given_a_dotted_date_written_out_when_checked_then_nothing_changes() {
+        check_case("a_dotted_date_written_out");
+    }
+
+    #[test]
+    fn given_a_comma_with_no_space_before_a_number_when_checked_then_it_is_two_numbers() {
+        check_case("a_comma_with_no_space_before_a_number");
+    }
+
+    #[test]
+    fn given_a_number_that_reads_both_ways_written_without_its_separator_then_it_is_quoted() {
+        check_case("a_number_that_reads_both_ways_written_without_its_separator");
+    }
+
+    #[test]
+    fn numbers_keep_a_decimal_apart_from_a_whole_number() {
+        let value = |raw: &str| numbers(raw).into_iter().map(|(_, v)| v).collect::<Vec<_>>();
+        assert_eq!(value("2.5"), ["2.5"]);
+        assert_eq!(value("2,5"), ["2.5"]);
+        assert_eq!(value("25"), ["25"]);
+        assert_eq!(value("0.5"), ["0.5"]);
+        assert_eq!(value("0,500"), ["0.5"]);
+        assert_eq!(value("0.50"), ["0.5"]);
+        assert_eq!(value("1.0"), ["1"]);
+        assert_eq!(value("05"), ["5"]);
+        assert_eq!(value("take .5 mg"), ["0.5"]);
+        assert_eq!(value("(.5 mg)"), ["0.5"]);
+        assert_eq!(value("5 mg,10 mg"), ["5", "10"]);
+        assert_eq!(value("twice,5 days"), ["5"]);
+        assert_eq!(value("1,000.5"), ["1000.5"]);
+        assert_eq!(value("1.000,5"), ["1000.5"]);
+        assert_eq!(value("1,000,000"), ["1000000"]);
+        assert_eq!(value("1,500"), ["~1,500"]);
+        assert_eq!(value("1.500"), ["~1.500"]);
+        assert_eq!(value("12.03.2024"), ["~12.03.2024"]);
+        assert_eq!(value("12.250"), ["~12.250"]);
+        assert_ne!(value("2.5"), value("25"));
+        let have = page_numbers("Take 2.5 mg, then half, on 12.03.2024.");
+        for allowed in ["2.5", "0.5", "~12.03.2024", "12", "3", "2024"] {
+            assert!(have.contains(allowed), "{allowed}");
+        }
+        for refused in ["25", "2", "5"] {
+            assert!(!have.contains(refused), "{refused}");
+        }
+    }
+
+    #[test]
     fn every_shared_case_has_a_test_below() {
         let me = include_str!("safety.rs");
         for name in CASES
@@ -883,6 +1140,107 @@ mod tests {
     #[test]
     fn given_a_summary_that_carries_every_trigger_when_checked_then_nothing_changes() {
         check_case("a_rule_carried_whole");
+    }
+
+    // A trigger that holds a number needs that number (18 Nov 2026): the shape the graded
+    // review marked unsafe ("Call 911 if chest pain is not gone after using the spray once"
+    // for "If the pain is not gone after 5 minutes, call 911"), and its neighbours.
+    #[test]
+    fn given_a_rule_whose_waiting_time_is_left_out_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_whose_waiting_time_is_left_out");
+    }
+
+    #[test]
+    fn given_a_rule_cut_before_its_number_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_cut_before_its_number");
+    }
+
+    #[test]
+    fn given_a_rule_whose_number_is_written_as_a_word_when_checked_then_it_stays() {
+        check_case("a_rule_whose_number_is_written_as_a_word");
+    }
+
+    #[test]
+    fn given_a_rule_cut_right_after_if_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_cut_right_after_if");
+    }
+
+    #[test]
+    fn given_a_rule_cut_at_or_with_its_number_left_out_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_cut_at_or_with_its_number_left_out");
+    }
+
+    #[test]
+    fn given_a_rule_cut_at_or_before_its_last_trigger_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_cut_at_or_before_its_last_trigger");
+    }
+
+    #[test]
+    fn given_a_rule_with_a_decimal_and_an_abbreviation_when_checked_then_the_rule_is_quoted() {
+        check_case("a_rule_with_a_decimal_and_an_abbreviation");
+    }
+
+    #[test]
+    fn given_a_rule_with_its_number_and_an_abbreviated_unit_when_checked_then_it_stays() {
+        check_case("a_rule_with_its_number_and_an_abbreviated_unit");
+    }
+
+    // By design, not closed: a trigger cut in the middle with no number in it still carries
+    // (one of its words is there). A stricter rule would turn paraphrases into quotes.
+    #[test]
+    fn given_a_trigger_cut_in_the_middle_without_a_number_when_checked_then_it_still_passes() {
+        check_case("a_trigger_cut_in_the_middle_without_a_number_still_passes");
+    }
+
+    // 18 Nov 2026: a sentence that carries a rule only in part, but also says something else (a
+    // dose), keeps its words; the rule is added just after it instead of replacing it.
+    #[test]
+    fn given_a_rule_inside_a_sentence_that_also_gives_a_dose_when_checked_then_the_dose_stays() {
+        check_case("a_rule_inside_a_sentence_that_also_gives_a_dose");
+    }
+
+    // "not" and "no" are not counted as content: a sentence that says the opposite of the rule
+    // is replaced by the rule in the letter's own words, which is the safe direction.
+    #[test]
+    fn given_a_sentence_negating_the_rule_when_checked_then_the_rule_replaces_it() {
+        check_case("a_sentence_negating_what_the_rule_says_is_replaced_by_the_rule");
+    }
+
+    // The independent acceptance set for the 18 Nov 2026 fixes (written apart from them, from
+    // bf4b06b9): ACT cases the step must still handle, KEEP cases it must leave whole.
+    #[test]
+    fn acceptance_m3_act_a_rule_missing_is_added() {
+        check_case("m3_act_a_rule_missing_is_added");
+    }
+
+    #[test]
+    fn acceptance_m3_act_a_sentence_inside_the_rule_is_replaced_by_it() {
+        check_case("m3_act_a_sentence_inside_the_rule_is_replaced_by_it");
+    }
+
+    #[test]
+    fn acceptance_m3_act_the_partial_sentence_is_replaced_and_the_dose_sentence_is_untouched() {
+        check_case("m3_act_the_partial_sentence_is_replaced_and_the_dose_sentence_is_untouched");
+    }
+
+    #[test]
+    fn acceptance_m3_keep_a_dose_and_half_a_rule() {
+        check_case("m3_keep_a_dose_and_half_a_rule");
+    }
+
+    #[test]
+    fn acceptance_m3_keep_a_dose_limit_and_one_trigger() {
+        check_case("m3_keep_a_dose_limit_and_one_trigger");
+    }
+
+    #[test]
+    fn acceptance_m3_keep_a_night_dose_and_one_trigger() {
+        check_case("m3_keep_a_night_dose_and_one_trigger");
+    }
+
+    #[test]
+    fn acceptance_m3_keep_quote_inside_the_rule_but_other_advice_in_the_sentence() {
+        check_case("m3_keep_quote_inside_the_rule_but_other_advice_in_the_sentence");
     }
 
     #[test]

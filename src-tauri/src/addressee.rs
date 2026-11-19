@@ -24,7 +24,7 @@
 //! in another language than English is left as it is (the wording is English).
 //!
 //! Pure std, so its tests run on their own: `rustc --edition 2021 --test src/addressee.rs`.
-//! The cases are shared with the evaluation's Python port (`addressee_cases.txt`).
+//! Its cases are in `addressee_cases.txt`, read by these tests.
 
 /// The post-step's name in a measurement (read by the evaluation measurement only).
 #[allow(dead_code)]
@@ -518,6 +518,113 @@ fn signer(pages: &str) -> Option<String> {
     None
 }
 
+/// What follows "if" or "when" in a courtesy offer to the receiving doctor ("if you need
+/// anything else", "if you have any questions"): not a condition about the patient.
+const COURTESY: &[&str] = &[
+    "you need",
+    "you have any",
+    "you have questions",
+    "you require",
+    "you would like",
+    "you wish",
+    "you want",
+    "needed",
+    "necessary",
+    "there are any",
+    "any questions",
+    "anything",
+    "further",
+];
+
+/// Whether a sentence says when to call: a condition ("if", "when", "unless") that is not a
+/// courtesy offer.
+fn tells_when_to_call(sentence: &str) -> bool {
+    let lower = format!(" {} ", sentence.to_lowercase().replace('\u{2019}', "'"));
+    [" if ", " when ", " unless "].iter().any(|condition| {
+        lower.match_indices(condition).any(|(at, _)| {
+            let rest = lower[at + condition.len()..].trim_start();
+            !COURTESY.iter().any(|offer| rest.starts_with(offer))
+        })
+    })
+}
+
+/// The verbs of getting in touch, as the letter says the patient will.
+const CALLING: &[&str] = &["call", "phone", "contact", "reach", "ring", "telephone"];
+
+/// What comes between the caller and the verb: "she can call", "Sam may call", "the patient
+/// knows to call", "he is to phone" (an adverb such as "also" may follow).
+const MAY_CALL: &[&[&str]] = &[
+    &["can"],
+    &["may"],
+    &["should"],
+    &["must"],
+    &["will"],
+    &["could"],
+    &["might"],
+    &["is", "to"],
+    &["are", "to"],
+    &["knows", "to"],
+    &["know", "to"],
+    &["is", "welcome", "to"],
+    &["are", "welcome", "to"],
+    &["is", "able", "to"],
+];
+
+/// Whether the letter's sentence names the patient as the one who calls: "she can call my office
+/// …", "Sam may call …", "the patient knows to call my line …", "ask Ms Lind to call …". Then
+/// the number is the patient's line to the writer's office, whatever the summary kept of the
+/// sentence (it may drop the condition, or say "to book your follow-up"). The receiving doctor
+/// ("you can call my office") and another doctor ("Dr. Lind can call") are not the patient.
+fn the_patient_calls(source: &str) -> bool {
+    let tokens: Vec<&str> = source
+        .split(|c: char| !(c.is_alphanumeric() || c == '\'' || c == '\u{2019}'))
+        .filter(|w| !w.is_empty())
+        .collect();
+    let lower: Vec<String> = tokens.iter().map(|w| w.to_lowercase()).collect();
+    let doctor = |at: usize| {
+        at.checked_sub(1)
+            .is_some_and(|p| matches!(lower[p].as_str(), "dr" | "doctor" | "docteur"))
+    };
+    let the_patient = |at: usize| match lower[at].as_str() {
+        "she" | "he" | "they" | "patient" => true,
+        // A sentence's first word is capitalised too: only a name counts, never these.
+        "i" | "we" | "you" | "please" | "it" | "this" | "that" | "who" | "your" | "our" | "my"
+        | "his" | "her" | "their" | "the" | "a" | "an" | "any" | "anyone" | "someone"
+        | "everyone" | "staff" | "family" | "nursing" | "office" | "colleagues" | "team" => false,
+        _ => tokens[at].chars().next().is_some_and(char::is_uppercase) && !doctor(at),
+    };
+    (0..lower.len())
+        .filter(|&v| CALLING.contains(&lower[v].as_str()))
+        .any(|v| {
+            let mut end = v;
+            if end > 0 && matches!(lower[end - 1].as_str(), "also" | "always" | "just" | "then") {
+                end -= 1;
+            }
+            let modal = MAY_CALL.iter().find(|m| {
+                end >= m.len()
+                    && lower[end - m.len()..end]
+                        .iter()
+                        .zip(m.iter())
+                        .all(|(a, b)| a == b)
+            });
+            let caller = modal.is_some_and(|m| end > m.len() && the_patient(end - m.len() - 1));
+            // "ask Ms Lind to call", "tell him to phone": the letter relays the call to the patient.
+            let relayed = v >= 3
+                && lower[v - 1] == "to"
+                && (2..=4).any(|back| {
+                    v > back
+                        && matches!(
+                            lower[v - 1 - back].as_str(),
+                            "ask" | "tell" | "remind" | "advise" | "instruct" | "encourage"
+                        )
+                        && lower[v - back..v - 1]
+                            .iter()
+                            .all(|w| !matches!(w.as_str(), "you" | "me" | "us" | "to"))
+                });
+            caller || relayed
+        })
+}
+
 fn contact_rewrite(pages: &str, source: &str, sentence: &str) -> Option<String> {
     let lower = format!(" {}", source.to_lowercase().replace('\u{2019}', "'"));
     let offers = CONTACT_OFFERS.iter().any(|offer| {
@@ -533,6 +640,15 @@ fn contact_rewrite(pages: &str, source: &str, sentence: &str) -> Option<String> 
         })
     });
     if !offers {
+        return None;
+    }
+    // A sentence that tells the patient when to call ("if the wound turns red, you can call the
+    // office at …") is the patient's rule, not the writer's line for the receiving doctor: it
+    // stays whole, number and all (the get-help check leaves contact offers alone, so nothing
+    // would put it back). Only a courtesy offer ("if you need anything else") is the writer's.
+    // The same when the letter names the patient as the caller, even if the summary dropped
+    // the condition or the sentence has none ("she can call my office … to book her follow-up").
+    if tells_when_to_call(sentence) || the_patient_calls(source) {
         return None;
     }
     let spans = phones(sentence);
@@ -593,6 +709,43 @@ const ASKING: &[&str] = &[
     "wondered",
 ];
 
+/// Verbs a letter uses to have its reader pass an action on to the patient ("ask him to …").
+const RELAYING: &[&str] = &[
+    "ask",
+    "tell",
+    "remind",
+    "advise",
+    "instruct",
+    "encourage",
+    "get",
+    "help",
+];
+
+/// Verbs that have the patient do something with no "to" ("have Ava stop the ibuprofen").
+const CAUSING: &[&str] = &["have", "let", "make"];
+
+/// The same in French, Spanish and Portuguese letters: the reader asked to pass an action on.
+const RELAYING_PHRASES: &[&str] = &[
+    "lui demander de",
+    "leur demander de",
+    "lui dire de",
+    "leur dire de",
+    "lui rappeler de",
+    "leur rappeler de",
+    "lui conseiller de",
+    "leur conseiller de",
+    "lui recommander de",
+    "pedirle que",
+    "pídale que",
+    "dígale que",
+    "recuérdele que",
+    "pedir-lhe que",
+    "peça-lhe que",
+    "diga-lhe que",
+    "lembre-o de",
+    "lembre-a de",
+];
+
 /// Words between "you" and what it is asked to do.
 const LINKING: &[&str] = &[
     "would", "could", "can", "should", "will", "might", "to", "please", "kindly", "also",
@@ -647,14 +800,47 @@ fn you_rewrite(source: &str, sentence: &str) -> Option<String> {
                 && (verb(at(2)) || (at(2) == Some("know") && at(3) == Some("to"))))
             || (at(1) == Some("like") && at(2) == Some("would"))
     };
+    // An action the letter asks its reader to pass on is the patient's, not the reader's: "asks
+    // you to take aspirin" in the patient's summary keeps its "you". The letter names the patient
+    // in up to three words between the verb and the action ("ask him to take aspirin", "remind
+    // the patient to …", "ask Mr. Quill to avoid driving", "have Ava stop the ibuprofen"), never
+    // the reader or the writer.
+    let relayed = |x: &str| {
+        let n = source_words.len();
+        (0..n).any(|i| {
+            let verb = source_words[i].as_str();
+            let with_to = RELAYING.contains(&verb);
+            let bare = CAUSING.contains(&verb);
+            (with_to || bare)
+                && (1..=3).any(|k| {
+                    let (from, to) = (i + 1, i + 1 + k);
+                    if to > n
+                        || source_words[from..to]
+                            .iter()
+                            .any(|w| matches!(w.as_str(), "you" | "me" | "us" | "to"))
+                    {
+                        return false;
+                    }
+                    let rest = &source_words[to..];
+                    (with_to && rest.len() >= 2 && rest[0] == "to" && rest[1] == x)
+                        || (bare && rest.first().is_some_and(|w| w == x))
+                })
+        })
+    };
+    // In a letter in another language the action cannot be matched word for word: a letter that
+    // passes an action on ("lui demander de …", "pídale que …", "peça-lhe que …") keeps the "you".
+    let relays_in_other_language = {
+        let lower = source.to_lowercase().replace('\u{2019}', "'");
+        RELAYING_PHRASES.iter().any(|p| lower.contains(p))
+    };
     let does_what_the_letter_asks = |i: usize| -> bool {
         if !english_you {
-            return true;
+            return !relays_in_other_language;
         }
         lower[i + 1..]
             .iter()
             .find(|x| !LINKING.contains(&x.as_str()))
-            .is_some_and(|x| source_words.contains(x))
+            .is_some_and(|x| source_words.contains(x) && !relayed(x.as_str()))
     };
     let mut after = sentence.to_owned();
     let mut changed = false;
@@ -671,7 +857,7 @@ fn you_rewrite(source: &str, sentence: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// The shared cases (also run by the evaluation's Python port).
+    /// The cases (`addressee_cases.txt`).
     const CASES: &str = include_str!("addressee_cases.txt");
 
     struct Case {
@@ -762,6 +948,119 @@ mod tests {
     fn given_the_writers_line_already_said_as_hers_when_post_processed_then_the_sentence_is_unchanged(
     ) {
         check("the_writers_line_said_as_hers");
+    }
+
+    // 18 Nov 2026: a sentence that tells the patient when to call keeps its trigger, its
+    // instruction and its number, even when the letter calls the line the writer's office.
+    #[test]
+    fn given_a_patient_rule_with_the_writers_office_line_when_post_processed_then_the_sentence_is_unchanged(
+    ) {
+        check("a_patient_rule_with_the_writers_office_line");
+    }
+
+    // 18 Nov 2026: what the letter asks its doctor to pass on ("ask him to take …") is the
+    // patient's own action: the summary's "you" stays.
+    #[test]
+    fn given_an_action_the_letter_relays_to_the_patient_when_post_processed_then_its_you_stays() {
+        check("an_action_the_letter_relays_to_the_patient");
+    }
+
+    // The independent acceptance set for the 18 Nov 2026 fixes (written apart from them, from
+    // bf4b06b9): ACT cases the step must still handle, KEEP cases it must leave whole.
+    #[test]
+    fn acceptance_m1_act_offer_to_the_reader_if_anything_is_unclear() {
+        check("m1_act_offer_to_the_reader_if_anything_is_unclear");
+    }
+
+    #[test]
+    fn acceptance_m1_act_my_office_for_questions_about_her_care() {
+        check("m1_act_my_office_for_questions_about_her_care");
+    }
+
+    #[test]
+    fn acceptance_m1_act_my_direct_line_to_discuss_results() {
+        check("m1_act_my_direct_line_to_discuss_results");
+    }
+
+    #[test]
+    fn acceptance_m1_keep_she_can_call_my_office_if_the_wound_turns_red() {
+        check("m1_keep_she_can_call_my_office_if_the_wound_turns_red");
+    }
+
+    #[test]
+    fn acceptance_m1_keep_named_patient_may_call_my_office() {
+        check("m1_keep_named_patient_may_call_my_office");
+    }
+
+    #[test]
+    fn acceptance_m1_keep_offer_and_patient_instruction_in_one_sentence() {
+        check("m1_keep_offer_and_patient_instruction_in_one_sentence");
+    }
+
+    #[test]
+    fn acceptance_m1_keep_the_patient_knows_to_call_my_line() {
+        check("m1_keep_the_patient_knows_to_call_my_line");
+    }
+
+    // The letter names the patient as the caller: the sentence stays, with or without a condition.
+    #[test]
+    fn given_the_patient_named_as_the_caller_when_post_processed_then_the_booking_line_stays() {
+        check("m1_keep_she_can_call_my_office_to_book_her_follow_up");
+    }
+
+    #[test]
+    fn given_a_patient_rule_whose_condition_was_dropped_when_post_processed_then_it_stays() {
+        check("m1_keep_a_patient_rule_whose_condition_the_summary_dropped");
+    }
+
+    #[test]
+    fn given_the_reader_as_the_caller_when_post_processed_then_it_is_the_writers_line() {
+        check("m1_act_the_reader_may_call_my_office");
+    }
+
+    #[test]
+    fn given_another_doctor_as_the_caller_when_post_processed_then_it_is_the_writers_line() {
+        check("m1_act_another_doctor_may_call_my_office");
+    }
+
+    #[test]
+    fn acceptance_m2_act_would_you_see_this_patient() {
+        check("m2_act_would_you_see_this_patient");
+    }
+
+    #[test]
+    fn acceptance_m2_act_could_you_assess_her_for_surgery() {
+        check("m2_act_could_you_assess_her_for_surgery");
+    }
+
+    #[test]
+    fn acceptance_m2_act_whether_you_would_recommend_a_test() {
+        check("m2_act_whether_you_would_recommend_a_test");
+    }
+
+    #[test]
+    fn acceptance_m2_keep_ask_him_to_take_aspirin() {
+        check("m2_keep_ask_him_to_take_aspirin");
+    }
+
+    #[test]
+    fn acceptance_m2_keep_remind_them_to_bring_the_machine() {
+        check("m2_keep_remind_them_to_bring_the_machine");
+    }
+
+    #[test]
+    fn acceptance_m2_keep_ask_a_named_patient_to_avoid_driving() {
+        check("m2_keep_ask_a_named_patient_to_avoid_driving");
+    }
+
+    #[test]
+    fn acceptance_m2_keep_have_the_patient_stop_a_medicine() {
+        check("m2_keep_have_the_patient_stop_a_medicine");
+    }
+
+    #[test]
+    fn acceptance_m2_keep_french_lui_demander_de() {
+        check("m2_keep_french_lui_demander_de");
     }
 
     #[test]

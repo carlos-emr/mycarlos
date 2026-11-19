@@ -1,5 +1,5 @@
-The safety checks' shared cases (K20): synthetic letters only. Read by the Rust tests in safety.rs and by the
-evaluation's Python port. Blocks separated by "===". "pages:" up to "summary:"; one summary sentence per line as
+The safety checks' shared cases (K20): synthetic letters only. Read by the Rust tests in safety.rs (no other
+reader: no Python port exists in the repository). Blocks separated by "===". "pages:" up to "summary:"; one summary sentence per line as
 "<text> || <quote>" (no quote: not found); "expect:" the sentences after the checks.
 ===
 name: a_rule_with_a_trigger_left_out
@@ -199,3 +199,290 @@ expect:
 You must have blood tests every 2 weeks.
 Call the clinic at once if you get a fever or mouth sores.
 
+===
+name: a_rule_inside_a_sentence_that_also_gives_a_dose
+pages:
+Going home
+Take FAKEDRUG 2 tablets daily. Call the clinic if you get a rash or your lips swell.
+summary:
+Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash. || Take FAKEDRUG 2 tablets daily
+expect:
+Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash.
+The document says: “Call the clinic if you get a rash or your lips swell.”
+===
+name: a_rule_whose_waiting_time_is_left_out
+pages:
+Going home
+For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Use the spray once for chest pain. || For chest pain, use the spray once
+Call 911 if chest pain is not gone after using the spray once. || If the pain is not gone after 5 minutes, call 911
+expect:
+Use the spray once for chest pain.
+The document says: “For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.”
+===
+name: a_rule_cut_before_its_number
+pages:
+Going home
+For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Use the spray once for chest pain. || For chest pain, use the spray once
+Call 911 if the pain is not gone after. || If the pain is not gone after 5 minutes, call 911
+expect:
+Use the spray once for chest pain.
+The document says: “For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.”
+===
+name: a_rule_whose_number_is_written_as_a_word
+pages:
+Going home
+For chest pain, use the spray once. If the pain is not gone after 5 minutes, call 911.
+summary:
+Use the spray once for chest pain. || For chest pain, use the spray once
+Call 911 if the pain is not gone five minutes after the spray. || If the pain is not gone after 5 minutes, call 911
+expect:
+Use the spray once for chest pain.
+Call 911 if the pain is not gone five minutes after the spray.
+===
+name: a_rule_cut_right_after_if
+pages:
+Going home
+Call the clinic if your wound gets red and swollen.
+summary:
+Call the clinic if. || Call the clinic if your wound gets red and swollen
+expect:
+The document says: “Call the clinic if your wound gets red and swollen.”
+===
+name: a_rule_cut_at_or_with_its_number_left_out
+pages:
+Going home
+Call the clinic if you have a fever over 38 or the wound gets red and swollen.
+summary:
+Call the clinic if you have a fever or the wound gets red. || Call the clinic if you have a fever over 38
+expect:
+The document says: “Call the clinic if you have a fever over 38 or the wound gets red and swollen.”
+===
+name: a_rule_cut_at_or_before_its_last_trigger
+pages:
+Going home
+Call the clinic if you have a fever over 38 or the wound gets red and swollen.
+summary:
+Call the clinic if you have a fever over 38 or. || Call the clinic if you have a fever over 38
+expect:
+The document says: “Call the clinic if you have a fever over 38 or the wound gets red and swollen.”
+===
+name: a_rule_with_a_decimal_and_an_abbreviation
+pages:
+Going home
+If your temperature is over 38.5 C, call Dr. Fakeham at the clinic.
+summary:
+Call Dr. Fakeham at the clinic if your temperature is over 38. || If your temperature is over 38.5 C
+expect:
+The document says: “If your temperature is over 38.5 C, call Dr. Fakeham at the clinic.”
+===
+name: a_rule_with_its_number_and_an_abbreviated_unit
+pages:
+Going home
+If the bleeding has not stopped after 20 minutes, call 911.
+summary:
+Call 911 if the bleeding has not stopped after 20 min. || If the bleeding has not stopped after 20 minutes
+expect:
+Call 911 if the bleeding has not stopped after 20 min.
+===
+name: a_trigger_cut_in_the_middle_without_a_number_still_passes
+pages:
+Going home
+Call 911 if you have chest pain or trouble breathing.
+summary:
+Call 911 if you have chest pain or trouble. || Call 911 if you have chest pain or trouble breathing
+expect:
+Call 911 if you have chest pain or trouble.
+===
+name: m3_act_a_rule_missing_is_added
+pages:
+Going home
+Use the cream twice a day. If the redness spreads past the line, call the clinic.
+summary:
+Use the cream twice a day. || Use the cream twice a day
+expect:
+Use the cream twice a day.
+The document says: “If the redness spreads past the line, call the clinic.”
+===
+name: m3_act_a_sentence_inside_the_rule_is_replaced_by_it
+pages:
+Going home
+If you have chest pain or trouble breathing, call 911.
+summary:
+Call 911 if you have chest pain. || If you have chest pain
+expect:
+The document says: “If you have chest pain or trouble breathing, call 911.”
+===
+name: m3_act_the_partial_sentence_is_replaced_and_the_dose_sentence_is_untouched
+pages:
+Going home
+Take FAKEDRUG 2 tablets each morning. Come back to the emergency department if you have a fever over 38 °C or new confusion.
+summary:
+Take FAKEDRUG 2 tablets each morning. || Take FAKEDRUG 2 tablets each morning
+Come back if you have a fever over 38 °C. || Come back to the emergency department if you have a fever over 38 °C
+expect:
+Take FAKEDRUG 2 tablets each morning.
+The document says: “Come back to the emergency department if you have a fever over 38 °C or new confusion.”
+===
+name: m3_keep_a_dose_and_half_a_rule
+pages:
+Going home
+Take FAKEDRUG 2 tablets daily. If you get a rash or lip swelling, stop FAKEDRUG and call 911.
+summary:
+Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash. || Take FAKEDRUG 2 tablets daily
+expect:
+Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash.
+The document says: “If you get a rash or lip swelling, stop FAKEDRUG and call 911.”
+===
+name: m3_keep_a_dose_limit_and_one_trigger
+pages:
+Going home
+Take 1 tablet of FAKEDRUG for pain, up to 4 a day. If the pain gets worse or you get a fever, call the clinic.
+summary:
+Take 1 tablet of FAKEDRUG for pain, up to 4 a day, and call the clinic if the pain gets worse. || Take 1 tablet of FAKEDRUG for pain, up to 4 a day
+expect:
+The document says: “Take 1 tablet of FAKEDRUG for pain, up to 4 a day. If the pain gets worse or you get a fever, call the clinic.”
+===
+name: m3_keep_a_night_dose_and_one_trigger
+pages:
+Going home
+Take 1 tablet of FAKEDRUG each night for sleep. If you feel very drowsy in the morning or fall, call the clinic.
+summary:
+Take 1 tablet of FAKEDRUG each night for sleep and call the clinic if you fall. || Take 1 tablet of FAKEDRUG each night for sleep
+expect:
+Take 1 tablet of FAKEDRUG each night for sleep and call the clinic if you fall.
+The document says: “If you feel very drowsy in the morning or fall, call the clinic.”
+===
+name: m3_keep_quote_inside_the_rule_but_other_advice_in_the_sentence
+pages:
+Going home
+Keep taking your other medicines. If your lips or tongue swell, stop FAKEDRUG and call 911.
+summary:
+Stop FAKEDRUG and call 911 if your lips get bigger, and keep taking your other medicines. || stop FAKEDRUG and call 911
+expect:
+Stop FAKEDRUG and call 911 if your lips get bigger, and keep taking your other medicines.
+The document says: “If your lips or tongue swell, stop FAKEDRUG and call 911.”
+===
+name: a_sentence_negating_what_the_rule_says_is_replaced_by_the_rule
+pages:
+Going home
+If the pain gets worse or you get a fever, call the clinic.
+summary:
+Do not call the clinic if the pain gets worse. || If the pain gets worse
+expect:
+The document says: “If the pain gets worse or you get a fever, call the clinic.”
+===
+name: a_decimal_dose_written_as_a_whole_number
+pages:
+Going home
+Take FAKEDRUG 2.5 mg each morning.
+summary:
+Take FAKEDRUG 25 mg each morning. || Take FAKEDRUG 2.5 mg each morning
+expect:
+The document says: “Take FAKEDRUG 2.5 mg each morning.”
+===
+name: a_half_milligram_dose_written_as_five
+pages:
+Going home
+Take FAKEDRUG 0.5 mg at night.
+summary:
+Take FAKEDRUG 5 mg at night. || Take FAKEDRUG 0.5 mg at night
+expect:
+The document says: “Take FAKEDRUG 0.5 mg at night.”
+===
+name: half_a_tablet_written_as_five
+pages:
+Going home
+Take half a tablet each morning.
+summary:
+Take 5 tablets each morning. || Take half a tablet each morning
+expect:
+The document says: “Take half a tablet each morning.”
+===
+name: a_decimal_without_its_leading_zero
+pages:
+Going home
+Take FAKEDRUG .5 mg at night.
+summary:
+Take FAKEDRUG 5 mg at night. || Take FAKEDRUG .5 mg at night
+expect:
+The document says: “Take FAKEDRUG .5 mg at night.”
+===
+name: a_decimal_dose_kept
+pages:
+Going home
+Take FAKEDRUG 2.5 mg daily. Take half a tablet of FAKEPILL at night.
+summary:
+Take 2.5 mg of FAKEDRUG every day. || Take FAKEDRUG 2.5 mg daily
+Take 0.5 of a FAKEPILL tablet at night. || Take half a tablet of FAKEPILL at night
+expect:
+Take 2.5 mg of FAKEDRUG every day.
+Take 0.5 of a FAKEPILL tablet at night.
+===
+name: a_french_decimal_comma_read_as_its_value
+pages:
+Retour à la maison
+Prendre FAKEDRUG 2,5 mg chaque matin.
+summary:
+Take FAKEDRUG 2.5 mg every morning. || Prendre FAKEDRUG 2,5 mg chaque matin
+expect:
+Take FAKEDRUG 2.5 mg every morning.
+===
+name: a_french_decimal_comma_written_as_a_whole_number
+pages:
+Retour à la maison
+Prendre FAKEDRUG 2,5 mg chaque matin.
+summary:
+Take FAKEDRUG 25 mg every morning. || Prendre FAKEDRUG 2,5 mg chaque matin
+expect:
+The document says: “Prendre FAKEDRUG 2,5 mg chaque matin.”
+===
+name: thousands_and_trailing_zeros_kept
+pages:
+Going home
+Drink 1,500 mL a day. Take FAKEDRUG 1.0 mg and 1,000.5 units as before.
+summary:
+Drink 1,500 mL a day. || Drink 1,500 mL a day
+Take FAKEDRUG 1 mg and 1000.5 units as before. || Take FAKEDRUG 1.0 mg and 1,000.5 units as before
+expect:
+Drink 1,500 mL a day.
+Take FAKEDRUG 1 mg and 1000.5 units as before.
+===
+name: a_number_that_reads_both_ways_rewritten
+pages:
+Going home
+Drink 1,500 mL a day.
+summary:
+Drink 1.5 mL a day. || Drink 1,500 mL a day
+expect:
+The document says: “Drink 1,500 mL a day.”
+===
+name: a_dotted_date_written_out
+pages:
+Results
+Seen on 12.03.2024 in the clinic.
+summary:
+You were seen on 12 March 2024 in the clinic. || Seen on 12.03.2024 in the clinic
+expect:
+You were seen on 12 March 2024 in the clinic.
+===
+name: a_comma_with_no_space_before_a_number
+pages:
+Going home
+Take FAKEDRUG 5 mg,10 mg later.
+summary:
+Take FAKEDRUG 5 mg, then 10 mg later. || Take FAKEDRUG 5 mg,10 mg later
+expect:
+Take FAKEDRUG 5 mg, then 10 mg later.
+===
+name: a_number_that_reads_both_ways_written_without_its_separator
+pages:
+Going home
+Drink 1,500 mL a day.
+summary:
+Drink 1500 mL a day. || Drink 1,500 mL a day
+expect:
+The document says: “Drink 1,500 mL a day.”

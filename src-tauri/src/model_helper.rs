@@ -604,6 +604,78 @@ char ::= [^"\\\x00-\x1F\x7F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{{4}})
     )
 }
 
+// --- Progress ------------------------------------------------------------------------------
+
+/// The stages a summary's progress lines name (`local_runner` checks them strictly): reading
+/// the prompt, then writing the sentences. The app's own checks after the answer are the
+/// runner's stage, never the helper's.
+pub(crate) const PROGRESS_READING: &str = "reading";
+pub(crate) const PROGRESS_WRITING: &str = "writing";
+
+/// One progress line of a summary, for request `id`, counts only: reading, the prompt tokens
+/// read of those this answer reads (an instruction prefix put back is not read, so not
+/// counted); writing, the sentences closed of the request's cap. Never a token, a word or a
+/// page: the keys are exactly these four, and every value but the stage is a number.
+#[derive(Debug, Serialize)]
+struct ProgressLine {
+    id: u64,
+    progress: &'static str,
+    done: u32,
+    total: u32,
+}
+
+pub(crate) fn progress_line(id: u64, stage: &'static str, done: u32, total: u32) -> String {
+    serde_json::to_string(&ProgressLine {
+        id,
+        progress: stage,
+        done,
+        total,
+    })
+    .unwrap_or_default()
+}
+
+/// The sentences a summary has closed so far, read from its bytes as the grammar writes them
+/// (`summary_grammar`): a sentence object closes when its `}` brings the braces back to the
+/// root's. A brace or quote inside a string is a character, never structure; the bytes of a
+/// character outside ASCII are never a brace, a quote or a backslash.
+#[derive(Debug, Default)]
+pub(crate) struct SentenceCount {
+    depth: u32,
+    in_string: bool,
+    escaped: bool,
+    closed: usize,
+}
+
+impl SentenceCount {
+    /// Takes the next bytes written; gives the sentences closed so far.
+    pub(crate) fn feed(&mut self, bytes: &[u8]) -> usize {
+        for &byte in bytes {
+            if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if byte == b'\\' {
+                    self.escaped = true;
+                } else if byte == b'"' {
+                    self.in_string = false;
+                }
+                continue;
+            }
+            match byte {
+                b'"' => self.in_string = true,
+                b'{' => self.depth += 1,
+                b'}' => {
+                    if self.depth == 2 {
+                        self.closed += 1;
+                    }
+                    self.depth = self.depth.saturating_sub(1);
+                }
+                _ => {}
+            }
+        }
+        self.closed
+    }
+}
+
 #[derive(Deserialize)]
 struct Sentences {
     sentences: Vec<Sentence>,
@@ -755,10 +827,15 @@ fn serve_model(settings: &Settings) -> i32 {
                 pages,
                 max_sentences,
                 threads,
-            }) => match engine
-                .use_threads(threads)
-                .and_then(|()| engine.summarize(&lang, &pages, max_sentences))
-            {
+            }) => match engine.use_threads(threads).and_then(|()| {
+                // How far it is, between the model's steps (counts only, see `progress_line`).
+                // A line that cannot be written is not an answer's failure: the answer's own
+                // line then cannot be written either, and the helper ends there.
+                let mut report = |stage, done, total| {
+                    let _ = send(&mut output, &progress_line(id, stage, done, total));
+                };
+                engine.summarize(&lang, &pages, max_sentences, &mut report)
+            }) {
                 Ok((sentences, fit)) => serde_json::to_string(&SummaryAnswer {
                     id,
                     sentences,
@@ -831,10 +908,27 @@ mod stub {
             };
             std::thread::sleep(std::time::Duration::from_millis(delay_ms));
             let answer = match request {
-                Request::Summary { id, pages, .. } => {
+                Request::Summary {
+                    id,
+                    pages,
+                    max_sentences,
+                    ..
+                } => {
                     let Some(first) = pages.first() else {
                         return exit::INPUT;
                     };
+                    // Progress as the real helper reports it: the prompt read in two chunks,
+                    // then its one sentence of the request's cap.
+                    let cap = max_sentences.clamp(1, MAX_SENTENCES) as u32;
+                    for (stage, done, total) in [
+                        (PROGRESS_READING, 1, 2),
+                        (PROGRESS_READING, 2, 2),
+                        (PROGRESS_WRITING, 1, cap),
+                    ] {
+                        if !send(&mut output, &progress_line(id, stage, done, total)) {
+                            return exit::OUTPUT;
+                        }
+                    }
                     let quote: String = first
                         .text
                         .split_whitespace()
@@ -1295,6 +1389,65 @@ mod tests {
         ));
         let unknown = r#"{"tool":"explain","id":2,"term":"a","context":"b","lang":"en","x":1}"#;
         assert!(serde_json::from_str::<Request>(unknown).is_err());
+    }
+
+    #[test]
+    fn a_progress_line_has_exactly_its_four_keys_and_numbers_only() {
+        assert_eq!(
+            progress_line(7, PROGRESS_READING, 1024, 1148),
+            r#"{"id":7,"progress":"reading","done":1024,"total":1148}"#
+        );
+        let line: serde_json::Value =
+            serde_json::from_str(&progress_line(8, PROGRESS_WRITING, 3, 10)).unwrap();
+        let line = line.as_object().unwrap();
+        let mut keys: Vec<&String> = line.keys().collect();
+        keys.sort();
+        assert_eq!(keys, ["done", "id", "progress", "total"]);
+        for (key, value) in line {
+            if key == "progress" {
+                assert_eq!(value, "writing");
+            } else {
+                assert!(value.is_u64(), "{key}");
+            }
+        }
+    }
+
+    #[test]
+    fn sentences_are_counted_as_they_close_whatever_their_words_hold() {
+        // FAKE words with braces, quotes, backslashes and characters outside ASCII in them.
+        let answer = r##"{"sentences":[{"text":"FAKE: a \"}\" and {braces}","quote":"x \\"},{"text":"é ünï }{ ","quote":"y"},{"text":"z","quote":"\\\"}"}]}"##;
+        let sentences = serde_json::from_str::<Sentences>(answer).unwrap().sentences;
+        assert_eq!(sentences.len(), 3);
+        // Where each sentence closes: its `}` before `,{` or `]`.
+        let ends: Vec<usize> = answer
+            .match_indices("\"},{\"text\"")
+            .map(|(at, _)| at + 2)
+            .chain(answer.rfind("\"}]}").map(|at| at + 2))
+            .collect();
+        assert_eq!(ends.len(), 3);
+        // Byte by byte: the count goes up by one exactly there, and nowhere else.
+        let mut count = SentenceCount::default();
+        let mut went_up = Vec::new();
+        let mut was = 0;
+        for (at, byte) in answer.as_bytes().iter().enumerate() {
+            let now = count.feed(&[*byte]);
+            if now != was {
+                assert_eq!(now, was + 1);
+                went_up.push(at + 1);
+                was = now;
+            }
+        }
+        assert_eq!(went_up, ends);
+        // In pieces of any size, the same.
+        for size in [2, 3, 5, 7] {
+            let mut count = SentenceCount::default();
+            let last = answer
+                .as_bytes()
+                .chunks(size)
+                .map(|piece| count.feed(piece))
+                .last();
+            assert_eq!(last, Some(3), "{size}");
+        }
     }
 
     #[test]
