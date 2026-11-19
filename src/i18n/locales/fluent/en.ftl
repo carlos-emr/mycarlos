@@ -1835,7 +1835,7 @@ ai-summary-tooLongWithLast =
 
 ai-summary-tooLongStart = This document is probably too long for the AI helper to read at once. It can read only about the start of page 1.
 
-ai-summary-tooLongAfter = If it cannot read all of it, the summary will say which pages it read.
+ai-summary-tooLongAfter = If it cannot read all of it, the summary will say so.
 
 ai-summary-readPages =
     { $last ->

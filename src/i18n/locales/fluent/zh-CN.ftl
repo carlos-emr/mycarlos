@@ -1687,7 +1687,7 @@ ai-summary-tooLongWithLast =
 
 ai-summary-tooLongStart = 这份文档可能太长，AI 助手无法一次读完。它大约只能读第 1 页的开头部分。
 
-ai-summary-tooLongAfter = 如果无法读完全部内容，摘要会说明读了哪些页。
+ai-summary-tooLongAfter = 如果无法读完全部内容，摘要会注明。
 
 ai-summary-readPages =
     { $last ->

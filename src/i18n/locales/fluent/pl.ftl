@@ -1909,7 +1909,7 @@ ai-summary-tooLongWithLast =
 
 ai-summary-tooLongStart = Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej tylko początek strony 1.
 
-ai-summary-tooLongAfter = Jeśli nie zdoła przeczytać całości, podsumowanie poda, które strony zostały przeczytane.
+ai-summary-tooLongAfter = Jeśli nie zdoła przeczytać całości, podsumowanie o tym poinformuje.
 
 ai-summary-readPages =
     { $last ->

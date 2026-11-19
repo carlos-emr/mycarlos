@@ -1871,7 +1871,7 @@ ai-summary-tooLongWithLast =
 
 ai-summary-tooLongStart = Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Solo puede leer aproximadamente el comienzo de la página 1.
 
-ai-summary-tooLongAfter = Si no puede leerlo todo, el resumen indicará qué páginas leyó.
+ai-summary-tooLongAfter = Si no puede leerlo todo, el resumen lo indicará.
 
 ai-summary-readPages =
     { $last ->

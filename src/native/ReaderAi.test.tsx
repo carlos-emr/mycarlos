@@ -1322,9 +1322,7 @@ describe("a document longer than the model reads at a time (#301)", () => {
     await user.click(screen.getByRole("button", { name: "Summary" }));
     expect(await screen.findByText(warning)).toBeVisible();
     expect(
-      screen.getByText(
-        "If it cannot read all of it, the summary will say which pages it read.",
-      ),
+      screen.getByText("If it cannot read all of it, the summary will say so."),
     ).toBeVisible();
     expect(model.calls).toHaveLength(0);
     // The first answer takes the focus, and is described by the question, so
@@ -1338,7 +1336,7 @@ describe("a document longer than the model reads at a time (#301)", () => {
       .map((id) => document.getElementById(id)?.textContent ?? "")
       .join(" ");
     expect(visibleText(description)).toBe(
-      "This document is probably too long for the AI helper to read at once. It can read about pages 1 to 2 of 5. If it cannot read all of it, the summary will say which pages it read.",
+      "This document is probably too long for the AI helper to read at once. It can read about pages 1 to 2 of 5. If it cannot read all of it, the summary will say so.",
     );
     // Tab reaches Cancel next, and back.
     await user.tab();
@@ -1351,13 +1349,11 @@ describe("a document longer than the model reads at a time (#301)", () => {
     expect(screen.getByRole("button", { name: "Summary" })).toHaveFocus();
     expect(model.calls).toHaveLength(1);
     // The whole text goes to the native side, which fits the pages itself;
-    // the answer says the pages it read, as before.
+    // the answer says it read only part (#314's notice, which names no pages).
     expect(model.calls[0].input).toContain(longPages[4]);
     expect(
       await screen.findByText(
-        humanText(
-          "This summary covers only the start of the document: pages 1 to 2.",
-        ),
+        humanText("This summary uses only part of the document’s text."),
       ),
     ).toBeVisible();
   });
