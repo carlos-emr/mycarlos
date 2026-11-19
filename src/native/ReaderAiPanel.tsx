@@ -14,6 +14,7 @@ import {
 } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
+import { useSummaryProgress } from "./useSummaryProgress";
 import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
 import { SMALL_WINDOW, useMediaMatch } from "./smallWindow";
 import { estimateFit, type FitEstimate } from "../ai/capacity";
@@ -159,6 +160,9 @@ export function ReaderAiPanel({
       setWorkingMinutes(0);
     };
   }, [working]);
+  const progress = useSummaryProgress(working && tool === "summary");
+  // Events of a run that is no longer the latest are not shown.
+  const run = useRef(0);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -239,8 +243,9 @@ export function ReaderAiPanel({
     }
   };
 
-  // The model's summary of `document`, shown, said once, and kept.
-  const writeSummary = async (document: DocumentText) => {
+  // The model's summary of `document`, shown, said once, and kept. `mine` is
+  // the run's number (`run`): the progress of an older run is not shown.
+  const writeSummary = async (document: DocumentText, mine: number) => {
     const result = await asModel(() =>
       summarizeDocument(
         aiRef.current.model,
@@ -248,6 +253,9 @@ export function ReaderAiPanel({
         SUMMARY_LANGUAGE,
         Date.now,
         aiRef.current.kept?.recordId,
+        (event) => {
+          if (live.current && run.current === mine) progress.onProgress(event);
+        },
       ),
     );
     if (!live.current) return;
@@ -271,6 +279,8 @@ export function ReaderAiPanel({
     if (tool !== "summary" || !installed || startedFor.current === request)
       return;
     startedFor.current = request;
+    const mine = ++run.current;
+    progress.reset();
     setTooLong(null);
     setWorking(true);
     setFailed(null);
@@ -315,7 +325,7 @@ export function ReaderAiPanel({
           setTooLong({ document, fit });
           return;
         }
-        await writeSummary(document);
+        await writeSummary(document, mine);
       })
       .catch(stopped)
       .finally(() => live.current && setWorking(false));
@@ -348,9 +358,11 @@ export function ReaderAiPanel({
     const waiting = tooLong;
     if (!waiting || working) return;
     setTooLong(null);
+    const mine = ++run.current;
+    progress.reset();
     setWorking(true);
     onReturnFocus();
-    writeSummary(waiting.document)
+    writeSummary(waiting.document, mine)
       .catch(stopped)
       .finally(() => live.current && setWorking(false));
   };
@@ -420,6 +432,17 @@ export function ReaderAiPanel({
     setUnfolded(true);
   };
 
+  // The words of the stage the run is in. Before the helper's first word
+  // the status line keeps today's "working" words; the panel says how long.
+  const stageWords =
+    progress.view.stage === "before"
+      ? t("ai.summary.progress.before")
+      : t(`ai.summary.progress.${progress.view.stage}`);
+  const statusWords = progress.view.statusSaysSlower
+    ? t("ai.summary.progress.slower")
+    : progress.view.stage === "before"
+      ? t("ai.working")
+      : stageWords;
   const title = t(tool === "summary" ? "ai.summary.title" : "ai.explain.title");
   return (
     <section
@@ -506,7 +529,9 @@ export function ReaderAiPanel({
           role="status"
         >
           {working
-            ? t("ai.working")
+            ? tool === "summary"
+              ? statusWords
+              : t("ai.working")
             : !failed && readyFor === tool && tool === "summary" && summary
               ? t("ai.summary.ready")
               : !failed && readyFor === tool && tool === "explain" && explained
@@ -559,9 +584,46 @@ export function ReaderAiPanel({
         {/* Not in the status above, so a screen reader is not told each
           minute; read with the panel. */}
         {working && tool === "summary" && (
-          <p className="native-reader-ai-wait">{t("ai.workingLong")}</p>
+          <div className="native-reader-ai-progress">
+            {/* The stage's words are in the status line above, which is on
+              screen too; only before the helper starts does the panel say
+              more (how long it can take). */}
+            {progress.view.stage === "before" && (
+              <p id="reader-ai-stage" className="native-reader-ai-wait">
+                {stageWords}
+              </p>
+            )}
+            <progress
+              {...(progress.view.stage === "before"
+                ? { "aria-labelledby": "reader-ai-stage" }
+                : { "aria-label": stageWords })}
+              max={100}
+              {...(progress.view.percent === null
+                ? {}
+                : {
+                    value: progress.view.percent,
+                    "aria-valuetext": `${stageWords}, ${new Intl.NumberFormat(
+                      lang,
+                      { style: "percent" },
+                    ).format(progress.view.percent / 100)}`,
+                  })}
+            />
+            {progress.view.slower ? (
+              <p className="native-reader-ai-wait">
+                {t("ai.summary.progress.slower")}
+              </p>
+            ) : (
+              progress.view.minutesLeft !== null && (
+                <p className="native-reader-ai-wait">
+                  {t("ai.summary.progress.estimate", {
+                    minutes: progress.view.minutesLeft,
+                  })}
+                </p>
+              )
+            )}
+          </div>
         )}
-        {working && workingMinutes > 0 && (
+        {working && tool === "explain" && workingMinutes > 0 && (
           <p className="native-reader-ai-wait">
             {t("ai.workingFor", { minutes: workingMinutes })}
           </p>

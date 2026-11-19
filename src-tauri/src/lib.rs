@@ -36,6 +36,7 @@ mod quote_provenance;
 // K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
 mod safety;
 mod summary_contract;
+mod summary_progress;
 // The model download runs on computers only (no AI helper on a phone).
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
@@ -2159,11 +2160,12 @@ async fn ai_summarize(
     };
     let sent_page_indices: Vec<_> = request.pages.iter().map(|page| page.index).collect();
     let lang = request.lang.clone();
+    let mut report = report_progress(app.clone(), answer_id);
     let result = run_ai(
         store.inner(),
         origin,
         announce_answer(app, answer_id),
-        move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch),
+        move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch, &mut report),
     )
     .await?;
     let read_pages =
@@ -2346,6 +2348,119 @@ fn announce_answer(
                 limit_ms,
             },
         );
+    }
+}
+
+/// How far a summary is, for the page (#72): its stage, counts, and the time left when there is
+/// a number, keyed by the answer's id as `ai-answer-started` is, so that the page drops an
+/// abandoned answer's. Counts and seconds only, never a word. No event before the helper
+/// reads (the page's own "before" stage); checking is one event, 1 of 1.
+const AI_ANSWER_PROGRESS: &str = "ai-answer-progress";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiAnswerProgress {
+    answer_id: Uuid,
+    stage: &'static str,
+    done: u32,
+    total: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimate_seconds: Option<u32>,
+}
+
+impl AiAnswerProgress {
+    fn new(
+        answer_id: Uuid,
+        progress: local_runner::Progress,
+        estimate_seconds: Option<u32>,
+    ) -> Self {
+        use local_runner::Stage;
+        Self {
+            answer_id,
+            stage: match progress.stage {
+                Stage::Reading => "reading",
+                Stage::Writing => "writing",
+                Stage::Checking => "checking",
+            },
+            done: progress.done,
+            total: progress.total,
+            estimate_seconds,
+        }
+    }
+}
+
+fn report_progress(
+    app: tauri::AppHandle,
+    answer_id: Uuid,
+) -> impl FnMut(local_runner::Progress, Option<u32>) + Send + 'static {
+    move |progress, estimate_seconds| {
+        use tauri::Emitter;
+        let _ = app.emit(
+            AI_ANSWER_PROGRESS,
+            AiAnswerProgress::new(answer_id, progress, estimate_seconds),
+        );
+    }
+}
+
+#[cfg(test)]
+mod answer_progress_event_tests {
+    use super::*;
+    use local_runner::{Progress, Stage};
+
+    #[test]
+    fn the_progress_event_carries_counts_seconds_and_the_answers_id_only() {
+        let answer_id = Uuid::from_u128(7);
+        let reading = serde_json::to_value(AiAnswerProgress::new(
+            answer_id,
+            Progress {
+                stage: Stage::Reading,
+                done: 512,
+                total: 1148,
+            },
+            Some(123),
+        ))
+        .unwrap();
+        assert_eq!(
+            reading,
+            serde_json::json!({
+                "answerId": answer_id.to_string(),
+                "stage": "reading",
+                "done": 512,
+                "total": 1148,
+                "estimateSeconds": 123,
+            })
+        );
+        // No number yet: no key. Checking is one step.
+        let checking = serde_json::to_value(AiAnswerProgress::new(
+            answer_id,
+            Progress {
+                stage: Stage::Checking,
+                done: 1,
+                total: 1,
+            },
+            None,
+        ))
+        .unwrap();
+        assert_eq!(
+            checking,
+            serde_json::json!({
+                "answerId": answer_id.to_string(),
+                "stage": "checking",
+                "done": 1,
+                "total": 1,
+            })
+        );
+        let writing = serde_json::to_value(AiAnswerProgress::new(
+            answer_id,
+            Progress {
+                stage: Stage::Writing,
+                done: 3,
+                total: 10,
+            },
+            None,
+        ))
+        .unwrap();
+        assert_eq!(writing["stage"], "writing");
     }
 }
 
@@ -5331,6 +5446,9 @@ pub fn run() {
             // Notice keys (#230) live beside `vault-home` too, so no vault
             // backup holds them.
             notice_key::install(&app.path().app_local_data_dir()?);
+            // A summary's measured speed, per model, numbers only (`summary_progress`), beside
+            // `vault-home` too.
+            summary_progress::install(&app.path().app_local_data_dir()?);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
@@ -8768,6 +8886,7 @@ mod event_permission_ipc_tests {
             "ai-model-add-progress",
             "ai-model-add-ended",
             "ai-answer-started",
+            "ai-answer-progress",
         ] {
             let id = tauri::test::get_ipc_response(&main, listen(event))
                 .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))

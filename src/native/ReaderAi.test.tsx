@@ -817,7 +817,7 @@ describe("the reader's AI helper", () => {
     expect(vi.getTimerCount()).toBeGreaterThan(0);
   };
 
-  it("says a summary can take several minutes, and how many it has taken, outside its status", async () => {
+  it("says a summary can take a few minutes, with a bar that has no number until the helper reports, outside its status", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const model = fakeLocalModel();
@@ -840,28 +840,25 @@ describe("the reader's AI helper", () => {
       );
       expect(
         within(panel).getByText(
-          humanText("This can take several minutes for a long document."),
+          "This can take a few minutes. You can keep reading the letter.",
         ),
       ).toBeVisible();
-      await startCounting();
-      // No time before the first minute.
-      expect(within(panel).queryByText(/so far/)).toBeNull();
-      await act(async () => vi.advanceTimersByTime(45_000));
-      expect(
-        within(panel).getByText(humanText("Working for 1 minute so far.")),
-      ).toBeVisible();
-      await act(async () => vi.advanceTimersByTime(2 * 60_000));
-      expect(
-        within(panel).getByText(humanText("Working for 3 minutes so far.")),
-      ).toBeVisible();
+      expect(within(panel).getByRole("progressbar")).not.toHaveAttribute(
+        "value",
+      );
+      // No count of minutes for a summary: the helper's own numbers, or
+      // nothing (the "Working for" line is Explain's).
+      await act(async () => vi.advanceTimersByTime(3 * 60_000));
+      expect(within(panel).queryByText(/so far|minutes? left/)).toBeNull();
       // A screen reader is told the work once, not each minute.
       expect(status).toHaveTextContent(/^The AI helper is working…$/);
-      // Both go once the answer is written.
+      // The bar goes once the answer is written.
       await act(async () => release());
       await waitFor(() =>
         expect(status).toHaveTextContent("The summary is ready."),
       );
-      expect(within(panel).queryByText(/several minutes|so far/)).toBeNull();
+      expect(within(panel).queryByRole("progressbar")).toBeNull();
+      expect(within(panel).queryByText(/few minutes|so far/)).toBeNull();
     } finally {
       vi.useRealTimers();
     }

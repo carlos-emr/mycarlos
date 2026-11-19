@@ -20,6 +20,11 @@ file or opens a connection. Modes, by argument:
   --quote-unread    adds a sentence quoting a page it did not read
   --read-fd         explains with the first bytes of descriptor 3
   --greet-after S   waits that long before greeting (for the lock-during-start test)
+  --progress        says how far it is before answering, as the real helper does: reading
+                    1100 prompt tokens in three batches, then each sentence of the cap
+  --progress-line T writes line T, with ID replaced by the request's id, before the answer
+  --progress-other  writes a valid progress line of another request's id first
+  --progress-every S  writes a reading line every S seconds, forever (for the time limit)
 """
 import json
 import sys
@@ -54,6 +59,24 @@ for line in sys.stdin:
     request = json.loads(line)
     if slow:
         time.sleep(slow)
+    if "--progress-other" in args:
+        print(json.dumps({"id": request["id"] + 1000, "progress": "reading", "done": 1,
+                          "total": 1}), flush=True)
+    if "--progress-every" in args:
+        every = float(args[args.index("--progress-every") + 1])
+        done = 0
+        while True:
+            done += 1
+            print(json.dumps({"id": request["id"], "progress": "reading", "done": done,
+                              "total": 8000}), flush=True)
+            time.sleep(every)
+    if "--progress" in args:
+        for done in (512, 1024, 1100):
+            print(json.dumps({"id": request["id"], "progress": "reading", "done": done,
+                              "total": 1100}), flush=True)
+    if "--progress-line" in args:
+        template = args[args.index("--progress-line") + 1]
+        print(template.replace("ID", str(request["id"])), flush=True)
     if "--long-line" in args:
         print(json.dumps({"id": request["id"], "text": "x" * (5 * 1024 * 1024)}), flush=True)
         continue
@@ -81,6 +104,11 @@ for line in sys.stdin:
             if "--unlocated" in args:
                 quote = "FAKE words the document never says"
             answer.append({"text": f"In short: {sentence.rstrip('.')}.", "quote": quote})
+        if "--progress" in args:
+            cap = min(max(request.get("maxSentences", 5), 1), 10)
+            for done in range(1, len(answer) + 1):
+                print(json.dumps({"id": request["id"], "progress": "writing", "done": done,
+                                  "total": cap}), flush=True)
         if "--quote-unread" in args and len(pages) > 1:
             answer.append({"text": "In short: the clinic phoned.", "quote": pages[1]["text"][:20]})
         reply = {"id": request["id"], "sentences": answer, "lastPage": last,
