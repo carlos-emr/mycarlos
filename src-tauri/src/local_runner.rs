@@ -1430,6 +1430,29 @@ fn folded(text: &str) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_summary_is_sized_as_the_call_sized_it_inline_before_the_extraction() {
+        // The words around the pages (750), then three bytes a token of the pages, at most the
+        // context; the answer's 400. The same values the summary call built in place before
+        // `summary_request_size` was taken out of it.
+        assert_eq!(summary_request_size(0), (750, 400));
+        assert_eq!(summary_request_size(3), (751, 400));
+        assert_eq!(summary_request_size(3_001), (1_751, 400));
+        assert_eq!(
+            summary_request_size(1_000_000),
+            (crate::model_helper::CONTEXT_TOKENS, 400)
+        );
+        for bytes in [1, 2, 4, 100, 9_999, 22_326] {
+            assert_eq!(
+                summary_request_size(bytes),
+                (
+                    prompt_tokens(SUMMARY_PROMPT_TOKENS, bytes),
+                    SUMMARY_ANSWER_TOKENS
+                )
+            );
+        }
+    }
+
     struct Fixed(Option<u64>);
 
     impl MemoryProbe for Fixed {

@@ -4,7 +4,29 @@ A repeatable way to tell whether a change makes the AI summary better or worse: 
 documents, summarized by the real model through the app's own helper, scored the same way, and
 compared with a baseline under a rule written down before the run.
 
-Nothing here runs in CI and nothing here runs a model on its own. Every document is synthetic.
+Nothing here runs a real model on its own. Every document is synthetic.
+
+## What runs where
+- **In CI, on every push (Linux and Windows, `cargo test --features ai-helper-stub`):**
+  - the non-ignored tests of `src-tauri/tests/model_engine.rs`. Four were there before this harness. It adds
+    `a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file`, which starts the real myCarlos executable as
+    the sandboxed helper on a tiny FAKE model the test writes, and
+    `a_summary_build_names_its_prompt_grammar_and_caps_by_one_fingerprint`, which runs no model;
+  - the new unit tests, including `extraction_acceptance_tests` and `pdf_view`'s `extraction_testing`, both in Linux test
+    builds only.
+- **By hand only:**
+  - the ignored real-model tests (`a_real_model_evaluation_run` and the two others);
+  - the Python harness (`compare.py` and its tests: no workflow runs them, so nothing catches them going stale between
+    uses);
+  - every scoring step.
+- **Compiled into the app (Linux and Windows builds):**
+  - about 120 lines in the existing `#[doc(hidden)]` `engine_testing` module of `model_runtime.rs` (the measured summary,
+    `summary_build`, the model file's hash); no command reaches them;
+  - one production edit: `local_runner::summary_request_size`, which returns exactly the size the summary call built
+    inline before (a test pins it).
+- **Not the frozen scorer:** `harness/compare.py` in this repository is the working tool. The graded runs (the unseen sets
+  and their panels) were scored by a frozen copy kept outside the repository (v9.1, its own sha256 recorded with each
+  result), which is a different file. Quote a result's scorer by that recorded hash, not by this file.
 
 ## Pieces
 - `src-tauri/tests/model_engine.rs` → `a_real_model_evaluation_run` (ignored): starts the real
