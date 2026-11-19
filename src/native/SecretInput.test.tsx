@@ -1,9 +1,10 @@
-import { humanText, visibleText } from "../test/humanText";
+import { humanText } from "../test/humanText";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { SecretInput } from "./SecretInput";
+import "../styles.css";
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
 
 function Field() {
@@ -81,7 +82,7 @@ describe("secret input", () => {
           expect(screen.getByLabelText("FAKE secret field")).toBe(input);
           expect(input).toHaveValue(value);
           expect(input).toHaveAttribute("type", type);
-          expect(input).toHaveAttribute("title", description);
+          expect(input).not.toHaveAttribute("title");
           expect(input).toHaveHumanAccessibleDescription(
             `${description} FAKE keep this private.`,
           );
@@ -105,30 +106,26 @@ describe("secret input", () => {
     render(<SecretInput aria-label="Passphrase" value={value} readOnly />);
     const input = screen.getByLabelText(humanText("Passphrase"));
     expect(input).toHaveValue(value);
-    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
-      "14 character password",
-    );
-    expect(input).toHaveHumanAccessibleDescription("14 character password");
+    expect(input).toHaveHumanAccessibleDescription("14 character passphrase");
   });
 
-  it("gives the character count on hover and in the field's description without copying secrets into accessible metadata", async () => {
+  it("gives the character count in the field's description only, not on hover, without copying secrets into accessible metadata", async () => {
     const user = userEvent.setup();
     render(<Field />);
     const input = screen.getByLabelText(humanText("Passphrase"));
     expect(input).toHaveAttribute("type", "password");
     expect(input).toHaveHumanAccessibleName("Passphrase");
-    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
-      "0 character password",
+    expect(input).not.toHaveAttribute("title");
+    expect(input).toHaveHumanAccessibleDescription(
+      "0 character passphrase Use a long passphrase.",
     );
     await user.type(input, "FAKE secret");
-    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
-      "11 character password",
-    );
+    expect(input).not.toHaveAttribute("title");
     expect(input).toHaveHumanAccessibleDescription(
-      "11 character password Use a long passphrase.",
+      "11 character passphrase Use a long passphrase.",
     );
     // The count is read with the field; it is text, not a Tab stop.
-    const count = screen.getByText(humanText("11 character password"));
+    const count = screen.getByText(humanText("11 character passphrase"));
     expect(count).not.toHaveAttribute("tabindex");
     await user.tab();
     expect(
@@ -143,12 +140,12 @@ describe("secret input", () => {
       screen.getByRole("button", { name: humanText("Toggle visibility") }),
     );
     expect(input).toHaveAttribute("type", "text");
-    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
-      "11 character password, shown",
+    expect(input).toHaveHumanAccessibleDescription(
+      "11 character passphrase, shown Use a long passphrase.",
     );
     await user.clear(input);
-    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
-      "0 character password, shown",
+    expect(input).toHaveHumanAccessibleDescription(
+      "0 character passphrase, shown Use a long passphrase.",
     );
     await user.click(
       screen.getByRole("button", { name: humanText("Toggle visibility") }),
@@ -166,10 +163,25 @@ describe("secret input", () => {
       />,
     );
     const input = screen.getByLabelText(humanText("Recovery key"));
-    expect(visibleText(input.getAttribute("title") ?? "")).toBe(
-      "3 character recovery key",
-    );
     expect(input).toHaveHumanAccessibleDescription("3 character recovery key");
     expect(document.body.textContent).not.toContain("A😀é");
+  });
+
+  it("keeps the count in the accessible description but does not draw it", () => {
+    render(<SecretInput aria-label="Passphrase" value="FAKE" readOnly />);
+    const input = screen.getByLabelText(humanText("Passphrase"));
+    const count = screen.getByText(humanText("4 character passphrase"));
+    // Read with the field (its description), by the id the field points at ...
+    expect(input.getAttribute("aria-describedby")).toBe(count.id);
+    expect(input).toHaveHumanAccessibleDescription("4 character passphrase");
+    // ... but visually hidden (the class), and no hover text repeats it.
+    expect(count).toHaveClass("sr-only");
+    expect(input).not.toHaveAttribute("title");
+    // sr-only really takes it out of sight: one pixel, clipped, out of flow.
+    const style = getComputedStyle(count);
+    expect(style.position).toBe("absolute");
+    expect(style.width).toBe("1px");
+    expect(style.height).toBe("1px");
+    expect(style.overflow).toBe("hidden");
   });
 });

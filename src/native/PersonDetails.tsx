@@ -43,6 +43,128 @@ export function trimmedDetails(details: PersonDetails): PersonDetails {
     ...(details.birthDate ? { birthDate: details.birthDate } : {}),
   };
 }
+/** A birth date as the year, month and day a person types or chooses. A
+ * phone's own date picker opens on today's month, where the year is a small
+ * label to tap, so a date decades back is slow to reach. The value handed on is
+ * still the "YYYY-MM-DD" text the vault stores and `detailsProblem` checks; it
+ * is empty until the year, the month and the day are all given, and a year of
+ * fewer than four digits is a date `detailsProblem` refuses. */
+type BirthDateParts = { year: string; month: string; day: string };
+const NO_BIRTH_DATE: BirthDateParts = { year: "", month: "", day: "" };
+const MONTH_NUMBERS = [
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "08",
+  "09",
+  "10",
+  "11",
+  "12",
+] as const;
+export function splitBirthDate(value: string): BirthDateParts {
+  const found = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return found
+    ? { year: found[1], month: found[2], day: found[3] }
+    : NO_BIRTH_DATE;
+}
+export function joinBirthDate({ year, month, day }: BirthDateParts): string {
+  // A year of one to three digits with the month and day chosen is joined as
+  // it stands, so that `detailsProblem` says "not a valid date" (not "required",
+  // which a person who typed 85 would not understand).
+  if (!year || !month || !day) return "";
+  return `${year}-${month}-${day.padStart(2, "0")}`;
+}
+function BirthDateFields({
+  value,
+  unknown,
+  onChange,
+}: {
+  value: string;
+  unknown: boolean;
+  onChange: (birthDate: string) => void;
+}) {
+  const { locale, t } = useI18n();
+  const [parts, setParts] = useState(() => splitBirthDate(value));
+  // Show what is chosen from outside: a person's saved date when the form
+  // opens on it, and nothing once "I don't know" is ticked.
+  useEffect(() => {
+    setParts((current) =>
+      unknown
+        ? NO_BIRTH_DATE
+        : joinBirthDate(current) === value
+          ? current
+          : splitBirthDate(value),
+    );
+  }, [value, unknown]);
+  const monthNames = new Intl.DateTimeFormat(locale, {
+    month: "long",
+    timeZone: "UTC",
+  });
+  const change = (next: BirthDateParts) => {
+    setParts(next);
+    onChange(joinBirthDate(next));
+  };
+  return (
+    <fieldset className="native-birth-date" disabled={unknown}>
+      <legend>{t("personDetails.birthDate")}</legend>
+      <label className="native-birth-year">
+        {t("personDetails.birthYear")}
+        <input
+          inputMode="numeric"
+          autoComplete="bday-year"
+          maxLength={4}
+          required={!unknown}
+          value={parts.year}
+          onChange={(e) =>
+            change({
+              ...parts,
+              year: e.target.value.replace(/\D/g, "").slice(0, 4),
+            })
+          }
+        />
+      </label>
+      <label className="native-birth-month">
+        {t("personDetails.birthMonth")}
+        <select
+          autoComplete="bday-month"
+          required={!unknown}
+          value={parts.month}
+          onChange={(e) => change({ ...parts, month: e.target.value })}
+        >
+          <option value="">{t("personDetails.birthMonthChoose")}</option>
+          {MONTH_NUMBERS.map((month) => (
+            <option key={month} value={month}>
+              {monthNames.format(
+                new Date(Date.UTC(2000, Number(month) - 1, 1)),
+              )}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="native-birth-day">
+        {t("personDetails.birthDay")}
+        <input
+          inputMode="numeric"
+          autoComplete="bday-day"
+          maxLength={2}
+          required={!unknown}
+          value={parts.day}
+          onChange={(e) =>
+            change({
+              ...parts,
+              day: e.target.value.replace(/\D/g, "").slice(0, 2),
+            })
+          }
+        />
+      </label>
+    </fieldset>
+  );
+}
+
 export function PersonDetailsFields({
   details,
   onChange,
@@ -72,17 +194,11 @@ export function PersonDetailsFields({
           onChange={(e) => onChange({ ...details, fullName: e.target.value })}
         />
       </label>
-      <label>
-        {t("personDetails.birthDate")}
-        <input
-          type="date"
-          max={localDateText(new Date())}
-          required={!birthDateUnknown}
-          disabled={birthDateUnknown}
-          value={details.birthDate ?? ""}
-          onChange={(e) => onChange({ ...details, birthDate: e.target.value })}
-        />
-      </label>
+      <BirthDateFields
+        value={details.birthDate ?? ""}
+        unknown={birthDateUnknown}
+        onChange={(birthDate) => onChange({ ...details, birthDate })}
+      />
       <label className="native-person-date-unknown">
         <input
           type="checkbox"

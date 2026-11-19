@@ -96,6 +96,7 @@ The important trust boundaries are:
 | --- | --- |
 | External source to OS picker | Selection is user intent, not proof that a file is safe or authentic. |
 | React webview to Rust | Treat the renderer as untrusted. Validate command, state, identity, size, and object ID in Rust. |
+| Page to the Android activity | On Android the WebView has exactly one JavaScript interface, `MyCarlosSystemBars`, added by the patched `MainActivity` (scripts/configure-android-security.mjs). It has one `@JavascriptInterface` method, `set(colour, darkBackground)`, which accepts only a `#rrggbb` string (checked against `^#[0-9a-fA-F]{6}$`; anything else is ignored) and a boolean, and runs on the UI thread. All it can do is set the colour of the strip behind the status bar and the tone of the bar icons. It reads nothing, returns nothing and reaches no vault, file or network. The most that a hostile page or frame could do through it is change that strip's colour; Android injects the interface into every frame of the WebView, so it is only the app's own page that can reach it while two things hold: the CSP (`frame-src 'none'; object-src 'none'`, no iframe, object, embed or `window.open` in the app) and the navigation check (a top-level navigation goes through Rust's `may_navigate`, which allows only the bundled pages; see IPC-02). |
 | Rust to OS key storage | Store only the minimum wrapping material and bind access to the intended application/device policy. |
 | Rust to local storage | Durable document content, metadata, indexes, and derived artifacts must be authenticated ciphertext. |
 | Vault to viewer | Decrypt only after unlock; constrain viewer privileges and prohibit uncontrolled network or native access. |
@@ -412,7 +413,7 @@ This model does **not** cover:
 - phones: the PDF helper does not run there (IMP-02), so a phone can neither read a document's
   text nor run a local model, and neither the export nor the AI on this device works on a phone
   until a phone design is reviewed;
-- macOS for now: the model helper is built for Windows and Linux only, and a Mac says "not available on this kind of computer yet" until #211;
+- macOS for now: the model helper is built for Windows and Linux only, and a Mac says "not available on this kind of device yet" until #211;
 - the later tools (questions to ask, filing suggestions).
 
 Stated limits: removing details is never perfect (AI-01); an AI service the patient is signed in

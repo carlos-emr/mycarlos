@@ -48,7 +48,7 @@ checklist-notAName = Distinta de su nombre
 
 checklist-notYet = , todavía no
 
-checklist-spaces = Se permiten espacios, así que unas cuantas palabras sin relación entre sí forman una buena frase de contraseña. myCarlos comprueba estas reglas en este equipo.
+checklist-spaces = Se permiten espacios, así que unas cuantas palabras sin relación entre sí forman una buena frase de contraseña. myCarlos comprueba estas reglas en este dispositivo.
 
 comfort-autoLock-body = myCarlos se bloquea solo cuando no se usa durante este tiempo, para que nadie más vea sus documentos. Elija entre 1 y 15 minutos.
 
@@ -78,7 +78,7 @@ create-stays = Su bóveda permanece en este dispositivo. Si creó una en otro di
 
 create-submit = Crear bóveda
 
-create-title = Configure myCarlos en este equipo
+create-title = Configure myCarlos en este dispositivo
 
 error-checkBoxes = Revise { $boxes } y vuelva a intentarlo.
 
@@ -251,7 +251,7 @@ interface-notice-alreadyShared = { $name } ya estaba en Compartido conmigo.
 
 interface-notice-changesResumed = { $outcome } La bóveda vuelve a aceptar cambios.
 
-interface-notice-copySaved = Se guardó una copia legible en este equipo.
+interface-notice-copySaved = Se guardó una copia legible en este dispositivo.
 
 interface-notice-damagedHidden =
     { $count ->
@@ -331,7 +331,7 @@ interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative = Su kit antiguo
 
 interface-person-records = Documentos de { $name }
 
-interface-photo-checkYourComputersCameraPrivacySettingsAnd = Revise los ajustes de privacidad de la cámara de su equipo y permita que myCarlos la use.
+interface-photo-checkYourComputersCameraPrivacySettingsAnd = Revise los ajustes de privacidad de la cámara de su dispositivo y permita que myCarlos la use.
 
 interface-photo-inSystemSettingsOpenPrivacySecurityThen = En Ajustes del Sistema, abra Privacidad y seguridad, después Cámara, y active myCarlos.
 
@@ -407,7 +407,7 @@ interface-RecordDetails-moveTo = Mover a
 
 interface-RecordDetails-read = Leer
 
-interface-RecordDetails-saveACopyToThisComputer = Guardar una copia en este equipo
+interface-RecordDetails-saveACopyToThisComputer = Guardar una copia en este dispositivo
 
 interface-RecordDetails-theFileStaysEncryptedInTheVault = El archivo permanece cifrado en la bóveda. Guarde una copia solo cuando necesite un archivo legible fuera de myCarlos.
 
@@ -558,7 +558,7 @@ interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Muévalos a sus carp
 
 interface-VaultLibrary-moveTheSelectedDocuments = Mover los documentos seleccionados.
 
-interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos no pudo guardar un cambio en este equipo. Libere espacio de almacenamiento o compruebe el disco; después, bloquee y desbloquee de nuevo. La bóveda se repara cuando puede escribir.
+interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos no pudo guardar un cambio en este dispositivo. Libere espacio de almacenamiento o compruebe el disco; después, bloquee y desbloquee de nuevo. La bóveda se repara cuando puede escribir.
 
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteca de documentos cifrados de myCarlos
 
@@ -790,7 +790,7 @@ native-error-33 = myCarlos no puede mostrar documentos de forma segura en este s
 
 native-error-34 = No hay suficiente espacio de almacenamiento para completar esta operación.
 
-native-error-35 = myCarlos no pudo leer o escribir sus archivos en este equipo. Compruebe que la unidad que contiene myCarlos esté conectada y tenga espacio libre e inténtelo de nuevo. Si estaba cambiando algo, compruebe primero sus documentos para ver si se realizó el cambio.
+native-error-35 = myCarlos no pudo leer o escribir sus archivos en este dispositivo. Compruebe que la unidad que contiene myCarlos esté conectada y tenga espacio libre e inténtelo de nuevo. Si estaba cambiando algo, compruebe primero sus documentos para ver si se realizó el cambio.
 
 native-error-36 = La operación se detuvo porque se bloqueó la bóveda.
 
@@ -957,7 +957,7 @@ photo-zoomIn = Acercar
 
 photo-zoomOut = Alejar
 
-preferences-subtitle = Cómo se ve myCarlos en este equipo
+preferences-subtitle = Cómo se ve myCarlos en este dispositivo
 
 readingAid-available = Su clínica también envió una ayuda de lectura para este documento.
 
@@ -1100,7 +1100,7 @@ rename-tooLong = Este nombre es demasiado largo. Acórtelo para guardarlo.
 
 rename-unsafe = Los nombres de documento no pueden contener { $characters } ni caracteres de control invisibles, ni terminar en punto.
 
-reset-plainly = Al apartar la bóveda se quitan de myCarlos en este equipo todos sus documentos, carpetas y perfiles de pacientes. Se quedan en este equipo, cifrados. Esa bóveda sigue abriéndose con su frase de contraseña original o la clave de recuperación correspondiente. Crear una bóveda nueva no cambia esas credenciales. Para confirmarlo, escriba exactamente las palabras de abajo.
+reset-plainly = Al apartar la bóveda se quitan de myCarlos en este dispositivo todos sus documentos, carpetas y perfiles de pacientes. Se quedan en este dispositivo, cifrados. Esa bóveda sigue abriéndose con su frase de contraseña original o la clave de recuperación correspondiente. Crear una bóveda nueva no cambia esas credenciales. Para confirmarlo, escriba exactamente las palabras de abajo.
 
 reset-submit = Apartar la bóveda
 
@@ -1336,7 +1336,7 @@ textSize-box = Tamaño del texto en porcentaje
 
 textSize-followsDevice = Aquí, el tamaño del texto depende de su dispositivo: de su propio ajuste de tamaño del texto o del zoom del navegador.
 
-textSize-help = Agranda o reduce todo el contenido de myCarlos, del { $min }% al { $max }%. myCarlos recuerda el tamaño en este equipo. También puede mantener pulsada la tecla { $modifier } y pulsar más, menos o 0.
+textSize-help = Agranda o reduce todo el contenido de myCarlos, del { $min }% al { $max }%. myCarlos recuerda el tamaño en este dispositivo. También puede mantener pulsada la tecla { $modifier } y pulsar más, menos o 0.
 
 textSize-key-command = Comando
 
@@ -1391,6 +1391,14 @@ personDetails-birthDate = Fecha de nacimiento
 personDetails-birthDateRequired = Introduzca la fecha de nacimiento o indique que la desconoce.
 
 personDetails-birthDateUnknown = No conozco la fecha de nacimiento de esta persona
+
+personDetails-birthDay = Día
+
+personDetails-birthMonth = Mes
+
+personDetails-birthMonthChoose = Elegir
+
+personDetails-birthYear = Año
 
 personDetails-cancel = Cancelar
 
@@ -1857,9 +1865,9 @@ ai-summary-title = Resumen en palabras sencillas
 
 ai-explain-title = Explicar un término
 
-ai-notInstalled-title = El asistente de IA todavía no está en este equipo
+ai-notInstalled-title = El asistente de IA todavía no está en este dispositivo
 
-ai-notInstalled-body = Cuando esté instalado, le explicará sus documentos en palabras sencillas con un modelo de IA que funciona en este equipo. En Configuración, en Asistente de IA, puede descargar el modelo o agregar un archivo de modelo que ya tenga.
+ai-notInstalled-body = Cuando esté instalado, le explicará sus documentos en palabras sencillas con un modelo de IA que funciona en este dispositivo. En Configuración, en Asistente de IA, puede descargar el modelo o agregar un archivo de modelo que ya tenga.
 
 ai-notInstalled-openPreferences = Abrir la configuración del asistente de IA
 
@@ -1911,11 +1919,11 @@ ai-explain-submit = Explicar
 
 ai-preferences-title = Asistente de IA
 
-ai-preferences-body = Explica tus documentos con palabras sencillas mediante un modelo de IA que funciona en este equipo. Descarga uno de los modelos de abajo o añade un archivo correspondiente que ya tengas. Los modelos se quedan en este equipo.
+ai-preferences-body = Explica tus documentos con palabras sencillas mediante un modelo de IA que funciona en este dispositivo. Descarga uno de los modelos de abajo o añade un archivo correspondiente que ya tengas. Los modelos se quedan en este dispositivo.
 
 ai-preferences-notInstalled = No instalado
 
-ai-settings-subtitle = Cómo funciona el asistente de IA en este equipo
+ai-settings-subtitle = Cómo funciona el asistente de IA en este dispositivo
 
 ai-model-add = Agregar un archivo de modelo…
 
@@ -1942,15 +1950,15 @@ ai-model-installed = Instalado: { $name }
 
 ai-model-remove = Quitar el modelo
 
-ai-model-removeConfirm = ¿Quitar el modelo de este equipo? Podrá agregarlo de nuevo más tarde.
+ai-model-removeConfirm = ¿Quitar el modelo de este dispositivo? Podrá agregarlo de nuevo más tarde.
 
 ai-model-damaged = El archivo del modelo está dañado o ha cambiado. Quítelo y vuelva a agregarlo.
 
-ai-model-unsupportedRam = Este equipo no tiene memoria suficiente para el asistente de IA (necesita unos 8 GB).
+ai-model-unsupportedRam = Este dispositivo no tiene memoria suficiente para el asistente de IA (necesita unos 8 GB).
 
-ai-model-unsupportedCpu = El procesador de este equipo no es compatible con el asistente de IA.
+ai-model-unsupportedCpu = El procesador de este dispositivo no es compatible con el asistente de IA.
 
-ai-model-unsupportedPlatform = El asistente de IA todavía no está disponible en este tipo de equipo.
+ai-model-unsupportedPlatform = El asistente de IA todavía no está disponible en este tipo de dispositivo.
 
 ai-model-refusedList = myCarlos no acepta este archivo. Elige uno de los archivos de modelo indicados arriba.
 
@@ -1958,9 +1966,9 @@ ai-model-refusedHash = Este no es el archivo esperado. Descárguelo de nuevo y a
 
 ai-model-refusedIncomplete = No se pudo leer el archivo completo. Compruebe que la descarga haya terminado e inténtelo de nuevo.
 
-ai-model-refusedDisk = No hay espacio libre suficiente en este equipo. El modelo necesita unos 4 GB.
+ai-model-refusedDisk = No hay espacio libre suficiente en este dispositivo. El modelo necesita unos 4 GB.
 
-ai-model-refusedStorage = No se pudo guardar el modelo en este equipo.
+ai-model-refusedStorage = No se pudo guardar el modelo en este dispositivo.
 
 ai-model-refusedBusy = El asistente de IA está trabajando. Inténtelo de nuevo cuando termine.
 
@@ -2005,7 +2013,7 @@ ai-error-memory = Ahora mismo no hay suficiente memoria libre para el asistente 
 
 ai-error-busy = Se está agregando o quitando el modelo del asistente de IA. Intente de nuevo cuando termine.
 
-ai-error-storage = No se pudo leer el modelo del asistente de IA en este equipo. Intente de nuevo. Si sigue pasando, quite el modelo en Configuración, en Asistente de IA, y vuelva a agregarlo.
+ai-error-storage = No se pudo leer el modelo del asistente de IA en este dispositivo. Intente de nuevo. Si sigue pasando, quite el modelo en Configuración, en Asistente de IA, y vuelva a agregarlo.
 
 ai-summary-pagesMissing = Algunas páginas no se pudieron leer completas, así que puede que este resumen omita partes.
 
@@ -2034,9 +2042,9 @@ ai-summary-progress-slower = Está tardando más de lo previsto.
 
 aiHelper-notice-title = Acerca del asistente de IA
 
-aiHelper-notice-introShare = myCarlos puede preparar el texto de un documento para el servicio de IA que usted elija. El asistente de IA nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este equipo.
+aiHelper-notice-introShare = myCarlos puede preparar el texto de un documento para el servicio de IA que usted elija. El asistente de IA nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este dispositivo.
 
-aiHelper-notice-intro = El asistente de IA explica un documento con palabras sencillas, aquí en este dispositivo, y puede preparar el texto de un documento para el servicio de IA que usted elija. Nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este equipo.
+aiHelper-notice-intro = El asistente de IA explica un documento con palabras sencillas, aquí en este dispositivo, y puede preparar el texto de un documento para el servicio de IA que usted elija. Nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este dispositivo.
 
 aiHelper-notice-testBuild = Esta versión de desarrollo es solo para archivos ficticios. No la use con información de salud real.
 
@@ -2247,7 +2255,7 @@ ai-keepFull = Este documento ya guarda el máximo de respuestas de la IA. Las re
 
 # Catalog model list (#276A).
 
-ai-models-title = Modelos en este equipo
+ai-models-title = Modelos en este dispositivo
 
 ai-models-group = Modelo en uso
 
