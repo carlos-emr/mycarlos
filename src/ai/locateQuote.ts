@@ -9,8 +9,14 @@ import type { DocumentText, SourceSpan } from "./types";
  * compares both texts after collapsing white space, folding case, accents
  * and compatibility forms (NFKD without combining marks), and treating curly
  * quotes as straight ones, while keeping a map back to the page's own
- * offsets. A quote with "..." or "…" in it must match each part, in order, on
- * one page.
+ * offsets. A space right before a comma is dropped on both sides: a PDF's
+ * text layer often puts the comma of a wrapped line at the start of the next
+ * one ("biopsy\n, with"), and a model copies it either way. A quote with
+ * "..." or "…" in it must match each part, in order, on one page.
+ *
+ * The Rust runner matches quotes by the same rule before a summary reaches
+ * this file (`quote_locate.rs`, used by the runner's gate, the addressee step
+ * and the safety checks); a change here needs the same change there.
  *
  * It is an exact match after that, never a guess: a quote that is not in the
  * document gives `null`, and the sentence then shows without a link. The
@@ -20,7 +26,9 @@ import type { DocumentText, SourceSpan } from "./types";
  * needs at least 12 characters or at least 3 words (a word is a run of
  * letters or digits, or one Chinese, Japanese or Korean character). A model
  * that cites "mg" or "the" would otherwise get a real-looking link to any
- * page, which is what the check is for (THREAT_MODEL.md AI-05).
+ * page, which is what the check is for (THREAT_MODEL.md AI-05). The Rust
+ * gate keeps a quote of one short part for its own checks (the addressee and
+ * safety steps); this reader still shows that sentence without a link.
  */
 export function locateQuote(
   document: DocumentText,
@@ -87,6 +95,11 @@ function fold(original: string): Folded {
       : (QUOTES[char] ??
         char.normalize("NFKD").toLowerCase().replace(/\p{M}/gu, ""));
     if (out === " " && text.endsWith(" ")) out = "";
+    if (out === "," && text.endsWith(" ")) {
+      text = text.slice(0, -1);
+      starts.pop();
+      ends.pop();
+    }
     for (let i = 0; i < out.length; i++) {
       starts.push(at);
       ends.push(end);

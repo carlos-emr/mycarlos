@@ -1050,7 +1050,9 @@ impl Runner {
             .take(request.max_sentences)
             .enumerate()
             .map(|(index, mut sentence)| {
-                if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
+                if !quote_on_a_page(&read_pages, &sentence.quote)
+                    || quote_is_heading(&text, &sentence.quote)
+                {
                     unlocated_quotes.record(index, std::mem::take(&mut sentence.quote));
                 }
                 sentence
@@ -1681,21 +1683,22 @@ fn cut(text: &str, chars: usize) -> String {
     text.chars().take(chars).collect()
 }
 
-/// What a quote may start or end with that is not part of it, as the reader
-/// trims it (`locateQuote`): quotation marks, straight or curly, and `.,;:`.
-const QUOTE_ENDS: &[char] = &[
-    '"', '\'', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '.', ',', ';', ':',
-];
-
-/// Whether the document contains the quote, word for word, as the reader
-/// matches one (`locateQuote`): whitespace runs count as one, case does not
-/// count, and spaces and [`QUOTE_ENDS`] at either end of the quote are not
-/// part of it. A model often copies the colon of a "Label: value" line
-/// (": Admitted: 2026-10-01"). The renderer places it exactly; here a quote
-/// that is not there at all is enough to empty it.
+/// Whether the pages contain the quote as the reader matches one (`locateQuote.ts`, shared as
+/// `quote_locate`): white space runs count as one, case, accents and ligatures do not count, a
+/// curly quote is a straight one, the space before a comma is not there, and spaces and `.,;:`
+/// and quote marks at either end of the quote are not part of it (a model often copies the colon
+/// of a "Label: value" line, ": Admitted: 2026-10-01"). A quote may be parts joined by "..."
+/// that are found in order, and each part must be worth finding. The renderer places it exactly;
+/// here a quote that is not there at all is enough to empty it.
 fn quote_in(text: &str, quote: &str) -> bool {
-    let quote = folded(quote);
-    !quote.is_empty() && fold(text).contains(&quote)
+    crate::quote_locate::is_located(text, quote)
+}
+
+/// Whether one of the pages read contains the quote. The reader matches page by page
+/// (`locateQuote.ts`: every part of a quote on one page), so words that only run over a page break
+/// are no source it can show; the joined text of the pages would find them.
+fn quote_on_a_page(pages: &[&Page], quote: &str) -> bool {
+    pages.iter().any(|page| quote_in(&page.text, quote))
 }
 
 /// At most this many words make a heading (see [`quote_is_heading`]).
@@ -1711,17 +1714,17 @@ const HEADING_WORDS: usize = 4;
 /// "Allergies: none") is no heading, nor is a line with a value in it ("Admitted:
 /// 2026-10-01") or a sentence ("Hypertension is treated.").
 fn quote_is_heading(text: &str, quote: &str) -> bool {
-    let quote = folded(quote);
-    if quote.is_empty()
-        || quote.split(' ').count() > HEADING_WORDS
-        || quote.chars().any(char::is_numeric)
-    {
+    // A quote joined from parts is no line of its own.
+    let Some(quote) = crate::quote_locate::single_part(quote) else {
+        return false;
+    };
+    if quote.split(' ').count() > HEADING_WORDS || quote.chars().any(char::is_numeric) {
         return false;
     }
     let lines: Vec<&str> = text.lines().collect();
     lines.iter().enumerate().any(|(at, line)| {
         let next = lines[at + 1..].iter().find(|next| !next.trim().is_empty());
-        folded(line) == quote && reads_as_heading(line, next.copied())
+        crate::quote_locate::folded_line(line) == quote && reads_as_heading(line, next.copied())
     })
 }
 
@@ -1752,20 +1755,6 @@ fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
             || numbered
     });
     line.ends_with(':') || in_capitals || over_a_list
-}
-
-/// Whitespace runs as one space, in lower case.
-fn fold(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
-}
-
-/// A quote, or a line, as quotes are compared: folded, without [`QUOTE_ENDS`] or spaces at
-/// either end.
-fn folded(text: &str) -> String {
-    fold(text.trim_matches(|c: char| c.is_whitespace() || QUOTE_ENDS.contains(&c)))
 }
 
 #[cfg(test)]
@@ -1885,6 +1874,86 @@ mod tests {
         assert!(!quote_in(letter, " :.;'\" "));
         // Inside the quote, the words still have to be there as written.
         assert!(!quote_in(letter, "lasts 3 to 6 minutes"));
+    }
+
+    #[test]
+    fn a_quote_is_found_in_a_pdfs_text_as_the_reader_finds_it() {
+        // A FAKE letter as a PDF's text layer gives it: ligature characters (U+FB01, U+FB03), a
+        // comma at the start of a wrapped line, a micro sign (U+00B5), the Bloods line before
+        // the Diagnosis line. The reader links each of these quotes; the gate must keep them.
+        let letter = "Bloods (3 November 2026): hemoglobin 101 g/L, ferritin 5 \u{b5}g/L\n\
+            Diagnosis\nCeliac disease, con\u{fb01}rmed by biopsy\n, with iron de\u{fb01}ciency anemia\n\
+            Referral to our clinic dietitian, Robin FAKE-Dietwell; the dietitian's o\u{fb03}ce\n\
+            will call within 2\nweeks.";
+        for quote in [
+            "Celiac disease, confirmed by biopsy, with iron deficiency anemia",
+            "Celiac disease, con\u{fb01}rmed by biopsy , with iron de\u{fb01}ciency anemia",
+            "hemoglobin 101 g/L, ferritin 5 \u{3bc}g/L",
+            "the dietitian\u{2019}s office will call within 2 weeks",
+            "Referral to our clinic dietitian, Robin FAKE-Dietwell; the dietitian's office will call within 2 weeks.",
+            // Parts joined by dots, found in order (the Bloods line is first in this letter).
+            "hemoglobin 101 g/L, ferritin 5 \u{b5}g/L ... Celiac disease, confirmed by biopsy",
+            "hemoglobin 101 g/L\u{2026}Celiac disease, confirmed by biopsy",
+        ] {
+            assert!(quote_in(letter, quote), "{quote}");
+            assert!(!quote_is_heading(letter, quote), "{quote}");
+        }
+        // Still not found: a word that is not in the letter, parts out of order, a part that is
+        // too short to mean one place, a made-up quote.
+        for quote in [
+            "Referral to our clinic dietitian, Robin FAKE-Dietwell; the dietitian's office will phone within 2 weeks.",
+            "Celiac disease, confirmed by biopsy ... hemoglobin 101 g/L, ferritin 5 \u{b5}g/L",
+            "hemoglobin ... Celiac disease, confirmed by biopsy",
+            "The patient must start steroids immediately.",
+        ] {
+            assert!(!quote_in(letter, quote), "{quote}");
+        }
+    }
+
+    #[test]
+    fn a_heading_is_a_heading_whatever_its_ligatures_and_a_joined_quote_is_none() {
+        let letter = "De\u{fb01}nite plan:\nBlood tests in 1 week.\nFollow-up in this clinic.";
+        assert!(quote_is_heading(letter, "Definite plan"));
+        assert!(quote_is_heading(letter, "\"Definite plan:\""));
+        assert!(!quote_is_heading(
+            letter,
+            "Definite plan ... Follow-up in this clinic"
+        ));
+    }
+
+    #[test]
+    fn a_quote_is_located_on_one_page_as_the_reader_does_not_over_a_page_break() {
+        let first = Page {
+            index: 0,
+            text: "Plan\nThe blood tests will be repeated in six weeks and".to_owned(),
+        };
+        let second = Page {
+            index: 1,
+            text: "the result will be sent to your family doctor.".to_owned(),
+        };
+        let pages = [&first, &second];
+        let joined = format!("{}{PAGE_SEPARATOR}{}", first.text, second.text);
+        let over_the_break = "will be repeated in six weeks and the result will be sent";
+        // The joined text has it; no page does, and the reader would show no link for it.
+        assert!(quote_in(&joined, over_the_break));
+        assert!(!quote_on_a_page(&pages, over_the_break));
+        assert!(!quote_on_a_page(
+            &pages,
+            "The blood tests will be repeated ... the result will be sent to your family doctor"
+        ));
+        // Each page's own words are found, on either page.
+        assert!(quote_on_a_page(
+            &pages,
+            "The blood tests will be repeated in six weeks"
+        ));
+        assert!(quote_on_a_page(
+            &pages,
+            "the result will be sent to your family doctor."
+        ));
+        assert!(!quote_on_a_page(
+            &[],
+            "the result will be sent to your family doctor."
+        ));
     }
 
     #[test]
