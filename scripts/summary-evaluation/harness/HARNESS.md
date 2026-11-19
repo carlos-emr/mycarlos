@@ -16,9 +16,11 @@ Nothing here runs a real model on its own. Every document is synthetic.
     builds only.
 - **By hand only:**
   - the ignored real-model tests (`a_real_model_evaluation_run` and the two others);
-  - the Python harness (`compare.py` and its tests: no workflow runs them, so nothing catches them going stale between
-    uses);
+  - the Python harness (`compare.py` and its tests);
   - every scoring step.
+  - One exception, also started by hand: the manual Windows identity workflow (`windows-model-identity.yml`,
+    `workflow_dispatch`, never on push) runs `compare.py prepare` and the ignored `a_real_model_evaluation_run` on Windows.
+    `compare.py`'s own tests and every scoring step run in no workflow, so nothing catches them going stale between uses.
 - **Compiled into the app (Linux and Windows builds):**
   - about 120 lines in the existing `#[doc(hidden)]` `engine_testing` module of `model_runtime.rs` (the measured summary,
     `summary_build`, the model file's hash); no command reaches them;
