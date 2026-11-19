@@ -699,6 +699,34 @@ en-GB). Camera browser checks fix the computer locale (en-US and en-GB), timezon
 status text uses Fluent isolation; the stored filename contains no formatter
 controls.
 
+## Automated Android emulator smoke test
+
+The workflow `mycarlos-android-emulator.yml` builds the Android debug app for an x86_64
+emulator, starts an Android 34 emulator on a hosted Linux runner and runs
+`scripts/android-emulator-smoke.sh`. It runs by hand (Actions > myCarlos Android emulator smoke
+test > Run workflow) and on pull requests that change the workflow, that script or the Android
+security script; ordinary pull requests do not run it.
+
+What it checks:
+
+- The built APK is `ca.carlos.mycarlos`, has a launchable activity and names a launcher icon
+  (read with `aapt2`) that is really inside the APK.
+- The app installs on the emulator, opens, comes to the front and is still running ten seconds
+  later, with nothing in the crash log and no fatal exception or "not responding" in the log.
+- A screenshot of the first screen, the log and the check output are kept as the
+  `myCarlos-Android-Emulator-Smoke` artifact for 14 days.
+
+What it does not check yet:
+
+- The status-bar inset, the keyboard and how the icon looks. The screenshot lets a person look
+  at them; nothing asserts them.
+- Anything inside the page. WebView debugging is not enabled in the app, so Playwright cannot
+  attach to it on Android yet; that is a follow-up.
+- A phone (arm64). The emulator is x86_64.
+
+A red run is a real failure: nothing is retried. Emulator boot is the likeliest cause of a
+false alarm; read the log in the artifact before changing the app.
+
 ## Password-protected PDFs
 
 Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS
