@@ -555,7 +555,7 @@ function ReadingDocument({
         tabIndex={-1}
         onKeyDown={turnPageWithKeys}
       >
-        <header className="dialog-head native-reader-head">
+        <header className="dialog-head native-reader-head native-reader-head-flow">
           <div>
             <h2 id="reader-title">{record.displayName}</h2>
             <p id="reader-trust">
