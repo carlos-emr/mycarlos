@@ -353,15 +353,15 @@ test("the runbook's 'If it stalls' messages match the app", async ({
   for (const [model, words] of [
     [
       { state: "unsupported", reason: "ram" },
-      "This computer does not have enough memory for the AI helper (it needs about 8 GB).",
+      "This device does not have enough memory for the AI helper (it needs about 8 GB).",
     ],
     [
       { state: "unsupported", reason: "cpu" },
-      "This computer's processor is not supported by the AI helper.",
+      "This device's processor is not supported by the AI helper.",
     ],
     [
       { state: "unsupported", reason: "platform" },
-      "The AI helper is not available on this kind of computer yet.",
+      "The AI helper is not available on this kind of device yet.",
     ],
     [
       { state: "damaged" },
@@ -396,12 +396,12 @@ test("the runbook's 'If it stalls' messages match the app", async ({
     [
       AI_COMMANDS.addPicked,
       "storage",
-      "The model could not be saved on this computer.",
+      "The model could not be saved on this device.",
     ],
     [
       AI_COMMANDS.addPicked,
       "noDisk",
-      "There is not enough free space on this computer. The model needs about 4 GB.",
+      "There is not enough free space on this device. The model needs about 4 GB.",
     ],
     [
       AI_COMMANDS.addPicked,
@@ -454,6 +454,6 @@ test("the runbook's 'If it stalls' messages match the app", async ({
   await open.getByRole("button", { name: "Summary", exact: true }).click();
   await refuseAi(reader, AI_COMMANDS.summarize, "aiDamaged");
   await open.getByRole("button", { name: "Summary", exact: true }).click();
-  await says(open, "The AI helper isn't on this computer yet", "If it stalls");
+  await says(open, "The AI helper isn't on this device yet", "If it stalls");
   await named(open, "Open AI helper settings", "If it stalls");
 });

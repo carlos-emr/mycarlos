@@ -13,6 +13,7 @@ export type {
   SourceSpan,
 } from "../documentText";
 import type { DocumentText, SourceSpan } from "../documentText";
+import type { SummaryProgressEvent } from "./summaryProgress";
 
 export type AiTool = "summary" | "explain";
 
@@ -172,6 +173,8 @@ export interface LocalModel {
     document: DocumentText,
     lang: string,
     keepFor?: string,
+    /** Told how far the run is, as the helper reports it (counts only). */
+    onProgress?: (event: SummaryProgressEvent) => void,
   ): Promise<ModelSummary>;
   explain(
     term: string,
@@ -187,7 +190,7 @@ export interface LocalModel {
  * file fails its check: either way the patient is led to Preferences. */
 export class ModelNotInstalled extends Error {
   constructor() {
-    super("No AI model is installed on this computer.");
+    super("No AI model is installed on this device.");
     this.name = "ModelNotInstalled";
   }
 }

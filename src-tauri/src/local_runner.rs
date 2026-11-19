@@ -37,7 +37,14 @@
 //!   "lang":…}` is answered by `{"id":n,"text":…}`;
 //! - `{"id":n,"error":…}` says the model could not answer. Its text is cut
 //!   to [`MAX_ERROR_CHARS`] and is the model's own words: shown on its own,
-//!   never beside the document's text, and never written anywhere.
+//!   never beside the document's text, and never written anywhere;
+//! - before a summary's answer, the model may say how far it is, counts only:
+//!   `{"id":n,"progress":"reading","done":d,"total":t}` (prompt tokens read of
+//!   those to read) and then `{"id":n,"progress":"writing","done":d,"total":k}`
+//!   (sentences closed of the request's cap). Checked strictly ([`ProgressCheck`]):
+//!   exactly those keys, whole numbers, counts that only go up, reading before
+//!   writing; a line that breaks this is a protocol error, as a malformed answer
+//!   is. Another request's progress is ignored, as its answer would be.
 //!
 //! A request in flight is cancelled by the vault locking ([`on_lock`], which
 //! also stops the installed runner's process) or by the reader leaving the
@@ -437,6 +444,104 @@ pub(crate) struct Sentence {
     pub(crate) quote: String,
 }
 
+/// The stages of a summary as the reader is told them: the helper reads the prompt, then
+/// writes the sentences; then the app checks the answer (the runner's own stage).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Stage {
+    Reading,
+    Writing,
+    Checking,
+}
+
+/// How far a summary is: `done` of `total` in its stage. Reading counts prompt tokens, writing
+/// sentences of the request's cap; checking is one step (1 of 1). Counts only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Progress {
+    pub(crate) stage: Stage,
+    pub(crate) done: u32,
+    pub(crate) total: u32,
+}
+
+/// A progress line as the helper writes it (`model_helper::progress_line`): these four keys and
+/// no other, the counts as whole numbers.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProgressLine {
+    id: u64,
+    progress: String,
+    done: u32,
+    total: u32,
+}
+
+/// What a summary's progress lines may say, in order. A line that says anything else is a
+/// protocol error: never ignored, never passed on.
+#[derive(Debug)]
+struct ProgressCheck {
+    /// The request's sentence cap, as the helper bounds it: writing's total.
+    sentences: u32,
+    /// Reading: the total, which never changes, and the count so far.
+    reading: Option<(u32, u32)>,
+    /// Writing: the sentences closed so far.
+    written: Option<u32>,
+}
+
+impl ProgressCheck {
+    fn new(max_sentences: usize) -> Self {
+        Self {
+            sentences: max_sentences.clamp(1, crate::model_helper::MAX_SENTENCES) as u32,
+            reading: None,
+            written: None,
+        }
+    }
+
+    fn take(&mut self, stage: &str, done: u32, total: u32) -> Result<Progress, RunnerError> {
+        let refuse = |what: &str| Err(RunnerError::Protocol(format!("progress: {what}")));
+        if done > total {
+            return refuse("more done than in all");
+        }
+        if stage == crate::model_helper::PROGRESS_READING {
+            if self.written.is_some() {
+                return refuse("reading after writing");
+            }
+            if total == 0 || total > crate::model_helper::CONTEXT_TOKENS {
+                return refuse("reading total out of bounds");
+            }
+            if let Some((was_total, was_done)) = self.reading {
+                if total != was_total {
+                    return refuse("reading total changed");
+                }
+                if done <= was_done {
+                    return refuse("reading count not going up");
+                }
+            }
+            self.reading = Some((total, done));
+            Ok(Progress {
+                stage: Stage::Reading,
+                done,
+                total,
+            })
+        } else if stage == crate::model_helper::PROGRESS_WRITING {
+            if !self.reading.is_some_and(|(total, done)| done == total) {
+                return refuse("writing before reading ended");
+            }
+            if total != self.sentences {
+                return refuse("writing total is not the cap");
+            }
+            if self.written.is_some_and(|was| done <= was) {
+                return refuse("writing count not going up");
+            }
+            self.written = Some(done);
+            Ok(Progress {
+                stage: Stage::Writing,
+                done,
+                total,
+            })
+        } else {
+            refuse("unknown stage")
+        }
+    }
+}
+
 /// A summary as given back. A sentence whose quote is not in the pages read keeps its words,
 /// with an empty quote: the reader then says no source was found (AI-05).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -466,6 +571,9 @@ pub(crate) struct Summary {
     /// K20: the safety checks' fallbacks (`safety`), for measuring; never shown.
     #[allow(dead_code)]
     pub(crate) fallbacks: Vec<crate::safety::Fallback>,
+    /// How the helper made this answer, when it said (counts and times only): the measured
+    /// speed the next estimate starts from (`summary_progress`).
+    pub(crate) stats: Option<crate::model_helper::Stats>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -869,15 +977,36 @@ impl Runner {
         ticket: Ticket,
         request: &SummaryRequest,
     ) -> Result<Summary, RunnerError> {
+        self.summarize_with_progress(ticket, request, &mut |_| ())
+    }
+
+    /// [`Runner::summarize`], telling `progress` how far it is: the helper's reading and
+    /// writing as it reports them (checked strictly, see [`ProgressCheck`]), then the checks
+    /// once the answer is in (1 of 1). Counts only; the answer is the same without it.
+    pub(crate) fn summarize_with_progress(
+        &self,
+        ticket: Ticket,
+        request: &SummaryRequest,
+        progress: &mut dyn FnMut(Progress),
+    ) -> Result<Summary, RunnerError> {
         let request_json = serde_json::to_value(request)
             .map_err(|error| RunnerError::Protocol(error.to_string()))?;
         let text_bytes = request.pages.iter().map(|page| page.text.len()).sum();
-        let (answer, model) = self.ask(
+        let mut check = ProgressCheck::new(request.max_sentences);
+        let (answer, model) = self.ask_with_sampler(
             ticket,
             "summary",
             request_json,
             summary_request_size(text_bytes),
+            sample_busy_share,
+            Some((&mut check, &mut *progress)),
         )?;
+        progress(Progress {
+            stage: Stage::Checking,
+            done: 1,
+            total: 1,
+        });
+        let stats = answer.stats;
         let Some(sentences) = answer.sentences else {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
         };
@@ -1072,6 +1201,7 @@ impl Runner {
             rewrites,
             explained,
             fallbacks,
+            stats,
         })
     }
 
@@ -1122,11 +1252,13 @@ impl Runner {
         request: serde_json::Value,
         size: (u32, u32),
     ) -> Result<(Answer, ModelInfo), RunnerError> {
-        self.ask_with_sampler(ticket, tool, request, size, sample_busy_share)
+        self.ask_with_sampler(ticket, tool, request, size, sample_busy_share, None)
     }
 
     /// Keep sampling outside the process lock; a per-call sampler also lets tests
-    /// control cancellation during that interval without a shared timing hook.
+    /// control cancellation during that interval without a shared timing hook. With
+    /// `progress`, this request's progress lines are checked and passed on; without, a
+    /// progress line for it is a protocol error.
     fn ask_with_sampler(
         &self,
         ticket: Ticket,
@@ -1134,6 +1266,7 @@ impl Runner {
         mut request: serde_json::Value,
         size: (u32, u32),
         sample: impl FnOnce() -> Option<f64>,
+        progress: Option<(&mut ProgressCheck, &mut dyn FnMut(Progress))>,
     ) -> Result<(Answer, ModelInfo), RunnerError> {
         if !self.is_current(ticket) {
             return Err(RunnerError::Cancelled);
@@ -1204,6 +1337,7 @@ impl Runner {
             &request,
             answer_timeout,
             id,
+            progress,
         );
         // Cancelled while the answer was already in: the reader has left,
         // and the answer belongs to nobody.
@@ -1474,13 +1608,15 @@ fn read_lines(output: Box<dyn Read + Send>, sender: &mpsc::Sender<std::io::Resul
 }
 
 /// Writes the request and waits for its answer, looking at the ticket every
-/// `CANCEL_POLL`.
+/// `CANCEL_POLL`. Progress lines on the way (see the contract above) go to `progress`, checked;
+/// they change neither the time limit nor the cancel.
 fn exchange(
     running: &mut Sidecar,
     current: impl Fn() -> bool,
     request: &serde_json::Value,
     timeout: Duration,
     id: u64,
+    mut progress: Option<(&mut ProgressCheck, &mut dyn FnMut(Progress))>,
 ) -> Result<Answer, RunnerError> {
     let mut line =
         serde_json::to_string(request).map_err(|error| RunnerError::Protocol(error.to_string()))?;
@@ -1501,7 +1637,23 @@ fn exchange(
         }
         match running.lines.recv_timeout(CANCEL_POLL.min(deadline - now)) {
             Ok(Ok(text)) => {
-                let answer: Answer = serde_json::from_str(&text)
+                let line: serde_json::Value = serde_json::from_str(&text)
+                    .map_err(|_| RunnerError::Protocol("answer not understood".to_owned()))?;
+                if line.get("progress").is_some() {
+                    // From the text itself, so that a key given twice is refused too.
+                    let line: ProgressLine = serde_json::from_str(&text)
+                        .map_err(|_| RunnerError::Protocol("progress not understood".to_owned()))?;
+                    if line.id != id {
+                        // An earlier, abandoned request's: not this one's.
+                        continue;
+                    }
+                    let Some((check, report)) = progress.as_mut() else {
+                        return Err(RunnerError::Protocol("progress not asked for".to_owned()));
+                    };
+                    report(check.take(&line.progress, line.done, line.total)?);
+                    continue;
+                }
+                let answer: Answer = serde_json::from_value(line)
                     .map_err(|_| RunnerError::Protocol("answer not understood".to_owned()))?;
                 if answer.sentences.is_none() && answer.text.is_none() && answer.error.is_none() {
                     return Err(RunnerError::Protocol("empty answer".to_owned()));
@@ -2124,6 +2276,199 @@ mod tests {
             );
         }
 
+        fn step(stage: Stage, done: u32, total: u32) -> Progress {
+            Progress { stage, done, total }
+        }
+
+        #[test]
+        fn a_summarys_progress_comes_in_order_and_the_answer_is_the_same_without_it() {
+            let plain = Runner::new(config(&[], GIB));
+            plain.start(&Fixed(Some(8 * GIB))).unwrap();
+            let without = plain.summarize(plain.ticket(), &request()).unwrap();
+            // Another request's progress line comes first: ignored, as its answer would be.
+            let runner = Runner::new(config(&["--progress", "--progress-other"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let mut seen = Vec::new();
+            let with = runner
+                .summarize_with_progress(runner.ticket(), &request(), &mut |p| seen.push(p))
+                .unwrap();
+            assert_eq!(with, without);
+            assert_eq!(
+                seen,
+                [
+                    step(Stage::Reading, 512, 1100),
+                    step(Stage::Reading, 1024, 1100),
+                    step(Stage::Reading, 1100, 1100),
+                    // Of the request's cap (5), not of the sentences written (3).
+                    step(Stage::Writing, 1, 5),
+                    step(Stage::Writing, 2, 5),
+                    step(Stage::Writing, 3, 5),
+                    step(Stage::Checking, 1, 1),
+                ]
+            );
+            // Asked without a listener, the same lines are taken and the same answer given.
+            assert_eq!(
+                runner.summarize(runner.ticket(), &request()).unwrap(),
+                without
+            );
+            // A model that says nothing of its progress is answered as before: checking only.
+            let mut quiet = Vec::new();
+            let again = plain
+                .summarize_with_progress(plain.ticket(), &request(), &mut |p| quiet.push(p))
+                .unwrap();
+            assert_eq!(again, without);
+            assert_eq!(quiet, [step(Stage::Checking, 1, 1)]);
+        }
+
+        #[test]
+        fn a_progress_line_that_breaks_the_contract_is_a_protocol_error_and_stops_the_model() {
+            // (after the fake's own valid reading lines, ID: the request's id, line)
+            let cases = [
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":1,"total":2,"text":"FAKE"}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":1,"total":2,"id":ID}"#,
+                ),
+                (false, r#"{"id":ID,"progress":"reading","done":1}"#),
+                (false, r#"{"progress":"reading","done":1,"total":2}"#),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":1.5,"total":2}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":-1,"total":2}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":"1","total":2}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":3,"total":2}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":0,"total":0}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":1,"total":9000}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"checking","done":1,"total":1}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"thinking","done":1,"total":1}"#,
+                ),
+                (false, r#"{"id":ID,"progress":1,"done":1,"total":1}"#),
+                (false, r#"{"id":ID,"progress":null,"done":1,"total":1}"#),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"writing","done":1,"total":5}"#,
+                ),
+                (
+                    true,
+                    r#"{"id":ID,"progress":"reading","done":1100,"total":1100}"#,
+                ),
+                (
+                    true,
+                    r#"{"id":ID,"progress":"reading","done":1101,"total":1200}"#,
+                ),
+                (
+                    true,
+                    r#"{"id":ID,"progress":"writing","done":1,"total":10}"#,
+                ),
+                (true, r#"{"id":ID,"progress":"writing","done":6,"total":5}"#),
+                (
+                    true,
+                    "{\"id\":ID,\"progress\":\"writing\",\"done\":2,\"total\":5}\n\
+                     {\"id\":ID,\"progress\":\"writing\",\"done\":2,\"total\":5}",
+                ),
+                (
+                    true,
+                    "{\"id\":ID,\"progress\":\"writing\",\"done\":1,\"total\":5}\n\
+                     {\"id\":ID,\"progress\":\"reading\",\"done\":1100,\"total\":1100}",
+                ),
+            ];
+            for (after_reading, line) in cases {
+                let mut args = vec!["--progress-line", line];
+                if after_reading {
+                    args.insert(0, "--progress");
+                }
+                let runner = Runner::new(config(&args, GIB));
+                runner.start(&Fixed(Some(8 * GIB))).unwrap();
+                let mut seen = Vec::new();
+                let outcome =
+                    runner.summarize_with_progress(runner.ticket(), &request(), &mut |p| {
+                        seen.push(p)
+                    });
+                assert!(
+                    matches!(outcome, Err(RunnerError::Protocol(_))),
+                    "{line}: {outcome:?}"
+                );
+                assert!(!runner.is_running(), "{line}");
+                // Nothing after the reading the fake did right, and never the checks.
+                assert!(
+                    seen.iter().all(|p| p.stage != Stage::Checking),
+                    "{line}: {seen:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn an_explanation_takes_no_progress_line() {
+            let runner = Runner::new(config(&["--progress"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let outcome = runner.explain(runner.ticket(), "tablet", TEXT, "en");
+            assert_eq!(
+                outcome,
+                Err(RunnerError::Protocol("progress not asked for".to_owned()))
+            );
+        }
+
+        #[test]
+        fn progress_neither_extends_the_time_limit_nor_holds_off_a_cancel() {
+            // Reading lines every 0.1 s, forever, and no answer.
+            let timed = Runner::new(RunnerConfig {
+                answer_limit: AnswerLimit::fixed(Duration::from_millis(800)),
+                ..config(&["--progress-every", "0.1"], GIB)
+            });
+            timed.start(&Fixed(Some(8 * GIB))).unwrap();
+            let mut seen = 0;
+            let began = Instant::now();
+            let outcome =
+                timed.summarize_with_progress(timed.ticket(), &request(), &mut |_| seen += 1);
+            assert_eq!(outcome, Err(RunnerError::Timeout));
+            assert!(seen >= 2, "{seen}");
+            assert!(began.elapsed() < Duration::from_secs(5));
+            assert!(!timed.is_running());
+
+            let runner = Arc::new(Runner::new(config(&["--progress-every", "0.1"], GIB)));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let ticket = runner.ticket();
+            let canceller = {
+                let runner = Arc::clone(&runner);
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(400));
+                    runner.cancel_all();
+                })
+            };
+            let mut seen = 0;
+            let began = Instant::now();
+            let outcome = runner.summarize_with_progress(ticket, &request(), &mut |_| seen += 1);
+            canceller.join().unwrap();
+            assert_eq!(outcome, Err(RunnerError::Cancelled));
+            assert!(seen >= 1, "{seen}");
+            assert!(began.elapsed() < Duration::from_secs(5));
+            assert!(!runner.is_running());
+        }
+
         #[test]
         fn ownership_an_admitted_old_worker_cannot_change_a_new_answers_helper() {
             // Pause A after admission, before start, then admit B either in
@@ -2243,6 +2588,7 @@ mod tests {
                                 crate::model_helper::EXPLAIN_TOKENS as u32,
                             ),
                             || panic!("the load must not be sampled"),
+                            None,
                         )
                         .unwrap();
                 }
@@ -2327,6 +2673,7 @@ mod tests {
                             release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
                             Some(0.0)
                         },
+                        None,
                     )
                 });
                 // Both requests must actually enter the adaptive sampling path.
