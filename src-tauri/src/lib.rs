@@ -32,6 +32,9 @@ mod glossary;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;
+// Where a model's quote is in the pages: the one rule the runner, addressee and safety share
+// with the reader's `src/ai/locateQuote.ts`.
+mod quote_locate;
 mod quote_provenance;
 // K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
 mod safety;

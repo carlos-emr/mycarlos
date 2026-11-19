@@ -23,8 +23,9 @@
 //! (a dose, a date) is left as it is, so only the writer's phone number is ever left out. A summary
 //! in another language than English is left as it is (the wording is English).
 //!
-//! Pure std, so its tests run on their own: `rustc --edition 2021 --test src/addressee.rs`.
-//! Its cases are in `addressee_cases.txt`, read by these tests.
+//! Its cases are in `addressee_cases.txt`, read by these tests. It finds a quote in the pages with
+//! `quote_locate` (the one rule the runner's gate and the reader share), so its tests run with
+//! `cargo test addressee` rather than on their own.
 
 /// The post-step's name in a measurement (read by the evaluation measurement only).
 #[allow(dead_code)]
@@ -144,44 +145,10 @@ fn is_doctor_greeting(line: &str) -> bool {
     BARE_TITLES.contains(first) && line.ends_with(',')
 }
 
-/// The byte range of `quote` in `pages`, matched as the runner matches quotes (`quote_in`):
-/// whitespace runs as one, case ignored, quote marks and `.,;:` trimmed at the quote's ends.
+/// The byte range of `quote` in `pages`, matched as the runner matches quotes (`quote_in`) and
+/// the reader does (`locateQuote.ts`): see `quote_locate`.
 pub(crate) fn find_folded(pages: &str, quote: &str) -> Option<(usize, usize)> {
-    const QUOTE_ENDS: &[char] = &[
-        '"', '\'', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '.', ',', ';', ':',
-    ];
-    let wanted = quote
-        .trim_matches(|c: char| c.is_whitespace() || QUOTE_ENDS.contains(&c))
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
-    if wanted.is_empty() {
-        return None;
-    }
-    let mut folded = String::new();
-    let mut from: Vec<(usize, usize)> = Vec::new(); // per folded byte: (start, end) in `pages`
-    let mut in_space = false;
-    for (at, c) in pages.char_indices() {
-        if c.is_whitespace() {
-            if !in_space && !folded.is_empty() {
-                folded.push(' ');
-                from.push((at, at + c.len_utf8()));
-            }
-            in_space = true;
-            continue;
-        }
-        in_space = false;
-        for lower in c.to_lowercase() {
-            for _ in 0..lower.len_utf8() {
-                from.push((at, at + c.len_utf8()));
-            }
-            folded.push(lower);
-        }
-    }
-    let found = folded.find(&wanted)?;
-    let last = found + wanted.len() - 1;
-    Some((from[found].0, from[last].1))
+    crate::quote_locate::find(pages, quote)
 }
 
 const ABBREVIATIONS: &[&str] = &[
