@@ -2,26 +2,33 @@
 //! document's own sentence as the fallback. They run after K17's addressee step and before the
 //! glossary step (which leaves a fallback quote as it is).
 //!
-//! - **Numbers.** Every number in a summary sentence must be in the pages read (digits compared
-//!   without separators or leading zeros; a number word counts: "two" for 2). A sentence that
-//!   fails becomes the document's own sentence at its quote, marked as a quote:
+//! - **Numbers.** Every number a summary sentence writes in digits must be in the pages read, by
+//!   its value (see `numbers`): a decimal stays a decimal ("2.5" is not "25", ".5" is "0.5"),
+//!   thousands separators and leading zeros go, and a number the pages give as a word counts
+//!   ("two" for 2, "half" for 0.5). A number that reads two ways ("1,500") or is date-like
+//!   ("12.03.2024") must be written as the pages write it (a date's parts also count). A sentence
+//!   that fails becomes the document's own sentence at its quote, marked as a quote:
 //!   `The document says: “…”`. A sentence whose quote was not found stays as it is.
 //! - **Get-help rules.** Every sentence of the pages read that is a rule about when to call or
 //!   get help (an action word and a condition word) needs one summary sentence that has an
-//!   action word and every trigger of the rule (a trigger counts when one of its content words,
-//!   or a word starting with its first five letters, is there). A summary sentence that covers
-//!   the rule in part (its quote lies in the rule, or it has an action word and one of the
-//!   rule's content words) becomes the rule, quoted; with none, the rule is added, quoted, at the
-//!   end. Only English rules are checked (the summary is English); the writer's own line to
-//!   another doctor ("please call me …") is no rule for the patient (K17 handles it).
+//!   action word and every trigger of the rule (see `carries`: one of the trigger's content
+//!   words, or a word sharing its first five letters, and every number the trigger holds, as
+//!   digits or as a number word). When none has, the rule is put in, quoted. A summary sentence
+//!   that covers the rule in part (its quote lies in the rule, or it has an action word and
+//!   carries one trigger) is replaced by the rule only when it says nothing the rule's span does
+//!   not (`covered_by`); otherwise it keeps its words and the rule is added just after it. With
+//!   no such sentence, the rule is added at the end. Only English rules are checked (the summary
+//!   is English); the writer's own line to another doctor ("please call me …") is no rule for
+//!   the patient (K17 handles it).
 //! - **The rule's whole span (safety-2).** The quote is the rule with what it needs: in a
 //!   bulleted or numbered step, the whole step up to the rule ("Weigh yourself every morning.
 //!   Call if …"); otherwise, for a rule that refers back ("it", "this", "they", "these", "that",
 //!   or "the pain" when a word of the sentence before has the noun's first five letters, as in
 //!   "nosebleed" for "the bleeding"), the sentence before it too, when it is in the same
-//!   paragraph and ends as a sentence. The sentence replaced is the one whose quote lies in the
-//!   rule itself, else one with an action word and a trigger; a sentence that gives only the
-//!   lead-in stays, and the whole rule is added after.
+//!   paragraph and ends as a sentence. The sentence that covers the rule in part is the one
+//!   whose quote lies in the rule itself, else one with an action word and a trigger (replaced
+//!   or followed by the rule, as above); a sentence that gives only the lead-in stays, and the
+//!   whole rule is added.
 //! - **The rule's lead-in step (safety-3).** When the rule's condition points back to a step
 //!   before it ("the pain", "your weight": "the", "your", "this" or "that", then a noun whose
 //!   first five letters are in the step), in its span or before the action in its own sentence
