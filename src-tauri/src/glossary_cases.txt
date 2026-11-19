@@ -5,7 +5,7 @@ also run twice: a second run must change nothing.
 name: a_lab_value_with_its_unit
 lang: en
 sentence: The creatinine was 120 µmol/L.
-expect: The creatinine (a waste product in the blood that shows how well the kidneys work) was 120 µmol/L (the amount of a substance in a litre, a unit for lab test results).
+expect: The creatinine (a waste product in the blood that shows how well the kidneys work) was 120 µmol/L.
 ===
 name: a_term_already_explained_with_called
 lang: en
@@ -25,7 +25,7 @@ expect: The heart pumps less (EF, the share of blood the heart pumps out with ea
 name: a_plain_phrase_keeps_its_short_term_unexplained
 lang: en
 sentence: Her LDL cholesterol was 2.9 mmol/L.
-expect: Her LDL cholesterol was 2.9 mmol/L (the amount of a substance in a litre, a unit for lab test results).
+expect: Her LDL cholesterol was 2.9 mmol/L.
 ===
 name: an_upper_case_abbreviation_matches_only_in_upper_case
 lang: en
@@ -55,12 +55,12 @@ expect: The C. difficile (a germ that can cause diarrhea) test was negative and 
 name: a_french_summary
 lang: fr
 sentence: La créatinine est à 120 µmol/L.
-expect: La créatinine (un déchet du sang qui montre si les reins fonctionnent bien) est à 120 µmol/L (la quantité d'une substance dans un litre, une unité des analyses de laboratoire).
+expect: La créatinine (un déchet du sang qui montre si les reins fonctionnent bien) est à 120 µmol/L.
 ===
 name: a_canadian_french_tag
 lang: fr-CA
 sentence: La ferritine est basse.
-expect: La ferritine (une analyse de sang qui mesure les réserves de fer du corps) est basse.
+expect: La ferritine (une protéine qui stocke le fer dans le corps) est basse.
 ===
 name: another_language_is_left_as_it_is
 lang: pl
@@ -70,12 +70,12 @@ expect: Kreatynina 120 µmol/L.
 name: a_unit_right_after_its_number
 lang: en
 sentence: The level was 120µmol/L today.
-expect: The level was 120µmol/L (the amount of a substance in a litre, a unit for lab test results) today.
+expect: The level was 120µmol/L today.
 ===
 name: the_longest_term_first
 lang: en
 sentence: The albumin-to-creatinine ratio was 30 mg/mmol.
-expect: The albumin-to-creatinine ratio (a urine test for protein leaking from the kidneys) was 30 mg/mmol (the ratio of two substances in urine, a unit for urine tests).
+expect: The albumin-to-creatinine ratio (a urine test for protein leaking from the kidneys) was 30 mg/mmol.
 ===
 name: a_term_inside_a_longer_word
 lang: en
@@ -105,7 +105,7 @@ expect: Drink 8 fl oz of water.
 name: ldl_c_is_not_split
 lang: en
 sentence: Her LDL-C was 2.1 mmol/L.
-expect: Her LDL-C was 2.1 mmol/L (the amount of a substance in a litre, a unit for lab test results).
+expect: Her LDL-C was 2.1 mmol/L.
 ===
 name: ttg_iga_as_one_term
 lang: en
@@ -120,12 +120,12 @@ expect: The eGFR (an estimate of how well the kidneys filter the blood) uses the
 name: a_urine_albumin_creatinine_ratio
 lang: en
 sentence: The urine albumin/creatinine ratio was 42 mg/mmol.
-expect: The urine albumin/creatinine ratio (a urine test for protein leaking from the kidneys) was 42 mg/mmol (the ratio of two substances in urine, a unit for urine tests).
+expect: The urine albumin/creatinine ratio (a urine test for protein leaking from the kidneys) was 42 mg/mmol.
 ===
 name: a_protein_to_creatinine_ratio
 lang: en
 sentence: The protein-to-creatinine ratio was 50 mg/mmol.
-expect: The protein-to-creatinine ratio (a urine test for protein leaking from the kidneys) was 50 mg/mmol (the ratio of two substances in urine, a unit for urine tests).
+expect: The protein-to-creatinine ratio (a urine test for protein leaking from the kidneys) was 50 mg/mmol.
 ===
 name: urine_creatinine_in_french
 lang: fr
@@ -215,7 +215,7 @@ expect: The CRP, the white count and the lactate (a blood substance that can go 
 name: a_lab_value_in_units_per_millilitre
 lang: en
 sentence: The tTG-IgA was 86 U/mL.
-expect: The tTG-IgA (a blood test for celiac disease) was 86 U/mL (units of a substance in a millilitre, a unit for lab test results).
+expect: The tTG-IgA (a blood test for celiac disease) was 86 U/mL.
 ===
 name: an_insulin_brand_strength
 lang: en
@@ -225,17 +225,17 @@ expect: Toujeo 300 U/mL, 20 units at bedtime.
 name: two_different_units_of_one_line
 lang: en
 sentence: His creatinine was 98 µmol/L and LDL cholesterol 3.1 mmol/L.
-expect: His creatinine (a waste product in the blood that shows how well the kidneys work) was 98 µmol/L (the amount of a substance in a litre, a unit for lab test results) and LDL cholesterol 3.1 mmol/L (the amount of a substance in a litre, a unit for lab test results).
+expect: His creatinine (a waste product in the blood that shows how well the kidneys work) was 98 µmol/L and LDL cholesterol 3.1 mmol/L.
 ===
 name: one_unit_twice
 lang: en
 sentence: The potassium was 5.3 mmol/L and the sugar 8.4 mmol/L.
-expect: The potassium was 5.3 mmol/L (the amount of a substance in a litre, a unit for lab test results) and the sugar 8.4 mmol/L.
+expect: The potassium was 5.3 mmol/L and the sugar 8.4 mmol/L.
 ===
 name: a_unit_with_a_lower_case_l
 lang: en
 sentence: The CRP was 22 mg/l.
-expect: The CRP (a blood test for inflammation) was 22 mg/l (the weight of a substance in an amount of fluid, a unit for lab test results).
+expect: The CRP (a blood test for inflammation) was 22 mg/l.
 ===
 name: a_french_cell_count_is_not_grams
 lang: fr
@@ -245,7 +245,7 @@ expect: Les leucocytes sont à 12 G/L.
 name: the_polish_count_unit
 lang: en
 sentence: White blood cells were 15,2 tys./µl.
-expect: White blood cells were 15,2 tys./µl (the number of cells, in thousands, in a microlitre, a unit for blood counts).
+expect: White blood cells were 15,2 tys./µl.
 ===
 name: oxygen_saturation
 lang: en
@@ -260,7 +260,7 @@ expect: The transferrin saturation was 8%.
 name: a_unit_per_millilitre_inside_brackets
 lang: en
 sentence: The celiac test was high (86 U/mL).
-expect: The celiac test was high (86 U/mL, units of a substance in a millilitre, a unit for lab test results).
+expect: The celiac test was high (86 U/mL).
 ===
 name: a_list_inside_brackets
 lang: en
