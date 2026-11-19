@@ -8076,7 +8076,7 @@ mod approval_recovery_tests {
             VAULT_FORMAT
         );
         // Format 12 is no longer the newest (previous full names are 13).
-        assert!(VAULT_FORMAT >= MANIFEST_FORMAT_REFUSED);
+        const { assert!(VAULT_FORMAT >= MANIFEST_FORMAT_REFUSED) };
         assert!(refused_saved(&store).is_empty());
         let refused = undecryptable(&base, 7);
         let (result, _) = check_listing(&store, &link, std::slice::from_ref(&refused));
