@@ -44,7 +44,7 @@
 //!   ("have blood tests …, and call the clinic if they get a fever") is no step.
 //! - Nothing is translated, nothing is dropped: a quote replaces a sentence or is added.
 //!
-//! Pure std (with `addressee`), tested on its own: see the tests' note.
+//! Pure std (with `addressee` and `quote_locate`), tested on its own: see the tests' note.
 
 use crate::addressee::{ends_sentence, find_folded, source_sentence, wraps, CONTACT_OFFERS};
 
@@ -931,8 +931,10 @@ pub(crate) fn moved_to(log: &[Fallback], len: usize) -> Vec<usize> {
 
 #[cfg(test)]
 mod tests {
-    // Run on their own with a harness file that has `#[path] mod addressee; #[path] mod safety;`
-    // (safety uses addressee's sentence and quote helpers); see the evaluation notes.
+    // Run on their own with a harness file that has `#[path] mod addressee; #[path] mod safety;
+    // #[path] mod quote_locate;` and the `unicode-normalization` crate (safety uses addressee's
+    // sentence and quote helpers, and addressee finds quotes with `quote_locate`); see the
+    // evaluation notes.
     use super::*;
 
     const CASES: &str = include_str!("safety_cases.txt");
