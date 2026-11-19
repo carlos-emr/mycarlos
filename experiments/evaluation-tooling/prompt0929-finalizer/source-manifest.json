@@ -1,0 +1,9 @@
+{
+  "candidate_head": "0929f4ac398bfb027021379a9dff448eb2814c21",
+  "candidate_tree": "f63dd22faae241e3836b4fed6069e8421066567e",
+  "files": {
+    "finalize_h10.py": "08857a80d12d3b05fb031e95c6979f16336cd4e1a75512b20a62b830d4e0d560",
+    "test_finalizer_gates.py": "79ea3e82ee6a02a24e02f35f1e8911641db66a5c5eeb30eec18ce7b16a56f3df"
+  },
+  "schema": "prompt0929-finalizer-source-only-manifest-v1"
+}
