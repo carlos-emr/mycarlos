@@ -2206,3 +2206,5 @@ ai-models-starting = Iniciando la descarga…
 ai-models-picking = Elige un archivo de modelo para añadir.
 
 ai-models-changed = Se cambió el modelo en uso
+
+ai-summaryTooLarge = El resumen completo es demasiado grande. No se ha guardado ningún resumen nuevo.

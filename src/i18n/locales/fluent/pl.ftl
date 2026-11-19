@@ -2247,3 +2247,5 @@ ai-models-starting = Rozpoczynanie pobierania…
 ai-models-picking = Wybierz plik modelu do dodania.
 
 ai-models-changed = Zmieniono używany model
+
+ai-summaryTooLarge = Pełne podsumowanie jest zbyt duże. Nie zapisano nowego podsumowania.

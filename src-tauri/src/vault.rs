@@ -309,6 +309,8 @@ pub enum VaultError {
     /// none is ever deleted (D3): a new one is refused, said as such.
     #[error("the document keeps the most AI answers it can")]
     AiResultsFull,
+    #[error("the complete summary exceeds its saved byte budget")]
+    AiSummaryTooLarge,
     #[error("the passphrase is too easy to guess")]
     WeakPassphrase,
     #[error("too many files were selected for one import")]

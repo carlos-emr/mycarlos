@@ -123,9 +123,9 @@ fn prompt_tokens(fixed: u32, text_bytes: usize) -> u32 {
 const SUMMARY_PROMPT_TOKENS: u32 = 750;
 const EXPLAIN_PROMPT_TOKENS: u32 = 400;
 /// The answer a summary's limit allows for: about 53 tokens a sentence were measured (5 Nov
-/// 2026), so six sentences run to about 320; its cap (`SUMMARY_TOKENS`) stops it anyway,
-/// keeping the sentences it finished.
-const SUMMARY_ANSWER_TOKENS: u32 = 400;
+/// 2026), so ten sentences (`MAX_SENTENCES`) run to about 530; its cap (`SUMMARY_TOKENS`, 900)
+/// stops it anyway, keeping the sentences it finished.
+const SUMMARY_ANSWER_TOKENS: u32 = 600;
 
 /// The size a summary's limit is reckoned from, for `text_bytes` of pages: its prompt's
 /// estimated tokens and the answer tokens it allows (`AnswerLimit::for_request`).
@@ -170,12 +170,32 @@ pub(crate) struct RunnerConfig {
     /// caps its memory at `memory_limit_bytes`); on unix the helper sandboxes itself.
     pub(crate) sandboxed: bool,
     /// The most threads the model writes an answer on (the helper's `--threads`). With it, each
-    /// answer is sent with a number chosen from the computer's load at the time
-    /// ([`generation_threads`]); `None` sends none (fakes, and the stub's tests).
+    /// answer is sent with [`answer_threads`] of them; `None` sends none (fakes, and the stub's
+    /// tests).
     pub(crate) generation_threads: Option<u32>,
 }
 
-// --- Threads from the computer's load --------------------------------------------------
+// --- Threads an answer is written on ----------------------------------------------------
+
+/// Answers are written on this many threads, or on all of the helper's when it has fewer,
+/// whatever the computer's load. The words a model writes depend on the number of threads it
+/// writes them on (measured 17 Nov 2026: one long FAKE letter came out as three different
+/// summaries on 1, 2 and 3 threads), so a number chosen from the load at the time made the same
+/// computer word the same letter differently when it was busy. Fixed, the same computer always
+/// writes the same summary; the cost is speed on a busy computer, where threads that share
+/// cores wait for each other (2 to 4 times slower, measured 5 Nov 2026). The helper never
+/// writes on more threads than it reads prompts on (one core left for myCarlos), so this never
+/// asks for more threads than the computer has. `None` chooses from the load again
+/// ([`generation_threads`]).
+const FIXED_ANSWER_THREADS: Option<u32> = Some(3);
+
+/// The threads an answer is sent with when the helper has `most`: [`FIXED_ANSWER_THREADS`], at
+/// most `most`; `None` when they are chosen from the load instead.
+pub(crate) fn answer_threads(most: u32) -> Option<u32> {
+    FIXED_ANSWER_THREADS.map(|fixed| fixed.min(most).max(1))
+}
+
+// --- Threads from the computer's load (when not fixed) ---------------------------------
 
 /// How long the computer's processor use is sampled before an answer.
 const LOAD_SAMPLE: Duration = Duration::from_millis(250);
@@ -386,6 +406,8 @@ pub(crate) enum RunnerError {
     Timeout,
     /// The model answered, but not as the contract says.
     Protocol(String),
+    /// The complete postprocessed answer cannot fit the shared save budget.
+    SummaryTooLarge,
     /// The model said it could not answer: its own words, cut short, to be
     /// shown on their own and never beside the document's text.
     Model(String),
@@ -425,11 +447,25 @@ pub(crate) struct Summary {
     pub(crate) last_page: u32,
     /// Only the start of that page fitted.
     pub(crate) last_page_cut: bool,
-    /// How many quotes were not in the pages read, and were emptied.
+    /// The document's last page, when the model read it after a gap: the pages it read are the
+    /// first ones up to `last_page`, then this one.
+    pub(crate) tail_page: Option<u32>,
+    /// How many original model quotes were rejected before post-steps. This is a
+    /// model-quoting diagnostic; a repaired final source may now be located.
     pub(crate) unlocated: usize,
-    /// What those quotes said, for measuring a model's quoting (tests print them); never shown.
+    /// Original rejected model quotes, keyed by sentence index even after a source
+    /// repair. Measurements use each final source's located flag; never shown.
     #[allow(dead_code)]
-    pub(crate) unlocated_quotes: Vec<String>,
+    pub(crate) unlocated_quotes: crate::quote_provenance::UnlocatedQuotes,
+    /// K17: the sentences the post-step rewrote (`addressee`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) rewrites: Vec<crate::addressee::Rewrite>,
+    /// K19: the sentences the glossary step explained (`glossary`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) explained: Vec<crate::glossary::Explained>,
+    /// K20: the safety checks' fallbacks (`safety`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) fallbacks: Vec<crate::safety::Fallback>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -572,6 +608,9 @@ struct Answer {
     last_page: Option<u32>,
     #[serde(default)]
     last_page_cut: bool,
+    /// The document's last page, read after a gap.
+    #[serde(default)]
+    tail_page: Option<u32>,
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
@@ -610,7 +649,7 @@ impl Runner {
     }
 
     /// Answers are written on `threads` threads from now on, whatever the computer's load;
-    /// `None` chooses from the load again. For measuring by hand.
+    /// `None` goes back to the app's own number ([`answer_threads`]). For measuring by hand.
     #[allow(dead_code)] // `engine_testing` only.
     pub(crate) fn override_threads(&self, threads: Option<u32>) {
         *self
@@ -861,29 +900,178 @@ impl Runner {
         else {
             return Err(RunnerError::Protocol("last page not sent".to_owned()));
         };
-        let text = request.pages[..=read]
+        let mut read_pages: Vec<&Page> = request.pages[..=read].iter().collect();
+        if let Some(tail_page) = answer.tail_page {
+            let Some(tail) = request.pages[read + 1..]
+                .iter()
+                .find(|page| page.index == tail_page)
+            else {
+                return Err(RunnerError::Protocol("tail page not sent".to_owned()));
+            };
+            read_pages.push(tail);
+        }
+        let text = read_pages
             .iter()
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
-        let mut unlocated_quotes = Vec::new();
-        let sentences = sentences
+        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
+        let mut sentences: Vec<Sentence> = sentences
             .into_iter()
             .take(request.max_sentences)
-            .map(|mut sentence| {
+            .enumerate()
+            .map(|(index, mut sentence)| {
                 if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
-                    unlocated_quotes.push(std::mem::take(&mut sentence.quote));
+                    unlocated_quotes.record(index, std::mem::take(&mut sentence.quote));
                 }
                 sentence
             })
             .collect();
+        // K17 (evaluation only): a sentence that words a line the letter writes to another doctor
+        // as the patient's own says who the line is for (`addressee`). English summaries only,
+        // sentences with a found quote only; nothing is dropped, and the words of each rewrite go
+        // in `rewrites` for measuring, never into a log.
+        let contract_error = |error| match error {
+            crate::summary_contract::Error::TooLarge => RunnerError::SummaryTooLarge,
+            crate::summary_contract::Error::Invalid => {
+                RunnerError::Protocol("invalid final summary".to_owned())
+            }
+        };
+        crate::summary_contract::reserve(
+            sentences
+                .iter()
+                .map(|s| (s.text.as_str(), s.quote.as_str())),
+            &model.name,
+            &model.sha256,
+            &request.lang,
+        )
+        .map_err(contract_error)?;
+        let mut rewrites = Vec::new();
+        if request.lang == "en" {
+            for index in 0..sentences.len() {
+                let sentence = &sentences[index];
+                if sentence.quote.is_empty() {
+                    continue;
+                }
+                if let Some((kind, after)) =
+                    crate::addressee::rewrite(&text, &sentence.text, &sentence.quote)
+                {
+                    crate::summary_contract::reserve_edit(
+                        sentences
+                            .iter()
+                            .map(|s| (s.text.as_str(), s.quote.as_str())),
+                        Some(index),
+                        &after,
+                        &sentence.quote,
+                        &model.name,
+                        &model.sha256,
+                        &request.lang,
+                    )
+                    .map_err(contract_error)?;
+                    let before = std::mem::replace(&mut sentences[index].text, after.clone());
+                    rewrites.push(crate::addressee::Rewrite {
+                        index,
+                        kind,
+                        before,
+                        after,
+                    });
+                }
+            }
+        }
+        // K20 (evaluation only): the safety checks after the addressee step: a number not in the
+        // pages, or a get-help rule not carried whole, falls back to the document's own sentence,
+        // quoted (`safety`); the words go in `fallbacks` for measuring, never into a log.
+        let mut fallbacks = Vec::new();
+        if request.lang == "en" {
+            let mut lines: Vec<crate::safety::Line> = sentences
+                .iter()
+                .map(|s| crate::safety::Line {
+                    text: s.text.clone(),
+                    quote: s.quote.clone(),
+                })
+                .collect();
+            fallbacks =
+                crate::safety::check_guarded(&text, &mut lines, |lines, replace, after, quote| {
+                    crate::summary_contract::reserve_edit(
+                        lines.iter().map(|s| (s.text.as_str(), s.quote.as_str())),
+                        replace,
+                        after,
+                        quote,
+                        &model.name,
+                        &model.sha256,
+                        &request.lang,
+                    )
+                })
+                .map_err(contract_error)?;
+            if !fallbacks.is_empty() {
+                sentences = lines
+                    .into_iter()
+                    .map(|line| Sentence {
+                        text: line.text,
+                        quote: line.quote,
+                    })
+                    .collect();
+                // A rule put in between two sentences moves the ones after it: the unfound
+                // quotes and the rewrites, recorded by index before the checks, move with them.
+                let moved = crate::safety::moved_to(&fallbacks, sentences.len());
+                unlocated_quotes.remap(&moved);
+                for rewrite in &mut rewrites {
+                    rewrite.index = moved[rewrite.index];
+                }
+            }
+        }
+        // K19 (evaluation only): after the addressee step, a short plain explanation beside the
+        // first use of each medical word, germ, test or unit (`glossary`); it only inserts, and
+        // the words go in `explained` for measuring, never into a log. A fallback quote is the
+        // document's own words and stays as it is.
+        let mut explained = Vec::new();
+        for index in 0..sentences.len() {
+            let sentence = &sentences[index];
+            if sentence.text.starts_with(crate::safety::QUOTE_MARK) {
+                continue;
+            }
+            if let Some((after, terms)) = crate::glossary::explain(&sentence.text, &request.lang) {
+                crate::summary_contract::reserve_edit(
+                    sentences
+                        .iter()
+                        .map(|s| (s.text.as_str(), s.quote.as_str())),
+                    Some(index),
+                    &after,
+                    &sentence.quote,
+                    &model.name,
+                    &model.sha256,
+                    &request.lang,
+                )
+                .map_err(contract_error)?;
+                let before = std::mem::replace(&mut sentences[index].text, after.clone());
+                explained.push(crate::glossary::Explained {
+                    index,
+                    before,
+                    after,
+                    terms: terms.into_iter().map(|(term, _)| term).collect(),
+                });
+            }
+        }
+        crate::summary_contract::reserve(
+            sentences
+                .iter()
+                .map(|s| (s.text.as_str(), s.quote.as_str())),
+            &model.name,
+            &model.sha256,
+            &request.lang,
+        )
+        .map_err(contract_error)?;
         Ok(Summary {
             sentences,
             model,
             last_page,
             last_page_cut: answer.last_page_cut,
+            tail_page: answer.tail_page,
             unlocated: unlocated_quotes.len(),
             unlocated_quotes,
+            rewrites,
+            explained,
+            fallbacks,
         })
     }
 
@@ -958,6 +1146,7 @@ impl Runner {
             .unwrap_or_else(|e| e.into_inner());
         let chooses = matches!(tool, "summary" | "explain")
             && forced.is_none()
+            && FIXED_ANSWER_THREADS.is_none()
             && self
                 .sidecar
                 .lock()
@@ -981,9 +1170,9 @@ impl Runner {
         if let Some(object) = request.as_object_mut() {
             object.insert("id".to_owned(), serde_json::json!(id));
             object.insert("tool".to_owned(), serde_json::json!(tool));
-            // The threads to write this answer on, from the computer's load now.
+            // The threads to write this answer on: fixed, else from the computer's load now.
             if let (Some(most), "summary" | "explain") = (running.generation_threads, tool) {
-                let threads = forced.unwrap_or_else(|| {
+                let threads = forced.or_else(|| answer_threads(most)).unwrap_or_else(|| {
                     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
                     generation_threads(most, cores, busy)
                 });
@@ -1433,14 +1622,14 @@ mod tests {
     #[test]
     fn a_summary_is_sized_as_the_call_sized_it_inline_before_the_extraction() {
         // The words around the pages (750), then three bytes a token of the pages, at most the
-        // context; the answer's 400. The same values the summary call built in place before
-        // `summary_request_size` was taken out of it.
-        assert_eq!(summary_request_size(0), (750, 400));
-        assert_eq!(summary_request_size(3), (751, 400));
-        assert_eq!(summary_request_size(3_001), (1_751, 400));
+        // context; the answer's 600 (this candidate's answer allowance, raised from 400). The same
+        // values the summary call built in place before `summary_request_size` was taken out of it.
+        assert_eq!(summary_request_size(0), (750, 600));
+        assert_eq!(summary_request_size(3), (751, 600));
+        assert_eq!(summary_request_size(3_001), (1_751, 600));
         assert_eq!(
             summary_request_size(1_000_000),
-            (crate::model_helper::CONTEXT_TOKENS, 400)
+            (crate::model_helper::CONTEXT_TOKENS, 600)
         );
         for bytes in [1, 2, 4, 100, 9_999, 22_326] {
             assert_eq!(
@@ -1712,6 +1901,17 @@ mod tests {
         assert_eq!(generation_threads(4, 6, Some(7.0)), 2);
     }
 
+    #[test]
+    fn answers_are_written_on_three_threads_or_all_of_a_smaller_helpers() {
+        assert_eq!(FIXED_ANSWER_THREADS, Some(3));
+        // Six or more cores (helper 4), four (3), three (2), two (1): never more than the helper.
+        assert_eq!(answer_threads(4), Some(3));
+        assert_eq!(answer_threads(3), Some(3));
+        assert_eq!(answer_threads(2), Some(2));
+        assert_eq!(answer_threads(1), Some(1));
+        assert_eq!(answer_threads(0), Some(1));
+    }
+
     fn idle_config() -> RunnerConfig {
         RunnerConfig {
             command: PathBuf::from("/nonexistent/FAKE-model"),
@@ -1950,9 +2150,79 @@ mod tests {
         }
 
         #[test]
+        fn every_answer_is_sent_with_the_fixed_threads_and_the_load_is_never_sampled() {
+            /// Keeps a copy of every byte written to the helper.
+            struct Copy {
+                input: Box<dyn Write + Send>,
+                bytes: Arc<Mutex<Vec<u8>>>,
+            }
+
+            impl Write for Copy {
+                fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                    let written = self.input.write(bytes)?;
+                    self.bytes
+                        .lock()
+                        .unwrap()
+                        .extend_from_slice(&bytes[..written]);
+                    Ok(written)
+                }
+
+                fn flush(&mut self) -> std::io::Result<()> {
+                    self.input.flush()
+                }
+            }
+
+            for (most, sent) in [(4, 3), (2, 2)] {
+                let mut fixed = config(&[], GIB);
+                fixed.generation_threads = Some(most);
+                let runner = Runner::new(fixed);
+                runner.start(&Fixed(Some(8 * GIB))).unwrap();
+                let bytes = Arc::new(Mutex::new(Vec::new()));
+                {
+                    let mut slot = runner.sidecar.lock().unwrap();
+                    let running = slot.as_mut().unwrap();
+                    let input = std::mem::replace(&mut running.input, Box::new(std::io::sink()));
+                    running.input = Box::new(Copy {
+                        input,
+                        bytes: Arc::clone(&bytes),
+                    });
+                }
+                for _ in 0..2 {
+                    runner
+                        .ask_with_sampler(
+                            runner.ticket(),
+                            "explain",
+                            serde_json::json!({ "term": "tablet", "context": TEXT, "lang": "en" }),
+                            (
+                                prompt_tokens(EXPLAIN_PROMPT_TOKENS, "tablet".len() + TEXT.len()),
+                                crate::model_helper::EXPLAIN_TOKENS as u32,
+                            ),
+                            || panic!("the load must not be sampled"),
+                        )
+                        .unwrap();
+                }
+                let written = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+                let lines: Vec<serde_json::Value> = written
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                assert_eq!(lines.len(), 2, "helper {most}");
+                for line in lines {
+                    assert_eq!(line["threads"], serde_json::json!(sent), "helper {most}");
+                }
+                runner.stop();
+            }
+        }
+
+        #[test]
         fn a_ticket_cancelled_while_sampling_leaves_the_newer_requests_helper_alone() {
             use std::sync::atomic::AtomicUsize;
             use std::sync::mpsc;
+            // Nothing is sampled while answers are written on fixed threads; this guards the
+            // load-chosen path for when `FIXED_ANSWER_THREADS` is `None` again.
+            if FIXED_ANSWER_THREADS.is_some() {
+                return;
+            }
 
             struct CountWrites {
                 input: Box<dyn Write + Send>,
@@ -2298,6 +2568,29 @@ mod tests {
             let summary = runner.summarize(runner.ticket(), &request()).unwrap();
             assert_eq!(summary.last_page, 0);
             assert_eq!(summary.unlocated, 1);
+        }
+
+        #[test]
+        fn a_last_page_read_after_a_gap_comes_back_and_its_quotes_are_located() {
+            let runner = Runner::new(config(&["--head-tail"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!((summary.last_page, summary.tail_page), (0, Some(2)));
+            // The quote from page 3 (index 2) is found in what was read.
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|sentence| sentence.quote.contains("FAKE page three")));
+            assert_eq!(summary.unlocated, 0);
+            for tail in ["1", "0"] {
+                let wrong = Runner::new(config(&["--head-tail", "--tail-page", tail], GIB));
+                wrong.start(&Fixed(Some(8 * GIB))).unwrap();
+                assert_eq!(
+                    wrong.summarize(wrong.ticket(), &request()),
+                    Err(RunnerError::Protocol("tail page not sent".to_owned())),
+                    "tail page {tail}"
+                );
+            }
         }
 
         #[test]

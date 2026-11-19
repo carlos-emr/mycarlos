@@ -1,0 +1,268 @@
+The glossary post-step's shared cases (K19, glossary-2.1): synthetic sentences only. Read by the Rust tests in
+glossary.rs and by the evaluation's Python port. One case per block, blocks separated by a line "===". Every case is
+also run twice: a second run must change nothing.
+===
+name: a_lab_value_with_its_unit
+lang: en
+sentence: The creatinine was 120 µmol/L.
+expect: The creatinine (a waste product in the blood that shows how well the kidneys work) was 120 µmol/L (the amount of a substance in a litre, a unit for lab test results).
+===
+name: a_term_already_explained_with_called
+lang: en
+sentence: She has a kidney infection called pyelonephritis.
+expect: She has a kidney infection called pyelonephritis.
+===
+name: a_term_already_explained_in_brackets
+lang: en
+sentence: The creatinine (a kidney test) was high.
+expect: The creatinine (a kidney test) was high.
+===
+name: a_term_inside_brackets
+lang: en
+sentence: The heart pumps less (EF 40%).
+expect: The heart pumps less (EF, the share of blood the heart pumps out with each beat, 40%).
+===
+name: a_plain_phrase_keeps_its_short_term_unexplained
+lang: en
+sentence: Her LDL cholesterol was 2.9 mmol/L.
+expect: Her LDL cholesterol was 2.9 mmol/L (the amount of a substance in a litre, a unit for lab test results).
+===
+name: an_upper_case_abbreviation_matches_only_in_upper_case
+lang: en
+sentence: Take it PO twice a day; the po box is closed.
+expect: Take it PO (by mouth) twice a day; the po box is closed.
+===
+name: only_the_first_use_in_a_sentence
+lang: en
+sentence: The CRP was 30 and the CRP will be repeated.
+expect: The CRP (a blood test for inflammation) was 30 and the CRP will be repeated.
+===
+name: each_glossary_line_gets_its_own
+lang: en
+sentence: ALT and AST are high.
+expect: ALT (a liver blood test) and AST (a liver blood test) are high.
+===
+name: two_spellings_of_one_line
+lang: en
+sentence: The eGFR was 45 and the GFR will be repeated.
+expect: The eGFR (an estimate of how well the kidneys filter the blood) was 45 and the GFR will be repeated.
+===
+name: two_names_of_one_germ
+lang: en
+sentence: The C. difficile test was negative and no C. diff was found.
+expect: The C. difficile (a germ that can cause diarrhea) test was negative and no C. diff was found.
+===
+name: a_french_summary
+lang: fr
+sentence: La créatinine est à 120 µmol/L.
+expect: La créatinine (un déchet du sang qui montre si les reins fonctionnent bien) est à 120 µmol/L (la quantité d'une substance dans un litre, une unité des analyses de laboratoire).
+===
+name: a_canadian_french_tag
+lang: fr-CA
+sentence: La ferritine est basse.
+expect: La ferritine (une analyse de sang qui mesure les réserves de fer du corps) est basse.
+===
+name: another_language_is_left_as_it_is
+lang: pl
+sentence: Kreatynina 120 µmol/L.
+expect: Kreatynina 120 µmol/L.
+===
+name: a_unit_right_after_its_number
+lang: en
+sentence: The level was 120µmol/L today.
+expect: The level was 120µmol/L (the amount of a substance in a litre, a unit for lab test results) today.
+===
+name: the_longest_term_first
+lang: en
+sentence: The albumin-to-creatinine ratio was 30 mg/mmol.
+expect: The albumin-to-creatinine ratio (a urine test for protein leaking from the kidneys) was 30 mg/mmol (the ratio of two substances in urine, a unit for urine tests).
+===
+name: a_term_inside_a_longer_word
+lang: en
+sentence: Creatinines and ALTitude are not terms.
+expect: Creatinines and ALTitude are not terms.
+===
+name: a_plain_sentence
+lang: en
+sentence: Take your tablets with food every morning.
+expect: Take your tablets with food every morning.
+===
+name: egfr_mutation_is_not_egfr
+lang: en
+sentence: The tumour has no EGFR mutation.
+expect: The tumour has no EGFR mutation.
+===
+name: a_grocery_store_is_not_iga
+lang: fr
+sentence: Elle fait ses courses à l'IGA.
+expect: Elle fait ses courses à l'IGA.
+===
+name: fluid_ounces_are_not_femtolitres
+lang: en
+sentence: Drink 8 fl oz of water.
+expect: Drink 8 fl oz of water.
+===
+name: ldl_c_is_not_split
+lang: en
+sentence: Her LDL-C was 2.1 mmol/L.
+expect: Her LDL-C was 2.1 mmol/L (the amount of a substance in a litre, a unit for lab test results).
+===
+name: ttg_iga_as_one_term
+lang: en
+sentence: The tTG-IgA was high.
+expect: The tTG-IgA (a blood test for celiac disease) was high.
+===
+name: ckd_epi_is_left_alone
+lang: en
+sentence: The eGFR uses the CKD-EPI formula.
+expect: The eGFR (an estimate of how well the kidneys filter the blood) uses the CKD-EPI formula.
+===
+name: a_urine_albumin_creatinine_ratio
+lang: en
+sentence: The urine albumin/creatinine ratio was 42 mg/mmol.
+expect: The urine albumin/creatinine ratio (a urine test for protein leaking from the kidneys) was 42 mg/mmol (the ratio of two substances in urine, a unit for urine tests).
+===
+name: a_protein_to_creatinine_ratio
+lang: en
+sentence: The protein-to-creatinine ratio was 50 mg/mmol.
+expect: The protein-to-creatinine ratio (a urine test for protein leaking from the kidneys) was 50 mg/mmol (the ratio of two substances in urine, a unit for urine tests).
+===
+name: urine_creatinine_in_french
+lang: fr
+sentence: La créatinine urinaire est normale.
+expect: La créatinine urinaire (un déchet de l'urine qui montre si les reins fonctionnent bien) est normale.
+===
+name: ringers_lactate_is_a_fluid
+lang: en
+sentence: She was given Ringer's lactate.
+expect: She was given Ringer's lactate.
+===
+name: lactate_dehydrogenase_is_another_test
+lang: en
+sentence: The lactate dehydrogenase was high.
+expect: The lactate dehydrogenase was high.
+===
+name: urea_breath_test
+lang: en
+sentence: The urea breath test was negative.
+expect: The urea breath test was negative.
+===
+name: urea_cream
+lang: en
+sentence: Use urea cream twice a day.
+expect: Use urea cream twice a day.
+===
+name: pulmonary_hypertension
+lang: en
+sentence: He has pulmonary hypertension.
+expect: He has pulmonary hypertension.
+===
+name: ocular_hypertension
+lang: en
+sentence: She has ocular hypertension.
+expect: She has ocular hypertension.
+===
+name: gastric_erosions
+lang: en
+sentence: The gastroscopy showed gastric erosions.
+expect: The gastroscopy (a camera test of the stomach) showed gastric erosions (small areas where a surface is worn away).
+===
+name: acr_eular_criteria
+lang: en
+sentence: She meets the ACR/EULAR criteria.
+expect: She meets the ACR/EULAR criteria.
+===
+name: insulin_strength_unit
+lang: en
+sentence: Insulin glargine 300 U/mL at bedtime.
+expect: Insulin glargine 300 U/mL at bedtime.
+===
+name: glycated_hemoglobin
+lang: en
+sentence: The glycated hemoglobin was 7.5%.
+expect: The glycated hemoglobin (a blood test of the average blood sugar over the past few months) was 7.5%.
+===
+name: hemoglobine_a1c_in_french
+lang: fr
+sentence: L'hémoglobine A1c est à 8 %.
+expect: L'hémoglobine A1c (une analyse de sang qui mesure le sucre moyen des derniers mois) est à 8 %.
+===
+name: recalled_is_not_called
+lang: en
+sentence: She recalled delirium last year.
+expect: She recalled delirium (sudden confusion) last year.
+===
+name: french_appelee_before
+lang: fr
+sentence: Elle a une infection du rein appelée pyélonéphrite.
+expect: Elle a une infection du rein appelée pyélonéphrite.
+===
+name: french_qui_after
+lang: fr
+sentence: La pyélonéphrite, qui touche le rein, guérit.
+expect: La pyélonéphrite, qui touche le rein, guérit.
+===
+name: a_decomposed_accent
+lang: fr
+sentence: La créatinine est stable.
+expect: La créatinine (un déchet du sang qui montre si les reins fonctionnent bien) est stable.
+===
+name: a_list_after_a_term
+lang: en
+sentence: The CRP, the white count and the lactate were high.
+expect: The CRP, the white count and the lactate (a blood substance that can go up in serious illness) were high.
+===
+name: a_lab_value_in_units_per_millilitre
+lang: en
+sentence: The tTG-IgA was 86 U/mL.
+expect: The tTG-IgA (a blood test for celiac disease) was 86 U/mL (units of a substance in a millilitre, a unit for lab test results).
+===
+name: an_insulin_brand_strength
+lang: en
+sentence: Toujeo 300 U/mL, 20 units at bedtime.
+expect: Toujeo 300 U/mL, 20 units at bedtime.
+===
+name: two_different_units_of_one_line
+lang: en
+sentence: His creatinine was 98 µmol/L and LDL cholesterol 3.1 mmol/L.
+expect: His creatinine (a waste product in the blood that shows how well the kidneys work) was 98 µmol/L (the amount of a substance in a litre, a unit for lab test results) and LDL cholesterol 3.1 mmol/L (the amount of a substance in a litre, a unit for lab test results).
+===
+name: one_unit_twice
+lang: en
+sentence: The potassium was 5.3 mmol/L and the sugar 8.4 mmol/L.
+expect: The potassium was 5.3 mmol/L (the amount of a substance in a litre, a unit for lab test results) and the sugar 8.4 mmol/L.
+===
+name: a_unit_with_a_lower_case_l
+lang: en
+sentence: The CRP was 22 mg/l.
+expect: The CRP (a blood test for inflammation) was 22 mg/l (the weight of a substance in an amount of fluid, a unit for lab test results).
+===
+name: a_french_cell_count_is_not_grams
+lang: fr
+sentence: Les leucocytes sont à 12 G/L.
+expect: Les leucocytes sont à 12 G/L.
+===
+name: the_polish_count_unit
+lang: en
+sentence: White blood cells were 15,2 tys./µl.
+expect: White blood cells were 15,2 tys./µl (the number of cells, in thousands, in a microlitre, a unit for blood counts).
+===
+name: oxygen_saturation
+lang: en
+sentence: The oxygen saturation was 94% without oxygen.
+expect: The oxygen saturation (how much oxygen the blood is carrying) was 94% without oxygen.
+===
+name: transferrin_saturation_is_an_iron_test
+lang: en
+sentence: The transferrin saturation was 8%.
+expect: The transferrin saturation was 8%.
+===
+name: a_unit_per_millilitre_inside_brackets
+lang: en
+sentence: The celiac test was high (86 U/mL).
+expect: The celiac test was high (86 U/mL, units of a substance in a millilitre, a unit for lab test results).
+===
+name: a_list_inside_brackets
+lang: en
+sentence: Have a blood test (creatinine, potassium) in 1 week.
+expect: Have a blood test (creatinine, a waste product in the blood that shows how well the kidneys work, potassium) in 1 week.
