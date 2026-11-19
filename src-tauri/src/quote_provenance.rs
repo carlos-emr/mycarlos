@@ -19,6 +19,15 @@ impl UnlocatedQuotes {
         self.0.len()
     }
 
+    /// The sentences moved: sentence `i` is now at `to[i]` (`safety::moved_to`, after the
+    /// safety checks inserted a rule between two sentences). Each original quote follows its
+    /// sentence, so the measured sheet never shows it beside the line before.
+    pub(crate) fn remap(&mut self, to: &[usize]) {
+        for (index, _) in &mut self.0 {
+            *index = to[*index];
+        }
+    }
+
     /// A repaired source is located; otherwise recover only this sentence's
     /// original missing quote. Original model-quoting diagnostics stay intact.
     pub(crate) fn for_measurement(&self, index: usize, current: String) -> (String, bool) {
@@ -123,6 +132,77 @@ mod tests {
         assert_eq!(missing.original(1), Some("FAKE missing second"));
         assert_eq!(missing.original(4), Some("FAKE missing fifth"));
         assert_eq!(missing.len(), 2);
+    }
+
+    #[test]
+    fn an_unfound_quote_after_an_inserted_rule_stays_with_its_sentence() {
+        // The same calls as the runner: the checks put the rule in after sentence 0, then
+        // the recorded unfound quote of sentence 1 moves with it to index 2.
+        let rule = "Call the clinic if you get a rash or your lips swell.";
+        let pages = format!("Going home\nTake FAKEDRUG 2 tablets daily. {rule}\nFAKE visit.");
+        let mut missing = UnlocatedQuotes::default();
+        missing.record(1, "FAKE unmatched model quote".to_owned());
+        let mut lines = vec![
+            Line {
+                text: "Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash."
+                    .to_owned(),
+                quote: "Take FAKEDRUG 2 tablets daily".to_owned(),
+            },
+            Line {
+                text: "The appointment is on Monday.".to_owned(),
+                quote: String::new(),
+            },
+        ];
+        let log = safety::check(&pages, &mut lines);
+        assert_eq!(log.len(), 1);
+        assert_eq!((log[0].index, log[0].before.is_none()), (1, true));
+        assert_eq!(lines.len(), 3);
+        let moved = safety::moved_to(&log, lines.len());
+        assert_eq!(moved, vec![0, 2]);
+        missing.remap(&moved);
+        let measured: Vec<(String, bool)> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| missing.for_measurement(i, l.quote.clone()))
+            .collect();
+        assert_eq!(
+            measured[0],
+            ("Take FAKEDRUG 2 tablets daily".to_owned(), true)
+        );
+        assert_eq!(measured[1], (rule.to_owned(), true));
+        assert_eq!(
+            measured[2],
+            ("FAKE unmatched model quote".to_owned(), false)
+        );
+    }
+
+    #[test]
+    fn an_earlier_logged_line_moves_when_a_rule_is_put_in_before_it() {
+        // The first rule is not in the summary and goes at the end (index 2); the second is
+        // put in after sentence 0, so the first one's log entry must move on to index 3.
+        let pages = "Going home\nCall 911 if you have chest pain. Take FAKEDRUG 2 tablets daily. \
+                     Call the clinic if you get a rash or your lips swell.";
+        let mut lines = vec![
+            Line {
+                text: "Take FAKEDRUG 2 tablets daily; call the clinic if you get a rash."
+                    .to_owned(),
+                quote: "Take FAKEDRUG 2 tablets daily".to_owned(),
+            },
+            Line {
+                text: "The appointment is on Monday.".to_owned(),
+                quote: String::new(),
+            },
+        ];
+        let log = safety::check(pages, &mut lines);
+        let added: Vec<(usize, bool)> = log
+            .iter()
+            .map(|f| (f.index, f.after.contains("911")))
+            .collect();
+        assert_eq!(added, vec![(3, true), (1, false)]);
+        for f in &log {
+            assert_eq!(lines[f.index].text, f.after);
+        }
+        assert_eq!(safety::moved_to(&log, lines.len()), vec![0, 2]);
     }
 
     #[test]
