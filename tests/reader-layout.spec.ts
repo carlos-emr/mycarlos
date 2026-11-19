@@ -479,7 +479,17 @@ test("reads down a zoomed page with the keys before turning it", async ({
     // that reading back goes on where it left off.
     await page.keyboard.press("PageUp");
     await expect(reader.locator(".native-reader-where")).toHaveText(where(1));
-    await expect.poll(async () => (await scroll()).atBottom).toBe(true);
+    // Shown from its bottom once its picture is drawn: until then the page
+    // area is empty, and an empty area is "at the bottom" too (scrollHeight
+    // equals clientHeight), so the wait must also see the tall, drawn page.
+    // Otherwise Home is pressed at the top of nothing, does nothing, and the
+    // picture then scrolls itself to the bottom.
+    await expect
+      .poll(async () => {
+        const at = await scroll();
+        return at.tall && at.atBottom;
+      })
+      .toBe(true);
     // Home scrolls page 1 to its top; the first page has none before it.
     await page.keyboard.press("Home");
     await expect.poll(async () => (await scroll()).top).toBe(0);

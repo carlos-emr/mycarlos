@@ -22,10 +22,24 @@ export interface ModelInfo {
   sha256: string;
 }
 
+/** How much of a document one summary reads (#301), in the model's tokens:
+ * the context the helper runs it with, and the room left for the document's
+ * text (`capacity.ts` turns it into about so many pages). */
+export interface ModelCapacity {
+  contextTokens: number;
+  documentTokens: number;
+}
+
 /** What `ai_model_status` says about the model on this computer. */
 export type ModelStatus =
   | { state: "notInstalled" }
-  | { state: "installed"; model: ModelInfo }
+  | {
+      state: "installed";
+      model: ModelInfo;
+      /** How much of a document it reads at a time; null or absent when
+       * not known, and the reader then starts as before. */
+      capacity?: ModelCapacity | null;
+    }
   /** The model cannot run here: too little memory in all, a processor
    * without the instructions it needs, or a system it does not run on yet
    * (macOS, for now). */
@@ -73,6 +87,9 @@ export interface AcceptedModel {
   licence: string;
   notices: string[];
   sourceUrl: string;
+  /** How much of a document it reads at a time (#301). Absent from a native
+   * side that predates it. */
+  capacity?: ModelCapacity;
 }
 
 /** One native catalog row, keyed by its stable catalog index (#276A). */

@@ -1495,6 +1495,10 @@ interface-history-event-copySaved = 可讀副本已儲存
 
 interface-history-event-created = 保險庫已建立
 
+interface-history-event-deliveryRefusalsCleared = 已選擇重試未通過驗證的診所文件
+
+interface-history-event-deliveryRefused = 診所文件未通過驗證
+
 interface-history-event-deliveryFiled = 已儲存診所文件
 
 interface-history-event-deliveryReceiptSettled = 領取回執已結束
@@ -1659,6 +1663,12 @@ portal-codeSubmit = 確認驗證碼
 
 portal-codeSubmitted = 驗證碼已送出。正在等待診所確認此裝置。如果 10 分鐘內仍未確認，請重新申請。
 
+portal-refusedDocuments = 此診所有 { $count } 份文件無法驗證。請診所重新傳送。
+
+portal-tryAgain = 重試
+
+portal-tryAgainFor = 重試：{ $clinic }
+
 portal-linkAnother = 連結另一家診所
 
 ai-summary-button = 摘要
@@ -1679,7 +1689,37 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文件中顯示
 
-ai-summary-partial = 此摘要僅涵蓋文件開頭部分：第 1 頁至第 { $last } 頁。
+ai-summary-partial = 此摘要僅使用了文件的部分文字。
+
+ai-summary-tooLong =
+    { $last ->
+    [1] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁（共 { $total } 頁）。
+   *[other] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁至第 { $last } 頁（共 { $total } 頁）。
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [1] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁和最後一頁，即第 { $tail } 頁（共 { $total } 頁）。
+   *[other] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁至第 { $last } 頁，以及最後一頁，即第 { $tail } 頁（共 { $total } 頁）。
+    }
+
+ai-summary-tooLongStart = 這份文件可能太長，AI 助理無法一次讀完。它大約只能讀第 1 頁的開頭部分。
+
+ai-summary-tooLongAfter = 如果無法讀完全部內容，摘要會註明。
+
+ai-summary-readPages =
+    { $last ->
+    [1] 為第 1 頁產生摘要
+   *[other] 為第 1 頁至第 { $last } 頁產生摘要
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [1] 為第 1 頁和第 { $tail } 頁產生摘要
+   *[other] 為第 1 頁至第 { $last } 頁和第 { $tail } 頁產生摘要
+    }
+
+ai-summary-readStart = 為第 1 頁的開頭部分產生摘要
 
 ai-summary-noText = myCarlos 無法讀取此文件中的任何文字，因此無法產生摘要。這可能是掃描檔。
 
@@ -1700,6 +1740,8 @@ ai-settings-subtitle = AI 助理在此裝置上的運作方式
 ai-model-add = 新增模型檔案…
 
 ai-model-accepted = { $name }，{ $size } MB。授權：{ $licence }。
+
+ai-model-reads = 每次約可讀 { $pages } 頁（約 { $characters } 個英文字元）。表格和某些語言會更少。
 
 ai-model-where = 在哪裡取得檔案
 
@@ -1778,6 +1820,9 @@ ai-error-storage = 無法從此裝置讀取 AI 助理的模型。請重試。如
 ai-summary-pagesMissing = 部分頁面未能完整讀取，因此此摘要可能遺漏部分內容。
 
 ai-summary-noSource = 未找到來源
+
+ai-summary-englishOnly = 目前摘要以英文撰寫。myCarlos 只對英文摘要核對數字與「何時就醫」的提示，請在文件本身中核對這些內容。
+
 aiHelper-notice-title = 關於 AI 助理
 
 aiHelper-notice-introShare = myCarlos 可以為您選擇的 AI 服務準備文件的文字。AI 助理絕不會透過網際網路傳送您的文件或任何關於您的資訊。它唯一會取得的是其模型檔案，而且只有在您選擇下載時才會取得。下載時，下載網站會看到這台裝置的網際網路位址。
@@ -2022,3 +2067,5 @@ ai-models-starting = 正在開始下載…
 ai-models-picking = 請選擇要新增的模型檔案。
 
 ai-models-changed = 已變更正在使用的模型
+
+ai-summaryTooLarge = 完整摘要過大。未儲存新的摘要。
