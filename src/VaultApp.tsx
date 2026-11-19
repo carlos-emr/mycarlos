@@ -680,6 +680,20 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       }),
     [bridge],
   );
+  // The vault locked natively without this screen asking: the window was
+  // closed to the tray, Quit was chosen, or the native idle lock fell due
+  // (#206). The vault is already locked, so the screen lets go of everything
+  // it shows at once, as its own lock does, whatever is in flight. It does not
+  // wait for a `visibilitychange` that a hidden window may never get.
+  useEffect(
+    () =>
+      bridge.onVaultLocked?.(({ by }) => {
+        if (statusRef.current !== "unlocked") return;
+        lockReasonRef.current ??= by === "idle" ? "idle" : "hidden";
+        requestLock(true);
+      }),
+    [bridge, requestLock],
+  );
   const trackedBridge = useMemo<VaultBridge>(() => {
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
       // `run` locks once the operation has reported the transfer's outcome.

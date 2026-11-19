@@ -1039,6 +1039,17 @@ export const MESSAGE_KEYS = [
   "personDetails.notNow",
   "personDetails.notSaved",
   "ai.summaryTooLarge",
+  "background.title",
+  "background.keepRunning",
+  "background.keepRunningHelp",
+  "background.startAtLogin",
+  "background.startAtLoginHelp",
+  "background.paused",
+  "background.unavailable",
+  "background.error",
+  "native.tray.open",
+  "native.tray.quit",
+  "native.tray.tooltip",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2277,6 +2288,17 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.notNow": "personDetails-notNow",
   "personDetails.notSaved": "personDetails-notSaved",
   "ai.summaryTooLarge": "ai-summaryTooLarge",
+  "background.title": "background-title",
+  "background.keepRunning": "background-keepRunning",
+  "background.keepRunningHelp": "background-keepRunningHelp",
+  "background.startAtLogin": "background-startAtLogin",
+  "background.startAtLoginHelp": "background-startAtLoginHelp",
+  "background.paused": "background-paused",
+  "background.unavailable": "background-unavailable",
+  "background.error": "background-error",
+  "native.tray.open": "native-tray-open",
+  "native.tray.quit": "native-tray-quit",
+  "native.tray.tooltip": "native-tray-tooltip",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3434,6 +3456,17 @@ export interface MessageArgsByKey {
   "personDetails.notNow": undefined;
   "personDetails.notSaved": undefined;
   "ai.summaryTooLarge": undefined;
+  "background.title": undefined;
+  "background.keepRunning": undefined;
+  "background.keepRunningHelp": undefined;
+  "background.startAtLogin": undefined;
+  "background.startAtLoginHelp": undefined;
+  "background.paused": undefined;
+  "background.unavailable": undefined;
+  "background.error": undefined;
+  "native.tray.open": undefined;
+  "native.tray.quit": undefined;
+  "native.tray.tooltip": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];
