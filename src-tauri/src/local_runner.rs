@@ -921,9 +921,7 @@ impl Runner {
             .take(request.max_sentences)
             .enumerate()
             .map(|(index, mut sentence)| {
-                if !quote_on_a_page(&read_pages, &sentence.quote)
-                    || quote_is_heading(&text, &sentence.quote)
-                {
+                if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
                     unlocated_quotes.record(index, std::mem::take(&mut sentence.quote));
                 }
                 sentence
@@ -1542,13 +1540,6 @@ fn quote_in(text: &str, quote: &str) -> bool {
     crate::quote_locate::is_located(text, quote)
 }
 
-/// Whether one of the pages read contains the quote. The reader matches page by page
-/// (`locateQuote.ts`: every part of a quote on one page), so words that only run over a page break
-/// are no source it can show; the joined text of the pages would find them.
-fn quote_on_a_page(pages: &[&Page], quote: &str) -> bool {
-    pages.iter().any(|page| quote_in(&page.text, quote))
-}
-
 /// At most this many words make a heading (see [`quote_is_heading`]).
 const HEADING_WORDS: usize = 4;
 
@@ -1766,41 +1757,6 @@ mod tests {
         assert!(!quote_is_heading(
             letter,
             "Definite plan ... Follow-up in this clinic"
-        ));
-    }
-
-    #[test]
-    fn a_quote_is_located_on_one_page_as_the_reader_does_not_over_a_page_break() {
-        let first = Page {
-            index: 0,
-            text: "Plan\nThe blood tests will be repeated in six weeks and".to_owned(),
-        };
-        let second = Page {
-            index: 1,
-            text: "the result will be sent to your family doctor.".to_owned(),
-        };
-        let pages = [&first, &second];
-        let joined = format!("{}{PAGE_SEPARATOR}{}", first.text, second.text);
-        let over_the_break = "will be repeated in six weeks and the result will be sent";
-        // The joined text has it; no page does, and the reader would show no link for it.
-        assert!(quote_in(&joined, over_the_break));
-        assert!(!quote_on_a_page(&pages, over_the_break));
-        assert!(!quote_on_a_page(
-            &pages,
-            "The blood tests will be repeated ... the result will be sent to your family doctor"
-        ));
-        // Each page's own words are found, on either page.
-        assert!(quote_on_a_page(
-            &pages,
-            "The blood tests will be repeated in six weeks"
-        ));
-        assert!(quote_on_a_page(
-            &pages,
-            "the result will be sent to your family doctor."
-        ));
-        assert!(!quote_on_a_page(
-            &[],
-            "the result will be sent to your family doctor."
         ));
     }
 
