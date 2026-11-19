@@ -1855,7 +1855,7 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver en el documento
 
-ai-summary-partial = Este resumen solo abarca el comienzo del documento: páginas 1 a { $last }.
+ai-summary-partial = Este resumen utiliza solo parte del texto del documento.
 
 ai-summary-noText = myCarlos no pudo leer ningún texto en este documento, así que no puede resumirlo. Puede que sea un documento escaneado.
 

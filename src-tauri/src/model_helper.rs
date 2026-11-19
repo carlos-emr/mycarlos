@@ -896,6 +896,25 @@ mod stub {
 mod tests {
     use super::*;
 
+    /// The summary wording that was graded (M2 6595b3c2, unchanged in the candidate bf4b06b9:
+    /// the graded hard 10, and the unseen run of 18 Nov 2026), pinned: its system text and its
+    /// English summary build (prompt, grammar and caps, as a fingerprint). A change here changes
+    /// the graded summaries, so it needs grading again before these values move.
+    #[test]
+    fn the_graded_summary_wording_is_pinned() {
+        use sha2::{Digest, Sha256};
+        assert_eq!(SYSTEM_PROMPT.chars().count(), 1_130);
+        assert_eq!(
+            format!("{:x}", Sha256::digest(SYSTEM_PROMPT.as_bytes())),
+            "ee6c6ddbd775ff216404b12a92286c0f5e7f211c81a0101753708a64fcf671d4"
+        );
+        #[cfg(any(target_os = "linux", windows))]
+        assert_eq!(
+            crate::model_runtime::engine_testing::summary_build("en").unwrap()["fingerprint"],
+            "d2ba1ec0c479ca24fc7199884fd2c2fcb4e4e368851f51adae603f3c57541d42"
+        );
+    }
+
     fn settings(model: ModelFile) -> Settings {
         Settings {
             chat_format: ChatFormat::Builtin,
