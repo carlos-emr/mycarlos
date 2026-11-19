@@ -708,6 +708,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
   "interface.history.event.created",
+  "interface.history.event.deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused",
   "interface.history.event.deliveryFiled",
   "interface.history.event.deliveryReceiptSettled",
   "interface.history.event.other",
@@ -813,6 +815,9 @@ export const MESSAGE_KEYS = [
   "portal.codeRefused",
   "portal.codeSubmit",
   "portal.codeSubmitted",
+  "portal.refusedDocuments",
+  "portal.tryAgain",
+  "portal.tryAgainFor",
   "portal.linkAnother",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
@@ -1842,6 +1847,10 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
   "interface.history.event.copySaved": "interface-history-event-copySaved",
   "interface.history.event.created": "interface-history-event-created",
+  "interface.history.event.deliveryRefusalsCleared":
+    "interface-history-event-deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused":
+    "interface-history-event-deliveryRefused",
   "interface.history.event.deliveryFiled":
     "interface-history-event-deliveryFiled",
   "interface.history.event.deliveryReceiptSettled":
@@ -1970,6 +1979,9 @@ const FLUENT_IDS_BY_KEY = {
   "portal.codeRefused": "portal-codeRefused",
   "portal.codeSubmit": "portal-codeSubmit",
   "portal.codeSubmitted": "portal-codeSubmitted",
+  "portal.refusedDocuments": "portal-refusedDocuments",
+  "portal.tryAgain": "portal-tryAgain",
+  "portal.tryAgainFor": "portal-tryAgainFor",
   "portal.linkAnother": "portal-linkAnother",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
@@ -3039,6 +3051,8 @@ export interface MessageArgsByKey {
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
   "interface.history.event.created": undefined;
+  "interface.history.event.deliveryRefusalsCleared": undefined;
+  "interface.history.event.deliveryRefused": undefined;
   "interface.history.event.deliveryFiled": undefined;
   "interface.history.event.deliveryReceiptSettled": undefined;
   "interface.history.event.other": undefined;
@@ -3144,6 +3158,9 @@ export interface MessageArgsByKey {
   "portal.codeRefused": undefined;
   "portal.codeSubmit": undefined;
   "portal.codeSubmitted": undefined;
+  "portal.refusedDocuments": { count: FluentArgument };
+  "portal.tryAgain": undefined;
+  "portal.tryAgainFor": { clinic: FluentArgument };
   "portal.linkAnother": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;

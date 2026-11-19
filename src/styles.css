@@ -4016,6 +4016,10 @@ button:disabled,
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+/* #143: the "Try again" button keeps the card's usual gap below the line. */
+.portal-refused .button {
+  margin-block-start: 0.5rem;
+}
 .portal-documents label {
   display: grid;
   gap: 0.35rem;

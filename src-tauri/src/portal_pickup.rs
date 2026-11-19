@@ -293,15 +293,20 @@ where
         Ok(n)
     };
     let mut result = CheckResult::default();
+    let links = store.delivery_links(session)?;
+    // Refusals whose deliveries have expired are no longer offered (#143).
+    // Only tidying: an expired refusal is ignored anyway, so a failure to
+    // write here does not stop the check, unless the vault locked.
+    if let Err(error @ (VaultError::Locked | VaultError::Cancelled)) =
+        store.forget_expired_refusals(session)
+    {
+        return Err(error);
+    }
     // Portals that answered a device of this vault in this check, and the
     // devices one of them did not know.
     let mut answered = std::collections::HashSet::new();
     let mut unknown = Vec::new();
-    for original in store
-        .delivery_links(session)?
-        .into_iter()
-        .filter(|link| include(link))
-    {
+    for original in links.into_iter().filter(|link| include(link)) {
         // A device this run of the app already found gone from its portal is
         // not asked again (in memory only): said as removed, with no request,
         // and its receipts, which that portal can never take, are not counted.
@@ -390,6 +395,13 @@ where
                         .map_err(|_| VaultError::Portal(LinkError::InvalidResponse))?;
                     if !seen.insert(outer.delivery_id.clone()) {
                         return Err(VaultError::Portal(LinkError::InvalidResponse));
+                    }
+                    // A delivery that failed its checks before, unchanged, is
+                    // not downloaded and refused again (#143): the patient
+                    // was told then, and the clinic card says so until it
+                    // expires or the patient chooses Try again.
+                    if store.refusal_remembered(&link, &outer, session)? {
+                        continue;
                     }
                     if outer.kind.is_some() {
                         match crate::reading_aid::check_listing(&outer) {
