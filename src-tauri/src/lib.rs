@@ -26,14 +26,25 @@ mod idle;
 // some platforms.
 #[allow(dead_code)]
 mod local_model;
+// K17 (evaluation only): the post-step on summary sentences (pure std; tested on its own).
+mod addressee;
+// K19 (evaluation only): the glossary post-step (pure std; tested on its own).
+mod glossary;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;
+mod quote_provenance;
+// K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
+mod safety;
+mod summary_contract;
 // The model download runs on computers only (no AI helper on a phone).
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
 mod model_runtime;
+mod notice_key;
+#[cfg(windows)]
+mod notice_store_windows;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -449,6 +460,10 @@ impl From<VaultError> for PublicText {
             VaultError::Invalid => Self {
                 code: "invalid",
                 message_key: "native.error.19",
+            },
+            VaultError::AiSummaryTooLarge => Self {
+                code: "aiSummaryTooLarge",
+                message_key: "ai.summaryTooLarge",
             },
             // The reader says it on this code: the answer is shown, not kept.
             VaultError::AiResultsFull => Self {
@@ -1284,6 +1299,9 @@ struct TextTicket {
     pages_missing: bool,
     /// The index (from 0) of the last page the text holds.
     last_index: Option<u32>,
+    /// The document's page count, as the text read found it: a summary's last page read after a
+    /// gap is the document's own last page only if it is the last of these (E4b).
+    page_count: u32,
     /// What the pages said (`pages_digest`): a summary kept for this document must be of them.
     pages_digest: [u8; 32],
 }
@@ -1641,7 +1659,7 @@ struct RecordIdRequest {
 struct SaveAiResultRequest {
     record_id: Uuid,
     kept_id: Uuid,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "summary_contract::deserialize_sources")]
     sources: Option<Vec<Option<model_runtime::SourceSpan>>>,
 }
 
@@ -2111,7 +2129,7 @@ async fn ai_summarize(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: model_runtime::SummarizeRequest,
+    mut request: model_runtime::SummarizeRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
     // Capture the actual unlocked session before validation can yield.
@@ -2132,11 +2150,14 @@ async fn ai_summarize(
             if sent != text.pages_digest {
                 return Err(ai_error(model_runtime::AiError::Failed));
             }
+            // The text read's own page count, not the renderer's (E4b).
+            request.page_count = Some(text.page_count);
             Some((record_id, text))
         }
         (None, None) => None,
         _ => return Err(ai_error(model_runtime::AiError::Failed)),
     };
+    let sent_page_indices: Vec<_> = request.pages.iter().map(|page| page.index).collect();
     let lang = request.lang.clone();
     let result = run_ai(
         store.inner(),
@@ -2145,6 +2166,19 @@ async fn ai_summarize(
         move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch),
     )
     .await?;
+    let read_pages =
+        model_runtime::summary_read_pages(&sent_page_indices, result.last_page, result.tail_page)
+            .ok_or_else(|| ai_error(model_runtime::AiError::Failed))?;
+    summary_contract::reserve(
+        result
+            .sentences
+            .iter()
+            .map(|s| (s.text.as_str(), s.quote.as_str())),
+        &result.model.name,
+        &result.model.sha256,
+        &lang,
+    )
+    .map_err(summary_error)?;
     let kept_id = kept_for.map(|(record_id, text)| {
         picks.keep_ai_answer(
             session,
@@ -2157,7 +2191,7 @@ async fn ai_summarize(
                 } else {
                     0
                 },
-                last_index: result.last_page,
+                read_pages,
                 partial: text.partial(result.last_page, result.last_page_cut),
                 pages_missing: text.pages_missing,
                 model: result.model.clone(),
@@ -2339,6 +2373,13 @@ async fn held_for_answer<T: Send + 'static>(
     result
 }
 
+fn summary_error(error: summary_contract::Error) -> PublicError {
+    ai_error(match error {
+        summary_contract::Error::TooLarge => model_runtime::AiError::SummaryTooLarge,
+        summary_contract::Error::Invalid => model_runtime::AiError::Failed,
+    })
+}
+
 /// An AI run's failure for the renderer: its code says which; the words are the panel's.
 fn ai_error(error: model_runtime::AiError) -> PublicError {
     use model_runtime::AiError;
@@ -2347,6 +2388,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         AiError::Memory => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
         AiError::Storage => "ai.error.storage",
+        AiError::SummaryTooLarge => "ai.summaryTooLarge",
         AiError::Cancelled | AiError::Failed => "ai.failed",
     };
     PublicError {
@@ -2748,7 +2790,13 @@ async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> Co
 /// asked for) runs in the background, so opening never waits on the network.
 fn after_open(store: &Arc<VaultStore>) {
     let store = Arc::clone(store);
-    tauri::async_runtime::spawn_blocking(move || store.after_open());
+    tauri::async_runtime::spawn_blocking(move || {
+        // Notice keys of any other vault go (#230).
+        if let Some(vault_id) = store.open_vault_id() {
+            notice_key::after_open(vault_id);
+        }
+        store.after_open();
+    });
 }
 
 #[tauri::command]
@@ -3131,6 +3179,20 @@ async fn vault_restart_device_approval(
     let session = store.portal_link_ticket();
     let store = Arc::clone(store.inner());
     tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+/// Try again (#143): forgets a clinic's remembered refusals, so that the next
+/// check downloads and checks its documents again.
+#[tauri::command]
+async fn vault_forget_refused_deliveries(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
         .map_err(Into::into)
@@ -4632,6 +4694,7 @@ async fn vault_document_text(
                 && text.cut_pages.is_empty()
                 && text.failed_pages.is_empty()),
             last_index: text.pages.last().map(|page| page.index),
+            page_count: text.page_count,
             pages_digest: pages_digest(
                 text.pages
                     .iter()
@@ -5024,7 +5087,8 @@ async fn vault_ai_result_save(
         .kept_ai_answer(request.kept_id, request.record_id)
         .ok_or(vault::VaultError::Invalid)?;
     let (input, content) = answer
-        .content(request.sources.as_deref())
+        .checked_content(request.sources.as_deref())
+        .map_err(summary_error)?
         .ok_or(vault::VaultError::Invalid)?;
     // Still checked as the reader's answers are: the caps, and the model that
     // last answered here.
@@ -5149,6 +5213,8 @@ async fn vault_reset(
     }
     picks.clear();
     run_blocking(store.inner(), VaultStore::reset).await?;
+    // Its notice keys go with it (#230).
+    let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
     forget_vault(throttle.inner()).await;
     Ok(true)
@@ -5344,6 +5410,9 @@ pub fn run() {
                     .join("vault-home")
                     .join("attempts.json"),
             ))));
+            // Notice keys (#230) live beside `vault-home` too, so no vault
+            // backup holds them.
+            notice_key::install(&app.path().app_local_data_dir()?);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
@@ -5435,6 +5504,7 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
             vault_set_automatic_document_checks,
@@ -5958,7 +6028,11 @@ mod tests {
             ),
             (
                 "async fn vault_reset(",
-                "VaultStore::reset).await?; forget_vault(throttle.inner()).await; Ok(true)",
+                concat!(
+                    "VaultStore::reset).await?; ",
+                    "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
+                    "forget_vault(throttle.inner()).await; Ok(true)",
+                ),
             ),
             (
                 "async fn vault_restore(",
@@ -6216,6 +6290,7 @@ mod tests {
             truncated,
             pages_missing: false,
             last_index,
+            page_count: 4,
             pages_digest: [0; 32],
         };
         assert!(!ticket(false, Some(3)).partial(3, false));
@@ -6238,6 +6313,11 @@ mod tests {
             (AiError::Memory, "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
             (AiError::Storage, "aiStorage", "could not be read"),
+            (
+                AiError::SummaryTooLarge,
+                "aiSummaryTooLarge",
+                "complete summary is too large",
+            ),
             (AiError::Cancelled, "aiCancelled", "could not finish"),
             (AiError::Failed, "aiFailed", "could not finish"),
         ] {
@@ -7464,7 +7544,32 @@ mod tests {
         let library = include_str!("lib.rs");
         let build_script = include_str!("../build.rs");
         let command_marker = ["#[tauri", "::command]"].concat();
-        assert_eq!(permissions.len(), library.matches(&command_marker).count());
+        // A command whose feature is switched off in the screens stays declared, compiled and
+        // tested, but is granted only while its flag in src/ai/features.ts is on (with
+        // removeUnusedCommands, Tauri then leaves it out of the handler). The flag and the grant
+        // change together.
+        // Each switched-off command with the flag in features.ts that switches it on.
+        const SWITCHABLE: &[(&str, &str)] = &[("ai_explain", "AI_EXPLAIN_ENABLED")];
+        let features = include_str!("../../src/ai/features.ts");
+        let mut not_granted = 0;
+        for &(command, flag) in SWITCHABLE {
+            let on = features.contains(&format!("export const {flag}: boolean = true;"));
+            let off = features.contains(&format!("export const {flag}: boolean = false;"));
+            assert!(on != off, "{flag} must be a plain true or false constant");
+            let grant = format!("allow-{}", command.replace('_', "-"));
+            let granted = permissions.contains(&grant.as_str());
+            assert_eq!(
+                granted, on,
+                "{grant} must be granted exactly when {flag} is on"
+            );
+            assert!(library.contains(&format!("fn {command}(")));
+            assert!(build_script.contains(&format!("\"{command}\"")));
+            not_granted += usize::from(!granted);
+        }
+        assert_eq!(
+            permissions.len() + not_granted,
+            library.matches(&command_marker).count()
+        );
         for permission in permissions {
             assert!(!permission.contains(':'));
             let command = permission.strip_prefix("allow-").unwrap().replace('-', "_");
@@ -7727,6 +7832,7 @@ mod historical_identifier_export_tests {
                 truncated: false,
                 pages_missing: false,
                 last_index: Some(0),
+                page_count: 1,
                 pages_digest: pages_digest([(0, "Zorvana")]),
             },
         );
@@ -8759,6 +8865,7 @@ mod native_localization_tests {
             VaultError::NotFound,
             VaultError::Invalid,
             VaultError::AiResultsFull,
+            VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,
@@ -9157,3 +9264,6 @@ mod audit_history_ipc_tests {
         assert_eq!(locked["code"], "locked");
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod extraction_acceptance_tests;

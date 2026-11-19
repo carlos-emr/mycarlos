@@ -188,9 +188,13 @@ interface-count-selected =
 
 interface-DocumentReader-documentPassword = Contraseña del documento
 
+interface-DocumentReader-firstPage = Primera página
+
 interface-DocumentReader-fitWidth = Ajustar al ancho
 
 interface-DocumentReader-larger = Ampliar
+
+interface-DocumentReader-lastPage = Última página
 
 interface-DocumentReader-nextPage = Página siguiente
 
@@ -1480,6 +1484,8 @@ portal-copyFailed = Seleccione el código completo del dispositivo y cópielo.
 
 portal-dateNotRecorded = Fecha no registrada
 
+portal-defaultDeviceName = myCarlos en { $platform }
+
 portal-deviceCode = Código del dispositivo
 
 portal-deviceName = Nombre de este dispositivo
@@ -1649,6 +1655,10 @@ interface-history-event-backupSaved = Copia de seguridad cifrada guardada
 interface-history-event-copySaved = Copia legible guardada
 
 interface-history-event-created = Bóveda creada
+
+interface-history-event-deliveryRefusalsCleared = Nuevo intento solicitado para los documentos no verificados de la clínica
+
+interface-history-event-deliveryRefused = Documento de la clínica no verificado
 
 interface-history-event-deliveryFiled = Documento de la clínica guardado
 
@@ -1829,6 +1839,16 @@ portal-codeSubmit = Confirmar código
 
 portal-codeSubmitted = Código enviado. Esperando a que su clínica confirme este dispositivo. Si no se confirma en 10 minutos, vuelva a solicitarlo.
 
+portal-refusedDocuments =
+    { $count ->
+    [one] No se pudo verificar { $count } documento de esta clínica. Pida a la clínica que se lo vuelva a enviar.
+    *[other] No se pudieron verificar { $count } documentos de esta clínica. Pida a la clínica que se los vuelva a enviar.
+    }
+
+portal-tryAgain = Intentar de nuevo
+
+portal-tryAgainFor = Intentar de nuevo con { $clinic }
+
 portal-linkAnother = Vincular otra clínica
 
 ai-summary-button = Resumen
@@ -1849,7 +1869,37 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver en el documento
 
-ai-summary-partial = Este resumen solo abarca el comienzo del documento: páginas 1 a { $last }.
+ai-summary-partial = Este resumen utiliza solo parte del texto del documento.
+
+ai-summary-tooLong =
+    { $last ->
+    [one] Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Puede leer aproximadamente la página 1 de { $total }.
+   *[other] Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Puede leer aproximadamente las páginas 1 a { $last } de { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Puede leer aproximadamente la página 1 y la última página, la página { $tail }, de { $total }.
+   *[other] Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Puede leer aproximadamente las páginas 1 a { $last } y la última página, la página { $tail }, de { $total }.
+    }
+
+ai-summary-tooLongStart = Es probable que este documento sea demasiado largo para que el asistente de IA lo lea de una vez. Solo puede leer aproximadamente el comienzo de la página 1.
+
+ai-summary-tooLongAfter = Si no puede leerlo todo, el resumen lo indicará.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Resumir la página 1
+   *[other] Resumir las páginas 1 a { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Resumir la página 1 y la página { $tail }
+   *[other] Resumir las páginas 1 a { $last } y la página { $tail }
+    }
+
+ai-summary-readStart = Resumir el comienzo de la página 1
 
 ai-summary-noText = myCarlos no pudo leer ningún texto en este documento, así que no puede resumirlo. Puede que sea un documento escaneado.
 
@@ -1870,6 +1920,13 @@ ai-settings-subtitle = Cómo funciona el asistente de IA en este equipo
 ai-model-add = Agregar un archivo de modelo…
 
 ai-model-accepted = { $name }, { $size } MB. Licencia: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Lee alrededor de { $pages } página a la vez (alrededor de { $characters } caracteres de texto en inglés). Menos con tablas y en algunos idiomas.
+    [many] Lee alrededor de { $pages } de páginas a la vez (alrededor de { $characters } caracteres de texto en inglés). Menos con tablas y en algunos idiomas.
+   *[other] Lee alrededor de { $pages } páginas a la vez (alrededor de { $characters } caracteres de texto en inglés). Menos con tablas y en algunos idiomas.
+    }
 
 ai-model-where = Dónde obtener el archivo
 
@@ -1953,6 +2010,9 @@ ai-error-storage = No se pudo leer el modelo del asistente de IA en este equipo.
 ai-summary-pagesMissing = Algunas páginas no se pudieron leer completas, así que puede que este resumen omita partes.
 
 ai-summary-noSource = No se encontró la fuente
+
+ai-summary-englishOnly = Por ahora, los resúmenes se escriben en inglés. myCarlos solo comprueba los números y las indicaciones de «cuándo pedir ayuda» en inglés, así que compruébelos en el propio documento.
+
 aiHelper-notice-title = Acerca del asistente de IA
 
 aiHelper-notice-introShare = myCarlos puede preparar el texto de un documento para el servicio de IA que usted elija. El asistente de IA nunca envía por internet sus documentos ni nada sobre usted. Lo único que obtiene es su archivo de modelo, y solo si usted decide descargarlo. Al descargarlo, el sitio de descarga ve la dirección de internet de este equipo.
@@ -2212,3 +2272,5 @@ ai-models-starting = Iniciando la descarga…
 ai-models-picking = Elige un archivo de modelo para añadir.
 
 ai-models-changed = Se cambió el modelo en uso
+
+ai-summaryTooLarge = El resumen completo es demasiado grande. No se ha guardado ningún resumen nuevo.

@@ -194,9 +194,13 @@ interface-count-selected =
 
 interface-DocumentReader-documentPassword = Hasło dokumentu
 
+interface-DocumentReader-firstPage = Pierwsza strona
+
 interface-DocumentReader-fitWidth = Dopasuj do szerokości
 
 interface-DocumentReader-larger = Powiększ
+
+interface-DocumentReader-lastPage = Ostatnia strona
 
 interface-DocumentReader-nextPage = Następna strona
 
@@ -1512,6 +1516,8 @@ portal-copyFailed = Zaznacz cały kod urządzenia i skopiuj go.
 
 portal-dateNotRecorded = Data nie została zapisana
 
+portal-defaultDeviceName = myCarlos na { $platform }
+
 portal-deviceCode = Kod urządzenia
 
 portal-deviceName = Nazwa tego urządzenia
@@ -1684,6 +1690,10 @@ interface-history-event-backupSaved = Zapisano zaszyfrowaną kopię zapasową
 interface-history-event-copySaved = Zapisano czytelną kopię
 
 interface-history-event-created = Utworzono sejf
+
+interface-history-event-deliveryRefusalsCleared = Wybrano „Spróbuj ponownie” dla niezweryfikowanych dokumentów z przychodni
+
+interface-history-event-deliveryRefused = Nie zweryfikowano dokumentu z przychodni
 
 interface-history-event-deliveryFiled = Zapisano dokument z przychodni
 
@@ -1867,6 +1877,18 @@ portal-codeSubmit = Potwierdź kod
 
 portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, proszę ponowić prośbę.
 
+portal-refusedDocuments =
+    { $count ->
+    [one] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    [few] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    [many] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    *[other] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    }
+
+portal-tryAgain = Spróbuj ponownie
+
+portal-tryAgainFor = Spróbuj ponownie: { $clinic }
+
 portal-linkAnother = Połącz z inną przychodnią
 
 ai-summary-button = Podsumowanie
@@ -1887,7 +1909,37 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Pokaż w dokumencie
 
-ai-summary-partial = To podsumowanie obejmuje tylko początek dokumentu: strony od 1 do { $last }.
+ai-summary-partial = To podsumowanie wykorzystuje tylko część tekstu dokumentu.
+
+ai-summary-tooLong =
+    { $last ->
+    [one] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej stronę 1 z { $total }.
+   *[other] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej strony od 1 do { $last } z { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej stronę 1 i ostatnią stronę, stronę { $tail }, z { $total }.
+   *[other] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej strony od 1 do { $last } oraz ostatnią stronę, stronę { $tail }, z { $total }.
+    }
+
+ai-summary-tooLongStart = Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej tylko początek strony 1.
+
+ai-summary-tooLongAfter = Jeśli nie zdoła przeczytać całości, podsumowanie o tym poinformuje.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Podsumuj stronę 1
+   *[other] Podsumuj strony od 1 do { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Podsumuj stronę 1 i stronę { $tail }
+   *[other] Podsumuj strony od 1 do { $last } i stronę { $tail }
+    }
+
+ai-summary-readStart = Podsumuj początek strony 1
 
 ai-summary-noText = Nie udało się odczytać żadnego tekstu w tym dokumencie, więc nie można go podsumować. To może być skan.
 
@@ -1908,6 +1960,14 @@ ai-settings-subtitle = Działanie asystenta AI na tym komputerze
 ai-model-add = Dodaj plik modelu…
 
 ai-model-accepted = { $name }, { $size } MB. Licencja: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Czyta naraz około { $pages } strony (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    [few] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    [many] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+   *[other] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    }
 
 ai-model-where = Gdzie pobrać plik
 
@@ -1992,6 +2052,9 @@ ai-error-storage = Nie udało się odczytać modelu asystenta AI z tego komputer
 ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stron, więc w tym podsumowaniu może czegoś brakować.
 
 ai-summary-noSource = Nie znaleziono źródła
+
+ai-summary-englishOnly = Na razie podsumowania są pisane po angielsku. myCarlos sprawdza liczby i zasady „kiedy szukać pomocy” tylko po angielsku, więc sprawdź je w samym dokumencie.
+
 aiHelper-notice-title = O asystencie AI
 
 aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której następuje pobieranie.
@@ -2253,3 +2316,5 @@ ai-models-starting = Rozpoczynanie pobierania…
 ai-models-picking = Wybierz plik modelu do dodania.
 
 ai-models-changed = Zmieniono używany model
+
+ai-summaryTooLarge = Pełne podsumowanie jest zbyt duże. Nie zapisano nowego podsumowania.

@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  formatDeviceName,
   useI18n,
   useTextState,
   message,
@@ -38,6 +39,7 @@ import {
   type PollApproval,
   type PortalWaits,
 } from "./useApprovalPolling";
+import { RefusedDeliveries } from "./RefusedDeliveries";
 
 interface Props {
   bridge: VaultBridge;
@@ -203,10 +205,16 @@ export function PortalDocuments({
   dialogHost,
   onDialogChange,
 }: Props) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [address, setAddress] = useState("");
   const [code, setCode] = useState("");
-  const [device, setDevice] = useState("myCarlos");
+  // The name the patient typed for this device, if any. Until they type one,
+  // `device` is the default in the language in use ("myCarlos on Windows").
+  const [typedDevice, setDevice] = useState<string | null>(null);
+  const [platformName, setPlatformName] = useState<string | null>(null);
+  const device =
+    typedDevice ??
+    (platformName ? formatDeviceName(locale, platformName) : "myCarlos");
   const [person, setPerson] = useState("");
   // The link the notices step follows, while it is offered.
   const [offerNotices, setOfferNotices] = useState<string | null>(null);
@@ -258,6 +266,19 @@ export function PortalDocuments({
   }, [snapshot.capture.epoch, snapshot.capture.sequence, statusHeardOnly]);
   const [connecting, setConnecting] = useState(false);
   const [focusLink, setFocusLink] = useState<string | null>(null);
+  // After Try again (#143), focus goes back to the button, or to the
+  // clinic's name once its documents verified and the button is gone.
+  const [focusAfterRetry, setFocusAfterRetry] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusAfterRetry || busy || working) return;
+    if (document.activeElement === document.body) {
+      (
+        document.getElementById(`portal-try-again-${focusAfterRetry}`) ??
+        document.getElementById(`portal-link-title-${focusAfterRetry}`)
+      )?.focus();
+    }
+    setFocusAfterRetry(null);
+  }, [focusAfterRetry, busy, working, snapshot.portalLinks]);
   // "Link another clinic" (#145): its dialog, and where focus goes once a
   // link sent from it is over: the clinic's heading, or else back to the
   // button that opened it.
@@ -310,10 +331,7 @@ export function PortalDocuments({
           android: "Android",
           ios: "iOS",
         };
-        if (shown.current && os[platform])
-          setDevice((current) =>
-            current === "myCarlos" ? `myCarlos on ${os[platform]}` : current,
-          );
+        if (shown.current && os[platform]) setPlatformName(os[platform]);
       })
       .catch(() => {});
     return () => {
@@ -519,12 +537,17 @@ export function PortalDocuments({
       link.approvalStatus ?? "",
     );
   const disabled = busy || readOnly || connecting || working;
-  const check = () => {
+  /** Checks every clinic; `first` runs before, in the same operation, and
+   * `after` once it has ended. */
+  const check = (first?: () => Promise<void>, after?: () => void) => {
     polling.hold();
     // What this check found for each open request: the portal has it,
     // unless the check names a problem with that device's clinic.
     let known: Record<string, LiveApproval | undefined> = {};
     void run(async () => {
+      // Only Try again has a first step. A plain check starts at once, in the
+      // same turn as the press, as before.
+      if (first) await first();
       const { result, vault: next } = await checkClinicDocuments({
         bridge,
         links,
@@ -542,14 +565,17 @@ export function PortalDocuments({
       );
       // Reported after leaving this view too, as for connecting.
       setNotice(deferredText(() => documentCheckText(result)));
-    }).finally(() => polling.restart(known));
+    }).finally(() => {
+      polling.restart(known);
+      after?.();
+    });
   };
   const checkButton = (
     <button
       className="button"
       type="button"
       disabled={disabled || !links.some((link) => !link.incomplete)}
-      onClick={check}
+      onClick={() => check()}
     >
       {t(working && compact ? "portal.working" : "portal.check")}
     </button>
@@ -822,6 +848,19 @@ export function PortalDocuments({
         </h3>
         <p className="portal-address">{link.portalBase}</p>
         <p>{stateText(cardState(link, live))}</p>
+        <RefusedDeliveries
+          link={link}
+          disabled={disabled}
+          onTryAgain={
+            readOnly || !bridge.forgetRefusedDeliveries
+              ? undefined
+              : () =>
+                  check(
+                    () => bridge.forgetRefusedDeliveries!(link.id),
+                    () => setFocusAfterRetry(link.id),
+                  )
+          }
+        />
         {left !== null && (
           <p>
             {left > 0

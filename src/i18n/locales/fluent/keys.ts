@@ -71,8 +71,10 @@ export const MESSAGE_KEYS = [
   "interface.CameraDialog.useTheCamera",
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword",
+  "interface.DocumentReader.firstPage",
   "interface.DocumentReader.fitWidth",
   "interface.DocumentReader.larger",
+  "interface.DocumentReader.lastPage",
   "interface.DocumentReader.nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis",
   "interface.DocumentReader.open",
@@ -649,6 +651,7 @@ export const MESSAGE_KEYS = [
   "portal.copy",
   "portal.copyFailed",
   "portal.dateNotRecorded",
+  "portal.defaultDeviceName",
   "portal.deviceCode",
   "portal.deviceName",
   "portal.deviceDetailsShow",
@@ -705,6 +708,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
   "interface.history.event.created",
+  "interface.history.event.deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused",
   "interface.history.event.deliveryFiled",
   "interface.history.event.deliveryReceiptSettled",
   "interface.history.event.other",
@@ -810,6 +815,9 @@ export const MESSAGE_KEYS = [
   "portal.codeRefused",
   "portal.codeSubmit",
   "portal.codeSubmitted",
+  "portal.refusedDocuments",
+  "portal.tryAgain",
+  "portal.tryAgainFor",
   "portal.linkAnother",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
@@ -822,6 +830,13 @@ export const MESSAGE_KEYS = [
   "ai.result.meta",
   "ai.summary.showInDocument",
   "ai.summary.partial",
+  "ai.summary.tooLong",
+  "ai.summary.tooLongWithLast",
+  "ai.summary.tooLongStart",
+  "ai.summary.tooLongAfter",
+  "ai.summary.readPages",
+  "ai.summary.readPagesAndLast",
+  "ai.summary.readStart",
   "ai.summary.noText",
   "ai.explain.box",
   "ai.explain.hint",
@@ -840,6 +855,7 @@ export const MESSAGE_KEYS = [
   "ai.error.storage",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
+  "ai.summary.englishOnly",
   "aiHelper.notice.title",
   "aiHelper.notice.introShare",
   "aiHelper.notice.intro",
@@ -944,6 +960,7 @@ export const MESSAGE_KEYS = [
   "native.notice.arrival",
   "ai.model.add",
   "ai.model.accepted",
+  "ai.model.reads",
   "ai.model.where",
   "ai.model.copy",
   "ai.model.copied",
@@ -1007,6 +1024,7 @@ export const MESSAGE_KEYS = [
   "personDetails.reminder",
   "personDetails.notNow",
   "personDetails.notSaved",
+  "ai.summaryTooLarge",
   "background.title",
   "background.keepRunning",
   "background.keepRunningHelp",
@@ -1102,8 +1120,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword":
     "interface-DocumentReader-documentPassword",
+  "interface.DocumentReader.firstPage": "interface-DocumentReader-firstPage",
   "interface.DocumentReader.fitWidth": "interface-DocumentReader-fitWidth",
   "interface.DocumentReader.larger": "interface-DocumentReader-larger",
+  "interface.DocumentReader.lastPage": "interface-DocumentReader-lastPage",
   "interface.DocumentReader.nextPage": "interface-DocumentReader-nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis":
     "interface-DocumentReader-noTextCouldBeReadOnThis",
@@ -1778,6 +1798,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.copy": "portal-copy",
   "portal.copyFailed": "portal-copyFailed",
   "portal.dateNotRecorded": "portal-dateNotRecorded",
+  "portal.defaultDeviceName": "portal-defaultDeviceName",
   "portal.deviceCode": "portal-deviceCode",
   "portal.deviceName": "portal-deviceName",
   "portal.deviceDetailsShow": "portal-deviceDetailsShow",
@@ -1837,6 +1858,10 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
   "interface.history.event.copySaved": "interface-history-event-copySaved",
   "interface.history.event.created": "interface-history-event-created",
+  "interface.history.event.deliveryRefusalsCleared":
+    "interface-history-event-deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused":
+    "interface-history-event-deliveryRefused",
   "interface.history.event.deliveryFiled":
     "interface-history-event-deliveryFiled",
   "interface.history.event.deliveryReceiptSettled":
@@ -1965,6 +1990,9 @@ const FLUENT_IDS_BY_KEY = {
   "portal.codeRefused": "portal-codeRefused",
   "portal.codeSubmit": "portal-codeSubmit",
   "portal.codeSubmitted": "portal-codeSubmitted",
+  "portal.refusedDocuments": "portal-refusedDocuments",
+  "portal.tryAgain": "portal-tryAgain",
+  "portal.tryAgainFor": "portal-tryAgainFor",
   "portal.linkAnother": "portal-linkAnother",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
@@ -1978,6 +2006,13 @@ const FLUENT_IDS_BY_KEY = {
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
   "ai.summary.partial": "ai-summary-partial",
+  "ai.summary.tooLong": "ai-summary-tooLong",
+  "ai.summary.tooLongWithLast": "ai-summary-tooLongWithLast",
+  "ai.summary.tooLongStart": "ai-summary-tooLongStart",
+  "ai.summary.tooLongAfter": "ai-summary-tooLongAfter",
+  "ai.summary.readPages": "ai-summary-readPages",
+  "ai.summary.readPagesAndLast": "ai-summary-readPagesAndLast",
+  "ai.summary.readStart": "ai-summary-readStart",
   "ai.summary.noText": "ai-summary-noText",
   "ai.explain.box": "ai-explain-box",
   "ai.explain.hint": "ai-explain-hint",
@@ -1996,6 +2031,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
+  "ai.summary.englishOnly": "ai-summary-englishOnly",
   "aiHelper.notice.title": "aiHelper-notice-title",
   "aiHelper.notice.introShare": "aiHelper-notice-introShare",
   "aiHelper.notice.intro": "aiHelper-notice-intro",
@@ -2158,6 +2194,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.notice.arrival": "native-notice-arrival",
   "ai.model.add": "ai-model-add",
   "ai.model.accepted": "ai-model-accepted",
+  "ai.model.reads": "ai-model-reads",
   "ai.model.where": "ai-model-where",
   "ai.model.copy": "ai-model-copy",
   "ai.model.copied": "ai-model-copied",
@@ -2222,6 +2259,7 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.reminder": "personDetails-reminder",
   "personDetails.notNow": "personDetails-notNow",
   "personDetails.notSaved": "personDetails-notSaved",
+  "ai.summaryTooLarge": "ai-summaryTooLarge",
   "background.title": "background-title",
   "background.keepRunning": "background-keepRunning",
   "background.keepRunningHelp": "background-keepRunningHelp",
@@ -2322,8 +2360,10 @@ export interface MessageArgsByKey {
   "interface.CameraDialog.useTheCamera": undefined;
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay": undefined;
   "interface.DocumentReader.documentPassword": undefined;
+  "interface.DocumentReader.firstPage": undefined;
   "interface.DocumentReader.fitWidth": undefined;
   "interface.DocumentReader.larger": undefined;
+  "interface.DocumentReader.lastPage": undefined;
   "interface.DocumentReader.nextPage": undefined;
   "interface.DocumentReader.noTextCouldBeReadOnThis": undefined;
   "interface.DocumentReader.open": undefined;
@@ -2973,6 +3013,7 @@ export interface MessageArgsByKey {
   "portal.copy": undefined;
   "portal.copyFailed": undefined;
   "portal.dateNotRecorded": undefined;
+  "portal.defaultDeviceName": { platform: FluentArgument };
   "portal.deviceCode": undefined;
   "portal.deviceName": undefined;
   "portal.deviceDetailsShow": undefined;
@@ -3032,6 +3073,8 @@ export interface MessageArgsByKey {
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
   "interface.history.event.created": undefined;
+  "interface.history.event.deliveryRefusalsCleared": undefined;
+  "interface.history.event.deliveryRefused": undefined;
   "interface.history.event.deliveryFiled": undefined;
   "interface.history.event.deliveryReceiptSettled": undefined;
   "interface.history.event.other": undefined;
@@ -3137,6 +3180,9 @@ export interface MessageArgsByKey {
   "portal.codeRefused": undefined;
   "portal.codeSubmit": undefined;
   "portal.codeSubmitted": undefined;
+  "portal.refusedDocuments": { count: FluentArgument };
+  "portal.tryAgain": undefined;
+  "portal.tryAgainFor": { clinic: FluentArgument };
   "portal.linkAnother": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
@@ -3152,7 +3198,18 @@ export interface MessageArgsByKey {
     tool: FluentArgument;
   };
   "ai.summary.showInDocument": undefined;
-  "ai.summary.partial": { last: FluentArgument };
+  "ai.summary.partial": undefined;
+  "ai.summary.tooLong": { last: FluentArgument; total: FluentArgument };
+  "ai.summary.tooLongWithLast": {
+    last: FluentArgument;
+    tail: FluentArgument;
+    total: FluentArgument;
+  };
+  "ai.summary.tooLongStart": undefined;
+  "ai.summary.tooLongAfter": undefined;
+  "ai.summary.readPages": { last: FluentArgument };
+  "ai.summary.readPagesAndLast": { last: FluentArgument; tail: FluentArgument };
+  "ai.summary.readStart": undefined;
   "ai.summary.noText": undefined;
   "ai.explain.box": undefined;
   "ai.explain.hint": undefined;
@@ -3171,6 +3228,7 @@ export interface MessageArgsByKey {
   "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
+  "ai.summary.englishOnly": undefined;
   "aiHelper.notice.title": undefined;
   "aiHelper.notice.introShare": undefined;
   "aiHelper.notice.intro": undefined;
@@ -3283,6 +3341,7 @@ export interface MessageArgsByKey {
     name: FluentArgument;
     size: FluentArgument;
   };
+  "ai.model.reads": { characters: FluentArgument; pages: FluentArgument };
   "ai.model.where": undefined;
   "ai.model.copy": undefined;
   "ai.model.copied": undefined;
@@ -3354,6 +3413,7 @@ export interface MessageArgsByKey {
   "personDetails.reminder": { name: FluentArgument };
   "personDetails.notNow": undefined;
   "personDetails.notSaved": undefined;
+  "ai.summaryTooLarge": undefined;
   "background.title": undefined;
   "background.keepRunning": undefined;
   "background.keepRunningHelp": undefined;

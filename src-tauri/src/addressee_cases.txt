@@ -1,0 +1,453 @@
+The post-step's shared cases (K17): synthetic letters only, none of the evaluation letters' words. Read by the Rust
+tests in addressee.rs (no other reader: no Python port exists in the repository). One case per block, blocks
+separated by a line "===". Fields: name, letter (the lines up to "sentence:"), sentence, quote, expect (the rewritten
+sentence, or "(none)" when it is left as it is), kind.
+===
+name: a_copied_call_me_line
+letter:
+Oakfield Test Clinic
+Tel 555-0131
+
+Dr. Theo Marlow
+Testville Sleep Clinic
+
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+Please phone me on 555-0137 ext. 4 if anything is unclear, Theo.
+
+Yours,
+Dr. Iris Oakfield
+sentence: Please phone me on 555-0137 ext. 4 if anything is unclear.
+quote: Please phone me on 555-0137 ext. 4
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: the_writers_line_as_a_patient_task
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+Please phone me on 555-0137 ext. 4 if anything is unclear, Theo.
+sentence: You must call Dr. Marlow at 555-0137 ext. 4 if anything is unclear.
+quote: phone me on 555-0137 ext. 4 if anything is unclear
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: the_writer_named_in_the_sentence
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+Please phone me on 555-0137 ext. 4 if anything is unclear.
+
+Yours sincerely,
+
+Dr. Iris Oakfield, MD
+Testville Family Practice
+sentence: Call Dr. Iris Oakfield at 555-0137 ext. 4 if anything is unclear.
+quote: Please phone me on 555-0137 ext. 4
+expect: The letter gives Dr. Iris Oakfield's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: the_writers_line_said_as_hers
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+Please phone me on 555-0137 ext. 4 if anything is unclear, Theo.
+sentence: Dr. Oakfield asks Dr. Marlow to phone her at 555-0137 ext. 4 if anything is unclear.
+quote: Please phone me on 555-0137 ext. 4
+expect: (none)
+kind: (none)
+===
+name: a_question_to_the_doctor_with_its_you_kept
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring and daytime sleepiness.
+
+Questions
+Would you advise a sleep study before her knee surgery?
+Is her blood pressure treatment enough?
+sentence: The doctor asks if you would advise a sleep study before her knee surgery.
+quote: Would you advise a sleep study before her knee surgery?
+expect: The doctor asks if the receiving doctor would advise a sleep study before her knee surgery.
+kind: addressee-you
+===
+name: a_request_to_the_doctor_with_its_you_kept
+letter:
+Dear colleague,
+
+Sam Quill has had loud snoring for a year. I would be grateful if you could see her within 3 weeks.
+sentence: The doctor asks you to see the patient within 3 weeks.
+quote: I would be grateful if you could see her within 3 weeks
+expect: The doctor asks the receiving doctor to see the patient within 3 weeks.
+kind: addressee-you
+===
+name: a_request_naming_the_patient_with_no_you_in_the_letter
+letter:
+Dear Dr. Marlow,
+
+Sam Quill has had loud snoring for a year. I would be grateful if she could be seen within 3 weeks.
+sentence: The doctor asks you to see the patient within 3 weeks.
+quote: I would be grateful if she could be seen within 3 weeks
+expect: The doctor asks the receiving doctor to see the patient within 3 weeks.
+kind: addressee-you
+===
+name: your_doctor_asks_about_the_patient
+letter:
+Dear Dr. Marlow,
+
+Questions
+Would you recommend a sleep study, since her snoring is worse?
+sentence: Your doctor wants to know if you need a sleep study.
+quote: Would you recommend a sleep study
+expect: (none)
+kind: (none)
+===
+name: the_doctor_asks_if_you_need_it
+letter:
+Dear Dr. Marlow,
+
+Questions
+Would you recommend a sleep study, since her snoring is worse?
+sentence: The doctor wants to know if you need a sleep study.
+quote: Would you recommend a sleep study
+expect: (none)
+kind: (none)
+===
+name: a_question_about_the_patient_with_no_you_in_the_letter
+letter:
+Dear Dr. Marlow,
+
+Questions
+Does Ms. Quill need a sleep study before her knee surgery?
+sentence: The doctor asks if you need a sleep study before your knee surgery.
+quote: Does Ms. Quill need a sleep study before her knee surgery?
+expect: (none)
+kind: (none)
+===
+name: a_letter_written_to_the_patient
+letter:
+Dear Sam,
+
+Your knee wound looks clean. Call me at 555-0149 if the wound opens or weeps.
+sentence: Call your surgeon at 555-0149 if the wound opens or weeps.
+quote: Call me at 555-0149 if the wound opens or weeps
+expect: (none)
+kind: (none)
+===
+name: an_emergency_rule_in_a_letter_to_a_doctor
+letter:
+Dear Dr. Marlow,
+
+I have given her a spray and asked her to call 911 if the pain lasts more than 10 minutes. Would you see her soon?
+sentence: You must call 911 if the pain lasts more than 10 minutes.
+quote: asked her to call 911 if the pain lasts more than 10 minutes
+expect: (none)
+kind: (none)
+===
+name: a_contact_line_with_another_number_in_the_sentence
+letter:
+Dear Dr. Marlow,
+
+Please call me at 555-0137 about the 20 mg dose, Theo.
+sentence: Please call me at 555-0137 about the 20 mg dose.
+quote: Please call me at 555-0137 about the 20 mg dose
+expect: (none)
+kind: (none)
+===
+name: a_french_letter_to_a_colleague
+letter:
+Chère collègue,
+
+Je vous adresse Mme Sam Quill pour des ronflements.
+Pourriez-vous voir Mme Quill d'ici trois semaines ?
+sentence: The doctor asks if you could see Ms. Quill within three weeks.
+quote: Pourriez-vous voir Mme Quill d'ici trois semaines
+expect: The doctor asks if the receiving doctor could see Ms. Quill within three weeks.
+kind: addressee-you
+===
+name: an_address_line_is_not_a_greeting
+letter:
+Docteur Paul Marlow
+Clinique Test du Sommeil
+
+Pourriez-vous voir Mme Quill d'ici trois semaines ?
+sentence: The doctor asks if you could see Ms. Quill within three weeks.
+quote: Pourriez-vous voir Mme Quill d'ici trois semaines
+expect: (none)
+kind: (none)
+===
+name: a_quote_above_the_greeting
+letter:
+Oakfield Test Clinic · Tel 555-0131 · please call me with questions
+
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring.
+sentence: Please call me at 555-0131 with questions.
+quote: Tel 555-0131 · please call me with questions
+expect: (none)
+kind: (none)
+===
+name: a_quote_not_in_the_letter
+letter:
+Dear Dr. Marlow,
+
+Please phone me on 555-0137 if anything is unclear.
+sentence: Please phone me on 555-0137 if anything is unclear.
+quote: Please ring me on 555-0137
+expect: (none)
+kind: (none)
+===
+name: the_doctors_number_with_no_contact_offer
+letter:
+Dear Dr. Marlow,
+
+Her husband can be reached at 555-0188.
+sentence: You can call her husband at 555-0188.
+quote: Her husband can be reached at 555-0188
+expect: (none)
+kind: (none)
+===
+name: a_patient_rule_with_the_writers_office_line
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, after the repair of a wound on his knee.
+If the wound turns red, he can call my office at 555-0199.
+
+Yours,
+Dr. Iris Oakfield
+sentence: If the wound turns red, you can call the office at 555-0199.
+quote: If the wound turns red, he can call my office at 555-0199
+expect: (none)
+kind: (none)
+===
+name: an_action_the_letter_relays_to_the_patient
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, after his heart attack.
+Could you please ask him to take aspirin 81 mg daily?
+
+Yours,
+Dr. Iris Oakfield
+sentence: The doctor asks you to take aspirin 81 mg daily.
+quote: Could you please ask him to take aspirin 81 mg daily
+expect: (none)
+kind: (none)
+===
+name: m1_act_offer_to_the_reader_if_anything_is_unclear
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Sam Quill, 52, for loud snoring.
+Please phone me on 555-0137 ext. 4 if anything is unclear.
+
+Yours,
+Dr. Iris Oakfield
+sentence: Please phone me on 555-0137 ext. 4 if anything is unclear.
+quote: Please phone me on 555-0137 ext. 4 if anything is unclear
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: m1_act_my_office_for_questions_about_her_care
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, for knee pain.
+Do not hesitate to call my office at 555-0151 should you have any questions about her care.
+sentence: You can call the office at 555-0151 with any questions about your care.
+quote: call my office at 555-0151 should you have any questions about her care
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: m1_act_my_direct_line_to_discuss_results
+letter:
+Dear colleague,
+
+Ava Lind's results are enclosed.
+My direct line is 555-0162 if you wish to discuss the results.
+sentence: Call 555-0162 to discuss the results.
+quote: My direct line is 555-0162 if you wish to discuss the results
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: m1_keep_she_can_call_my_office_if_the_wound_turns_red
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, after her knee operation.
+If her wound turns red, she can call my office at 555-0199.
+sentence: If the wound turns red, you can call the office at 555-0199.
+quote: If her wound turns red, she can call my office at 555-0199
+expect: (none)
+kind: (none)
+===
+name: m1_keep_named_patient_may_call_my_office
+letter:
+Dear Dr. Marlow,
+
+Sam Quill, 52, was seen today for leg swelling.
+Sam may call my office at 555-0188 if the swelling comes back.
+sentence: Call the office at 555-0188 if the swelling comes back.
+quote: Sam may call my office at 555-0188 if the swelling comes back
+expect: (none)
+kind: (none)
+===
+name: m1_keep_offer_and_patient_instruction_in_one_sentence
+letter:
+Dear Dr. Marlow,
+
+Ava Lind, 61, was seen today for back pain.
+Please call me at 555-0137 with any questions, and ask Ms Lind to call my office at 555-0137 if the pain gets worse.
+sentence: Call the office at 555-0137 if the pain gets worse.
+quote: ask Ms Lind to call my office at 555-0137 if the pain gets worse
+expect: (none)
+kind: (none)
+===
+name: m1_keep_the_patient_knows_to_call_my_line
+letter:
+Dear Dr. Marlow,
+
+Sam Quill, 52, has heart failure.
+The patient knows to call my line, 555-0144, if he becomes short of breath.
+sentence: Call 555-0144 if you become short of breath.
+quote: The patient knows to call my line, 555-0144, if he becomes short of breath
+expect: (none)
+kind: (none)
+===
+name: m2_act_would_you_see_this_patient
+letter:
+Dear Dr. Marlow,
+
+Sam Quill, 52, has loud snoring.
+Would you be able to see this patient in the next few weeks?
+sentence: The doctor asks you to see the patient in the next few weeks.
+quote: Would you be able to see this patient in the next few weeks?
+expect: The doctor asks the receiving doctor to see the patient in the next few weeks.
+kind: addressee-you
+===
+name: m2_act_could_you_assess_her_for_surgery
+letter:
+Dear Dr. Marlow,
+
+Ava Lind, 61, has knee pain.
+Could you please assess her for knee surgery?
+sentence: The doctor asks you to assess her for knee surgery.
+quote: Could you please assess her for knee surgery?
+expect: The doctor asks the receiving doctor to assess her for knee surgery.
+kind: addressee-you
+===
+name: m2_act_whether_you_would_recommend_a_test
+letter:
+Dear Dr. Marlow,
+
+Sam Quill, 52, has daytime sleepiness.
+I would like to know whether you would recommend a sleep study.
+sentence: The doctor wants to know whether you would recommend a sleep study.
+quote: I would like to know whether you would recommend a sleep study
+expect: The doctor wants to know whether the receiving doctor would recommend a sleep study.
+kind: addressee-you
+===
+name: m2_keep_ask_him_to_take_aspirin
+letter:
+Dear Dr. Marlow,
+
+Sam Quill, 52, had a minor stroke.
+Could you please ask him to take aspirin 81 mg daily?
+sentence: The doctor asks you to take aspirin 81 mg daily.
+quote: Could you please ask him to take aspirin 81 mg daily?
+expect: (none)
+kind: (none)
+===
+name: m2_keep_remind_them_to_bring_the_machine
+letter:
+Dear Dr. Marlow,
+
+Sam Quill, 52, uses a CPAP machine.
+Could you remind them to bring the CPAP machine to the next visit?
+sentence: The doctor asks you to bring the CPAP machine to the next visit.
+quote: Could you remind them to bring the CPAP machine to the next visit?
+expect: (none)
+kind: (none)
+===
+name: m2_keep_ask_a_named_patient_to_avoid_driving
+letter:
+Dear Dr. Marlow,
+
+Sam Quill, 52, had a fainting spell.
+Would you ask Mr. Quill to avoid driving until he is reviewed?
+sentence: The doctor asks you to avoid driving until you are reviewed.
+quote: Would you ask Mr. Quill to avoid driving until he is reviewed?
+expect: (none)
+kind: (none)
+===
+name: m2_keep_have_the_patient_stop_a_medicine
+letter:
+Dear Dr. Marlow,
+
+Ava Lind, 61, has stomach pain.
+Could you have Ava stop the ibuprofen?
+sentence: The doctor asks you to stop the ibuprofen.
+quote: Could you have Ava stop the ibuprofen?
+expect: (none)
+kind: (none)
+===
+name: m2_keep_french_lui_demander_de
+letter:
+Chère collègue,
+
+Madame Lind, 61 ans, a eu un petit AVC.
+Pourriez-vous lui demander de prendre l'aspirine chaque jour?
+sentence: The doctor asks you to take the aspirin every day.
+quote: Pourriez-vous lui demander de prendre l'aspirine chaque jour?
+expect: (none)
+kind: (none)
+===
+name: m1_keep_she_can_call_my_office_to_book_her_follow_up
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, after her knee operation.
+She can call my office at 555-0199 to book her follow-up.
+sentence: Call the office at 555-0199 to book your follow-up.
+quote: She can call my office at 555-0199 to book her follow-up
+expect: (none)
+kind: (none)
+===
+name: m1_keep_a_patient_rule_whose_condition_the_summary_dropped
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, after her knee operation.
+If her wound turns red, she can call my office at 555-0199.
+sentence: Call the office at 555-0199.
+quote: If her wound turns red, she can call my office at 555-0199
+expect: (none)
+kind: (none)
+===
+name: m1_act_the_reader_may_call_my_office
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, for knee pain.
+You may call my office at 555-0151 with any questions about her care.
+sentence: You can call the office at 555-0151 with any questions about your care.
+quote: You may call my office at 555-0151 with any questions about her care
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact
+===
+name: m1_act_another_doctor_may_call_my_office
+letter:
+Dear Dr. Marlow,
+
+Thank you for seeing Ava Lind, 61, for knee pain.
+Dr. Lind's surgeon can call my office at 555-0151 to discuss her care.
+sentence: Call the office at 555-0151 to discuss your care.
+quote: Dr. Lind's surgeon can call my office at 555-0151 to discuss her care
+expect: The letter gives the writing doctor's phone line for the receiving doctor.
+kind: writer-contact

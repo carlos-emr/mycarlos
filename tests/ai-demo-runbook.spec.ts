@@ -10,6 +10,7 @@ import {
   type FakeAiSetup,
 } from "./support/aiFake";
 import { visibleHumanText } from "./support/fluent";
+import { AI_EXPLAIN_ENABLED } from "../src/ai/features";
 import {
   FAKE_PAGE_COUNT,
   fakePageText,
@@ -305,7 +306,18 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
       fakePageText(name, 1),
     );
 
-    if (first) {
+    if (first && !AI_EXPLAIN_ENABLED) {
+      // Step 9 (Explain a term) is out of the demo while Explain is switched
+      // off in the UI (src/ai/features.ts), so it is skipped here and comes
+      // back with the switch. That the button is gone is checked by
+      // "offers Summary only" in ai-helper-reader.spec.ts.
+      test.info().annotations.push({
+        type: "skipped step",
+        description:
+          "runbook step 9 (Explain a term): Explain is switched off in the UI and out of the demo",
+      });
+    }
+    if (first && AI_EXPLAIN_ENABLED) {
       // Step 9: Explain a term → Word or phrase → Explain.
       await (await named(reader, "Explain a term", "step 9")).click();
       const explain = reader.getByRole("region", {

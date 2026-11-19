@@ -190,6 +190,9 @@ export interface FakeVaultSetup {
   /** The service date the clinic's document from a check carries, as the
    * clinic sent it ("" = not recorded). Default: none. */
   clinicServiceDate?: string;
+  /** With the clinic approved: how many of its documents failed their
+   * checks and are remembered as refused (#143); Try again forgets them. */
+  refusedDeliveries?: number;
   /** With a clinic linked ("linked" only; anything else is refused by
    * fakeVaultWith) but not approved: the current approval request's state,
    * and whether a new request may be started (natively: an expired or
@@ -299,6 +302,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         approvalStatus: string | null;
         approvalReason?: string | null;
         approvalCanRestart?: boolean;
+        refusedDeliveries?: number;
       };
       type Snapshot = {
         profiles: {
@@ -582,7 +586,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                           approval.canRestart ??
                           ["expired", "cancelled"].includes(approval.status),
                       }
-                    : link(1, "https://fake-clinic.example.com", true),
+                    : {
+                        ...link(1, "https://fake-clinic.example.com", true),
+                        ...(setup.refusedDeliveries
+                          ? { refusedDeliveries: setup.refusedDeliveries }
+                          : {}),
+                      },
                 ]
               : [];
         }
@@ -1363,6 +1372,14 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               recovery: false,
             };
           }
+          case "vault_forget_refused_deliveries": {
+            const found = snapshot.portalLinks?.find(
+              (candidate) => candidate.id === args.linkId,
+            );
+            if (!found) throw refuse("not_found", "native.error.18");
+            found.refusedDeliveries = 0;
+            return;
+          }
           case "vault_check_documents":
             state.checks += 1;
             if (state.checks > 1)
@@ -1706,6 +1723,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       pageCount: FAKE_PAGE_COUNT,
       portal: setup.portal ?? null,
       clinicServiceDate: setup.clinicServiceDate ?? null,
+      refusedDeliveries: setup.refusedDeliveries ?? 0,
       approval: setup.approval ?? null,
       backup: setup.backup ?? null,
       missingFiles: setup.missingFiles ?? [],

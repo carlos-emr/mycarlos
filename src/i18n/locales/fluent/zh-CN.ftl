@@ -140,9 +140,13 @@ interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay = 手机会询问一�
 
 interface-DocumentReader-documentPassword = 文档密码
 
+interface-DocumentReader-firstPage = 第一页
+
 interface-DocumentReader-fitWidth = 符合宽度
 
 interface-DocumentReader-larger = 放大
+
+interface-DocumentReader-lastPage = 最后一页
 
 interface-DocumentReader-nextPage = 下一页
 
@@ -1320,6 +1324,8 @@ portal-copyFailed = 请选取完整的设备代码并复制。
 
 portal-dateNotRecorded = 未记录日期
 
+portal-defaultDeviceName = { $platform } 上的 myCarlos
+
 portal-deviceCode = 设备代码
 
 portal-deviceName = 此设备的名称
@@ -1480,6 +1486,10 @@ interface-history-event-backupSaved = 加密备份已保存
 interface-history-event-copySaved = 可读副本已保存
 
 interface-history-event-created = 保险库已创建
+
+interface-history-event-deliveryRefusalsCleared = 已选择重试未通过验证的诊所文档
+
+interface-history-event-deliveryRefused = 诊所文档未通过验证
 
 interface-history-event-deliveryFiled = 已保存诊所文档
 
@@ -1645,6 +1655,12 @@ portal-codeSubmit = 确认验证码
 
 portal-codeSubmitted = 验证码已发送。正在等待诊所确认此设备。如果 10 分钟内仍未确认，请重新申请。
 
+portal-refusedDocuments = 此诊所有 { $count } 份文档无法验证。请诊所重新发送。
+
+portal-tryAgain = 重试
+
+portal-tryAgainFor = 重试：{ $clinic }
+
 portal-linkAnother = 关联另一家诊所
 
 ai-summary-button = 摘要
@@ -1665,7 +1681,37 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文档中显示
 
-ai-summary-partial = 此摘要仅涵盖文档开头部分：第 1 页至第 { $last } 页。
+ai-summary-partial = 此摘要仅使用了文档的部分文本。
+
+ai-summary-tooLong =
+    { $last ->
+    [1] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页（共 { $total } 页）。
+   *[other] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页至第 { $last } 页（共 { $total } 页）。
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [1] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页和最后一页，即第 { $tail } 页（共 { $total } 页）。
+   *[other] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页至第 { $last } 页，以及最后一页，即第 { $tail } 页（共 { $total } 页）。
+    }
+
+ai-summary-tooLongStart = 这份文档可能太长，AI 助手无法一次读完。它大约只能读第 1 页的开头部分。
+
+ai-summary-tooLongAfter = 如果无法读完全部内容，摘要会注明。
+
+ai-summary-readPages =
+    { $last ->
+    [1] 为第 1 页生成摘要
+   *[other] 为第 1 页至第 { $last } 页生成摘要
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [1] 为第 1 页和第 { $tail } 页生成摘要
+   *[other] 为第 1 页至第 { $last } 页和第 { $tail } 页生成摘要
+    }
+
+ai-summary-readStart = 为第 1 页的开头部分生成摘要
 
 ai-summary-noText = myCarlos 无法读取此文档中的任何文本，因此无法生成摘要。这可能是扫描件。
 
@@ -1686,6 +1732,8 @@ ai-settings-subtitle = AI 助手在此电脑上的运行方式
 ai-model-add = 添加模型文件…
 
 ai-model-accepted = { $name }，{ $size } MB。许可证：{ $licence }。
+
+ai-model-reads = 每次约可读 { $pages } 页（约 { $characters } 个英文字符）。表格和某些语言会更少。
 
 ai-model-where = 在哪里获取文件
 
@@ -1764,6 +1812,9 @@ ai-error-storage = 无法从此电脑读取 AI 助手的模型。请重试。如
 ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能遗漏部分内容。
 
 ai-summary-noSource = 未找到来源
+
+ai-summary-englishOnly = 目前摘要以英文撰写。myCarlos 只对英文摘要核对数字和“何时就医”的提示，请在文档本身中核对这些内容。
+
 aiHelper-notice-title = 关于 AI 助手
 
 aiHelper-notice-introShare = myCarlos 可以为您选择的 AI 服务准备文档的文本。AI 助手绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。下载时，下载网站会看到这台电脑的互联网地址。
@@ -2020,3 +2071,5 @@ ai-models-starting = 正在开始下载…
 ai-models-picking = 请选择要添加的模型文件。
 
 ai-models-changed = 已更改正在使用的模型
+
+ai-summaryTooLarge = 完整摘要过大。未保存新的摘要。
