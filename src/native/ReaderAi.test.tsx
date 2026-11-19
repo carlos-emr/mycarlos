@@ -167,9 +167,7 @@ describe("the reader's AI helper", () => {
       name: "Summary in plain words",
     });
     expect(
-      await within(panel).findByText(
-        "The AI helper isn't on this computer yet",
-      ),
+      await within(panel).findByText("The AI helper isn't on this device yet"),
     ).toBeVisible();
     await user.click(
       within(panel).getByRole("button", {
@@ -183,7 +181,7 @@ describe("the reader's AI helper", () => {
     const explain = screen.getByRole("region", { name: "Explain a term" });
     expect(
       await within(explain).findByText(
-        "The AI helper isn't on this computer yet",
+        "The AI helper isn't on this device yet",
       ),
     ).toBeVisible();
     expect(within(explain).queryByRole("textbox")).toBeNull();
@@ -627,7 +625,7 @@ describe("the reader's AI helper", () => {
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: "Summary" }));
-    await screen.findByText("The AI helper isn't on this computer yet");
+    await screen.findByText("The AI helper isn't on this device yet");
     unmount();
     expect(loadText).not.toHaveBeenCalled();
     expect(cancelText).not.toHaveBeenCalled();
@@ -703,9 +701,7 @@ describe("the reader's AI helper", () => {
       name: "Summary in plain words",
     });
     expect(
-      await within(panel).findByText(
-        "The AI helper isn't on this computer yet",
-      ),
+      await within(panel).findByText("The AI helper isn't on this device yet"),
     ).toBeVisible();
     await user.click(
       within(panel).getByRole("button", {
@@ -1132,7 +1128,7 @@ describe("the reader's AI helper", () => {
     [
       "aiStorage",
       "ai.error.storage",
-      "The AI helper's model could not be read from this computer. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.",
+      "The AI helper's model could not be read from this device. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.",
     ],
     [
       "aiMemory",
@@ -1649,7 +1645,7 @@ describe("Settings > AI helper", () => {
       screen.getByRole("heading", { level: 1, name: "AI helper" }),
     ).toBeVisible();
     expect(
-      screen.getByText("How the AI helper works on this computer"),
+      screen.getByText("How the AI helper works on this device"),
     ).toBeVisible();
     const row = screen
       .getByRole("heading", { level: 2, name: /AI helper/ })
@@ -1657,7 +1653,7 @@ describe("Settings > AI helper", () => {
     expect(within(row).getByText("Not installed")).toBeVisible();
     expect(
       within(row).getByText(
-        "Explains your documents in plain words with an AI model that runs on this computer. Download one of the models below, or add a matching file you already have. Models stay on this computer.",
+        "Explains your documents in plain words with an AI model that runs on this device. Download one of the models below, or add a matching file you already have. Models stay on this device.",
       ),
     ).toBeVisible();
     unmount();

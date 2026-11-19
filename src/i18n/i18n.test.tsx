@@ -212,10 +212,14 @@ describe("a rendered screen in each language", () => {
       expect(field.getAttribute("aria-label")).toBe(
         translate(locale, "passphrase.label"),
       );
-      expect(field.getAttribute("title")).toBe(
+      expect(field).not.toHaveAttribute("title");
+      const count = document.getElementById(
+        field.getAttribute("aria-describedby")!.split(" ")[0],
+      )!;
+      expect(count.textContent).toBe(
         translate(locale, "secret.count.password", { count: 0 }),
       );
-      expect(field.getAttribute("title")).not.toMatch(
+      expect(count.textContent).not.toMatch(
         locale === "en" ? /\u0000/ : /character/,
       );
       // The window's accessible name is translated too.

@@ -31,6 +31,38 @@ export function appearanceMode(value: unknown): AppearanceMode {
     : "system";
 }
 
+/** On Android the activity draws the strip behind the clock and the gesture
+ * bar. It offers `window.MyCarlosSystemBars.set("#rrggbb", darkBackground)`
+ * (the generated MainActivity, scripts/configure-android-security.mjs); the
+ * page sends the title bar's colour (`--canvas-2`) for the theme in force, so
+ * the strip follows myCarlos's own Appearance setting and not only the phone's
+ * night mode. Nothing happens where there is no such bridge. */
+interface SystemBarsBridge {
+  set: (colour: string, darkBackground: boolean) => void;
+}
+function tellSystemBars() {
+  const bridge = (window as { MyCarlosSystemBars?: SystemBarsBridge })
+    .MyCarlosSystemBars;
+  if (!bridge || typeof bridge.set !== "function") return;
+  const colour = getComputedStyle(document.documentElement)
+    .getPropertyValue("--canvas-2")
+    .trim();
+  const match = /^#([0-9a-f]{6})$/i.exec(colour);
+  if (!match) return;
+  const [r, g, b] = [0, 2, 4].map(
+    (at) => parseInt(match[1].slice(at, at + 2), 16) / 255,
+  );
+  // Relative luminance, as the page's own contrast checks use it.
+  const lin = (c: number) =>
+    c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  try {
+    bridge.set(colour, luminance < 0.5);
+  } catch {
+    // The strip keeps its last colour.
+  }
+}
+
 /** Device preferences apply to locked screens too, without opening the vault. */
 export function startAppearance(): Appearance {
   const dark = window.matchMedia("(prefers-color-scheme: dark)");
@@ -62,6 +94,7 @@ export function startAppearance(): Appearance {
     );
     if (meta)
       meta.content = getComputedStyle(document.documentElement).backgroundColor;
+    tellSystemBars();
   }
   function publish() {
     state = { ...state, mode, theme: theme(), storageError };

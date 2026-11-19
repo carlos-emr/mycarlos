@@ -187,7 +187,7 @@ export interface LocalModel {
  * file fails its check: either way the patient is led to Preferences. */
 export class ModelNotInstalled extends Error {
   constructor() {
-    super("No AI model is installed on this computer.");
+    super("No AI model is installed on this device.");
     this.name = "ModelNotInstalled";
   }
 }
