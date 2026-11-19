@@ -170,9 +170,7 @@ describe("the reader's AI helper", () => {
       name: "Summary in plain words",
     });
     expect(
-      await within(panel).findByText(
-        "The AI helper isn't on this computer yet",
-      ),
+      await within(panel).findByText("The AI helper isn't on this device yet"),
     ).toBeVisible();
     await user.click(
       within(panel).getByRole("button", {
@@ -186,7 +184,7 @@ describe("the reader's AI helper", () => {
     const explain = screen.getByRole("region", { name: "Explain a term" });
     expect(
       await within(explain).findByText(
-        "The AI helper isn't on this computer yet",
+        "The AI helper isn't on this device yet",
       ),
     ).toBeVisible();
     expect(within(explain).queryByRole("textbox")).toBeNull();
@@ -630,7 +628,7 @@ describe("the reader's AI helper", () => {
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: "Summary" }));
-    await screen.findByText("The AI helper isn't on this computer yet");
+    await screen.findByText("The AI helper isn't on this device yet");
     unmount();
     expect(loadText).not.toHaveBeenCalled();
     expect(cancelText).not.toHaveBeenCalled();
@@ -706,9 +704,7 @@ describe("the reader's AI helper", () => {
       name: "Summary in plain words",
     });
     expect(
-      await within(panel).findByText(
-        "The AI helper isn't on this computer yet",
-      ),
+      await within(panel).findByText("The AI helper isn't on this device yet"),
     ).toBeVisible();
     await user.click(
       within(panel).getByRole("button", {
@@ -817,7 +813,7 @@ describe("the reader's AI helper", () => {
     expect(vi.getTimerCount()).toBeGreaterThan(0);
   };
 
-  it("says a summary can take several minutes, and how many it has taken, outside its status", async () => {
+  it("says a summary can take a few minutes, with a bar that has no number until the helper reports, outside its status", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const model = fakeLocalModel();
@@ -840,28 +836,25 @@ describe("the reader's AI helper", () => {
       );
       expect(
         within(panel).getByText(
-          humanText("This can take several minutes for a long document."),
+          "This can take a few minutes. You can keep reading the letter.",
         ),
       ).toBeVisible();
-      await startCounting();
-      // No time before the first minute.
-      expect(within(panel).queryByText(/so far/)).toBeNull();
-      await act(async () => vi.advanceTimersByTime(45_000));
-      expect(
-        within(panel).getByText(humanText("Working for 1 minute so far.")),
-      ).toBeVisible();
-      await act(async () => vi.advanceTimersByTime(2 * 60_000));
-      expect(
-        within(panel).getByText(humanText("Working for 3 minutes so far.")),
-      ).toBeVisible();
+      expect(within(panel).getByRole("progressbar")).not.toHaveAttribute(
+        "value",
+      );
+      // No count of minutes for a summary: the helper's own numbers, or
+      // nothing (the "Working for" line is Explain's).
+      await act(async () => vi.advanceTimersByTime(3 * 60_000));
+      expect(within(panel).queryByText(/so far|minutes? left/)).toBeNull();
       // A screen reader is told the work once, not each minute.
       expect(status).toHaveTextContent(/^The AI helper is working…$/);
-      // Both go once the answer is written.
+      // The bar goes once the answer is written.
       await act(async () => release());
       await waitFor(() =>
         expect(status).toHaveTextContent("The summary is ready."),
       );
-      expect(within(panel).queryByText(/several minutes|so far/)).toBeNull();
+      expect(within(panel).queryByRole("progressbar")).toBeNull();
+      expect(within(panel).queryByText(/few minutes|so far/)).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -1135,7 +1128,7 @@ describe("the reader's AI helper", () => {
     [
       "aiStorage",
       "ai.error.storage",
-      "The AI helper's model could not be read from this computer. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.",
+      "The AI helper's model could not be read from this device. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.",
     ],
     [
       "aiMemory",
@@ -1652,7 +1645,7 @@ describe("Settings > AI helper", () => {
       screen.getByRole("heading", { level: 1, name: "AI helper" }),
     ).toBeVisible();
     expect(
-      screen.getByText("How the AI helper works on this computer"),
+      screen.getByText("How the AI helper works on this device"),
     ).toBeVisible();
     const row = screen
       .getByRole("heading", { level: 2, name: /AI helper/ })
@@ -1660,7 +1653,7 @@ describe("Settings > AI helper", () => {
     expect(within(row).getByText("Not installed")).toBeVisible();
     expect(
       within(row).getByText(
-        "Explains your documents in plain words with an AI model that runs on this computer. Download one of the models below, or add a matching file you already have. Models stay on this computer.",
+        "Explains your documents in plain words with an AI model that runs on this device. Download one of the models below, or add a matching file you already have. Models stay on this device.",
       ),
     ).toBeVisible();
     unmount();

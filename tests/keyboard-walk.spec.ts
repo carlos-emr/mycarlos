@@ -49,7 +49,7 @@ test("first setup works from the keyboard alone", async ({ page }) => {
   await page.getByRole("button", { name: "Continue" }).focus();
   await page.keyboard.press("Enter");
   await expect(
-    page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+    page.getByRole("heading", { name: "Set up myCarlos on this device" }),
   ).toBeVisible();
   await walk(page, "create the vault");
 
@@ -159,7 +159,7 @@ test("the library works from the keyboard alone: open, move and search", async (
   await page.keyboard.press("Enter");
   const letterDetails = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
   await letterDetails
-    .getByRole("button", { name: "Save a copy to this computer" })
+    .getByRole("button", { name: "Save a copy to this device" })
     .focus();
   await page.keyboard.press("Enter");
   const confirm = page.getByRole("alertdialog", {

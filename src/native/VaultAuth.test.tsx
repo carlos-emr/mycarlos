@@ -1,4 +1,5 @@
 import { humanText } from "../test/humanText";
+import { birthDateGroup, enterBirthDate } from "../test/birthDate";
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -34,7 +35,7 @@ describe("CreateVault: the first person's details (#234)", () => {
       create: screen.getByRole("button", { name: humanText("Create vault") }),
       fullName: () =>
         screen.getByLabelText(humanText("Full name, as on clinic documents")),
-      birthDate: () => screen.getByLabelText(humanText("Date of birth")),
+      birthDate: () => birthDateGroup(),
     };
   };
 
@@ -56,7 +57,7 @@ describe("CreateVault: the first person's details (#234)", () => {
         humanText("Enter a date of birth or choose that it is unknown."),
       ),
     ).toBeVisible();
-    fireEvent.change(birthDate(), { target: { value: "1980-04-12" } });
+    enterBirthDate(birthDate(), "1980-04-12");
     expect(create).toBeEnabled();
     fireEvent.click(create);
     expect(onCreate).toHaveBeenCalledWith("FAKE Robin", PASS, {
@@ -68,7 +69,7 @@ describe("CreateVault: the first person's details (#234)", () => {
   it("refuses a date in the future and takes an unknown one", () => {
     const { onCreate, create, fullName, birthDate } = form();
     fireEvent.change(fullName(), { target: { value: "FAKE Robin Example" } });
-    fireEvent.change(birthDate(), { target: { value: "2999-01-01" } });
+    enterBirthDate(birthDate(), "2999-01-01");
     expect(
       screen.getByText(humanText("A birth date cannot be in the future.")),
     ).toBeVisible();
@@ -252,7 +253,7 @@ describe("CreateVault", () => {
     expect(
       screen.getByLabelText(humanText("Passphrase")),
     ).toHaveHumanAccessibleDescription(
-      /^0 character password Your passphrase needs to be: At least 15 characters\s*, not yet/,
+      /^0 character passphrase Your passphrase needs to be: At least 15 characters\s*, not yet/,
     );
   });
 
@@ -611,7 +612,7 @@ describe("UnlockVault", () => {
     expect(status).toBeEmptyDOMElement();
     expect(
       screen.getByLabelText(humanText("Passphrase")),
-    ).toHaveHumanAccessibleDescription("0 character password");
+    ).toHaveHumanAccessibleDescription("0 character passphrase");
 
     rerender(<UnlockVault {...props} notice="FAKE wrong passphrase." />);
     expect(screen.getAllByRole("status")[0]).toBe(status);
@@ -634,7 +635,7 @@ describe("UnlockVault", () => {
     const passphrase = screen.getByLabelText(humanText("Passphrase"));
     expect(passphrase).toHaveFocus();
     expect(passphrase).toHaveHumanAccessibleDescription(
-      "0 character password Vault locked.",
+      "0 character passphrase Vault locked.",
     );
   });
 
@@ -655,7 +656,7 @@ describe("UnlockVault", () => {
     });
     const replacement = screen.getByLabelText(humanText("New passphrase"));
     expect(replacement).toHaveHumanAccessibleDescription(
-      /^0 character password Use at least 15 characters\./,
+      /^0 character passphrase Use at least 15 characters\./,
     );
     fireEvent.change(replacement, {
       target: { value: "lantern-orbit-willow-cascade-572" },
@@ -684,7 +685,7 @@ describe("UnlockVault", () => {
     expect(forgotStatus).toHaveHumanTextContent("FAKE wrong recovery key.");
     expect(
       screen.getByLabelText(humanText("Passphrase")),
-    ).toHaveHumanAccessibleDescription("0 character password");
+    ).toHaveHumanAccessibleDescription("0 character passphrase");
     // The key is kept, so that a typo in it can be corrected.
     expect(screen.getByLabelText(humanText("Recovery key"))).toHaveValue(
       "abcd efgh jkmn pqrs tvwx yz01 2345",

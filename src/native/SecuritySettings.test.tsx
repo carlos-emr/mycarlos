@@ -1,5 +1,6 @@
 import { humanValue } from "../test/humanText";
 import { humanText } from "../test/humanText";
+import { birthDateGroup, enterBirthDate } from "../test/birthDate";
 import {
   act,
   cleanup,
@@ -59,9 +60,11 @@ function renderSettings(overrides: Record<string, unknown> = {}) {
 }
 
 const change = (label: string, value: string) =>
-  fireEvent.change(screen.getByLabelText(humanText(label)), {
-    target: { value },
-  });
+  label === "Date of birth"
+    ? enterBirthDate(birthDateGroup(), value)
+    : fireEvent.change(screen.getByLabelText(humanText(label)), {
+        target: { value },
+      });
 
 describe("SecuritySettings profile layout", () => {
   afterEach(async () => {
@@ -785,12 +788,7 @@ describe("SecuritySettings profiles", () => {
       ),
       { target: { value: " FAKE Riley Example " } },
     );
-    fireEvent.change(
-      within(dialog).getByLabelText(humanText("Date of birth")),
-      {
-        target: { value: "2012-06-02" },
-      },
-    );
+    enterBirthDate(birthDateGroup(dialog), "2012-06-02");
     fireEvent.click(
       within(dialog).getByRole("button", { name: humanText("Add profile") }),
     );

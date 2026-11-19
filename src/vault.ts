@@ -1,3 +1,4 @@
+import type { SummaryProgressEvent } from "./ai/summaryProgress";
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -599,6 +600,9 @@ export interface VaultBridge {
     lang: string,
     keep?: { recordId: string; ticket: string },
     answerId?: string,
+    /** Told how far this answer's run is, as the helper reports it: counts
+     * only (`ai-answer-progress`), matched to `answerId`. */
+    onProgress?: (event: SummaryProgressEvent) => void,
   ): Promise<ModelSummary>;
   /** A term explained in plain words, with the sentence it is in. With
    * `recordId`, kept natively for that document's save, as a summary is. */
@@ -1125,11 +1129,45 @@ export function createVaultBridge(): VaultBridge {
       return cancellation;
     },
     aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
-    aiSummarize: (pages, lang, keep, answerId = crypto.randomUUID()) =>
-      invoke<ModelSummary>("ai_summarize", {
-        answerId,
-        request: { pages, lang, ...keep },
-      }),
+    aiSummarize: async (
+      pages,
+      lang,
+      keep,
+      answerId = crypto.randomUUID(),
+      onProgress,
+    ) => {
+      // Listening starts before the run does, so that no early event is
+      // missed; only this answer's events are passed on. The progress is
+      // only for show: a listener that cannot be attached (a refused
+      // permission, a webview that will not listen) leaves the summary to
+      // run without it, never fails it.
+      let unlisten: (() => void) | null = null;
+      if (onProgress) {
+        try {
+          unlisten = await listen<SummaryProgressEvent>(
+            "ai-answer-progress",
+            (event) => {
+              if (event.payload?.answerId === answerId)
+                onProgress(event.payload);
+            },
+          );
+        } catch {
+          unlisten = null;
+        }
+      }
+      try {
+        return await invoke<ModelSummary>("ai_summarize", {
+          answerId,
+          request: { pages, lang, ...keep },
+        });
+      } finally {
+        try {
+          unlisten?.();
+        } catch {
+          // Already gone: nothing to stop.
+        }
+      }
+    },
     aiExplain: (
       term,
       context,

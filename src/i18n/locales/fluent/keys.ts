@@ -612,6 +612,10 @@ export const MESSAGE_KEYS = [
   "personDetails.birthDate",
   "personDetails.birthDateRequired",
   "personDetails.birthDateUnknown",
+  "personDetails.birthDay",
+  "personDetails.birthMonth",
+  "personDetails.birthMonthChoose",
+  "personDetails.birthYear",
   "personDetails.cancel",
   "personDetails.edit",
   "personDetails.editFor",
@@ -860,6 +864,12 @@ export const MESSAGE_KEYS = [
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
   "ai.summary.englishOnly",
+  "ai.summary.progress.before",
+  "ai.summary.progress.reading",
+  "ai.summary.progress.writing",
+  "ai.summary.progress.checking",
+  "ai.summary.progress.estimate",
+  "ai.summary.progress.slower",
   "aiHelper.notice.title",
   "aiHelper.notice.introShare",
   "aiHelper.notice.intro",
@@ -1752,6 +1762,10 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.birthDate": "personDetails-birthDate",
   "personDetails.birthDateRequired": "personDetails-birthDateRequired",
   "personDetails.birthDateUnknown": "personDetails-birthDateUnknown",
+  "personDetails.birthDay": "personDetails-birthDay",
+  "personDetails.birthMonth": "personDetails-birthMonth",
+  "personDetails.birthMonthChoose": "personDetails-birthMonthChoose",
+  "personDetails.birthYear": "personDetails-birthYear",
   "personDetails.cancel": "personDetails-cancel",
   "personDetails.edit": "personDetails-edit",
   "personDetails.editFor": "personDetails-editFor",
@@ -2029,6 +2043,12 @@ const FLUENT_IDS_BY_KEY = {
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
   "ai.summary.englishOnly": "ai-summary-englishOnly",
+  "ai.summary.progress.before": "ai-summary-progress-before",
+  "ai.summary.progress.reading": "ai-summary-progress-reading",
+  "ai.summary.progress.writing": "ai-summary-progress-writing",
+  "ai.summary.progress.checking": "ai-summary-progress-checking",
+  "ai.summary.progress.estimate": "ai-summary-progress-estimate",
+  "ai.summary.progress.slower": "ai-summary-progress-slower",
   "aiHelper.notice.title": "aiHelper-notice-title",
   "aiHelper.notice.introShare": "aiHelper-notice-introShare",
   "aiHelper.notice.intro": "aiHelper-notice-intro",
@@ -2957,6 +2977,10 @@ export interface MessageArgsByKey {
   "personDetails.birthDate": undefined;
   "personDetails.birthDateRequired": undefined;
   "personDetails.birthDateUnknown": undefined;
+  "personDetails.birthDay": undefined;
+  "personDetails.birthMonth": undefined;
+  "personDetails.birthMonthChoose": undefined;
+  "personDetails.birthYear": undefined;
   "personDetails.cancel": undefined;
   "personDetails.edit": undefined;
   "personDetails.editFor": { name: FluentArgument };
@@ -3219,6 +3243,12 @@ export interface MessageArgsByKey {
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
   "ai.summary.englishOnly": undefined;
+  "ai.summary.progress.before": undefined;
+  "ai.summary.progress.reading": undefined;
+  "ai.summary.progress.writing": undefined;
+  "ai.summary.progress.checking": undefined;
+  "ai.summary.progress.estimate": { minutes: FluentArgument };
+  "ai.summary.progress.slower": undefined;
   "aiHelper.notice.title": undefined;
   "aiHelper.notice.introShare": undefined;
   "aiHelper.notice.intro": undefined;

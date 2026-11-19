@@ -56,6 +56,15 @@ been checked line by line. Any that is would keep its own terms: under GPL-2.0-o
 taken under version 3 and combined with the AGPL, which section 13 of the AGPL and of GPL version 3
 allow, and would carry the GPL version 3 text; under GPL version 2 alone it could not be. This is part of the review below.
 
+## The app icon (the CARLOS logo)
+
+The app icon on every platform is the CARLOS EMR project's logo (the "birdman"), used here with the
+CARLOS project's permission. It is the project's mark and is **not covered by the code's open
+licence**: the AGPL does not grant any right to it. Anyone who forks or redistributes myCarlos under
+another name replaces it (the files are listed in [src-tauri/icons/source/README.md](src-tauri/icons/source/README.md):
+`src-tauri/icons/`, including `android/` and `ios/`, and the copy kept under `source/`). Its origin is the
+CARLOS GitHub organisation's picture, 460 px (`src-tauri/icons/source/carlos-logo-460.jpg`).
+
 ## Open: app stores
 
 Whether an AGPL or GPL app may be distributed through Apple's App Store is **not settled**. The
