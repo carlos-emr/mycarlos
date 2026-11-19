@@ -2103,6 +2103,9 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       [{ index: 0, text: pageText }],
       "en",
       { recordId: expect.any(String), ticket: expect.any(String) },
+      undefined,
+      // The reader's progress listener, for the progress bar.
+      expect.any(Function),
     );
     await waitFor(() =>
       expect(native.saveAiResult).toHaveBeenCalledWith(

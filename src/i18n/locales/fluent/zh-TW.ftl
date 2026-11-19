@@ -1823,6 +1823,24 @@ ai-summary-noSource = 未找到來源
 
 ai-summary-englishOnly = 目前摘要以英文撰寫。myCarlos 只對英文摘要核對數字與「何時就醫」的提示，請在文件本身中核對這些內容。
 
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = 這可能需要幾分鐘。您可以繼續閱讀這封信。
+
+ai-summary-progress-reading = 正在閱讀信件…
+
+ai-summary-progress-writing = 正在撰寫摘要…
+
+ai-summary-progress-checking = 正在檢查摘要…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] 剩餘不到一分鐘
+       *[other] 大約還剩 { $minutes } 分鐘
+    }
+
+ai-summary-progress-slower = 耗時比預期更久。
+
 aiHelper-notice-title = 關於 AI 助理
 
 aiHelper-notice-introShare = myCarlos 可以為您選擇的 AI 服務準備文件的文字。AI 助理絕不會透過網際網路傳送您的文件或任何關於您的資訊。它唯一會取得的是其模型檔案，而且只有在您選擇下載時才會取得。下載時，下載網站會看到這台裝置的網際網路位址。

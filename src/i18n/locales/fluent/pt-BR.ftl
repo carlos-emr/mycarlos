@@ -2021,6 +2021,25 @@ ai-summary-noSource = Fonte não encontrada
 
 ai-summary-englishOnly = Por enquanto, os resumos são escritos em inglês. O myCarlos só verifica números e orientações de “quando buscar ajuda” em inglês; confira-os no próprio documento.
 
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = Isso pode levar alguns minutos. Você pode continuar lendo a carta.
+
+ai-summary-progress-reading = Lendo a carta…
+
+ai-summary-progress-writing = Escrevendo o resumo…
+
+ai-summary-progress-checking = Verificando o resumo…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Falta menos de um minuto
+        [one] Falta cerca de { $minutes } minuto
+       *[other] Faltam cerca de { $minutes } minutos
+    }
+
+ai-summary-progress-slower = Está demorando mais do que o esperado.
+
 aiHelper-notice-title = Sobre o assistente de IA
 
 aiHelper-notice-introShare = O myCarlos pode preparar o texto de um documento para o serviço de IA que você escolher. O assistente de IA nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo. Ao baixá-lo, o site de download vê o endereço de internet deste dispositivo.

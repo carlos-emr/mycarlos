@@ -8,15 +8,15 @@
 //! their sizes, the term and its sentence, and the language.
 
 use crate::local_runner::{
-    self, check_budget, AnswerLimit, AnswerWatch, Budget, MemoryProbe, ModelInfo, Page, Runner,
-    RunnerConfig, RunnerError, Sentence, SummaryRequest,
+    self, check_budget, AnswerLimit, AnswerWatch, Budget, MemoryProbe, ModelInfo, Page, Progress,
+    Runner, RunnerConfig, RunnerError, RunnerStatus, Sentence, SummaryRequest,
 };
 use crate::model_helper;
 use crate::vault::{AiResultInput, AiTool};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// At most this many pages, each at most this many bytes, all at most this many: the reader's
 /// own caps (`documentText.ts`, `pdf_view`).
@@ -504,34 +504,64 @@ impl ModelRuntime {
         request: SummarizeRequest,
         watch: AnswerWatch,
     ) -> Result<SummaryResult, AiError> {
-        self.summarize_for(self.reserve_answer(), request, watch)
+        self.summarize_for(self.reserve_answer(), request, watch, &mut |_, _| ())
     }
 
     pub(crate) fn reserve_answer(&self) -> crate::local_runner::Ticket {
         self.runner.ticket()
     }
 
+    /// `progress` is told how far it is, with the time left in seconds when there is a number
+    /// (`summary_progress`): counts and seconds only.
     pub(crate) fn summarize_for(
         &self,
         ticket: crate::local_runner::Ticket,
         request: SummarizeRequest,
         watch: AnswerWatch,
+        progress: &mut dyn FnMut(Progress, Option<u32>),
     ) -> Result<SummaryResult, AiError> {
         check_summary(&request)?;
         let page_count = request.page_count;
-        self.runner.watch_answer(ticket, watch);
+        // The request is written to the helper when its watch is told its limit: the reading,
+        // and this run's speeds, start there (after the helper's start, if it had to start).
+        let written_at = Arc::new(OnceLock::new());
+        let mark = Arc::clone(&written_at);
+        self.runner.watch_answer(
+            ticket,
+            Box::new(move |limit| {
+                let _ = mark.set(Instant::now());
+                watch(limit);
+            }),
+        );
         self.start(ticket)?;
+        let kept = match self.runner.status() {
+            RunnerStatus::Ready { model }
+            | RunnerStatus::Working { model }
+            | RunnerStatus::Installed { model } => crate::summary_progress::kept(&model.sha256),
+            _ => None,
+        };
+        let mut estimate = crate::summary_progress::Estimate::new(kept, Instant::now());
         let summary = self
             .runner
-            .summarize(
+            .summarize_with_progress(
                 ticket,
                 &SummaryRequest {
                     lang: request.lang,
                     pages: request.pages,
                     max_sentences: model_helper::MAX_SENTENCES,
                 },
+                &mut |step| {
+                    if let Some(at) = written_at.get() {
+                        estimate.start_at(*at);
+                    }
+                    progress(step, estimate.after(step, Instant::now()));
+                },
             )
             .map_err(|error| from_runner(&error))?;
+        // Finished: its speed is the next estimate's start. A cancelled or failed one is not kept.
+        if let Some(stats) = &summary.stats {
+            crate::summary_progress::record(&summary.model.sha256, stats);
+        }
         self.answered_by(&summary.model);
         Ok(SummaryResult {
             sentences: summary.sentences,

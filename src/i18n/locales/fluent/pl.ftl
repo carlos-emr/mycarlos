@@ -2063,6 +2063,27 @@ ai-summary-noSource = Nie znaleziono źródła
 
 ai-summary-englishOnly = Na razie podsumowania są pisane po angielsku. myCarlos sprawdza liczby i zasady „kiedy szukać pomocy” tylko po angielsku, więc sprawdź je w samym dokumencie.
 
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = To może potrwać kilka minut. Możesz czytać dalej list.
+
+ai-summary-progress-reading = Czytanie listu…
+
+ai-summary-progress-writing = Pisanie podsumowania…
+
+ai-summary-progress-checking = Sprawdzanie podsumowania…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Zostało mniej niż minuta
+        [one] Zostało około { $minutes } minuty
+        [few] Zostały około { $minutes } minuty
+        [many] Zostało około { $minutes } minut
+       *[other] Zostało około { $minutes } minut
+    }
+
+ai-summary-progress-slower = To trwa dłużej, niż oczekiwano.
+
 aiHelper-notice-title = O asystencie AI
 
 aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego urządzenia stronie, z której następuje pobieranie.
