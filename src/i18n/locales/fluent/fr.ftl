@@ -1869,7 +1869,37 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Voir dans le document
 
-ai-summary-partial = Ce résumé ne couvre que le début du document : pages 1 à { $last }.
+ai-summary-partial = Ce résumé utilise seulement une partie du texte du document.
+
+ai-summary-tooLong =
+    { $last ->
+    [one] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ la page 1 sur { $total }.
+   *[other] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ les pages 1 à { $last } sur { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ la page 1 et la dernière page, la page { $tail }, sur { $total }.
+   *[other] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ les pages 1 à { $last } et la dernière page, la page { $tail }, sur { $total }.
+    }
+
+ai-summary-tooLongStart = Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il ne peut en lire qu’environ le début de la page 1.
+
+ai-summary-tooLongAfter = S’il ne peut pas tout lire, le résumé le dira.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Résumer la page 1
+   *[other] Résumer les pages 1 à { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Résumer la page 1 et la page { $tail }
+   *[other] Résumer les pages 1 à { $last } et la page { $tail }
+    }
+
+ai-summary-readStart = Résumer le début de la page 1
 
 ai-summary-noText = myCarlos n’a pu lire aucun texte dans ce document et ne peut donc pas le résumer. Il s’agit peut-être d’une numérisation.
 
@@ -1890,6 +1920,13 @@ ai-settings-subtitle = Le fonctionnement de l’assistant IA sur cet ordinateur
 ai-model-add = Ajouter un fichier de modèle…
 
 ai-model-accepted = { $name }, { $size } Mo. Licence : { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Lit environ { $pages } page à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
+    [many] Lit environ { $pages } de pages à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
+   *[other] Lit environ { $pages } pages à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
+    }
 
 ai-model-where = Où obtenir le fichier
 
@@ -1973,6 +2010,9 @@ ai-error-storage = Le modèle de l’assistant IA n’a pas pu être lu sur cet 
 ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; ce résumé peut donc en omettre des parties.
 
 ai-summary-noSource = Source introuvable
+
+ai-summary-englishOnly = Pour l’instant, les résumés sont rédigés en anglais. myCarlos ne vérifie les chiffres et les consignes « quand demander de l’aide » qu’en anglais : vérifiez-les dans le document lui-même.
+
 aiHelper-notice-title = À propos de l’assistant IA
 
 aiHelper-notice-introShare = myCarlos peut préparer le texte d’un document pour le service d’IA de votre choix. L’assistant IA n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger. Son téléchargement montre l’adresse Internet de cet ordinateur au site de téléchargement.
@@ -2220,6 +2260,8 @@ ai-models-starting = Démarrage du téléchargement…
 ai-models-picking = Choisissez un fichier de modèle à ajouter.
 
 ai-models-changed = Le modèle utilisé a été changé
+
+ai-summaryTooLarge = Le résumé complet est trop volumineux. Aucun nouveau résumé n’a été enregistré.
 
 personDetails-previousTitle = Anciens noms complets
 personDetails-previousHelp = Jusqu’à 16 anciens noms complets aident à repérer les renseignements identifiants. Un nom modifié est proposé ici ; retirez-le avant d’enregistrer si vous ne souhaitez pas le garder. Le retrait ne supprime que cette entrée ; d’autres dossiers et sauvegardes peuvent la conserver.

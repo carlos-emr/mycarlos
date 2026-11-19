@@ -1833,7 +1833,37 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Show in document
 
-ai-summary-partial = This summary covers only the start of the document: pages 1 to { $last }.
+ai-summary-partial = This summary uses only part of the document’s text.
+
+ai-summary-tooLong =
+    { $last ->
+    [one] This document is probably too long for the AI helper to read at once. It can read about page 1 of { $total }.
+   *[other] This document is probably too long for the AI helper to read at once. It can read about pages 1 to { $last } of { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] This document is probably too long for the AI helper to read at once. It can read about page 1 and the last page, page { $tail }, of { $total }.
+   *[other] This document is probably too long for the AI helper to read at once. It can read about pages 1 to { $last } and the last page, page { $tail }, of { $total }.
+    }
+
+ai-summary-tooLongStart = This document is probably too long for the AI helper to read at once. It can read only about the start of page 1.
+
+ai-summary-tooLongAfter = If it cannot read all of it, the summary will say so.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Summarize page 1
+   *[other] Summarize pages 1 to { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Summarize page 1 and page { $tail }
+   *[other] Summarize pages 1 to { $last } and page { $tail }
+    }
+
+ai-summary-readStart = Summarize the start of page 1
 
 ai-summary-noText = myCarlos could not read any text in this document, so it can't summarize it. It may be a scan.
 
@@ -1854,6 +1884,12 @@ ai-settings-subtitle = How the AI helper works on this computer
 ai-model-add = Add a model file…
 
 ai-model-accepted = { $name }, { $size } MB. Licence: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Reads about { $pages } page at a time (about { $characters } characters of English text). Less for tables and some languages.
+   *[other] Reads about { $pages } pages at a time (about { $characters } characters of English text). Less for tables and some languages.
+    }
 
 ai-model-where = Where to get the file
 
@@ -1936,6 +1972,9 @@ ai-error-storage = The AI helper's model could not be read from this computer. T
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 
 ai-summary-noSource = No source found
+
+ai-summary-englishOnly = For now, summaries are written in English. myCarlos checks numbers and “when to get help” rules only in English, so check those in the document itself.
+
 aiHelper-notice-title = About the AI helper
 
 aiHelper-notice-introShare = myCarlos can prepare a document's text for an AI service you choose. The AI helper never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this computer’s internet address to the download site.
@@ -2183,6 +2222,8 @@ ai-models-starting = Starting the download…
 ai-models-picking = Choose a model file to add.
 
 ai-models-changed = Model in use changed
+
+ai-summaryTooLarge = The complete summary is too large. No new summary was saved.
 
 personDetails-previousTitle = Previous full names
 personDetails-previousHelp = Up to 16 previous full names help find identifying details. A changed name is suggested here; remove it before saving if you do not want to keep it. Removing a saved name only removes this list entry; other records and backups may retain it.

@@ -1869,7 +1869,37 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver no documento
 
-ai-summary-partial = Este resumo cobre apenas o início do documento: páginas 1 a { $last }.
+ai-summary-partial = Este resumo usa apenas parte do texto do documento.
+
+ai-summary-tooLong =
+    { $last ->
+    [one] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente a página 1 de { $total }.
+   *[other] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente as páginas 1 a { $last } de { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente a página 1 e a última página, a página { $tail }, de { $total }.
+   *[other] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente as páginas 1 a { $last } e a última página, a página { $tail }, de { $total }.
+    }
+
+ai-summary-tooLongStart = Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler apenas aproximadamente o início da página 1.
+
+ai-summary-tooLongAfter = Se não conseguir ler tudo, o resumo avisará.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Resumir a página 1
+   *[other] Resumir as páginas 1 a { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Resumir a página 1 e a página { $tail }
+   *[other] Resumir as páginas 1 a { $last } e a página { $tail }
+    }
+
+ai-summary-readStart = Resumir o início da página 1
 
 ai-summary-noText = O myCarlos não conseguiu ler nenhum texto neste documento, então não pode resumi-lo. Ele pode ser uma digitalização.
 
@@ -1890,6 +1920,13 @@ ai-settings-subtitle = Como o assistente de IA funciona neste computador
 ai-model-add = Adicionar um arquivo de modelo…
 
 ai-model-accepted = { $name }, { $size } MB. Licença: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Lê cerca de { $pages } página por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
+    [many] Lê cerca de { $pages } de páginas por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
+   *[other] Lê cerca de { $pages } páginas por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
+    }
 
 ai-model-where = Onde obter o arquivo
 
@@ -1973,6 +2010,9 @@ ai-error-storage = Não foi possível ler o modelo do assistente de IA neste com
 ai-summary-pagesMissing = Algumas páginas não puderam ser lidas por completo, então este resumo pode deixar partes de fora.
 
 ai-summary-noSource = Fonte não encontrada
+
+ai-summary-englishOnly = Por enquanto, os resumos são escritos em inglês. O myCarlos só verifica números e orientações de “quando buscar ajuda” em inglês; confira-os no próprio documento.
+
 aiHelper-notice-title = Sobre o assistente de IA
 
 aiHelper-notice-introShare = O myCarlos pode preparar o texto de um documento para o serviço de IA que você escolher. O assistente de IA nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo. Ao baixá-lo, o site de download vê o endereço de internet deste computador.
@@ -2220,6 +2260,8 @@ ai-models-starting = Iniciando o download…
 ai-models-picking = Escolha um arquivo de modelo para adicionar.
 
 ai-models-changed = Modelo em uso alterado
+
+ai-summaryTooLarge = O resumo completo é grande demais. Nenhum novo resumo foi salvo.
 
 personDetails-previousTitle = Nomes completos anteriores
 personDetails-previousHelp = Até 16 nomes completos anteriores ajudam a encontrar dados de identificação. Um nome alterado é sugerido aqui; remova-o antes de salvar se não quiser guardá-lo. A remoção afeta apenas esta entrada; outros registros e backups podem mantê-lo.
