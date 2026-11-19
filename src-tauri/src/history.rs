@@ -81,6 +81,12 @@ pub enum HistoryEvent {
     DeviceApprovalRequestRestarted,
     DeliveryFiled,
     DeliveryReceiptSettled,
+    /// A clinic document failed its checks and was not added. It is
+    /// remembered, so that it is not downloaded and refused again (#143).
+    DeliveryRefused,
+    /// The patient chose Try again for a clinic: its remembered refusals
+    /// were forgotten, so its documents are checked again (#143).
+    DeliveryRefusalsCleared,
     ReadingAidFiled,
     /// The AI helper's answer was kept with the document (#72): `how` is
     /// the tool, "summary" or "explain". No text is recorded.

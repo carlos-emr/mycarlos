@@ -1196,6 +1196,13 @@ p {
   color: var(--ink-soft);
   font-size: 0.875rem;
 }
+/* #301: the choice before summarizing a document too long to read at once. */
+.native-reader-ai-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
 .native-reader-ai-explain {
   display: grid;
   gap: 6px;
@@ -4089,6 +4096,10 @@ button:disabled,
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+/* #143: the "Try again" button keeps the card's usual gap below the line. */
+.portal-refused .button {
+  margin-block-start: 0.5rem;
+}
 .portal-documents label {
   display: grid;
   gap: 0.35rem;
@@ -4220,9 +4231,15 @@ button:disabled,
    form, box or buttons that follow: one rule for every such section (Clinic
    documents, and the AI helper in Security and on its own page). After the
    rules above, so the gap also replaces the inline form's pull-up margin. */
-:where(h1, h2, h3):has(+ .section-intro) { margin-block-end: 0; }
-.section-intro { margin-block-start: 4px; }
-.section-intro + * { margin-block-start: 14px; }
+:where(h1, h2, h3):has(+ .section-intro) {
+  margin-block-end: 0;
+}
+.section-intro {
+  margin-block-start: 4px;
+}
+.section-intro + * {
+  margin-block-start: 14px;
+}
 /* Visible choices before opening a vault, wrapping instead of a dropdown. */
 .language-compact {
   display: grid;
