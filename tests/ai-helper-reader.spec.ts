@@ -234,7 +234,7 @@ test("a lock while the Summary reads the text ends the read and the reader", asy
   await expectOnlyFakedCommands(page);
 });
 
-test.describe("with a model on this computer", () => {
+test.describe("with a model on this device", () => {
   test("a summary is labeled as the AI's, links its sources, and was asked for the document's pages", async ({
     page,
   }) => {

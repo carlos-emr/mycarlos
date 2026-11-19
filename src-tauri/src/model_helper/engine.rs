@@ -4,9 +4,11 @@
 use super::{
     answer_hash, document_budget, explain_prompt, fit_pages, gemma4_conversation, language_name,
     read_explanation, read_summary, summary_grammar, summary_prompt, thinking_off, without_slot,
-    ChatFormat, Fit, ModelFile, Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
-    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
+    ChatFormat, Fit, ModelFile, Page, Sentence, SentenceCount, Settings, Stats, ANSWER_HASH_START,
+    BATCH_TOKENS, CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, PROGRESS_READING,
+    PROGRESS_WRITING, SLOT, SUMMARY_TOKENS, SYSTEM_PROMPT,
 };
+
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -19,6 +21,9 @@ use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_2::{LlamaStateSeqFlags, SeqState};
 use std::num::NonZeroU32;
+
+/// Told how far a summary is (`progress_line`): a stage, a count done and its total.
+pub(super) type Report<'a> = &'a mut dyn FnMut(&'static str, u32, u32);
 
 /// Whether the weights are mapped from the file rather than read into the helper's memory.
 /// Linux: read, so that the sealed copy (shared memory) can be closed once loaded and is not
@@ -298,12 +303,17 @@ impl Engine {
     /// Reads `tokens`, then writes at most `max` tokens, under `grammar` if given. Returns what
     /// it wrote and whether it stopped at `max`. The first `prefix_len` tokens are the
     /// instruction prefix: read once, then put back (see [`Prefix`]).
+    ///
+    /// With `progress` (a summary: its report and its sentence cap), it is told after each
+    /// batch read and each sentence closed, between the model's steps: what the model reads
+    /// and writes, and how, is the same with it or without it.
     fn generate(
         &mut self,
         tokens: &[LlamaToken],
         prefix_len: usize,
         max: usize,
         grammar: Option<&str>,
+        progress: Option<(Report<'_>, u32)>,
     ) -> Result<(String, bool), Failure> {
         if tokens.is_empty() || tokens.len() + max > CONTEXT_TOKENS as usize {
             return Err(failed("too long"));
@@ -337,20 +347,46 @@ impl Engine {
         let batch_size = BATCH_TOKENS as usize;
         let mut batch = LlamaBatch::new(batch_size, 1);
         let last = tokens.len() - 1;
+        let (mut report, sentence_cap) = match progress {
+            Some((report, cap)) => (Some(report), cap),
+            None => (None, 0),
+        };
+        let restored = prefix_len > 0 && self.restore_prefix(&tokens[..prefix_len]);
+        // What this answer reads: a prefix put back is not read.
+        let to_read = (if restored {
+            tokens.len() - prefix_len
+        } else {
+            tokens.len()
+        }) as u32;
+        let mut read_so_far = 0;
+        let mut after_batch = |read: usize| {
+            read_so_far += read as u32;
+            if let Some(report) = report.as_mut() {
+                report(PROGRESS_READING, read_so_far, to_read);
+            }
+        };
         if prefix_len > 0 {
-            if self.restore_prefix(&tokens[..prefix_len]) {
+            if restored {
                 self.stats.cache_hit = true;
             } else {
                 // Read on its own, as when it is put back, so both ways do the same sums.
-                self.read(&mut batch, &tokens[..prefix_len], 0, last)?;
+                self.read(&mut batch, &tokens[..prefix_len], 0, last, &mut after_batch)?;
                 self.keep_prefix(&tokens[..prefix_len]);
             }
         }
-        self.read(&mut batch, &tokens[prefix_len..], prefix_len, last)?;
+        self.read(
+            &mut batch,
+            &tokens[prefix_len..],
+            prefix_len,
+            last,
+            &mut after_batch,
+        )?;
         let read = std::time::Instant::now();
         self.stats.prompt_ms = (read - started).as_millis() as u64;
         let vocab = self.model.vocab();
         let mut written = Vec::new();
+        let mut sentences = SentenceCount::default();
+        let mut closed = 0;
         for position in (tokens.len()..).take(max) {
             let (token, scanned) = self.pick(batch.n_tokens() - 1, grammar.as_mut());
             self.stats.grammar_scans += u32::from(scanned);
@@ -363,7 +399,15 @@ impl Engine {
             if let Some(grammar) = grammar.as_mut() {
                 grammar.accept(token);
             }
+            let before = written.len();
             vocab.token_to_piece_into(token, &mut written, false, None);
+            if let Some(report) = report.as_mut() {
+                let now = sentences.feed(&written[before..]);
+                if now > closed && now <= sentence_cap as usize {
+                    closed = now;
+                    report(PROGRESS_WRITING, closed as u32, sentence_cap);
+                }
+            }
             batch.clear();
             batch
                 .add(token, position as i32, &[0], true)
@@ -378,12 +422,14 @@ impl Engine {
     }
 
     /// Reads `tokens` from `start` on, in batches; the token at `last` gets its scores.
+    /// `after_batch` is told each batch's length once it is read.
     fn read(
         &mut self,
         batch: &mut LlamaBatch,
         tokens: &[LlamaToken],
         start: usize,
         last: usize,
+        after_batch: &mut dyn FnMut(usize),
     ) -> Result<(), Failure> {
         let batch_size = BATCH_TOKENS as usize;
         for (chunk_index, chunk) in tokens.chunks(batch_size).enumerate() {
@@ -395,6 +441,7 @@ impl Engine {
                     .map_err(|_| failed("batch"))?;
             }
             self.ctx_mut().decode(batch).map_err(|_| failed("decode"))?;
+            after_batch(chunk.len());
         }
         Ok(())
     }
@@ -481,11 +528,13 @@ impl Engine {
     }
 
     /// A summary of the pages that fit, in `lang`, with the fit it read.
+    /// `report` is told how far it is (see [`Engine::generate`]).
     pub(super) fn summarize(
         &mut self,
         lang: &str,
         pages: &[Page],
         max_sentences: usize,
+        report: Report<'_>,
     ) -> Result<(Vec<Sentence>, Fit), Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
         let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
@@ -508,8 +557,13 @@ impl Engine {
         .ok_or_else(|| failed("no room"))?;
         let (tokens, prefix_len) = self.prompt_tokens(&user, &[&fit.text])?;
         let grammar = summary_grammar(max_sentences);
-        let (written, capped) =
-            self.generate(&tokens, prefix_len, SUMMARY_TOKENS, Some(&grammar))?;
+        let (written, capped) = self.generate(
+            &tokens,
+            prefix_len,
+            SUMMARY_TOKENS,
+            Some(&grammar),
+            Some((report, max_sentences as u32)),
+        )?;
         let sentences = read_summary(&written, capped).ok_or_else(|| failed("unreadable"))?;
         Ok((sentences, fit))
     }
@@ -525,7 +579,7 @@ impl Engine {
         let user = explain_prompt(language);
         let (term, context) = (without_slot(term), without_slot(context));
         let (tokens, prefix_len) = self.prompt_tokens(&user, &[&term, &context])?;
-        let (written, capped) = self.generate(&tokens, prefix_len, EXPLAIN_TOKENS, None)?;
+        let (written, capped) = self.generate(&tokens, prefix_len, EXPLAIN_TOKENS, None, None)?;
         read_explanation(&written, capped).ok_or_else(|| failed("empty"))
     }
 }

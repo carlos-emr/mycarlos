@@ -8,8 +8,9 @@ type Props = Omit<ComponentPropsWithRef<"input">, "value" | "type"> & {
 };
 
 /** Keep the browser's protected input semantics. Only the count, never the
- * secret, goes into the hover text or accessible description. Native screen
- * reader password echo remains controlled by the reader and needs device tests.
+ * secret, goes into the accessible description (it is visually hidden, and
+ * there is no hover text). Native screen reader password echo remains
+ * controlled by the reader and needs device tests.
  * A secret shown as text is not handed to the spell checker, autocorrection or
  * capitalization (#69); a caller may still choose its capitalization, as the
  * recovery key does. */
@@ -43,10 +44,11 @@ export function SecretInput({
         {...props}
         type={type}
         value={value}
-        title={description}
         aria-describedby={[countId, describedBy].filter(Boolean).join(" ")}
       />
-      <small id={countId} className="secret-count">
+      {/* Not drawn: the count is the field's description for a screen reader
+          (aria-describedby above), and no hover text repeats it. */}
+      <small id={countId} className="secret-count sr-only">
         {description}
       </small>
     </span>
