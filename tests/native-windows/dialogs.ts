@@ -180,7 +180,7 @@ export async function testNativeDialogs(
           .click();
         await expect(
           page.getByRole("heading", {
-            name: "Set up myCarlos on this computer",
+            name: "Set up myCarlos on this device",
             exact: true,
           }),
         ).toBeVisible();

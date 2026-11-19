@@ -92,7 +92,7 @@ test("language choices persist, preserve High contrast and work from the keyboar
   await expectOnlyFakedCommands(page);
 });
 
-test("setup language translates the form without resetting drafts at 320px and enlarged text", async ({
+test("the language is chosen on the first screen only, and the set-up form follows it at 320px and enlarged text", async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 320, height: 700 });
@@ -111,38 +111,6 @@ test("setup language translates the form without resetting drafts at 320px and e
       level: 1,
     }),
   ).toBeVisible();
-  await page
-    .getByRole("button", {
-      name: translate("fr", "comfort.continue"),
-      exact: true,
-    })
-    .click();
-  const profile = page.getByRole("textbox", {
-    name: translate("fr", "create.profile.label"),
-  });
-  const password = page.getByLabel(translate("fr", "passphrase.label"), {
-    exact: true,
-  });
-  await profile.fill("FAKE Language Patient");
-  await password.fill("FAKE draft");
-  await page.getByRole("radio", { name: "Polski" }).check();
-  await expect(
-    page.getByRole("textbox", {
-      name: translate("pl", "create.profile.label"),
-    }),
-  ).toHaveValue("FAKE Language Patient");
-  await expect(
-    page.getByLabel(translate("pl", "passphrase.label"), { exact: true }),
-  ).toHaveValue("FAKE draft");
-  await expect(
-    page.getByRole("heading", {
-      name: translate("pl", "create.title"),
-      level: 1,
-    }),
-  ).toBeVisible();
-  await expect(page.locator("#passphrase-too-short")).toHaveText(
-    translate("pl", "passphrase.tooShort", { min: 15 }),
-  );
   await page.locator("html").evaluate((element) => {
     element.style.fontSize = "200%";
   });
@@ -161,12 +129,47 @@ test("setup language translates the form without resetting drafts at 320px and e
       }),
     );
   expect(choicesFit).toBe(true);
+  await page.locator("html").evaluate((element) => {
+    element.style.fontSize = "";
+  });
+  await page
+    .getByRole("button", {
+      name: translate("fr", "comfort.continue"),
+      exact: true,
+    })
+    .click();
+  // The set-up form is in the language chosen on the first screen, and offers
+  // no language choice of its own (nor does the unlock screen).
+  await expect(page.getByRole("group", { name: "Language" })).toHaveCount(0);
+  await expect(
+    page.getByRole("group", { name: translate("fr", "language.title") }),
+  ).toHaveCount(0);
+  const profile = page.getByRole("textbox", {
+    name: translate("fr", "create.profile.label"),
+  });
+  const password = page.getByLabel(translate("fr", "passphrase.label"), {
+    exact: true,
+  });
+  await profile.fill("FAKE Language Patient");
+  await password.fill("FAKE draft");
+  await expect(
+    page.getByRole("heading", {
+      name: translate("fr", "create.title"),
+      level: 1,
+    }),
+  ).toBeVisible();
+  await expect(page.locator("#passphrase-too-short")).toHaveText(
+    translate("fr", "passphrase.tooShort", { min: 15 }),
+  );
+  await page.locator("html").evaluate((element) => {
+    element.style.fontSize = "200%";
+  });
   const headingFits = await page
     .locator(".vault-card h1")
     .evaluate((heading) => heading.scrollWidth <= heading.clientWidth + 1);
   expect(headingFits).toBe(true);
   const create = page.getByRole("button", {
-    name: translate("pl", "create.submit"),
+    name: translate("fr", "create.submit"),
     exact: true,
   });
   await create.scrollIntoViewIfNeeded();
@@ -183,5 +186,36 @@ test("setup language translates the form without resetting drafts at 320px and e
     path: info.outputPath("language-screen.png"),
     fullPage: true,
   });
+  await expectOnlyFakedCommands(page);
+});
+
+test("the unlock screen has a globe and language button that opens the list, with a 44px target and no shift of the passphrase field", async ({
+  page,
+}) => {
+  await fakeVault(page, "locked");
+  await page.goto("/");
+  const field = page.getByLabel("Passphrase", { exact: true });
+  await expect(field).toBeVisible();
+  const before = await field.boundingBox();
+  const button = page.getByRole("button", { name: /^English \(Language\)$/ });
+  await expect(button).toBeVisible();
+  const box = await button.boundingBox();
+  expect(box!.height).toBeGreaterThanOrEqual(44);
+  // Opening and closing the list does not move the passphrase field.
+  await button.click();
+  const dialog = page.getByRole("dialog", { name: "Language" });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(button).toBeFocused();
+  const reopened = await field.boundingBox();
+  expect(Math.abs(reopened!.y - before!.y)).toBeLessThan(2);
+  // A language chosen from the list applies and the button shows its own name.
+  await button.click();
+  await dialog.getByRole("radio", { name: "Español" }).check();
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("button", { name: /^Español \(/ })).toBeFocused();
   await expectOnlyFakedCommands(page);
 });
