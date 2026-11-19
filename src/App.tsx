@@ -518,11 +518,6 @@ export default function App({ bridge = defaultBridge }: AppProps) {
           aria-label="myCarlos record library evaluation"
         >
           <header className="titlebar" inert={Boolean(activeDocument)}>
-            <span className="window-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
             <span className="window-title">myCarlos</span>
             <span className="unlock-pill">
               <Icon name="lock-open" /> Unlocked

@@ -1,10 +1,10 @@
+import { LanguageButton } from "./LanguageButton";
 import {
   PersonDetailsOrLater,
   detailsProblem,
   trimmedDetails,
 } from "./PersonDetails";
 import { useI18n, MessageKey } from "../i18n";
-import { LanguageSetting } from "./LanguageSetting";
 import { SecretInput } from "./SecretInput";
 import {
   useEffect,
@@ -49,9 +49,12 @@ const FRAME_STATES = {
 
 export function VaultAuthFrame({
   state,
+  language = false,
   children,
 }: {
   state: keyof typeof FRAME_STATES;
+  /** The language button, for the screens that have no list of their own. */
+  language?: boolean;
   children: ReactNode;
 }) {
   const { t } = useI18n();
@@ -67,17 +70,15 @@ export function VaultAuthFrame({
           aria-label={t("frame.window.label")}
         >
           <header className="titlebar">
-            <span className="window-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
             <span className="window-title">myCarlos</span>
             <span className="native-auth-state">
               <Icon name="shield" /> {t(FRAME_STATES[state])}
             </span>
           </header>
-          <main className="vault-auth">{children}</main>
+          <main className="vault-auth">
+            {language && <LanguageButton />}
+            {children}
+          </main>
         </section>
       </div>
     </div>
@@ -240,9 +241,8 @@ export function CreateVault({
     else void onCreate(profile, secret);
   };
   return (
-    <VaultAuthFrame state="Setting up">
+    <VaultAuthFrame state="Setting up" language>
       <section className="vault-card" aria-labelledby="create-title">
-        <LanguageSetting compact />
         <p className="vault-kicker">{t("auth.kicker")}</p>
         <h1 id="create-title">{t("create.title")}</h1>
         <p>{t("create.intro")}</p>
@@ -399,9 +399,8 @@ export function UnlockVault({
     void onUnlock(secret);
   };
   return (
-    <VaultAuthFrame state="Locked">
+    <VaultAuthFrame state="Locked" language>
       <section className="vault-card" aria-labelledby="unlock-title">
-        <LanguageSetting compact />
         <p className="vault-kicker">{t("auth.kicker")}</p>
         <h1 id="unlock-title">{t("unlock.title")}</h1>
         <p>{t("unlock.autoLock", { count: autoLockMinutes })}</p>
